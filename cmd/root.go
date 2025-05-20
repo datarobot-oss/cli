@@ -1,14 +1,15 @@
-package dr
+package cmd
 
 import (
-	"os"
-
+	_ "github.com/datarobot/cli/cmd/auth"
+	_ "github.com/datarobot/cli/cmd/templates"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "dr",
+	Use:   version.AppName,
 	Short: "The DataRobot CLI",
 	Long: `
 	The DataRobot CLI is a command-line interface for interacting with
@@ -19,11 +20,8 @@ var RootCmd = &cobra.Command{
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	err := RootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
+func Execute() error {
+	return RootCmd.Execute()
 }
 
 func init() {

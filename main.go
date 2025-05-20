@@ -1,11 +1,14 @@
 package main
 
 import (
-	"github.com/datarobot/cli/dr"
-	_ "github.com/datarobot/cli/dr/auth"
-	_ "github.com/datarobot/cli/dr/templates"
+	"github.com/datarobot/cli/cmd"
+	"log"
+	"os"
 )
 
 func main() {
-	dr.Execute()
+	if err := cmd.Execute(); err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
 }

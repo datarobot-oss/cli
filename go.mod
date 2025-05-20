@@ -1,6 +1,6 @@
 module github.com/datarobot/cli
 
-go 1.23.7
+go 1.24.3
 
 require github.com/spf13/cobra v1.9.1
 

@@ -129,8 +129,6 @@ var logoutCmd = &cobra.Command{
 func init() {
 	AuthCmd.AddCommand(
 		loginCmd,
-	)
-	AuthCmd.AddCommand(
 		logoutCmd,
 	)
 }

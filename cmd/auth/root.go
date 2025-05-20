@@ -4,8 +4,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/datarobot/cli/dr"
 )
 
 var AuthCmd = &cobra.Command{
@@ -21,8 +19,4 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func init() {
-	dr.RootCmd.AddCommand(AuthCmd)
 }

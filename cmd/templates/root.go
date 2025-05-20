@@ -3,7 +3,6 @@ package templates
 import (
 	"os"
 
-	"github.com/datarobot/cli/dr"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +19,4 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func init() {
-	dr.RootCmd.AddCommand(TemplatesCmd)
 }

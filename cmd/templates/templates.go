@@ -3,11 +3,11 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/datarobot/cli/cmd/auth"
 	"log"
 	"net/http"
 	"os/exec"
 
-	"github.com/datarobot/cli/dr/auth"
 	"github.com/spf13/cobra"
 )
 
@@ -91,8 +91,6 @@ var statusCmd = &cobra.Command{
 func init() {
 	TemplatesCmd.AddCommand(
 		listTemplatesCmd,
-	)
-	TemplatesCmd.AddCommand(
 		statusCmd,
 	)
 }
