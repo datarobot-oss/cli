@@ -30,6 +30,7 @@ func (v *VersionFormat) String() string {
 	if v == nil {
 		return ""
 	}
+
 	return string(*v)
 }
 
@@ -80,7 +81,7 @@ func init() {
 		fmt.Sprintf("Output format (options: %s, %s)", VersionFormatJSON, VersionFormatText),
 	)
 
-	VersionCmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = VersionCmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{string(VersionFormatJSON), string(VersionFormatText)}, cobra.ShellCompDirectiveNoFileComp
 	})
 }
@@ -95,5 +96,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return fmt.Sprintf("DataRobot CLI version: %s", version.FullVersion), nil
+	return "DataRobot CLI version: " + version.FullVersion, nil
 }

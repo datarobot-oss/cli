@@ -21,21 +21,32 @@ import (
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
 var (
-	authFileDir  string = os.Getenv("HOME") + "/.datarobot-cli/auth"
-	authFileName string = "datarobot-key"
-	authFilePath string = authFileDir + "/" + authFileName
+	authFileDir  = os.Getenv("HOME") + "/.datarobot-cli/auth"
+	authFileName = "datarobot-key"
+	authFilePath = authFileDir + "/" + authFileName
 )
 
 func createAuthFileDirIfNotExists() error {
+	// TODO: we create a CLI config file here basically, so need to reflect that in the method names and structure
 	_, err := os.Stat(authFilePath)
 
-	if errors.Is(err, os.ErrNotExist) {
-		os.MkdirAll(authFileDir, os.ModePerm)
-		os.Create(authFilePath)
-		return nil
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("error checking auth file: %w", err)
 	}
 
-	return err
+	// file was not found, let's create it
+
+	err = os.MkdirAll(authFileDir, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("failed to create auth file directory: %w", err)
+	}
+
+	_, err = os.Create(authFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create auth file: %w", err)
+	}
+
+	return nil
 }
 
 func clearAuthFile() error {
@@ -51,8 +62,9 @@ func LoginAction() error {
 
 	fileInfo, _ := os.Stat(authFilePath)
 
-	if fileInfo.Size() > 0 {
+	if fileInfo.Size() > 0 { //nolint: nestif
 		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
+		// TODO: make this block simpler
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
 			panic(err)
@@ -72,14 +84,17 @@ func LoginAction() error {
 	fmt.Println("Please use the DataRobot web interface to log in and get an API key.")
 
 	file, err := os.Create(authFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create auth file: %w", err)
+	}
 
 	key, err := reader.ReadString('\n')
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
-		panic(err)
+		return err
 	}
 
 	return nil
@@ -121,8 +136,8 @@ var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to DataRobot",
 	Long:  `Login to DataRobot to get and store an API key that can be used for other operation in the cli.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		LoginAction()
+	Run: func(_ *cobra.Command, _ []string) {
+		_ = LoginAction() // TODO: handler errors properly
 	},
 }
 
@@ -130,8 +145,8 @@ var logoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Logout from DataRobot",
 	Long:  `Logout from DataRobot and clear the stored API key.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		LogoutAction()
+	Run: func(_ *cobra.Command, _ []string) {
+		_ = LogoutAction() // TODO: handler errors properly
 	},
 }
 

@@ -78,7 +78,7 @@ PowerShell:
 	DisableFlagsInUseLine: true,
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
 	ValidArgs:             supportedShells(),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		shell := Shell(args[0])
 
 		switch shell {
