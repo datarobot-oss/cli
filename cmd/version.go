@@ -60,7 +60,13 @@ var VersionCmd = &cobra.Command{
 	Short: "Show the DataRobot CLI version information",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), getVersion(options))
+		info, err := getVersion(options)
+
+		if err != nil {
+			return err
+		}
+
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), info)
 		return nil
 	},
 }
@@ -80,12 +86,16 @@ func init() {
 	})
 }
 
-func getVersion(opts versionOptions) string {
+func getVersion(opts versionOptions) (string, error) {
 	if opts.format == VersionFormatJSON {
-		b, _ := json.Marshal(version.Info)
+		b, err := json.Marshal(version.Info)
 
-		return string(b)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal version info to JSON: %w", err)
+		}
+
+		return string(b), nil
 	}
 
-	return fmt.Sprintf("DataRobot CLI version: %s", version.FullVersion)
+	return fmt.Sprintf("DataRobot CLI version: %s", version.FullVersion), nil
 }
