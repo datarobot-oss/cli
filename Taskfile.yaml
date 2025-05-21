@@ -85,7 +85,8 @@ tasks:
       - license
     cmds:
       - echo "🧹 Applying license headers"
-      - docker run --rm \
-        -v $PWD:/github/workspace \
-        ghcr.io/apache/skywalking-eyes/license-eye:4021a396bf07b2136f97c12708476418a8157d72 \
-        -v info -c .licenserc.yaml header fix
+      - |
+        docker run --rm \
+          -v $PWD:/github/workspace \
+          ghcr.io/apache/skywalking-eyes/license-eye:4021a396bf07b2136f97c12708476418a8157d72 \
+          -v info -c .licenserc.yaml header fix
