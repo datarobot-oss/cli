@@ -1,4 +1,4 @@
-// Copyright {{current_year}} DataRobot, Inc. and its affiliates.
+// Copyright 2025 DataRobot, Inc. and its affiliates.
 // All rights reserved.
 // DataRobot, Inc. Confidential.
 // This is unpublished proprietary source code of DataRobot, Inc.
@@ -61,7 +61,6 @@ var VersionCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		info, err := getVersion(options)
-
 		if err != nil {
 			return err
 		}
@@ -89,7 +88,6 @@ func init() {
 func getVersion(opts versionOptions) (string, error) {
 	if opts.format == VersionFormatJSON {
 		b, err := json.Marshal(version.Info)
-
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal version info to JSON: %w", err)
 		}
