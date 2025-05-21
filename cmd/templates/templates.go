@@ -3,10 +3,11 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/datarobot/cli/cmd/auth"
 	"log"
 	"net/http"
 	"os/exec"
+
+	"github.com/datarobot/cli/cmd/auth"
 
 	"github.com/spf13/cobra"
 )
@@ -77,7 +78,6 @@ var statusCmd = &cobra.Command{
 		fmt.Println("Checking the status of the DataRobot application...")
 		gitcmd := exec.Command("git", "status")
 		stdout, err := gitcmd.Output()
-
 		if err != nil {
 			fmt.Println(err.Error())
 			return

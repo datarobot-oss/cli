@@ -9,7 +9,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.GitCommit={{.COMMIT}} \
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
-  BIN_DIR:      "./tmp/bin"
+  BIN_DIR:      "$CWD/tmp/bin"
 
 dotenv: ['.env']
 
@@ -24,13 +24,14 @@ tasks:
     desc: "Install static checkers & other binaries"
     cmds:
       - echo "🚚 Downloading tools…"
+      - export GOBIN={{.BIN_DIR}}
       - |
-          GOBIN={{.BIN_DIR}} go install mvdan.cc/gofumpt@latest
-          GOBIN={{.BIN_DIR}} go install github.com/air-verse/air@latest
-          GOBIN={{.BIN_DIR}} go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          GOBIN={{.BIN_DIR}} go install github.com/g4s8/envdoc@latest
-          GOBIN={{.BIN_DIR}} go install github.com/denis-tingaikin/go-header/cmd/go-header@latest
-          GOBIN={{.BIN_DIR}} go install github.com/goreleaser/goreleaser/v2@latest
+          go install mvdan.cc/gofumpt@latest
+          go install github.com/air-verse/air@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/g4s8/envdoc@latest
+          go install github.com/denis-tingaikin/go-header/cmd/go-header@latest
+          go install github.com/goreleaser/goreleaser/v2@latest
 
   lint:
     desc: "Lint the source code"

@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/datarobot/cli/cmd"
 	"log"
 	"os"
+
+	"github.com/datarobot/cli/cmd"
 )
 
 func main() {

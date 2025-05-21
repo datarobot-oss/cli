@@ -12,9 +12,11 @@ import (
 
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
-var authFileDir string = os.Getenv("HOME") + "/.datarobot-cli/auth"
-var authFileName string = "datarobot-key"
-var authFilePath string = authFileDir + "/" + authFileName
+var (
+	authFileDir  string = os.Getenv("HOME") + "/.datarobot-cli/auth"
+	authFileName string = "datarobot-key"
+	authFilePath string = authFileDir + "/" + authFileName
+)
 
 func createAuthFileDirIfNotExists() error {
 	_, err := os.Stat(authFilePath)
@@ -93,7 +95,6 @@ func GetAPIKey() (string, error) {
 	}
 
 	key, err := os.ReadFile(authFilePath)
-
 	if err != nil {
 		return "", err
 	}
