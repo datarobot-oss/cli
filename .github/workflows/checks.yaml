@@ -29,6 +29,12 @@ jobs:
         with:
           go-version: '1.24.2'
 
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       # cache go modules
       - uses: actions/cache@v4
         with:
@@ -49,7 +55,7 @@ jobs:
 
       - name: Run Golang Lint Command
         run: |
-          make lint
+          task lint
 
   copyright:
     runs-on: ubuntu-latest
@@ -72,6 +78,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -87,7 +99,7 @@ jobs:
 
       - name: Ensure Code Generated
         run: |
-          make gen-check
+          task gen-check
 
   build:
     strategy:
@@ -99,10 +111,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24.2'
 
       - name: Build The Shop Binary
-        run:  make build
+        run:  task build
