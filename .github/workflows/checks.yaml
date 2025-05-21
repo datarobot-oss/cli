@@ -126,6 +126,11 @@ jobs:
         run:  task build
 
       - name: Check if binary runs without errors
-        shell: bash
+        if: matrix.os != 'windows-latest'
         run: |
           ./dist/dr --help
+
+      - name: Check if binary runs without errors
+        if: matrix.os == 'windows-latest'
+        run: |
+          .\dist\dr.exe --help
