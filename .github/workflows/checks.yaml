@@ -128,8 +128,4 @@ jobs:
       - name: Check if binary runs without errors
         shell: bash
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            .\dist\dr.exe --help
-          else
-            ./dist/dr --help
-          fi
+          ./dist/dr --help
