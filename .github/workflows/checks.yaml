@@ -124,3 +124,11 @@ jobs:
 
       - name: Build The Shop Binary
         run:  task build
+
+      - name: Check if binary runs without errors
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            .\bin\dr.exe --help
+          else
+            ./bin/dr --help
+          fi
