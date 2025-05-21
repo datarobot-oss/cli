@@ -15,14 +15,33 @@ import (
 
 const AppName = "dr"
 
+var Version = "dev"
+
 // GitCommit is the commit hash of the current version.
 var GitCommit = "unknown"
 
 // BuildDate is the date when the binary was built.
 var BuildDate = "unknown"
 
-var FullVersion string
+type InfoData struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date"`
+	Runtime   string `json:"runtime"`
+}
+
+var (
+	FullVersion string
+	Info        InfoData
+)
 
 func init() {
-	FullVersion = fmt.Sprintf("%s (%s, runtime: %s)", GitCommit, BuildDate, runtime.Version())
+	Info = InfoData{
+		Version:   Version,
+		Commit:    GitCommit,
+		BuildDate: BuildDate,
+		Runtime:   runtime.Version(),
+	}
+
+	FullVersion = fmt.Sprintf("%s (commit: %s, built date: %s, runtime: %s)", Version, GitCommit, BuildDate, runtime.Version())
 }

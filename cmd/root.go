@@ -9,13 +9,13 @@
 package cmd
 
 import (
-	_ "github.com/datarobot/cli/cmd/auth"
-	_ "github.com/datarobot/cli/cmd/templates"
+	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-// rootCmd represents the base command when called without any subcommands
+// RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   version.AppName,
 	Short: "The DataRobot CLI",
@@ -33,13 +33,11 @@ func Execute() error {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
+	RootCmd.AddCommand(
+		auth.AuthCmd,
+		templates.TemplatesCmd,
+		VersionCmd,
+	)
 
-	// RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.golang-cobra.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
 	RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

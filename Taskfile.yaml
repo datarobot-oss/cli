@@ -61,7 +61,7 @@ tasks:
       - 'echo "Version: {{.VERSION}}"'
       - 'echo "Commit: {{.COMMIT}}"'
       - 'echo "Build Date: {{.BUILD_DATE}}"'
-      - 'go build -ldflags "{{.LDFLAGS_COMMON}}" -o ./dist/cli'
+      - 'go build -ldflags "{{.LDFLAGS_COMMON}}" -o ./dist/dr'
 
   gen:
     desc: "Generate Go code"
