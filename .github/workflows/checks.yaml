@@ -127,10 +127,13 @@ jobs:
 
       - name: Check if binary runs without errors
         if: matrix.os != 'windows-latest'
+        shell: bash
         run: |
           ./dist/dr --help
 
       - name: Check if binary runs without errors
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          .\dist\dr.exe --help
+          Set-Location $Env:GITHUB_WORKSPACE
+          & .\dist\dr.exe --help
