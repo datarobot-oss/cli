@@ -1,2 +1,3 @@
-# cli
-The DataRobot command line interface
+# DataRobot CLI
+
+The DataRobot command line interface to manage custom applications.

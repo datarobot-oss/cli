@@ -1,0 +1,90 @@
+version: "3"
+
+vars:
+  VERSION_PACKAGE: "github.com/datarobot/cli/internal/version"
+  VERSION: { sh: 'git describe --long --always --abbrev=15' }
+  COMMIT: { sh: 'git describe --dirty --long --always --abbrev=15' }
+  BUILD_DATE:    { sh: 'date -u +"%Y-%m-%dT%H:%M:%SZ"' }
+  LDFLAGS_COMMON: |
+    -X {{.VERSION_PACKAGE}}.GitCommit={{.COMMIT}} \
+    -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
+    -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
+  BIN_DIR:      "$PWD/tmp/bin"
+
+dotenv: ['.env']
+
+tasks:
+  help:
+    desc: "🛠️ Dev Commands"
+    cmds:
+      - echo "🛠️ Dev Commands"
+      - task --list
+
+  install-tools:
+    desc: "Install static checkers & other binaries"
+    cmds:
+      - |
+          echo "🚚 Downloading tools…"
+          export GOBIN={{.BIN_DIR}}
+        
+          go install mvdan.cc/gofumpt@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/goreleaser/goreleaser/v2@latest
+
+  lint:
+    desc: "Lint the source code"
+    deps: [install-tools]
+    cmds:
+      - echo "🧹 Cleaning go.mod…"
+      - go mod tidy
+      - echo "🧹 Formatting files…"
+      - go fmt ./...
+      - '{{.BIN_DIR}}/gofumpt -l -w .'
+      - echo "🧹 Vetting go.mod…"
+      - go vet ./...
+      - echo "🧹 GoCI Lint…"
+      - '{{.BIN_DIR}}/golangci-lint run ./...'
+      - echo "🧹 Check GoReleaser…"
+      - '{{.BIN_DIR}}/goreleaser check'
+
+  run:
+    desc: "Run CLI"
+    cmds:
+      - go run -ldflags "{{.LDFLAGS_COMMON}}" main.go -- {{ join .ARGS " " }}
+
+  build:
+    desc: "Build CLI"
+    cmds:
+      - 'echo "🔨 Building binary…"'
+      - 'echo "Version: {{.VERSION}}"'
+      - 'echo "Commit: {{.COMMIT}}"'
+      - 'echo "Build Date: {{.BUILD_DATE}}"'
+      - 'go build -ldflags "{{.LDFLAGS_COMMON}}" -o ./dist/dr'
+
+  gen:
+    desc: "Generate Go code"
+    cmds:
+      - go generate ./...
+
+  gen-check:
+    desc: "Check if Go code needs to be generated"
+    deps: [gen]
+    cmds:
+      - git diff --exit-code
+
+  test:
+    desc: "Run tests"
+    cmds:
+      - go test -v -count=1 -race -shuffle=on -coverprofile=coverage.txt ./...
+
+  copyright:
+    desc: "Apply copyrights to all files"
+    aliases:
+      - license
+    cmds:
+      - echo "🧹 Applying license headers"
+      - |
+        docker run --rm \
+          -v $PWD:/github/workspace \
+          ghcr.io/apache/skywalking-eyes/license-eye:4021a396bf07b2136f97c12708476418a8157d72 \
+          -v info -c .licenserc.yaml header fix
