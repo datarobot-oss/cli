@@ -126,6 +126,7 @@ jobs:
         run:  task build
 
       - name: Check if binary runs without errors
+        shell: bash
         run: |
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             .\dist\dr.exe --help
