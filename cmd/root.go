@@ -36,6 +36,7 @@ func init() {
 	RootCmd.AddCommand(
 		auth.AuthCmd,
 		templates.TemplatesCmd,
+		TaskRunCmd,
 		CompletionCmd,
 		VersionCmd,
 	)
