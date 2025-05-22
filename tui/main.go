@@ -1,6 +1,7 @@
 package tui
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -9,29 +10,51 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const drPurple = lipgloss.Color("#7770F9")
+//go:embed DR-ASCII.txt
+var logoContent string
 
-var baseTextStyle = lipgloss.NewStyle().Foreground(drPurple)
-var welcomeStyle = baseTextStyle.Bold(true)
-var logoStyle = baseTextStyle
+// View states
+const (
+	ViewWelcome = iota
+	ViewLogin
+)
+
+// UI Constants
+const (
+	AppName      = "Datarobot CLI"
+	QuitHelpText = "Press q or Ctrl+C to quit"
+)
+
+// Color scheme
+const drPurple = lipgloss.Color("#7770F9")
+const drRed = lipgloss.Color("#9A3131")
+
+// Style definitions
+var (
+	baseTextStyle = lipgloss.NewStyle().Foreground(drPurple)
+	welcomeStyle  = baseTextStyle.Bold(true)
+	logoStyle     = baseTextStyle
+	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(drRed)).Bold(true)
+)
 
 type model struct {
+	currentView        int
 	logoDisplayContent string
 }
 
 func initialModel() model {
-	m := model{}
-	logoFilePath := "tui/DR-ASCII.txt"
+	m := model{
+		currentView: ViewWelcome,
+	}
 
-	logoBytes, err := os.ReadFile(logoFilePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading logo file %s: %v\n", logoFilePath, err)
-		m.logoDisplayContent = logoStyle.Render("Error: Could not load logo.")
+	// Process embedded logo with error handling
+	if logoContent == "" {
+		m.logoDisplayContent = errorStyle.Render("⚠ Logo not available")
 	} else {
-		logoContent := string(logoBytes)
 		logoLines := strings.Split(strings.TrimSpace(logoContent), "\n")
 		m.logoDisplayContent = logoStyle.Render(strings.Join(logoLines, "\n"))
 	}
+
 	return m
 }
 
@@ -51,23 +74,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	welcomeMessage := welcomeStyle.Render("Welcome to Datarobot CLI")
-	quitMessage := baseTextStyle.Render("Press q to quit.")
-
 	var sb strings.Builder
-	sb.WriteString(m.logoDisplayContent)
+
+	// Always render header with logo
+	sb.WriteString(m.renderHeader())
 	sb.WriteString("\n\n")
-	sb.WriteString(welcomeMessage)
+
+	// Render current view content
+	switch m.currentView {
+	case ViewWelcome:
+		sb.WriteString(m.renderWelcomeView())
+	// Future views:
+	// case ViewLogin:
+	//     sb.WriteString(m.renderLoginView())
+	default:
+		sb.WriteString(errorStyle.Render("Unknown view"))
+	}
+
+	// Always render footer
 	sb.WriteString("\n\n")
-	sb.WriteString(quitMessage)
-	sb.WriteString("\n")
+	sb.WriteString(m.renderFooter())
+
 	return sb.String()
+}
+
+func (m model) renderHeader() string {
+	return m.logoDisplayContent
+}
+
+func (m model) renderWelcomeView() string {
+	var sb strings.Builder
+
+	welcome := welcomeStyle.Render(fmt.Sprintf("Welcome to %s", AppName))
+	sb.WriteString(welcome)
+	sb.WriteString("\n\n")
+
+	return sb.String()
+}
+
+func (m model) renderFooter() string {
+	return baseTextStyle.Render(QuitHelpText)
 }
 
 func Start() {
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
+		fmt.Printf("An error occurred: %v", err)
 		os.Exit(1)
 	}
 }
