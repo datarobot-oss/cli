@@ -2,16 +2,16 @@ version: "3"
 
 vars:
   VERSION_PACKAGE: "github.com/datarobot/cli/internal/version"
-  VERSION: { sh: 'git describe --long --always --abbrev=15' }
-  COMMIT: { sh: 'git describe --dirty --long --always --abbrev=15' }
-  BUILD_DATE:    { sh: 'date -u +"%Y-%m-%dT%H:%M:%SZ"' }
+  VERSION: { sh: "git describe --long --always --abbrev=15" }
+  COMMIT: { sh: "git describe --dirty --long --always --abbrev=15" }
+  BUILD_DATE: { sh: 'date -u +"%Y-%m-%dT%H:%M:%SZ"' }
   LDFLAGS_COMMON: |
     -X {{.VERSION_PACKAGE}}.GitCommit={{.COMMIT}} \
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
-  BIN_DIR:      "$PWD/tmp/bin"
+  BIN_DIR: "$PWD/tmp/bin"
 
-dotenv: ['.env']
+dotenv: [".env"]
 
 tasks:
   help:
@@ -24,12 +24,12 @@ tasks:
     desc: "Install static checkers & other binaries"
     cmds:
       - |
-          echo "🚚 Downloading tools…"
-          export GOBIN={{.BIN_DIR}}
-        
-          go install mvdan.cc/gofumpt@latest
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          go install github.com/goreleaser/goreleaser/v2@latest
+        echo "🚚 Downloading tools…"
+        export GOBIN={{.BIN_DIR}}
+
+        go install mvdan.cc/gofumpt@latest
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        go install github.com/goreleaser/goreleaser/v2@latest
 
   lint:
     desc: "Lint the source code"
@@ -39,18 +39,23 @@ tasks:
       - go mod tidy
       - echo "🧹 Formatting files…"
       - go fmt ./...
-      - '{{.BIN_DIR}}/gofumpt -l -w .'
+      - "{{.BIN_DIR}}/gofumpt -l -w ."
       - echo "🧹 Vetting go.mod…"
       - go vet ./...
       - echo "🧹 GoCI Lint…"
-      - '{{.BIN_DIR}}/golangci-lint run ./...'
+      - "{{.BIN_DIR}}/golangci-lint run ./..."
       - echo "🧹 Check GoReleaser…"
-      - '{{.BIN_DIR}}/goreleaser check'
+      - "{{.BIN_DIR}}/goreleaser check"
 
   run:
     desc: "Run CLI"
     cmds:
-      - go run -ldflags "{{.LDFLAGS_COMMON}}" main.go -- {{ join .ARGS " " }}
+      - |
+        if [ -z "{{.CLI_ARGS}}" ]; then
+          go run -ldflags "{{.LDFLAGS_COMMON}}" main.go
+        else
+          go run -ldflags "{{.LDFLAGS_COMMON}}" main.go -- {{.CLI_ARGS}}
+        fi
 
   build:
     desc: "Build CLI"
