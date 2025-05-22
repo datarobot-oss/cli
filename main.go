@@ -13,11 +13,27 @@ import (
 	"os"
 
 	"github.com/datarobot/cli/cmd"
+	"github.com/datarobot/cli/tui"
 )
 
-func main() {
+func runInteractiveMode() {
+	tui.Start()
+}
+
+func runNonInteractiveMode() {
 	if err := cmd.Execute(); err != nil {
 		log.Println(err)
 		os.Exit(1)
+	}
+}
+
+func main() {
+	// If no arguments (besides the program name itself) are passed,
+	// start the interactive TUI.
+	if len(os.Args) == 1 {
+		runInteractiveMode()
+	} else {
+		// Otherwise, execute the command-line interface with the provided arguments.
+		runNonInteractiveMode()
 	}
 }
