@@ -54,36 +54,38 @@ type versionOptions struct {
 	format VersionFormat
 }
 
-var options versionOptions
+func versionCmd() *cobra.Command {
+	var options versionOptions
 
-var VersionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show the DataRobot CLI version information",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		info, err := getVersion(options)
-		if err != nil {
-			return err
-		}
-
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), info)
-		return nil
-	},
-}
-
-func init() {
 	options.format = VersionFormatText
 
-	VersionCmd.Flags().VarP(
+	cmd := &cobra.Command{
+		Use:   "version",
+		Short: "Show the DataRobot CLI version information",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			info, err := getVersion(options)
+			if err != nil {
+				return err
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), info)
+			return nil
+		},
+	}
+
+	cmd.Flags().VarP(
 		&options.format,
 		"format",
 		"f",
 		fmt.Sprintf("Output format (options: %s, %s)", VersionFormatJSON, VersionFormatText),
 	)
 
-	_ = VersionCmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	_ = cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{string(VersionFormatJSON), string(VersionFormatText)}, cobra.ShellCompDirectiveNoFileComp
 	})
+
+	return cmd
 }
 
 func getVersion(opts versionOptions) (string, error) {
