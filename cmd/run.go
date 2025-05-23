@@ -58,7 +58,7 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 
 			if opts.ListTasks || len(args) == 0 {
 				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error:", err)
+					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 					os.Exit(1)
 					return
 				}
@@ -83,7 +83,7 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 					_, _ = fmt.Fprint(w, "\n")
 				}
 
-				if err := w.Flush(); err != nil {
+				if err = w.Flush(); err != nil {
 					fmt.Fprintln(os.Stderr, "Error:", err)
 					os.Exit(1)
 					return
@@ -100,18 +100,19 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 
 			err = taskRunner.Run(taskNames, opts.RunOpts())
 			if err != nil { //nolint: nestif
-				fmt.Fprintln(os.Stderr, "Error:", err)
+				exitCode := 1
 
 				if exitErr, ok := err.(*exec.ExitError); ok {
 					// Only propagate if --exit-code was requested
 					if opts.ExitCode {
 						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
-							os.Exit(status.ExitStatus())
+							exitCode = status.ExitStatus()
 						}
 					}
 				}
 
-				os.Exit(1)
+				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+				os.Exit(exitCode)
 			}
 		},
 	}
