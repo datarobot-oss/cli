@@ -14,6 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/datarobot/cli/internal/version"
 )
 
 //go:embed DR-ASCII.txt
@@ -27,7 +29,6 @@ const (
 
 // UI Constants
 const (
-	AppName      = "DataRobot CLI"
 	QuitHelpText = "Press q or Ctrl+C to quit"
 )
 
@@ -110,7 +111,7 @@ func (m templateInitModel) renderHeader() string {
 func (m templateInitModel) renderWelcomeView() string {
 	var sb strings.Builder
 
-	welcome := welcomeStyle.Render("Welcome to " + AppName)
+	welcome := welcomeStyle.Render("Welcome to " + version.AppDisplayName)
 	sb.WriteString(welcome)
 	sb.WriteString("\n\n")
 

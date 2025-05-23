@@ -11,13 +11,14 @@ package auth
 import (
 	"os"
 
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var AuthCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "DataRobot authentication commands",
-	Long:  `Authentication commands for DataRobot CLI.`,
+	Long:  `Authentication commands for ` + version.AppDisplayName + `.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

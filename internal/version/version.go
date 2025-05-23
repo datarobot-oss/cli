@@ -15,6 +15,8 @@ import (
 
 const AppName = "dr"
 
+const AppDisplayName = "DataRobot CLI"
+
 var Version = "dev"
 
 // GitCommit is the commit hash of the current version.

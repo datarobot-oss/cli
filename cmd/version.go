@@ -58,7 +58,7 @@ var options versionOptions
 
 var VersionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Show the DataRobot CLI version information",
+	Short: "Show the " + version.AppDisplayName + " version information",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		info, err := getVersion(options)
@@ -96,5 +96,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return "DataRobot CLI version: " + version.FullVersion, nil
+	return version.AppDisplayName + " version: " + version.FullVersion, nil
 }
