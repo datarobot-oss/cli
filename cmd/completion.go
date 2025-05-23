@@ -35,10 +35,11 @@ func supportedShells() []string {
 	}
 }
 
-var CompletionCmd = &cobra.Command{
-	Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
-	Short: "Generate shell completion script",
-	Long: `To load completions:
+func completionCmd() *cobra.Command {
+	var cmd = &cobra.Command{
+		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
+		Short: "Generate shell completion script",
+		Long: `To load completions:
 
 Bash:
 
@@ -75,25 +76,28 @@ PowerShell:
   PS> ` + version.AppName + ` completion powershell > ` + version.AppName + `.ps1
   # and source it from your PowerShell profile.
 `,
-	DisableFlagsInUseLine: true,
-	Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
-	ValidArgs:             supportedShells(),
-	RunE: func(_ *cobra.Command, args []string) error {
-		shell := Shell(args[0])
+		DisableFlagsInUseLine: true,
+		Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
+		ValidArgs:             supportedShells(),
+		RunE: func(_ *cobra.Command, args []string) error {
+			shell := Shell(args[0])
 
-		switch shell {
-		case ShellBash:
-			return RootCmd.GenBashCompletion(os.Stdout)
-		case ShellZsh:
-			// Cobra v1.1.1+ supports GenZshCompletion
-			return RootCmd.GenZshCompletion(os.Stdout)
-		case ShellFish:
-			// the `true` gives fish the “__fish_use_subcommand” behavior
-			return RootCmd.GenFishCompletion(os.Stdout, true)
-		case ShellPowerShell:
-			return RootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
-		default:
-			return fmt.Errorf("unsupported shell %q", args[0])
-		}
-	},
+			switch shell {
+			case ShellBash:
+				return RootCmd.GenBashCompletion(os.Stdout)
+			case ShellZsh:
+				// Cobra v1.1.1+ supports GenZshCompletion
+				return RootCmd.GenZshCompletion(os.Stdout)
+			case ShellFish:
+				// the `true` gives fish the “__fish_use_subcommand” behavior
+				return RootCmd.GenFishCompletion(os.Stdout, true)
+			case ShellPowerShell:
+				return RootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+			default:
+				return fmt.Errorf("unsupported shell %q", args[0])
+			}
+		},
+	}
+
+	return cmd
 }

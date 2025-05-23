@@ -36,10 +36,8 @@ func init() {
 	RootCmd.AddCommand(
 		auth.AuthCmd,
 		templates.TemplatesCmd,
-		TaskRunCmd,
-		CompletionCmd,
-		VersionCmd,
+		taskRunCmd(),
+		completionCmd(),
+		versionCmd(),
 	)
-
-	RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
