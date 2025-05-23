@@ -9,7 +9,6 @@
 package tui
 
 import (
-	_ "embed"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,9 +16,6 @@ import (
 
 	"github.com/datarobot/cli/internal/version"
 )
-
-//go:embed DR-ASCII.txt
-var logoContent string
 
 // View states
 const (
@@ -56,8 +52,8 @@ func initialModel() templateInitModel {
 		currentView: ViewWelcome,
 	}
 
-	// Process embedded logo
-	logoLines := strings.Split(strings.TrimSpace(logoContent), "\n")
+	// Process banner
+	logoLines := strings.Split(strings.TrimSpace(Banner), "\n")
 	m.logoDisplayContent = logoStyle.Render(strings.Join(logoLines, "\n"))
 
 	return m
