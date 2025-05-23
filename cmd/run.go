@@ -68,14 +68,14 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 				}
 
 				w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
-				for _, task := range tasks {
-					desc := strings.ReplaceAll(task.Desc, "\n", " ")
+				for _, t := range tasks {
+					desc := strings.ReplaceAll(t.Desc, "\n", " ")
 
 					_, _ = fmt.Fprint(w, "* ")
-					_, _ = fmt.Fprint(w, task.Name)
+					_, _ = fmt.Fprint(w, t.Name)
 
-					if len(task.Aliases) > 0 {
-						_, _ = fmt.Fprintf(w, " (%s)", strings.Join(task.Aliases, ", "))
+					if len(t.Aliases) > 0 {
+						_, _ = fmt.Fprintf(w, " (%s)", strings.Join(t.Aliases, ", "))
 					}
 
 					_, _ = fmt.Fprintf(w, " \t%s", desc)
