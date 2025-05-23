@@ -10,8 +10,6 @@ package tui
 
 import (
 	_ "embed"
-	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,7 +27,7 @@ const (
 
 // UI Constants
 const (
-	AppName      = "Datarobot CLI"
+	AppName      = "DataRobot CLI"
 	QuitHelpText = "Press q or Ctrl+C to quit"
 )
 
@@ -123,10 +121,8 @@ func (m model) renderFooter() string {
 	return baseTextStyle.Render(QuitHelpText)
 }
 
-func Start() {
+func Start() error {
 	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("An error occurred: %v", err)
-		os.Exit(1)
-	}
+	_, err := p.Run()
+	return err
 }

@@ -9,31 +9,34 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"os"
 
 	"github.com/datarobot/cli/cmd"
 	"github.com/datarobot/cli/tui"
 )
 
-func runInteractiveMode() {
-	tui.Start()
+func runInteractiveMode() error {
+	return tui.Start()
 }
 
-func runNonInteractiveMode() {
-	if err := cmd.Execute(); err != nil {
-		log.Println(err)
-		os.Exit(1)
-	}
+func runNonInteractiveMode() error {
+	return cmd.Execute()
 }
 
 func main() {
+	var err error
 	// If no arguments (besides the program name itself) are passed,
 	// start the interactive TUI.
 	if len(os.Args) == 1 {
-		runInteractiveMode()
+		err = runInteractiveMode()
 	} else {
 		// Otherwise, execute the command-line interface with the provided arguments.
-		runNonInteractiveMode()
+		err = runNonInteractiveMode()
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }
