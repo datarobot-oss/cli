@@ -85,7 +85,7 @@ func (r *Runner) ListTasks() ([]Task, error) {
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = r.opts.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
@@ -149,9 +149,9 @@ func (r *Runner) Run(tasks []string, opts RunOpts) error {
 
 	cmd.Dir = r.opts.Dir
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdout = r.opts.Stdout
+	cmd.Stderr = r.opts.Stderr
+	cmd.Stdin = r.opts.Stdin
 
 	return cmd.Run()
 }
