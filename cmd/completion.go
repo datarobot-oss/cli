@@ -36,7 +36,7 @@ func supportedShells() []string {
 }
 
 func completionCmd() *cobra.Command {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
 		Short: "Generate shell completion script",
 		Long: `To load completions:

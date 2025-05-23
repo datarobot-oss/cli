@@ -59,7 +59,7 @@ func versionCmd() *cobra.Command {
 
 	options.format = VersionFormatText
 
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Show the DataRobot CLI version information",
 		Args:  cobra.NoArgs,
