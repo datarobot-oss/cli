@@ -50,9 +50,17 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 		Aliases: []string{"r"},
 		Short:   "Run an application template task",
 		Run: func(_ *cobra.Command, args []string) {
+			binaryName := "task"
 			taskRunner := task.NewTaskRunner(task.RunnerOpts{
-				Dir: opts.Dir,
+				BinaryName: binaryName,
+				Dir:        opts.Dir,
 			})
+
+			if !taskRunner.Installed() {
+				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
+				os.Exit(1)
+				return
+			}
 
 			tasks, err := taskRunner.ListTasks()
 

@@ -61,6 +61,14 @@ func NewTaskRunner(opts RunnerOpts) *Runner {
 	}
 }
 
+func (r *Runner) Installed() bool {
+	if _, err := exec.LookPath(r.opts.BinaryName); err != nil {
+		return false
+	}
+
+	return true
+}
+
 func (r *Runner) ListTasks() ([]Task, error) {
 	cmd := exec.Command(r.opts.BinaryName, "--list", "--json")
 
