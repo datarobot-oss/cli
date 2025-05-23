@@ -56,9 +56,9 @@ tasks:
     desc: "Build CLI"
     cmds:
       - 'echo "🔨 Building binary…"'
-      - 'echo "Version: {{.VERSION}}"'
-      - 'echo "Commit: {{.COMMIT}}"'
-      - 'echo "Build Date: {{.BUILD_DATE}}"'
+      - 'echo "• Version: {{.VERSION}}"'
+      - 'echo "• Commit: {{.COMMIT}}"'
+      - 'echo "• Build Date: {{.BUILD_DATE}}"'
       - 'go build -ldflags "{{.LDFLAGS_COMMON}}" -o ./dist/dr'
       - 'echo "✨ Binary built at ./dist/dr"'
 
