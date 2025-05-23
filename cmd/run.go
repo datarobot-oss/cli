@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -73,13 +74,34 @@ func taskRunCmd() *cobra.Command {
 			if opts.ListTasks || len(args) == 0 {
 				if err != nil {
 					fmt.Fprintln(os.Stderr, "Error:", err)
+					os.Exit(1)
 					return
 				}
 
-				fmt.Println("Available tasks:")
+				if !opts.Silent {
+					fmt.Println("Available tasks:")
+				}
 
+				w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
 				for _, task := range tasks {
-					fmt.Printf("  %s\t- %s\n", task.Name, task.Desc)
+					desc := strings.ReplaceAll(task.Desc, "\n", " ")
+
+					_, _ = fmt.Fprint(w, "* ")
+					_, _ = fmt.Fprint(w, task.Name)
+
+					if len(task.Aliases) > 0 {
+						_, _ = fmt.Fprint(w, fmt.Sprintf(" (%s)", strings.Join(task.Aliases, ", ")))
+					}
+
+					_, _ = fmt.Fprint(w, fmt.Sprintf(" \t%s", desc))
+
+					_, _ = fmt.Fprint(w, "\n")
+				}
+
+				if err := w.Flush(); err != nil {
+					fmt.Fprintln(os.Stderr, "Error:", err)
+					os.Exit(1)
+					return
 				}
 
 				return
