@@ -1,3 +1,11 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
 package tui
 
 import (
@@ -26,15 +34,17 @@ const (
 )
 
 // Color scheme
-const drPurple = lipgloss.Color("#7770F9")
-const drRed = lipgloss.Color("#9A3131")
+const (
+	drPurple = lipgloss.Color("#7770F9")
+	drRed    = lipgloss.Color("#9A3131")
+)
 
 // Style definitions
 var (
 	baseTextStyle = lipgloss.NewStyle().Foreground(drPurple)
 	welcomeStyle  = baseTextStyle.Bold(true)
 	logoStyle     = baseTextStyle
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(drRed)).Bold(true)
+	errorStyle    = lipgloss.NewStyle().Foreground(drRed).Bold(true)
 )
 
 type model struct {
@@ -47,13 +57,9 @@ func initialModel() model {
 		currentView: ViewWelcome,
 	}
 
-	// Process embedded logo with error handling
-	if logoContent == "" {
-		m.logoDisplayContent = errorStyle.Render("⚠ Logo not available")
-	} else {
-		logoLines := strings.Split(strings.TrimSpace(logoContent), "\n")
-		m.logoDisplayContent = logoStyle.Render(strings.Join(logoLines, "\n"))
-	}
+	// Process embedded logo
+	logoLines := strings.Split(strings.TrimSpace(logoContent), "\n")
+	m.logoDisplayContent = logoStyle.Render(strings.Join(logoLines, "\n"))
 
 	return m
 }
@@ -70,6 +76,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	}
+
 	return m, nil
 }
 
@@ -105,7 +112,7 @@ func (m model) renderHeader() string {
 func (m model) renderWelcomeView() string {
 	var sb strings.Builder
 
-	welcome := welcomeStyle.Render(fmt.Sprintf("Welcome to %s", AppName))
+	welcome := welcomeStyle.Render("Welcome to " + AppName)
 	sb.WriteString(welcome)
 	sb.WriteString("\n\n")
 
