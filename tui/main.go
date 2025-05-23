@@ -45,13 +45,13 @@ var (
 	errorStyle    = lipgloss.NewStyle().Foreground(drRed).Bold(true)
 )
 
-type model struct {
+type templateInitModel struct {
 	currentView        int
 	logoDisplayContent string
 }
 
-func initialModel() model {
-	m := model{
+func initialModel() templateInitModel {
+	m := templateInitModel{
 		currentView: ViewWelcome,
 	}
 
@@ -62,11 +62,11 @@ func initialModel() model {
 	return m
 }
 
-func (m model) Init() tea.Cmd {
+func (m templateInitModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m templateInitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -78,7 +78,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
+func (m templateInitModel) View() string {
 	var sb strings.Builder
 
 	// Always render header with logo
@@ -103,11 +103,11 @@ func (m model) View() string {
 	return sb.String()
 }
 
-func (m model) renderHeader() string {
+func (m templateInitModel) renderHeader() string {
 	return m.logoDisplayContent
 }
 
-func (m model) renderWelcomeView() string {
+func (m templateInitModel) renderWelcomeView() string {
 	var sb strings.Builder
 
 	welcome := welcomeStyle.Render("Welcome to " + AppName)
@@ -117,7 +117,7 @@ func (m model) renderWelcomeView() string {
 	return sb.String()
 }
 
-func (m model) renderFooter() string {
+func (m templateInitModel) renderFooter() string {
 	return baseTextStyle.Render(QuitHelpText)
 }
 
