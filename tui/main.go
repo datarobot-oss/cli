@@ -124,5 +124,6 @@ func (m model) renderFooter() string {
 func Start() error {
 	p := tea.NewProgram(initialModel())
 	_, err := p.Run()
+
 	return err
 }
