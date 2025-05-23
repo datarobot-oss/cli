@@ -128,7 +128,7 @@ func runTask(dir string, taskNames []string, parallel bool) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, " "))
+	fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 
 	return cmd.Run()
 }
