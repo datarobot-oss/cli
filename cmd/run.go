@@ -14,22 +14,56 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 type taskRunOptions struct {
-	Dir           string
-	ListTasks     bool
-	RunInParallel bool
+	Dir         string
+	ListTasks   bool
+	Concurrency int
+	Parallel    bool
+	WatchTask   bool
+	AnswerYes   bool
+	Silent      bool
+	ExitCode    bool
+}
+
+func (o *taskRunOptions) TaskfileArgs() []string {
+	args := make([]string, 0, 6)
+
+	if o.Parallel {
+		args = append(args, "--parallel")
+	}
+
+	if o.WatchTask {
+		args = append(args, "--watch")
+	}
+
+	if o.AnswerYes {
+		args = append(args, "--yes")
+	}
+
+	if o.ExitCode {
+		args = append(args, "--exit-code")
+	}
+
+	if o.Silent {
+		args = append(args, "--silent")
+	}
+
+	args = append(args, "-C", strconv.Itoa(o.Concurrency))
+
+	return args
 }
 
 func taskRunCmd() *cobra.Command {
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{
-		Use:     "run [TASK1, TASK2]",
+		Use:     "run [task1, task2, ...] [flags]",
 		Aliases: []string{"r"},
 		Short:   "Run an application template task",
 		Run: func(_ *cobra.Command, args []string) {
@@ -38,7 +72,7 @@ func taskRunCmd() *cobra.Command {
 
 			if opts.ListTasks || len(args) == 0 {
 				if err != nil {
-					fmt.Println("Error:", err)
+					fmt.Fprintln(os.Stderr, "Error:", err)
 					return
 				}
 
@@ -53,21 +87,36 @@ func taskRunCmd() *cobra.Command {
 
 			taskNames := args
 
-			//if _, exists := tasks[taskName]; !exists {
-			//	return suggestTasks(taskName, tasks)
-			//}
+			if !opts.Silent {
+				fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
+			}
 
-			err = runTask(dir, taskNames, opts.RunInParallel)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
+			err = runTask(dir, taskNames, opts)
+			if err != nil { //nolint: nestif
+				fmt.Fprintln(os.Stderr, "Error:", err)
+
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					// Only propagate if --exit-code was requested
+					if opts.ExitCode {
+						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
+							os.Exit(status.ExitStatus())
+						}
+					}
+				}
+
+				os.Exit(1)
 			}
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "Directory to look for tasks")
-	cmd.Flags().BoolVarP(&opts.ListTasks, "list", "l", false, "List all available tasks")
-	cmd.Flags().BoolVarP(&opts.RunInParallel, "parallel", "p", false, "Run tasks in parallel")
+	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "Directory to look for tasks.")
+	cmd.Flags().BoolVarP(&opts.ListTasks, "list", "l", false, "List all available tasks.")
+	cmd.Flags().BoolVarP(&opts.Parallel, "parallel", "p", false, "Run tasks in parallel.")
+	cmd.Flags().IntVarP(&opts.Concurrency, "concurrency", "C", 2, "Number of concurrent tasks to run.")
+	cmd.Flags().BoolVarP(&opts.WatchTask, "watch", "w", false, "Enables watch of the given task.")
+	cmd.Flags().BoolVarP(&opts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
+	cmd.Flags().BoolVarP(&opts.ExitCode, "exit-code", "x", false, "Pass-through the exit code of the task command.")
+	cmd.Flags().BoolVarP(&opts.Silent, "silent", "s", false, "Disables echoing.")
 
 	return cmd
 }
@@ -113,12 +162,11 @@ func getAllTasks(dir string) ([]Task, error) {
 	return taskList.Tasks, nil
 }
 
-func runTask(dir string, taskNames []string, parallel bool) error {
-	args := taskNames
+func runTask(dir string, taskNames []string, opts taskRunOptions) error {
+	var args []string
 
-	if parallel {
-		args = append([]string{"--parallel"}, taskNames...)
-	}
+	args = append(args, opts.TaskfileArgs()...)
+	args = append(args, taskNames...)
 
 	cmd := exec.Command("task", args...)
 
@@ -127,8 +175,6 @@ func runTask(dir string, taskNames []string, parallel bool) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-
-	fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 
 	return cmd.Run()
 }
