@@ -78,7 +78,7 @@ func (r *Runner) Installed() bool {
 }
 
 func (r *Runner) ListTasks() ([]Task, error) {
-	cmd := exec.Command(r.opts.BinaryName, "--list", "--json")
+	cmd := exec.Command(r.opts.BinaryName, "--list-all", "--json")
 
 	cmd.Dir = r.opts.Dir
 
