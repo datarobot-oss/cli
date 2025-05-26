@@ -25,8 +25,7 @@ var RootCmd = &cobra.Command{
 	DataRobot's application templates and authentication. It allows users to 
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// If no subcommand is specified, launch interactive mode
+	RunE: func(_ *cobra.Command, _ []string) error {
 		return tui.Start()
 	},
 }
