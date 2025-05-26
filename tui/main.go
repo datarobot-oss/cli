@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/datarobot/cli/internal/version"
 )
@@ -28,18 +27,9 @@ const (
 	QuitHelpText = "Press q or Ctrl+C to quit"
 )
 
-// Color scheme
-const (
-	drPurple = lipgloss.Color("#7770F9")
-	drRed    = lipgloss.Color("#9A3131")
-)
-
-// Style definitions
 var (
-	baseTextStyle = lipgloss.NewStyle().Foreground(drPurple)
-	welcomeStyle  = baseTextStyle.Bold(true)
-	logoStyle     = baseTextStyle
-	errorStyle    = lipgloss.NewStyle().Foreground(drRed).Bold(true)
+	logoStyle    = BaseTextStyle
+	welcomeStyle = BaseTextStyle.Bold(true)
 )
 
 type templateInitModel struct {
@@ -90,7 +80,7 @@ func (m templateInitModel) View() string {
 	// case ViewLogin:
 	//     sb.WriteString(m.renderLoginView())
 	default:
-		sb.WriteString(errorStyle.Render("Unknown view"))
+		sb.WriteString(ErrorStyle.Render("Unknown view"))
 	}
 
 	// Always render footer
@@ -115,7 +105,7 @@ func (m templateInitModel) renderWelcomeView() string {
 }
 
 func (m templateInitModel) renderFooter() string {
-	return baseTextStyle.Render(QuitHelpText)
+	return BaseTextStyle.Render(QuitHelpText)
 }
 
 func Start() error {
