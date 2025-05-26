@@ -13,9 +13,9 @@ import (
 	"runtime"
 )
 
-const AppName = "dr"
+const CliName = "dr"
 
-const AppDisplayName = "DataRobot CLI"
+const AppName = "DataRobot CLI"
 
 var Version = "dev"
 

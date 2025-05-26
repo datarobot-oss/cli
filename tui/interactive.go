@@ -97,7 +97,7 @@ func (m templateInitModel) renderHeader() string {
 func (m templateInitModel) renderWelcomeView() string {
 	var sb strings.Builder
 
-	welcome := welcomeStyle.Render("Welcome to " + version.AppDisplayName)
+	welcome := welcomeStyle.Render("Welcome to " + version.AppName)
 	sb.WriteString(welcome)
 	sb.WriteString("\n\n")
 

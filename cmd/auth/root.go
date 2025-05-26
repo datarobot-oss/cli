@@ -18,7 +18,7 @@ import (
 var AuthCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "DataRobot authentication commands",
-	Long:  `Authentication commands for ` + version.AppDisplayName + `.`,
+	Long:  `Authentication commands for ` + version.AppName + `.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

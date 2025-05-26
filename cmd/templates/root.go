@@ -18,7 +18,7 @@ import (
 var TemplatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "DataRobot application templates commands",
-	Long:  `Application templates commands for ` + version.AppDisplayName + `.`,
+	Long:  `Application templates commands for ` + version.AppName + `.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

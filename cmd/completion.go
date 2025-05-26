@@ -43,14 +43,14 @@ func completionCmd() *cobra.Command {
 
 Bash:
 
-  $ source <(` + version.AppName + ` completion bash)
+  $ source <(` + version.CliName + ` completion bash)
 
   # To load completions for each session, execute once:
   # Linux:
-  $ ` + version.AppName + ` completion bash > /etc/bash_completion.d/` + version.AppName + `
+  $ ` + version.CliName + ` completion bash > /etc/bash_completion.d/` + version.CliName + `
 
   # macOS (with Homebrew):
-  $ ` + version.AppName + ` completion bash > /usr/local/etc/bash_completion.d/` + version.AppName + `
+  $ ` + version.CliName + ` completion bash > /usr/local/etc/bash_completion.d/` + version.CliName + `
 
 Zsh:
 
@@ -59,21 +59,21 @@ Zsh:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
   # To load completions for each session, execute once:
-  $ ` + version.AppName + ` completion zsh > "${fpath[1]}/_` + version.AppName + `"
+  $ ` + version.CliName + ` completion zsh > "${fpath[1]}/_` + version.CliName + `"
 
 Fish:
 
-  $ ` + version.AppName + ` completion fish | source
+  $ ` + version.CliName + ` completion fish | source
 
   # To load completions for each session, execute once:
-  $ ` + version.AppName + ` completion fish > ~/.config/fish/completions/` + version.AppName + `.fish
+  $ ` + version.CliName + ` completion fish > ~/.config/fish/completions/` + version.CliName + `.fish
 
 PowerShell:
 
-  PS> ` + version.AppName + ` completion powershell | Out-String | Invoke-Expression
+  PS> ` + version.CliName + ` completion powershell | Out-String | Invoke-Expression
 
   # To load completions for every new session, run:
-  PS> ` + version.AppName + ` completion powershell > ` + version.AppName + `.ps1
+  PS> ` + version.CliName + ` completion powershell > ` + version.CliName + `.ps1
   # and source it from your PowerShell profile.
 `,
 		DisableFlagsInUseLine: true,

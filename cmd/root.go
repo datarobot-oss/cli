@@ -17,10 +17,10 @@ import (
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   version.AppName,
-	Short: "The " + version.AppDisplayName,
+	Use:   version.CliName,
+	Short: "The " + version.AppName,
 	Long: `
-	The ` + version.AppDisplayName + ` is a command-line interface for interacting with
+	The ` + version.AppName + ` is a command-line interface for interacting with
 	DataRobot's application templates and authentication. It allows users to 
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,

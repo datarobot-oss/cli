@@ -61,7 +61,7 @@ func versionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Show the " + version.AppDisplayName + " version information",
+		Short: "Show the " + version.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := getVersion(options)
@@ -98,5 +98,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return version.AppDisplayName + " version: " + version.FullVersion, nil
+	return version.AppName + " version: " + version.FullVersion, nil
 }
