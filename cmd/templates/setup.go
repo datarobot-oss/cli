@@ -9,7 +9,6 @@
 package templates
 
 import (
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +18,11 @@ var setupCmd = &cobra.Command{
 	Long: `Setup and configure the current template with an interactive setup wizard.
 
 This interactive command:
-- Helps setting setting up the template configuration
+- Helps with setting up the template configuration
 
 This command launches an interactive terminal interface to guide you through
 the template configuration process step by step.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		return tui.Start()
+		return StartTemplateSetup()
 	},
 }

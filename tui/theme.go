@@ -20,4 +20,8 @@ const (
 var (
 	BaseTextStyle = lipgloss.NewStyle().Foreground(DrPurple)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
+
+	// Specific UI styles
+	LogoStyle    = BaseTextStyle
+	WelcomeStyle = BaseTextStyle.Bold(true)
 )
