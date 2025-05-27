@@ -12,7 +12,6 @@ import (
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,9 +24,7 @@ var RootCmd = &cobra.Command{
 	DataRobot's application templates and authentication. It allows users to 
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		return tui.Start()
-	},
+	// Show help by default when no subcommands match
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
