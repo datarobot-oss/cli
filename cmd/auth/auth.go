@@ -31,7 +31,7 @@ var (
 func createAuthFileDirIfNotExists() error {
 	// TODO: we create a CLI config file here basically, so need to reflect that in the method names and structure
 	_, err := os.Stat(authFilePath)
-	if err == nil {
+	if (err == nil) {
 		// File exists, do nothing
 		return nil
 	}
@@ -59,7 +59,7 @@ func clearAuthFile() error {
 }
 
 
-func waitForApiKeyCallback() string {
+func waitForAPIKeyCallback() string {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string)
 
@@ -78,7 +78,7 @@ func waitForApiKeyCallback() string {
 	// Start the server in a goroutine
 	go func() {
 	    fmt.Println("Via this link : https://staging.datarobot.com/account/developer-tools?cliRedirect=true")
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		if (err := server.ListenAndServe(); err != http.ErrServerClosed) {
 			fmt.Printf("Server error: %v\n", err)
 		}
 	}()
@@ -132,10 +132,7 @@ func LoginAction() error {
 		return fmt.Errorf("failed to create auth file: %w", err)
 	}
 
-    key:= waitForApiKeyCallback();
-	if err != nil {
-		return err
-	}
+    key:= waitForAPIKeyCallback();
 
 	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
