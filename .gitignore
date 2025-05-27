@@ -30,3 +30,10 @@ dist/
 tmp
 
 .idea
+
+# macOS
+.DS_Store
+
+# Test coverage
+coverage.txt
+

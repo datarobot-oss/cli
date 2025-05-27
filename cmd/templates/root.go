@@ -11,13 +11,14 @@ package templates
 import (
 	"os"
 
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var TemplatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "DataRobot application templates commands",
-	Long:  `Application templates commands for DataRobot CLI.`,
+	Long:  `Application templates commands for ` + version.AppName + `.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

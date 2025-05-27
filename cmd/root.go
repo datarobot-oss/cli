@@ -17,13 +17,14 @@ import (
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   version.AppName,
-	Short: "The DataRobot CLI",
+	Use:   version.CliName,
+	Short: "The " + version.AppName,
 	Long: `
-	The DataRobot CLI is a command-line interface for interacting with
+	The ` + version.AppName + ` is a command-line interface for interacting with
 	DataRobot's application templates and authentication. It allows users to 
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
+	// Show help by default when no subcommands match
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

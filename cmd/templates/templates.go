@@ -108,5 +108,6 @@ func init() {
 	TemplatesCmd.AddCommand(
 		listTemplatesCmd,
 		statusCmd,
+		setupCmd,
 	)
 }
