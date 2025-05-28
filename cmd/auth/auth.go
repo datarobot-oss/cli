@@ -10,8 +10,10 @@ package auth
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -29,6 +31,10 @@ var (
 func createAuthFileDirIfNotExists() error {
 	// TODO: we create a CLI config file here basically, so need to reflect that in the method names and structure
 	_, err := os.Stat(authFilePath)
+	if err == nil {
+		// File exists, do nothing
+		return nil
+	}
 
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("error checking auth file: %w", err)
@@ -53,6 +59,44 @@ func clearAuthFile() error {
 	return os.Truncate(authFilePath, 0)
 }
 
+func waitForAPIKeyCallback() string {
+	addr := "localhost:51164"
+	apiKeyChan := make(chan string)
+
+	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		apiKey := r.URL.Query().Get("key")
+
+		fmt.Fprint(w, "Successfully processed API key, you may close this window.")
+		apiKeyChan <- apiKey // send the key to the main goroutine
+	})
+
+	// Start the server in a goroutine
+	go func() {
+		fmt.Println("Via this link : https://staging.datarobot.com/account/developer-tools?cliRedirect=true")
+
+		err := server.ListenAndServe()
+		if err != http.ErrServerClosed {
+			fmt.Printf("Server error: %v\n", err)
+		}
+	}()
+
+	// Wait for the key from the handler
+	apiKey := <-apiKeyChan
+
+	// Now shut down the server after key is received
+	if err := server.Shutdown(context.Background()); err != nil {
+		fmt.Printf("Error during shutdown: %v\n", err)
+	}
+
+	return apiKey
+}
+
 func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -65,6 +109,7 @@ func LoginAction() error {
 	if fileInfo.Size() > 0 { //nolint: nestif
 		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
 		// TODO: make this block simpler
+		// TODO Verify the API Key is still valid
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
 			panic(err)
@@ -88,10 +133,7 @@ func LoginAction() error {
 		return fmt.Errorf("failed to create auth file: %w", err)
 	}
 
-	key, err := reader.ReadString('\n')
-	if err != nil {
-		return err
-	}
+	key := waitForAPIKeyCallback()
 
 	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
