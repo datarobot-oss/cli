@@ -196,5 +196,6 @@ func init() {
 	AuthCmd.AddCommand(
 		loginCmd,
 		logoutCmd,
+		setUrlCmd,
 	)
 }
