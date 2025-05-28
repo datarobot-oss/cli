@@ -78,7 +78,15 @@ func getBaseURL(input string) (string, error) {
 	return base, nil
 }
 
-func SetURLAction() {
+func PromptUserForURL() {
+
+}
+func GetURL(promptIfFound bool) (string, error) {
+	// This is the entrypoint for using a URL. The flow is:
+	// * Check if there's a file with the content.  If there's no file, make it.
+	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
+	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
+	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
 	err := createURLFileDirIfNotExists()
 	if err != nil {
 		panic(err)
@@ -89,7 +97,11 @@ func SetURLAction() {
 	if err != nil {
 		panic(err)
 	}
-	if len(urlContent) > 0 {
+	if (len(urlContent) > 0) && !promptIfFound {
+		return urlContent, nil
+	}
+
+	if (len(urlContent) > 0) && promptIfFound {
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
@@ -102,17 +114,17 @@ func SetURLAction() {
 			}
 		} else {
 			fmt.Println("Exiting without overwriting the DataRobot URL.")
-			return
+			return urlContent, nil
 		}
 	}
 	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")
 	fmt.Println("Please enter 1 if you're using https://app.datarobot.com")
 	fmt.Println("Please enter 2 if you're using https://app.eu.datarobot.com")
 	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
-	fmt.Println("Otherwise, please enter the URl you use")
+	fmt.Println("Otherwise, please enter the URL you use")
 	selectedOption, err := reader.ReadString('\n')
 	if err != nil {
-		panic(err)
+		return "", nil
 	}
 	selected := strings.ToLower(strings.Replace(selectedOption, "\n", "", -1))
 
@@ -126,10 +138,16 @@ func SetURLAction() {
 	} else {
 		url, err = getBaseURL(selected)
 		if err != nil {
-			panic(err)
+			return "", nil
 		}
 	}
 	createOrUpdateUrl(url)
+	return url, nil
+}
+
+func SetURLAction() {
+	_, err := GetURL(true)
+	panic(err)
 }
 
 var setUrlCmd = &cobra.Command{
