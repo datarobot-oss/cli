@@ -63,10 +63,12 @@ func clearAuthFile() error {
 func waitForAPIKeyCallback() string {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
+
 	datarobotHost, err := GetURL(false)
 	if err != nil {
 		panic(err)
 	}
+
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Addr:    addr,
@@ -77,8 +79,10 @@ func waitForAPIKeyCallback() string {
 		apiKey := r.URL.Query().Get("key")
 
 		fmt.Fprint(w, "Successfully processed API key, you may close this window.")
+
 		apiKeyChan <- apiKey // send the key to the main goroutine
 	})
+
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
 		panic(err)
@@ -87,6 +91,7 @@ func waitForAPIKeyCallback() string {
 	// Start the server in a goroutine
 	go func() {
 		fmt.Printf("Via this link : %s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
+
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {
 			fmt.Printf("Server error: %v\n", err)
@@ -95,7 +100,8 @@ func waitForAPIKeyCallback() string {
 
 	// Wait for the key from the handler
 	apiKey := <-apiKeyChan
-	fmt.Println("Sucessfully consumed API Key from API Request")
+
+	fmt.Println("Successfully consumed API Key from API Request")
 	// Now shut down the server after key is received
 	if err := server.Shutdown(context.Background()); err != nil {
 		fmt.Printf("Error during shutdown: %v\n", err)
@@ -144,6 +150,7 @@ func LoginAction() error {
 	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -201,6 +208,6 @@ func init() {
 	AuthCmd.AddCommand(
 		loginCmd,
 		logoutCmd,
-		setUrlCmd,
+		setURLCmd,
 	)
 }

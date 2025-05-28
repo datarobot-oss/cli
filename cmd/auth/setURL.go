@@ -52,19 +52,20 @@ func createURLFileDirIfNotExists() error {
 	return nil
 }
 
-func createOrUpdateUrl(url string) error {
-	return os.WriteFile(urlFilePath, []byte(url), 0644)
+func createOrUpdateURL(url string) error {
+	return os.WriteFile(urlFilePath, []byte(url), 0o644)
 }
 
-func readUrlFromFile() (string, error) {
+func readURLFromFile() (string, error) {
 	data, err := os.ReadFile(urlFilePath)
 	if err != nil {
 		return "", err
 	}
+
 	return string(data), nil
 }
 
-func clearUrlFile() error {
+func clearURLFile() error {
 	return os.Truncate(urlFilePath, 0)
 }
 
@@ -75,13 +76,11 @@ func getBaseURL(input string) (string, error) {
 	}
 
 	base := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
+
 	return base, nil
 }
 
-func PromptUserForURL() {
-
-}
-func GetURL(promptIfFound bool) (string, error) {
+func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// This is the entrypoint for using a URL. The flow is:
 	// * Check if there's a file with the content.  If there's no file, make it.
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
@@ -89,43 +88,51 @@ func GetURL(promptIfFound bool) (string, error) {
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
 	err := createURLFileDirIfNotExists()
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	urlContent, err := readUrlFromFile()
+
+	urlContent, err := readURLFromFile()
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	if (len(urlContent) > 0) && !promptIfFound {
+
+	emptyURLContent := len(urlContent) > 0
+
+	if emptyURLContent && !promptIfFound {
 		return urlContent, nil
 	}
 
-	if (len(urlContent) > 0) && promptIfFound {
+	if emptyURLContent && promptIfFound { //nolint: nestif
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
+
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			panic(err)
+			return "", err
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			if err := clearUrlFile(); err != nil {
-				panic(err)
+			if err := clearURLFile(); err != nil {
+				return "", err
 			}
 		} else {
 			fmt.Println("Exiting without overwriting the DataRobot URL.")
 			return urlContent, nil
 		}
 	}
+
 	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")
 	fmt.Println("Please enter 1 if you're using https://app.datarobot.com")
 	fmt.Println("Please enter 2 if you're using https://app.eu.datarobot.com")
 	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
 	fmt.Println("Otherwise, please enter the URL you use")
+
 	selectedOption, err := reader.ReadString('\n')
 	if err != nil {
 		return "", nil
 	}
+
 	selected := strings.ToLower(strings.Replace(selectedOption, "\n", "", -1))
 
 	var url string
@@ -141,7 +148,12 @@ func GetURL(promptIfFound bool) (string, error) {
 			return "", nil
 		}
 	}
-	createOrUpdateUrl(url)
+
+	errors := createOrUpdateURL(url)
+	if errors != nil {
+		return url, errors
+	}
+
 	return url, nil
 }
 
@@ -152,7 +164,7 @@ func SetURLAction() {
 	}
 }
 
-var setUrlCmd = &cobra.Command{
+var setURLCmd = &cobra.Command{
 	Use:   "setURL",
 	Short: "Set URL for Loging to DataRobot",
 	Long:  `Set URL for DataRobot to get and store that URL which can be used for other operations in the cli.`,
