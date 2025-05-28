@@ -70,14 +70,16 @@ func waitForAPIKeyCallback() string {
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.URL.Query().Get("key")
-		fmt.Fprintf(w, "Successfully processed API key, you may close this window.")
+
+		fmt.Fprint(w, "Successfully processed API key, you may close this window.")
 		apiKeyChan <- apiKey // send the key to the main goroutine
 	})
 
 	// Start the server in a goroutine
 	go func() {
 		fmt.Println("Via this link : https://staging.datarobot.com/account/developer-tools?cliRedirect=true")
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		err := server.ListenAndServe()
+		if err != http.ErrServerClosed {
 			fmt.Printf("Server error: %v\n", err)
 		}
 	}()
