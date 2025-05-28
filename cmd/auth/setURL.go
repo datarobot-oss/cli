@@ -147,7 +147,9 @@ func GetURL(promptIfFound bool) (string, error) {
 
 func SetURLAction() {
 	_, err := GetURL(true)
-	panic(err)
+	if err != nil {
+		panic(err)
+	}
 }
 
 var setUrlCmd = &cobra.Command{
