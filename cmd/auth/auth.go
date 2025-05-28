@@ -35,6 +35,7 @@ func createAuthFileDirIfNotExists() error {
 		// File exists, do nothing
 		return nil
 	}
+
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("error checking auth file: %w", err)
 	}
@@ -78,6 +79,7 @@ func waitForAPIKeyCallback() string {
 	// Start the server in a goroutine
 	go func() {
 		fmt.Println("Via this link : https://staging.datarobot.com/account/developer-tools?cliRedirect=true")
+
 		err := server.ListenAndServe()
 		if err != http.ErrServerClosed {
 			fmt.Printf("Server error: %v\n", err)
