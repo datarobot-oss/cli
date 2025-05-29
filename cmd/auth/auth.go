@@ -60,14 +60,9 @@ func clearAuthFile() error {
 	return os.Truncate(authFilePath, 0)
 }
 
-func waitForAPIKeyCallback() string {
+func waitForAPIKeyCallback(datarobotHost string) string {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
-
-	datarobotHost, err := GetURL(false)
-	if err != nil {
-		panic(err)
-	}
 
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -90,7 +85,7 @@ func waitForAPIKeyCallback() string {
 
 	// Start the server in a goroutine
 	go func() {
-		fmt.Printf("Via this link : %s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
+		fmt.Printf("\n\nPlease visit this link to connect your DataRobot creds to the CLI \n(If you're prompted to log in, you may need to re-enter this URL):\n%s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
 
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {
@@ -110,7 +105,29 @@ func waitForAPIKeyCallback() string {
 	return apiKey
 }
 
-func LoginAction() error {
+func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
+	// Verifies if the datarobot host + api key pair correspond to a valid
+	// pair.
+	req, err := http.NewRequest(http.MethodGet, datarobotHost+"s/api/v2/version/", nil)
+	if err != nil {
+		return false, err
+	}
+
+	req.Header.Add("Authorization", "bearer "+apiKey)
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
+func LoginAction() error { //nolint: cyclop
 	reader := bufio.NewReader(os.Stdin)
 
 	if err := createAuthFileDirIfNotExists(); err != nil {
@@ -119,34 +136,50 @@ func LoginAction() error {
 
 	fileInfo, _ := os.Stat(authFilePath)
 
+	datarobotHost, err := GetURL(false)
+	if err != nil {
+		panic(err)
+	}
+
 	if fileInfo.Size() > 0 { //nolint: nestif
-		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
-		// TODO: make this block simpler
-		// TODO Verify the API Key is still valid
-		selectedOption, err := reader.ReadString('\n')
+		currentKey, err := GetAPIKey()
 		if err != nil {
 			panic(err)
 		}
 
-		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			if err := clearAuthFile(); err != nil {
+		isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
+		if err != nil {
+			panic(err)
+		}
+
+		if isValidKeyPair {
+			fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
+			// TODO: make this block simpler
+			// TODO Verify the API Key is still valid
+			selectedOption, err := reader.ReadString('\n')
+			if err != nil {
 				panic(err)
 			}
+
+			if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
+				if err := clearAuthFile(); err != nil {
+					panic(err)
+				}
+			} else {
+				fmt.Println("Exiting without overwriting the API key.")
+				return nil
+			}
 		} else {
-			fmt.Println("Exiting without overwriting the API key.")
-			return nil
+			fmt.Println("The stored API key is invalid or expired. Retrieving a new one")
 		}
 	}
-
-	fmt.Println("Assisted authentication is not supported yet.")
-	fmt.Println("Please use the DataRobot web interface to log in and get an API key.")
 
 	file, err := os.Create(authFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create auth file: %w", err)
 	}
 
-	key := waitForAPIKeyCallback()
+	key := waitForAPIKeyCallback(datarobotHost)
 	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
 	}
@@ -168,7 +201,7 @@ func LogoutAction() error {
 
 func GetAPIKey() (string, error) {
 	if err := createAuthFileDirIfNotExists(); err != nil {
-		panic(err)
+		return "", err
 	}
 
 	key, err := os.ReadFile(authFilePath)
