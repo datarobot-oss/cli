@@ -21,6 +21,7 @@ tasks:
       - task --list
 
   install-tools:
+    silent: true
     desc: "Install static checkers & other binaries"
     cmds:
       - |
@@ -32,6 +33,7 @@ tasks:
         go install github.com/goreleaser/goreleaser/v2@latest
 
   lint:
+    silent: true
     desc: "Lint the source code"
     deps: [install-tools]
     cmds:
@@ -48,6 +50,7 @@ tasks:
       - "{{.BIN_DIR}}/goreleaser check"
 
   run:
+    silent: true
     desc: "Run CLI"
     cmds:
       - |
@@ -58,6 +61,7 @@ tasks:
         fi
 
   build:
+    silent: true
     desc: "Build CLI"
     cmds:
       - 'echo "🔨 Building binary…"'
@@ -68,22 +72,26 @@ tasks:
       - 'echo "✨ Binary built at ./dist/dr"'
 
   gen:
+    silent: true
     desc: "Generate Go code"
     cmds:
       - go generate ./...
 
   gen-check:
+    silent: true
     desc: "Check if Go code needs to be generated"
     deps: [gen]
     cmds:
       - git diff --exit-code
 
   test:
+    silent: true
     desc: "Run tests"
     cmds:
       - go test -v -count=1 -race -shuffle=on -coverprofile=coverage.txt ./...
 
   copyright:
+    silent: true
     desc: "Apply copyrights to all files"
     aliases:
       - license

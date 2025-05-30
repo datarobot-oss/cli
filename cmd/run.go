@@ -51,18 +51,28 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 		Short:   "Run an application template task",
 		Run: func(_ *cobra.Command, args []string) {
 			binaryName := "task"
-			taskRunner := task.NewTaskRunner(task.RunnerOpts{
+			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+
+			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
+				os.Exit(1)
+				return
+			}
+
+			runner := task.NewTaskRunner(task.RunnerOpts{
 				BinaryName: binaryName,
+				Taskfile:   rootTaskfile,
 				Dir:        opts.Dir,
 			})
 
-			if !taskRunner.Installed() {
+			if !runner.Installed() {
 				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
 				os.Exit(1)
 				return
 			}
 
-			tasks, err := taskRunner.ListTasks()
+			tasks, err := runner.ListTasks()
 
 			if opts.ListTasks || len(args) == 0 {
 				if err != nil {
@@ -106,7 +116,7 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 				fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
-			err = taskRunner.Run(taskNames, opts.RunOpts())
+			err = runner.Run(taskNames, opts.RunOpts())
 			if err != nil { //nolint: nestif
 				exitCode := 1
 
