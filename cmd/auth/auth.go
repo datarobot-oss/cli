@@ -19,45 +19,104 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"sigs.k8s.io/yaml"
 )
 
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
 var (
-	authFileDir  = os.Getenv("HOME") + "/.datarobot-cli/auth"
-	authFileName = "datarobot-key"
-	authFilePath = authFileDir + "/" + authFileName
+	configFileDir  = os.Getenv("HOME") + "/.config/datarobot"
+	configFileName = "drconfig.yaml"
+	configFilePath = configFileDir + "/" + configFileName
 )
 
-func createAuthFileDirIfNotExists() error {
-	// TODO: we create a CLI config file here basically, so need to reflect that in the method names and structure
-	_, err := os.Stat(authFilePath)
+type PartialConfig struct {
+	Token    string `yaml:"token"`
+	Endpoint string `yaml:"endpoint"`
+}
+
+var (
+	DATAROBOT_API_KEY = "token"
+)
+
+func createConfigFileDirIfNotExists() error {
+	_, err := os.Stat(configFilePath)
 	if err == nil {
 		// File exists, do nothing
 		return nil
 	}
 
 	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("error checking auth file: %w", err)
+		return fmt.Errorf("error checking config file: %w", err)
 	}
 
 	// file was not found, let's create it
 
-	err = os.MkdirAll(authFileDir, os.ModePerm)
+	err = os.MkdirAll(configFileDir, os.ModePerm)
 	if err != nil {
-		return fmt.Errorf("failed to create auth file directory: %w", err)
+		return fmt.Errorf("failed to create config file directory: %w", err)
 	}
 
-	_, err = os.Create(authFilePath)
+	_, err = os.Create(configFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create auth file: %w", err)
+		return fmt.Errorf("failed to create config file: %w", err)
 	}
 
 	return nil
 }
 
-func clearAuthFile() error {
-	return os.Truncate(authFilePath, 0)
+func setValueInConfigFile(key string, value string) error {
+	// Set the key of the YAML to be a given value.
+	// The "key" here is either token or endpoint, and the value
+	// is empty string or not a key (if it's undefined) or the given value
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return err
+	}
+
+	var full map[string]interface{}
+	if err := yaml.Unmarshal(data, &full); err != nil {
+		return err
+	}
+
+	if full == nil {
+		full = make(map[string]interface{})
+	}
+
+	full[key] = value
+
+	updatedYAML, err := yaml.Marshal(full)
+	if err != nil {
+		return err
+	}
+
+	err = os.WriteFile(configFilePath, updatedYAML, 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readValueFromConfigFile(key string) (string, error) {
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return "", err
+	}
+
+	var full map[string]interface{}
+	if err := yaml.Unmarshal(data, &full); err != nil {
+		return "", err
+	}
+
+	value, exists := full[key]
+
+	if !exists {
+		return "", nil
+	}
+	return value.(string), nil
+
 }
 
 func waitForAPIKeyCallback(datarobotHost string) string {
@@ -108,7 +167,7 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 	// Verifies if the datarobot host + api key pair correspond to a valid
 	// pair.
-	req, err := http.NewRequest(http.MethodGet, datarobotHost+"s/api/v2/version/", nil)
+	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
 	if err != nil {
 		return false, err
 	}
@@ -130,11 +189,11 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 func LoginAction() error { //nolint: cyclop
 	reader := bufio.NewReader(os.Stdin)
 
-	if err := createAuthFileDirIfNotExists(); err != nil {
+	if err := createConfigFileDirIfNotExists(); err != nil {
 		panic(err)
 	}
 
-	fileInfo, _ := os.Stat(authFilePath)
+	fileInfo, _ := os.Stat(configFilePath)
 
 	datarobotHost, err := GetURL(false)
 	if err != nil {
@@ -154,15 +213,14 @@ func LoginAction() error { //nolint: cyclop
 
 		if isValidKeyPair {
 			fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
-			// TODO: make this block simpler
-			// TODO Verify the API Key is still valid
 			selectedOption, err := reader.ReadString('\n')
 			if err != nil {
 				panic(err)
 			}
 
 			if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-				if err := clearAuthFile(); err != nil {
+				// Set the DataRobot API key to be an empty string
+				if err := setValueInConfigFile(DATAROBOT_API_KEY, ""); err != nil {
 					panic(err)
 				}
 			} else {
@@ -174,13 +232,8 @@ func LoginAction() error { //nolint: cyclop
 		}
 	}
 
-	file, err := os.Create(authFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to create auth file: %w", err)
-	}
-
 	key := waitForAPIKeyCallback(datarobotHost)
-	if _, err := file.WriteString(strings.Replace(key, "\n", "", -1)); err != nil {
+	if err := setValueInConfigFile(DATAROBOT_API_KEY, strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
 	}
 
@@ -188,11 +241,11 @@ func LoginAction() error { //nolint: cyclop
 }
 
 func LogoutAction() error {
-	if err := createAuthFileDirIfNotExists(); err != nil {
+	if err := createConfigFileDirIfNotExists(); err != nil {
 		panic(err)
 	}
 
-	if err := clearAuthFile(); err != nil {
+	if err := setValueInConfigFile(DATAROBOT_API_KEY, ""); err != nil {
 		panic(err)
 	}
 
@@ -200,23 +253,17 @@ func LogoutAction() error {
 }
 
 func GetAPIKey() (string, error) {
-	if err := createAuthFileDirIfNotExists(); err != nil {
+	// Returns the API key if there is one, otherwise returns an empty string
+	if err := createConfigFileDirIfNotExists(); err != nil {
 		return "", err
 	}
 
-	key, err := os.ReadFile(authFilePath)
+	key, err := readValueFromConfigFile(DATAROBOT_API_KEY)
 	if err != nil {
 		return "", err
 	}
 
-	fileInfo, _ := os.Stat(authFilePath)
-
-	if fileInfo.Size() == 0 {
-		fmt.Println("No API key found, please login first. Exiting.")
-		return "", errors.New("no API key found")
-	}
-
-	return string(key), nil
+	return key, nil
 }
 
 var loginCmd = &cobra.Command{

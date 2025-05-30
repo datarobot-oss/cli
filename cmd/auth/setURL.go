@@ -10,7 +10,6 @@ package auth
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -19,58 +18,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Store the DataRobot URL in a file in the users home directory.
-// In the real world this would probably need to be encrypted.
 var (
-	urlFileName = "datarobot-url"
-	urlFilePath = authFileDir + "/" + urlFileName
+	DATAROBOT_URL = "endpoint"
 )
 
-func createURLFileDirIfNotExists() error {
-	_, err := os.Stat(urlFilePath)
-	if err == nil {
-		// File exists, do nothing
-		return nil
-	}
-
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("error checking auth file: %w", err)
-	}
-
-	// file was not found, let's create it
-
-	err = os.MkdirAll(authFileDir, os.ModePerm)
+func getBaseURL() (string, error) {
+	urlContent, err := readValueFromConfigFile(DATAROBOT_URL)
 	if err != nil {
-		return fmt.Errorf("failed to create url file directory: %w", err)
+		return "", err
+	}
+	if urlContent == "" {
+		return "", nil
 	}
 
-	_, err = os.Create(urlFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to create auth file: %w", err)
-	}
-
-	return nil
-}
-
-func createOrUpdateURL(url string) error {
-	return os.WriteFile(urlFilePath, []byte(url), 0o644)
-}
-
-func readURLFromFile() (string, error) {
-	data, err := os.ReadFile(urlFilePath)
+	baseURL, err := loadBaseURLFromURL(urlContent)
 	if err != nil {
 		return "", err
 	}
 
-	return string(data), nil
+	return baseURL, nil
 }
 
-func clearURLFile() error {
-	return os.Truncate(urlFilePath, 0)
-}
-
-func getBaseURL(input string) (string, error) {
-	parsedURL, err := url.Parse(input)
+func loadBaseURLFromURL(longURL string) (string, error) {
+	// Takes a URL like: https://app.datarobot.com/api/v2 and just
+	// returns https://app.datarobot.com (no trailing slash)
+	parsedURL, err := url.Parse(longURL)
 	if err != nil {
 		return "", err
 	}
@@ -80,24 +52,45 @@ func getBaseURL(input string) (string, error) {
 	return base, nil
 }
 
+func saveUrlToConfig(newURL string) error {
+	// Saves the URL to the config file with the path prefix
+	// Or as an empty string, if that's needed
+	if newURL == "" {
+		err := setValueInConfigFile(DATAROBOT_API_KEY, "")
+		if err != nil {
+			return err
+		}
+	}
+
+	baseURL, err := loadBaseURLFromURL(newURL)
+	if err != nil {
+		return err
+	}
+
+	err = setValueInConfigFile(DATAROBOT_URL, baseURL+"/api/v2")
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// This is the entrypoint for using a URL. The flow is:
 	// * Check if there's a file with the content.  If there's no file, make it.
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
 	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
-	err := createURLFileDirIfNotExists()
+	err := createConfigFileDirIfNotExists()
 	if err != nil {
 		return "", err
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 
-	urlContent, err := readURLFromFile()
+	urlContent, err := getBaseURL()
 	if err != nil {
 		return "", err
 	}
-
 	emptyURLContent := len(urlContent) > 0
 
 	if emptyURLContent && !promptIfFound {
@@ -105,6 +98,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	}
 
 	if emptyURLContent && promptIfFound { //nolint: nestif
+
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -113,7 +107,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			if err := clearURLFile(); err != nil {
+			if err := setValueInConfigFile(DATAROBOT_URL, ""); err != nil {
 				return "", err
 			}
 		} else {
@@ -143,13 +137,13 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	} else if selected == "3" {
 		url = "https://app.jp.datarobot.com"
 	} else {
-		url, err = getBaseURL(selected)
+		url, err = loadBaseURLFromURL(selected)
 		if err != nil {
 			return "", nil
 		}
 	}
 
-	errors := createOrUpdateURL(url)
+	errors := saveUrlToConfig(url)
 	if errors != nil {
 		return url, errors
 	}
