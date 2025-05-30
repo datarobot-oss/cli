@@ -33,6 +33,7 @@ type Task struct {
 type RunnerOpts struct {
 	BinaryName string
 	Dir        string
+	Taskfile   string
 	Stdout     *os.File
 	Stderr     *os.File
 	Stdin      *os.File
@@ -78,7 +79,13 @@ func (r *Runner) Installed() bool {
 }
 
 func (r *Runner) ListTasks() ([]Task, error) {
-	cmd := exec.Command(r.opts.BinaryName, "--list-all", "--json")
+	args := []string{"--list", "--json"}
+
+	if r.opts.Taskfile != "" {
+		args = append(args, "-t", r.opts.Taskfile)
+	}
+
+	cmd := exec.Command(r.opts.BinaryName, args...)
 
 	cmd.Dir = r.opts.Dir
 
@@ -141,6 +148,10 @@ func (o *RunOpts) RunArgs() []string {
 
 func (r *Runner) Run(tasks []string, opts RunOpts) error {
 	var args []string
+
+	if r.opts.Taskfile != "" {
+		args = append(args, "-t", r.opts.Taskfile)
+	}
 
 	args = append(args, opts.RunArgs()...)
 	args = append(args, tasks...)
