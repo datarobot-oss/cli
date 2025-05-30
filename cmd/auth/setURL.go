@@ -18,15 +18,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	DATAROBOT_URL = "endpoint"
-)
+var DataRobotURL = "endpoint"
 
 func getBaseURL() (string, error) {
-	urlContent, err := readValueFromConfigFile(DATAROBOT_URL)
+	urlContent, err := readValueFromConfigFile(DataRobotURL)
 	if err != nil {
 		return "", err
 	}
+
 	if urlContent == "" {
 		return "", nil
 	}
@@ -52,11 +51,11 @@ func loadBaseURLFromURL(longURL string) (string, error) {
 	return base, nil
 }
 
-func saveUrlToConfig(newURL string) error {
+func saveURLToConfig(newURL string) error {
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
-		err := setValueInConfigFile(DATAROBOT_API_KEY, "")
+		err := setValueInConfigFile(DataRobotAPIKey, "")
 		if err != nil {
 			return err
 		}
@@ -67,10 +66,11 @@ func saveUrlToConfig(newURL string) error {
 		return err
 	}
 
-	err = setValueInConfigFile(DATAROBOT_URL, baseURL+"/api/v2")
+	err = setValueInConfigFile(DataRobotURL, baseURL+"/api/v2")
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -91,6 +91,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	if err != nil {
 		return "", err
 	}
+
 	emptyURLContent := len(urlContent) > 0
 
 	if emptyURLContent && !promptIfFound {
@@ -98,7 +99,6 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	}
 
 	if emptyURLContent && promptIfFound { //nolint: nestif
-
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -107,7 +107,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			if err := setValueInConfigFile(DATAROBOT_URL, ""); err != nil {
+			if err := setValueInConfigFile(DataRobotURL, ""); err != nil {
 				return "", err
 			}
 		} else {
@@ -143,7 +143,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		}
 	}
 
-	errors := saveUrlToConfig(url)
+	errors := saveURLToConfig(url)
 	if errors != nil {
 		return url, errors
 	}

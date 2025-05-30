@@ -36,9 +36,7 @@ type PartialConfig struct {
 	Endpoint string `yaml:"endpoint"`
 }
 
-var (
-	DATAROBOT_API_KEY = "token"
-)
+var DataRobotAPIKey = "token"
 
 func createConfigFileDirIfNotExists() error {
 	_, err := os.Stat(configFilePath)
@@ -91,7 +89,7 @@ func setValueInConfigFile(key string, value string) error {
 		return err
 	}
 
-	err = os.WriteFile(configFilePath, updatedYAML, 0644)
+	err = os.WriteFile(configFilePath, updatedYAML, 0o644)
 	if err != nil {
 		return err
 	}
@@ -115,8 +113,8 @@ func readValueFromConfigFile(key string) (string, error) {
 	if !exists {
 		return "", nil
 	}
-	return value.(string), nil
 
+	return value.(string), nil
 }
 
 func waitForAPIKeyCallback(datarobotHost string) string {
@@ -213,6 +211,7 @@ func LoginAction() error { //nolint: cyclop
 
 		if isValidKeyPair {
 			fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
+
 			selectedOption, err := reader.ReadString('\n')
 			if err != nil {
 				panic(err)
@@ -220,7 +219,7 @@ func LoginAction() error { //nolint: cyclop
 
 			if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
 				// Set the DataRobot API key to be an empty string
-				if err := setValueInConfigFile(DATAROBOT_API_KEY, ""); err != nil {
+				if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
 					panic(err)
 				}
 			} else {
@@ -233,7 +232,7 @@ func LoginAction() error { //nolint: cyclop
 	}
 
 	key := waitForAPIKeyCallback(datarobotHost)
-	if err := setValueInConfigFile(DATAROBOT_API_KEY, strings.Replace(key, "\n", "", -1)); err != nil {
+	if err := setValueInConfigFile(DataRobotAPIKey, strings.Replace(key, "\n", "", -1)); err != nil {
 		return err
 	}
 
@@ -245,7 +244,7 @@ func LogoutAction() error {
 		panic(err)
 	}
 
-	if err := setValueInConfigFile(DATAROBOT_API_KEY, ""); err != nil {
+	if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
 		panic(err)
 	}
 
@@ -258,7 +257,7 @@ func GetAPIKey() (string, error) {
 		return "", err
 	}
 
-	key, err := readValueFromConfigFile(DATAROBOT_API_KEY)
+	key, err := readValueFromConfigFile(DataRobotAPIKey)
 	if err != nil {
 		return "", err
 	}
