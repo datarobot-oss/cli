@@ -16,9 +16,8 @@ header:
     - 'testutils/'
     - 'tools/'
     - 'main.go'
-    - 'internal/task/Taskfile.tmpl.yaml'
 
   paths-ignore:
-    - 'internal/db/model/'
+    - 'internal/task/Taskfile.tmpl.yaml'
 
   comment: on-failure
