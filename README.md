@@ -37,7 +37,7 @@ In order to release a new version of the DR CLI, you will need to do the followi
 - Create a new tag with the corresponding next version like:
 
 ```bash
-git tag v0.0.2.dev1
+git tag v0.0.2-rc.1
 git push --tags
 ```
 
