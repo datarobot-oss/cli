@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
@@ -92,13 +93,13 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		return "", err
 	}
 
-	emptyURLContent := len(urlContent) > 0
+	presentURLContent := len(urlContent) > 0
 
-	if emptyURLContent && !promptIfFound {
+	if presentURLContent && !promptIfFound {
 		return urlContent, nil
 	}
 
-	if emptyURLContent && promptIfFound { //nolint: nestif
+	if presentURLContent && promptIfFound { //nolint: nestif
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -154,7 +155,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 func SetURLAction() {
 	_, err := GetURL(true)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 

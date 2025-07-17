@@ -13,6 +13,7 @@ import (
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -41,4 +42,6 @@ func init() {
 		completionCmd(),
 		versionCmd(),
 	)
+	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 }
