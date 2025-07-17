@@ -87,13 +87,13 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		return "", err
 	}
 
-	emptyURLContent := len(urlContent) > 0
+	presentURLContent := len(urlContent) > 0
 
-	if emptyURLContent && !promptIfFound {
+	if presentURLContent && !promptIfFound {
 		return urlContent, nil
 	}
 
-	if emptyURLContent && promptIfFound {
+	if presentURLContent && promptIfFound {
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -155,7 +155,7 @@ func SetURLAction() {
 
 var setURLCmd = &cobra.Command{
 	Use:   "setURL",
-	Short: "Set URL for Loging to DataRobot",
+	Short: "Set URL for Login to DataRobot",
 	Long:  `Set URL for DataRobot to get and store that URL which can be used for other operations in the cli.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		SetURLAction() // TODO: handler errors properly
