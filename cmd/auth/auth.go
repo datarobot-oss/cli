@@ -18,8 +18,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
-
 	"sigs.k8s.io/yaml"
 )
 
@@ -137,7 +137,7 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Start the server in a goroutine
@@ -188,25 +188,25 @@ func LoginAction() error { //nolint: cyclop
 	reader := bufio.NewReader(os.Stdin)
 
 	if err := createConfigFileDirIfNotExists(); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fileInfo, _ := os.Stat(configFilePath)
 
 	datarobotHost, err := GetURL(false)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	if fileInfo.Size() > 0 { //nolint: nestif
 		currentKey, err := GetAPIKey()
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 
 		isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 
 		if isValidKeyPair {
@@ -214,13 +214,13 @@ func LoginAction() error { //nolint: cyclop
 
 			selectedOption, err := reader.ReadString('\n')
 			if err != nil {
-				panic(err)
+				log.Fatal(err)
 			}
 
 			if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
 				// Set the DataRobot API key to be an empty string
 				if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
-					panic(err)
+					log.Fatal(err)
 				}
 			} else {
 				fmt.Println("Exiting without overwriting the API key.")
@@ -241,11 +241,11 @@ func LoginAction() error { //nolint: cyclop
 
 func LogoutAction() error {
 	if err := createConfigFileDirIfNotExists(); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	return nil

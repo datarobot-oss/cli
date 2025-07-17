@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
@@ -154,7 +155,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 func SetURLAction() {
 	_, err := GetURL(true)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 

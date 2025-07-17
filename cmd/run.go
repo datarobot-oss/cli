@@ -16,7 +16,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/datarobot/cli/internal/task"
-
 	"github.com/spf13/cobra"
 )
 
