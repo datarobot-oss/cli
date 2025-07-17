@@ -16,6 +16,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -148,7 +149,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 func SetURLAction() {
 	_, err := GetURL(true)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 

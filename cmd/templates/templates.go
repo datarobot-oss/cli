@@ -11,16 +11,14 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os/exec"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
-
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
-
-var datarobotEndpoint = "https://staging.datarobot.com/api/v2"
 
 type Template struct {
 	ID          string `json:"id"`
@@ -47,7 +45,19 @@ func ListTemplates() error {
 		return nil
 	}
 
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"/applicationTemplates?limit=100", nil)
+	// datarobotHost := "https://staging.datarobot.com/api/v2"
+	// datarobotHost := "https://app.datarobot.com/api/v2"
+	datarobotHost, err := auth.GetURL(false)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
+	if viper.GetBool("verbose") {
+		log.Info("Fetching templates from " + datarobotEndpoint)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {
 		log.Fatal(err) // TODO: handler errors properly
 	}
@@ -60,8 +70,11 @@ func ListTemplates() error {
 	if err != nil {
 		log.Fatal(err) // TODO: just return the error
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Fatal(resp.Status)
+	}
 
 	var templateList TemplateList
 
