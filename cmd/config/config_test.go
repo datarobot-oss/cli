@@ -78,6 +78,6 @@ func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
 	host := viper.GetString("host")
 	suite.Equal(host, readYamlData["host"], "Expected config file to have the same host")
 
-	token := viper.GetString("host")
+	token := viper.GetString("token")
 	suite.Equal(token, readYamlData["token"], "Expected config file to have the same token")
 }
