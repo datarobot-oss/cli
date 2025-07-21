@@ -19,14 +19,14 @@ import (
 )
 
 var (
-	configFileDir  = "/.config/datarobot"
+	configFileDir  = filepath.Join(".config", "datarobot")
 	configFileName = "drconfig.yaml"
 )
 
 func CreateConfigFileDirIfNotExists() error {
 	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := os.Getenv("HOME") + configFileDir
-	defaultConfigFilePath := defaultConfigFileDir + "/" + configFileName
+	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+	defaultConfigFilePath := filepath.Join(defaultConfigFileDir, configFileName)
 
 	_, err := os.Stat(defaultConfigFilePath)
 	if err == nil {
@@ -55,7 +55,7 @@ func CreateConfigFileDirIfNotExists() error {
 
 func ReadConfigFile(filePath string) error {
 	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := os.Getenv("HOME") + configFileDir
+	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
 
 	viper.SetConfigType("yaml")
 

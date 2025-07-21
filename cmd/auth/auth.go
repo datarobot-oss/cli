@@ -94,6 +94,15 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
+func writeConfigFile() {
+	err := viper.WriteConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Config file written successfully.")
+}
+
 func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -108,9 +117,6 @@ func LoginAction() error {
 	}
 
 	currentKey := viper.GetString(DataRobotAPIKey)
-	if currentKey == "" {
-		panic("API key is empty, please log in to DataRobot first.")
-	}
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {
@@ -130,20 +136,20 @@ func LoginAction() error {
 			viper.Set(DataRobotAPIKey, currentKey)
 		} else {
 			fmt.Println("Exiting without overwriting the API key.")
+
+			writeConfigFile()
+
 			return nil
 		}
 	} else {
 		fmt.Println("The stored API key is invalid or expired. Retrieving a new one")
-
-		key := waitForAPIKeyCallback(datarobotHost)
-
-		viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
 	}
 
-	err = viper.WriteConfig()
-	if err != nil {
-		panic(err)
-	}
+	key := waitForAPIKeyCallback(datarobotHost)
+
+	viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
+
+	writeConfigFile()
 
 	return nil
 }
@@ -151,10 +157,7 @@ func LoginAction() error {
 func LogoutAction() error {
 	viper.Set(DataRobotAPIKey, DataRobotAPIKey)
 
-	err := viper.WriteConfig()
-	if err != nil {
-		panic(err)
-	}
+	writeConfigFile()
 
 	return nil
 }
