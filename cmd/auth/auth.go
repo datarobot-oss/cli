@@ -11,111 +11,21 @@ package auth
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/config"
 	"github.com/spf13/cobra"
-
-	"sigs.k8s.io/yaml"
+	"github.com/spf13/viper"
 )
 
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
-var (
-	configFileDir  = os.Getenv("HOME") + "/.config/datarobot"
-	configFileName = "drconfig.yaml"
-	configFilePath = configFileDir + "/" + configFileName
-)
-
-type PartialConfig struct {
-	Token    string `yaml:"token"`
-	Endpoint string `yaml:"endpoint"`
-}
 
 var DataRobotAPIKey = "token"
-
-func createConfigFileDirIfNotExists() error {
-	_, err := os.Stat(configFilePath)
-	if err == nil {
-		// File exists, do nothing
-		return nil
-	}
-
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("error checking config file: %w", err)
-	}
-
-	// file was not found, let's create it
-
-	err = os.MkdirAll(configFileDir, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("failed to create config file directory: %w", err)
-	}
-
-	_, err = os.Create(configFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
-	}
-
-	return nil
-}
-
-func setValueInConfigFile(key string, value string) error {
-	// Set the key of the YAML to be a given value.
-	// The "key" here is either token or endpoint, and the value
-	// is empty string or not a key (if it's undefined) or the given value
-	data, err := os.ReadFile(configFilePath)
-	if err != nil {
-		return err
-	}
-
-	var full map[string]interface{}
-	if err := yaml.Unmarshal(data, &full); err != nil {
-		return err
-	}
-
-	if full == nil {
-		full = make(map[string]interface{})
-	}
-
-	full[key] = value
-
-	updatedYAML, err := yaml.Marshal(full)
-	if err != nil {
-		return err
-	}
-
-	err = os.WriteFile(configFilePath, updatedYAML, 0o644)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func readValueFromConfigFile(key string) (string, error) {
-	data, err := os.ReadFile(configFilePath)
-	if err != nil {
-		return "", err
-	}
-
-	var full map[string]interface{}
-	if err := yaml.Unmarshal(data, &full); err != nil {
-		return "", err
-	}
-
-	value, exists := full[key]
-
-	if !exists {
-		return "", nil
-	}
-
-	return value.(string), nil
-}
 
 func waitForAPIKeyCallback(datarobotHost string) string {
 	addr := "localhost:51164"
@@ -184,67 +94,65 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-func LoginAction() error { //nolint: cyclop
+func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	if err := createConfigFileDirIfNotExists(); err != nil {
+	err := config.ReadConfigFile("")
+	if err != nil {
 		panic(err)
 	}
-
-	fileInfo, _ := os.Stat(configFilePath)
 
 	datarobotHost, err := GetURL(false)
 	if err != nil {
 		panic(err)
 	}
 
-	if fileInfo.Size() > 0 { //nolint: nestif
-		currentKey, err := GetAPIKey()
-		if err != nil {
-			panic(err)
-		}
-
-		isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
-		if err != nil {
-			panic(err)
-		}
-
-		if isValidKeyPair {
-			fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
-
-			selectedOption, err := reader.ReadString('\n')
-			if err != nil {
-				panic(err)
-			}
-
-			if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-				// Set the DataRobot API key to be an empty string
-				if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
-					panic(err)
-				}
-			} else {
-				fmt.Println("Exiting without overwriting the API key.")
-				return nil
-			}
-		} else {
-			fmt.Println("The stored API key is invalid or expired. Retrieving a new one")
-		}
+	currentKey := viper.GetString(DataRobotAPIKey)
+	if currentKey == "" {
+		panic("API key is empty, please log in to DataRobot first.")
 	}
 
-	key := waitForAPIKeyCallback(datarobotHost)
-	if err := setValueInConfigFile(DataRobotAPIKey, strings.Replace(key, "\n", "", -1)); err != nil {
-		return err
+	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
+	if err != nil {
+		panic(err)
+	}
+
+	if isValidKeyPair {
+		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
+
+		selectedOption, err := reader.ReadString('\n')
+		if err != nil {
+			panic(err)
+		}
+
+		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
+			// Set the DataRobot API key to be an empty string
+			viper.Set(DataRobotAPIKey, currentKey)
+		} else {
+			fmt.Println("Exiting without overwriting the API key.")
+			return nil
+		}
+	} else {
+		fmt.Println("The stored API key is invalid or expired. Retrieving a new one")
+
+		key := waitForAPIKeyCallback(datarobotHost)
+
+		viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
+	}
+
+	err = viper.WriteConfig()
+	if err != nil {
+		panic(err)
 	}
 
 	return nil
 }
 
 func LogoutAction() error {
-	if err := createConfigFileDirIfNotExists(); err != nil {
-		panic(err)
-	}
+	viper.Set(DataRobotAPIKey, DataRobotAPIKey)
 
-	if err := setValueInConfigFile(DataRobotAPIKey, ""); err != nil {
+	err := viper.WriteConfig()
+	if err != nil {
 		panic(err)
 	}
 
@@ -253,14 +161,7 @@ func LogoutAction() error {
 
 func GetAPIKey() (string, error) {
 	// Returns the API key if there is one, otherwise returns an empty string
-	if err := createConfigFileDirIfNotExists(); err != nil {
-		return "", err
-	}
-
-	key, err := readValueFromConfigFile(DataRobotAPIKey)
-	if err != nil {
-		return "", err
-	}
+	key := viper.GetString(DataRobotAPIKey)
 
 	return key, nil
 }

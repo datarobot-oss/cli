@@ -32,6 +32,19 @@ tasks:
         go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
         go install github.com/goreleaser/goreleaser/v2@latest
 
+  dev-init:
+    silent: true
+    desc: "Initialize development environment"
+    deps: [lint]
+    cmds:
+      - |
+        export GOBIN={{.BIN_DIR}}
+        echo "🔧 Initializing development environment…"
+        mkdir -p {{.BIN_DIR}}
+        echo "🛠️ Installing tools…"
+        go get github.com/stretchr/testify@latest
+        echo "✅ Development environment initialized."
+
   lint:
     silent: true
     desc: "Lint the source code"

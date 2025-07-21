@@ -15,16 +15,15 @@ import (
 	"os"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/config"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var DataRobotURL = "endpoint"
 
 func getBaseURL() (string, error) {
-	urlContent, err := readValueFromConfigFile(DataRobotURL)
-	if err != nil {
-		return "", err
-	}
+	urlContent := viper.GetString(DataRobotURL)
 
 	if urlContent == "" {
 		return "", nil
@@ -55,10 +54,7 @@ func saveURLToConfig(newURL string) error {
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
-		err := setValueInConfigFile(DataRobotAPIKey, "")
-		if err != nil {
-			return err
-		}
+		viper.Set("", DataRobotAPIKey)
 	}
 
 	baseURL, err := loadBaseURLFromURL(newURL)
@@ -66,10 +62,7 @@ func saveURLToConfig(newURL string) error {
 		return err
 	}
 
-	err = setValueInConfigFile(DataRobotURL, baseURL+"/api/v2")
-	if err != nil {
-		return err
-	}
+	viper.Set(DataRobotURL, baseURL+"/api/v2")
 
 	return nil
 }
@@ -80,7 +73,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
 	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
-	err := createConfigFileDirIfNotExists()
+	err := config.ReadConfigFile("")
 	if err != nil {
 		return "", err
 	}
@@ -98,7 +91,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		return urlContent, nil
 	}
 
-	if emptyURLContent && promptIfFound { //nolint: nestif
+	if emptyURLContent && promptIfFound {
 		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -107,13 +100,13 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			if err := setValueInConfigFile(DataRobotURL, ""); err != nil {
-				return "", err
-			}
-		} else {
-			fmt.Println("Exiting without overwriting the DataRobot URL.")
-			return urlContent, nil
+			viper.Set(DataRobotURL, "")
+			return "", nil
 		}
+
+		fmt.Println("Exiting without overwriting the DataRobot URL.")
+
+		return urlContent, nil
 	}
 
 	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")
