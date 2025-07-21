@@ -70,7 +70,7 @@ func ReadConfigFile(filePath string) error {
 		viper.AddConfigPath(dir)
 	} else {
 		if err := CreateConfigFileDirIfNotExists(); err != nil {
-			panic(err)
+			return err
 		}
 
 		viper.SetConfigName(configFileName)
