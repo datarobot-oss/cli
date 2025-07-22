@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/charmbracelet/log"
 )
 
 //go:embed Taskfile.tmpl.yaml
@@ -81,8 +83,8 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 	var includes []componentInclude
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		// TODO: add debug output to make it easier to see how we walk through dirs and which dirs are ignored
 		if err != nil {
+			log.Debug(err)
 			return nil
 		}
 
@@ -90,6 +92,7 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
+			log.Debug(err)
 			return nil
 		}
 

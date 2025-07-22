@@ -48,7 +48,8 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return ""
 	}
 
 	// Start the server in a goroutine
@@ -98,7 +99,8 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 func writeConfigFile() {
 	err := viper.WriteConfig()
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return
 	}
 
 	fmt.Println("Config file written successfully.")
@@ -109,19 +111,19 @@ func LoginAction() error {
 
 	err := config.ReadConfigFile("")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	datarobotHost, err := GetURL(false)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	currentKey := viper.GetString(DataRobotAPIKey)
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if isValidKeyPair {
@@ -129,7 +131,7 @@ func LoginAction() error {
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
@@ -175,7 +177,10 @@ var loginCmd = &cobra.Command{
 	Short: "Login to DataRobot",
 	Long:  `Login to DataRobot to get and store an API key that can be used for other operation in the cli.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = LoginAction() // TODO: handler errors properly
+		err := LoginAction()
+		if err != nil {
+			log.Error(err)
+		}
 	},
 }
 
@@ -184,7 +189,10 @@ var logoutCmd = &cobra.Command{
 	Short: "Logout from DataRobot",
 	Long:  `Logout from DataRobot and clear the stored API key.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = LogoutAction() // TODO: handler errors properly
+		err := LogoutAction()
+		if err != nil {
+			log.Error(err)
+		}
 	},
 }
 

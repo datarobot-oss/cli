@@ -17,7 +17,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 type Template struct {
@@ -53,9 +52,7 @@ func ListTemplates() error {
 	}
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
-	if viper.GetBool("verbose") {
-		log.Info("Fetching templates from " + datarobotEndpoint)
-	}
+	log.Info("Fetching templates from " + datarobotEndpoint)
 
 	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {

@@ -9,6 +9,7 @@
 package cmd
 
 import (
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
@@ -35,6 +36,8 @@ func Execute() error {
 }
 
 func init() {
+	cobra.OnInitialize(initConfig)
+
 	RootCmd.AddCommand(
 		auth.AuthCmd,
 		templates.TemplatesCmd,
@@ -43,5 +46,15 @@ func init() {
 		versionCmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+}
+
+func initConfig() {
+	if viper.GetBool("debug") {
+		log.SetLevel(log.DebugLevel)
+	} else if viper.GetBool("verbose") {
+		log.SetLevel(log.InfoLevel)
+	}
 }
