@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/completion"
+	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/cmd/version"
@@ -49,9 +50,10 @@ func init() {
 
 	RootCmd.AddCommand(
 		auth.Cmd,
-		templates.Cmd,
-		run.Cmd(),
 		completion.Cmd(),
+		dotenv.Cmd,
+		run.Cmd(),
+		templates.Cmd,
 		version.Cmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
