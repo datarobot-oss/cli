@@ -133,7 +133,7 @@ func LoginAction() error {
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
 			// Set the DataRobot API key to be an empty string
-			viper.Set(DataRobotAPIKey, currentKey)
+			viper.Set(DataRobotAPIKey, "")
 		} else {
 			fmt.Println("Exiting without overwriting the API key.")
 

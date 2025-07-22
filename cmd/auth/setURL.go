@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/datarobot/cli/cmd/config"
@@ -62,7 +63,7 @@ func saveURLToConfig(newURL string) error {
 		return err
 	}
 
-	viper.Set(DataRobotURL, baseURL+"/api/v2")
+	viper.Set(DataRobotURL, path.Join(baseURL, "/api/v2"))
 
 	return nil
 }
