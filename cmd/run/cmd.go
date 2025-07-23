@@ -42,7 +42,7 @@ func (o *taskRunOptions) RunOpts() task.RunOpts {
 	}
 }
 
-func RunCmd() *cobra.Command { //nolint: cyclop
+func Cmd() *cobra.Command { //nolint: cyclop
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{

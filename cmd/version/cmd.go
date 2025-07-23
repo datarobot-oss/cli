@@ -54,7 +54,7 @@ type versionOptions struct {
 	format VersionFormat
 }
 
-func VersionCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	var options versionOptions
 
 	options.format = VersionFormatText

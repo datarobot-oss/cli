@@ -42,11 +42,11 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	RootCmd.AddCommand(
-		auth.AuthCmd,
-		templates.TemplatesCmd,
-		run.RunCmd(),
-		completion.CompletionCmd(),
-		version.VersionCmd(),
+		auth.Cmd,
+		templates.Cmd,
+		run.Cmd(),
+		completion.Cmd(),
+		version.Cmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")

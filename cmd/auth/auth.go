@@ -199,7 +199,7 @@ var logoutCmd = &cobra.Command{
 }
 
 func init() {
-	AuthCmd.AddCommand(
+	Cmd.AddCommand(
 		loginCmd,
 		logoutCmd,
 		setURLCmd,

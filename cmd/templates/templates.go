@@ -119,7 +119,7 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
-	TemplatesCmd.AddCommand(
+	Cmd.AddCommand(
 		listTemplatesCmd,
 		statusCmd,
 		setupCmd,

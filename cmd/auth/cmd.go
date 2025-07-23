@@ -6,15 +6,15 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package templates
+package auth
 
 import (
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-var TemplatesCmd = &cobra.Command{
-	Use:   "templates",
-	Short: "DataRobot application templates commands",
-	Long:  `Application templates commands for ` + version.AppName + `.`,
+var Cmd = &cobra.Command{
+	Use:   "auth",
+	Short: "DataRobot authentication commands",
+	Long:  `Authentication commands for ` + version.AppName + `.`,
 }
