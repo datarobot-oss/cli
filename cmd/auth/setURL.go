@@ -13,11 +13,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -62,7 +60,12 @@ func saveURLToConfig(newURL string) error {
 		return err
 	}
 
-	viper.Set(DataRobotURL, path.Join(baseURL, "/api/v2"))
+	datarobotHost, err := url.JoinPath(baseURL, "/api/v2")
+	if err != nil {
+		return err
+	}
+
+	viper.Set(DataRobotURL, datarobotHost)
 
 	return nil
 }
@@ -73,11 +76,6 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
 	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
-	err := config.ReadConfigFile("")
-	if err != nil {
-		return "", err
-	}
-
 	reader := bufio.NewReader(os.Stdin)
 
 	urlContent, err := getBaseURL()

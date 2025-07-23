@@ -15,6 +15,7 @@ import (
 	"github.com/datarobot/cli/cmd/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/cmd/version"
+	"github.com/datarobot/cli/internal/config"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -40,6 +41,11 @@ func Execute() error {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	err := config.ReadConfigFile("")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	RootCmd.AddCommand(
 		auth.Cmd,
