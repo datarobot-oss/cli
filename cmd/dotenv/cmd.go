@@ -10,6 +10,7 @@ package dotenv
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,12 +49,13 @@ func backupAndCreate(dotenvFile string) (*os.File, error) {
 	return f, err
 }
 
-func readTemplate(dotenvFile string) string {
+func readTemplate(dotenvFile string) []string {
 	var dotenvTemplate string
 
 	templateFiles := []string{
 		dotenvFile + ".sample",
 		dotenvFile + ".template",
+		dotenvFile,
 	}
 
 	for _, templateFile := range templateFiles {
@@ -79,13 +81,13 @@ func readTemplate(dotenvFile string) string {
 	}
 
 	if len(dotenvTemplate) == 0 {
-		return defaultEnvTemplate
+		return slices.Collect(strings.Lines(defaultEnvTemplate))
 	}
 
-	return dotenvTemplate
+	return slices.Collect(strings.Lines(dotenvTemplate))
 }
 
-func addDatarobotEndpoint(f *os.File) error {
+func writeDatarobotEndpoint(f *os.File) error {
 	datarobotEndpoint, err := auth.GetURL(false)
 	if err != nil {
 		return err
@@ -98,7 +100,7 @@ func addDatarobotEndpoint(f *os.File) error {
 	return err
 }
 
-func addDatarobotAPIToken(f *os.File) error {
+func writeDatarobotAPIToken(f *os.File) error {
 	datarobotAPIToken, err := auth.GetAPIKey()
 	if err != nil {
 		return err
@@ -111,26 +113,29 @@ func addDatarobotAPIToken(f *os.File) error {
 	return err
 }
 
-func writeFromTemplate(f *os.File, dotenvTemplate string) {
-	for templateLine := range strings.Lines(dotenvTemplate) {
+func writeFromTemplate(f *os.File, templateLines []string) error {
+	for _, templateLine := range templateLines {
 		var err error
 
 		if strings.HasPrefix(templateLine, "DATAROBOT_ENDPOINT=") {
-			err = addDatarobotEndpoint(f)
+			err = writeDatarobotEndpoint(f)
 		} else if strings.HasPrefix(templateLine, "DATAROBOT_API_TOKEN=") {
-			err = addDatarobotAPIToken(f)
+			err = writeDatarobotAPIToken(f)
 		} else {
 			_, err = f.WriteString(templateLine)
 		}
 
 		if err != nil {
-			log.Error(err)
+			return err
 		}
 	}
+
+	return nil
 }
 
 func Run(_ *cobra.Command, _ []string) {
 	dotenvFile := ".env"
+	templateLines := readTemplate(dotenvFile)
 
 	f, err := backupAndCreate(dotenvFile)
 	if err != nil {
@@ -138,5 +143,8 @@ func Run(_ *cobra.Command, _ []string) {
 	}
 	defer f.Close()
 
-	writeFromTemplate(f, readTemplate(dotenvFile))
+	err = writeFromTemplate(f, templateLines)
+	if err != nil {
+		log.Error(err)
+	}
 }
