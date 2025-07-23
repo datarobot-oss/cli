@@ -11,6 +11,7 @@ package cmd
 import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ func init() {
 		auth.AuthCmd,
 		templates.TemplatesCmd,
 		taskRunCmd(),
-		completionCmd(),
+		completion.CompletionCmd(),
 		versionCmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
