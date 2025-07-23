@@ -25,7 +25,7 @@ var statusCmd = &cobra.Command{
 		gitcmd := exec.Command("git", "status")
 		stdout, err := gitcmd.Output()
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Fatal(err)
 			return
 		}
 
