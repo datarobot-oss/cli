@@ -11,7 +11,6 @@ package auth
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -68,7 +67,7 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	fmt.Println("Successfully consumed API Key from API Request")
 	// Now shut down the server after key is received
 	if err := server.Shutdown(context.Background()); err != nil {
-		return "", errors.New(fmt.Sprintf("Error during shutdown: %v\n", err))
+		return "", fmt.Errorf("error during shutdown: %v", err)
 	}
 
 	return apiKey, nil
