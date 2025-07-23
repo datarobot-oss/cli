@@ -10,6 +10,7 @@ package templates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -37,18 +38,17 @@ type TemplateList struct {
 
 func ListTemplates() error {
 	key, err := auth.GetAPIKey()
+	if err != nil {
+		return err
+	}
 
 	bearer := "Bearer " + key
-
-	if err != nil {
-		return nil
-	}
 
 	// datarobotHost := "https://staging.datarobot.com/api/v2"
 	// datarobotHost := "https://app.datarobot.com/api/v2"
 	datarobotHost, err := auth.GetURL(false)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
@@ -56,7 +56,7 @@ func ListTemplates() error {
 
 	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {
-		log.Fatal(err) // TODO: handler errors properly
+		return err
 	}
 
 	req.Header.Add("Authorization", bearer)
@@ -65,19 +65,19 @@ func ListTemplates() error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err) // TODO: just return the error
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Fatal(resp.Status)
+		return errors.New("Response status code is " + resp.Status)
 	}
 
 	var templateList TemplateList
 
 	err = json.NewDecoder(resp.Body).Decode(&templateList)
 	if err != nil {
-		log.Fatal(err) // TODO: just return the error
+		return err
 	}
 
 	for _, template := range templateList.Templates {
@@ -92,7 +92,11 @@ var listTemplatesCmd = &cobra.Command{
 	Short: "List all available templates",
 	Long:  `List all available templates in the DataRobot application.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = ListTemplates() // TODO: handle errors properly
+		err := ListTemplates()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
 	},
 }
 
@@ -105,7 +109,7 @@ var statusCmd = &cobra.Command{
 		gitcmd := exec.Command("git", "status")
 		stdout, err := gitcmd.Output()
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Fatal(err.Error())
 			return
 		}
 
