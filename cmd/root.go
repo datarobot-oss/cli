@@ -41,8 +41,9 @@ func init() {
 
 	err := config.ReadConfigFile("")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
+
 	RootCmd.AddCommand(
 		auth.AuthCmd,
 		templates.TemplatesCmd,
