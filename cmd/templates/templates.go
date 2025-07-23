@@ -117,11 +117,3 @@ var statusCmd = &cobra.Command{
 		fmt.Println(string(stdout))
 	},
 }
-
-func init() {
-	Cmd.AddCommand(
-		listTemplatesCmd,
-		statusCmd,
-		setupCmd,
-	)
-}

@@ -18,3 +18,11 @@ var Cmd = &cobra.Command{
 	Short: "DataRobot authentication commands",
 	Long:  `Authentication commands for ` + version.AppName + `.`,
 }
+
+func init() {
+	Cmd.AddCommand(
+		loginCmd,
+		logoutCmd,
+		setURLCmd,
+	)
+}

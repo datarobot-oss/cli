@@ -197,11 +197,3 @@ var logoutCmd = &cobra.Command{
 		}
 	},
 }
-
-func init() {
-	Cmd.AddCommand(
-		loginCmd,
-		logoutCmd,
-		setURLCmd,
-	)
-}

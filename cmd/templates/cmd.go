@@ -18,3 +18,11 @@ var Cmd = &cobra.Command{
 	Short: "DataRobot application templates commands",
 	Long:  `Application templates commands for ` + version.AppName + `.`,
 }
+
+func init() {
+	Cmd.AddCommand(
+		listTemplatesCmd,
+		statusCmd,
+		setupCmd,
+	)
+}
