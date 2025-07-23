@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -64,7 +63,12 @@ func saveURLToConfig(newURL string) error {
 		return err
 	}
 
-	viper.Set(DataRobotURL, path.Join(baseURL, "/api/v2"))
+	datarobotHost, err := url.JoinPath(baseURL, "/api/v2")
+	if err != nil {
+		return err
+	}
+
+	viper.Set(DataRobotURL, datarobotHost)
 
 	return nil
 }
