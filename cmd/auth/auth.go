@@ -21,8 +21,6 @@ import (
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
 
-var DataRobotAPIKey = "token"
-
 func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.

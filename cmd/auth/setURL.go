@@ -22,8 +22,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-var DataRobotURL = "endpoint"
-
 func getBaseURL() (string, error) {
 	urlContent := viper.GetString(DataRobotURL)
 
