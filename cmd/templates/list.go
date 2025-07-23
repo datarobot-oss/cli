@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os/exec"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
@@ -98,30 +97,4 @@ var listTemplatesCmd = &cobra.Command{
 			return
 		}
 	},
-}
-
-var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Check the status of the DataRobot application",
-	Long:  `Check the status of the DataRobot application.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		fmt.Println("Checking the status of the DataRobot application...")
-		gitcmd := exec.Command("git", "status")
-		stdout, err := gitcmd.Output()
-		if err != nil {
-			log.Fatal(err.Error())
-			return
-		}
-
-		// Print the output
-		fmt.Println(string(stdout))
-	},
-}
-
-func init() {
-	TemplatesCmd.AddCommand(
-		listTemplatesCmd,
-		statusCmd,
-		setupCmd,
-	)
 }

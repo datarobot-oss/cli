@@ -9,24 +9,17 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/config"
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
-
-var DataRobotAPIKey = "token"
 
 func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	addr := "localhost:51164"
@@ -105,103 +98,9 @@ func writeConfigFile() {
 	fmt.Println("Config file written successfully.")
 }
 
-func LoginAction() error {
-	reader := bufio.NewReader(os.Stdin)
-
-	err := config.ReadConfigFile("")
-	if err != nil {
-		return err
-	}
-
-	datarobotHost, err := GetURL(false)
-	if err != nil {
-		return err
-	}
-
-	currentKey := viper.GetString(DataRobotAPIKey)
-
-	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
-	if err != nil {
-		return err
-	}
-
-	if isValidKeyPair {
-		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
-
-		selectedOption, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
-
-		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			// Set the DataRobot API key to be an empty string
-			viper.Set(DataRobotAPIKey, "")
-		} else {
-			fmt.Println("Exiting without overwriting the API key.")
-
-			writeConfigFile()
-
-			return nil
-		}
-	} else {
-		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
-	}
-
-	key, err := waitForAPIKeyCallback(datarobotHost)
-	if err != nil {
-		log.Error(err)
-	}
-
-	viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
-
-	writeConfigFile()
-
-	return nil
-}
-
-func LogoutAction() error {
-	viper.Set(DataRobotAPIKey, DataRobotAPIKey)
-
-	writeConfigFile()
-
-	return nil
-}
-
 func GetAPIKey() (string, error) {
 	// Returns the API key if there is one, otherwise returns an empty string
 	key := viper.GetString(DataRobotAPIKey)
 
 	return key, nil
-}
-
-var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Login to DataRobot",
-	Long:  `Login to DataRobot to get and store an API key that can be used for other operation in the cli.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := LoginAction()
-		if err != nil {
-			log.Error(err)
-		}
-	},
-}
-
-var logoutCmd = &cobra.Command{
-	Use:   "logout",
-	Short: "Logout from DataRobot",
-	Long:  `Logout from DataRobot and clear the stored API key.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := LogoutAction()
-		if err != nil {
-			log.Error(err)
-		}
-	},
-}
-
-func init() {
-	AuthCmd.AddCommand(
-		loginCmd,
-		logoutCmd,
-		setURLCmd,
-	)
 }

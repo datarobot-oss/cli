@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package cmd
+package version
 
 import (
 	"encoding/json"
@@ -17,47 +17,47 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type VersionFormat string
+type Format string
 
-var _ pflag.Value = (*VersionFormat)(nil)
+var _ pflag.Value = (*Format)(nil)
 
 const (
-	VersionFormatJSON VersionFormat = "json"
-	VersionFormatText VersionFormat = "text"
+	FormatJSON Format = "json"
+	FormatText Format = "text"
 )
 
-func (v *VersionFormat) String() string {
-	if v == nil {
+func (vf *Format) String() string {
+	if vf == nil {
 		return ""
 	}
 
-	return string(*v)
+	return string(*vf)
 }
 
-func (v *VersionFormat) Set(s string) error {
+func (vf *Format) Set(s string) error {
 	switch s {
-	case string(VersionFormatJSON), string(VersionFormatText):
-		*v = VersionFormat(s)
+	case string(FormatJSON), string(FormatText):
+		*vf = Format(s)
 		return nil
 	}
 
 	return fmt.Errorf("invalid format %q (must be %q or %q)",
-		s, VersionFormatJSON, VersionFormatText)
+		s, FormatJSON, FormatText)
 }
 
 // Type is used by the shell completion generator
-func (v *VersionFormat) Type() string {
-	return "VersionFormat"
+func (vf *Format) Type() string {
+	return "version.Format"
 }
 
 type versionOptions struct {
-	format VersionFormat
+	format Format
 }
 
-func versionCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	var options versionOptions
 
-	options.format = VersionFormatText
+	options.format = FormatText
 
 	cmd := &cobra.Command{
 		Use:   "version",
@@ -78,18 +78,18 @@ func versionCmd() *cobra.Command {
 		&options.format,
 		"format",
 		"f",
-		fmt.Sprintf("Output format (options: %s, %s)", VersionFormatJSON, VersionFormatText),
+		fmt.Sprintf("Output format (options: %s, %s)", FormatJSON, FormatText),
 	)
 
 	_ = cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{string(VersionFormatJSON), string(VersionFormatText)}, cobra.ShellCompDirectiveNoFileComp
+		return []string{string(FormatJSON), string(FormatText)}, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
 }
 
 func getVersion(opts versionOptions) (string, error) {
-	if opts.format == VersionFormatJSON {
+	if opts.format == FormatJSON {
 		b, err := json.Marshal(version.Info)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal version info to JSON: %w", err)

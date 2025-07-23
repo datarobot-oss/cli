@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package cmd
+package run
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ func (o *taskRunOptions) RunOpts() task.RunOpts {
 	}
 }
 
-func taskRunCmd() *cobra.Command { //nolint: cyclop
+func Cmd() *cobra.Command { //nolint: cyclop
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{
