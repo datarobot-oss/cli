@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/completion"
+	"github.com/datarobot/cli/cmd/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ func init() {
 	RootCmd.AddCommand(
 		auth.AuthCmd,
 		templates.TemplatesCmd,
-		taskRunCmd(),
+		run.RunCmd(),
 		completion.CompletionCmd(),
 		versionCmd(),
 	)
