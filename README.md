@@ -6,7 +6,9 @@ The DataRobot command line interface to manage custom applications.
 
 ### Prerequisites
 
-First, install the required development tools:
+First, install `go-task` for running commands from `Taskfile.yaml`: [Installation instructions](https://taskfile.dev/installation/)
+
+After that install the required development tools:
 
 ```bash
 task install-tools

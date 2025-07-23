@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -27,7 +28,7 @@ import (
 
 var DataRobotAPIKey = "token"
 
-func waitForAPIKeyCallback(datarobotHost string) string {
+func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
 
@@ -47,7 +48,7 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	// Start the server in a goroutine
@@ -56,7 +57,7 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {
-			fmt.Printf("Server error: %v\n", err)
+			log.Errorf("Server error: %v\n", err)
 		}
 	}()
 
@@ -66,10 +67,10 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 	fmt.Println("Successfully consumed API Key from API Request")
 	// Now shut down the server after key is received
 	if err := server.Shutdown(context.Background()); err != nil {
-		fmt.Printf("Error during shutdown: %v\n", err)
+		return "", fmt.Errorf("error during shutdown: %v", err)
 	}
 
-	return apiKey
+	return apiKey, nil
 }
 
 func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
@@ -97,7 +98,8 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 func writeConfigFile() {
 	err := viper.WriteConfig()
 	if err != nil {
-		panic(err)
+		log.Error(err)
+		return
 	}
 
 	fmt.Println("Config file written successfully.")
@@ -108,19 +110,19 @@ func LoginAction() error {
 
 	err := config.ReadConfigFile("")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	datarobotHost, err := GetURL(false)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	currentKey := viper.GetString(DataRobotAPIKey)
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if isValidKeyPair {
@@ -128,7 +130,7 @@ func LoginAction() error {
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
@@ -142,10 +144,13 @@ func LoginAction() error {
 			return nil
 		}
 	} else {
-		fmt.Println("The stored API key is invalid or expired. Retrieving a new one")
+		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
 	}
 
-	key := waitForAPIKeyCallback(datarobotHost)
+	key, err := waitForAPIKeyCallback(datarobotHost)
+	if err != nil {
+		log.Error(err)
+	}
 
 	viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
 
@@ -174,7 +179,10 @@ var loginCmd = &cobra.Command{
 	Short: "Login to DataRobot",
 	Long:  `Login to DataRobot to get and store an API key that can be used for other operation in the cli.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = LoginAction() // TODO: handler errors properly
+		err := LoginAction()
+		if err != nil {
+			log.Error(err)
+		}
 	},
 }
 
@@ -183,7 +191,10 @@ var logoutCmd = &cobra.Command{
 	Short: "Logout from DataRobot",
 	Long:  `Logout from DataRobot and clear the stored API key.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = LogoutAction() // TODO: handler errors properly
+		err := LogoutAction()
+		if err != nil {
+			log.Error(err)
+		}
 	},
 }
 

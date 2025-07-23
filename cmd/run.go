@@ -15,8 +15,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/task"
-
 	"github.com/spf13/cobra"
 )
 
@@ -113,7 +113,7 @@ func taskRunCmd() *cobra.Command { //nolint: cyclop
 			taskNames := args
 
 			if !opts.Silent {
-				fmt.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
+				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
 			err = runner.Run(taskNames, opts.RunOpts())

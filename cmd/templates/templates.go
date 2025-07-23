@@ -10,17 +10,15 @@ package templates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os/exec"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
-
 	"github.com/spf13/cobra"
 )
-
-var datarobotEndpoint = "https://staging.datarobot.com/api/v2"
 
 type Template struct {
 	ID          string `json:"id"`
@@ -40,16 +38,25 @@ type TemplateList struct {
 
 func ListTemplates() error {
 	key, err := auth.GetAPIKey()
+	if err != nil {
+		return err
+	}
 
 	bearer := "Bearer " + key
 
+	// datarobotHost := "https://staging.datarobot.com/api/v2"
+	// datarobotHost := "https://app.datarobot.com/api/v2"
+	datarobotHost, err := auth.GetURL(false)
 	if err != nil {
-		return nil
+		return err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"/applicationTemplates?limit=100", nil)
+	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
+	log.Info("Fetching templates from " + datarobotEndpoint)
+
+	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {
-		log.Fatal(err) // TODO: handler errors properly
+		return err
 	}
 
 	req.Header.Add("Authorization", bearer)
@@ -58,16 +65,19 @@ func ListTemplates() error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err) // TODO: just return the error
+		return err
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("Response status code is " + resp.Status)
+	}
 
 	var templateList TemplateList
 
 	err = json.NewDecoder(resp.Body).Decode(&templateList)
 	if err != nil {
-		log.Fatal(err) // TODO: just return the error
+		return err
 	}
 
 	for _, template := range templateList.Templates {
@@ -82,7 +92,11 @@ var listTemplatesCmd = &cobra.Command{
 	Short: "List all available templates",
 	Long:  `List all available templates in the DataRobot application.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		_ = ListTemplates() // TODO: handle errors properly
+		err := ListTemplates()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
 	},
 }
 
@@ -95,7 +109,7 @@ var statusCmd = &cobra.Command{
 		gitcmd := exec.Command("git", "status")
 		stdout, err := gitcmd.Output()
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Fatal(err.Error())
 			return
 		}
 
