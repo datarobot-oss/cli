@@ -11,6 +11,7 @@ package auth
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -28,7 +29,7 @@ import (
 
 var DataRobotAPIKey = "token"
 
-func waitForAPIKeyCallback(datarobotHost string) string {
+func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
 
@@ -48,8 +49,7 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Error(err)
-		return ""
+		return "", err
 	}
 
 	// Start the server in a goroutine
@@ -68,10 +68,10 @@ func waitForAPIKeyCallback(datarobotHost string) string {
 	fmt.Println("Successfully consumed API Key from API Request")
 	// Now shut down the server after key is received
 	if err := server.Shutdown(context.Background()); err != nil {
-		log.Errorf("Error during shutdown: %v\n", err)
+		return "", errors.New(fmt.Sprintf("Error during shutdown: %v\n", err))
 	}
 
-	return apiKey
+	return apiKey, nil
 }
 
 func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
@@ -148,7 +148,10 @@ func LoginAction() error {
 		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
 	}
 
-	key := waitForAPIKeyCallback(datarobotHost)
+	key, err := waitForAPIKeyCallback(datarobotHost)
+	if err != nil {
+		log.Error(err)
+	}
 
 	viper.Set(DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
 
