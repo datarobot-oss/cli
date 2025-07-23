@@ -14,17 +14,18 @@ import (
 	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/run"
 	"github.com/datarobot/cli/cmd/templates"
-	"github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/cmd/version"
+	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   version.CliName,
-	Short: "The " + version.AppName,
+	Use:   internalVersion.CliName,
+	Short: "The " + internalVersion.AppName,
 	Long: `
-	The ` + version.AppName + ` is a command-line interface for interacting with
+	The ` + internalVersion.AppName + ` is a command-line interface for interacting with
 	DataRobot's application templates and authentication. It allows users to 
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
@@ -45,7 +46,7 @@ func init() {
 		templates.TemplatesCmd,
 		run.RunCmd(),
 		completion.CompletionCmd(),
-		versionCmd(),
+		version.VersionCmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")

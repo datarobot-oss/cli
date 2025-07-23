@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package cmd
+package version
 
 import (
 	"encoding/json"
@@ -54,7 +54,7 @@ type versionOptions struct {
 	format VersionFormat
 }
 
-func versionCmd() *cobra.Command {
+func VersionCmd() *cobra.Command {
 	var options versionOptions
 
 	options.format = VersionFormatText
