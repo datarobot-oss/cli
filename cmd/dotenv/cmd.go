@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/spf13/cobra"
@@ -87,28 +89,11 @@ func readTemplate(dotenvFile string) []string {
 	return slices.Collect(strings.Lines(dotenvTemplate))
 }
 
-func writeDatarobotEndpoint(f *os.File) error {
-	datarobotEndpoint, err := auth.GetURL(false)
-	if err != nil {
-		return err
-	}
+func writeVariable(f *os.File, name, key string) error {
+	log.Info("Adding variable " + name)
 
-	log.Info("Adding DATAROBOT_ENDPOINT")
-
-	_, err = f.WriteString("DATAROBOT_ENDPOINT=" + datarobotEndpoint + "\n")
-
-	return err
-}
-
-func writeDatarobotAPIToken(f *os.File) error {
-	datarobotAPIToken, err := auth.GetAPIKey()
-	if err != nil {
-		return err
-	}
-
-	log.Info("Adding DATAROBOT_API_TOKEN")
-
-	_, err = f.WriteString("DATAROBOT_API_TOKEN=" + datarobotAPIToken + "\n")
+	value := viper.GetString(key)
+	_, err := f.WriteString(name + "=" + value + "\n")
 
 	return err
 }
@@ -118,9 +103,9 @@ func writeFromTemplate(f *os.File, templateLines []string) error {
 		var err error
 
 		if strings.HasPrefix(templateLine, "DATAROBOT_ENDPOINT=") {
-			err = writeDatarobotEndpoint(f)
+			err = writeVariable(f, "DATAROBOT_ENDPOINT", auth.DataRobotURL)
 		} else if strings.HasPrefix(templateLine, "DATAROBOT_API_TOKEN=") {
-			err = writeDatarobotAPIToken(f)
+			err = writeVariable(f, "DATAROBOT_API_TOKEN", auth.DataRobotAPIKey)
 		} else {
 			_, err = f.WriteString(templateLine)
 		}
