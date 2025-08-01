@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package templates
+package list
 
 import (
 	"encoding/json"
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/spf13/cobra"
@@ -35,10 +36,10 @@ type TemplateList struct {
 	Previous   string     `json:"previous"`
 }
 
-func ListTemplates() error {
+func getTemplates() (*TemplateList, error) {
 	key, err := auth.GetAPIKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	bearer := "Bearer " + key
@@ -47,7 +48,7 @@ func ListTemplates() error {
 	// datarobotHost := "https://app.datarobot.com/api/v2"
 	datarobotHost, err := auth.GetURL(false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
@@ -55,7 +56,7 @@ func ListTemplates() error {
 
 	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req.Header.Add("Authorization", bearer)
@@ -64,17 +65,26 @@ func ListTemplates() error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("Response status code is " + resp.Status)
+		return nil, errors.New("Response status code is " + resp.Status)
 	}
 
 	var templateList TemplateList
 
 	err = json.NewDecoder(resp.Body).Decode(&templateList)
+	if err != nil {
+		return nil, err
+	}
+
+	return &templateList, nil
+}
+
+func Run() error {
+	templateList, err := getTemplates()
 	if err != nil {
 		return err
 	}
@@ -86,12 +96,34 @@ func ListTemplates() error {
 	return nil
 }
 
-var listTemplatesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available templates",
 	Long:  `List all available templates in the DataRobot application.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		err := ListTemplates()
+		err := Run()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+	},
+}
+
+func RunTea() error {
+	templateList, _ := getTemplates()
+	m := NewModel(templateList.Templates)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	_, err := p.Run()
+	return err
+}
+
+var TeaCmd = &cobra.Command{
+	Use:   "list_tea",
+	Short: "List all available templates",
+	Long:  `List all available templates in the DataRobot application.`,
+	Run: func(_ *cobra.Command, _ []string) {
+		err := RunTea()
 		if err != nil {
 			log.Fatal(err)
 			return
