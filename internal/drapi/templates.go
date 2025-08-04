@@ -3,6 +3,7 @@ package drapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/charmbracelet/log"
@@ -15,11 +16,33 @@ type Template struct {
 	Description string `json:"description"`
 	IsGlobal    bool   `json:"isGlobal"`
 	IsPremium   bool   `json:"isPremium"`
+
+	Readme     string     `json:"readme"`
+	Tags       []string   `json:"tags"`
+	Repository Repository `json:"repository"`
+	MediaUrl   string     `json:"mediaUrl"`
+
+	// CreatedBy        string `json:"createdBy"`
+	// CreatorFirstName string `json:"creatorFirstName"`
+	// CreatorLastName  string `json:"creatorLastName"`
+	// CreatorUserhash  string `json:"creatorUserhash"`
+	// CreatedAt        string `json:"createdAt"`
+	// EditedBy         string `json:"editedBy"`
+	// EditorFirstName  string `json:"editorFirstName"`
+	// EditorLastName   string `json:"editorLastName"`
+	// EditorUserhash   string `json:"editorUserhash"`
+	// EditedAt         string `json:"editedAt"`
 }
 
 func (t Template) FilterValue() string {
 	// return fmt.Sprintf("%s\n%s", t.Name, t.Description)
 	return t.Name
+}
+
+type Repository struct {
+	URL      string `json:"url"`
+	Tag      string `json:"tag"`
+	IsPublic bool   `json:"isPublic"`
 }
 
 type TemplateList struct {
@@ -75,4 +98,19 @@ func GetTemplates() (*TemplateList, error) {
 	}
 
 	return &templateList, nil
+}
+
+func GetTemplate(id string) (*Template, error) {
+	templates, err := GetTemplates()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, template := range templates.Templates {
+		if template.ID == id {
+			return &template, nil
+		}
+	}
+
+	return nil, errors.New(fmt.Sprintf("template with id %s not found", id))
 }
