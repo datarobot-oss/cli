@@ -24,6 +24,7 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.AddCommand(
 		clone.Cmd,
+		clone.TeaCmd,
 		list.Cmd,
 		list.TeaCmd,
 		statusCmd,
