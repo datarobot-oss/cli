@@ -9,82 +9,16 @@
 package list
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"
 )
 
-type Template struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	IsGlobal    bool   `json:"isGlobal"`
-	IsPremium   bool   `json:"isPremium"`
-}
-
-type TemplateList struct {
-	Templates  []Template `json:"data"`
-	Count      int        `json:"count"`
-	TotalCount int        `json:"totalCount"`
-	Next       string     `json:"next"`
-	Previous   string     `json:"previous"`
-}
-
-func getTemplates() (*TemplateList, error) {
-	key, err := auth.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-
-	bearer := "Bearer " + key
-
-	// datarobotHost := "https://staging.datarobot.com/api/v2"
-	// datarobotHost := "https://app.datarobot.com/api/v2"
-	datarobotHost, err := auth.GetURL(false)
-	if err != nil {
-		return nil, err
-	}
-
-	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
-	log.Info("Fetching templates from " + datarobotEndpoint)
-
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Authorization", bearer)
-
-	client := &http.Client{}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Response status code is " + resp.Status)
-	}
-
-	var templateList TemplateList
-
-	err = json.NewDecoder(resp.Body).Decode(&templateList)
-	if err != nil {
-		return nil, err
-	}
-
-	return &templateList, nil
-}
-
 func Run() error {
-	templateList, err := getTemplates()
+	templateList, err := drapi.GetTemplates()
 	if err != nil {
 		return err
 	}
@@ -110,7 +44,7 @@ var Cmd = &cobra.Command{
 }
 
 func RunTea() error {
-	templateList, _ := getTemplates()
+	templateList, _ := drapi.GetTemplates()
 	m := NewModel(templateList.Templates)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 

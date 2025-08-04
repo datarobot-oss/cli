@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -57,7 +58,7 @@ func (m Model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-func NewModel(templates []Template) tea.Model {
+func NewModel(templates []drapi.Template) tea.Model {
 	items := make([]list.Item, len(templates), len(templates))
 	for i, t := range templates {
 		items[i] = t
@@ -78,11 +79,6 @@ var (
 	selectedItemStyle = baseStyle.PaddingLeft(1).Inherit(selectedStyle)
 )
 
-func (t Template) FilterValue() string {
-	// return fmt.Sprintf("%s\n%s", t.Name, t.Description)
-	return t.Name
-}
-
 type itemDelegate struct{}
 
 func NewList(title string, items []list.Item) list.Model {
@@ -96,7 +92,7 @@ func (d itemDelegate) Height() int                             { return 8 }
 func (d itemDelegate) Spacing() int                            { return 0 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	li, ok := listItem.(Template)
+	li, ok := listItem.(drapi.Template)
 	if !ok {
 		return
 	}
