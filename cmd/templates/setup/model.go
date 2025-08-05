@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package templates
+package setup
 
 import (
 	"strings"
@@ -16,39 +16,33 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// TemplateSetupModel handles the template setup workflow
-type TemplateSetupModel struct {
-	tui.BaseModel
+type Model struct{}
+
+func NewModel() Model {
+	return Model{}
 }
 
-// NewTemplateSetupModel creates a new template setup model
-func NewTemplateSetupModel() TemplateSetupModel {
-	return TemplateSetupModel{
-		BaseModel: tui.NewBaseModel(),
-	}
-}
-
-func (m TemplateSetupModel) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m TemplateSetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle common keys (quit, etc.)
-		if cmd := tui.HandleCommonKeys(msg); cmd != nil {
-			return m, cmd
+		switch keypress := msg.String(); keypress {
+		case "q", "ctrl+c":
+			return m, tea.Quit
 		}
 	}
 
 	return m, nil
 }
 
-func (m TemplateSetupModel) View() string {
+func (m Model) View() string {
 	var sb strings.Builder
 
 	// Render header with logo
-	sb.WriteString(m.RenderHeader())
+	sb.WriteString(tui.Header())
 	sb.WriteString("\n\n")
 
 	// Render welcome content
@@ -60,15 +54,7 @@ func (m TemplateSetupModel) View() string {
 	sb.WriteString("\n\n")
 
 	// Render footer with quit instructions
-	sb.WriteString(m.RenderFooter())
+	sb.WriteString(tui.Footer())
 
 	return sb.String()
-}
-
-// StartTemplateSetup starts the template setup TUI
-func StartTemplateSetup() error {
-	p := tea.NewProgram(NewTemplateSetupModel())
-	_, err := p.Run()
-
-	return err
 }
