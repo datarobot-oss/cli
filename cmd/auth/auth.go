@@ -46,7 +46,9 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 
 	// Start the server in a goroutine
 	go func() {
-		fmt.Printf("\n\nPlease visit this link to connect your DataRobot creds to the CLI \n(If you're prompted to log in, you may need to re-enter this URL):\n%s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
+		fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
+		fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
+		fmt.Printf("%s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
 
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {
