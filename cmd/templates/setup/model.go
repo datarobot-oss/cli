@@ -9,17 +9,50 @@
 package setup
 
 import (
+	"log"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/cmd/templates/clone"
+	"github.com/datarobot/cli/cmd/templates/list"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
 
-type Model struct{}
+type screens int
+
+const (
+	welcomeScreen = screens(iota)
+	loginScreen
+	listScreen
+	cloneScreen
+)
+
+type Model struct {
+	screen screens
+	login  LoginModel
+	list   list.Model
+	clone  clone.Model
+}
+
+type successMsg string
+
+func successCmd(apiKey string) tea.Cmd {
+	log.Printf("successCmd\n")
+	return func() tea.Msg {
+		return successMsg(apiKey)
+	}
+}
 
 func NewModel() Model {
-	return Model{}
+	return Model{
+		screen: welcomeScreen,
+		login: LoginModel{
+			apiKeyChan: make(chan string, 1),
+			successCmd: successCmd,
+		},
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -32,10 +65,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch keypress := msg.String(); keypress {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "enter":
+			templateList, err := drapi.GetTemplates()
+			if err != nil {
+				m.screen = loginScreen
+				// m.login.err = err
+				if m.login.apiKeyChan != nil {
+					cmd := m.login.Init()
+					return m, cmd
+				}
+
+				return m, nil
+			}
+
+			m.list = list.NewModel(templateList.Templates)
+			m.screen = listScreen
+			return m, m.list.Init()
 		}
+	case successMsg:
+		log.Printf("successMsg\n")
+		m.screen = listScreen
+		return m, nil
 	}
 
-	return m, nil
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
+
+	m.login, cmd = m.login.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	m.list, cmd = m.list.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	m.clone, cmd = m.clone.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
@@ -45,16 +116,25 @@ func (m Model) View() string {
 	sb.WriteString(tui.Header())
 	sb.WriteString("\n\n")
 
-	// Render welcome content
-	welcome := tui.WelcomeStyle.Render("Welcome to " + version.AppName)
-	sb.WriteString(welcome)
-	sb.WriteString("\n\n")
+	switch m.screen {
+	case welcomeScreen:
+		// Render welcome content
+		welcome := tui.WelcomeStyle.Render("Welcome to " + version.AppName)
+		sb.WriteString(welcome)
+		sb.WriteString("\n\n")
 
-	sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
-	sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString("\n\n")
 
-	// Render footer with quit instructions
-	sb.WriteString(tui.Footer())
+		// Render footer with quit instructions
+		sb.WriteString(tui.Footer())
+	case loginScreen:
+		sb.WriteString(m.login.View())
+	case listScreen:
+		sb.WriteString(m.list.View())
+	case cloneScreen:
+		sb.WriteString(m.clone.View())
+	}
 
 	return sb.String()
 }

@@ -15,7 +15,7 @@ type Model struct {
 
 type startCloningMsg struct{}
 
-func StartCloningMsg() tea.Msg {
+func startCloning() tea.Msg {
 	return startCloningMsg{}
 }
 
@@ -23,7 +23,7 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
@@ -34,7 +34,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Blur()
 			m.cloning = true
 
-			return m, StartCloningMsg
+			return m, startCloning
 		}
 
 	case startCloningMsg:
@@ -65,7 +65,7 @@ func (m Model) View() string {
 	return "Enter destination directory\n" + m.input.View()
 }
 
-func NewModel(repoUrl, dir string) tea.Model {
+func NewModel(repoUrl, dir string) Model {
 	input := textinput.New()
 	input.SetValue(dir)
 	input.Focus()

@@ -15,7 +15,7 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/drapi"
@@ -99,20 +99,21 @@ var Cmd = &cobra.Command{
 }
 
 func RunTea(args []string) error {
-	templateId, dir, err := validateArgs(args)
-	if err != nil {
-		return err
-	}
-
-	template, err := drapi.GetTemplate(templateId)
-	repoUrl := template.Repository.URL
-
-	m := NewModel(repoUrl, dir)
-	// p := tea.NewProgram(m, tea.WithAltScreen())
-	p := tea.NewProgram(m)
-
-	_, err = p.Run()
-	return err
+	return nil
+	//templateId, dir, err := validateArgs(args)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//template, err := drapi.GetTemplate(templateId)
+	//repoUrl := template.Repository.URL
+	//
+	//m := NewModel(repoUrl, dir)
+	////p := tea.NewProgram(m, tea.WithAltScreen())
+	//p := tea.NewProgram(m)
+	//
+	//_, err = p.Run()
+	//return err
 }
 
 var TeaCmd = &cobra.Command{

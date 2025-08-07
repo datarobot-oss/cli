@@ -90,12 +90,16 @@ func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-func writeConfigFile() {
+func WriteConfigFileSilent() {
 	err := viper.WriteConfig()
 	if err != nil {
 		log.Error(err)
 		return
 	}
+}
+
+func writeConfigFile() {
+	WriteConfigFileSilent()
 
 	fmt.Println("Config file written successfully.")
 }

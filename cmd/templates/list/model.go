@@ -26,10 +26,10 @@ type Model struct {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return tea.WindowSize()
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
@@ -45,8 +45,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		if len(m.list.Items()) > 0 {
+			h, v := docStyle.GetFrameSize()
+			m.list.SetSize(msg.Width-h, msg.Height-v)
+		}
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -58,7 +61,7 @@ func (m Model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-func NewModel(templates []drapi.Template) tea.Model {
+func NewModel(templates []drapi.Template) Model {
 	items := make([]list.Item, len(templates), len(templates))
 	for i, t := range templates {
 		items[i] = t

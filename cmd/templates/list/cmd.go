@@ -11,7 +11,7 @@ package list
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"
@@ -44,12 +44,13 @@ var Cmd = &cobra.Command{
 }
 
 func RunTea() error {
-	templateList, _ := drapi.GetTemplates()
-	m := NewModel(templateList.Templates)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-
-	_, err := p.Run()
-	return err
+	//templateList, _ := drapi.GetTemplates()
+	//m := NewModel(templateList.Templates)
+	//p := tea.NewProgram(m, tea.WithAltScreen())
+	//
+	//_, err := p.Run()
+	//return err
+	return nil
 }
 
 var TeaCmd = &cobra.Command{
