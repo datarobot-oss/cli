@@ -22,7 +22,7 @@ import (
 	"github.com/datarobot/cli/cmd/auth"
 )
 
-func waitForAPIKeyCmd(apiKeyChan chan string, server *http.Server, successCmd func(string) tea.Cmd) tea.Cmd {
+func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd func(string) tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-apiKeyChan
@@ -58,7 +58,7 @@ type errMsg struct{ error }
 
 func (e errMsg) Error() string { return e.error.Error() }
 
-func startServerCmd(apiKeyChan chan string, datarobotHost string) tea.Cmd {
+func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 	return func() tea.Msg {
 		addr := "localhost:51164"
 
@@ -108,24 +108,18 @@ func (lm LoginModel) Init() tea.Cmd {
 	datarobotHost, err := auth.GetURL(false)
 	if err != nil {
 		return func() tea.Msg {
-			return startedMsg{
-				message: "error while getting datarobotHost",
-			}
+			return errMsg{err}
 		}
 	}
 
-	return startServerCmd(lm.apiKeyChan, datarobotHost)
+	return startServer(lm.apiKeyChan, datarobotHost)
 }
 
 func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case startedMsg:
 		lm.loginMessage = msg.message
-		return lm, waitForAPIKeyCmd(lm.apiKeyChan, msg.server, lm.successCmd)
-
-	// case responseMsg:
-	//	lm.apiKey = string(msg)
-	//	return lm, lm.successCmd(lm.apiKey)
+		return lm, waitForAPIKey(lm.apiKeyChan, msg.server, lm.successCmd)
 
 	case errMsg:
 		lm.err = msg

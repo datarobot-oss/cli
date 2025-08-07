@@ -39,10 +39,15 @@ type Model struct {
 type successMsg string
 
 func successCmd(apiKey string) tea.Cmd {
-	log.Printf("successCmd\n")
 	return func() tea.Msg {
 		return successMsg(apiKey)
 	}
+}
+
+type getTemplatesMsg struct{}
+
+func getTemplates() tea.Msg {
+	return getTemplatesMsg{}
 }
 
 func NewModel() Model {
@@ -56,7 +61,7 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return getTemplates
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,23 +70,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch keypress := msg.String(); keypress {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "enter":
-			templateList, err := drapi.GetTemplates()
-			if err != nil {
-				m.screen = loginScreen
-				// m.login.err = err
-				if m.login.apiKeyChan != nil {
-					cmd := m.login.Init()
-					return m, cmd
-				}
-
-				return m, nil
+		}
+	case getTemplatesMsg:
+		templateList, err := drapi.GetTemplates()
+		if err != nil {
+			m.screen = loginScreen
+			if m.login.apiKeyChan != nil {
+				cmd := m.login.Init()
+				return m, cmd
 			}
 
-			m.list = list.NewModel(templateList.Templates)
-			m.screen = listScreen
-			return m, m.list.Init()
+			return m, nil
 		}
+
+		m.list = list.NewModel(templateList.Templates)
+		m.screen = listScreen
+		return m, m.list.Init()
 	case successMsg:
 		log.Printf("successMsg\n")
 		m.screen = listScreen
@@ -91,19 +95,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
-	m.login, cmd = m.login.Update(msg)
-	if cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-
-	m.list, cmd = m.list.Update(msg)
-	if cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-
-	m.clone, cmd = m.clone.Update(msg)
-	if cmd != nil {
-		cmds = append(cmds, cmd)
+	switch m.screen {
+	case loginScreen:
+		m.login, cmd = m.login.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case listScreen:
+		m.list, cmd = m.list.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case cloneScreen:
+		m.clone, cmd = m.clone.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
