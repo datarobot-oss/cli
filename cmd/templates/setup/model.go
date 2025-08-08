@@ -29,14 +29,19 @@ const (
 )
 
 type Model struct {
-	screen screens
-	login  LoginModel
-	list   list.Model
-	clone  clone.Model
+	screen   screens
+	login    LoginModel
+	list     list.Model
+	template drapi.Template
+	clone    clone.Model
 }
 
 type authSuccessMsg struct {
 	key string
+}
+
+type templateSelectedMsg struct {
+	template drapi.Template
 }
 
 type getTemplatesMsg struct{}
@@ -52,6 +57,8 @@ func NewModel() Model {
 			apiKeyChan: make(chan string, 1),
 			successMsg: authSuccessMsg{},
 		},
+		list:  list.Model{},
+		clone: clone.Model{},
 	}
 }
 
@@ -78,12 +85,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		m.list = list.NewModel(templateList.Templates)
+		successMsg := func(t drapi.Template) tea.Cmd {
+			return func() tea.Msg {
+				return templateSelectedMsg{t}
+			}
+		}
+		m.list = list.NewModel(templateList.Templates, successMsg)
 		m.screen = listScreen
 		return m, m.list.Init()
 	case authSuccessMsg:
 		m.screen = listScreen
 		return m, getTemplates
+	case templateSelectedMsg:
+		m.template = msg.template
+		m.clone = clone.NewModel(m.template)
+		m.screen = cloneScreen
+		return m, m.clone.Init()
 	}
 
 	var cmd tea.Cmd

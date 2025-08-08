@@ -1,17 +1,23 @@
 package clone
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 type Model struct {
-	repoUrl  string
+	template drapi.Template
 	input    textinput.Model
 	cloning  bool
 	finished bool
 	out      string
 }
+
+type focusInputMsg struct{}
 
 type startCloningMsg struct{}
 
@@ -20,7 +26,7 @@ func startCloning() tea.Msg {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return func() tea.Msg { return focusInputMsg{} }
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -37,8 +43,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, startCloning
 		}
 
+	case focusInputMsg:
+		m.input.Focus()
+		return m, nil
 	case startCloningMsg:
-		out, err := gitClone(m.repoUrl, m.input.Value())
+		out, err := gitClone(m.template.Repository.URL, m.input.Value())
 		if err != nil {
 			m.out = err.Error()
 			return m, tea.Quit
@@ -57,21 +66,28 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("Template %s\n", m.template.Name))
+
 	if m.cloning {
-		return "Cloning " + m.repoUrl + " into " + m.input.Value() + "..."
+		sb.WriteString("Cloning into " + m.input.Value() + "...")
 	} else if m.finished {
-		return m.out + "\nFinished cloning into " + m.input.Value() + ".\n"
+		sb.WriteString(m.out + "\nFinished cloning into " + m.input.Value() + ".\n")
+	} else {
+		sb.WriteString("Enter destination directory\n" + m.input.View())
 	}
-	return "Enter destination directory\n" + m.input.View()
+
+	return sb.String()
 }
 
-func NewModel(repoUrl, dir string) Model {
+func NewModel(template drapi.Template) Model {
 	input := textinput.New()
-	input.SetValue(dir)
+	input.SetValue(template.DefaultDir())
 	input.Focus()
 
 	return Model{
-		repoUrl: repoUrl,
-		input:   input,
+		template: template,
+		input:    input,
 	}
 }

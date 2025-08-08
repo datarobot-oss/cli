@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
@@ -37,6 +38,14 @@ type Template struct {
 func (t Template) FilterValue() string {
 	// return fmt.Sprintf("%s\n%s", t.Name, t.Description)
 	return t.Name
+}
+
+func (t Template) DefaultDir() string {
+	split := strings.Split(t.Repository.URL, "/")
+	if len(split) > 0 {
+		return split[len(split)-1]
+	}
+	return ""
 }
 
 type Repository struct {

@@ -22,7 +22,8 @@ import (
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 type Model struct {
-	list list.Model
+	list       list.Model
+	successCmd func(drapi.Template) tea.Cmd
 }
 
 func (m Model) Init() tea.Cmd {
@@ -37,11 +38,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			//i, ok := m.list.SelectedItem().(item)
-			//if ok {
-			//	m.choice = string(i)
-			//}
-			return m, tea.Quit
+			t, ok := m.list.SelectedItem().(drapi.Template)
+			if ok {
+				return m, m.successCmd(t)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -61,14 +61,15 @@ func (m Model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-func NewModel(templates []drapi.Template) Model {
+func NewModel(templates []drapi.Template, successCmd func(drapi.Template) tea.Cmd) Model {
 	items := make([]list.Item, len(templates), len(templates))
 	for i, t := range templates {
 		items[i] = t
 	}
 
 	return Model{
-		list: NewList("Application Templates", items),
+		list:       NewList("Application Templates", items),
+		successCmd: successCmd,
 	}
 }
 

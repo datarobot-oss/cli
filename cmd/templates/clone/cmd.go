@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
-
 	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -66,10 +64,7 @@ func validateArgs(args []string) (string, string, error) {
 	if len(args) > 1 {
 		dir = args[1]
 	} else {
-		split := strings.Split(template.Repository.URL, "/")
-		if len(split) > 0 {
-			dir = split[len(split)-1]
-		}
+		dir = template.DefaultDir()
 	}
 
 	return templateId, dir, nil
