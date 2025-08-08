@@ -67,7 +67,7 @@ func saveURLToConfig(newURL string) error {
 
 	viper.Set(DataRobotURL, datarobotHost)
 
-	viper.WriteConfig()
+	_ = viper.WriteConfig()
 
 	return nil
 }

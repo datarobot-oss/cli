@@ -21,24 +21,28 @@ import (
 )
 
 func Run(args []string) error {
-	templateId, dir, err := validateArgs(args)
+	templateID, dir, err := validateArgs(args)
 	if err != nil {
 		return err
 	}
 
-	template, err := drapi.GetTemplate(templateId)
-	repoUrl := template.Repository.URL
-	fmt.Printf("ID: %s\nName: %s\nRepository URL: %s\n", template.ID, template.Name, repoUrl)
+	template, err := drapi.GetTemplate(templateID)
+	if err != nil {
+		return err
+	}
+
+	repoURL := template.Repository.URL
+	fmt.Printf("ID: %s\nName: %s\nRepository URL: %s\n", template.ID, template.Name, repoURL)
 
 	dirStyled := lipgloss.NewStyle().Bold(true).Render(dir)
 
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		return errors.New(fmt.Sprintf("Directory %s already exists", dirStyled))
+		return fmt.Errorf("directory %s already exists", dirStyled)
 	}
 
 	fmt.Printf("\nCloning into %s directory...\n", dirStyled)
 
-	out, err := gitClone(repoUrl, dir)
+	out, err := gitClone(repoURL, dir)
 	if err != nil {
 		return err
 	}
@@ -53,9 +57,9 @@ func validateArgs(args []string) (string, string, error) {
 		return "", "", errors.New("template ID required")
 	}
 
-	templateId := args[0]
+	templateID := args[0]
 
-	template, err := drapi.GetTemplate(templateId)
+	template, err := drapi.GetTemplate(templateID)
 	if err != nil {
 		return "", "", err
 	}
@@ -67,11 +71,12 @@ func validateArgs(args []string) (string, string, error) {
 		dir = template.DefaultDir()
 	}
 
-	return templateId, dir, nil
+	return templateID, dir, nil
 }
 
-func gitClone(repoUrl, dir string) (string, error) {
-	cmd := exec.Command("git", "clone", repoUrl, dir)
+func gitClone(repoURL, dir string) (string, error) {
+	cmd := exec.Command("git", "clone", repoURL, dir)
+
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", err
@@ -93,8 +98,8 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func RunTea(args []string) error {
-	return nil
+// func RunTea(args []string) error {
+func RunTea() error {
 	//templateId, dir, err := validateArgs(args)
 	//if err != nil {
 	//	return err
@@ -109,14 +114,15 @@ func RunTea(args []string) error {
 	//
 	//_, err = p.Run()
 	//return err
+	return nil
 }
 
 var TeaCmd = &cobra.Command{
 	Use:   "clone_tea",
 	Short: "Clone application template",
 	Long:  `Clone application template into user provided directory.`,
-	Run: func(_ *cobra.Command, args []string) {
-		err := RunTea(args)
+	Run: func(_ *cobra.Command, _ []string) {
+		err := RunTea()
 		if err != nil {
 			log.Fatal(err)
 			return

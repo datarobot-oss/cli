@@ -53,7 +53,7 @@ type startedMsg struct {
 	message string
 }
 
-type errMsg struct{ error }
+type errMsg struct{ error } //nolint: errname
 
 func (e errMsg) Error() string { return e.error.Error() }
 
@@ -132,7 +132,7 @@ func (lm LoginModel) View() string {
 	var sb strings.Builder
 
 	if lm.apiKey != "" {
-		sb.WriteString(fmt.Sprintf("api key: %s", lm.apiKey))
+		sb.WriteString("api key: " + lm.apiKey)
 		sb.WriteString("\n\n")
 	} else if lm.loginMessage != "" {
 		sb.WriteString(lm.loginMessage)

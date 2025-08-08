@@ -36,9 +36,7 @@ type Model struct {
 	clone    clone.Model
 }
 
-type authSuccessMsg struct {
-	key string
-}
+type authSuccessMsg struct{}
 
 type templateSelectedMsg struct {
 	template drapi.Template
@@ -66,7 +64,7 @@ func (m Model) Init() tea.Cmd {
 	return getTemplates
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
@@ -92,6 +90,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list = list.NewModel(templateList.Templates, successMsg)
 		m.screen = listScreen
+
 		return m, m.list.Init()
 	case authSuccessMsg:
 		m.screen = listScreen
@@ -100,19 +99,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.template = msg.template
 		m.clone = clone.NewModel(m.template)
 		m.screen = cloneScreen
+
 		return m, m.clone.Init()
 	}
 
 	var cmd tea.Cmd
+
 	var cmds []tea.Cmd
 
 	m.login, cmd = m.login.Update(msg)
+
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 
 	switch m.screen {
-	// case loginScreen:
+	case welcomeScreen:
+	case loginScreen:
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
 		if cmd != nil {

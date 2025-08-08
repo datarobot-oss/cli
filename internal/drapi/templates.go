@@ -1,3 +1,11 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
 package drapi
 
 import (
@@ -21,7 +29,7 @@ type Template struct {
 	Readme     string     `json:"readme"`
 	Tags       []string   `json:"tags"`
 	Repository Repository `json:"repository"`
-	MediaUrl   string     `json:"mediaUrl"`
+	MediaURL   string     `json:"mediaURL"`
 
 	// CreatedBy        string `json:"createdBy"`
 	// CreatorFirstName string `json:"creatorFirstName"`
@@ -45,6 +53,7 @@ func (t Template) DefaultDir() string {
 	if len(split) > 0 {
 		return split[len(split)-1]
 	}
+
 	return ""
 }
 
@@ -121,5 +130,5 @@ func GetTemplate(id string) (*Template, error) {
 		}
 	}
 
-	return nil, errors.New(fmt.Sprintf("template with id %s not found", id))
+	return nil, fmt.Errorf("template with id %s not found", id)
 }

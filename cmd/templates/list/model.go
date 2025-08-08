@@ -44,6 +44,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return m, m.successCmd(t)
 				}
 			}
+
 			return m, nil
 		}
 
@@ -52,11 +53,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			h, v := docStyle.GetFrameSize()
 			m.list.SetSize(msg.Width-h, msg.Height-v)
 		}
+
 		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
+
 	return m, cmd
 }
 
@@ -65,7 +68,7 @@ func (m Model) View() string {
 }
 
 func NewModel(templates []drapi.Template, successCmd func(drapi.Template) tea.Cmd) Model {
-	items := make([]list.Item, len(templates), len(templates))
+	items := make([]list.Item, len(templates))
 	for i, t := range templates {
 		items[i] = t
 	}
@@ -93,6 +96,7 @@ func NewList(title string, items []list.Item) list.Model {
 	nl := list.New(items, itemDelegate{}, 0, 0)
 	nl.Title = title
 	nl.Styles.Title = nl.Styles.Title.Background(tui.DrPurple)
+
 	return nl
 }
 
@@ -111,6 +115,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if url == "" {
 		url = "Template without git repository"
 	}
+
 	title := fmt.Sprintf("%-30s  %s", li.Name, url)
 	sb.WriteString(boldStyle.Render(title))
 	sb.WriteString("\n")
@@ -119,6 +124,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if index == m.Index() {
 		style = selectedItemStyle
 	}
+
 	if li.Repository.URL == "" {
 		style = style.UnsetForeground()
 	}
