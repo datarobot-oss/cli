@@ -97,35 +97,3 @@ var Cmd = &cobra.Command{
 		}
 	},
 }
-
-// func RunTea(args []string) error {
-func RunTea() error {
-	//templateId, dir, err := validateArgs(args)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//template, err := drapi.GetTemplate(templateId)
-	//repoUrl := template.Repository.URL
-	//
-	//m := NewModel(repoUrl, dir)
-	////p := tea.NewProgram(m, tea.WithAltScreen())
-	//p := tea.NewProgram(m)
-	//
-	//_, err = p.Run()
-	//return err
-	return nil
-}
-
-var TeaCmd = &cobra.Command{
-	Use:   "clone_tea",
-	Short: "Clone application template",
-	Long:  `Clone application template into user provided directory.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := RunTea()
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	},
-}

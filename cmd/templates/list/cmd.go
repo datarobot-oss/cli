@@ -41,26 +41,3 @@ var Cmd = &cobra.Command{
 		}
 	},
 }
-
-func RunTea() error {
-	//templateList, _ := drapi.GetTemplates()
-	//m := NewModel(templateList.Templates)
-	//p := tea.NewProgram(m, tea.WithAltScreen())
-	//
-	//_, err := p.Run()
-	//return err
-	return nil
-}
-
-var TeaCmd = &cobra.Command{
-	Use:   "list_tea",
-	Short: "List all available templates",
-	Long:  `List all available templates in the DataRobot application.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := RunTea()
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	},
-}
