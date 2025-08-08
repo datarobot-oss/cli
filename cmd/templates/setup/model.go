@@ -9,7 +9,6 @@
 package setup
 
 import (
-	"log"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,12 +35,8 @@ type Model struct {
 	clone  clone.Model
 }
 
-type successMsg string
-
-func successCmd(apiKey string) tea.Cmd {
-	return func() tea.Msg {
-		return successMsg(apiKey)
-	}
+type authSuccessMsg struct {
+	key string
 }
 
 type getTemplatesMsg struct{}
@@ -55,7 +50,7 @@ func NewModel() Model {
 		screen: welcomeScreen,
 		login: LoginModel{
 			apiKeyChan: make(chan string, 1),
-			successCmd: successCmd,
+			successMsg: authSuccessMsg{},
 		},
 	}
 }
@@ -86,21 +81,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list = list.NewModel(templateList.Templates)
 		m.screen = listScreen
 		return m, m.list.Init()
-	case successMsg:
-		log.Printf("successMsg\n")
+	case authSuccessMsg:
 		m.screen = listScreen
-		return m, nil
+		return m, getTemplates
 	}
 
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	m.login, cmd = m.login.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	switch m.screen {
-	case loginScreen:
-		m.login, cmd = m.login.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+	// case loginScreen:
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
 		if cmd != nil {

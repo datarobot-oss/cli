@@ -11,18 +11,17 @@ package setup
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/spf13/viper"
 )
 
-func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd func(string) tea.Cmd) tea.Cmd {
+func waitForAPIKey(apiKeyChan chan string, server *http.Server, successMsg tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-apiKeyChan
@@ -36,7 +35,7 @@ func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd func(
 		viper.Set(auth.DataRobotAPIKey, apiKey)
 		auth.WriteConfigFileSilent()
 
-		return successCmd(apiKey)
+		return successMsg
 	}
 }
 
@@ -45,7 +44,7 @@ type LoginModel struct {
 	apiKeyChan   chan string
 	apiKey       string
 	err          error
-	successCmd   func(string) tea.Cmd
+	successMsg   tea.Msg
 }
 
 // type responseMsg string
@@ -85,8 +84,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		go func() {
 			err := server.Serve(listen)
 			if err != http.ErrServerClosed {
-				// log.Errorf("Server error: %v\n", err)
-				log.Printf("Server error: %v\n", err)
+				log.Errorf("Server error: %v\n", err)
 			}
 		}()
 
@@ -119,7 +117,7 @@ func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case startedMsg:
 		lm.loginMessage = msg.message
-		return lm, waitForAPIKey(lm.apiKeyChan, msg.server, lm.successCmd)
+		return lm, waitForAPIKey(lm.apiKeyChan, msg.server, lm.successMsg)
 
 	case errMsg:
 		lm.err = msg
