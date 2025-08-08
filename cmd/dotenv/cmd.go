@@ -15,11 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{

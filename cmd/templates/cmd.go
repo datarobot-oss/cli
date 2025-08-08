@@ -9,6 +9,9 @@
 package templates
 
 import (
+	"github.com/datarobot/cli/cmd/templates/clone"
+	"github.com/datarobot/cli/cmd/templates/list"
+	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -21,8 +24,11 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.AddCommand(
-		listTemplatesCmd,
+		clone.Cmd,
+		clone.TeaCmd,
+		list.Cmd,
+		list.TeaCmd,
+		setup.Cmd,
 		statusCmd,
-		setupCmd,
 	)
 }
