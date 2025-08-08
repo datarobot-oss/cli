@@ -11,7 +11,6 @@ package list
 import (
 	"fmt"
 
-	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"

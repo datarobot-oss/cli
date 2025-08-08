@@ -11,6 +11,7 @@ package list
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,10 +39,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			t, ok := m.list.SelectedItem().(drapi.Template)
-			if ok {
-				return m, m.successCmd(t)
+			if t, ok := m.list.SelectedItem().(drapi.Template); ok {
+				if t.Repository.URL != "" {
+					return m, m.successCmd(t)
+				}
 			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -74,13 +77,14 @@ func NewModel(templates []drapi.Template, successCmd func(drapi.Template) tea.Cm
 }
 
 var (
+	boldStyle     = lipgloss.NewStyle().Bold(true)
 	baseStyle     = lipgloss.NewStyle().Height(6).Margin(1, 0)
 	selectedStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			Foreground(tui.DrPurple).BorderForeground(tui.DrPurple)
 
 	itemStyle         = baseStyle.PaddingLeft(2)
-	selectedItemStyle = baseStyle.PaddingLeft(1).Inherit(selectedStyle)
+	selectedItemStyle = baseStyle.PaddingLeft(1).MarginRight(1).Inherit(selectedStyle)
 )
 
 type itemDelegate struct{}
@@ -101,12 +105,25 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	str := fmt.Sprintf("%s\n%s", li.Name, li.Description)
+	var sb strings.Builder
+
+	url := li.Repository.URL
+	if url == "" {
+		url = "Template without git repository"
+	}
+	title := fmt.Sprintf("%-30s  %s", li.Name, url)
+	sb.WriteString(boldStyle.Render(title))
+	sb.WriteString("\n")
 
 	style := itemStyle
 	if index == m.Index() {
 		style = selectedItemStyle
 	}
+	if li.Repository.URL == "" {
+		style = style.UnsetForeground()
+	}
 
-	fmt.Fprint(w, style.Width(m.Width()).Render(str))
+	sb.WriteString(li.Description)
+
+	fmt.Fprint(w, style.Width(m.Width()-style.GetHorizontalFrameSize()).Render(sb.String()))
 }
