@@ -10,6 +10,7 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,41 +22,19 @@ import (
 	"github.com/spf13/viper"
 )
 
-func waitForAPIKey(apiKeyChan chan string, server *http.Server, successMsg tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		// Wait for the key from the handler
-		apiKey := <-apiKeyChan
-
-		// fmt.Println("Successfully consumed API Key from API Request")
-		// Now shut down the server after key is received
-		if err := server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("error during shutdown: %v", err)}
-		}
-
-		viper.Set(auth.DataRobotAPIKey, apiKey)
-		auth.WriteConfigFileSilent()
-
-		return successMsg
-	}
-}
-
 type LoginModel struct {
 	loginMessage string
 	apiKeyChan   chan string
-	apiKey       string
 	err          error
 	successMsg   tea.Msg
 }
 
-// type responseMsg string
+type errMsg struct{ error } //nolint: errname
+
 type startedMsg struct {
 	server  *http.Server
 	message string
 }
-
-type errMsg struct{ error } //nolint: errname
-
-func (e errMsg) Error() string { return e.error.Error() }
 
 func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 	return func() tea.Msg {
@@ -70,6 +49,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.URL.Query().Get("key")
 
+			// Response to browser
 			fmt.Fprint(w, "Successfully processed API key, you may close this window.")
 
 			apiKeyChan <- apiKey // send the key to the main goroutine
@@ -83,7 +63,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		// Start the server in a goroutine
 		go func() {
 			err := server.Serve(listen)
-			if err != http.ErrServerClosed {
+			if !errors.Is(err, http.ErrServerClosed) {
 				log.Errorf("Server error: %v\n", err)
 			}
 		}()
@@ -99,6 +79,22 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 			server:  server,
 			message: msg.String(),
 		}
+	}
+}
+
+func waitForAPIKey(apiKeyChan chan string, server *http.Server, successMsg tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		// Wait for the key from the handler
+		apiKey := <-apiKeyChan
+		viper.Set(auth.DataRobotAPIKey, apiKey)
+		auth.WriteConfigFileSilent()
+
+		// Now shut down the server after key is received
+		if err := server.Shutdown(context.Background()); err != nil {
+			return errMsg{fmt.Errorf("error during shutdown: %v", err)}
+		}
+
+		return successMsg
 	}
 }
 
@@ -131,16 +127,11 @@ func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 func (lm LoginModel) View() string {
 	var sb strings.Builder
 
-	if lm.apiKey != "" {
-		sb.WriteString("api key: " + lm.apiKey)
-		sb.WriteString("\n\n")
-	} else if lm.loginMessage != "" {
+	if lm.loginMessage != "" {
 		sb.WriteString(lm.loginMessage)
 	} else if lm.err != nil {
 		sb.WriteString(fmt.Sprintf("something went wrong: %s", lm.err))
 		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString("else\n\n")
 	}
 
 	return sb.String()
