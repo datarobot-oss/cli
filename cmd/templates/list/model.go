@@ -35,9 +35,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-
 		case "enter":
 			if t, ok := m.list.SelectedItem().(drapi.Template); ok {
 				if t.Repository.URL != "" {
