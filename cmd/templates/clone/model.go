@@ -18,11 +18,13 @@ import (
 )
 
 type Model struct {
-	template drapi.Template
-	input    textinput.Model
-	cloning  bool
-	finished bool
-	out      string
+	template   drapi.Template
+	input      textinput.Model
+	cloning    bool
+	finished   bool
+	out        string
+	Dir        string
+	SuccessCmd tea.Cmd
 }
 
 type focusInputMsg struct{}
@@ -60,8 +62,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.out = out
 		m.cloning = false
 		m.finished = true
+		m.Dir = m.input.Value()
 
-		return m, tea.Batch(tea.ExitAltScreen, tea.Quit)
+		return m, m.SuccessCmd
 	}
 
 	var cmd tea.Cmd
@@ -86,13 +89,9 @@ func (m Model) View() string {
 	return sb.String()
 }
 
-func NewModel(template drapi.Template) Model {
-	input := textinput.New()
-	input.SetValue(template.DefaultDir())
-	input.Focus()
-
-	return Model{
-		template: template,
-		input:    input,
-	}
+func (m *Model) SetTemplate(template drapi.Template) {
+	m.input = textinput.New()
+	m.input.SetValue(template.DefaultDir())
+	m.input.Focus()
+	m.template = template
 }

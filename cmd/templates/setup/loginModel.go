@@ -24,9 +24,9 @@ import (
 
 type LoginModel struct {
 	loginMessage string
-	apiKeyChan   chan string
+	APIKeyChan   chan string
 	err          error
-	successMsg   tea.Msg
+	SuccessCmd   tea.Cmd
 }
 
 type errMsg struct{ error } //nolint: errname
@@ -82,7 +82,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 	}
 }
 
-func waitForAPIKey(apiKeyChan chan string, server *http.Server, successMsg tea.Msg) tea.Cmd {
+func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-apiKeyChan
@@ -94,7 +94,7 @@ func waitForAPIKey(apiKeyChan chan string, server *http.Server, successMsg tea.M
 			return errMsg{fmt.Errorf("error during shutdown: %v", err)}
 		}
 
-		return successMsg
+		return successCmd()
 	}
 }
 
@@ -106,14 +106,14 @@ func (lm LoginModel) Init() tea.Cmd {
 		}
 	}
 
-	return startServer(lm.apiKeyChan, datarobotHost)
+	return startServer(lm.APIKeyChan, datarobotHost)
 }
 
 func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case startedMsg:
 		lm.loginMessage = msg.message
-		return lm, waitForAPIKey(lm.apiKeyChan, msg.server, lm.successMsg)
+		return lm, waitForAPIKey(lm.APIKeyChan, msg.server, lm.SuccessCmd)
 
 	case errMsg:
 		lm.err = msg

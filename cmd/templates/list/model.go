@@ -24,7 +24,8 @@ var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 type Model struct {
 	list       list.Model
-	successCmd func(drapi.Template) tea.Cmd
+	Template   drapi.Template
+	SuccessCmd tea.Cmd
 }
 
 func (m Model) Init() tea.Cmd {
@@ -38,7 +39,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "enter":
 			if t, ok := m.list.SelectedItem().(drapi.Template); ok {
 				if t.Repository.URL != "" {
-					return m, m.successCmd(t)
+					m.Template = t
+					return m, m.SuccessCmd
 				}
 			}
 
@@ -64,16 +66,13 @@ func (m Model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-func NewModel(templates []drapi.Template, successCmd func(drapi.Template) tea.Cmd) Model {
+func (m *Model) SetTemplates(templates []drapi.Template) {
 	items := make([]list.Item, len(templates))
 	for i, t := range templates {
 		items[i] = t
 	}
 
-	return Model{
-		list:       NewList("Application Templates", items),
-		successCmd: successCmd,
-	}
+	m.list = NewList("Application Templates", items)
 }
 
 var (

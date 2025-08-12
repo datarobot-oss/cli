@@ -9,9 +9,11 @@
 package setup
 
 import (
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/internal/drapi"
@@ -26,37 +28,50 @@ const (
 	loginScreen
 	listScreen
 	cloneScreen
+	dotenvScreen
 )
 
 type Model struct {
 	screen   screens
+	template drapi.Template
 	login    LoginModel
 	list     list.Model
-	template drapi.Template
 	clone    clone.Model
+	dotenv   dotenv.Model
 }
 
-type authSuccessMsg struct{}
+type (
+	authSuccessMsg      struct{}
+	templateSelectedMsg struct{}
+	getTemplatesMsg     struct{}
+	templateClonedMsg   struct{}
+	dotenvUpdatedMsg    struct{}
+)
 
-type templateSelectedMsg struct {
-	template drapi.Template
-}
-
-type getTemplatesMsg struct{}
-
-func getTemplates() tea.Msg {
-	return getTemplatesMsg{}
-}
+func authSuccess() tea.Msg      { return authSuccessMsg{} }
+func getTemplates() tea.Msg     { return getTemplatesMsg{} }
+func templateSelected() tea.Msg { return templateSelectedMsg{} }
+func templateCloned() tea.Msg   { return templateClonedMsg{} }
+func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 
 func NewModel() Model {
 	return Model{
-		screen: welcomeScreen,
+		screen:   welcomeScreen,
+		template: drapi.Template{},
+
 		login: LoginModel{
-			apiKeyChan: make(chan string, 1),
-			successMsg: authSuccessMsg{},
+			APIKeyChan: make(chan string, 1),
+			SuccessCmd: authSuccess,
 		},
-		list:  list.Model{},
-		clone: clone.Model{},
+		list: list.Model{
+			SuccessCmd: templateSelected,
+		},
+		clone: clone.Model{
+			SuccessCmd: templateCloned,
+		},
+		dotenv: dotenv.Model{
+			SuccessCmd: dotenvUpdated,
+		},
 	}
 }
 
@@ -68,14 +83,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
-		case "q", "ctrl+c":
+		case "ctrl+c":
 			return m, tea.Quit
+		case "q":
+			if m.screen != cloneScreen {
+				return m, tea.Quit
+			}
 		}
 	case getTemplatesMsg:
 		templateList, err := drapi.GetTemplates()
 		if err != nil {
 			m.screen = loginScreen
-			if m.login.apiKeyChan != nil {
+			if m.login.APIKeyChan != nil {
 				cmd := m.login.Init()
 				return m, cmd
 			}
@@ -83,12 +102,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, nil
 		}
 
-		successMsg := func(t drapi.Template) tea.Cmd {
-			return func() tea.Msg {
-				return templateSelectedMsg{t}
-			}
-		}
-		m.list = list.NewModel(templateList.Templates, successMsg)
+		m.list.SetTemplates(templateList.Templates)
 		m.screen = listScreen
 
 		return m, m.list.Init()
@@ -96,11 +110,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = listScreen
 		return m, getTemplates
 	case templateSelectedMsg:
-		m.template = msg.template
-		m.clone = clone.NewModel(m.template)
+		m.template = m.list.Template
+		m.clone.SetTemplate(m.template)
 		m.screen = cloneScreen
 
 		return m, m.clone.Init()
+	case templateClonedMsg:
+		m.screen = dotenvScreen
+		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
+
+		return m, m.dotenv.Init()
 	}
 
 	var cmd tea.Cmd
@@ -123,6 +142,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 	case cloneScreen:
 		m.clone, cmd = m.clone.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dotenvScreen:
+		m.dotenv, cmd = m.dotenv.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -151,11 +175,16 @@ func (m Model) View() string {
 		// Render footer with quit instructions
 		sb.WriteString(tui.Footer())
 	case loginScreen:
+		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString("\n\n")
+
 		sb.WriteString(m.login.View())
 	case listScreen:
 		sb.WriteString(m.list.View())
 	case cloneScreen:
 		sb.WriteString(m.clone.View())
+	case dotenvScreen:
+		sb.WriteString(m.dotenv.View())
 	}
 
 	return sb.String()
