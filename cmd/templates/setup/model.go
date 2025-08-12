@@ -9,6 +9,7 @@
 package setup
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -29,15 +30,18 @@ const (
 	listScreen
 	cloneScreen
 	dotenvScreen
+	exitScreen
 )
 
 type Model struct {
-	screen   screens
-	template drapi.Template
-	login    LoginModel
-	list     list.Model
-	clone    clone.Model
-	dotenv   dotenv.Model
+	screen      screens
+	template    drapi.Template
+	exitMessage string
+
+	login  LoginModel
+	list   list.Model
+	clone  clone.Model
+	dotenv dotenv.Model
 }
 
 type (
@@ -46,6 +50,7 @@ type (
 	getTemplatesMsg     struct{}
 	templateClonedMsg   struct{}
 	dotenvUpdatedMsg    struct{}
+	exitMsg             struct{}
 )
 
 func authSuccess() tea.Msg      { return authSuccessMsg{} }
@@ -53,6 +58,7 @@ func getTemplates() tea.Msg     { return getTemplatesMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
+func exit() tea.Msg             { return exitMsg{} }
 
 func NewModel() Model {
 	return Model{
@@ -121,26 +127,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, m.dotenv.Init()
 	case dotenvUpdatedMsg:
-		return m, tea.Sequence(
-			tea.ExitAltScreen,
-			tea.Printf("Template %s cloned and initialized in %s directory.", m.template.Name, m.clone.Dir),
-			tea.Quit,
+		m.screen = exitScreen
+		m.exitMessage = fmt.Sprintf("Template '%s' cloned and initialized in '%s' directory.\n\n",
+			m.template.Name, m.clone.Dir,
 		)
+
+		return m, tea.Sequence(tea.ExitAltScreen, exit)
+	case exitMsg:
+		return m, tea.Quit
 	}
 
 	var cmd tea.Cmd
 
 	var cmds []tea.Cmd
 
-	m.login, cmd = m.login.Update(msg)
-
-	if cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-
 	switch m.screen {
 	case welcomeScreen:
 	case loginScreen:
+		m.login, cmd = m.login.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
 		if cmd != nil {
@@ -158,7 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, tea.Sequence(cmds...)
 }
 
 func (m Model) View() string {
@@ -191,6 +198,8 @@ func (m Model) View() string {
 		sb.WriteString(m.clone.View())
 	case dotenvScreen:
 		sb.WriteString(m.dotenv.View())
+	case exitScreen:
+		sb.WriteString(m.exitMessage)
 	}
 
 	return sb.String()
