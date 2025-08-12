@@ -50,8 +50,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, startCloning
 		}
 	case focusInputMsg:
-		m.input.Focus()
-		return m, nil
+		focusCmd := m.input.Focus()
+		return m, focusCmd
 	case startCloningMsg:
 		out, err := gitClone(m.template.Repository.URL, m.input.Value())
 		if err != nil {
@@ -92,6 +92,5 @@ func (m Model) View() string {
 func (m *Model) SetTemplate(template drapi.Template) {
 	m.input = textinput.New()
 	m.input.SetValue(template.DefaultDir())
-	m.input.Focus()
 	m.template = template
 }
