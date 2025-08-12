@@ -22,30 +22,37 @@ type variable struct {
 }
 
 type Model struct {
-	DotenvFile string
-	variables  []variable
-	err        error
-	SuccessCmd tea.Cmd
+	DotenvFile     string
+	DotenvTemplate string
+	variables      []variable
+	err            error
+	SuccessCmd     tea.Cmd
 }
 
 type errMsg struct{ error } //nolint: errname
 
 type (
 	// getVariablesMsg struct{}
-	startedMsg struct{ variables []variable }
+	dotenvFileUpdatedMsg struct{ variables []variable }
 )
 
 func (m Model) Init() tea.Cmd {
 	return func() tea.Msg {
-		variables := []variable{
-			{
-				name:   "foo",
-				value:  "bar",
-				secret: false,
-			},
+		var templateLines []string
+		templateLines, m.DotenvTemplate = readTemplate(m.DotenvFile)
+
+		f, err := backupAndCreate(m.DotenvFile)
+		if err != nil {
+			return errMsg{err}
+		}
+		defer f.Close()
+
+		variables, err := writeFromTemplate(f, templateLines)
+		if err != nil {
+			return errMsg{err}
 		}
 
-		return startedMsg{variables}
+		return dotenvFileUpdatedMsg{variables}
 	}
 }
 
@@ -56,10 +63,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "enter":
 			return m, m.SuccessCmd
 		}
-	case startedMsg:
+	case dotenvFileUpdatedMsg:
 		m.variables = msg.variables
 		return m, nil
-
 	case errMsg:
 		m.err = msg
 		return m, nil

@@ -120,6 +120,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
 
 		return m, m.dotenv.Init()
+	case dotenvUpdatedMsg:
+		return m, tea.Sequence(
+			tea.ExitAltScreen,
+			tea.Printf("Template %s cloned and initialized in %s directory.", m.template.Name, m.clone.Dir),
+			tea.Quit,
+		)
 	}
 
 	var cmd tea.Cmd
