@@ -163,6 +163,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case exitScreen:
 	}
 
 	return m, tea.Sequence(cmds...)
