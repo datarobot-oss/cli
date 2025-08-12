@@ -77,7 +77,7 @@ func (m *Model) SetTemplates(templates []drapi.Template) {
 
 var (
 	boldStyle     = lipgloss.NewStyle().Bold(true)
-	baseStyle     = lipgloss.NewStyle().Height(6).Margin(1, 0)
+	baseStyle     = lipgloss.NewStyle()
 	selectedStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			Foreground(tui.DrPurple).BorderForeground(tui.DrPurple)
@@ -96,8 +96,9 @@ func NewList(title string, items []list.Item) list.Model {
 	return nl
 }
 
-func (d itemDelegate) Height() int                             { return 8 }
-func (d itemDelegate) Spacing() int                            { return 0 }
+func (d itemDelegate) Height() int  { return 6 }
+func (d itemDelegate) Spacing() int { return 1 }
+
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	li, ok := listItem.(drapi.Template)

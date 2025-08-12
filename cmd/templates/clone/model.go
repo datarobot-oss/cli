@@ -27,16 +27,16 @@ type Model struct {
 	SuccessCmd tea.Cmd
 }
 
-type focusInputMsg struct{}
+type (
+	focusInputMsg   struct{}
+	startCloningMsg struct{}
+)
 
-type startCloningMsg struct{}
-
-func startCloning() tea.Msg {
-	return startCloningMsg{}
-}
+func startCloning() tea.Msg { return startCloningMsg{} }
+func focusInput() tea.Msg   { return focusInputMsg{} }
 
 func (m Model) Init() tea.Cmd {
-	return func() tea.Msg { return focusInputMsg{} }
+	return focusInput
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
