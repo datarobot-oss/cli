@@ -166,7 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	case exitScreen:
 	}
 
-	return m, tea.Sequence(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
