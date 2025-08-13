@@ -52,7 +52,7 @@ func saveURLToConfig(newURL string) error {
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
-		viper.Set("", DataRobotAPIKey)
+		viper.Set(DataRobotAPIKey, "")
 	}
 
 	baseURL, err := loadBaseURLFromURL(newURL)
@@ -66,6 +66,8 @@ func saveURLToConfig(newURL string) error {
 	}
 
 	viper.Set(DataRobotURL, datarobotHost)
+
+	_ = viper.WriteConfig()
 
 	return nil
 }
@@ -97,14 +99,10 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 			return "", err
 		}
 
-		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
-			viper.Set(DataRobotURL, "")
-			return "", nil
+		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) != "y" {
+			fmt.Println("Exiting without overwriting the DataRobot URL.")
+			return urlContent, nil
 		}
-
-		fmt.Println("Exiting without overwriting the DataRobot URL.")
-
-		return urlContent, nil
 	}
 
 	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")

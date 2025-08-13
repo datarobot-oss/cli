@@ -6,13 +6,17 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package templates
+package setup
 
 import (
+	"fmt"
+	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
-var setupCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Setup template configuration (interactive mode)",
 	Long: `Setup and configure the current template with an interactive setup wizard.
@@ -23,6 +27,24 @@ This interactive command:
 This command launches an interactive terminal interface to guide you through
 the template configuration process step by step.`,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		return StartTemplateSetup()
+		return RunTea()
 	},
+}
+
+// RunTea starts the template setup TUI
+func RunTea() error {
+	if len(os.Getenv("DEBUG")) > 0 {
+		f, err := tea.LogToFile("debug.log", "debug")
+		if err != nil {
+			fmt.Println("fatal:", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+	}
+
+	m := NewModel()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := p.Run()
+
+	return err
 }

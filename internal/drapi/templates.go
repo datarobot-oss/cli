@@ -6,17 +6,17 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package templates
+package drapi
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
-	"github.com/spf13/cobra"
 )
 
 type Template struct {
@@ -25,6 +25,42 @@ type Template struct {
 	Description string `json:"description"`
 	IsGlobal    bool   `json:"isGlobal"`
 	IsPremium   bool   `json:"isPremium"`
+
+	Readme     string     `json:"readme"`
+	Tags       []string   `json:"tags"`
+	Repository Repository `json:"repository"`
+	MediaURL   string     `json:"mediaURL"`
+
+	// CreatedBy        string `json:"createdBy"`
+	// CreatorFirstName string `json:"creatorFirstName"`
+	// CreatorLastName  string `json:"creatorLastName"`
+	// CreatorUserhash  string `json:"creatorUserhash"`
+	// CreatedAt        string `json:"createdAt"`
+	// EditedBy         string `json:"editedBy"`
+	// EditorFirstName  string `json:"editorFirstName"`
+	// EditorLastName   string `json:"editorLastName"`
+	// EditorUserhash   string `json:"editorUserhash"`
+	// EditedAt         string `json:"editedAt"`
+}
+
+func (t Template) FilterValue() string {
+	// return fmt.Sprintf("%s\n%s", t.Name, t.Description)
+	return t.Name
+}
+
+func (t Template) DefaultDir() string {
+	split := strings.Split(t.Repository.URL, "/")
+	if len(split) > 0 {
+		return split[len(split)-1]
+	}
+
+	return ""
+}
+
+type Repository struct {
+	URL      string `json:"url"`
+	Tag      string `json:"tag"`
+	IsPublic bool   `json:"isPublic"`
 }
 
 type TemplateList struct {
@@ -35,10 +71,10 @@ type TemplateList struct {
 	Previous   string     `json:"previous"`
 }
 
-func ListTemplates() error {
+func GetTemplates() (*TemplateList, error) {
 	key, err := auth.GetAPIKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	bearer := "Bearer " + key
@@ -47,7 +83,7 @@ func ListTemplates() error {
 	// datarobotHost := "https://app.datarobot.com/api/v2"
 	datarobotHost, err := auth.GetURL(false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
@@ -55,7 +91,7 @@ func ListTemplates() error {
 
 	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req.Header.Add("Authorization", bearer)
@@ -64,37 +100,35 @@ func ListTemplates() error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("Response status code is " + resp.Status)
+		return nil, errors.New("Response status code is " + resp.Status)
 	}
 
 	var templateList TemplateList
 
 	err = json.NewDecoder(resp.Body).Decode(&templateList)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	for _, template := range templateList.Templates {
-		fmt.Printf("ID: %s\tName: %s\n", template.ID, template.Name)
-	}
-
-	return nil
+	return &templateList, nil
 }
 
-var listTemplatesCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all available templates",
-	Long:  `List all available templates in the DataRobot application.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := ListTemplates()
-		if err != nil {
-			log.Fatal(err)
-			return
+func GetTemplate(id string) (*Template, error) {
+	templates, err := GetTemplates()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, template := range templates.Templates {
+		if template.ID == id {
+			return &template, nil
 		}
-	},
+	}
+
+	return nil, fmt.Errorf("template with id %s not found", id)
 }
