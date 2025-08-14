@@ -48,10 +48,6 @@ type (
 
 func focusInput() tea.Msg { return focusInputMsg{} }
 
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(focusInput, m.validateDir())
-}
-
 func dirExists(dir string) bool {
 	_, err := os.Stat(dir)
 	return !os.IsNotExist(err)
@@ -104,6 +100,10 @@ func (m Model) validateDir() tea.Cmd {
 	}
 }
 
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(focusInput, m.validateDir())
+}
+
 const debounceDuration = 350 * time.Millisecond
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
@@ -124,9 +124,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		if m.debounceID == msg.id {
 			return m, m.validateDir()
 		}
+
+		return m, nil
 	case validMsg:
 		m.exists = ""
-
 		return m, focusInput
 	case dirStatusMsg:
 		m.cloning = false
