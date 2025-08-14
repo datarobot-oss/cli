@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -76,6 +78,42 @@ func validateArgs(args []string) (string, string, error) {
 
 func gitClone(repoURL, dir string) (string, error) {
 	cmd := exec.Command("git", "clone", repoURL, dir)
+
+	stdout, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return string(stdout), nil
+}
+
+func gitOrigin(dir string) string {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+
+	path, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	cmd.Dir = filepath.Join(path, dir)
+
+	stdout, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(stdout))
+}
+
+func gitPull(dir string) (string, error) {
+	cmd := exec.Command("git", "pull")
+
+	path, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	cmd.Dir = filepath.Join(path, dir)
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {

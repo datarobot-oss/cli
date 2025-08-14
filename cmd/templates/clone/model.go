@@ -10,7 +10,9 @@ package clone
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,7 +22,11 @@ import (
 type Model struct {
 	template   drapi.Template
 	input      textinput.Model
+	debounceID int
 	cloning    bool
+	exists     string
+	repoURL    string
+	cloneError bool
 	finished   bool
 	out        string
 	Dir        string
@@ -28,47 +34,138 @@ type Model struct {
 }
 
 type (
-	focusInputMsg   struct{}
-	startCloningMsg struct{}
+	focusInputMsg    struct{}
+	validateInputMsg struct{ id int }
+	validMsg         struct{}
+	dirStatusMsg     struct {
+		dir     string
+		exists  bool
+		repoURL string
+	}
+	cloneSuccessMsg struct{ out string }
+	cloneErrorMsg   struct{ out string }
 )
 
-func startCloning() tea.Msg { return startCloningMsg{} }
-func focusInput() tea.Msg   { return focusInputMsg{} }
+func focusInput() tea.Msg { return focusInputMsg{} }
 
 func (m Model) Init() tea.Cmd {
-	return focusInput
+	return tea.Batch(focusInput, m.validateDir())
 }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+func dirExists(dir string) bool {
+	_, err := os.Stat(dir)
+	return !os.IsNotExist(err)
+}
+
+func dirStatus(dir string) dirStatusMsg {
+	if dirExists(dir) {
+		return dirStatusMsg{dir, true, gitOrigin(dir)}
+	}
+
+	return dirStatusMsg{dir, false, ""}
+}
+
+func (m Model) pullRepository() tea.Cmd {
+	return func() tea.Msg {
+		dir := m.input.Value()
+		status := dirStatus(dir) // Dir should be independently validated here
+
+		if !status.exists {
+			out, err := gitClone(m.template.Repository.URL, dir)
+			if err != nil {
+				return cloneErrorMsg{out: err.Error()}
+			}
+
+			return cloneSuccessMsg{out}
+		}
+
+		if status.repoURL == m.template.Repository.URL {
+			out, err := gitPull(dir)
+			if err != nil {
+				return cloneErrorMsg{out: err.Error()}
+			}
+
+			return cloneSuccessMsg{out}
+		}
+
+		return nil
+	}
+}
+
+func (m Model) validateDir() tea.Cmd {
+	return func() tea.Msg {
+		dir := m.input.Value()
+
+		if status := dirStatus(dir); status.exists {
+			return status
+		}
+
+		return validMsg{}
+	}
+}
+
+const debounceDuration = 350 * time.Millisecond
+
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "enter":
 			m.input.Blur()
 			m.cloning = true
+			m.Dir = m.input.Value()
 
-			return m, startCloning
+			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		}
 	case focusInputMsg:
 		focusCmd := m.input.Focus()
 		return m, focusCmd
-	case startCloningMsg:
-		out, err := gitClone(m.template.Repository.URL, m.input.Value())
-		if err != nil {
-			m.out = err.Error()
-			return m, tea.Quit
+	case validateInputMsg:
+		if m.debounceID == msg.id {
+			return m, m.validateDir()
+		}
+	case validMsg:
+		m.exists = ""
+
+		return m, focusInput
+	case dirStatusMsg:
+		m.cloning = false
+		m.repoURL = msg.repoURL
+
+		if msg.exists {
+			m.exists = msg.dir
+		} else {
+			m.exists = ""
 		}
 
-		m.out = out
+		return m, focusInput
+	case cloneSuccessMsg:
+		m.out = msg.out
 		m.cloning = false
 		m.finished = true
-		m.Dir = m.input.Value()
 
 		return m, m.SuccessCmd
+	case cloneErrorMsg:
+		m.out = msg.out
+		m.cloning = false
+		m.cloneError = true
+
+		return m, focusInput
 	}
+
+	prevValue := m.input.Value()
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+
+	if prevValue != m.input.Value() {
+		m.debounceID++
+		tick := tea.Tick(debounceDuration, func(_ time.Time) tea.Msg {
+			return validateInputMsg{m.debounceID}
+		})
+
+		return m, tea.Batch(tick, cmd)
+	}
 
 	return m, cmd
 }
@@ -80,10 +177,28 @@ func (m Model) View() string {
 
 	if m.cloning {
 		sb.WriteString("Cloning into " + m.input.Value() + "...")
+		return sb.String()
 	} else if m.finished {
 		sb.WriteString(m.out + "\nFinished cloning into " + m.input.Value() + ".\n")
+		return sb.String()
+	}
+
+	sb.WriteString("Enter destination directory\n")
+	sb.WriteString(m.input.View())
+	sb.WriteString("\n")
+
+	if m.exists != "" {
+		if m.repoURL == m.template.Repository.URL {
+			sb.WriteString("\nDirectory '" + m.exists + "' will be pulled from origin\n")
+		} else {
+			sb.WriteString("\nDirectory '" + m.exists + "' contains different repository: '" + m.repoURL + "'\n")
+		}
+	}
+
+	if m.cloneError {
+		sb.WriteString("\nError while cloning:\n" + m.out + "\n")
 	} else {
-		sb.WriteString("Enter destination directory\n" + m.input.View())
+		sb.WriteString(m.out + "\n")
 	}
 
 	return sb.String()
