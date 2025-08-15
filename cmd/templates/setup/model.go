@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
@@ -26,6 +28,7 @@ type screens int
 
 const (
 	welcomeScreen = screens(iota)
+	hostScreen
 	loginScreen
 	listScreen
 	cloneScreen
@@ -38,6 +41,7 @@ type Model struct {
 	template    drapi.Template
 	exitMessage string
 
+	host   textinput.Model
 	login  LoginModel
 	list   list.Model
 	clone  clone.Model
@@ -45,8 +49,9 @@ type Model struct {
 }
 
 type (
-	authStartMsg        struct{}
-	authSuccessMsg      struct{}
+	authHostStartMsg    struct{}
+	authKeyStartMsg     struct{}
+	authKeySuccessMsg   struct{}
 	templateSelectedMsg struct{}
 	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
 	templateClonedMsg   struct{}
@@ -54,7 +59,8 @@ type (
 	exitMsg             struct{}
 )
 
-func authSuccess() tea.Msg      { return authSuccessMsg{} }
+func authHostStart() tea.Msg    { return authHostStartMsg{} }
+func authSuccess() tea.Msg      { return authKeySuccessMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
@@ -62,12 +68,25 @@ func exit() tea.Msg             { return exitMsg{} }
 
 func (m Model) getTemplates() tea.Cmd {
 	return func() tea.Msg {
+		datarobotHost, _ := auth.GetBaseURL()
+		if datarobotHost == "" {
+			return authHostStartMsg{}
+		}
+
 		templatesList, err := drapi.GetTemplates()
 		if err != nil {
-			return authStartMsg{}
+			return authKeyStartMsg{}
 		}
 
 		return templatesLoadedMsg{templatesList}
+	}
+}
+
+func (m Model) setHost() tea.Cmd {
+	return func() tea.Msg {
+		_ = auth.SaveURLToConfig(m.host.Value())
+
+		return authKeyStartMsg{}
 	}
 }
 
@@ -76,8 +95,10 @@ func NewModel() Model {
 		screen:   welcomeScreen,
 		template: drapi.Template{},
 
+		host: textinput.New(),
 		login: LoginModel{
 			APIKeyChan: make(chan string, 1),
+			SetHostCmd: authHostStart,
 			SuccessCmd: authSuccess,
 		},
 		list: list.Model{
@@ -107,11 +128,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
-	case authStartMsg:
+	case authHostStartMsg:
+		m.screen = hostScreen
+		focusCmd := m.host.Focus()
+
+		return m, focusCmd
+	case authKeyStartMsg:
 		m.screen = loginScreen
 		cmd := m.login.Init()
+
 		return m, cmd
-	case authSuccessMsg:
+	case authKeySuccessMsg:
 		m.screen = listScreen
 		return m, m.getTemplates()
 	case templatesLoadedMsg:
@@ -120,9 +147,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, m.list.Init()
 	case templateSelectedMsg:
+		m.screen = cloneScreen
 		m.template = m.list.Template
 		m.clone.SetTemplate(m.template)
-		m.screen = cloneScreen
 
 		return m, m.clone.Init()
 	case templateClonedMsg:
@@ -147,6 +174,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 	switch m.screen {
 	case welcomeScreen:
+	case hostScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "enter":
+				return m, m.setHost()
+			}
+		}
+
+		m.host, cmd = m.host.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case loginScreen:
 		m.login, cmd = m.login.Update(msg)
 		if cmd != nil {
@@ -192,6 +232,16 @@ func (m Model) View() string {
 
 		// Render footer with quit instructions
 		sb.WriteString(tui.Footer())
+	case hostScreen:
+		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString("\n\n")
+		sb.WriteString("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering\n")
+		sb.WriteString("Please enter 1 if you're using https://app.datarobot.com\n")
+		sb.WriteString("Please enter 2 if you're using https://app.eu.datarobot.com\n")
+		sb.WriteString("Please enter 3 if you're using https://app.jp.datarobot.com\n")
+		sb.WriteString("Otherwise, please enter the URL you use\n\n")
+
+		sb.WriteString(m.host.View())
 	case loginScreen:
 		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
 		sb.WriteString("\n\n")

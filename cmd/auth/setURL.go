@@ -43,12 +43,18 @@ func schemeHostOnly(longURL string) (string, error) {
 		return "", err
 	}
 
+	if parsedURL.Host == "" {
+		return "", err
+	}
+
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
 
 	return parsedURL.String(), nil
 }
 
-func saveURLToConfig(newURL string) error {
+func SaveURLToConfig(newURL string) error {
+	newURL = urlFromShortcut(newURL)
+
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
@@ -73,7 +79,29 @@ func saveURLToConfig(newURL string) error {
 	return nil
 }
 
-func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
+func urlFromShortcut(selectedOption string) string {
+	selected := strings.ToLower(strings.TrimSpace(selectedOption))
+
+	switch selected {
+	case "":
+		return ""
+	case "1":
+		return "https://app.datarobot.com"
+	case "2":
+		return "https://app.eu.datarobot.com"
+	case "3":
+		return "https://app.jp.datarobot.com"
+	default:
+		url, err := schemeHostOnly(selected)
+		if err != nil {
+			return ""
+		}
+
+		return url
+	}
+}
+
+func GetURL(promptIfFound bool) (string, error) {
 	// This is the entrypoint for using a URL. The flow is:
 	// * Check if there's a file with the content.  If there's no file, make it.
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
@@ -112,32 +140,12 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
 	fmt.Println("Otherwise, please enter the URL you use")
 
-	selectedOption, err := reader.ReadString('\n')
+	url, err := reader.ReadString('\n')
 	if err != nil {
 		return "", nil
 	}
 
-	selected := strings.ToLower(strings.TrimSpace(selectedOption))
-
-	var url string
-
-	switch selected {
-	case "":
-		url = ""
-	case "1":
-		url = "https://app.datarobot.com"
-	case "2":
-		url = "https://app.eu.datarobot.com"
-	case "3":
-		url = "https://app.jp.datarobot.com"
-	default:
-		url, err = schemeHostOnly(selected)
-		if err != nil {
-			return "", nil
-		}
-	}
-
-	errors := saveURLToConfig(url)
+	errors := SaveURLToConfig(url)
 	if errors != nil {
 		return url, errors
 	}

@@ -26,6 +26,7 @@ type LoginModel struct {
 	loginMessage string
 	APIKeyChan   chan string
 	err          error
+	SetHostCmd   tea.Cmd
 	SuccessCmd   tea.Cmd
 }
 
@@ -101,9 +102,7 @@ func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd tea.C
 func (lm LoginModel) Init() tea.Cmd {
 	datarobotHost, _ := auth.GetBaseURL()
 	if datarobotHost == "" {
-		return func() tea.Msg {
-			return errMsg{errors.New("datarobotHost is not set")}
-		}
+		return lm.SetHostCmd
 	}
 
 	return startServer(lm.APIKeyChan, datarobotHost)
