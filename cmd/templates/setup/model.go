@@ -49,17 +49,17 @@ type Model struct {
 }
 
 type (
-	authHostStartMsg    struct{}
+	getHostMsg          struct{}
 	authKeyStartMsg     struct{}
 	authKeySuccessMsg   struct{}
-	templateSelectedMsg struct{}
 	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
+	templateSelectedMsg struct{}
 	templateClonedMsg   struct{}
 	dotenvUpdatedMsg    struct{}
 	exitMsg             struct{}
 )
 
-func authHostStart() tea.Msg    { return authHostStartMsg{} }
+func getHost() tea.Msg          { return getHostMsg{} }
 func authSuccess() tea.Msg      { return authKeySuccessMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
@@ -70,7 +70,7 @@ func (m Model) getTemplates() tea.Cmd {
 	return func() tea.Msg {
 		datarobotHost, _ := auth.GetBaseURL()
 		if datarobotHost == "" {
-			return authHostStartMsg{}
+			return getHostMsg{}
 		}
 
 		templatesList, err := drapi.GetTemplates()
@@ -98,7 +98,7 @@ func NewModel() Model {
 		host: textinput.New(),
 		login: LoginModel{
 			APIKeyChan: make(chan string, 1),
-			SetHostCmd: authHostStart,
+			GetHostCmd: getHost,
 			SuccessCmd: authSuccess,
 		},
 		list: list.Model{
@@ -128,7 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
-	case authHostStartMsg:
+	case getHostMsg:
 		m.screen = hostScreen
 		focusCmd := m.host.Focus()
 
@@ -197,7 +197,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "esc":
 				m.login.server.Close()
-				return m, authHostStart
+				return m, getHost
 			}
 		}
 
