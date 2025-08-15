@@ -27,7 +27,7 @@ func getBaseURL() (string, error) {
 		return "", nil
 	}
 
-	baseURL, err := loadBaseURLFromURL(urlContent)
+	baseURL, err := schemeHostOnly(urlContent)
 	if err != nil {
 		return "", err
 	}
@@ -35,7 +35,7 @@ func getBaseURL() (string, error) {
 	return baseURL, nil
 }
 
-func loadBaseURLFromURL(longURL string) (string, error) {
+func schemeHostOnly(longURL string) (string, error) {
 	// Takes a URL like: https://app.datarobot.com/api/v2 and just
 	// returns https://app.datarobot.com (no trailing slash)
 	parsedURL, err := url.Parse(longURL)
@@ -43,29 +43,30 @@ func loadBaseURLFromURL(longURL string) (string, error) {
 		return "", err
 	}
 
-	base := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
+	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
 
-	return base, nil
+	return parsedURL.String(), nil
 }
 
 func saveURLToConfig(newURL string) error {
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
+		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
+		_ = viper.WriteConfig()
+
+		return nil
 	}
 
-	baseURL, err := loadBaseURLFromURL(newURL)
+	datarobotURL, err := url.Parse(newURL)
 	if err != nil {
 		return err
 	}
 
-	datarobotHost, err := url.JoinPath(baseURL, "/api/v2")
-	if err != nil {
-		return err
-	}
+	datarobotURL.Path, datarobotURL.RawQuery, datarobotURL.Fragment = "/api/v2", "", ""
 
-	viper.Set(DataRobotURL, datarobotHost)
+	viper.Set(DataRobotURL, datarobotURL.String())
 
 	_ = viper.WriteConfig()
 
@@ -116,17 +117,21 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 		return "", nil
 	}
 
-	selected := strings.ToLower(strings.Replace(selectedOption, "\n", "", -1))
+	selected := strings.ToLower(strings.TrimSpace(selectedOption))
 
 	var url string
-	if selected == "1" {
+
+	switch selected {
+	case "":
+		url = ""
+	case "1":
 		url = "https://app.datarobot.com"
-	} else if selected == "2" {
+	case "2":
 		url = "https://app.eu.datarobot.com"
-	} else if selected == "3" {
+	case "3":
 		url = "https://app.jp.datarobot.com"
-	} else {
-		url, err = loadBaseURLFromURL(selected)
+	default:
+		url, err = schemeHostOnly(selected)
 		if err != nil {
 			return "", nil
 		}
