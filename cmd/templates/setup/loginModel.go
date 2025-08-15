@@ -99,10 +99,10 @@ func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd tea.C
 }
 
 func (lm LoginModel) Init() tea.Cmd {
-	datarobotHost, err := auth.GetURL(false)
-	if err != nil {
+	datarobotHost, _ := auth.GetBaseURL()
+	if datarobotHost == "" {
 		return func() tea.Msg {
-			return errMsg{err}
+			return errMsg{errors.New("datarobotHost is not set")}
 		}
 	}
 

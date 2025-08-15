@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func getBaseURL() (string, error) {
+func GetBaseURL() (string, error) {
 	urlContent := viper.GetString(DataRobotURL)
 
 	if urlContent == "" {
@@ -81,7 +81,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
 	reader := bufio.NewReader(os.Stdin)
 
-	urlContent, err := getBaseURL()
+	urlContent, err := GetBaseURL()
 	if err != nil {
 		return "", err
 	}

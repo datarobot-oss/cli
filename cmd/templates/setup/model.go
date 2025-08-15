@@ -45,20 +45,31 @@ type Model struct {
 }
 
 type (
+	authStartMsg        struct{}
 	authSuccessMsg      struct{}
 	templateSelectedMsg struct{}
-	getTemplatesMsg     struct{}
+	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
 	templateClonedMsg   struct{}
 	dotenvUpdatedMsg    struct{}
 	exitMsg             struct{}
 )
 
 func authSuccess() tea.Msg      { return authSuccessMsg{} }
-func getTemplates() tea.Msg     { return getTemplatesMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
+
+func (m Model) getTemplates() tea.Cmd {
+	return func() tea.Msg {
+		templatesList, err := drapi.GetTemplates()
+		if err != nil {
+			return authStartMsg{}
+		}
+
+		return templatesLoadedMsg{templatesList}
+	}
+}
 
 func NewModel() Model {
 	return Model{
@@ -82,7 +93,7 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return getTemplates
+	return m.getTemplates()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -96,25 +107,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
-	case getTemplatesMsg:
-		templateList, err := drapi.GetTemplates()
-		if err != nil {
-			m.screen = loginScreen
-			if m.login.APIKeyChan != nil {
-				cmd := m.login.Init()
-				return m, cmd
-			}
-
-			return m, nil
-		}
-
-		m.list.SetTemplates(templateList.Templates)
-		m.screen = listScreen
-
-		return m, m.list.Init()
+	case authStartMsg:
+		m.screen = loginScreen
+		cmd := m.login.Init()
+		return m, cmd
 	case authSuccessMsg:
 		m.screen = listScreen
-		return m, getTemplates
+		return m, m.getTemplates()
+	case templatesLoadedMsg:
+		m.screen = listScreen
+		m.list.SetTemplates(msg.templatesList.Templates)
+
+		return m, m.list.Init()
 	case templateSelectedMsg:
 		m.template = m.list.Template
 		m.clone.SetTemplate(m.template)
