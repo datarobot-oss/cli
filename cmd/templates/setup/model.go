@@ -66,7 +66,7 @@ func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
 
-func (m Model) getTemplates() tea.Cmd {
+func getTemplates() tea.Cmd {
 	return func() tea.Msg {
 		datarobotHost, _ := auth.GetBaseURL()
 		if datarobotHost == "" {
@@ -82,7 +82,7 @@ func (m Model) getTemplates() tea.Cmd {
 	}
 }
 
-func (m Model) saveHost(host string) tea.Cmd {
+func saveHost(host string) tea.Cmd {
 	return func() tea.Msg {
 		_ = auth.SaveURLToConfig(host)
 
@@ -114,7 +114,7 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.getTemplates()
+	return getTemplates()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -140,7 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, cmd
 	case authKeySuccessMsg:
 		m.screen = listScreen
-		return m, m.getTemplates()
+		return m, getTemplates()
 	case templatesLoadedMsg:
 		m.screen = listScreen
 		m.list.SetTemplates(msg.templatesList.Templates)
@@ -183,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				m.host.SetValue("")
 				m.host.Blur()
 
-				return m, m.saveHost(host)
+				return m, saveHost(host)
 			}
 		}
 
