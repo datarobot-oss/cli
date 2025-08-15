@@ -15,6 +15,7 @@ import (
 	"net/http"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/assets"
 	"github.com/spf13/viper"
 )
 
@@ -34,7 +35,7 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.URL.Query().Get("key")
 
-		fmt.Fprint(w, "Successfully processed API key, you may close this window.")
+		assets.Write(w, "templates/success.html")
 
 		apiKeyChan <- apiKey // send the key to the main goroutine
 	})
