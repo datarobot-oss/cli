@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
@@ -26,6 +28,7 @@ type screens int
 
 const (
 	welcomeScreen = screens(iota)
+	hostScreen
 	loginScreen
 	listScreen
 	cloneScreen
@@ -38,6 +41,7 @@ type Model struct {
 	template    drapi.Template
 	exitMessage string
 
+	host   textinput.Model
 	login  LoginModel
 	list   list.Model
 	clone  clone.Model
@@ -45,28 +49,56 @@ type Model struct {
 }
 
 type (
-	authSuccessMsg      struct{}
+	getHostMsg          struct{}
+	authKeyStartMsg     struct{}
+	authKeySuccessMsg   struct{}
+	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
 	templateSelectedMsg struct{}
-	getTemplatesMsg     struct{}
 	templateClonedMsg   struct{}
 	dotenvUpdatedMsg    struct{}
 	exitMsg             struct{}
 )
 
-func authSuccess() tea.Msg      { return authSuccessMsg{} }
-func getTemplates() tea.Msg     { return getTemplatesMsg{} }
+func getHost() tea.Msg          { return getHostMsg{} }
+func authSuccess() tea.Msg      { return authKeySuccessMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
+
+func getTemplates() tea.Cmd {
+	return func() tea.Msg {
+		datarobotHost, _ := auth.GetBaseURL()
+		if datarobotHost == "" {
+			return getHostMsg{}
+		}
+
+		templatesList, err := drapi.GetTemplates()
+		if err != nil {
+			return authKeyStartMsg{}
+		}
+
+		return templatesLoadedMsg{templatesList}
+	}
+}
+
+func saveHost(host string) tea.Cmd {
+	return func() tea.Msg {
+		_ = auth.SaveURLToConfig(host)
+
+		return authKeyStartMsg{}
+	}
+}
 
 func NewModel() Model {
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},
 
+		host: textinput.New(),
 		login: LoginModel{
 			APIKeyChan: make(chan string, 1),
+			GetHostCmd: getHost,
 			SuccessCmd: authSuccess,
 		},
 		list: list.Model{
@@ -82,7 +114,7 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return getTemplates
+	return getTemplates()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -96,29 +128,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
-	case getTemplatesMsg:
-		templateList, err := drapi.GetTemplates()
-		if err != nil {
-			m.screen = loginScreen
-			if m.login.APIKeyChan != nil {
-				cmd := m.login.Init()
-				return m, cmd
-			}
+	case getHostMsg:
+		m.screen = hostScreen
+		focusCmd := m.host.Focus()
 
-			return m, nil
-		}
+		return m, focusCmd
+	case authKeyStartMsg:
+		m.screen = loginScreen
+		cmd := m.login.Init()
 
-		m.list.SetTemplates(templateList.Templates)
+		return m, cmd
+	case authKeySuccessMsg:
 		m.screen = listScreen
+		return m, getTemplates()
+	case templatesLoadedMsg:
+		m.screen = listScreen
+		m.list.SetTemplates(msg.templatesList.Templates)
 
 		return m, m.list.Init()
-	case authSuccessMsg:
-		m.screen = listScreen
-		return m, getTemplates
 	case templateSelectedMsg:
+		m.screen = cloneScreen
 		m.template = m.list.Template
 		m.clone.SetTemplate(m.template)
-		m.screen = cloneScreen
 
 		return m, m.clone.Init()
 	case templateClonedMsg:
@@ -143,12 +174,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 	switch m.screen {
 	case welcomeScreen:
+	case hostScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "enter":
+				host := m.host.Value()
+				m.host.SetValue("")
+				m.host.Blur()
+
+				return m, saveHost(host)
+			}
+		}
+
+		m.host, cmd = m.host.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case loginScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "esc":
+				m.login.server.Close()
+				return m, getHost
+			}
+		}
+
 		m.login, cmd = m.login.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case listScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "esc":
+				// return m, getHost
+				return m, nil
+			}
+		}
+
 		m.list, cmd = m.list.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -188,11 +254,23 @@ func (m Model) View() string {
 
 		// Render footer with quit instructions
 		sb.WriteString(tui.Footer())
+	case hostScreen:
+		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString("\n\n")
+		sb.WriteString("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering\n")
+		sb.WriteString("Please enter 1 if you're using https://app.datarobot.com\n")
+		sb.WriteString("Please enter 2 if you're using https://app.eu.datarobot.com\n")
+		sb.WriteString("Please enter 3 if you're using https://app.jp.datarobot.com\n")
+		sb.WriteString("Otherwise, please enter the URL you use\n\n")
+
+		sb.WriteString(m.host.View())
 	case loginScreen:
 		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
 		sb.WriteString("\n\n")
 
 		sb.WriteString(m.login.View())
+
+		sb.WriteString(tui.BaseTextStyle.Render("Press Esc to change DataRobot URL"))
 	case listScreen:
 		sb.WriteString(m.list.View())
 	case cloneScreen:

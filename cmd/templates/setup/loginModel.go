@@ -24,8 +24,10 @@ import (
 
 type LoginModel struct {
 	loginMessage string
+	server       *http.Server
 	APIKeyChan   chan string
 	err          error
+	GetHostCmd   tea.Cmd
 	SuccessCmd   tea.Cmd
 }
 
@@ -82,28 +84,26 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 	}
 }
 
-func waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd tea.Cmd) tea.Cmd {
+func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
-		apiKey := <-apiKeyChan
+		apiKey := <-lm.APIKeyChan
 		viper.Set(auth.DataRobotAPIKey, apiKey)
 		auth.WriteConfigFileSilent()
 
 		// Now shut down the server after key is received
-		if err := server.Shutdown(context.Background()); err != nil {
+		if err := lm.server.Shutdown(context.Background()); err != nil {
 			return errMsg{fmt.Errorf("error during shutdown: %v", err)}
 		}
 
-		return successCmd()
+		return lm.SuccessCmd()
 	}
 }
 
 func (lm LoginModel) Init() tea.Cmd {
-	datarobotHost, err := auth.GetURL(false)
-	if err != nil {
-		return func() tea.Msg {
-			return errMsg{err}
-		}
+	datarobotHost, _ := auth.GetBaseURL()
+	if datarobotHost == "" {
+		return lm.GetHostCmd
 	}
 
 	return startServer(lm.APIKeyChan, datarobotHost)
@@ -113,7 +113,9 @@ func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case startedMsg:
 		lm.loginMessage = msg.message
-		return lm, waitForAPIKey(lm.APIKeyChan, msg.server, lm.SuccessCmd)
+		lm.server = msg.server
+
+		return lm, lm.waitForAPIKey()
 
 	case errMsg:
 		lm.err = msg

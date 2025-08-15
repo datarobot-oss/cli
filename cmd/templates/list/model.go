@@ -72,7 +72,11 @@ func (m *Model) SetTemplates(templates []drapi.Template) {
 		items[i] = t
 	}
 
-	m.list = NewList("Application Templates", items)
+	nl := list.New(items, itemDelegate{}, 0, 0)
+	nl.Title = "Application Templates"
+	nl.Styles.Title = nl.Styles.Title.Background(tui.DrPurple)
+
+	m.list = nl
 }
 
 var (
@@ -87,14 +91,6 @@ var (
 )
 
 type itemDelegate struct{}
-
-func NewList(title string, items []list.Item) list.Model {
-	nl := list.New(items, itemDelegate{}, 0, 0)
-	nl.Title = title
-	nl.Styles.Title = nl.Styles.Title.Background(tui.DrPurple)
-
-	return nl
-}
 
 func (d itemDelegate) Height() int  { return 6 }
 func (d itemDelegate) Spacing() int { return 1 }
