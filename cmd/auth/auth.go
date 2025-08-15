@@ -35,7 +35,7 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.URL.Query().Get("key")
 
-		assets.Write(w, "templates/success.html")
+		_ = assets.Write(w, "templates/success.html")
 
 		apiKeyChan <- apiKey // send the key to the main goroutine
 	})

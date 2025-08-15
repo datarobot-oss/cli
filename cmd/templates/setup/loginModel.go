@@ -51,7 +51,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 			apiKey := r.URL.Query().Get("key")
 
 			// Response to browser
-			assets.Write(w, "templates/success.html")
+			_ = assets.Write(w, "templates/success.html")
 
 			apiKeyChan <- apiKey // send the key to the main goroutine
 		})

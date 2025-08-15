@@ -23,5 +23,6 @@ func Write(w io.Writer, name string) error {
 	}
 
 	_, err = w.Write(content)
+
 	return err
 }
