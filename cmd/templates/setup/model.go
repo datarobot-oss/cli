@@ -82,9 +82,9 @@ func (m Model) getTemplates() tea.Cmd {
 	}
 }
 
-func (m Model) setHost() tea.Cmd {
+func (m Model) saveHost(host string) tea.Cmd {
 	return func() tea.Msg {
-		_ = auth.SaveURLToConfig(m.host.Value())
+		_ = auth.SaveURLToConfig(host)
 
 		return authKeyStartMsg{}
 	}
@@ -179,7 +179,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
 			case "enter":
-				return m, m.setHost()
+				host := m.host.Value()
+				m.host.SetValue("")
+				m.host.Blur()
+
+				return m, m.saveHost(host)
 			}
 		}
 
@@ -188,6 +192,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			cmds = append(cmds, cmd)
 		}
 	case loginScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "esc":
+				m.login.server.Close()
+				return m, authHostStart
+			}
+		}
+
 		m.login, cmd = m.login.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -247,6 +260,8 @@ func (m Model) View() string {
 		sb.WriteString("\n\n")
 
 		sb.WriteString(m.login.View())
+
+		sb.WriteString(tui.BaseTextStyle.Render("Press Esc to change DataRobot URL"))
 	case listScreen:
 		sb.WriteString(m.list.View())
 	case cloneScreen:
