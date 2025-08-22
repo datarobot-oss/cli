@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/assets"
+	"github.com/datarobot/cli/internal/base_auth"
 	"github.com/spf13/viper"
 )
 
@@ -35,6 +36,28 @@ type LoginModel struct {
 }
 
 type errMsg struct{ error } //nolint: errname
+
+type initMsg struct {
+	datarobotUrl string
+	message      string
+}
+
+func initLoginModel() tea.Cmd {
+	return func() tea.Msg {
+
+		datarobotHost, err := base_auth.GetBaseURL()
+		if err != nil {
+			return func() tea.Msg {
+				return errMsg{err}
+			}
+		}
+
+		return initMsg{
+			datarobotUrl: datarobotHost,
+			message:      "Checking for existing API key and host URL...",
+		}
+	}
+}
 
 type startedMsg struct {
 	server  *http.Server
@@ -108,7 +131,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
-		viper.Set(auth.DataRobotAPIKey, apiKey)
+		viper.Set(base_auth.DataRobotAPIKey, apiKey)
 		auth.WriteConfigFileSilent()
 
 		// Now shut down the server after key is received
