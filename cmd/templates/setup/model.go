@@ -15,8 +15,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/datarobot/cli/cmd/auth"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
@@ -97,6 +97,7 @@ func NewModel() Model {
 	if err != nil {
 		log.Error("Failed to read config file", "error", err)
 	}
+
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},

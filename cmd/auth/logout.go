@@ -10,13 +10,13 @@ package auth
 
 import (
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/internal/base_auth"
+	"github.com/datarobot/cli/internal/baseauth"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 func LogoutAction() error {
-	viper.Set(base_auth.DataRobotAPIKey, base_auth.DataRobotAPIKey)
+	viper.Set(baseauth.DataRobotAPIKey, baseauth.DataRobotAPIKey)
 
 	writeConfigFile()
 

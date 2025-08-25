@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/internal/base_auth"
+	"github.com/datarobot/cli/internal/baseauth"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,7 +28,7 @@ func LoginAction() error {
 		return err
 	}
 
-	currentKey := viper.GetString(base_auth.DataRobotAPIKey)
+	currentKey := viper.GetString(baseauth.DataRobotAPIKey)
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {
@@ -45,7 +45,7 @@ func LoginAction() error {
 
 		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
 			// Set the DataRobot API key to be an empty string
-			viper.Set(base_auth.DataRobotAPIKey, "")
+			viper.Set(baseauth.DataRobotAPIKey, "")
 		} else {
 			fmt.Println("Exiting without overwriting the API key.")
 
@@ -62,7 +62,7 @@ func LoginAction() error {
 		log.Error(err)
 	}
 
-	viper.Set(base_auth.DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
+	viper.Set(baseauth.DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
 
 	writeConfigFile()
 
