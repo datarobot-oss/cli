@@ -1,4 +1,4 @@
-package baseauth
+package config
 
 import (
 	"fmt"

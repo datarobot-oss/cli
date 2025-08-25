@@ -22,7 +22,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/assets"
-	"github.com/datarobot/cli/internal/baseauth"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/viper"
 )
 
@@ -109,7 +109,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
-		viper.Set(baseauth.DataRobotAPIKey, apiKey)
+		viper.Set(config.DataRobotAPIKey, apiKey)
 		auth.WriteConfigFileSilent()
 
 		// Now shut down the server after key is received
