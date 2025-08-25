@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/assets"
 	"github.com/spf13/viper"
 )
 
@@ -52,7 +53,8 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 			apiKey := r.URL.Query().Get("key")
 
 			// Response to browser
-			fmt.Fprint(w, "Successfully processed API key, you may close this window.")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_ = assets.Write(w, "templates/success.html")
 
 			apiKeyChan <- apiKey // send the key to the main goroutine
 		})
