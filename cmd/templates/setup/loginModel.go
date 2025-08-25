@@ -104,7 +104,7 @@ func open(url string) {
 	}
 }
 
-func (lm LoginModel) waitForAPIKey(apiKeyChan chan string, server *http.Server, successCmd tea.Cmd) tea.Cmd {
+func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
