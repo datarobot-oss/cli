@@ -20,14 +20,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-func getBaseURL() (string, error) {
+func GetBaseURL() (string, error) {
 	urlContent := viper.GetString(DataRobotURL)
 
 	if urlContent == "" {
 		return "", nil
 	}
 
-	baseURL, err := loadBaseURLFromURL(urlContent)
+	baseURL, err := schemeHostOnly(urlContent)
 	if err != nil {
 		return "", err
 	}
@@ -35,7 +35,7 @@ func getBaseURL() (string, error) {
 	return baseURL, nil
 }
 
-func loadBaseURLFromURL(longURL string) (string, error) {
+func schemeHostOnly(longURL string) (string, error) {
 	// Takes a URL like: https://app.datarobot.com/api/v2 and just
 	// returns https://app.datarobot.com (no trailing slash)
 	parsedURL, err := url.Parse(longURL)
@@ -43,36 +43,65 @@ func loadBaseURLFromURL(longURL string) (string, error) {
 		return "", err
 	}
 
-	base := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
+	if parsedURL.Host == "" {
+		return "", err
+	}
 
-	return base, nil
+	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
+
+	return parsedURL.String(), nil
 }
 
-func saveURLToConfig(newURL string) error {
+func SaveURLToConfig(newURL string) error {
+	newURL = urlFromShortcut(newURL)
+
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
+		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
+		_ = viper.WriteConfig()
+
+		return nil
 	}
 
-	baseURL, err := loadBaseURLFromURL(newURL)
+	datarobotURL, err := url.Parse(newURL)
 	if err != nil {
 		return err
 	}
 
-	datarobotHost, err := url.JoinPath(baseURL, "/api/v2")
-	if err != nil {
-		return err
-	}
+	datarobotURL.Path, datarobotURL.RawQuery, datarobotURL.Fragment = "/api/v2", "", ""
 
-	viper.Set(DataRobotURL, datarobotHost)
+	viper.Set(DataRobotURL, datarobotURL.String())
 
 	_ = viper.WriteConfig()
 
 	return nil
 }
 
-func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
+func urlFromShortcut(selectedOption string) string {
+	selected := strings.ToLower(strings.TrimSpace(selectedOption))
+
+	switch selected {
+	case "":
+		return ""
+	case "1":
+		return "https://app.datarobot.com"
+	case "2":
+		return "https://app.eu.datarobot.com"
+	case "3":
+		return "https://app.jp.datarobot.com"
+	default:
+		url, err := schemeHostOnly(selected)
+		if err != nil {
+			return ""
+		}
+
+		return url
+	}
+}
+
+func GetURL(promptIfFound bool) (string, error) {
 	// This is the entrypoint for using a URL. The flow is:
 	// * Check if there's a file with the content.  If there's no file, make it.
 	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
@@ -80,7 +109,7 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
 	reader := bufio.NewReader(os.Stdin)
 
-	urlContent, err := getBaseURL()
+	urlContent, err := GetBaseURL()
 	if err != nil {
 		return "", err
 	}
@@ -111,28 +140,12 @@ func GetURL(promptIfFound bool) (string, error) { //nolint: cyclop
 	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
 	fmt.Println("Otherwise, please enter the URL you use")
 
-	selectedOption, err := reader.ReadString('\n')
+	url, err := reader.ReadString('\n')
 	if err != nil {
 		return "", nil
 	}
 
-	selected := strings.ToLower(strings.Replace(selectedOption, "\n", "", -1))
-
-	var url string
-	if selected == "1" {
-		url = "https://app.datarobot.com"
-	} else if selected == "2" {
-		url = "https://app.eu.datarobot.com"
-	} else if selected == "3" {
-		url = "https://app.jp.datarobot.com"
-	} else {
-		url, err = loadBaseURLFromURL(selected)
-		if err != nil {
-			return "", nil
-		}
-	}
-
-	errors := saveURLToConfig(url)
+	errors := SaveURLToConfig(url)
 	if errors != nil {
 		return url, errors
 	}
