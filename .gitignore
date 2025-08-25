@@ -8,6 +8,8 @@
 *.so
 *.dylib
 
+*.golden -text
+
 # Test binary, built with `go test -c`
 *.test
 

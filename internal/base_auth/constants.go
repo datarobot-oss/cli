@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package auth
+package base_auth
 
 const (
 	DataRobotURL    = "endpoint"
