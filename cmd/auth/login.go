@@ -39,14 +39,11 @@ func LoginAction() error {
 			return err
 		}
 
-		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
+		if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
 			// Set the DataRobot API key to be an empty string
 			viper.Set(config.DataRobotAPIKey, "")
 		} else {
 			fmt.Println("Exiting without overwriting the API key.")
-
-			writeConfigFile()
-
 			return nil
 		}
 	} else {
