@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
@@ -70,7 +69,7 @@ func exit() tea.Msg             { return exitMsg{} }
 
 func getTemplates() tea.Cmd {
 	return func() tea.Msg {
-		datarobotHost, _ := auth.GetBaseURL()
+		datarobotHost := config.GetBaseURL()
 		if datarobotHost == "" {
 			return getHostMsg{}
 		}
@@ -86,7 +85,7 @@ func getTemplates() tea.Cmd {
 
 func saveHost(host string) tea.Cmd {
 	return func() tea.Msg {
-		_ = auth.SaveURLToConfig(host)
+		_ = config.SaveURLToConfig(host)
 
 		return authKeyStartMsg{}
 	}

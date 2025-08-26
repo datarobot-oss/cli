@@ -11,127 +11,29 @@ package auth
 import (
 	"bufio"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-func GetBaseURL() (string, error) {
-	urlContent := viper.GetString(config.DataRobotURL)
-
-	if urlContent == "" {
-		return "", nil
-	}
-
-	baseURL, err := schemeHostOnly(urlContent)
-	if err != nil {
-		return "", err
-	}
-
-	return baseURL, nil
-}
-
-func schemeHostOnly(longURL string) (string, error) {
-	// Takes a URL like: https://app.datarobot.com/api/v2 and just
-	// returns https://app.datarobot.com (no trailing slash)
-	parsedURL, err := url.Parse(longURL)
-	if err != nil {
-		return "", err
-	}
-
-	if parsedURL.Host == "" {
-		return "", err
-	}
-
-	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
-
-	return parsedURL.String(), nil
-}
-
-func SaveURLToConfig(newURL string) error {
-	newURL = urlFromShortcut(newURL)
-
-	// Saves the URL to the config file with the path prefix
-	// Or as an empty string, if that's needed
-	if newURL == "" {
-		viper.Set(config.DataRobotURL, "")
-		viper.Set(config.DataRobotAPIKey, "")
-		_ = viper.WriteConfig()
-
-		return nil
-	}
-
-	datarobotURL, err := url.Parse(newURL)
-	if err != nil {
-		return err
-	}
-
-	datarobotURL.Path, datarobotURL.RawQuery, datarobotURL.Fragment = "/api/v2", "", ""
-
-	viper.Set(config.DataRobotURL, datarobotURL.String())
-
-	_ = viper.WriteConfig()
-
-	return nil
-}
-
-func urlFromShortcut(selectedOption string) string {
-	selected := strings.ToLower(strings.TrimSpace(selectedOption))
-
-	switch selected {
-	case "":
-		return ""
-	case "1":
-		return "https://app.datarobot.com"
-	case "2":
-		return "https://app.eu.datarobot.com"
-	case "3":
-		return "https://app.jp.datarobot.com"
-	default:
-		url, err := schemeHostOnly(selected)
-		if err != nil {
-			return ""
-		}
-
-		return url
-	}
-}
-
-func GetURL(promptIfFound bool) (string, error) {
-	// This is the entrypoint for using a URL. The flow is:
-	// * Check if there's a file with the content.  If there's no file, make it.
-	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
-	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
-	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
+func SetURLAction() {
 	reader := bufio.NewReader(os.Stdin)
 
-	urlContent, err := GetBaseURL()
-	if err != nil {
-		return "", err
-	}
+	datarobotHost := config.GetBaseURL()
 
-	presentURLContent := len(urlContent) > 0
-
-	if presentURLContent && !promptIfFound {
-		return urlContent, nil
-	}
-
-	if presentURLContent && promptIfFound {
-		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
+	if len(datarobotHost) > 0 {
+		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", datarobotHost)
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			return "", err
+			return
 		}
 
-		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) != "y" {
+		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
 			fmt.Println("Exiting without overwriting the DataRobot URL.")
-			return urlContent, nil
+			return
 		}
 	}
 
@@ -143,21 +45,12 @@ func GetURL(promptIfFound bool) (string, error) {
 
 	url, err := reader.ReadString('\n')
 	if err != nil {
-		return "", nil
+		return
 	}
 
-	errors := SaveURLToConfig(url)
-	if errors != nil {
-		return url, errors
-	}
-
-	return url, nil
-}
-
-func SetURLAction() {
-	_, err := GetURL(true)
+	err = config.SaveURLToConfig(url)
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 }
 
@@ -166,6 +59,6 @@ var setURLCmd = &cobra.Command{
 	Short: "Set URL for Login to DataRobot",
 	Long:  `Set URL for DataRobot to get and store that URL which can be used for other operations in the cli.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		SetURLAction() // TODO: handler errors properly
+		SetURLAction()
 	},
 }

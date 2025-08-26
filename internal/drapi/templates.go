@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/config"
 )
 
 type Template struct {
@@ -72,19 +72,11 @@ type TemplateList struct {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	key, err := auth.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
+	bearer := "Bearer " + config.GetAPIKey()
 
-	bearer := "Bearer " + key
-
-	// datarobotHost := "https://staging.datarobot.com/api/v2"
-	// datarobotHost := "https://app.datarobot.com/api/v2"
-	datarobotHost, err := auth.GetURL(false)
-	if err != nil {
-		return nil, err
-	}
+	// datarobotHost := "https://staging.datarobot.com"
+	// datarobotHost := "https://app.datarobot.com"
+	datarobotHost := config.GetBaseURL()
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
 	log.Info("Fetching templates from " + datarobotEndpoint)

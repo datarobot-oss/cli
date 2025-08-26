@@ -23,12 +23,14 @@ import (
 func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	datarobotHost, err := GetURL(false)
-	if err != nil {
-		return err
+	datarobotHost := config.GetBaseURL()
+	if datarobotHost == "" {
+		SetURLAction()
+
+		datarobotHost = config.GetBaseURL()
 	}
 
-	currentKey := viper.GetString(config.DataRobotAPIKey)
+	currentKey := config.GetAPIKey()
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {
@@ -43,14 +45,11 @@ func LoginAction() error {
 			return err
 		}
 
-		if strings.ToLower(strings.Replace(selectedOption, "\n", "", -1)) == "y" {
+		if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
 			// Set the DataRobot API key to be an empty string
 			viper.Set(config.DataRobotAPIKey, "")
 		} else {
 			fmt.Println("Exiting without overwriting the API key.")
-
-			writeConfigFile()
-
 			return nil
 		}
 	} else {

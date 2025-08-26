@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -95,6 +96,10 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 }
 
 func open(url string) {
+	if testing.Testing() {
+		return
+	}
+
 	switch runtime.GOOS {
 	case "darwin":
 		_ = exec.Command("open", url).Run()
@@ -122,7 +127,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 }
 
 func (lm LoginModel) Init() tea.Cmd {
-	datarobotHost, _ := auth.GetBaseURL()
+	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		return lm.GetHostCmd
 	}

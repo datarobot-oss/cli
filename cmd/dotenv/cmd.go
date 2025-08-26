@@ -9,6 +9,7 @@
 package dotenv
 
 import (
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,13 +43,13 @@ type variableConfig = struct {
 
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func() (string, error) {
-			datarobotHost, err := auth.GetURL(false)
-			return datarobotHost, err
-		},
+		viperKey: config.DataRobotURL,
 	},
 	"DATAROBOT_ENDPOINT": {
-		viperKey: config.DataRobotURL,
+		getValue: func() (string, error) {
+			fullURL, err := url.JoinPath(config.GetBaseURL(), "/api/v2")
+			return fullURL, err
+		},
 	},
 	"DATAROBOT_API_TOKEN": {
 		viperKey: config.DataRobotAPIKey,
