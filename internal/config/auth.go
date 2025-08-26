@@ -33,18 +33,7 @@ func schemeHostOnly(longURL string) (string, error) {
 }
 
 func GetBaseURL() string {
-	urlContent := viper.GetString(DataRobotURL)
-
-	if urlContent == "" {
-		return ""
-	}
-
-	baseURL, err := schemeHostOnly(urlContent)
-	if err != nil {
-		return ""
-	}
-
-	return baseURL
+	return viper.GetString(DataRobotURL)
 }
 
 func SaveURLToConfig(newURL string) error {
@@ -60,15 +49,12 @@ func SaveURLToConfig(newURL string) error {
 		return nil
 	}
 
-	datarobotURL, err := url.Parse(newURL)
+	newURL, err := schemeHostOnly(newURL)
 	if err != nil {
 		return err
 	}
 
-	datarobotURL.Path, datarobotURL.RawQuery, datarobotURL.Fragment = "/api/v2", "", ""
-
-	viper.Set(DataRobotURL, datarobotURL.String())
-
+	viper.Set(DataRobotURL, newURL)
 	_ = viper.WriteConfig()
 
 	return nil

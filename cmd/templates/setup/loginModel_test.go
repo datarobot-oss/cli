@@ -93,7 +93,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
@@ -134,7 +134,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.eu.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.eu.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
@@ -175,7 +175,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.jp.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.jp.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
@@ -216,7 +216,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.parakeet.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.parakeet.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {

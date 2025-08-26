@@ -9,6 +9,7 @@
 package dotenv
 
 import (
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -42,13 +43,13 @@ type variableConfig = struct {
 
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func() (string, error) {
-			datarobotHost := config.GetBaseURL()
-			return datarobotHost, nil
-		},
+		viperKey: config.DataRobotURL,
 	},
 	"DATAROBOT_ENDPOINT": {
-		viperKey: config.DataRobotURL,
+		getValue: func() (string, error) {
+			fullURL, err := url.JoinPath(config.GetBaseURL(), "/api/v2")
+			return fullURL, err
+		},
 	},
 	"DATAROBOT_API_TOKEN": {
 		viperKey: config.DataRobotAPIKey,
