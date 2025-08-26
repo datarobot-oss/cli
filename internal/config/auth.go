@@ -9,10 +9,7 @@
 package config
 
 import (
-	"bufio"
-	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -35,19 +32,19 @@ func schemeHostOnly(longURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func GetBaseURL() (string, error) {
+func GetBaseURL() string {
 	urlContent := viper.GetString(DataRobotURL)
 
 	if urlContent == "" {
-		return "", nil
+		return ""
 	}
 
 	baseURL, err := schemeHostOnly(urlContent)
 	if err != nil {
-		return "", err
+		return ""
 	}
 
-	return baseURL, nil
+	return baseURL
 }
 
 func SaveURLToConfig(newURL string) error {
@@ -78,7 +75,7 @@ func SaveURLToConfig(newURL string) error {
 }
 
 func urlFromShortcut(selectedOption string) string {
-	selected := strings.ToLower(strings.TrimSpace(selectedOption))
+	selected := strings.TrimSpace(selectedOption)
 
 	switch selected {
 	case "":
@@ -97,58 +94,6 @@ func urlFromShortcut(selectedOption string) string {
 
 		return url
 	}
-}
-
-func GetURL(promptIfFound bool) (string, error) {
-	// This is the entrypoint for using a URL. The flow is:
-	// * Check if there's a file with the content.  If there's no file, make it.
-	// * If the file exists, and has content return it **UNLESS** the promptIfFound bool
-	//   is supplied. This promptIfFound should really only be called if we're doing the setURL flow.
-	// * If there's no file, then prompt the user for a URL, save it to the file, and return the URL to the caller func
-	reader := bufio.NewReader(os.Stdin)
-
-	urlContent, err := GetBaseURL()
-	if err != nil {
-		return "", err
-	}
-
-	presentURLContent := len(urlContent) > 0
-
-	if presentURLContent && !promptIfFound {
-		return urlContent, nil
-	}
-
-	if presentURLContent && promptIfFound {
-		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", urlContent)
-
-		selectedOption, err := reader.ReadString('\n')
-		if err != nil {
-			return "", err
-		}
-
-		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
-			fmt.Println("Exiting without overwriting the DataRobot URL.")
-			return urlContent, nil
-		}
-	}
-
-	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")
-	fmt.Println("Please enter 1 if you're using https://app.datarobot.com")
-	fmt.Println("Please enter 2 if you're using https://app.eu.datarobot.com")
-	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
-	fmt.Println("Otherwise, please enter the URL you use")
-
-	url, err := reader.ReadString('\n')
-	if err != nil {
-		return "", nil
-	}
-
-	errors := SaveURLToConfig(url)
-	if errors != nil {
-		return url, errors
-	}
-
-	return url, nil
 }
 
 func GetAPIKey() string {

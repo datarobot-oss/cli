@@ -69,7 +69,7 @@ func exit() tea.Msg             { return exitMsg{} }
 
 func getTemplates() tea.Cmd {
 	return func() tea.Msg {
-		datarobotHost, _ := config.GetBaseURL()
+		datarobotHost := config.GetBaseURL()
 		if datarobotHost == "" {
 			return getHostMsg{}
 		}

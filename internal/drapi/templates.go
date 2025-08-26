@@ -74,12 +74,9 @@ type TemplateList struct {
 func GetTemplates() (*TemplateList, error) {
 	bearer := "Bearer " + config.GetAPIKey()
 
-	// datarobotHost := "https://staging.datarobot.com/api/v2"
-	// datarobotHost := "https://app.datarobot.com/api/v2"
-	datarobotHost, err := config.GetURL(false)
-	if err != nil {
-		return nil, err
-	}
+	// datarobotHost := "https://staging.datarobot.com"
+	// datarobotHost := "https://app.datarobot.com"
+	datarobotHost := config.GetBaseURL()
 
 	datarobotEndpoint := datarobotHost + "/api/v2/applicationTemplates/?limit=100"
 	log.Info("Fetching templates from " + datarobotEndpoint)

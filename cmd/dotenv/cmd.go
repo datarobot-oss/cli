@@ -43,8 +43,8 @@ type variableConfig = struct {
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
 		getValue: func() (string, error) {
-			datarobotHost, err := config.GetURL(false)
-			return datarobotHost, err
+			datarobotHost := config.GetBaseURL()
+			return datarobotHost, nil
 		},
 	},
 	"DATAROBOT_ENDPOINT": {
