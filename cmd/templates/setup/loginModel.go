@@ -122,7 +122,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 }
 
 func (lm LoginModel) Init() tea.Cmd {
-	datarobotHost, _ := auth.GetBaseURL()
+	datarobotHost, _ := config.GetBaseURL()
 	if datarobotHost == "" {
 		return lm.GetHostCmd
 	}

@@ -16,7 +16,6 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
-	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/viper"
 )
 
@@ -105,11 +104,4 @@ func writeConfigFile() {
 	WriteConfigFileSilent()
 
 	fmt.Println("Config file written successfully.")
-}
-
-func GetAPIKey() (string, error) {
-	// Returns the API key if there is one, otherwise returns an empty string
-	key := viper.GetString(config.DataRobotAPIKey)
-
-	return key, nil
 }

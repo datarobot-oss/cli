@@ -16,7 +16,7 @@ import (
 )
 
 func LogoutAction() error {
-	viper.Set(config.DataRobotAPIKey, config.DataRobotAPIKey)
+	viper.Set(config.DataRobotAPIKey, "")
 
 	writeConfigFile()
 

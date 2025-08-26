@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/config"
 )
 
 type Template struct {
@@ -72,7 +72,7 @@ type TemplateList struct {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	key, err := auth.GetAPIKey()
+	key, err := config.GetAPIKey()
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func GetTemplates() (*TemplateList, error) {
 
 	// datarobotHost := "https://staging.datarobot.com/api/v2"
 	// datarobotHost := "https://app.datarobot.com/api/v2"
-	datarobotHost, err := auth.GetURL(false)
+	datarobotHost, err := config.GetURL(false)
 	if err != nil {
 		return nil, err
 	}

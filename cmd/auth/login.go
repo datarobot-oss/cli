@@ -23,7 +23,7 @@ import (
 func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	datarobotHost, err := GetURL(false)
+	datarobotHost, err := config.GetURL(false)
 	if err != nil {
 		return err
 	}
