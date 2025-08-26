@@ -72,12 +72,7 @@ type TemplateList struct {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	key, err := config.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-
-	bearer := "Bearer " + key
+	bearer := "Bearer " + config.GetAPIKey()
 
 	// datarobotHost := "https://staging.datarobot.com/api/v2"
 	// datarobotHost := "https://app.datarobot.com/api/v2"

@@ -28,7 +28,7 @@ func LoginAction() error {
 		return err
 	}
 
-	currentKey := viper.GetString(config.DataRobotAPIKey)
+	currentKey := config.GetAPIKey()
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
 	if err != nil {

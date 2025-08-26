@@ -151,9 +151,7 @@ func GetURL(promptIfFound bool) (string, error) {
 	return url, nil
 }
 
-func GetAPIKey() (string, error) {
+func GetAPIKey() string {
 	// Returns the API key if there is one, otherwise returns an empty string
-	key := viper.GetString(DataRobotAPIKey)
-
-	return key, nil
+	return viper.GetString(DataRobotAPIKey)
 }
