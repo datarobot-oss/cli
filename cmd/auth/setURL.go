@@ -16,12 +16,13 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 func GetBaseURL() (string, error) {
-	urlContent := viper.GetString(DataRobotURL)
+	urlContent := viper.GetString(config.DataRobotURL)
 
 	if urlContent == "" {
 		return "", nil
@@ -58,8 +59,8 @@ func SaveURLToConfig(newURL string) error {
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
 	if newURL == "" {
-		viper.Set(DataRobotURL, "")
-		viper.Set(DataRobotAPIKey, "")
+		viper.Set(config.DataRobotURL, "")
+		viper.Set(config.DataRobotAPIKey, "")
 		_ = viper.WriteConfig()
 
 		return nil
@@ -72,7 +73,7 @@ func SaveURLToConfig(newURL string) error {
 
 	datarobotURL.Path, datarobotURL.RawQuery, datarobotURL.Fragment = "/api/v2", "", ""
 
-	viper.Set(DataRobotURL, datarobotURL.String())
+	viper.Set(config.DataRobotURL, datarobotURL.String())
 
 	_ = viper.WriteConfig()
 

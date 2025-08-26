@@ -15,10 +15,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
@@ -91,6 +93,11 @@ func saveHost(host string) tea.Cmd {
 }
 
 func NewModel() Model {
+	err := config.ReadConfigFile("")
+	if err != nil {
+		log.Error("Failed to read config file", "error", err)
+	}
+
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},

@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -48,10 +49,10 @@ var knownVariables = map[string]variableConfig{
 		},
 	},
 	"DATAROBOT_ENDPOINT": {
-		viperKey: auth.DataRobotURL,
+		viperKey: config.DataRobotURL,
 	},
 	"DATAROBOT_API_TOKEN": {
-		viperKey: auth.DataRobotAPIKey,
+		viperKey: config.DataRobotAPIKey,
 		secret:   true,
 	},
 }
