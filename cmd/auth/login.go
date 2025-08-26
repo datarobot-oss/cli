@@ -24,6 +24,12 @@ func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
 	datarobotHost := config.GetBaseURL()
+	if datarobotHost == "" {
+		SetURLAction()
+
+		datarobotHost = config.GetBaseURL()
+	}
+
 	currentKey := config.GetAPIKey()
 
 	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
