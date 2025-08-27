@@ -16,11 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{
@@ -131,12 +132,16 @@ func readTemplate(dotenvFile string) ([]string, string) {
 	return slices.Collect(strings.Lines(dotenvTemplate)), templateFileUsed
 }
 
-func writeVariable(f *os.File, name, value string) error {
+func writeVariable(f *os.File, name, value string) (string, error) {
 	log.Info("Adding variable " + name)
 
-	_, err := f.WriteString(name + "=" + value + "\n")
+	line := name + "=" + value + "\n"
+	_, err := f.WriteString(line)
+	if err != nil {
+		return "", err
+	}
 
-	return err
+	return line, nil
 }
 
 func variableName(line string) string {
@@ -150,50 +155,64 @@ func variableName(line string) string {
 	return ""
 }
 
-func writeFromTemplate(f *os.File, templateLines []string) ([]variable, error) {
+func writeFromTemplate(f *os.File, templateLines []string) ([]variable, string, error) {
 	variables := make([]variable, 0)
+	var contents strings.Builder
 
 	for _, templateLine := range templateLines {
 		name := variableName(templateLine)
 
-		var value string
+		if name == "" {
+			_, err := f.WriteString(templateLine)
+			if err != nil {
+				return nil, "", err
+			}
 
-		if name != "" {
-			if conf, found := knownVariables[name]; found {
-				switch {
-				case conf.viperKey != "":
-					value = viper.GetString(conf.viperKey)
-				case conf.getValue != nil:
-					var err error
+			contents.WriteString(templateLine)
+			continue
+		}
 
-					value, err = conf.getValue()
-					if err != nil {
-						log.Error(err)
-					}
+		v := variable{
+			name:   name,
+			secret: knownVariables[name].secret,
+		}
+
+		if conf, found := knownVariables[name]; found {
+			v.auto = true
+
+			switch {
+			case conf.viperKey != "":
+				v.value = viper.GetString(conf.viperKey)
+			case conf.getValue != nil:
+				var err error
+
+				v.value, err = conf.getValue()
+				if err != nil {
+					log.Error(err)
 				}
 			}
 		}
 
-		if value != "" {
-			variables = append(variables, variable{
-				name:   name,
-				value:  value,
-				secret: knownVariables[name].secret,
-			})
-
-			err := writeVariable(f, name, value)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		if v.value == "" {
 			_, err := f.WriteString(templateLine)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
+
+			contents.WriteString(templateLine)
+		} else {
+			line, err := writeVariable(f, name, v.value)
+			if err != nil {
+				return nil, "", err
+			}
+
+			contents.WriteString(line)
 		}
+
+		variables = append(variables, v)
 	}
 
-	return variables, nil
+	return variables, contents.String(), nil
 }
 
 func Run(_ *cobra.Command, _ []string) {
@@ -206,7 +225,7 @@ func Run(_ *cobra.Command, _ []string) {
 	}
 	defer f.Close()
 
-	_, err = writeFromTemplate(f, templateLines)
+	_, _, err = writeFromTemplate(f, templateLines)
 	if err != nil {
 		log.Error(err)
 	}
