@@ -77,7 +77,7 @@ func variablesFromTemplate(templateLines []string) ([]variable, string, bool) {
 	var contents strings.Builder
 
 	for _, templateLine := range templateLines {
-		v := NewFromLine(templateLine)
+		v := newFromLine(templateLine)
 
 		if v.name != "" && v.commented {
 			variables = append(variables, v)

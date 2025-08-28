@@ -27,7 +27,7 @@ type variable struct {
 	commented bool
 }
 
-func NewFromLine(line string) variable {
+func newFromLine(line string) variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*)\s*=\s*(?P<value>.*)\n$`)
 	result := misc.NamedStringMatches(expr, line)
 	v := variable{}
