@@ -44,53 +44,28 @@ type Model struct {
 }
 
 type (
-	errMsg   struct{ err error }
-	savedMsg struct{}
+	errMsg struct{ err error }
 
-	// getVariablesMsg struct{}
 	dotenvFileUpdatedMsg struct {
-		variables []variable
-		contents  string
+		variables      []variable
+		contents       string
+		dotenvTemplate string
 	}
 )
 
 func (m Model) saveEnvFile() tea.Cmd {
 	return func() tea.Msg {
-		f, err := backupAndCreate(m.DotenvFile)
-		if err != nil {
-			return errMsg{err}
-		}
-		defer f.Close()
-
-		_, err = f.WriteString(m.contents)
+		variables, contents, dotenvTemplate, err := writeDotenvFile(m.DotenvFile)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		return savedMsg{}
+		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate}
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	cmd := func() tea.Msg {
-		var templateLines []string
-		templateLines, m.DotenvTemplate = readTemplate(m.DotenvFile)
-
-		f, err := backupAndCreate(m.DotenvFile)
-		if err != nil {
-			return errMsg{err}
-		}
-		defer f.Close()
-
-		variables, contents, err := writeFromTemplate(f, templateLines)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		return dotenvFileUpdatedMsg{variables, contents}
-	}
-
-	return tea.Batch(cmd, tea.WindowSize())
+	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -134,6 +109,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case dotenvFileUpdatedMsg:
 			m.variables = msg.variables
 			m.contents = msg.contents
+			m.DotenvTemplate = msg.dotenvTemplate
 			return m, nil
 		case errMsg:
 			m.err = msg.err
@@ -147,9 +123,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				// m.saving = true
 				return m, m.saveEnvFile()
 			}
-		case savedMsg:
+		case dotenvFileUpdatedMsg:
 			m.screen = listScreen
-			// m.saving = false
+			m.variables = msg.variables
+			m.contents = msg.contents
+			m.DotenvTemplate = msg.dotenvTemplate
 			return m, nil
 		}
 		var cmd tea.Cmd
