@@ -47,6 +47,10 @@ func NewFromLine(line string) variable {
 }
 
 func (v *variable) String() string {
+	if v.commented {
+		return "# " + v.name + "=" + v.value + "\n"
+	}
+
 	return v.name + "=" + v.value + "\n"
 }
 

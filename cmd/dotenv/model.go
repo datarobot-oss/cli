@@ -10,6 +10,7 @@ package dotenv
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -48,12 +49,26 @@ type (
 
 func (m Model) saveEnvFile() tea.Cmd {
 	return func() tea.Msg {
-		variables, contents, dotenvTemplate, err := writeDotenvFile(m.DotenvFile)
+		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
 		if err != nil {
 			return errMsg{err}
 		}
 
 		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate}
+	}
+}
+
+func (m Model) saveEditedFile() tea.Cmd {
+	return func() tea.Msg {
+		lines := slices.Collect(strings.Lines(m.contents))
+		variables, _, _ := variablesFromTemplate(lines)
+
+		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate}
 	}
 }
 
@@ -116,7 +131,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "esc":
 				// m.saving = true
-				return m, m.saveEnvFile()
+				return m, m.saveEditedFile()
 			}
 		}
 
@@ -138,10 +153,16 @@ func (m Model) View() string {
 		fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
 
 		for _, v := range m.variables {
+			if v.commented {
+				fmt.Fprintf(&sb, "# ")
+			}
+
+			fmt.Fprintf(&sb, "%s: ", v.name)
+
 			if v.secret {
-				fmt.Fprintf(&sb, "%s: ***\n", v.name)
+				fmt.Fprintf(&sb, "***\n")
 			} else {
-				fmt.Fprintf(&sb, "%s: %s\n", v.name, v.value)
+				fmt.Fprintf(&sb, "%s\n", v.value)
 			}
 		}
 	case editorScreen:
