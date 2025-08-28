@@ -23,13 +23,6 @@ const (
 	editorScreen
 )
 
-type variable struct {
-	name   string
-	value  string
-	secret bool
-	auto   bool
-}
-
 type Model struct {
 	screen         screens
 	DotenvFile     string
@@ -68,7 +61,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -78,6 +71,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.textarea.SetWidth(m.width - 1)
 			m.textarea.SetHeight(m.height - 12)
 		}
+
+		return m, nil
+	case dotenvFileUpdatedMsg:
+		m.screen = listScreen
+		m.variables = msg.variables
+		m.contents = msg.contents
+		m.DotenvTemplate = msg.dotenvTemplate
 
 		return m, nil
 	}
@@ -106,11 +106,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					}
 				})
 			}
-		case dotenvFileUpdatedMsg:
-			m.variables = msg.variables
-			m.contents = msg.contents
-			m.DotenvTemplate = msg.dotenvTemplate
-			return m, nil
 		case errMsg:
 			m.err = msg.err
 			return m, nil
@@ -123,13 +118,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				// m.saving = true
 				return m, m.saveEnvFile()
 			}
-		case dotenvFileUpdatedMsg:
-			m.screen = listScreen
-			m.variables = msg.variables
-			m.contents = msg.contents
-			m.DotenvTemplate = msg.dotenvTemplate
-			return m, nil
 		}
+
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
 		m.contents = m.textarea.Value()

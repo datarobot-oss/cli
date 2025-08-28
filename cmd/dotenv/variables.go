@@ -10,10 +10,71 @@ package dotenv
 
 import (
 	"net/url"
+	"regexp"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/misc"
+	"github.com/spf13/viper"
 )
+
+type variable struct {
+	name      string
+	value     string
+	secret    bool
+	changed   bool
+	commented bool
+}
+
+func NewFromLine(line string) variable {
+	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*)\s*=\s*(?P<value>.*)\n$`)
+	result := misc.NamedStringMatches(expr, line)
+	v := variable{}
+
+	v.name = result["name"]
+	v.value = result["value"]
+
+	if result["commented"] != "" {
+		v.commented = true
+	}
+
+	if knownVariables[v.name].secret {
+		v.secret = true
+	}
+
+	return v
+}
+
+func (v *variable) String() string {
+	return v.name + "=" + v.value + "\n"
+}
+
+func (v *variable) setValue() {
+	conf, found := knownVariables[v.name]
+
+	if !found {
+		return
+	}
+
+	oldValue := v.value
+
+	switch {
+	case conf.viperKey != "":
+		v.value = viper.GetString(conf.viperKey)
+	case conf.getValue != nil:
+		var err error
+
+		v.value, err = conf.getValue()
+		if err != nil {
+			log.Error(err)
+		}
+	}
+
+	if v.value != oldValue {
+		v.changed = true
+	}
+}
 
 type variableConfig = struct {
 	viperKey string
