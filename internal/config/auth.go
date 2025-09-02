@@ -38,12 +38,14 @@ func GetBaseURL() string {
 }
 
 func GetEndpointURL(endpoint string) (string, error) {
+	// baseURL := "https://staging.datarobot.com"
+	// baseURL := "https://app.datarobot.com"
 	baseURL := GetBaseURL()
 	if baseURL == "" {
 		return "", errors.New("empty url")
 	}
 
-	return url.JoinPath(GetBaseURL(), endpoint)
+	return url.JoinPath(baseURL, endpoint)
 }
 
 func SaveURLToConfig(newURL string) error {

@@ -30,9 +30,7 @@ func LoginAction() error {
 		datarobotHost = config.GetBaseURL()
 	}
 
-	currentKey := config.GetAPIKey()
-
-	isValidKeyPair, err := verifyAPIKey(datarobotHost, currentKey)
+	isValidKeyPair, err := verifyAPIKey(datarobotHost)
 	if err != nil {
 		return err
 	}
