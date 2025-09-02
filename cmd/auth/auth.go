@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/viper"
 )
 
@@ -70,15 +71,15 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	return apiKey, nil
 }
 
-func verifyAPIKey(datarobotHost string, apiKey string) (bool, error) {
-	// Verifies if the datarobot host + api key pair correspond to a valid
-	// pair.
+func verifyAPIKey(datarobotHost string) (bool, error) {
+	// Verifies if the datarobot host + api key pair correspond to a valid pair.
 	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
 	if err != nil {
 		return false, err
 	}
 
-	req.Header.Add("Authorization", "bearer "+apiKey)
+	bearer := "Bearer " + config.GetAPIKey()
+	req.Header.Add("Authorization", bearer)
 
 	client := &http.Client{}
 

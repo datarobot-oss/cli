@@ -9,6 +9,7 @@
 package config
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 
@@ -34,6 +35,15 @@ func schemeHostOnly(longURL string) (string, error) {
 
 func GetBaseURL() string {
 	return viper.GetString(DataRobotURL)
+}
+
+func GetEndpointURL(endpoint string) (string, error) {
+	baseURL := GetBaseURL()
+	if baseURL == "" {
+		return "", errors.New("empty url")
+	}
+
+	return url.JoinPath(baseURL, endpoint)
 }
 
 func SaveURLToConfig(newURL string) error {

@@ -130,7 +130,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		m.exists = ""
 		return m, focusInput
 	case dirStatusMsg:
-		m.cloning = false
 		m.repoURL = msg.repoURL
 
 		if msg.exists {

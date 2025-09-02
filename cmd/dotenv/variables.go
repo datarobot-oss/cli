@@ -1,0 +1,114 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
+package dotenv
+
+import (
+	"regexp"
+
+	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/misc"
+	"github.com/spf13/viper"
+)
+
+type variable struct {
+	name      string
+	value     string
+	secret    bool
+	changed   bool
+	commented bool
+}
+
+func newFromLine(line string) variable {
+	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*)\s*=\s*(?P<value>.*)\n$`)
+	result := misc.NamedStringMatches(expr, line)
+	v := variable{}
+
+	v.name = result["name"]
+	v.value = result["value"]
+
+	if result["commented"] != "" {
+		v.commented = true
+	}
+
+	if knownVariables[v.name].secret {
+		v.secret = true
+	}
+
+	return v
+}
+
+func (v *variable) String() string {
+	if v.commented {
+		return "# " + v.name + "=" + v.value + "\n"
+	}
+
+	return v.name + "=" + v.value + "\n"
+}
+
+func (v *variable) setValue() {
+	conf, found := knownVariables[v.name]
+
+	if !found {
+		return
+	}
+
+	oldValue := v.value
+
+	switch {
+	case conf.viperKey != "":
+		v.value = viper.GetString(conf.viperKey)
+	case conf.getValue != nil:
+		var err error
+
+		v.value, err = conf.getValue()
+		if err != nil {
+			log.Error(err)
+		}
+	}
+
+	if v.value != oldValue {
+		v.changed = true
+	}
+}
+
+type variableConfig = struct {
+	viperKey string
+	getValue func() (string, error)
+	secret   bool
+}
+
+var knownVariables = map[string]variableConfig{
+	"DATAROBOT_ENDPOINT_SHORT": {
+		viperKey: config.DataRobotURL,
+	},
+	"DATAROBOT_ENDPOINT": {
+		getValue: func() (string, error) {
+			return config.GetEndpointURL("/api/v2")
+		},
+	},
+	"DATAROBOT_API_TOKEN": {
+		viperKey: config.DataRobotAPIKey,
+		secret:   true,
+	},
+	"USE_DATAROBOT_LLM_GATEWAY": {
+		getValue: func() (string, error) {
+			enabled, err := drapi.IsLLMGatewayEnabled()
+			if err != nil {
+				return "", err
+			}
+
+			if enabled {
+				return "true", nil
+			}
+			return "false", nil
+		},
+	},
+}

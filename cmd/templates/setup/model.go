@@ -130,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		case "ctrl+c":
 			return m, tea.Quit
 		case "q":
-			if m.screen != cloneScreen {
+			if m.screen != cloneScreen && m.screen != dotenvScreen {
 				return m, tea.Quit
 			}
 		}
