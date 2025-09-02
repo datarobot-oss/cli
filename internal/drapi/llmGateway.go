@@ -10,13 +10,12 @@ package drapi
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/datarobot/cli/internal/config"
 )
 
 func IsLLMGatewayEnabled() (bool, error) {
-	datarobotEndpoint, err := url.JoinPath(config.GetBaseURL(), "/api/v2/genai/llmgw/responses/")
+	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/genai/llmgw/responses/")
 	if err != nil {
 		return false, err
 	}

@@ -9,7 +9,6 @@
 package dotenv
 
 import (
-	"net/url"
 	"regexp"
 
 	"github.com/charmbracelet/log"
@@ -92,8 +91,7 @@ var knownVariables = map[string]variableConfig{
 	},
 	"DATAROBOT_ENDPOINT": {
 		getValue: func() (string, error) {
-			fullURL, err := url.JoinPath(config.GetBaseURL(), "/api/v2")
-			return fullURL, err
+			return config.GetEndpointURL("/api/v2")
 		},
 	},
 	"DATAROBOT_API_TOKEN": {
