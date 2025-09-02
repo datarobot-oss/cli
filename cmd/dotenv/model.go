@@ -15,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/tui"
 )
 
 type screens int
@@ -108,7 +109,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				m.screen = editorScreen
 				ta := textarea.New()
 				ta.SetWidth(m.width - 1)
-				ta.SetHeight(m.height - 12)
+				ta.SetHeight(m.height - 14)
 				ta.SetValue(m.contents)
 				ta.CursorStart()
 				cmd := ta.Focus()
@@ -165,8 +166,13 @@ func (m Model) View() string {
 				fmt.Fprintf(&sb, "%s\n", v.value)
 			}
 		}
+
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
 	}
 
 	return sb.String()
