@@ -11,6 +11,7 @@ package config
 import (
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -34,7 +35,17 @@ func schemeHostOnly(longURL string) (string, error) {
 }
 
 func GetBaseURL() string {
-	return viper.GetString(DataRobotURL)
+	if endpoint := os.Getenv("DATAROBOT_ENDPOINT"); endpoint != "" {
+		if newURL, err := schemeHostOnly(endpoint); err == nil {
+			return newURL
+		}
+	}
+
+	if url, err := schemeHostOnly(viper.GetString(DataRobotURL)); err == nil {
+		return url
+	}
+
+	return ""
 }
 
 func GetEndpointURL(endpoint string) (string, error) {
@@ -93,6 +104,10 @@ func urlFromShortcut(selectedOption string) string {
 }
 
 func GetAPIKey() string {
+	if token := os.Getenv("DATAROBOT_API_TOKEN"); token != "" {
+		return token
+	}
+
 	// Returns the API key if there is one, otherwise returns an empty string
 	return viper.GetString(DataRobotAPIKey)
 }

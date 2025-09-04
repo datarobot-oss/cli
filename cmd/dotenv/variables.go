@@ -95,8 +95,10 @@ var knownVariables = map[string]variableConfig{
 		},
 	},
 	"DATAROBOT_API_TOKEN": {
-		viperKey: config.DataRobotAPIKey,
-		secret:   true,
+		getValue: func() (string, error) {
+			return config.GetAPIKey(), nil
+		},
+		secret: true,
 	},
 	"USE_DATAROBOT_LLM_GATEWAY": {
 		getValue: func() (string, error) {
