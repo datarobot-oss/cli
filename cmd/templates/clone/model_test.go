@@ -73,11 +73,18 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathHomeShortcutExistingFile(
 }
 
 func (suite *ModelTestSuite) TestCreateAbsoluteFilepathEnvVarExistingFile() {
-	// In this case, $HOME has been set to suite.tempDir in SetupTest
+	// In this case, $HOME and $PARAKEET has been set to suite.tempDir in SetupTest
 	testFileName := "$HOME/squak/squak"
 	createdMsg := DirStatus(testFileName)
 
 	expectedDir := filepath.Join(suite.tempDir, "squak/squak")
+
+	suite.Equal(expectedDir, createdMsg.dir, "Expected directory status message to match")
+
+	testFileName = "$PARAKEET/squak/squak"
+	createdMsg = DirStatus(testFileName)
+
+	expectedDir = filepath.Join(suite.tempDir, "squak/squak")
 
 	suite.Equal(expectedDir, createdMsg.dir, "Expected directory status message to match")
 }
