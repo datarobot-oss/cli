@@ -11,6 +11,8 @@ package clone
 import (
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,7 +39,7 @@ type (
 	focusInputMsg    struct{}
 	validateInputMsg struct{ id int }
 	validMsg         struct{}
-	dirStatusMsg     struct {
+	DirStatusMsg     struct {
 		dir     string
 		exists  bool
 		repoURL string
@@ -53,21 +55,45 @@ func dirExists(dir string) bool {
 	return !os.IsNotExist(err)
 }
 
-func dirStatus(dir string) dirStatusMsg {
-	if dirExists(dir) {
-		return dirStatusMsg{dir, true, gitOrigin(dir)}
+func DirIsAbsolute(dir string) bool {
+	return filepath.IsAbs(dir)
+}
+
+func CleanDirPath(dir string) string {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
 	}
 
-	return dirStatusMsg{dir, false, ""}
+	homeDir := currentUser.HomeDir
+
+	resolvedString := os.ExpandEnv(dir)
+	if strings.HasPrefix(resolvedString, "~/") {
+		resolvedString = strings.Replace(resolvedString, "~", homeDir, 1)
+	}
+
+	updatedDir := filepath.Clean(resolvedString)
+
+	return updatedDir
+}
+
+func DirStatus(dir string) DirStatusMsg {
+	updatedDir := CleanDirPath(dir)
+
+	if dirExists(updatedDir) {
+		return DirStatusMsg{updatedDir, true, GitOrigin(updatedDir, DirIsAbsolute(updatedDir))}
+	}
+
+	return DirStatusMsg{updatedDir, false, ""}
 }
 
 func (m Model) pullRepository() tea.Cmd {
 	return func() tea.Msg {
 		dir := m.input.Value()
-		status := dirStatus(dir) // Dir should be independently validated here
+		status := DirStatus(dir) // Dir should be independently validated here
 
 		if !status.exists {
-			out, err := gitClone(m.template.Repository.URL, dir)
+			out, err := gitClone(m.template.Repository.URL, status.dir)
 			if err != nil {
 				return cloneErrorMsg{out: err.Error()}
 			}
@@ -76,7 +102,7 @@ func (m Model) pullRepository() tea.Cmd {
 		}
 
 		if status.repoURL == m.template.Repository.URL {
-			out, err := gitPull(dir)
+			out, err := gitPull(status.dir)
 			if err != nil {
 				return cloneErrorMsg{out: err.Error()}
 			}
@@ -92,7 +118,7 @@ func (m Model) validateDir() tea.Cmd {
 	return func() tea.Msg {
 		dir := m.input.Value()
 
-		if status := dirStatus(dir); status.exists {
+		if status := DirStatus(dir); status.exists {
 			return status
 		}
 
@@ -113,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		case "enter":
 			m.input.Blur()
 			m.cloning = true
-			m.Dir = m.input.Value()
+			m.Dir = CleanDirPath(m.input.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		}
@@ -129,7 +155,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	case validMsg:
 		m.exists = ""
 		return m, focusInput
-	case dirStatusMsg:
+	case DirStatusMsg:
 		m.repoURL = msg.repoURL
 
 		if msg.exists {
