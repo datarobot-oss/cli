@@ -35,26 +35,26 @@ func (suite *ModelTestSuite) SetupTest() {
 
 func (suite *ModelTestSuite) TestLeaveSingleDirNameUnmodified() {
 	testFileName := "squak"
-	createdMsg := DirStatus(testFileName)
+	createdMsg := dirStatus(testFileName)
 
 	suite.Equal(testFileName, createdMsg.dir, "Expected directory status message to match")
 
 	testFileName = "squak/squak"
-	createdMsg = DirStatus(testFileName)
+	createdMsg = dirStatus(testFileName)
 
 	suite.Equal(testFileName, createdMsg.dir, "Expected directory status message to match")
 }
 
 func (suite *ModelTestSuite) TestCreateRelativeFilepathExistingFile() {
 	testFileName := "squak/squak"
-	createdMsg := DirStatus(testFileName)
+	createdMsg := dirStatus(testFileName)
 
 	suite.Equal(testFileName, createdMsg.dir, "Expected directory status message to match")
 }
 
 func (suite *ModelTestSuite) TestCreateAbsoluteFilepathNonExistingFile() {
 	testFileName := filepath.Join(suite.tempDir, "squak/squak")
-	createdMsg := DirStatus(testFileName)
+	createdMsg := dirStatus(testFileName)
 
 	suite.Equal(testFileName, createdMsg.dir, "Expected directory status message to match")
 }
@@ -62,7 +62,7 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathNonExistingFile() {
 func (suite *ModelTestSuite) TestCreateAbsoluteFilepathHomeShortcutExistingFile() {
 	// In this case, ~ is the shortcut for the actual home directory of the user running the test
 	testFileName := "~/squak/squak"
-	createdMsg := DirStatus(testFileName)
+	createdMsg := dirStatus(testFileName)
 
 	testUser, err := user.Current()
 	suite.NoError(err, "Expected no error retrieving current user") //nolint: testifylint
@@ -75,14 +75,14 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathHomeShortcutExistingFile(
 func (suite *ModelTestSuite) TestCreateAbsoluteFilepathEnvVarExistingFile() {
 	// In this case, $HOME and $PARAKEET has been set to suite.tempDir in SetupTest
 	testFileName := "$HOME/squak/squak"
-	createdMsg := DirStatus(testFileName)
+	createdMsg := dirStatus(testFileName)
 
 	expectedDir := filepath.Join(suite.tempDir, "squak/squak")
 
 	suite.Equal(expectedDir, createdMsg.dir, "Expected directory status message to match")
 
 	testFileName = "$PARAKEET/squak/squak"
-	createdMsg = DirStatus(testFileName)
+	createdMsg = dirStatus(testFileName)
 
 	expectedDir = filepath.Join(suite.tempDir, "squak/squak")
 
@@ -90,6 +90,6 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathEnvVarExistingFile() {
 }
 
 func (suite *ModelTestSuite) TestAbsolutePathDetectedCorrectly() {
-	suite.True(DirIsAbsolute("/squak/squak"), "Expected /squak/squak absolute path to be detected correctly")
-	suite.False(DirIsAbsolute("squak/squak"), "Expected squak/squak relative path to be detected correctly")
+	suite.True(dirIsAbsolute("/squak/squak"), "Expected /squak/squak absolute path to be detected correctly")
+	suite.False(dirIsAbsolute("squak/squak"), "Expected squak/squak relative path to be detected correctly")
 }

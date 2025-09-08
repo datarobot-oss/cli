@@ -39,7 +39,7 @@ type (
 	focusInputMsg    struct{}
 	validateInputMsg struct{ id int }
 	validMsg         struct{}
-	DirStatusMsg     struct {
+	dirStatusMsg     struct {
 		dir     string
 		exists  bool
 		repoURL string
@@ -55,11 +55,11 @@ func dirExists(dir string) bool {
 	return !os.IsNotExist(err)
 }
 
-func DirIsAbsolute(dir string) bool {
+func dirIsAbsolute(dir string) bool {
 	return filepath.IsAbs(dir)
 }
 
-func CleanDirPath(dir string) string {
+func cleanDirPath(dir string) string {
 	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
@@ -77,20 +77,20 @@ func CleanDirPath(dir string) string {
 	return updatedDir
 }
 
-func DirStatus(dir string) DirStatusMsg {
-	updatedDir := CleanDirPath(dir)
+func dirStatus(dir string) dirStatusMsg {
+	updatedDir := cleanDirPath(dir)
 
 	if dirExists(updatedDir) {
-		return DirStatusMsg{updatedDir, true, GitOrigin(updatedDir, DirIsAbsolute(updatedDir))}
+		return dirStatusMsg{updatedDir, true, gitOrigin(updatedDir, dirIsAbsolute(updatedDir))}
 	}
 
-	return DirStatusMsg{updatedDir, false, ""}
+	return dirStatusMsg{updatedDir, false, ""}
 }
 
 func (m Model) pullRepository() tea.Cmd {
 	return func() tea.Msg {
 		dir := m.input.Value()
-		status := DirStatus(dir) // Dir should be independently validated here
+		status := dirStatus(dir) // Dir should be independently validated here
 
 		if !status.exists {
 			out, err := gitClone(m.template.Repository.URL, status.dir)
@@ -118,7 +118,7 @@ func (m Model) validateDir() tea.Cmd {
 	return func() tea.Msg {
 		dir := m.input.Value()
 
-		if status := DirStatus(dir); status.exists {
+		if status := dirStatus(dir); status.exists {
 			return status
 		}
 
@@ -139,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		case "enter":
 			m.input.Blur()
 			m.cloning = true
-			m.Dir = CleanDirPath(m.input.Value())
+			m.Dir = cleanDirPath(m.input.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		}
@@ -155,7 +155,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	case validMsg:
 		m.exists = ""
 		return m, focusInput
-	case DirStatusMsg:
+	case dirStatusMsg:
 		m.repoURL = msg.repoURL
 
 		if msg.exists {
