@@ -15,7 +15,7 @@ import (
 )
 
 func IsLLMGatewayEnabled() (bool, error) {
-	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/genai/llmgw/responses/")
+	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/genai/llms/")
 	if err != nil {
 		return false, err
 	}
@@ -36,7 +36,7 @@ func IsLLMGatewayEnabled() (bool, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnprocessableEntity {
+	if resp.StatusCode == http.StatusOK {
 		return true, nil
 	}
 
