@@ -11,6 +11,8 @@ package clone
 import (
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,12 +55,36 @@ func dirExists(dir string) bool {
 	return !os.IsNotExist(err)
 }
 
-func dirStatus(dir string) dirStatusMsg {
-	if dirExists(dir) {
-		return dirStatusMsg{dir, true, gitOrigin(dir)}
+func dirIsAbsolute(dir string) bool {
+	return filepath.IsAbs(dir)
+}
+
+func cleanDirPath(dir string) string {
+	currentUser, err := user.Current()
+	if err != nil {
+		panic(err)
 	}
 
-	return dirStatusMsg{dir, false, ""}
+	homeDir := currentUser.HomeDir
+
+	resolvedString := os.ExpandEnv(dir)
+	if strings.HasPrefix(resolvedString, "~/") {
+		resolvedString = strings.Replace(resolvedString, "~", homeDir, 1)
+	}
+
+	updatedDir := filepath.Clean(resolvedString)
+
+	return updatedDir
+}
+
+func dirStatus(dir string) dirStatusMsg {
+	updatedDir := cleanDirPath(dir)
+
+	if dirExists(updatedDir) {
+		return dirStatusMsg{updatedDir, true, gitOrigin(updatedDir, dirIsAbsolute(updatedDir))}
+	}
+
+	return dirStatusMsg{updatedDir, false, ""}
 }
 
 func (m Model) pullRepository() tea.Cmd {
@@ -67,7 +93,7 @@ func (m Model) pullRepository() tea.Cmd {
 		status := dirStatus(dir) // Dir should be independently validated here
 
 		if !status.exists {
-			out, err := gitClone(m.template.Repository.URL, dir)
+			out, err := gitClone(m.template.Repository.URL, status.dir)
 			if err != nil {
 				return cloneErrorMsg{out: err.Error()}
 			}
@@ -76,7 +102,7 @@ func (m Model) pullRepository() tea.Cmd {
 		}
 
 		if status.repoURL == m.template.Repository.URL {
-			out, err := gitPull(dir)
+			out, err := gitPull(status.dir)
 			if err != nil {
 				return cloneErrorMsg{out: err.Error()}
 			}
@@ -113,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		case "enter":
 			m.input.Blur()
 			m.cloning = true
-			m.Dir = m.input.Value()
+			m.Dir = cleanDirPath(m.input.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		}

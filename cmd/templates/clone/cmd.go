@@ -44,7 +44,9 @@ func Run(args []string) error {
 
 	fmt.Printf("\nCloning into %s directory...\n", dirStyled)
 
-	out, err := gitClone(repoURL, dir)
+	updatedDir := cleanDirPath(dir)
+
+	out, err := gitClone(repoURL, updatedDir)
 	if err != nil {
 		return err
 	}
@@ -87,7 +89,7 @@ func gitClone(repoURL, dir string) (string, error) {
 	return string(stdout), nil
 }
 
-func gitOrigin(dir string) string {
+func gitOrigin(dir string, isAbsolute bool) string {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 
 	path, err := os.Getwd()
@@ -95,7 +97,11 @@ func gitOrigin(dir string) string {
 		return ""
 	}
 
-	cmd.Dir = filepath.Join(path, dir)
+	if isAbsolute {
+		cmd.Dir = dir
+	} else {
+		cmd.Dir = filepath.Join(path, dir)
+	}
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
