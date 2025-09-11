@@ -76,9 +76,18 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 		Type:  tea.KeyRunes,
 		Runes: []rune("enter"),
 	})
+
+	teatest.WaitFor(
+		suite.T(), tm.Output(),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte("cliRedirect=true"))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
-		Runes: []rune("ctrl+c"),
+		Runes: []rune("esc"),
 	})
 
 	err := tm.Quit()
@@ -93,7 +102,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
@@ -117,9 +126,18 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 		Type:  tea.KeyRunes,
 		Runes: []rune("enter"),
 	})
+
+	teatest.WaitFor(
+		suite.T(), tm.Output(),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte("cliRedirect=true"))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
-		Runes: []rune("ctrl+c"),
+		Runes: []rune("esc"),
 	})
 
 	err := tm.Quit()
@@ -134,7 +152,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.eu.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.eu.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
@@ -158,9 +176,18 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 		Type:  tea.KeyRunes,
 		Runes: []rune("enter"),
 	})
+
+	teatest.WaitFor(
+		suite.T(), tm.Output(),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte("cliRedirect=true"))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
-		Runes: []rune("ctrl+c"),
+		Runes: []rune("esc"),
 	})
 
 	err := tm.Quit()
@@ -175,7 +202,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.jp.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.jp.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
@@ -199,9 +226,18 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 		Type:  tea.KeyRunes,
 		Runes: []rune("enter"),
 	})
+
+	teatest.WaitFor(
+		suite.T(), tm.Output(),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte("cliRedirect=true"))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
-		Runes: []rune("ctrl+c"),
+		Runes: []rune("esc"),
 	})
 
 	err := tm.Quit()
@@ -216,7 +252,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.parakeet.datarobot.com", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://app.parakeet.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
@@ -240,6 +276,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 		Type:  tea.KeyRunes,
 		Runes: []rune("enter"),
 	})
+
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune("ctrl+c"),
@@ -251,11 +288,5 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 	}
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
-	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
-	yamlFile, _ := os.ReadFile(expectedFilePath)
-
-	yamlData := make(map[string]string)
-
-	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.NoFileExists(expectedFilePath, "Expected config file to not be created at default path")
 }

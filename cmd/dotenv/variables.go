@@ -87,7 +87,9 @@ type variableConfig = struct {
 
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
-		viperKey: config.DataRobotURL,
+		getValue: func() (string, error) {
+			return config.GetEndpointURL("")
+		},
 	},
 	"DATAROBOT_ENDPOINT": {
 		getValue: func() (string, error) {

@@ -26,7 +26,7 @@ func schemeHostOnly(longURL string) (string, error) {
 	}
 
 	if parsedURL.Host == "" {
-		return "", err
+		return "", errors.New("invalid url")
 	}
 
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
@@ -58,7 +58,14 @@ func GetEndpointURL(endpoint string) (string, error) {
 }
 
 func SaveURLToConfig(newURL string) error {
-	newURL = urlFromShortcut(newURL)
+	newURL, err := schemeHostOnly(urlFromShortcut(newURL))
+	if err != nil {
+		return err
+	}
+
+	if err := CreateConfigFileDirIfNotExists(); err != nil {
+		return err
+	}
 
 	// Saves the URL to the config file with the path prefix
 	// Or as an empty string, if that's needed
@@ -70,12 +77,7 @@ func SaveURLToConfig(newURL string) error {
 		return nil
 	}
 
-	newURL, err := schemeHostOnly(newURL)
-	if err != nil {
-		return err
-	}
-
-	viper.Set(DataRobotURL, newURL)
+	viper.Set(DataRobotURL, newURL+"/api/v2")
 	_ = viper.WriteConfig()
 
 	return nil
@@ -94,12 +96,7 @@ func urlFromShortcut(selectedOption string) string {
 	case "3":
 		return "https://app.jp.datarobot.com"
 	default:
-		url, err := schemeHostOnly(selected)
-		if err != nil {
-			return ""
-		}
-
-		return url
+		return selected
 	}
 }
 

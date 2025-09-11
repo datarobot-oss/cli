@@ -52,14 +52,7 @@ func (suite *ConfigTestSuite) TestReadConfigFileNoPreviousFile() {
 	suite.NoError(err, "Expected no error when reading config file without a previous file") //nolint: testifylint
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
-	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
-	yamlFile, _ := os.ReadFile(expectedFilePath)
-	yamlData := make(map[string]string)
-
-	err = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.NoError(err, "Expected no error when unmarshalling YAML file") //nolint: testifylint
-
-	suite.Empty(yamlData, "Expected config file to be empty after creation without previous file")
+	suite.NoFileExists(expectedFilePath, "Expected config file to not be created at default path")
 }
 
 func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
