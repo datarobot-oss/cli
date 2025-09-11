@@ -17,10 +17,11 @@ import (
 )
 
 type UserPrompt struct {
-	Key     string
-	Env     string `yaml:"env"`
-	Type    string `yaml:"type"`
-	Options []struct {
+	Key      string `yaml:"key,omitempty"`
+	Env      string `yaml:"env"`
+	Type     string `yaml:"type"`
+	Multiple bool   `yaml:"multiple"`
+	Options  []struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value,omitempty"`
 	} `yaml:"options,omitempty"`

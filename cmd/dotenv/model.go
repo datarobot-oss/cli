@@ -10,11 +10,13 @@ package dotenv
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -23,19 +25,24 @@ type screens int
 const (
 	listScreen = screens(iota)
 	editorScreen
+	wizardScreen
 )
 
 type Model struct {
-	screen         screens
-	DotenvFile     string
-	DotenvTemplate string
-	variables      []variable
-	err            error
-	textarea       textarea.Model
-	contents       string
-	width          int
-	height         int
-	SuccessCmd     tea.Cmd
+	screen             screens
+	DotenvFile         string
+	DotenvTemplate     string
+	variables          []variable
+	err                error
+	textarea           textarea.Model
+	contents           string
+	width              int
+	height             int
+	SuccessCmd         tea.Cmd
+	prompts            []promptMsg
+	savedResponses     map[string]interface{}
+	envResponses       map[string]interface{}
+	currentPromptIndex int
 }
 
 type (
@@ -45,6 +52,17 @@ type (
 		variables      []variable
 		contents       string
 		dotenvTemplate string
+	}
+
+	promptMsg struct {
+		rawPrompt envbuilder.UserPrompt
+		key       string
+		env       string
+		requires  []struct {
+			name  string
+			value string
+		}
+		helpMsg string
 	}
 )
 
@@ -74,6 +92,86 @@ func (m Model) saveEditedFile() tea.Cmd {
 }
 
 func (m Model) Init() tea.Cmd {
+	builder := envbuilder.NewEnvBuilder()
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg{err}
+		}
+	}
+
+	prompts, err := builder.GatherUserPrompts(currentDir)
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg{err}
+		}
+	}
+	promptMsgs := make([]promptMsg, 0, len(prompts))
+	for _, p := range prompts {
+		switch p.(type) {
+		case envbuilder.UserPrompt:
+			var allRequires []struct {
+				name  string
+				value string
+			}
+			//
+			allRequires = make([]struct {
+				name  string
+				value string
+			}, 0)
+			requires := p.(envbuilder.UserPrompt).Requires
+			for _, r := range requires {
+				allRequires = append(allRequires, struct {
+					name  string
+					value string
+				}{
+					name:  r.Name,
+					value: r.Value,
+				})
+			}
+			promptMsgs = append(promptMsgs, promptMsg{
+				rawPrompt: p.(envbuilder.UserPrompt),
+				key:       p.(envbuilder.UserPrompt).Key,
+				env:       p.(envbuilder.UserPrompt).Env,
+				requires:  allRequires,
+				helpMsg:   p.(envbuilder.UserPrompt).Help,
+			})
+		case envbuilder.UserPromptCollection:
+			var allRequires []struct {
+				name  string
+				value string
+			}
+			//
+			allRequires = make([]struct {
+				name  string
+				value string
+			}, 0)
+			requires := p.(envbuilder.UserPromptCollection).Requires
+			for _, r := range requires {
+				allRequires = append(allRequires, struct {
+					name  string
+					value string
+				}{
+					name:  r.Name,
+					value: r.Value,
+				})
+			}
+			for _, up := range p.(envbuilder.UserPromptCollection).Prompts {
+				promptMsgs = append(promptMsgs, promptMsg{
+					rawPrompt: up,
+					key:       up.Key,
+					env:       up.Env,
+					requires:  allRequires,
+					helpMsg:   up.Help,
+				})
+			}
+		}
+	}
+	m.prompts = promptMsgs
+	m.currentPromptIndex = 0
+	m.savedResponses = make(map[string]interface{})
+	m.envResponses = make(map[string]interface{})
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
@@ -141,6 +239,38 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		m.contents = m.textarea.Value()
 
 		return m, cmd
+
+	case wizardScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			default:
+				currentPrompt := m.prompts[m.currentPromptIndex]
+				m.savedResponses[currentPrompt.key] = keypress
+				if currentPrompt.env != "" {
+					m.envResponses[currentPrompt.env] = keypress
+				}
+				m.currentPromptIndex++
+				// Check if next prompt has requirements
+				for m.currentPromptIndex < len(m.prompts) {
+					nextPrompt := m.prompts[m.currentPromptIndex]
+					meetsRequirements := true
+					for _, req := range nextPrompt.requires {
+						if val, ok := m.savedResponses[req.name]; !ok || val != req.value {
+							meetsRequirements = false
+							break
+						}
+					}
+					if meetsRequirements {
+						break
+					}
+					m.currentPromptIndex++
+				}
+				if m.currentPromptIndex >= len(m.prompts) {
+					return m, m.SuccessCmd
+				}
+			}
+		}
 	}
 
 	return m, nil
@@ -173,6 +303,16 @@ func (m Model) View() string {
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
+
+	case wizardScreen:
+		currentPrompt := m.prompts[m.currentPromptIndex]
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
+		sb.WriteString("\n")
+		if currentPrompt.rawPrompt.Default != "" {
+			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+			sb.WriteString("\n")
+		}
 	}
 
 	return sb.String()

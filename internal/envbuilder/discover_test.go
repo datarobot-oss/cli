@@ -123,3 +123,12 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsFiles() {
 	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/parakeet.yaml", suite.tempDir))
 	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/another_parakeet.yaml", suite.tempDir))
 }
+
+func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
+	foundPaths, err := Discover(suite.tempDir, 5)
+	suite.NoError(err) //nolint: testifylint
+
+	suite.Equal(2, len(foundPaths), "Expected to find 2 YAML files")
+	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/parakeet.yaml", suite.tempDir))
+	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/another_parakeet.yaml", suite.tempDir))
+}
