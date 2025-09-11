@@ -54,8 +54,7 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 
 		fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
 		fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
-		fmt.Println(authURL)
-		fmt.Println("")
+		fmt.Printf("%s\n\n", authURL)
 
 		misc.Open(authURL)
 
