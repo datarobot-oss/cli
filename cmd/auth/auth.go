@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/misc"
 	"github.com/spf13/viper"
 )
 
@@ -49,9 +50,13 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 
 	// Start the server in a goroutine
 	go func() {
+		authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
+
 		fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
 		fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
-		fmt.Printf("%s/account/developer-tools?cliRedirect=true\n\n", datarobotHost)
+		fmt.Printf("%s\n\n", authURL)
+
+		misc.Open(authURL)
 
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {

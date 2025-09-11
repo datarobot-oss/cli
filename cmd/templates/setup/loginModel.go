@@ -14,16 +14,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os/exec"
-	"runtime"
 	"strings"
-	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/misc"
 	"github.com/spf13/viper"
 )
 
@@ -82,31 +80,16 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		msg.WriteString("to connect your DataRobot credentials to the CLI\n")
 		msg.WriteString("(If you're prompted to log in, you may need to re-enter this URL):\n")
 
-		url := datarobotHost + "/account/developer-tools?cliRedirect=true"
-		msg.WriteString(url)
+		authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
+		msg.WriteString(authURL)
 		msg.WriteString("\n\n")
 
-		open(url)
+		misc.Open(authURL)
 
 		return startedMsg{
 			server:  server,
 			message: msg.String(),
 		}
-	}
-}
-
-func open(url string) {
-	if testing.Testing() {
-		return
-	}
-
-	switch runtime.GOOS {
-	case "darwin":
-		_ = exec.Command("open", url).Run()
-	case "windows":
-		_ = exec.Command("start", url).Run()
-	default:
-		_ = exec.Command("xdg-open", url).Run()
 	}
 }
 
