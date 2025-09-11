@@ -10,7 +10,7 @@ package dotenv
 
 import (
 	"fmt"
-	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -54,6 +54,8 @@ type (
 		dotenvTemplate string
 	}
 
+	wizardFinishedMsg struct{}
+
 	promptMsg struct {
 		rawPrompt envbuilder.UserPrompt
 		key       string
@@ -94,15 +96,11 @@ func (m Model) saveEditedFile() tea.Cmd {
 func (m Model) Init() tea.Cmd {
 	builder := envbuilder.NewEnvBuilder()
 
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return func() tea.Msg {
-			return errMsg{err}
-		}
-	}
+	currentDir := filepath.Dir(m.DotenvFile)
 
 	prompts, err := builder.GatherUserPrompts(currentDir)
 	if err != nil {
+		envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
 		return func() tea.Msg {
 			return errMsg{err}
 		}
@@ -172,6 +170,14 @@ func (m Model) Init() tea.Cmd {
 	m.currentPromptIndex = 0
 	m.savedResponses = make(map[string]interface{})
 	m.envResponses = make(map[string]interface{})
+	if len(m.prompts) == 0 {
+		return func() tea.Msg {
+			return wizardFinishedMsg{}
+		}
+	}
+
+	// Start in the wizard screen
+	m.screen = wizardScreen
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
@@ -188,11 +194,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 		return m, nil
 	case dotenvFileUpdatedMsg:
-		m.screen = listScreen
+		m.screen = wizardScreen
 		m.variables = msg.variables
 		m.contents = msg.contents
 		m.DotenvTemplate = msg.dotenvTemplate
 
+		return m, nil
+
+	case wizardFinishedMsg:
+		m.screen = listScreen
 		return m, nil
 	}
 
@@ -281,24 +291,32 @@ func (m Model) View() string {
 
 	switch m.screen {
 	case listScreen:
-		fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
-
-		for _, v := range m.variables {
-			if v.commented {
-				fmt.Fprintf(&sb, "# ")
-			}
-
-			fmt.Fprintf(&sb, "%s: ", v.name)
-
-			if v.secret {
-				fmt.Fprintf(&sb, "***\n")
-			} else {
-				fmt.Fprintf(&sb, "%s\n", v.value)
-			}
-		}
-
+		//fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
+		//
+		//for _, v := range m.variables {
+		//	if v.commented {
+		//		fmt.Fprintf(&sb, "# ")
+		//	}
+		//
+		//	fmt.Fprintf(&sb, "%s: ", v.name)
+		//
+		//	if v.secret {
+		//		fmt.Fprintf(&sb, "***\n")
+		//	} else {
+		//		fmt.Fprintf(&sb, "%s\n", v.value)
+		//	}
+		//}
+		//
+		//sb.WriteString("\n")
+		//sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
+		currentPrompt := m.prompts[m.currentPromptIndex]
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
+		if currentPrompt.rawPrompt.Default != "" {
+			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+			sb.WriteString("\n")
+		}
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")

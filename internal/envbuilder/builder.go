@@ -25,7 +25,7 @@ type UserPrompt struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value,omitempty"`
 	} `yaml:"options,omitempty"`
-	Default  string `yaml:"default,omitempty"`
+	Default  any    `yaml:"default,omitempty"`
 	Help     string `yaml:"help"`
 	Optional bool   `yaml:"optional,omitempty"`
 	Requires []struct {
@@ -58,9 +58,23 @@ func NewEnvBuilder() *Builder {
 	return &Builder{}
 }
 
-func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
+func PrintToStdOut(message string) {
+	fmt.Fprintln(os.Stdout, message)
+	f, err := os.OpenFile("logging.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error opening file: %v", err)
+		return
+	}
+	defer f.Close()
 
-	yamlFiles, err := Discover(rootDir, 2)
+	_, err = f.WriteString(message + "\n")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error writing to file: %v", err)
+	}
+}
+
+func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
+	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
 	}
@@ -126,6 +140,5 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
 			}
 		}
 	}
-
 	return fullCollection, nil
 }

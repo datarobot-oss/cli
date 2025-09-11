@@ -79,7 +79,7 @@ func validateArgs(args []string) (string, string, error) {
 }
 
 func gitClone(repoURL, dir string) (string, error) {
-	cmd := exec.Command("git", "clone", repoURL, dir)
+	cmd := exec.Command("git", "clone", "-b", "alevan/CFX-3597-env-config", repoURL, dir)
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
@@ -112,7 +112,7 @@ func gitOrigin(dir string, isAbsolute bool) string {
 }
 
 func gitPull(dir string) (string, error) {
-	cmd := exec.Command("git", "pull")
+	cmd := exec.Command("git", "checkout", "alevan/CFX-3597-env-config", "&&", "git", "pull")
 
 	path, err := os.Getwd()
 	if err != nil {

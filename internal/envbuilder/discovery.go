@@ -71,7 +71,7 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 			return nil
 		}
 
-		matches, err := filepath.Glob(filepath.Join(path, "*.yaml"))
+		matches, err := filepath.Glob(filepath.Join(path, "*.y*ml"))
 		if err != nil {
 			log.Debug(err)
 			return nil
