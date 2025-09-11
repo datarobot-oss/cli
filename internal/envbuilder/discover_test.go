@@ -21,7 +21,7 @@ var testYamlFile1 = `
 pulumi_config_passphrase:
   env: PULUMI_CONFIG_PASSPHRASE
   type: string
-  default: 123
+  default: "123"
   optional: true
   help: "The passphrase used to encrypt and decrypt the private key. This value is required if you're not using pulumi cloud."
 datarobot_default_use_case:
@@ -37,7 +37,7 @@ infra_enable_llm:
   env: INFRA_ENABLE_LLM
   type: string
   optional: true
-  help: "Select "
+  help: "Select the type of LLM integration to enable."
   options:
     - name: "External LLM"
       value: "blueprint_with_external_llm.py"
@@ -55,6 +55,20 @@ deployed_llm:
   type: string
   optional: false
   help: "The deployment ID of the DataRobot Deployed LLM to use."
+registered_model:
+  requires:
+    - name: infra_enable_llm
+      value: "registered_model.py"
+  prompts:
+    - env: TEXTGEN_REGISTERED_MODEL_ID
+      type: string
+      optional: false
+      help: "The ID of the registered model with an LLM blueprint to use."
+    - env: DATAROBOT_TIMEOUT_MINUTES
+      type: number
+      default: "30"
+      optional: true
+      help: "The timeout in minutes for DataRobot operations. Default is 30 minutes."
 `
 
 func TestDiscoverTestSuite(t *testing.T) {

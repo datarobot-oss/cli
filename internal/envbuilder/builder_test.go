@@ -65,5 +65,21 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	prompts, err := envBuilder.GatherUserPrompts(suite.tempDir)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Equal(2, len(prompts), "Expected to find two sets of prompts")
+	suite.Equal(5, len(prompts), "Expected to find four sets of prompts")
+	userPromptCount := 0
+	usePromptCollectionCount := 0
+	for _, prompt := range prompts {
+		switch prompt.(type) {
+		case UserPrompt:
+			userPromptCount++
+		case UserPromptCollection:
+			usePromptCollectionCount++
+		}
+	}
+	suite.Equal(4, userPromptCount, "Expected to find found UserPrompt entries")
+	suite.Equal(1, usePromptCollectionCount, "Expected to find one UserPromptCollection entries")
+	firstPrompt := prompts[0].(UserPrompt)
+	suite.IsType(UserPrompt{}, firstPrompt, "Expected first prompt to be of type UserPrompt")
+	suite.Equal(firstPrompt.Key, "infra_enable_llm", "Expected first prompt key to match")
+	suite.Equal(firstPrompt.Env, "INFRA_ENABLE_LLM", "Expected first prompt env to match")
 }
