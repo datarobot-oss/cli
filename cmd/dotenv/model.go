@@ -104,8 +104,6 @@ func (m Model) loadPrompts() tea.Cmd {
 
 		userPrompts, err := builder.GatherUserPrompts(currentDir)
 		if err != nil {
-			envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
-
 			return func() tea.Msg {
 				return errMsg{err}
 			}

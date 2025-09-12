@@ -56,23 +56,6 @@ func NewEnvBuilder() *Builder {
 	return &Builder{}
 }
 
-func PrintToStdOut(message string) {
-	fmt.Fprintln(os.Stdout, message)
-
-	f, err := os.OpenFile("logging.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error opening file: %v", err)
-		return
-	}
-
-	defer f.Close()
-
-	_, err = f.WriteString(message + "\n")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing to file: %v", err)
-	}
-}
-
 func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //nolint: cyclop
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
