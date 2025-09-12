@@ -243,7 +243,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				m.savedResponses[currentPrompt.key] = m.currentPrompt.input.Value()
+				value := m.currentPrompt.input.Value()
+
+				if currentPrompt.rawPrompt.Options != nil && len(currentPrompt.rawPrompt.Options) > 0 {
+					for _, option := range currentPrompt.rawPrompt.Options {
+						if option.Name == value && option.Value != "" {
+							value = option.Value
+							break
+						}
+					}
+				}
+				m.savedResponses[currentPrompt.key] = value
 
 				if currentPrompt.env != "" {
 					m.envResponses[currentPrompt.env] = m.currentPrompt.input.Value()

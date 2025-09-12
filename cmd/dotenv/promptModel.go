@@ -45,8 +45,17 @@ func (pm promptModel) View() string {
 	sb.WriteString(pm.input.View())
 	sb.WriteString("\n")
 
-	if pm.currentPrompt.rawPrompt.Default != "" {
-		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", pm.currentPrompt.rawPrompt.Default)))
+	if pm.currentPrompt.rawPrompt.Options != nil && len(pm.currentPrompt.rawPrompt.Options) > 0 {
+		sb.WriteString(tui.BaseTextStyle.Render("Options:"))
+		sb.WriteString("\n")
+		for _, option := range pm.currentPrompt.rawPrompt.Options {
+			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("  - %v", option.Name)))
+			sb.WriteString("\n")
+		}
+	}
+
+	if pm.currentPrompt.rawPrompt.Default != "" && pm.currentPrompt.rawPrompt.Default != nil {
+		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %v", pm.currentPrompt.rawPrompt.Default)))
 		sb.WriteString("\n")
 	}
 
