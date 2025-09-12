@@ -62,13 +62,11 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 
 		currentDepth := depth(relPath)
 
-		if info.IsDir() && name != ".datarobot" {
-			if (strings.HasPrefix(name, ".") && name != ".") || currentDepth > maxDepth {
+		if info.IsDir() {
+			if (strings.HasPrefix(name, ".") && name != "." && name != ".datarobot") || currentDepth > maxDepth {
 				// skip all hidden dirs (except for our root dir) or if we have already dived too deep
 				return filepath.SkipDir
 			}
-
-			return nil
 		}
 
 		matches, err := filepath.Glob(filepath.Join(path, "*.y*ml"))
@@ -76,12 +74,8 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 			log.Debug(err)
 			return nil
 		}
-		if len(matches) == 0 {
-			return nil
-		}
 
-		if currentDepth == 1 {
-			// skip the root yamlFile
+		if len(matches) == 0 {
 			return nil
 		}
 

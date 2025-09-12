@@ -9,7 +9,6 @@
 package envbuilder
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,6 +82,7 @@ type DiscoverTestSuite struct {
 func (suite *DiscoverTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "a_template_repo")
 	datarobotDir := filepath.Join(dir, ".datarobot")
+
 	err := os.MkdirAll(datarobotDir, os.ModePerm)
 	if err != nil {
 		suite.T().Errorf("Failed to create .datarobot directory: %v", err)
@@ -119,16 +119,38 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsFiles() {
 	foundPaths, err := Discover(suite.tempDir, 5)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Equal(2, len(foundPaths), "Expected to find 2 YAML files")
-	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/parakeet.yaml", suite.tempDir))
-	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/another_parakeet.yaml", suite.tempDir))
+	suite.Len(foundPaths, 2, "Expected to find 2 YAML files")
+	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
+	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
 }
 
 func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
+	parakeetDir := filepath.Join(suite.tempDir, ".datarobot", "parakeet")
+
+	err := os.MkdirAll(parakeetDir, os.ModePerm)
+	if err != nil {
+		suite.T().Errorf("Failed to create nested .datarobot directory: %v", err)
+	}
+
+	file3, err := os.OpenFile(filepath.Join(parakeetDir, "yet_another_parakeet.yml"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		suite.T().Errorf("Failed to create test YAML file three: %v", err)
+	}
+
+	defer file3.Close()
+
+	_, err = file3.WriteString(testYamlFile1)
+	if err != nil {
+		suite.T().Errorf("Failed to write to test YAML file three: %v", err)
+	}
+
+	defer os.RemoveAll(parakeetDir)
+
 	foundPaths, err := Discover(suite.tempDir, 5)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Equal(2, len(foundPaths), "Expected to find 2 YAML files")
-	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/parakeet.yaml", suite.tempDir))
-	suite.Contains(foundPaths, fmt.Sprintf("%s/.datarobot/another_parakeet.yaml", suite.tempDir))
+	suite.Len(foundPaths, 3, "Expected to find 2 YAML files")
+	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
+	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
+	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet/yet_another_parakeet.yml")
 }

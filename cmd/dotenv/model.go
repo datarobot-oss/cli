@@ -104,11 +104,14 @@ func (m Model) loadPrompts() tea.Cmd {
 		userPrompts, err := builder.GatherUserPrompts(currentDir)
 		if err != nil {
 			envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
+
 			return func() tea.Msg {
 				return errMsg{err}
 			}
 		}
+
 		prompts := make([]prompt, 0, len(userPrompts))
+
 		for _, p := range userPrompts {
 			switch p := p.(type) {
 			case envbuilder.UserPrompt:
@@ -234,25 +237,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			default:
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				m.savedResponses[currentPrompt.key] = keypress
+
 				if currentPrompt.env != "" {
 					m.envResponses[currentPrompt.env] = keypress
 				}
+
 				m.currentPromptIndex++
 				// Check if next prompt has requirements
 				for m.currentPromptIndex < len(m.prompts) {
 					nextPrompt := m.prompts[m.currentPromptIndex]
 					meetsRequirements := true
+
 					for _, req := range nextPrompt.requires {
 						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
 							meetsRequirements = false
 							break
 						}
 					}
+
 					if meetsRequirements {
 						break
 					}
+
 					m.currentPromptIndex++
 				}
+
 				if m.currentPromptIndex >= len(m.prompts) {
 					return m, m.SuccessCmd
 				}
@@ -294,9 +303,11 @@ func (m Model) View() string {
 	case wizardScreen:
 		if m.currentPromptIndex < len(m.prompts) {
 			currentPrompt := m.prompts[m.currentPromptIndex]
+
 			sb.WriteString("\n\n")
 			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
 			sb.WriteString("\n")
+
 			if currentPrompt.rawPrompt.Default != "" {
 				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
 				sb.WriteString("\n")
