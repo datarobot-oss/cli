@@ -28,6 +28,7 @@ type BuilderTestSuite struct {
 func (suite *BuilderTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "a_template_repo")
 	datarobotDir := filepath.Join(dir, ".datarobot")
+
 	err := os.MkdirAll(datarobotDir, os.ModePerm)
 	if err != nil {
 		suite.T().Errorf("Failed to create .datarobot directory: %v", err)
@@ -65,9 +66,11 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	prompts, err := envBuilder.GatherUserPrompts(suite.tempDir)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Equal(5, len(prompts), "Expected to find four sets of prompts")
+	suite.Len(prompts, 5, "Expected to find four sets of prompts")
+
 	userPromptCount := 0
 	usePromptCollectionCount := 0
+
 	for _, prompt := range prompts {
 		switch prompt.(type) {
 		case UserPrompt:
@@ -76,10 +79,12 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 			usePromptCollectionCount++
 		}
 	}
+
 	suite.Equal(4, userPromptCount, "Expected to find found UserPrompt entries")
 	suite.Equal(1, usePromptCollectionCount, "Expected to find one UserPromptCollection entries")
+
 	firstPrompt := prompts[0].(UserPrompt)
 	suite.IsType(UserPrompt{}, firstPrompt, "Expected first prompt to be of type UserPrompt")
-	suite.Equal(firstPrompt.Key, "infra_enable_llm", "Expected first prompt key to match")
-	suite.Equal(firstPrompt.Env, "INFRA_ENABLE_LLM", "Expected first prompt env to match")
+	suite.Equal("infra_enable_llm", firstPrompt.Key, "Expected first prompt key to match")
+	suite.Equal("INFRA_ENABLE_LLM", firstPrompt.Env, "Expected first prompt env to match")
 }

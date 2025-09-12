@@ -54,6 +54,14 @@ type prompt struct {
 	helpMsg   string
 }
 
+type prompt struct {
+	rawPrompt envbuilder.UserPrompt
+	key       string
+	env       string
+	requires  []envbuilder.ParentOption
+	helpMsg   string
+}
+
 type (
 	errMsg struct{ err error }
 
@@ -105,11 +113,14 @@ func (m Model) loadPrompts() tea.Cmd {
 		userPrompts, err := builder.GatherUserPrompts(currentDir)
 		if err != nil {
 			envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
+
 			return func() tea.Msg {
 				return errMsg{err}
 			}
 		}
+
 		prompts := make([]prompt, 0, len(userPrompts))
+
 		for _, p := range userPrompts {
 			switch p := p.(type) {
 			case envbuilder.UserPrompt:
@@ -238,25 +249,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				m.savedResponses[currentPrompt.key] = m.currentPrompt.input.Value()
+
 				if currentPrompt.env != "" {
 					m.envResponses[currentPrompt.env] = m.currentPrompt.input.Value()
 				}
+
 				m.currentPromptIndex++
 				// Check if next prompt has requirements
 				for m.currentPromptIndex < len(m.prompts) {
 					nextPrompt := m.prompts[m.currentPromptIndex]
 					meetsRequirements := true
+
 					for _, req := range nextPrompt.requires {
 						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
 							meetsRequirements = false
 							break
 						}
 					}
+
 					if meetsRequirements {
 						break
 					}
+
 					m.currentPromptIndex++
 				}
+
 				if m.currentPromptIndex >= len(m.prompts) {
 					return m, m.SuccessCmd
 				}

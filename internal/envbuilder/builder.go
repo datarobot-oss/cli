@@ -58,11 +58,13 @@ func NewEnvBuilder() *Builder {
 
 func PrintToStdOut(message string) {
 	fmt.Fprintln(os.Stdout, message)
+
 	f, err := os.OpenFile("logging.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error opening file: %v", err)
 		return
 	}
+
 	defer f.Close()
 
 	_, err = f.WriteString(message + "\n")
@@ -71,7 +73,7 @@ func PrintToStdOut(message string) {
 	}
 }
 
-func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
+func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //nolint: cyclop
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
@@ -88,7 +90,9 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read task yaml file %s: %w", f, err)
 		}
+
 		var collection map[string]interface{}
+
 		if err = yaml.Unmarshal(data, &collection); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", f, err)
 		}
@@ -98,45 +102,60 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) {
 			if !ok {
 				return nil, fmt.Errorf("unexpected format in yaml file %s for key %s", f, key)
 			}
-			if prompts, exists := itemMap["prompts"]; exists {
+
+			if prompts, exists := itemMap["prompts"]; exists { //nolint: nestif
 				// This is a UserPromptCollection
 				var userPromptCollection UserPromptCollection
 				userPromptCollection.Key = key
+
 				var promptsList []UserPrompt
+
 				promptsSlice, ok := prompts.([]interface{})
+
 				if !ok {
 					return nil, fmt.Errorf("unexpected format for prompts in yaml file %s for key %s", f, key)
 				}
+
 				for _, p := range promptsSlice {
 					pMap, ok := p.(map[interface{}]interface{})
 					if !ok {
 						return nil, fmt.Errorf("unexpected format for individual prompt in yaml file %s for key %s", f, key)
 					}
+
 					var userPrompt UserPrompt
+
 					err = mapstructure.Decode(pMap, &userPrompt)
 					if err != nil {
 						return nil, fmt.Errorf("failed to decode individual prompt in yaml file %s for key %s: %w", f, key, err)
 					}
+
 					promptsList = append(promptsList, userPrompt)
 				}
+
 				userPromptCollection.Prompts = promptsList
+
 				delete(itemMap, "prompts")
+
 				err = mapstructure.Decode(itemMap, &userPromptCollection)
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode prompts collection in yaml file %s: %w", f, err)
 				}
+
 				fullCollection = append(fullCollection, userPromptCollection)
 			} else {
 				// This is a map of UserPrompt
 				var userPrompt UserPrompt
 				userPrompt.Key = key
+
 				err = mapstructure.Decode(itemMap, &userPrompt)
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode prompt in yaml file %s: %w", f, err)
 				}
+
 				fullCollection = append(fullCollection, userPrompt)
 			}
 		}
 	}
+
 	return fullCollection, nil
 }
