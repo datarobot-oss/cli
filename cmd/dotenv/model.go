@@ -54,14 +54,6 @@ type prompt struct {
 	helpMsg   string
 }
 
-type prompt struct {
-	rawPrompt envbuilder.UserPrompt
-	key       string
-	env       string
-	requires  []envbuilder.ParentOption
-	helpMsg   string
-}
-
 type (
 	errMsg struct{ err error }
 
