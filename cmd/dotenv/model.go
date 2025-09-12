@@ -268,39 +268,24 @@ func (m Model) View() string {
 
 	switch m.screen {
 	case listScreen:
-		//fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
-		//
-		//for _, v := range m.variables {
-		//	if v.commented {
-		//		fmt.Fprintf(&sb, "# ")
-		//	}
-		//
-		//	fmt.Fprintf(&sb, "%s: ", v.name)
-		//
-		//	if v.secret {
-		//		fmt.Fprintf(&sb, "***\n")
-		//	} else {
-		//		fmt.Fprintf(&sb, "%s\n", v.value)
-		//	}
-		//}
-		//
-		//sb.WriteString("\n")
-		//sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
+		fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
 
-		if m.currentPromptIndex < len(m.prompts) {
-			currentPrompt := m.prompts[m.currentPromptIndex]
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-			sb.WriteString("\n")
-			if currentPrompt.rawPrompt.Default != "" {
-				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
-				sb.WriteString("\n")
+		for _, v := range m.variables {
+			if v.commented {
+				fmt.Fprintf(&sb, "# ")
 			}
-		} else {
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
-			sb.WriteString("\n")
+
+			fmt.Fprintf(&sb, "%s: ", v.name)
+
+			if v.secret {
+				fmt.Fprintf(&sb, "***\n")
+			} else {
+				fmt.Fprintf(&sb, "%s\n", v.value)
+			}
 		}
+
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
