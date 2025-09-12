@@ -25,22 +25,21 @@ type UserPrompt struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value,omitempty"`
 	} `yaml:"options,omitempty"`
-	Default  any    `yaml:"default,omitempty"`
-	Help     string `yaml:"help"`
-	Optional bool   `yaml:"optional,omitempty"`
-	Requires []struct {
-		Name  string `yaml:"name"`
-		Value string `yaml:"value"`
-	} `yaml:"requires,omitempty"`
+	Default  any            `yaml:"default,omitempty"`
+	Help     string         `yaml:"help"`
+	Optional bool           `yaml:"optional,omitempty"`
+	Requires []ParentOption `yaml:"requires,omitempty"`
 }
 
 type UserPromptCollection struct {
 	Key      string
-	Requires []struct {
-		Name  string `yaml:"name"`
-		Value string `yaml:"value"`
-	} `yaml:"requires,omitempty"`
-	Prompts []UserPrompt `yaml:"prompts"`
+	Requires []ParentOption `yaml:"requires,omitempty"`
+	Prompts  []UserPrompt   `yaml:"prompts"`
+}
+
+type ParentOption struct {
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
 }
 
 type BuilderOpts struct {
@@ -54,13 +53,12 @@ type BuilderOpts struct {
 type Builder struct{}
 
 func NewEnvBuilder() *Builder {
-
 	return &Builder{}
 }
 
 func PrintToStdOut(message string) {
 	fmt.Fprintln(os.Stdout, message)
-	f, err := os.OpenFile("logging.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile("logging.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error opening file: %v", err)
 		return

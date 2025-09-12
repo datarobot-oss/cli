@@ -60,11 +60,8 @@ type (
 		rawPrompt envbuilder.UserPrompt
 		key       string
 		env       string
-		requires  []struct {
-			name  string
-			value string
-		}
-		helpMsg string
+		requires  []envbuilder.ParentOption
+		helpMsg   string
 	}
 )
 
@@ -107,60 +104,22 @@ func (m Model) Init() tea.Cmd {
 	}
 	promptMsgs := make([]promptMsg, 0, len(prompts))
 	for _, p := range prompts {
-		switch p.(type) {
+		switch p := p.(type) {
 		case envbuilder.UserPrompt:
-			var allRequires []struct {
-				name  string
-				value string
-			}
-			//
-			allRequires = make([]struct {
-				name  string
-				value string
-			}, 0)
-			requires := p.(envbuilder.UserPrompt).Requires
-			for _, r := range requires {
-				allRequires = append(allRequires, struct {
-					name  string
-					value string
-				}{
-					name:  r.Name,
-					value: r.Value,
-				})
-			}
 			promptMsgs = append(promptMsgs, promptMsg{
-				rawPrompt: p.(envbuilder.UserPrompt),
-				key:       p.(envbuilder.UserPrompt).Key,
-				env:       p.(envbuilder.UserPrompt).Env,
-				requires:  allRequires,
-				helpMsg:   p.(envbuilder.UserPrompt).Help,
+				rawPrompt: p,
+				key:       p.Key,
+				env:       p.Env,
+				requires:  p.Requires,
+				helpMsg:   p.Help,
 			})
 		case envbuilder.UserPromptCollection:
-			var allRequires []struct {
-				name  string
-				value string
-			}
-			//
-			allRequires = make([]struct {
-				name  string
-				value string
-			}, 0)
-			requires := p.(envbuilder.UserPromptCollection).Requires
-			for _, r := range requires {
-				allRequires = append(allRequires, struct {
-					name  string
-					value string
-				}{
-					name:  r.Name,
-					value: r.Value,
-				})
-			}
-			for _, up := range p.(envbuilder.UserPromptCollection).Prompts {
+			for _, up := range p.Prompts {
 				promptMsgs = append(promptMsgs, promptMsg{
 					rawPrompt: up,
 					key:       up.Key,
 					env:       up.Env,
-					requires:  allRequires,
+					requires:  p.Requires,
 					helpMsg:   up.Help,
 				})
 			}
@@ -266,7 +225,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 					nextPrompt := m.prompts[m.currentPromptIndex]
 					meetsRequirements := true
 					for _, req := range nextPrompt.requires {
-						if val, ok := m.savedResponses[req.name]; !ok || val != req.value {
+						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
 							meetsRequirements = false
 							break
 						}
