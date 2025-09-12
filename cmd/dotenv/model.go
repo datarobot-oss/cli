@@ -245,6 +245,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				value := m.currentPrompt.input.Value()
 
+				// If a prompt has options, map the selected option name to its value
+				// Sometimes options have human readable names, but values we want to store
 				if currentPrompt.rawPrompt.Options != nil && len(currentPrompt.rawPrompt.Options) > 0 {
 					for _, option := range currentPrompt.rawPrompt.Options {
 						if option.Name == value && option.Value != "" {
