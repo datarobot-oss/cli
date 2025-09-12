@@ -33,7 +33,7 @@ func (suite *BuilderTestSuite) SetupTest() {
 		suite.T().Errorf("Failed to create .datarobot directory: %v", err)
 	}
 
-	file1, err := os.OpenFile(filepath.Join(datarobotDir, "parakeet.yaml"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	file1, err := os.OpenFile(filepath.Join(datarobotDir, "parakeet.yaml"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		suite.T().Errorf("Failed to create test YAML file one: %v", err)
 	}
@@ -45,7 +45,7 @@ func (suite *BuilderTestSuite) SetupTest() {
 		suite.T().Errorf("Failed to write to test YAML file one: %v", err)
 	}
 
-	file2, err := os.OpenFile(filepath.Join(datarobotDir, "another_parakeet.yaml"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	file2, err := os.OpenFile(filepath.Join(datarobotDir, "another_parakeet.yaml"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		suite.T().Errorf("Failed to create test YAML file two: %v", err)
 	}

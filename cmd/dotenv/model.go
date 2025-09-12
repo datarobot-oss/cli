@@ -39,10 +39,18 @@ type Model struct {
 	width              int
 	height             int
 	SuccessCmd         tea.Cmd
-	prompts            []promptMsg
+	prompts            []prompt
 	savedResponses     map[string]interface{}
 	envResponses       map[string]interface{}
 	currentPromptIndex int
+}
+
+type prompt struct {
+	rawPrompt envbuilder.UserPrompt
+	key       string
+	env       string
+	requires  []envbuilder.ParentOption
+	helpMsg   string
 }
 
 type (
@@ -52,19 +60,13 @@ type (
 		variables      []variable
 		contents       string
 		dotenvTemplate string
+		promptUser     bool
 	}
 
 	wizardFinishedMsg struct{}
 
-	promptMsg struct {
-		rawPrompt envbuilder.UserPrompt
-		key       string
-		env       string
-		requires  []struct {
-			name  string
-			value string
-		}
-		helpMsg string
+	promptsLoadedMsg struct {
+		prompts []prompt
 	}
 )
 
@@ -75,7 +77,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate}
+		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, true}
 	}
 }
 
@@ -89,95 +91,52 @@ func (m Model) saveEditedFile() tea.Cmd {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate}
+		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate, false}
+	}
+}
+
+func (m Model) loadPrompts() tea.Cmd {
+	return func() tea.Msg {
+		builder := envbuilder.NewEnvBuilder()
+
+		currentDir := filepath.Dir(m.DotenvFile)
+
+		userPrompts, err := builder.GatherUserPrompts(currentDir)
+		if err != nil {
+			envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
+			return func() tea.Msg {
+				return errMsg{err}
+			}
+		}
+		prompts := make([]prompt, 0, len(userPrompts))
+		for _, p := range userPrompts {
+			switch p := p.(type) {
+			case envbuilder.UserPrompt:
+				prompts = append(prompts, prompt{
+					rawPrompt: p,
+					key:       p.Key,
+					env:       p.Env,
+					requires:  p.Requires,
+					helpMsg:   p.Help,
+				})
+			case envbuilder.UserPromptCollection:
+				for _, up := range p.Prompts {
+					prompts = append(prompts, prompt{
+						rawPrompt: up,
+						key:       up.Key,
+						env:       up.Env,
+						requires:  p.Requires,
+						helpMsg:   up.Help,
+					})
+				}
+			}
+		}
+
+		return promptsLoadedMsg{prompts}
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	builder := envbuilder.NewEnvBuilder()
-
-	currentDir := filepath.Dir(m.DotenvFile)
-
-	prompts, err := builder.GatherUserPrompts(currentDir)
-	if err != nil {
-		envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
-		return func() tea.Msg {
-			return errMsg{err}
-		}
-	}
-	promptMsgs := make([]promptMsg, 0, len(prompts))
-	for _, p := range prompts {
-		switch p.(type) {
-		case envbuilder.UserPrompt:
-			var allRequires []struct {
-				name  string
-				value string
-			}
-			//
-			allRequires = make([]struct {
-				name  string
-				value string
-			}, 0)
-			requires := p.(envbuilder.UserPrompt).Requires
-			for _, r := range requires {
-				allRequires = append(allRequires, struct {
-					name  string
-					value string
-				}{
-					name:  r.Name,
-					value: r.Value,
-				})
-			}
-			promptMsgs = append(promptMsgs, promptMsg{
-				rawPrompt: p.(envbuilder.UserPrompt),
-				key:       p.(envbuilder.UserPrompt).Key,
-				env:       p.(envbuilder.UserPrompt).Env,
-				requires:  allRequires,
-				helpMsg:   p.(envbuilder.UserPrompt).Help,
-			})
-		case envbuilder.UserPromptCollection:
-			var allRequires []struct {
-				name  string
-				value string
-			}
-			//
-			allRequires = make([]struct {
-				name  string
-				value string
-			}, 0)
-			requires := p.(envbuilder.UserPromptCollection).Requires
-			for _, r := range requires {
-				allRequires = append(allRequires, struct {
-					name  string
-					value string
-				}{
-					name:  r.Name,
-					value: r.Value,
-				})
-			}
-			for _, up := range p.(envbuilder.UserPromptCollection).Prompts {
-				promptMsgs = append(promptMsgs, promptMsg{
-					rawPrompt: up,
-					key:       up.Key,
-					env:       up.Env,
-					requires:  allRequires,
-					helpMsg:   up.Help,
-				})
-			}
-		}
-	}
-	m.prompts = promptMsgs
-	m.currentPromptIndex = 0
-	m.savedResponses = make(map[string]interface{})
-	m.envResponses = make(map[string]interface{})
-	if len(m.prompts) == 0 {
-		return func() tea.Msg {
-			return wizardFinishedMsg{}
-		}
-	}
-
-	// Start in the wizard screen
-	m.screen = wizardScreen
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
@@ -194,13 +153,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 		return m, nil
 	case dotenvFileUpdatedMsg:
-		m.screen = wizardScreen
+		// m.screen = wizardScreen
 		m.variables = msg.variables
 		m.contents = msg.contents
 		m.DotenvTemplate = msg.dotenvTemplate
 
-		return m, nil
+		if msg.promptUser {
+			return m, m.loadPrompts()
+		}
 
+		return m, nil
+	case promptsLoadedMsg:
+		// Start in the wizard screen
+		m.screen = wizardScreen
+		m.prompts = msg.prompts
+		m.currentPromptIndex = 0
+		m.savedResponses = make(map[string]interface{})
+		m.envResponses = make(map[string]interface{})
+
+		if len(m.prompts) == 0 {
+			return m, func() tea.Msg {
+				return wizardFinishedMsg{}
+			}
+		}
+
+		return m, nil
 	case wizardFinishedMsg:
 		m.screen = listScreen
 		return m, nil
@@ -266,7 +243,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 					nextPrompt := m.prompts[m.currentPromptIndex]
 					meetsRequirements := true
 					for _, req := range nextPrompt.requires {
-						if val, ok := m.savedResponses[req.name]; !ok || val != req.value {
+						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
 							meetsRequirements = false
 							break
 						}
@@ -291,44 +268,42 @@ func (m Model) View() string {
 
 	switch m.screen {
 	case listScreen:
-		//fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
-		//
-		//for _, v := range m.variables {
-		//	if v.commented {
-		//		fmt.Fprintf(&sb, "# ")
-		//	}
-		//
-		//	fmt.Fprintf(&sb, "%s: ", v.name)
-		//
-		//	if v.secret {
-		//		fmt.Fprintf(&sb, "***\n")
-		//	} else {
-		//		fmt.Fprintf(&sb, "%s\n", v.value)
-		//	}
-		//}
-		//
-		//sb.WriteString("\n")
-		//sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
-		currentPrompt := m.prompts[m.currentPromptIndex]
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-		sb.WriteString("\n")
-		if currentPrompt.rawPrompt.Default != "" {
-			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
-			sb.WriteString("\n")
+		fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
+
+		for _, v := range m.variables {
+			if v.commented {
+				fmt.Fprintf(&sb, "# ")
+			}
+
+			fmt.Fprintf(&sb, "%s: ", v.name)
+
+			if v.secret {
+				fmt.Fprintf(&sb, "***\n")
+			} else {
+				fmt.Fprintf(&sb, "%s\n", v.value)
+			}
 		}
+
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
 
 	case wizardScreen:
-		currentPrompt := m.prompts[m.currentPromptIndex]
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-		sb.WriteString("\n")
-		if currentPrompt.rawPrompt.Default != "" {
-			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+		if m.currentPromptIndex < len(m.prompts) {
+			currentPrompt := m.prompts[m.currentPromptIndex]
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
+			sb.WriteString("\n")
+			if currentPrompt.rawPrompt.Default != "" {
+				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
 			sb.WriteString("\n")
 		}
 	}
