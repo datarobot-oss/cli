@@ -11,13 +11,19 @@ package envbuilder
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v2"
 )
 
+type BaseUserPrompt struct {
+	Key      string         `yaml:"key,omitempty"`
+	Requires []ParentOption `yaml:"requires,omitempty"`
+}
+
 type UserPrompt struct {
-	Key      string `yaml:"key,omitempty"`
+	BaseUserPrompt
 	Env      string `yaml:"env"`
 	Type     string `yaml:"type"`
 	Multiple bool   `yaml:"multiple"`
@@ -25,16 +31,14 @@ type UserPrompt struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value,omitempty"`
 	} `yaml:"options,omitempty"`
-	Default  any            `yaml:"default,omitempty"`
-	Help     string         `yaml:"help"`
-	Optional bool           `yaml:"optional,omitempty"`
-	Requires []ParentOption `yaml:"requires,omitempty"`
+	Default  any    `yaml:"default,omitempty"`
+	Help     string `yaml:"help"`
+	Optional bool   `yaml:"optional,omitempty"`
 }
 
 type UserPromptCollection struct {
-	Key      string
-	Requires []ParentOption `yaml:"requires,omitempty"`
-	Prompts  []UserPrompt   `yaml:"prompts"`
+	BaseUserPrompt
+	Prompts []UserPrompt `yaml:"prompts"`
 }
 
 type ParentOption struct {
@@ -139,6 +143,26 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //n
 			}
 		}
 	}
+
+	sort.Slice(fullCollection, func(i, j int) bool {
+		var keyA, keyB string
+
+		switch v := fullCollection[i].(type) {
+		case UserPrompt:
+			keyA = v.Key
+		case UserPromptCollection:
+			keyA = v.Key
+		}
+
+		switch v := fullCollection[j].(type) {
+		case UserPrompt:
+			keyB = v.Key
+		case UserPromptCollection:
+			keyB = v.Key
+		}
+
+		return keyA < keyB
+	})
 
 	return fullCollection, nil
 }

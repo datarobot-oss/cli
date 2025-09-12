@@ -85,6 +85,6 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 
 	firstPrompt := prompts[0].(UserPrompt)
 	suite.IsType(UserPrompt{}, firstPrompt, "Expected first prompt to be of type UserPrompt")
-	suite.Equal("infra_enable_llm", firstPrompt.Key, "Expected first prompt key to match")
-	suite.Equal("INFRA_ENABLE_LLM", firstPrompt.Env, "Expected first prompt env to match")
+	suite.Equal("datarobot_default_use_case", firstPrompt.Key, "Expected first prompt key to match")
+	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", firstPrompt.Env, "Expected first prompt env to match")
 }
