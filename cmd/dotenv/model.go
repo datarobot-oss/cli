@@ -282,6 +282,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 		var cmd tea.Cmd
 		m.currentPrompt, cmd = m.currentPrompt.Update(msg)
+
 		return m, cmd
 	}
 

@@ -29,7 +29,7 @@ func newPromptModel(p prompt) promptModel {
 	}
 }
 
-func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) { //nolint: cyclop
+func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 	var cmd tea.Cmd
 	pm.input, cmd = pm.input.Update(msg)
 
@@ -44,6 +44,7 @@ func (pm promptModel) View() string {
 	sb.WriteString("\n")
 	sb.WriteString(pm.input.View())
 	sb.WriteString("\n")
+
 	if pm.currentPrompt.rawPrompt.Default != "" {
 		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", pm.currentPrompt.rawPrompt.Default)))
 		sb.WriteString("\n")
