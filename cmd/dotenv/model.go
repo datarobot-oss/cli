@@ -195,6 +195,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
+			case "w":
+				m.screen = wizardScreen
+				m.currentPromptIndex = 0
+				m.savedResponses = make(map[string]interface{})
+				m.envResponses = make(map[string]interface{})
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":
@@ -307,7 +312,15 @@ func (m Model) View() string {
 		}
 
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
+
+		if len(m.prompts) > 0 {
+			sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish and exit."))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
