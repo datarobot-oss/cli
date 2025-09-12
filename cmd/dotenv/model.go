@@ -43,6 +43,7 @@ type Model struct {
 	savedResponses     map[string]interface{}
 	envResponses       map[string]interface{}
 	currentPromptIndex int
+	currentPrompt      promptModel
 }
 
 type prompt struct {
@@ -177,7 +178,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			}
 		}
 
-		return m, nil
+		m.currentPrompt = newPromptModel(m.prompts[0])
+		cmd := m.currentPrompt.input.Focus()
+
+		return m, cmd
 	case wizardFinishedMsg:
 		m.screen = listScreen
 		return m, nil
@@ -231,11 +235,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			default:
+			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				m.savedResponses[currentPrompt.key] = keypress
+				m.savedResponses[currentPrompt.key] = m.currentPrompt.input.Value()
 				if currentPrompt.env != "" {
-					m.envResponses[currentPrompt.env] = keypress
+					m.envResponses[currentPrompt.env] = m.currentPrompt.input.Value()
 				}
 				m.currentPromptIndex++
 				// Check if next prompt has requirements
@@ -256,8 +260,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				if m.currentPromptIndex >= len(m.prompts) {
 					return m, m.SuccessCmd
 				}
+
+				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
+				cmd := m.currentPrompt.input.Focus()
+
+				return m, cmd
 			}
 		}
+
+		var cmd tea.Cmd
+		m.currentPrompt, cmd = m.currentPrompt.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -293,14 +306,7 @@ func (m Model) View() string {
 
 	case wizardScreen:
 		if m.currentPromptIndex < len(m.prompts) {
-			currentPrompt := m.prompts[m.currentPromptIndex]
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-			sb.WriteString("\n")
-			if currentPrompt.rawPrompt.Default != "" {
-				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
-				sb.WriteString("\n")
-			}
+			sb.WriteString(m.currentPrompt.View())
 		} else {
 			sb.WriteString("\n\n")
 			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
