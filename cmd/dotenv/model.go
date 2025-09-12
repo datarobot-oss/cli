@@ -39,10 +39,18 @@ type Model struct {
 	width              int
 	height             int
 	SuccessCmd         tea.Cmd
-	prompts            []promptMsg
+	prompts            []prompt
 	savedResponses     map[string]interface{}
 	envResponses       map[string]interface{}
 	currentPromptIndex int
+}
+
+type prompt struct {
+	rawPrompt envbuilder.UserPrompt
+	key       string
+	env       string
+	requires  []envbuilder.ParentOption
+	helpMsg   string
 }
 
 type (
@@ -52,16 +60,13 @@ type (
 		variables      []variable
 		contents       string
 		dotenvTemplate string
+		promptUser     bool
 	}
 
 	wizardFinishedMsg struct{}
 
-	promptMsg struct {
-		rawPrompt envbuilder.UserPrompt
-		key       string
-		env       string
-		requires  []envbuilder.ParentOption
-		helpMsg   string
+	promptsLoadedMsg struct {
+		prompts []prompt
 	}
 )
 
@@ -72,7 +77,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate}
+		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, true}
 	}
 }
 
@@ -86,57 +91,52 @@ func (m Model) saveEditedFile() tea.Cmd {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate}
+		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate, false}
+	}
+}
+
+func (m Model) loadPrompts() tea.Cmd {
+	return func() tea.Msg {
+		builder := envbuilder.NewEnvBuilder()
+
+		currentDir := filepath.Dir(m.DotenvFile)
+
+		userPrompts, err := builder.GatherUserPrompts(currentDir)
+		if err != nil {
+			envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
+			return func() tea.Msg {
+				return errMsg{err}
+			}
+		}
+		prompts := make([]prompt, 0, len(userPrompts))
+		for _, p := range userPrompts {
+			switch p := p.(type) {
+			case envbuilder.UserPrompt:
+				prompts = append(prompts, prompt{
+					rawPrompt: p,
+					key:       p.Key,
+					env:       p.Env,
+					requires:  p.Requires,
+					helpMsg:   p.Help,
+				})
+			case envbuilder.UserPromptCollection:
+				for _, up := range p.Prompts {
+					prompts = append(prompts, prompt{
+						rawPrompt: up,
+						key:       up.Key,
+						env:       up.Env,
+						requires:  p.Requires,
+						helpMsg:   up.Help,
+					})
+				}
+			}
+		}
+
+		return promptsLoadedMsg{prompts}
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	builder := envbuilder.NewEnvBuilder()
-
-	currentDir := filepath.Dir(m.DotenvFile)
-
-	prompts, err := builder.GatherUserPrompts(currentDir)
-	if err != nil {
-		envbuilder.PrintToStdOut(fmt.Sprintf("Error gathering user prompts: %v", err))
-		return func() tea.Msg {
-			return errMsg{err}
-		}
-	}
-	promptMsgs := make([]promptMsg, 0, len(prompts))
-	for _, p := range prompts {
-		switch p := p.(type) {
-		case envbuilder.UserPrompt:
-			promptMsgs = append(promptMsgs, promptMsg{
-				rawPrompt: p,
-				key:       p.Key,
-				env:       p.Env,
-				requires:  p.Requires,
-				helpMsg:   p.Help,
-			})
-		case envbuilder.UserPromptCollection:
-			for _, up := range p.Prompts {
-				promptMsgs = append(promptMsgs, promptMsg{
-					rawPrompt: up,
-					key:       up.Key,
-					env:       up.Env,
-					requires:  p.Requires,
-					helpMsg:   up.Help,
-				})
-			}
-		}
-	}
-	m.prompts = promptMsgs
-	m.currentPromptIndex = 0
-	m.savedResponses = make(map[string]interface{})
-	m.envResponses = make(map[string]interface{})
-	if len(m.prompts) == 0 {
-		return func() tea.Msg {
-			return wizardFinishedMsg{}
-		}
-	}
-
-	// Start in the wizard screen
-	m.screen = wizardScreen
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
@@ -153,13 +153,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 		return m, nil
 	case dotenvFileUpdatedMsg:
-		m.screen = wizardScreen
+		// m.screen = wizardScreen
 		m.variables = msg.variables
 		m.contents = msg.contents
 		m.DotenvTemplate = msg.dotenvTemplate
 
-		return m, nil
+		if msg.promptUser {
+			return m, m.loadPrompts()
+		}
 
+		return m, nil
+	case promptsLoadedMsg:
+		// Start in the wizard screen
+		m.screen = wizardScreen
+		m.prompts = msg.prompts
+		m.currentPromptIndex = 0
+		m.savedResponses = make(map[string]interface{})
+		m.envResponses = make(map[string]interface{})
+
+		if len(m.prompts) == 0 {
+			return m, func() tea.Msg {
+				return wizardFinishedMsg{}
+			}
+		}
+
+		return m, nil
 	case wizardFinishedMsg:
 		m.screen = listScreen
 		return m, nil
@@ -268,12 +286,19 @@ func (m Model) View() string {
 		//
 		//sb.WriteString("\n")
 		//sb.WriteString(tui.BaseTextStyle.Render("Press e to edit variables, enter to finish"))
-		currentPrompt := m.prompts[m.currentPromptIndex]
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-		sb.WriteString("\n")
-		if currentPrompt.rawPrompt.Default != "" {
-			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+
+		if m.currentPromptIndex < len(m.prompts) {
+			currentPrompt := m.prompts[m.currentPromptIndex]
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
+			sb.WriteString("\n")
+			if currentPrompt.rawPrompt.Default != "" {
+				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
 			sb.WriteString("\n")
 		}
 	case editorScreen:
@@ -282,12 +307,18 @@ func (m Model) View() string {
 		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
 
 	case wizardScreen:
-		currentPrompt := m.prompts[m.currentPromptIndex]
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
-		sb.WriteString("\n")
-		if currentPrompt.rawPrompt.Default != "" {
-			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+		if m.currentPromptIndex < len(m.prompts) {
+			currentPrompt := m.prompts[m.currentPromptIndex]
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render(currentPrompt.helpMsg))
+			sb.WriteString("\n")
+			if currentPrompt.rawPrompt.Default != "" {
+				sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %s", currentPrompt.rawPrompt.Default)))
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
 			sb.WriteString("\n")
 		}
 	}
