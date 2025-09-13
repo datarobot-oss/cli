@@ -42,6 +42,10 @@ func (suite *LoginModelTestSuite) SetupTest() {
 	if err != nil {
 		suite.T().Errorf("Failed to read config file: %v", err)
 	}
+
+	suite.T().Setenv("DATAROBOT_ENDPOINT", "")
+	suite.T().Setenv("DATAROBOT_ENDPOINT_SHORT", "")
+	suite.T().Setenv("DATAROBOT_API_TOKEN", "")
 }
 
 func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
