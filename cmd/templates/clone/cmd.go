@@ -112,7 +112,7 @@ func gitOrigin(dir string, isAbsolute bool) string {
 }
 
 func gitPull(dir string) (string, error) {
-	cmd := exec.Command("git", "checkout", "alevan/CFX-3597-env-config", "&&", "git", "pull")
+	cmd := exec.Command("git", "pull")
 
 	path, err := os.Getwd()
 	if err != nil {
