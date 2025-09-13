@@ -33,6 +33,10 @@ func (suite *TemplateTestSuite) SetupTest() {
 
 	suite.dotfile = filepath.Join(suite.tempDir, ".env")
 	suite.template = filepath.Join(suite.tempDir, ".env.template")
+
+	suite.T().Setenv("DATAROBOT_ENDPOINT", "")
+	suite.T().Setenv("DATAROBOT_ENDPOINT_SHORT", "")
+	suite.T().Setenv("DATAROBOT_API_TOKEN", "")
 }
 
 func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
