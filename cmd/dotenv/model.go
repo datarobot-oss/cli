@@ -40,8 +40,8 @@ type Model struct {
 	height             int
 	SuccessCmd         tea.Cmd
 	prompts            []prompt
-	savedResponses     map[string]interface{}
-	envResponses       map[string]interface{}
+	savedResponses     map[string]any
+	envResponses       map[string]any
 	currentPromptIndex int
 	currentPrompt      promptModel
 }
@@ -170,8 +170,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		m.screen = wizardScreen
 		m.prompts = msg.prompts
 		m.currentPromptIndex = 0
-		m.savedResponses = make(map[string]interface{})
-		m.envResponses = make(map[string]interface{})
+		m.savedResponses = make(map[string]any)
+		m.envResponses = make(map[string]any)
 
 		if len(m.prompts) == 0 {
 			return m, func() tea.Msg {
@@ -196,8 +196,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			case "w":
 				m.screen = wizardScreen
 				m.currentPromptIndex = 0
-				m.savedResponses = make(map[string]interface{})
-				m.envResponses = make(map[string]interface{})
+				m.savedResponses = make(map[string]any)
+				m.envResponses = make(map[string]any)
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":

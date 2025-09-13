@@ -14,7 +14,7 @@ import (
 	"sort"
 
 	"github.com/mitchellh/mapstructure"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type BaseUserPrompt struct {
@@ -60,7 +60,7 @@ func NewEnvBuilder() *Builder {
 	return &Builder{}
 }
 
-func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //nolint: cyclop
+func (r *Builder) GatherUserPrompts(rootDir string) ([]any, error) { //nolint: cyclop
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
@@ -70,7 +70,7 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //n
 		return nil, nil
 	}
 
-	var fullCollection []interface{}
+	var fullCollection []any
 
 	for _, f := range yamlFiles {
 		data, err := os.ReadFile(f)
@@ -78,14 +78,14 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //n
 			return nil, fmt.Errorf("failed to read task yaml file %s: %w", f, err)
 		}
 
-		var collection map[string]interface{}
+		var collection map[string]any
 
 		if err = yaml.Unmarshal(data, &collection); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", f, err)
 		}
 
 		for key, value := range collection {
-			itemMap, ok := value.(map[interface{}]interface{})
+			itemMap, ok := value.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("unexpected format in yaml file %s for key %s", f, key)
 			}
@@ -97,14 +97,14 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]interface{}, error) { //n
 
 				var promptsList []UserPrompt
 
-				promptsSlice, ok := prompts.([]interface{})
+				promptsSlice, ok := prompts.([]any)
 
 				if !ok {
 					return nil, fmt.Errorf("unexpected format for prompts in yaml file %s for key %s", f, key)
 				}
 
 				for _, p := range promptsSlice {
-					pMap, ok := p.(map[interface{}]interface{})
+					pMap, ok := p.(map[string]any)
 					if !ok {
 						return nil, fmt.Errorf("unexpected format for individual prompt in yaml file %s for key %s", f, key)
 					}
