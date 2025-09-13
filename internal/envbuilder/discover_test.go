@@ -23,6 +23,7 @@ pulumi_config_passphrase:
   default: "123"
   optional: true
   help: "The passphrase used to encrypt and decrypt the private key. This value is required if you're not using pulumi cloud."
+
 datarobot_default_use_case:
   env: DATAROBOT_DEFAULT_USE_CASE
   type: string
@@ -46,6 +47,7 @@ infra_enable_llm:
       value: "deployed_llm.py"
     - name: "Registered Model with an LLM Blueprint"
       value: "registered_model.py"
+
 deployed_llm:
   requires:
     - name: infra_enable_llm
@@ -54,6 +56,7 @@ deployed_llm:
   type: string
   optional: false
   help: "The deployment ID of the DataRobot Deployed LLM to use."
+
 registered_model:
   requires:
     - name: infra_enable_llm

@@ -80,7 +80,7 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 		}
 	}
 
-	suite.Equal(4, userPromptCount, "Expected to find found UserPrompt entries")
+	suite.Equal(4, userPromptCount, "Expected to find four UserPrompt entries")
 	suite.Equal(1, usePromptCollectionCount, "Expected to find one UserPromptCollection entries")
 
 	firstPrompt := prompts[0].(UserPrompt)
