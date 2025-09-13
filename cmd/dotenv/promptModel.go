@@ -40,7 +40,7 @@ func (pm promptModel) View() string {
 	var sb strings.Builder
 
 	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render(pm.currentPrompt.helpMsg))
+	sb.WriteString(tui.BaseTextStyle.Render(pm.currentPrompt.help))
 	sb.WriteString("\n")
 	sb.WriteString(pm.input.View())
 	sb.WriteString("\n")

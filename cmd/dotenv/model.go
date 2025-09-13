@@ -51,7 +51,7 @@ type prompt struct {
 	key       string
 	env       string
 	requires  []envbuilder.ParentOption
-	helpMsg   string
+	help      string
 }
 
 type (
@@ -119,7 +119,7 @@ func (m Model) loadPrompts() tea.Cmd {
 					key:       p.Key,
 					env:       p.Env,
 					requires:  p.Requires,
-					helpMsg:   p.Help,
+					help:      p.Help,
 				})
 			case envbuilder.UserPromptCollection:
 				for _, up := range p.Prompts {
@@ -128,7 +128,7 @@ func (m Model) loadPrompts() tea.Cmd {
 						key:       up.Key,
 						env:       up.Env,
 						requires:  p.Requires,
-						helpMsg:   up.Help,
+						help:      up.Help,
 					})
 				}
 			}
