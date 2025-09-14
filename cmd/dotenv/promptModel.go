@@ -14,15 +14,16 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
 
 type promptModel struct {
-	currentPrompt prompt
+	currentPrompt envbuilder.UserPrompt
 	input         textinput.Model
 }
 
-func newPromptModel(p prompt) promptModel {
+func newPromptModel(p envbuilder.UserPrompt) promptModel {
 	return promptModel{
 		currentPrompt: p,
 		input:         textinput.New(),
@@ -40,23 +41,23 @@ func (pm promptModel) View() string {
 	var sb strings.Builder
 
 	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render(pm.currentPrompt.help))
+	sb.WriteString(tui.BaseTextStyle.Render(pm.currentPrompt.Help))
 	sb.WriteString("\n")
 	sb.WriteString(pm.input.View())
 	sb.WriteString("\n")
 
-	if len(pm.currentPrompt.rawPrompt.Options) > 0 {
+	if len(pm.currentPrompt.Options) > 0 {
 		sb.WriteString(tui.BaseTextStyle.Render("Options:"))
 		sb.WriteString("\n")
 
-		for _, option := range pm.currentPrompt.rawPrompt.Options {
+		for _, option := range pm.currentPrompt.Options {
 			sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("  - %v", option.Name)))
 			sb.WriteString("\n")
 		}
 	}
 
-	if pm.currentPrompt.rawPrompt.Default != "" && pm.currentPrompt.rawPrompt.Default != nil {
-		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %v", pm.currentPrompt.rawPrompt.Default)))
+	if pm.currentPrompt.Default != "" && pm.currentPrompt.Default != nil {
+		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %v", pm.currentPrompt.Default)))
 		sb.WriteString("\n")
 	}
 

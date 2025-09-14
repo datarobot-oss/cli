@@ -39,19 +39,11 @@ type Model struct {
 	width              int
 	height             int
 	SuccessCmd         tea.Cmd
-	prompts            []prompt
+	prompts            []envbuilder.UserPrompt
 	savedResponses     map[string]any
 	envResponses       map[string]any
 	currentPromptIndex int
 	currentPrompt      promptModel
-}
-
-type prompt struct {
-	rawPrompt envbuilder.UserPrompt
-	key       string
-	env       string
-	requires  []envbuilder.ParentOption
-	help      string
 }
 
 type (
@@ -67,7 +59,7 @@ type (
 	wizardFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
-		prompts []prompt
+		prompts []envbuilder.UserPrompt
 	}
 )
 
@@ -98,43 +90,14 @@ func (m Model) saveEditedFile() tea.Cmd {
 
 func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
-		builder := envbuilder.NewEnvBuilder()
-
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, err := builder.GatherUserPrompts(currentDir)
+		userPrompts, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
-			return func() tea.Msg {
-				return errMsg{err}
-			}
+			return errMsg{err}
 		}
 
-		prompts := make([]prompt, 0, len(userPrompts))
-
-		for _, p := range userPrompts {
-			switch p := p.(type) {
-			case envbuilder.UserPrompt:
-				prompts = append(prompts, prompt{
-					rawPrompt: p,
-					key:       p.Key,
-					env:       p.Env,
-					requires:  p.Requires,
-					help:      p.Help,
-				})
-			case envbuilder.UserPromptCollection:
-				for _, up := range p.Prompts {
-					prompts = append(prompts, prompt{
-						rawPrompt: up,
-						key:       up.Key,
-						env:       up.Env,
-						requires:  p.Requires,
-						help:      up.Help,
-					})
-				}
-			}
-		}
-
-		return promptsLoadedMsg{prompts}
+		return promptsLoadedMsg{userPrompts}
 	}
 }
 
@@ -246,9 +209,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				value := m.currentPrompt.input.Value()
 
 				// If a prompt has options, map the selected option name to its value
-				// Sometimes options have human readable names, but values we want to store
-				if len(currentPrompt.rawPrompt.Options) > 0 {
-					for _, option := range currentPrompt.rawPrompt.Options {
+				// Sometimes options have human-readable names, but values we want to store
+				if len(currentPrompt.Options) > 0 {
+					for _, option := range currentPrompt.Options {
 						if option.Name == value && option.Value != "" {
 							value = option.Value
 							break
@@ -256,24 +219,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 					}
 				}
 
-				m.savedResponses[currentPrompt.key] = value
+				m.savedResponses[currentPrompt.Key] = value
 
-				if currentPrompt.env != "" {
-					m.envResponses[currentPrompt.env] = m.currentPrompt.input.Value()
+				if currentPrompt.Env != "" {
+					m.envResponses[currentPrompt.Env] = m.currentPrompt.input.Value()
 				}
 
 				m.currentPromptIndex++
 				// Check if next prompt has requirements
 				for m.currentPromptIndex < len(m.prompts) {
-					nextPrompt := m.prompts[m.currentPromptIndex]
+					// nextPrompt := m.prompts[m.currentPromptIndex]
 					meetsRequirements := true
-
-					for _, req := range nextPrompt.requires {
-						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
-							meetsRequirements = false
-							break
-						}
-					}
 
 					if meetsRequirements {
 						break

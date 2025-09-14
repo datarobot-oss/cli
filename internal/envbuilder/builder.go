@@ -10,35 +10,28 @@ package envbuilder
 
 import (
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 
-	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 )
 
-type BaseUserPrompt struct {
-	Key      string         `yaml:"key,omitempty"`
-	Requires []ParentOption `yaml:"requires,omitempty"`
-}
-
 type UserPrompt struct {
-	BaseUserPrompt
-	Env      string `yaml:"env"`
-	Type     string `yaml:"type"`
-	Multiple bool   `yaml:"multiple"`
-	Options  []struct {
-		Name  string `yaml:"name"`
-		Value string `yaml:"value,omitempty"`
-	} `yaml:"options,omitempty"`
-	Default  any    `yaml:"default,omitempty"`
-	Help     string `yaml:"help"`
-	Optional bool   `yaml:"optional,omitempty"`
+	Key      string          `yaml:"key,omitempty"`
+	Env      string          `yaml:"env"`
+	Type     string          `yaml:"type"`
+	Multiple bool            `yaml:"multiple"`
+	Options  []PromptOptions `yaml:"options,omitempty"`
+	Default  any             `yaml:"default,omitempty"`
+	Help     string          `yaml:"help"`
+	Optional bool            `yaml:"optional,omitempty"`
 }
 
-type UserPromptCollection struct {
-	BaseUserPrompt
-	Prompts []UserPrompt `yaml:"prompts"`
+type PromptOptions struct {
+	Name     string `yaml:"name"`
+	Value    string `yaml:"value,omitempty"`
+	Requires string `yaml:"requires,omitempty"`
 }
 
 type ParentOption struct {
@@ -46,21 +39,9 @@ type ParentOption struct {
 	Value string `yaml:"value"`
 }
 
-type BuilderOpts struct {
-	BinaryName string
-	Dir        string
-	Stdout     *os.File
-	Stderr     *os.File
-	Stdin      *os.File
-}
+type ParsedYaml map[string][]UserPrompt
 
-type Builder struct{}
-
-func NewEnvBuilder() *Builder {
-	return &Builder{}
-}
-
-func (r *Builder) GatherUserPrompts(rootDir string) ([]any, error) { //nolint: cyclop
+func GatherUserPrompts(rootDir string) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
@@ -70,99 +51,66 @@ func (r *Builder) GatherUserPrompts(rootDir string) ([]any, error) { //nolint: c
 		return nil, nil
 	}
 
-	var fullCollection []any
+	var allPrompts []UserPrompt
 
-	for _, f := range yamlFiles {
-		data, err := os.ReadFile(f)
+	for _, yamlFile := range yamlFiles {
+		data, err := os.ReadFile(yamlFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read task yaml file %s: %w", f, err)
+			return nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
 		}
 
-		var collection map[string]any
+		var fileParsed ParsedYaml
 
-		if err = yaml.Unmarshal(data, &collection); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", f, err)
+		if err = yaml.Unmarshal(data, &fileParsed); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
 		}
 
-		for key, value := range collection {
-			itemMap, ok := value.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("unexpected format in yaml file %s for key %s", f, key)
-			}
+		allPrompts = append(allPrompts, promptsSorted(fileParsed, rootKeys(fileParsed))...)
+	}
 
-			if prompts, exists := itemMap["prompts"]; exists { //nolint: nestif
-				// This is a UserPromptCollection
-				var userPromptCollection UserPromptCollection
-				userPromptCollection.Key = key
+	return allPrompts, nil
+}
 
-				var promptsList []UserPrompt
+func promptsSorted(fileParsed ParsedYaml, keys []string) []UserPrompt {
+	sortedPrompts := make([]UserPrompt, 0)
 
-				promptsSlice, ok := prompts.([]any)
+	for _, key := range keys {
+		for _, prompt := range fileParsed[key] {
+			sortedPrompts = append(sortedPrompts, prompt)
+			requiredPrompts := promptsSorted(fileParsed, requiredKeys(prompt))
+			sortedPrompts = append(sortedPrompts, requiredPrompts...)
+		}
+	}
 
-				if !ok {
-					return nil, fmt.Errorf("unexpected format for prompts in yaml file %s for key %s", f, key)
-				}
+	return sortedPrompts
+}
 
-				for _, p := range promptsSlice {
-					pMap, ok := p.(map[string]any)
-					if !ok {
-						return nil, fmt.Errorf("unexpected format for individual prompt in yaml file %s for key %s", f, key)
-					}
+func rootKeys(fileParsed ParsedYaml) []string {
+	keys := make(map[string]bool)
 
-					var userPrompt UserPrompt
+	for key := range maps.Keys(fileParsed) {
+		keys[key] = true
+	}
 
-					err = mapstructure.Decode(pMap, &userPrompt)
-					if err != nil {
-						return nil, fmt.Errorf("failed to decode individual prompt in yaml file %s for key %s: %w", f, key, err)
-					}
-
-					promptsList = append(promptsList, userPrompt)
-				}
-
-				userPromptCollection.Prompts = promptsList
-
-				delete(itemMap, "prompts")
-
-				err = mapstructure.Decode(itemMap, &userPromptCollection)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode prompts collection in yaml file %s: %w", f, err)
-				}
-
-				fullCollection = append(fullCollection, userPromptCollection)
-			} else {
-				// This is a map of UserPrompt
-				var userPrompt UserPrompt
-				userPrompt.Key = key
-
-				err = mapstructure.Decode(itemMap, &userPrompt)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode prompt in yaml file %s: %w", f, err)
-				}
-
-				fullCollection = append(fullCollection, userPrompt)
+	for _, prompts := range fileParsed {
+		for _, prompt := range prompts {
+			for _, option := range prompt.Options {
+				delete(keys, option.Requires)
 			}
 		}
 	}
 
-	sort.Slice(fullCollection, func(i, j int) bool {
-		var keyA, keyB string
+	return slices.Sorted(maps.Keys(keys))
+}
 
-		switch v := fullCollection[i].(type) {
-		case UserPrompt:
-			keyA = v.Key
-		case UserPromptCollection:
-			keyA = v.Key
+func requiredKeys(prompt UserPrompt) []string {
+	keys := make([]string, 0, len(prompt.Options))
+
+	for _, option := range prompt.Options {
+		if option.Requires != "" {
+			keys = append(keys, option.Requires)
 		}
+	}
 
-		switch v := fullCollection[j].(type) {
-		case UserPrompt:
-			keyB = v.Key
-		case UserPromptCollection:
-			keyB = v.Key
-		}
-
-		return keyA < keyB
-	})
-
-	return fullCollection, nil
+	return keys
 }
