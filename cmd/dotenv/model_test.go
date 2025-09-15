@@ -346,7 +346,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	teatest.WaitFor(
 		suite.T(), tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Select the type of LLM integration to enable."))
+			return bytes.Contains(bts, []byte("LLM Gateway"))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
 		teatest.WithDuration(time.Second*3),
