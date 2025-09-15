@@ -73,7 +73,7 @@ func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
 			items = append(items, item(option))
 		}
 
-		l := list.New(items, itemDelegate{}, 0, 10)
+		l := list.New(items, itemDelegate{}, 0, 15)
 
 		return promptModel{
 			prompt: prompt,
