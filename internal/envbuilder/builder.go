@@ -19,24 +19,19 @@ import (
 
 type UserPrompt struct {
 	Section  string
-	Env      string          `yaml:"env"`
-	Type     string          `yaml:"type"`
-	Multiple bool            `yaml:"multiple"`
-	Options  []PromptOptions `yaml:"options,omitempty"`
-	Default  any             `yaml:"default,omitempty"`
-	Help     string          `yaml:"help"`
-	Optional bool            `yaml:"optional,omitempty"`
+	Env      string         `yaml:"env"`
+	Type     string         `yaml:"type"`
+	Multiple bool           `yaml:"multiple"`
+	Options  []PromptOption `yaml:"options,omitempty"`
+	Default  any            `yaml:"default,omitempty"`
+	Help     string         `yaml:"help"`
+	Optional bool           `yaml:"optional,omitempty"`
 }
 
-type PromptOptions struct {
+type PromptOption struct {
 	Name     string `yaml:"name"`
 	Value    string `yaml:"value,omitempty"`
 	Requires string `yaml:"requires,omitempty"`
-}
-
-type ParentOption struct {
-	Name  string `yaml:"name"`
-	Value string `yaml:"value"`
 }
 
 type ParsedYaml map[string][]UserPrompt
