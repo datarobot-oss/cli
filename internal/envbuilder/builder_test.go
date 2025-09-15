@@ -62,29 +62,20 @@ func (suite *BuilderTestSuite) SetupTest() {
 }
 
 func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
-	envBuilder := NewEnvBuilder()
-	prompts, err := envBuilder.GatherUserPrompts(suite.tempDir)
+	prompts, roots, err := GatherUserPrompts(suite.tempDir)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Len(prompts, 5, "Expected to find four sets of prompts")
+	suite.Len(prompts, 6, "Expected to find 6 UserPrompt entries")
 
-	userPromptCount := 0
-	usePromptCollectionCount := 0
+	suite.Equal("INFRA_ENABLE_LLM", prompts[0].Env, "Expected [0] prompt env to match")
+	suite.Equal("TEXTGEN_DEPLOYMENT_ID", prompts[1].Env, "Expected [1] prompt env to match")
+	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[2].Env, "Expected [2] prompt env to match")
+	suite.Equal("DATAROBOT_TIMEOUT_MINUTES", prompts[3].Env, "Expected [3] prompt env to match")
+	suite.Equal("PULUMI_CONFIG_PASSPHRASE", prompts[4].Env, "Expected [4] prompt env to match")
+	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", prompts[5].Env, "Expected [5] prompt env to match")
 
-	for _, prompt := range prompts {
-		switch prompt.(type) {
-		case UserPrompt:
-			userPromptCount++
-		case UserPromptCollection:
-			usePromptCollectionCount++
-		}
-	}
+	suite.Len(roots, 2, "Expected to find 2 root entries")
 
-	suite.Equal(4, userPromptCount, "Expected to find found UserPrompt entries")
-	suite.Equal(1, usePromptCollectionCount, "Expected to find one UserPromptCollection entries")
-
-	firstPrompt := prompts[0].(UserPrompt)
-	suite.IsType(UserPrompt{}, firstPrompt, "Expected first prompt to be of type UserPrompt")
-	suite.Equal("datarobot_default_use_case", firstPrompt.Key, "Expected first prompt key to match")
-	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", firstPrompt.Env, "Expected first prompt env to match")
+	suite.Contains(roots[0], ".datarobot/another_parakeet.yaml:root")
+	suite.Contains(roots[1], ".datarobot/parakeet.yaml:root")
 }

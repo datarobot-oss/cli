@@ -17,57 +17,53 @@ import (
 )
 
 var testYamlFile1 = `
-pulumi_config_passphrase:
-  env: PULUMI_CONFIG_PASSPHRASE
-  type: string
-  default: "123"
-  optional: true
-  help: "The passphrase used to encrypt and decrypt the private key. This value is required if you're not using pulumi cloud."
-datarobot_default_use_case:
-  env: DATAROBOT_DEFAULT_USE_CASE
-  type: string
-  default:
-  optional: true
-  help: "The default use case for this application. If not set, a new use case will be created automatically"
+root:
+  - env: PULUMI_CONFIG_PASSPHRASE
+    type: string
+    default: "123"
+    optional: true
+    help: "The passphrase used to encrypt and decrypt the private key. This value is required if you're not using pulumi cloud."
+  - env: DATAROBOT_DEFAULT_USE_CASE
+    type: string
+    default:
+    optional: true
+    help: "The default use case for this application. If not set, a new use case will be created automatically"
 `
 
 var testYamlFile2 = `
-infra_enable_llm:
-  env: INFRA_ENABLE_LLM
-  type: string
-  optional: true
-  help: "Select the type of LLM integration to enable."
-  options:
-    - name: "External LLM"
-      value: "blueprint_with_external_llm.py"
-    - name: "LLM Gateway"
-      value: "blueprint_with_llm_gateway.py"
-    - name: "DataRobot Deployed LLM"
-      value: "deployed_llm.py"
-    - name: "Registered Model with an LLM Blueprint"
-      value: "registered_model.py"
+root:
+  - env: INFRA_ENABLE_LLM
+    type: string
+    optional: true
+    help: "Select the type of LLM integration to enable."
+    options:
+      - name: "External LLM"
+        value: "blueprint_with_external_llm.py"
+      - name: "LLM Gateway"
+        value: "blueprint_with_llm_gateway.py"
+      - name: "DataRobot Deployed LLM"
+        value: "deployed_llm.py"
+        requires: deployed_llm
+      - name: "Registered Model with an LLM Blueprint"
+        value: "registered_model.py"
+        requires: registered_model
+
 deployed_llm:
-  requires:
-    - name: infra_enable_llm
-      value: "deployed_llm.py"
-  env: TEXTGEN_DEPLOYMENT_ID
-  type: string
-  optional: false
-  help: "The deployment ID of the DataRobot Deployed LLM to use."
+  - env: TEXTGEN_DEPLOYMENT_ID
+    type: string
+    optional: false
+    help: "The deployment ID of the DataRobot Deployed LLM to use."
+
 registered_model:
-  requires:
-    - name: infra_enable_llm
-      value: "registered_model.py"
-  prompts:
-    - env: TEXTGEN_REGISTERED_MODEL_ID
-      type: string
-      optional: false
-      help: "The ID of the registered model with an LLM blueprint to use."
-    - env: DATAROBOT_TIMEOUT_MINUTES
-      type: number
-      default: "30"
-      optional: true
-      help: "The timeout in minutes for DataRobot operations. Default is 30 minutes."
+  - env: TEXTGEN_REGISTERED_MODEL_ID
+    type: string
+    optional: false
+    help: "The ID of the registered model with an LLM blueprint to use."
+  - env: DATAROBOT_TIMEOUT_MINUTES
+    type: number
+    default: "30"
+    optional: true
+    help: "The timeout in minutes for DataRobot operations. Default is 30 minutes."
 `
 
 func TestDiscoverTestSuite(t *testing.T) {
@@ -149,7 +145,7 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
 	foundPaths, err := Discover(suite.tempDir, 5)
 	suite.NoError(err) //nolint: testifylint
 
-	suite.Len(foundPaths, 3, "Expected to find 2 YAML files")
+	suite.Len(foundPaths, 3, "Expected to find 3 YAML files")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet/yet_another_parakeet.yml")

@@ -39,19 +39,11 @@ type Model struct {
 	width              int
 	height             int
 	SuccessCmd         tea.Cmd
-	prompts            []prompt
-	savedResponses     map[string]interface{}
-	envResponses       map[string]interface{}
+	prompts            []envbuilder.UserPrompt
+	requires           map[string]bool
+	envResponses       map[string]any
 	currentPromptIndex int
 	currentPrompt      promptModel
-}
-
-type prompt struct {
-	rawPrompt envbuilder.UserPrompt
-	key       string
-	env       string
-	requires  []envbuilder.ParentOption
-	helpMsg   string
 }
 
 type (
@@ -67,7 +59,8 @@ type (
 	wizardFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
-		prompts []prompt
+		prompts  []envbuilder.UserPrompt
+		requires map[string]bool
 	}
 )
 
@@ -98,43 +91,20 @@ func (m Model) saveEditedFile() tea.Cmd {
 
 func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
-		builder := envbuilder.NewEnvBuilder()
-
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, err := builder.GatherUserPrompts(currentDir)
+		userPrompts, roots, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
-			return func() tea.Msg {
-				return errMsg{err}
-			}
+			return errMsg{err}
 		}
 
-		prompts := make([]prompt, 0, len(userPrompts))
+		requires := make(map[string]bool, len(roots))
 
-		for _, p := range userPrompts {
-			switch p := p.(type) {
-			case envbuilder.UserPrompt:
-				prompts = append(prompts, prompt{
-					rawPrompt: p,
-					key:       p.Key,
-					env:       p.Env,
-					requires:  p.Requires,
-					helpMsg:   p.Help,
-				})
-			case envbuilder.UserPromptCollection:
-				for _, up := range p.Prompts {
-					prompts = append(prompts, prompt{
-						rawPrompt: up,
-						key:       up.Key,
-						env:       up.Env,
-						requires:  p.Requires,
-						helpMsg:   up.Help,
-					})
-				}
-			}
+		for _, root := range roots {
+			requires[root] = true
 		}
 
-		return promptsLoadedMsg{prompts}
+		return promptsLoadedMsg{userPrompts, requires}
 	}
 }
 
@@ -169,9 +139,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		// Start in the wizard screen
 		m.screen = wizardScreen
 		m.prompts = msg.prompts
+		m.requires = msg.requires
 		m.currentPromptIndex = 0
-		m.savedResponses = make(map[string]interface{})
-		m.envResponses = make(map[string]interface{})
+		m.envResponses = make(map[string]any)
 
 		if len(m.prompts) == 0 {
 			return m, func() tea.Msg {
@@ -196,8 +166,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			case "w":
 				m.screen = wizardScreen
 				m.currentPromptIndex = 0
-				m.savedResponses = make(map[string]interface{})
-				m.envResponses = make(map[string]interface{})
+				m.envResponses = make(map[string]any)
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":
@@ -243,39 +212,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				value := m.currentPrompt.input.Value()
+				value := m.currentPrompt.Value()
 
-				// If a prompt has options, map the selected option name to its value
-				// Sometimes options have human readable names, but values we want to store
-				if len(currentPrompt.rawPrompt.Options) > 0 {
-					for _, option := range currentPrompt.rawPrompt.Options {
-						if option.Name == value && option.Value != "" {
-							value = option.Value
-							break
+				// Update required sections
+				for _, option := range currentPrompt.Options {
+					if option.Requires != "" {
+						if option.Value != "" && option.Value == value {
+							m.requires[option.Requires] = true
+						} else if option.Value == "" && option.Name == value {
+							m.requires[option.Requires] = true
 						}
 					}
 				}
 
-				m.savedResponses[currentPrompt.key] = value
-
-				if currentPrompt.env != "" {
-					m.envResponses[currentPrompt.env] = m.currentPrompt.input.Value()
+				if currentPrompt.Env != "" {
+					m.envResponses[currentPrompt.Env] = value
 				}
 
 				m.currentPromptIndex++
-				// Check if next prompt has requirements
+				// Advance to next prompt that is required
 				for m.currentPromptIndex < len(m.prompts) {
 					nextPrompt := m.prompts[m.currentPromptIndex]
-					meetsRequirements := true
 
-					for _, req := range nextPrompt.requires {
-						if val, ok := m.savedResponses[req.Name]; !ok || val != req.Value {
-							meetsRequirements = false
-							break
-						}
-					}
-
-					if meetsRequirements {
+					if m.requires[nextPrompt.Section] {
 						break
 					}
 
@@ -287,9 +246,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				}
 
 				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
-				cmd := m.currentPrompt.input.Focus()
 
-				return m, cmd
+				if len(m.prompts[m.currentPromptIndex].Options) == 0 {
+					cmd := m.currentPrompt.input.Focus()
+
+					return m, cmd
+				}
+
+				return m, nil
 			}
 		}
 
