@@ -93,9 +93,15 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, requires, err := envbuilder.GatherUserPrompts(currentDir)
+		userPrompts, roots, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
 			return errMsg{err}
+		}
+
+		requires := make(map[string]bool, len(roots))
+
+		for _, root := range roots {
+			requires[root] = true
 		}
 
 		return promptsLoadedMsg{userPrompts, requires}

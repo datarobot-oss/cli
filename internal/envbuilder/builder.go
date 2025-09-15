@@ -41,7 +41,7 @@ type ParentOption struct {
 
 type ParsedYaml map[string][]UserPrompt
 
-func GatherUserPrompts(rootDir string) ([]UserPrompt, map[string]bool, error) {
+func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to discover task yaml files: %w", err)
@@ -52,7 +52,7 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, map[string]bool, error) {
 	}
 
 	allPrompts := make([]UserPrompt, 0)
-	allRootKeys := make(map[string]bool)
+	allRootKeys := make([]string, 0)
 
 	for _, yamlFile := range yamlFiles {
 		data, err := os.ReadFile(yamlFile)
@@ -70,7 +70,7 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, map[string]bool, error) {
 		prompts := promptsSorted(fileParsed, yamlFile, roots)
 
 		for _, root := range roots {
-			allRootKeys[yamlFile+":"+root] = true
+			allRootKeys = append(allRootKeys, yamlFile+":"+root)
 		}
 
 		for p := range prompts {

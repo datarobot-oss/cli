@@ -62,12 +62,20 @@ func (suite *BuilderTestSuite) SetupTest() {
 }
 
 func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
-	prompts, _, err := GatherUserPrompts(suite.tempDir)
+	prompts, roots, err := GatherUserPrompts(suite.tempDir)
 	suite.NoError(err) //nolint: testifylint
 
 	suite.Len(prompts, 6, "Expected to find 6 UserPrompt entries")
 
-	suite.Equal("INFRA_ENABLE_LLM", prompts[0].Env, "Expected first prompt env to match")
-	suite.Equal("TEXTGEN_DEPLOYMENT_ID", prompts[1].Env, "Expected second prompt env to match")
-	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[2].Env, "Expected third prompt env to match")
+	suite.Equal("INFRA_ENABLE_LLM", prompts[0].Env, "Expected [0] prompt env to match")
+	suite.Equal("TEXTGEN_DEPLOYMENT_ID", prompts[1].Env, "Expected [1] prompt env to match")
+	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[2].Env, "Expected [2] prompt env to match")
+	suite.Equal("DATAROBOT_TIMEOUT_MINUTES", prompts[3].Env, "Expected [3] prompt env to match")
+	suite.Equal("PULUMI_CONFIG_PASSPHRASE", prompts[4].Env, "Expected [4] prompt env to match")
+	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", prompts[5].Env, "Expected [5] prompt env to match")
+
+	suite.Len(roots, 2, "Expected to find 2 root entries")
+
+	suite.Contains(roots[0], ".datarobot/another_parakeet.yaml:root")
+	suite.Contains(roots[1], ".datarobot/parakeet.yaml:root")
 }
