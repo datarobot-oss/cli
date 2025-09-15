@@ -212,7 +212,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				value := strings.TrimSpace(m.currentPrompt.input.Value())
+				value := m.currentPrompt.Value()
 
 				// Update required sections
 				for _, option := range currentPrompt.Options {
@@ -246,9 +246,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 				}
 
 				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
-				cmd := m.currentPrompt.input.Focus()
 
-				return m, cmd
+				if len(m.prompts[m.currentPromptIndex].Options) == 0 {
+					cmd := m.currentPrompt.input.Focus()
+
+					return m, cmd
+				}
+
+				return m, nil
 			}
 		}
 
