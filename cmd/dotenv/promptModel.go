@@ -67,7 +67,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
 	if len(prompt.Options) > 0 {
-		items := make([]list.Item, 0, len(prompt.Options))
+		items := make([]list.Item, 0, len(prompt.Options)+1)
+
+		if prompt.Optional {
+			items = append(items, item{Blank: true, Name: "None (leave blank)"})
+		}
 
 		for _, option := range prompt.Options {
 			items = append(items, item(option))
@@ -94,7 +98,13 @@ func (pm promptModel) Value() string {
 		return strings.TrimSpace(pm.input.Value())
 	}
 
-	return pm.list.Items()[pm.list.Index()].FilterValue()
+	current := pm.list.Items()[pm.list.Index()].(item)
+
+	if current.Blank {
+		return ""
+	}
+
+	return current.FilterValue()
 }
 
 func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
