@@ -40,7 +40,7 @@ type Model struct {
 	height             int
 	SuccessCmd         tea.Cmd
 	prompts            []envbuilder.UserPrompt
-	savedResponses     map[string]any
+	requires           map[string]bool
 	envResponses       map[string]any
 	currentPromptIndex int
 	currentPrompt      promptModel
@@ -59,7 +59,8 @@ type (
 	wizardFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
-		prompts []envbuilder.UserPrompt
+		prompts  []envbuilder.UserPrompt
+		requires map[string]bool
 	}
 )
 
@@ -92,12 +93,12 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, err := envbuilder.GatherUserPrompts(currentDir)
+		userPrompts, requires, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		return promptsLoadedMsg{userPrompts}
+		return promptsLoadedMsg{userPrompts, requires}
 	}
 }
 
@@ -132,8 +133,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		// Start in the wizard screen
 		m.screen = wizardScreen
 		m.prompts = msg.prompts
+		m.requires = msg.requires
 		m.currentPromptIndex = 0
-		m.savedResponses = make(map[string]any)
 		m.envResponses = make(map[string]any)
 
 		if len(m.prompts) == 0 {
@@ -159,7 +160,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			case "w":
 				m.screen = wizardScreen
 				m.currentPromptIndex = 0
-				m.savedResponses = make(map[string]any)
 				m.envResponses = make(map[string]any)
 			case "enter":
 				return m, m.SuccessCmd
@@ -206,32 +206,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				value := m.currentPrompt.input.Value()
+				value := strings.TrimSpace(m.currentPrompt.input.Value())
 
-				// If a prompt has options, map the selected option name to its value
-				// Sometimes options have human-readable names, but values we want to store
-				if len(currentPrompt.Options) > 0 {
-					for _, option := range currentPrompt.Options {
-						if option.Name == value && option.Value != "" {
-							value = option.Value
-							break
+				// Update required sections
+				for _, option := range currentPrompt.Options {
+					if option.Requires != "" {
+						if option.Value != "" && option.Value == value {
+							m.requires[option.Requires] = true
+						} else if option.Value == "" && option.Name == value {
+							m.requires[option.Requires] = true
 						}
 					}
 				}
 
-				m.savedResponses[currentPrompt.Key] = value
-
 				if currentPrompt.Env != "" {
-					m.envResponses[currentPrompt.Env] = m.currentPrompt.input.Value()
+					m.envResponses[currentPrompt.Env] = value
 				}
 
 				m.currentPromptIndex++
-				// Check if next prompt has requirements
+				// Advance to next prompt that is required
 				for m.currentPromptIndex < len(m.prompts) {
-					// nextPrompt := m.prompts[m.currentPromptIndex]
-					meetsRequirements := true
+					nextPrompt := m.prompts[m.currentPromptIndex]
 
-					if meetsRequirements {
+					if m.requires[nextPrompt.Section] {
 						break
 					}
 

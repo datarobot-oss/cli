@@ -62,7 +62,7 @@ func (suite *BuilderTestSuite) SetupTest() {
 }
 
 func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
-	prompts, err := GatherUserPrompts(suite.tempDir)
+	prompts, _, err := GatherUserPrompts(suite.tempDir)
 	suite.NoError(err) //nolint: testifylint
 
 	suite.Len(prompts, 6, "Expected to find 6 UserPrompt entries")
