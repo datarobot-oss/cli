@@ -38,6 +38,7 @@ func (i item) FilterValue() string {
 	if i.Value != "" {
 		return i.Value
 	}
+
 	return i.Name
 }
 
@@ -78,7 +79,6 @@ func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
 			prompt: prompt,
 			list:   l,
 		}
-
 	}
 
 	ti := textinput.New()
@@ -92,9 +92,9 @@ func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
 func (pm promptModel) Value() string {
 	if len(pm.prompt.Options) == 0 {
 		return strings.TrimSpace(pm.input.Value())
-	} else {
-		return pm.list.Items()[pm.list.Index()].FilterValue()
 	}
+
+	return pm.list.Items()[pm.list.Index()].FilterValue()
 }
 
 func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
