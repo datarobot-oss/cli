@@ -231,7 +231,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			cmds = append(cmds, cmd)
 		}
 	case dotenvScreen:
-		m.dotenv, cmd = m.dotenv.Update(msg)
+		dotenvModel, cmd := m.dotenv.Update(msg)
+		// Type assertion to appease compiler
+		m.dotenv = dotenvModel.(dotenv.Model)
+
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}

@@ -11,6 +11,7 @@ package dotenv
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -112,7 +113,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -241,8 +242,39 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 					m.currentPromptIndex++
 				}
 
-				if m.currentPromptIndex >= len(m.prompts) {
-					return m, m.SuccessCmd
+				if m.currentPromptIndex >= len(m.prompts) { //nolint: nestif
+					// Finished all prompts
+					// Update the .env file with the responses
+					for env, value := range m.envResponses {
+						// Find existing variable using a regex checking for the variable name at the start of a line
+						// to avoid matching comments
+						indexSearchRegex := fmt.Sprintf(`\n%s=`, env)
+						compiledRegex := regexp.MustCompile(indexSearchRegex)
+						i := compiledRegex.FindStringIndex(m.contents)
+
+						if len(i) == 0 {
+							// If the variable isn't in the Append below DATAROBOT_ENDPOINT
+							j := strings.Index(m.contents, "DATAROBOT_ENDPOINT=")
+							if j == -1 {
+								j = 0
+							}
+							// Find the end of the line
+							j = strings.Index(m.contents[j:], "\n")
+							if j == -1 {
+								j = len(m.contents + "\n")
+							}
+							// Insert the new variable after this line
+							m.contents = m.contents[:j] + fmt.Sprintf("\n%s=%v", env, value) + m.contents[j:]
+
+							continue
+						}
+
+						// Replace existing value
+						replacement := strings.Replace(m.contents, fmt.Sprintf("%s=", env), fmt.Sprintf("%s=%v\n", env, value), -1) //nolint: perfsprint
+						m.contents = replacement
+					}
+
+					return m, m.saveEditedFile()
 				}
 
 				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
