@@ -126,7 +126,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, nil
 	case dotenvFileUpdatedMsg:
-		// m.screen = wizardScreen
+		m.screen = listScreen
 		m.variables = msg.variables
 		m.contents = msg.contents
 		m.DotenvTemplate = msg.dotenvTemplate
@@ -211,6 +211,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
+			case "esc":
+				m.screen = listScreen
+				return m, nil
 			case "enter":
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				value := m.currentPrompt.Value()
