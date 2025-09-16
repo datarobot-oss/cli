@@ -265,13 +265,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 							}
 							// Insert the new variable after this line
 							m.contents = m.contents[:j] + fmt.Sprintf("\n%s=%v", env, value) + m.contents[j:]
-
-							continue
+						} else {
+							// Replace existing value
+							m.contents = strings.Replace(m.contents,
+								fmt.Sprintf("%s=", env), //nolint: perfsprint
+								fmt.Sprintf("%s=%v\n", env, value), -1)
 						}
-
-						// Replace existing value
-						replacement := strings.Replace(m.contents, fmt.Sprintf("%s=", env), fmt.Sprintf("%s=%v\n", env, value), -1) //nolint: perfsprint
-						m.contents = replacement
 					}
 
 					return m, m.saveEditedFile()
