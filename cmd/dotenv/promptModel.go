@@ -53,7 +53,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	str := fmt.Sprintf("%d. %s", index+1, i.FilterValue())
+	str := fmt.Sprintf("%d. %s", index+1, i.Name)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
