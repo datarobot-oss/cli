@@ -262,12 +262,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 								j = 0
 							}
 							// Find the end of the line
-							j = strings.Index(m.contents[j:], "\n")
+							j += strings.Index(m.contents[j:], "\n")
 							if j == -1 {
-								j = len(m.contents + "\n")
+								j = 0
 							}
 							// Insert the new variable after this line
-							m.contents = m.contents[:j] + fmt.Sprintf("\n%s=%v", env, value) + m.contents[j:]
+							m.contents = m.contents[:j] + fmt.Sprintf("\n\n%s=%v", env, value) + m.contents[j:]
 						} else {
 							// Replace existing value
 							m.contents = strings.Replace(m.contents,
