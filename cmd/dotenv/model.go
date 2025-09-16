@@ -57,6 +57,7 @@ type (
 		promptUser     bool
 	}
 
+	promptFinishedMsg struct{}
 	wizardFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
@@ -64,6 +65,14 @@ type (
 		requires map[string]bool
 	}
 )
+
+func promptFinishedCmd() tea.Msg {
+	return promptFinishedMsg{}
+}
+
+func wizardFinishedCmd() tea.Msg {
+	return wizardFinishedMsg{}
+}
 
 func (m Model) saveEnvFile() tea.Cmd {
 	return func() tea.Msg {
@@ -145,13 +154,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.envResponses = make(map[string]any)
 
 		if len(m.prompts) == 0 {
-			return m, func() tea.Msg {
-				return wizardFinishedMsg{}
-			}
+			return m, wizardFinishedCmd
 		}
 
-		m.currentPrompt = newPromptModel(m.prompts[0])
-		cmd := m.currentPrompt.input.Focus()
+		var cmd tea.Cmd
+		m.currentPrompt, cmd = newPromptModel(m.prompts[0], promptFinishedCmd)
 
 		return m, cmd
 	case wizardFinishedMsg:
@@ -214,23 +221,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case "esc":
 				m.screen = listScreen
 				return m, nil
-			case "enter":
+			}
+		case promptFinishedMsg:
+			{
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				value := m.currentPrompt.Value()
+				values := m.currentPrompt.Values
 
 				// Update required sections
 				for _, option := range currentPrompt.Options {
 					if option.Requires != "" {
-						if option.Value != "" && option.Value == value {
+						if option.Value != "" && slices.Contains(values, option.Value) {
 							m.requires[option.Requires] = true
-						} else if option.Value == "" && option.Name == value {
+						} else if option.Value == "" && slices.Contains(values, option.Name) {
 							m.requires[option.Requires] = true
 						}
 					}
 				}
 
 				if currentPrompt.Env != "" {
-					m.envResponses[currentPrompt.Env] = value
+					m.envResponses[currentPrompt.Env] = strings.Join(values, ",")
 				}
 
 				m.currentPromptIndex++
@@ -279,15 +288,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 					return m, m.saveEditedFile()
 				}
 
-				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
+				var cmd tea.Cmd
+				m.currentPrompt, cmd = newPromptModel(m.prompts[m.currentPromptIndex], promptFinishedCmd)
 
-				if len(m.prompts[m.currentPromptIndex].Options) == 0 {
-					cmd := m.currentPrompt.input.Focus()
-
-					return m, cmd
-				}
-
-				return m, nil
+				return m, cmd
 			}
 		}
 

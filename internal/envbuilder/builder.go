@@ -30,6 +30,7 @@ type UserPrompt struct {
 
 type PromptOption struct {
 	Blank    bool
+	Checked  bool
 	Name     string `yaml:"name"`
 	Value    string `yaml:"value,omitempty"`
 	Requires string `yaml:"requires,omitempty"`
