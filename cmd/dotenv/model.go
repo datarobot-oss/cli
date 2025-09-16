@@ -58,7 +58,6 @@ type (
 	}
 
 	promptFinishedMsg struct{}
-	wizardFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
 		prompts  []envbuilder.UserPrompt
@@ -68,10 +67,6 @@ type (
 
 func promptFinishedCmd() tea.Msg {
 	return promptFinishedMsg{}
-}
-
-func wizardFinishedCmd() tea.Msg {
-	return wizardFinishedMsg{}
 }
 
 func (m Model) saveEnvFile() tea.Cmd {
@@ -154,16 +149,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.envResponses = make(map[string]any)
 
 		if len(m.prompts) == 0 {
-			return m, wizardFinishedCmd
+			m.screen = listScreen
+			return m, nil
 		}
 
 		var cmd tea.Cmd
 		m.currentPrompt, cmd = newPromptModel(m.prompts[0], promptFinishedCmd)
 
 		return m, cmd
-	case wizardFinishedMsg:
-		m.screen = listScreen
-		return m, nil
 	}
 
 	switch m.screen {
@@ -172,9 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
 			case "w":
-				m.screen = wizardScreen
-				m.currentPromptIndex = 0
-				m.envResponses = make(map[string]any)
+				return m, m.loadPrompts()
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":
