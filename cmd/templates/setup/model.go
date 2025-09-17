@@ -231,8 +231,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 	var cmd tea.Cmd
 
-	var cmds []tea.Cmd
-
 	switch m.screen {
 	case welcomeScreen:
 	case hostScreen:
@@ -249,9 +247,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		m.host, cmd = m.host.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+
+		return m, cmd
 	case loginScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -263,9 +260,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		m.login, cmd = m.login.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+
+		return m, cmd
 	case listScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -277,26 +273,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		m.list, cmd = m.list.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+
+		return m, cmd
 	case cloneScreen:
 		m.clone, cmd = m.clone.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+
+		return m, cmd
 	case dotenvScreen:
 		dotenvModel, cmd := m.dotenv.Update(msg)
 		// Type assertion to appease compiler
 		m.dotenv = dotenvModel.(dotenv.Model)
 
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		return m, cmd
 	case exitScreen:
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, nil
 }
 
 func (m Model) View() string {
