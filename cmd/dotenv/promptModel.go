@@ -114,6 +114,33 @@ func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMod
 	return pm, cmd
 }
 
+func (pm promptModel) GetValues() []string {
+	if len(pm.prompt.Options) == 0 {
+		return []string{strings.TrimSpace(pm.input.Value())}
+	}
+
+	items := pm.list.Items()
+	current := items[pm.list.Index()].(item)
+
+	if pm.prompt.Multiple {
+		values := make([]string, 0, len(items))
+
+		for i := range items {
+			if itm := items[i].(item); itm.Checked {
+				values = append(values, itm.FilterValue())
+			}
+		}
+
+		return values
+	}
+
+	if current.Blank {
+		return nil
+	}
+
+	return []string{current.FilterValue()}
+}
+
 func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 	if len(pm.prompt.Options) > 0 {
 		switch msg := msg.(type) {
@@ -173,26 +200,7 @@ func (pm promptModel) toggleCurrent() (promptModel, tea.Cmd) {
 }
 
 func (pm promptModel) submitList() (promptModel, tea.Cmd) {
-	items := pm.list.Items()
-	currentItem := items[pm.list.Index()].(item)
-
-	if pm.prompt.Multiple {
-		values := make([]string, 0, len(items))
-
-		for i := range items {
-			if itm := items[i].(item); itm.Checked {
-				values = append(values, itm.FilterValue())
-			}
-		}
-
-		pm.Values = values
-	} else {
-		if currentItem.Blank {
-			pm.Values = nil
-		} else {
-			pm.Values = []string{currentItem.FilterValue()}
-		}
-	}
+	pm.Values = pm.GetValues()
 
 	if pm.prompt.Optional || len(pm.Values) > 0 {
 		return pm, pm.successCmd
@@ -202,7 +210,7 @@ func (pm promptModel) submitList() (promptModel, tea.Cmd) {
 }
 
 func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
-	pm.Values = []string{strings.TrimSpace(pm.input.Value())}
+	pm.Values = pm.GetValues()
 
 	if pm.prompt.Optional || len(pm.Values[0]) > 0 {
 		return pm, pm.successCmd
