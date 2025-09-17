@@ -42,7 +42,7 @@ type Model struct {
 	SuccessCmd         tea.Cmd
 	prompts            []envbuilder.UserPrompt
 	requires           map[string]bool
-	envResponses       map[string]any
+	envResponses       map[string]string
 	currentPromptIndex int
 	currentPrompt      promptModel
 }
@@ -146,7 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.prompts = msg.prompts
 		m.requires = msg.requires
 		m.currentPromptIndex = 0
-		m.envResponses = make(map[string]any)
+		m.envResponses = make(map[string]string)
 
 		if len(m.prompts) == 0 {
 			m.screen = listScreen
