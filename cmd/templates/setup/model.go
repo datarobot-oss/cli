@@ -10,7 +10,10 @@ package setup
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -149,6 +152,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, getTemplates()
 	case templatesLoadedMsg:
 		m.screen = listScreen
+		// We need to detect if we're already in a template repo to allow users to rerun setup on their
+		// Current Template
+		// We do this by checking if the URL of any of the templates matches the current git remote URL
+		// If it does, we set that template as selected in the list
+		md := exec.Command("git", "config", "--get", "remote.origin.url")
+		out, err := md.Output()
+
+		if err == nil { //nolint: nestif
+			remoteURL := strings.TrimSpace(string(out))
+			log.Debug("Current git remote URL: " + remoteURL)
+
+			urlRepoRegex := ".com[:|/]([^.]*)"
+			compiledRegex := regexp.MustCompile(urlRepoRegex)
+			matches := compiledRegex.FindStringSubmatch(remoteURL)
+
+			if len(matches) > 1 {
+				repoName := matches[1]
+				log.Debug("Detected repo name: " + repoName)
+
+				for _, t := range msg.templatesList.Templates {
+					tRepoMatches := compiledRegex.FindStringSubmatch(t.Repository.URL)
+					if len(tRepoMatches) > 1 && tRepoMatches[1] == repoName {
+						log.Debug("Found matching template: " + t.Name)
+
+						cwd, err := os.Getwd()
+						if err != nil {
+							log.Error("Failed to get current working directory", "error", err)
+							break
+						}
+
+						m.list.Template = t
+						m.screen = dotenvScreen
+						m.dotenv.DotenvFile = filepath.Join(cwd, ".env")
+
+						return m, m.dotenv.Init()
+					}
+				}
+			}
+		} else {
+			log.Debug("Failed to get current git remote URL. Assuming we're not in a repo and continuing.", "error", err)
+		}
+
 		m.list.SetTemplates(msg.templatesList.Templates)
 
 		return m, m.list.Init()
