@@ -79,7 +79,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str))
 }
 
-func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	if len(prompt.Options) > 0 {
 		items := make([]list.Item, 0, len(prompt.Options)+1)
 
@@ -104,6 +104,7 @@ func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMod
 	}
 
 	ti := textinput.New()
+	ti.SetValue(value)
 	cmd := ti.Focus()
 	pm := promptModel{
 		prompt:     prompt,

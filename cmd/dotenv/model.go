@@ -113,6 +113,15 @@ func (m Model) loadPrompts() tea.Cmd {
 	}
 }
 
+func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	prompt := m.prompts[m.currentPromptIndex]
+	m.currentPrompt, cmd = newPromptModel(prompt, m.envResponses[prompt.Env], promptFinishedCmd)
+
+	return m, cmd
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
@@ -146,17 +155,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.prompts = msg.prompts
 		m.requires = msg.requires
 		m.currentPromptIndex = 0
-		m.envResponses = make(map[string]string)
+
+		if m.envResponses == nil {
+			m.envResponses = make(map[string]string)
+		}
 
 		if len(m.prompts) == 0 {
 			m.screen = listScreen
 			return m, nil
 		}
 
-		var cmd tea.Cmd
-		m.currentPrompt, cmd = newPromptModel(m.prompts[0], promptFinishedCmd)
-
-		return m, cmd
+		return m.updateCurrentPrompt()
 	}
 
 	switch m.screen {
@@ -279,10 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 					return m, m.saveEditedFile()
 				}
 
-				var cmd tea.Cmd
-				m.currentPrompt, cmd = newPromptModel(m.prompts[m.currentPromptIndex], promptFinishedCmd)
-
-				return m, cmd
+				return m.updateCurrentPrompt()
 			}
 		}
 
