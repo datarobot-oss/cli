@@ -22,9 +22,11 @@ import (
 )
 
 type promptModel struct {
-	prompt envbuilder.UserPrompt
-	input  textinput.Model
-	list   list.Model
+	prompt     envbuilder.UserPrompt
+	input      textinput.Model
+	list       list.Model
+	Values     []string
+	successCmd tea.Cmd
 }
 
 var (
@@ -42,7 +44,9 @@ func (i item) FilterValue() string {
 	return i.Name
 }
 
-type itemDelegate struct{}
+type itemDelegate struct {
+	multiple bool
+}
 
 func (d itemDelegate) Height() int                             { return 1 }
 func (d itemDelegate) Spacing() int                            { return 0 }
@@ -53,7 +57,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	str := fmt.Sprintf("%d. %s", index+1, i.Name)
+	checkbox := ""
+
+	if d.multiple {
+		if i.Checked {
+			checkbox = "[x] "
+		} else {
+			checkbox = "[ ] "
+		}
+	}
+
+	str := fmt.Sprintf("%d. %s%s", index+1, checkbox, i.Name)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -65,7 +79,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str))
 }
 
-func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
+func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	if len(prompt.Options) > 0 {
 		items := make([]list.Item, 0, len(prompt.Options)+1)
 
@@ -77,46 +91,133 @@ func newPromptModel(prompt envbuilder.UserPrompt) promptModel {
 			items = append(items, item(option))
 		}
 
-		l := list.New(items, itemDelegate{}, 0, 15)
+		l := list.New(items, itemDelegate{prompt.Multiple}, 0, 15)
 
-		return promptModel{
-			prompt: prompt,
-			list:   l,
+		cmd := tea.WindowSize()
+		pm := promptModel{
+			prompt:     prompt,
+			list:       l,
+			successCmd: successCmd,
 		}
+
+		return pm, cmd
 	}
 
 	ti := textinput.New()
-
-	return promptModel{
-		prompt: prompt,
-		input:  ti,
-	}
-}
-
-func (pm promptModel) Value() string {
-	if len(pm.prompt.Options) == 0 {
-		return strings.TrimSpace(pm.input.Value())
-	}
-
-	current := pm.list.Items()[pm.list.Index()].(item)
-
-	if current.Blank {
-		return ""
-	}
-
-	return current.FilterValue()
-}
-
-func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
-	var cmd tea.Cmd
-
-	if len(pm.prompt.Options) > 0 {
-		pm.list, cmd = pm.list.Update(msg)
-	} else {
-		pm.input, cmd = pm.input.Update(msg)
+	ti.SetValue(value)
+	cmd := ti.Focus()
+	pm := promptModel{
+		prompt:     prompt,
+		input:      ti,
+		successCmd: successCmd,
 	}
 
 	return pm, cmd
+}
+
+func (pm promptModel) GetValues() []string {
+	if len(pm.prompt.Options) == 0 {
+		return []string{strings.TrimSpace(pm.input.Value())}
+	}
+
+	items := pm.list.Items()
+	current := items[pm.list.Index()].(item)
+
+	if pm.prompt.Multiple {
+		values := make([]string, 0, len(items))
+
+		for i := range items {
+			if itm := items[i].(item); itm.Checked {
+				values = append(values, itm.FilterValue())
+			}
+		}
+
+		return values
+	}
+
+	if current.Blank {
+		return nil
+	}
+
+	return []string{current.FilterValue()}
+}
+
+func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
+	if len(pm.prompt.Options) > 0 {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case " ":
+				// toggle checkbox, don't submit
+				return pm.toggleCurrent()
+			case "enter":
+				// submit if valid
+				return pm.submitList()
+			}
+		}
+
+		var cmd tea.Cmd
+		pm.list, cmd = pm.list.Update(msg)
+
+		return pm, cmd
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch keypress := msg.String(); keypress {
+		case "enter":
+			return pm.submitInput()
+		}
+	}
+
+	var cmd tea.Cmd
+	pm.input, cmd = pm.input.Update(msg)
+
+	return pm, cmd
+}
+
+func (pm promptModel) toggleCurrent() (promptModel, tea.Cmd) {
+	items := pm.list.Items()
+	currentItem := items[pm.list.Index()].(item)
+
+	if !pm.prompt.Multiple {
+		return pm, nil
+	}
+
+	if currentItem.Blank {
+		for i := range items {
+			itm := items[i].(item)
+			itm.Checked = false
+			items[i] = itm
+		}
+	} else {
+		currentItem.Checked = !currentItem.Checked
+		items[pm.list.Index()] = currentItem
+	}
+
+	cmd := pm.list.SetItems(items)
+
+	return pm, cmd
+}
+
+func (pm promptModel) submitList() (promptModel, tea.Cmd) {
+	pm.Values = pm.GetValues()
+
+	if pm.prompt.Optional || len(pm.Values) > 0 {
+		return pm, pm.successCmd
+	}
+
+	return pm, nil
+}
+
+func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
+	pm.Values = pm.GetValues()
+
+	if pm.prompt.Optional || len(pm.Values[0]) > 0 {
+		return pm, pm.successCmd
+	}
+
+	return pm, nil
 }
 
 func (pm promptModel) View() string {

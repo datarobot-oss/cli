@@ -230,6 +230,11 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 		Runes: []rune("enter"),
 	})
 
+	tm.Send(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune("enter"),
+	})
+
 	err := tm.Quit()
 	if err != nil {
 		suite.T().Error(err)
@@ -362,6 +367,11 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	tm.Send(tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune("down"),
+	})
+
+	tm.Send(tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune("enter"),
 	})
 
 	tm.Send(tea.KeyMsg{

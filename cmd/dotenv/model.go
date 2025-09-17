@@ -42,7 +42,7 @@ type Model struct {
 	SuccessCmd         tea.Cmd
 	prompts            []envbuilder.UserPrompt
 	requires           map[string]bool
-	envResponses       map[string]any
+	envResponses       map[string]string
 	currentPromptIndex int
 	currentPrompt      promptModel
 }
@@ -57,13 +57,17 @@ type (
 		promptUser     bool
 	}
 
-	wizardFinishedMsg struct{}
+	promptFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
 		prompts  []envbuilder.UserPrompt
 		requires map[string]bool
 	}
 )
+
+func promptFinishedCmd() tea.Msg {
+	return promptFinishedMsg{}
+}
 
 func (m Model) saveEnvFile() tea.Cmd {
 	return func() tea.Msg {
@@ -109,6 +113,15 @@ func (m Model) loadPrompts() tea.Cmd {
 	}
 }
 
+func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	prompt := m.prompts[m.currentPromptIndex]
+	m.currentPrompt, cmd = newPromptModel(prompt, m.envResponses[prompt.Env], promptFinishedCmd)
+
+	return m, cmd
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
@@ -142,21 +155,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.prompts = msg.prompts
 		m.requires = msg.requires
 		m.currentPromptIndex = 0
-		m.envResponses = make(map[string]any)
 
-		if len(m.prompts) == 0 {
-			return m, func() tea.Msg {
-				return wizardFinishedMsg{}
-			}
+		if m.envResponses == nil {
+			m.envResponses = make(map[string]string)
 		}
 
-		m.currentPrompt = newPromptModel(m.prompts[0])
-		cmd := m.currentPrompt.input.Focus()
+		if len(m.prompts) == 0 {
+			m.screen = listScreen
+			return m, nil
+		}
 
-		return m, cmd
-	case wizardFinishedMsg:
-		m.screen = listScreen
-		return m, nil
+		return m.updateCurrentPrompt()
 	}
 
 	switch m.screen {
@@ -165,9 +174,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
 			case "w":
-				m.screen = wizardScreen
-				m.currentPromptIndex = 0
-				m.envResponses = make(map[string]any)
+				return m, m.loadPrompts()
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":
@@ -214,23 +221,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case "esc":
 				m.screen = listScreen
 				return m, nil
-			case "enter":
+			}
+		case promptFinishedMsg:
+			{
 				currentPrompt := m.prompts[m.currentPromptIndex]
-				value := m.currentPrompt.Value()
+				values := m.currentPrompt.Values
 
 				// Update required sections
 				for _, option := range currentPrompt.Options {
 					if option.Requires != "" {
-						if option.Value != "" && option.Value == value {
+						if option.Value != "" && slices.Contains(values, option.Value) {
 							m.requires[option.Requires] = true
-						} else if option.Value == "" && option.Name == value {
+						} else if option.Value == "" && slices.Contains(values, option.Name) {
 							m.requires[option.Requires] = true
 						}
 					}
 				}
 
 				if currentPrompt.Env != "" {
-					m.envResponses[currentPrompt.Env] = value
+					m.envResponses[currentPrompt.Env] = strings.Join(values, ",")
 				}
 
 				m.currentPromptIndex++
@@ -279,15 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 					return m, m.saveEditedFile()
 				}
 
-				m.currentPrompt = newPromptModel(m.prompts[m.currentPromptIndex])
-
-				if len(m.prompts[m.currentPromptIndex].Options) == 0 {
-					cmd := m.currentPrompt.input.Focus()
-
-					return m, cmd
-				}
-
-				return m, nil
+				return m.updateCurrentPrompt()
 			}
 		}
 
