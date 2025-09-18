@@ -223,7 +223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, nil
 			}
 		case promptFinishedMsg:
-			{
+			if m.currentPromptIndex < len(m.prompts) { //nolint: nestif
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				values := m.currentPrompt.Values
 
@@ -254,7 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 					m.currentPromptIndex++
 				}
 
-				if m.currentPromptIndex >= len(m.prompts) { //nolint: nestif
+				if m.currentPromptIndex >= len(m.prompts) {
 					// Finished all prompts
 					// Update the .env file with the responses
 					for env, value := range m.envResponses {
@@ -290,6 +290,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				return m.updateCurrentPrompt()
 			}
+
+			m.screen = listScreen
+
+			return m, nil
 		}
 
 		var cmd tea.Cmd

@@ -67,7 +67,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 	}
 
-	str := fmt.Sprintf("%d. %s%s", index+1, checkbox, i.Name)
+	str := fmt.Sprintf("%s%s", checkbox, i.Name)
 
 	fn := itemStyle.Render
 	if index == m.Index() {

@@ -247,7 +247,11 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 
 	// Set data source to google
 	suite.WaitFor(tm, "The data source to use for this application")
-	suite.Send(tm, "down", " ", "enter")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> [ ] Google")
+	suite.Send(tm, " ")
+	suite.WaitFor(tm, "> [x] Google")
+	suite.Send(tm, "enter")
 
 	suite.WaitFor(tm, "The client ID for the Google data source.")
 	suite.Send(tm, "google_parakeet_id", "enter")
@@ -289,7 +293,16 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 
 	// Set data source to google and box
 	suite.WaitFor(tm, "The data source to use for this application")
-	suite.Send(tm, "down", " ", "down", " ", "enter")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> [ ] Google")
+	suite.Send(tm, " ")
+	suite.WaitFor(tm, "> [x] Google")
+
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> [ ] Box")
+	suite.Send(tm, " ")
+	suite.WaitFor(tm, "> [x] Box")
+	suite.Send(tm, "enter")
 
 	suite.WaitFor(tm, "The client ID for the Google data source.")
 	suite.Send(tm, "google_parakeet_id", "enter")
