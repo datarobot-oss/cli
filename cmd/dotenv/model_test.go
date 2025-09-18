@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-var testEnvFile = `
+var entTemplateContents = `
 # Refer to https://docs.datarobot.com/en/docs/api/api-quickstart/index.html#create-a-datarobot-api-key
 # and https://docs.datarobot.com/en/docs/api/api-quickstart/index.html#retrieve-the-api-endpoint
 # Can be deleted on a DataRobot codespace
@@ -44,7 +44,7 @@ BOX_CLIENT_SECRET=
 # INFRA_ENABLE_LLM=
 `
 
-var testConfigFile = `
+var parakeetYamlContents = `
 root:
   - env: PULUMI_CONFIG_PASSPHRASE
     type: string
@@ -59,6 +59,7 @@ root:
   - type: string
     default:
     optional: true
+    multiple: true
     help: "The data source to use for this application."
     options:
       - name: "Google"
@@ -120,14 +121,14 @@ func (suite *DotenvModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 
-	file, err := os.OpenFile(filepath.Join(dir, ".env.template"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	envTemplateFile, err := os.OpenFile(filepath.Join(dir, ".env.template"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		suite.T().Errorf("Failed to create test env file: %v", err)
 	}
 
-	defer file.Close()
+	defer envTemplateFile.Close()
 
-	_, err = file.WriteString(testEnvFile)
+	_, err = envTemplateFile.WriteString(entTemplateContents)
 	if err != nil {
 		suite.T().Errorf("Failed to write to test env file: %v", err)
 	}
@@ -139,16 +140,16 @@ func (suite *DotenvModelTestSuite) SetupTest() {
 		suite.T().Errorf("Failed to create .datarobot directory: %v", err)
 	}
 
-	configFile := filepath.Join(datarobotDir, "parakeet.yaml")
+	parakeetYamlName := filepath.Join(datarobotDir, "parakeet.yaml")
 
-	file2, err := os.OpenFile(configFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	parakeetYamlFile, err := os.OpenFile(parakeetYamlName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		suite.T().Errorf("Failed to create test YAML file: %v", err)
 	}
 
-	defer file2.Close()
+	defer parakeetYamlFile.Close()
 
-	_, err = file2.WriteString(testConfigFile)
+	_, err = parakeetYamlFile.WriteString(parakeetYamlContents)
 	if err != nil {
 		suite.T().Errorf("Failed to write to test YAML file one: %v", err)
 	}
@@ -204,14 +205,20 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	// Set default pulumi passphrase to 123
 	suite.WaitFor(tm, "Default: 123")
 	suite.Send(tm, "123", "enter")
+
 	// Accept default for use case
 	suite.WaitFor(tm, "The default use case for this application")
 	suite.Send(tm, "enter")
+
 	// Leave data source blank
 	suite.WaitFor(tm, "The data source to use for this application")
 	suite.Send(tm, "enter")
+
 	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
-	suite.Send(tm, "down", "enter", "enter")
+	suite.Send(tm, "down", "enter")
+
+	// Exit list screen
+	suite.Send(tm, "enter")
 
 	fm := suite.FinalModel(tm)
 
@@ -233,18 +240,25 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	// Set default pulumi passphrase to 123
 	suite.WaitFor(tm, "Default: 123")
 	suite.Send(tm, "123", "enter")
+
 	// Accept default for use case
 	suite.WaitFor(tm, "The default use case for this application")
 	suite.Send(tm, "enter")
-	// Leave data source blank
+
+	// Set data source to google
 	suite.WaitFor(tm, "The data source to use for this application")
-	suite.Send(tm, "down", "enter")
+	suite.Send(tm, "down", " ", "enter")
+
 	suite.WaitFor(tm, "The client ID for the Google data source.")
-	suite.Send(tm, "parakeet_id", "enter")
+	suite.Send(tm, "google_parakeet_id", "enter")
 	suite.WaitFor(tm, "The client secret for the Google data source.")
-	suite.Send(tm, "parakeet_secret", "enter")
+	suite.Send(tm, "google_parakeet_secret", "enter")
+
 	suite.WaitFor(tm, "LLM Gateway")
-	suite.Send(tm, "down", "enter", "enter")
+	suite.Send(tm, "down", "enter")
+
+	// Exit list screen
+	suite.Send(tm, "enter")
 
 	fm := suite.FinalModel(tm)
 
@@ -254,6 +268,55 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	suite.Contains(fm.contents, "\nPULUMI_CONFIG_PASSPHRASE=123", "Expected env file to contain the entered passphrase")
 	suite.Contains(fm.contents, "\nDATAROBOT_DEFAULT_USE_CASE=", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "\nINFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
-	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_ID=parakeet_id", "Expected env file to contain the entered Google client ID")
-	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_SECRET=parakeet_secret", "Expected env file to contain the entered Google client secret")
+	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_ID=google_parakeet_id", "Expected env file to contain the entered Google client ID")
+	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_SECRET=google_parakeet_secret", "Expected env file to contain the entered Google client secret")
+}
+
+func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
+	tm := suite.NewTestModel(Model{
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		DotenvTemplate: filepath.Join(suite.tempDir, ".env.template"),
+	})
+
+	// Set default pulumi passphrase to 123
+	suite.WaitFor(tm, "Default: 123")
+	suite.Send(tm, "123", "enter")
+
+	// Accept default for use case
+	suite.WaitFor(tm, "The default use case for this application")
+	suite.Send(tm, "enter")
+
+	// Set data source to google and box
+	suite.WaitFor(tm, "The data source to use for this application")
+	suite.Send(tm, "down", " ", "down", " ", "enter")
+
+	suite.WaitFor(tm, "The client ID for the Google data source.")
+	suite.Send(tm, "google_parakeet_id", "enter")
+	suite.WaitFor(tm, "The client secret for the Google data source.")
+	suite.Send(tm, "google_parakeet_secret", "enter")
+
+	suite.WaitFor(tm, "The client ID for the Box data source.")
+	suite.Send(tm, "box_parakeet_id", "enter")
+	suite.WaitFor(tm, "The client secret for the Box data source.")
+	suite.Send(tm, "box_parakeet_secret", "enter")
+
+	suite.WaitFor(tm, "LLM Gateway")
+	suite.Send(tm, "down", "enter")
+
+	// Exit list screen
+	suite.Send(tm, "enter")
+
+	fm := suite.FinalModel(tm)
+
+	expectedFilePath := filepath.Join(suite.tempDir, ".env")
+
+	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
+	suite.Contains(fm.contents, "\nPULUMI_CONFIG_PASSPHRASE=123", "Expected env file to contain the entered passphrase")
+	suite.Contains(fm.contents, "\nDATAROBOT_DEFAULT_USE_CASE=", "Expected env file to contain the default use case")
+	suite.Contains(fm.contents, "\nINFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_ID=google_parakeet_id", "Expected env file to contain the entered Google client ID")
+	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_SECRET=google_parakeet_secret", "Expected env file to contain the entered Google client secret")
+	suite.Contains(fm.contents, "\nBOX_CLIENT_ID=box_parakeet_id", "Expected env file to contain the entered Box client ID")
+	suite.Contains(fm.contents, "\nBOX_CLIENT_SECRET=box_parakeet_secret", "Expected env file to contain the entered Box client secret")
 }
