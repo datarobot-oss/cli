@@ -215,7 +215,9 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	suite.Send(tm, "enter")
 
 	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
-	suite.Send(tm, "down", "enter")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> LLM Gateway")
+	suite.Send(tm, "enter")
 
 	// Exit list screen
 	suite.Send(tm, "enter")
@@ -258,8 +260,10 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	suite.WaitFor(tm, "The client secret for the Google data source.")
 	suite.Send(tm, "google_parakeet_secret", "enter")
 
-	suite.WaitFor(tm, "LLM Gateway")
-	suite.Send(tm, "down", "enter")
+	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> LLM Gateway")
+	suite.Send(tm, "enter")
 
 	// Exit list screen
 	suite.Send(tm, "enter")
@@ -314,8 +318,10 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	suite.WaitFor(tm, "The client secret for the Box data source.")
 	suite.Send(tm, "box_parakeet_secret", "enter")
 
-	suite.WaitFor(tm, "LLM Gateway")
-	suite.Send(tm, "down", "enter")
+	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> LLM Gateway")
+	suite.Send(tm, "enter")
 
 	// Exit list screen
 	suite.Send(tm, "enter")
