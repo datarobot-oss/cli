@@ -72,20 +72,11 @@ func (suite *LoginModelTestSuite) WaitFor(tm *teatest.TestModel, contains string
 	)
 }
 
-func (suite *LoginModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
+func (suite *LoginModelTestSuite) Quit(tm *teatest.TestModel) {
 	err := tm.Quit()
 	if err != nil {
 		suite.T().Error(err)
 	}
-
-	finalModel := tm.FinalModel(suite.T())
-
-	fm, ok := finalModel.(Model)
-	if !ok {
-		suite.T().Error("Final model is not of type Model")
-	}
-
-	return fm
 }
 
 func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
@@ -107,7 +98,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	suite.WaitFor(tm, "cliRedirect=true")
 	suite.Send(tm, "esc")
 
-	suite.FinalModel(tm)
+	suite.Quit(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -127,7 +118,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	suite.WaitFor(tm, "cliRedirect=true")
 	suite.Send(tm, "esc")
 
-	suite.FinalModel(tm)
+	suite.Quit(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -147,7 +138,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	suite.WaitFor(tm, "cliRedirect=true")
 	suite.Send(tm, "esc")
 
-	suite.FinalModel(tm)
+	suite.Quit(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -167,7 +158,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	suite.WaitFor(tm, "cliRedirect=true")
 	suite.Send(tm, "esc")
 
-	suite.FinalModel(tm)
+	suite.Quit(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -185,7 +176,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
 
-	suite.FinalModel(tm)
+	suite.Quit(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.NoFileExists(expectedFilePath, "Expected config file to not be created at default path")
