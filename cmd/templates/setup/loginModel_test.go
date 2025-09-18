@@ -48,6 +48,46 @@ func (suite *LoginModelTestSuite) SetupTest() {
 	suite.T().Setenv("DATAROBOT_API_TOKEN", "")
 }
 
+func (suite *LoginModelTestSuite) NewTestModel(m Model) *teatest.TestModel {
+	return teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+}
+
+func (suite *LoginModelTestSuite) Send(tm *teatest.TestModel, keys ...string) {
+	for _, key := range keys {
+		tm.Send(tea.KeyMsg{
+			Type:  tea.KeyRunes,
+			Runes: []rune(key),
+		})
+	}
+}
+
+func (suite *LoginModelTestSuite) WaitFor(tm *teatest.TestModel, contains string) {
+	teatest.WaitFor(
+		suite.T(), tm.Output(),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte(contains))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
+}
+
+func (suite *LoginModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
+	err := tm.Quit()
+	if err != nil {
+		suite.T().Error(err)
+	}
+
+	finalModel := tm.FinalModel(suite.T())
+
+	fm, ok := finalModel.(Model)
+	if !ok {
+		suite.T().Error("Final model is not of type Model")
+	}
+
+	return fm
+}
+
 func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 	suite.T().Logf("AfterTest: %s - %s finished", suiteName, testName)
 	os.RemoveAll(suite.tempDir) // Clean up the temporary directory after each test
@@ -60,44 +100,14 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
-	m := NewModel()
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	tm := suite.NewTestModel(NewModel())
 
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("https://app.datarobot.com"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "https://app.datarobot.com")
+	suite.Send(tm, "1", "enter")
+	suite.WaitFor(tm, "cliRedirect=true")
+	suite.Send(tm, "esc")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("1"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("cliRedirect=true"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("esc"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -110,44 +120,14 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
-	m := NewModel()
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	tm := suite.NewTestModel(NewModel())
 
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("https://app.eu.datarobot.com"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "https://app.eu.datarobot.com")
+	suite.Send(tm, "2", "enter")
+	suite.WaitFor(tm, "cliRedirect=true")
+	suite.Send(tm, "esc")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("2"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("cliRedirect=true"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("esc"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -160,44 +140,14 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
-	m := NewModel()
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	tm := suite.NewTestModel(NewModel())
 
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("https://app.jp.datarobot.com"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "https://app.jp.datarobot.com")
+	suite.Send(tm, "3", "enter")
+	suite.WaitFor(tm, "cliRedirect=true")
+	suite.Send(tm, "esc")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("3"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("cliRedirect=true"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("esc"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -210,44 +160,14 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
-	m := NewModel()
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	tm := suite.NewTestModel(NewModel())
 
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("https://app.jp.datarobot.com"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "https://app.jp.datarobot.com")
+	suite.Send(tm, "https://app.parakeet.datarobot.com", "enter")
+	suite.WaitFor(tm, "cliRedirect=true")
+	suite.Send(tm, "esc")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("https://app.parakeet.datarobot.com"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("cliRedirect=true"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("esc"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.FileExists(expectedFilePath, "Expected config file to be created at default path")
@@ -260,36 +180,12 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
-	m := NewModel()
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	tm := suite.NewTestModel(NewModel())
 
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("https://app.jp.datarobot.com"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "https://app.jp.datarobot.com")
+	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("squak-squak"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("ctrl+c"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.NoFileExists(expectedFilePath, "Expected config file to not be created at default path")

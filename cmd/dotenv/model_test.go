@@ -154,93 +154,35 @@ func (suite *DotenvModelTestSuite) SetupTest() {
 	}
 }
 
-func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
-	m := Model{
-		screen:         wizardScreen,
-		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
-		DotenvTemplate: filepath.Join(suite.tempDir, ".env.template"),
+func (suite *DotenvModelTestSuite) NewTestModel(m Model) *teatest.TestModel {
+	return teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+}
+
+func (suite *DotenvModelTestSuite) Send(tm *teatest.TestModel, keys ...string) {
+	for _, key := range keys {
+		tm.Send(tea.KeyMsg{
+			Type:  tea.KeyRunes,
+			Runes: []rune(key),
+		})
 	}
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+}
 
-	// Set default pulumi passphrase to 123
+func (suite *DotenvModelTestSuite) WaitFor(tm *teatest.TestModel, contains string) {
 	teatest.WaitFor(
 		suite.T(), tm.Output(),
 		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Default: 123"))
+			return bytes.Contains(bts, []byte(contains))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
 		teatest.WithDuration(time.Second*3),
 	)
+}
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("123"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	// Accept default for use case
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The default use case for this application"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	// Leave data source blank
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The data source to use for this application"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Select the type of LLM integration to enable."))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("down"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
+func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 	err := tm.Quit()
 	if err != nil {
 		suite.T().Error(err)
 	}
-
-	expectedFilePath := filepath.Join(suite.tempDir, ".env")
 
 	finalModel := tm.FinalModel(suite.T())
 
@@ -248,6 +190,32 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	if !ok {
 		suite.T().Error("Final model is not of type Model")
 	}
+
+	return fm
+}
+
+func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
+	tm := suite.NewTestModel(Model{
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		DotenvTemplate: filepath.Join(suite.tempDir, ".env.template"),
+	})
+
+	// Set default pulumi passphrase to 123
+	suite.WaitFor(tm, "Default: 123")
+	suite.Send(tm, "123", "enter")
+	// Accept default for use case
+	suite.WaitFor(tm, "The default use case for this application")
+	suite.Send(tm, "enter")
+	// Leave data source blank
+	suite.WaitFor(tm, "The data source to use for this application")
+	suite.Send(tm, "enter")
+	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
+	suite.Send(tm, "down", "enter", "enter")
+
+	fm := suite.FinalModel(tm)
+
+	expectedFilePath := filepath.Join(suite.tempDir, ".env")
 
 	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
 	suite.Contains(fm.contents, "\nPULUMI_CONFIG_PASSPHRASE=123", "Expected env file to contain the entered passphrase")
@@ -256,142 +224,31 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 }
 
 func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
-	m := Model{
+	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		DotenvTemplate: filepath.Join(suite.tempDir, ".env.template"),
-	}
-	tm := teatest.NewTestModel(suite.T(), m, teatest.WithInitialTermSize(300, 100))
+	})
 
 	// Set default pulumi passphrase to 123
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("Default: 123"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("123"),
-	})
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
+	suite.WaitFor(tm, "Default: 123")
+	suite.Send(tm, "123", "enter")
 	// Accept default for use case
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The default use case for this application"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
+	suite.WaitFor(tm, "The default use case for this application")
+	suite.Send(tm, "enter")
 	// Leave data source blank
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The data source to use for this application"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
+	suite.WaitFor(tm, "The data source to use for this application")
+	suite.Send(tm, "down", "enter")
+	suite.WaitFor(tm, "The client ID for the Google data source.")
+	suite.Send(tm, "parakeet_id", "enter")
+	suite.WaitFor(tm, "The client secret for the Google data source.")
+	suite.Send(tm, "parakeet_secret", "enter")
+	suite.WaitFor(tm, "LLM Gateway")
+	suite.Send(tm, "down", "enter", "enter")
 
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("down"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The client ID for the Google data source."))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("parakeet_id"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("The client secret for the Google data source."))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("parakeet_secret"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	teatest.WaitFor(
-		suite.T(), tm.Output(),
-		func(bts []byte) bool {
-			return bytes.Contains(bts, []byte("LLM Gateway"))
-		},
-		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
-	)
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("down"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	tm.Send(tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune("enter"),
-	})
-
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	fm := suite.FinalModel(tm)
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".env")
-
-	finalModel := tm.FinalModel(suite.T())
-
-	fm, ok := finalModel.(Model)
-	if !ok {
-		suite.T().Error("Final model is not of type Model")
-	}
 
 	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
 	suite.Contains(fm.contents, "\nPULUMI_CONFIG_PASSPHRASE=123", "Expected env file to contain the entered passphrase")
