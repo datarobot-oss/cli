@@ -80,7 +80,8 @@ func (suite *LoginModelTestSuite) Quit(tm *teatest.TestModel) {
 }
 
 func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
-	suite.T().Logf("AfterTest: %s - %s finished", suiteName, testName)
+	_, _ = suiteName, testName
+
 	os.RemoveAll(suite.tempDir) // Clean up the temporary directory after each test
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
