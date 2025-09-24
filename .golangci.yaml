@@ -1,5 +1,5 @@
 run:
-  go: "1.24.3"
+  go: "1.24.7"
 
 output:
   # Make output more digestible with quickfix in vim/emacs/etc.
