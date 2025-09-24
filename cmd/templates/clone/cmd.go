@@ -79,7 +79,7 @@ func validateArgs(args []string) (string, string, error) {
 }
 
 func gitClone(repoURL, dir string) (string, error) {
-	cmd := exec.Command("git", "clone", "-b", "alevan/CFX-3597-env-config", repoURL, dir)
+	cmd := exec.Command("git", "clone", repoURL, dir)
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
