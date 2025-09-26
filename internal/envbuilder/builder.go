@@ -20,6 +20,7 @@ import (
 type UserPrompt struct {
 	Section  string
 	Env      string         `yaml:"env"`
+	Key      string         `yaml:"key"`
 	Type     string         `yaml:"type"`
 	Multiple bool           `yaml:"multiple"`
 	Options  []PromptOption `yaml:"options,omitempty"`
@@ -52,37 +53,56 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
 	allRootKeys := make([]string, 0)
 
 	for _, yamlFile := range yamlFiles {
-		data, err := os.ReadFile(yamlFile)
+		prompts, roots, err := filePrompts(yamlFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
-		}
-
-		var fileParsed ParsedYaml
-
-		if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-			return nil, nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
-		}
-
-		roots := rootSections(fileParsed)
-		prompts := promptsSorted(fileParsed, yamlFile, roots)
-
-		for _, root := range roots {
-			allRootKeys = append(allRootKeys, yamlFile+":"+root)
-		}
-
-		for p := range prompts {
-			prompts[p].Section = yamlFile + ":" + prompts[p].Section
-			for o := range prompts[p].Options {
-				if prompts[p].Options[o].Requires != "" {
-					prompts[p].Options[o].Requires = yamlFile + ":" + prompts[p].Options[o].Requires
-				}
-			}
+			return nil, nil, err
 		}
 
 		allPrompts = append(allPrompts, prompts...)
+		allRootKeys = append(allRootKeys, roots...)
 	}
 
 	return allPrompts, allRootKeys, nil
+}
+
+func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
+	data, err := os.ReadFile(yamlFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
+	}
+
+	var fileParsed ParsedYaml
+
+	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
+	}
+
+	roots := rootSections(fileParsed)
+	prompts := promptsSorted(fileParsed, yamlFile, roots)
+
+	for i, root := range roots {
+		roots[i] = yamlFile + ":" + root
+	}
+
+	for p := range prompts {
+		if prompts[p].Key != "" {
+			prompts[p].Env = "# " + prompts[p].Key
+		}
+
+		prompts[p].Section = yamlFile + ":" + prompts[p].Section
+
+		for o := range prompts[p].Options {
+			if prompts[p].Options[o].Requires != "" {
+				prompts[p].Options[o].Requires = yamlFile + ":" + prompts[p].Options[o].Requires
+			}
+
+			if prompts[p].Options[o].Value == "" {
+				prompts[p].Options[o].Value = prompts[p].Options[o].Name
+			}
+		}
+	}
+
+	return prompts, roots, nil
 }
 
 func promptsSorted(fileParsed ParsedYaml, yamlFile string, keys []string) []UserPrompt {

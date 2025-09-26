@@ -11,6 +11,7 @@ package dotenv
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -80,35 +81,54 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
-	if len(prompt.Options) > 0 {
-		items := make([]list.Item, 0, len(prompt.Options)+1)
-
-		if prompt.Optional {
-			items = append(items, item{Blank: true, Name: "None (leave blank)"})
-		}
-
-		for _, option := range prompt.Options {
-			items = append(items, item(option))
-		}
-
-		l := list.New(items, itemDelegate{prompt.Multiple}, 0, 15)
-
-		cmd := tea.WindowSize()
+	if len(prompt.Options) == 0 {
+		ti := textinput.New()
+		ti.SetValue(value)
+		cmd := ti.Focus()
 		pm := promptModel{
 			prompt:     prompt,
-			list:       l,
+			input:      ti,
 			successCmd: successCmd,
 		}
 
 		return pm, cmd
 	}
 
-	ti := textinput.New()
-	ti.SetValue(value)
-	cmd := ti.Focus()
+	items := make([]list.Item, 0, len(prompt.Options)+1)
+
+	if prompt.Optional {
+		items = append(items, item{Blank: true, Name: "None (leave blank)"})
+	}
+
+	values := strings.Split(value, ",")
+
+	for _, option := range prompt.Options {
+		if prompt.Multiple && slices.Index(values, option.Value) != -1 {
+			option.Checked = true
+		}
+
+		items = append(items, item(option))
+	}
+
+	l := list.New(items, itemDelegate{prompt.Multiple}, 0, 15)
+
+	if value != "" {
+		if !prompt.Multiple {
+			initialIndex := slices.IndexFunc(prompt.Options, func(po envbuilder.PromptOption) bool {
+				return po.Value == value
+			})
+			if prompt.Optional || initialIndex == -1 {
+				initialIndex++
+			}
+
+			l.Select(initialIndex)
+		}
+	}
+
+	cmd := tea.WindowSize()
 	pm := promptModel{
 		prompt:     prompt,
-		input:      ti,
+		list:       l,
 		successCmd: successCmd,
 	}
 
