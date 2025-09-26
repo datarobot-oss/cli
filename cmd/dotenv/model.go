@@ -118,14 +118,12 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 
 	prompt := m.prompts[m.currentPromptIndex]
 
-	var value string
-	if prompt.Env != "" {
-		value = m.envResponses[prompt.Env]
-	} else {
-		value = m.envResponses["# "+prompt.Key]
+	envKey := prompt.Env
+	if envKey == "" {
+		envKey = "# " + prompt.Key
 	}
 
-	m.currentPrompt, cmd = newPromptModel(prompt, value, promptFinishedCmd)
+	m.currentPrompt, cmd = newPromptModel(prompt, m.envResponses[envKey], promptFinishedCmd)
 
 	return m, cmd
 }
