@@ -48,7 +48,7 @@ func readTemplate(dotenvFile string) ([]string, string) {
 	for _, templateFile := range templateFiles {
 		templateContents, err := os.ReadFile(templateFile)
 		if err != nil {
-			log.Warn(err)
+			log.Debug(err)
 			continue
 		}
 
