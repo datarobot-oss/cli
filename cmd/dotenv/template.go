@@ -40,9 +40,9 @@ func backup(dotenvFile string) error {
 
 func readTemplate(dotenvFile string) ([]string, string) {
 	templateFiles := []string{
+		dotenvFile,
 		dotenvFile + ".sample",
 		dotenvFile + ".template",
-		dotenvFile,
 	}
 
 	for _, templateFile := range templateFiles {

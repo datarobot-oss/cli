@@ -117,9 +117,57 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	prompt := m.prompts[m.currentPromptIndex]
-	m.currentPrompt, cmd = newPromptModel(prompt, m.envResponses[prompt.Env], promptFinishedCmd)
+
+	envKey := prompt.Env
+	if envKey == "" {
+		envKey = "# " + prompt.Key
+	}
+
+	m.currentPrompt, cmd = newPromptModel(prompt, m.envResponses[envKey], promptFinishedCmd)
 
 	return m, cmd
+}
+
+func (m Model) updatedContents() string {
+	additions := ""
+
+	for env, value := range m.envResponses {
+		// Find existing variable using a regex checking for the variable name at the start of a line
+		// to avoid matching comments
+		varRegex := regexp.MustCompile(fmt.Sprintf(`\n%s *= *[^\n]*\n`, env))
+		varBeginEnd := varRegex.FindStringIndex(m.contents)
+
+		varLine := fmt.Sprintf("%s=%v\n", env, value)
+
+		if varBeginEnd == nil {
+			if value != "" {
+				additions = additions + varLine
+			}
+		} else {
+			// Replace existing value
+			varBegin, varEnd := varBeginEnd[0], varBeginEnd[1]
+
+			m.contents = m.contents[:varBegin] + "\n" + varLine + m.contents[varEnd:]
+		}
+	}
+
+	if len(additions) == 0 {
+		return m.contents
+	}
+
+	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
+	deRegex := regexp.MustCompile(`\nDATAROBOT_ENDPOINT *= *[^\n]*\n`)
+	deBeginEnd := deRegex.FindStringIndex(m.contents)
+
+	if deBeginEnd == nil {
+		// Insert the new variables at the beginning
+		return additions + m.contents
+	}
+
+	_, deEnd := deBeginEnd[0], deBeginEnd[1]
+
+	// Insert the new variables after DATAROBOT_ENDPOINT line
+	return m.contents[:deEnd] + additions + m.contents[deEnd:]
 }
 
 func (m Model) Init() tea.Cmd {
@@ -158,6 +206,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		if m.envResponses == nil {
 			m.envResponses = make(map[string]string)
+
+			for _, v := range m.variables {
+				if v.name != "" {
+					if v.commented {
+						m.envResponses["# "+v.name] = v.value
+					} else {
+						m.envResponses[v.name] = v.value
+					}
+				}
+			}
 		}
 
 		if len(m.prompts) == 0 {
@@ -203,7 +261,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
 			case "esc":
-				// m.saving = true
 				return m, m.saveEditedFile()
 			}
 		}
@@ -257,33 +314,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				if m.currentPromptIndex >= len(m.prompts) {
 					// Finished all prompts
 					// Update the .env file with the responses
-					for env, value := range m.envResponses {
-						// Find existing variable using a regex checking for the variable name at the start of a line
-						// to avoid matching comments
-						indexSearchRegex := fmt.Sprintf(`\n%s=`, env)
-						compiledRegex := regexp.MustCompile(indexSearchRegex)
-						i := compiledRegex.FindStringIndex(m.contents)
-
-						if len(i) == 0 {
-							// If the variable isn't in the Append below DATAROBOT_ENDPOINT
-							j := strings.Index(m.contents, "DATAROBOT_ENDPOINT=")
-							if j == -1 {
-								j = 0
-							}
-							// Find the end of the line
-							j += strings.Index(m.contents[j:], "\n")
-							if j == -1 {
-								j = 0
-							}
-							// Insert the new variable after this line
-							m.contents = m.contents[:j] + fmt.Sprintf("\n\n%s=%v", env, value) + m.contents[j:]
-						} else {
-							// Replace existing value
-							m.contents = strings.Replace(m.contents,
-								fmt.Sprintf("%s=", env), //nolint: perfsprint
-								fmt.Sprintf("%s=%v\n", env, value), -1)
-						}
-					}
+					m.contents = m.updatedContents()
 
 					return m, m.saveEditedFile()
 				}
