@@ -27,7 +27,7 @@ type variable struct {
 }
 
 func newFromLine(line string) variable {
-	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*)\s*=\s*(?P<value>.*)\n$`)
+	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := misc.NamedStringMatches(expr, line)
 	v := variable{}
 
