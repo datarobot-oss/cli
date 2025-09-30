@@ -49,11 +49,11 @@ func init() {
 	}
 
 	RootCmd.AddCommand(
-		auth.Cmd,
+		auth.Cmd(),
 		completion.Cmd(),
-		dotenv.Cmd,
+		dotenv.Cmd(),
 		run.Cmd(),
-		templates.Cmd,
+		templates.Cmd(),
 		version.Cmd(),
 	)
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")

@@ -13,18 +13,48 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Cmd = &cobra.Command{
-	Use:   "dotenv",
-	Short: "Add Datarobot credentials to .env file",
-	Long:  "Generate or update .env file with Datarobot credentials",
-	Run:   Run,
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dotenv",
+		Short: "Commands to modify .env file",
+		Long:  "Edit, generate or update .env file with Datarobot credentials",
+	}
+
+	cmd.AddCommand(
+		EditCmd,
+		UpdateCmd,
+		WizardCmd,
+	)
+
+	return cmd
 }
 
-func Run(_ *cobra.Command, _ []string) {
-	dotenvFile := ".env"
+var EditCmd = &cobra.Command{
+	Use:   "edit",
+	Short: "Edit .env file using built-in editor",
+	Run: func(_ *cobra.Command, _ []string) {
+		log.Print("Editor will be here")
+	},
+}
 
-	_, _, _, err := writeUsingTemplateFile(dotenvFile)
-	if err != nil {
-		log.Error(err)
-	}
+var UpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update Datarobot credentials in .env file",
+	Long:  "Populate .env file with fresh Datarobot credentials",
+	Run: func(_ *cobra.Command, _ []string) {
+		dotenvFile := ".env"
+
+		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		if err != nil {
+			log.Error(err)
+		}
+	},
+}
+
+var WizardCmd = &cobra.Command{
+	Use:   "wizard",
+	Short: "Edit .env file using wizard",
+	Run: func(_ *cobra.Command, _ []string) {
+		log.Print("Wizard will be here")
+	},
 }

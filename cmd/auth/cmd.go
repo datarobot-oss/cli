@@ -13,16 +13,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Cmd = &cobra.Command{
-	Use:   "auth",
-	Short: "DataRobot authentication commands",
-	Long:  `Authentication commands for ` + version.AppName + `.`,
-}
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "DataRobot authentication commands",
+		Long:  `Authentication commands for ` + version.AppName + `.`,
+	}
 
-func init() {
-	Cmd.AddCommand(
+	cmd.AddCommand(
 		loginCmd,
 		logoutCmd,
 		setURLCmd,
 	)
+
+	return cmd
 }

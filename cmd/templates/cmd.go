@@ -16,17 +16,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Cmd = &cobra.Command{
-	Use:   "templates",
-	Short: "DataRobot application templates commands",
-	Long:  `Application templates commands for ` + version.AppName + `.`,
-}
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "templates",
+		Short: "DataRobot application templates commands",
+		Long:  `Application templates commands for ` + version.AppName + `.`,
+	}
 
-func init() {
-	Cmd.AddCommand(
+	cmd.AddCommand(
 		clone.Cmd,
 		list.Cmd,
 		setup.Cmd,
 		statusCmd,
 	)
+
+	return cmd
 }
