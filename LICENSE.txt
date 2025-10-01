@@ -1,54 +1,201 @@
-DATAROBOT TOOL AND UTILITY AGREEMENT
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
 
-This Tool and Utility Agreement (this “Agreement”) between DataRobot, Inc., a Delaware Corporation, with its principal place of business located at 225 FRANKLIN STREET, 13TH FLOOR, BOSTON, MASSACHUSETTS 02110, USA (“DataRobot”) and you and the organization you represent (“You”), is effective as of the date that You are first granted access to the Tool and Utility Software (as defined below) (the “Effective Date”).
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
-This Agreement supersedes any other agreement between DataRobot and You with respect to the Tool and Utility Software.
+   1. Definitions.
 
-1. LICENSE GRANT
-    1.1. “Tool and Utility Software” means a no-fee offering of DataRobot’s tool(s) and/or utility software for use with the Solution.
-    1.2. Subject to the terms of this Agreement, DataRobot grants to You, for the period of time authorized by DataRobot (or, if no time has been specified, until the expiration of Your subscription for the DataRobot enterprise AI platform (the “Solution”) (the “Term”), a non-exclusive, non-transferable, non-sublicensable license to use the Tool and Utility Software with the Solution only for your internal business purposes.
-    1.3. DataRobot shall have the right to terminate, downgrade, limit or modify the Tool and Utility Software at any time without notice or compensation. No warranty, indemnity, availability, maintenance or support obligations of DataRobot will apply to Tool and Utility Software.
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
 
-2. RESTRICTIONS ON USE OF THE TOOL AND UTILITY SOFTWARE
-You shall not, and shall not permit any third party to, except as may be allowed by any applicable law which is incapable of exclusion by agreement between the parties and except as permitted under this Agreement:
-    (a) attempt to backup, copy, modify, create derivative works from, or distribute any part of the Tool and Utility Software;
-    (b) attempt to de-compile, reverse compile, disassemble, reverse engineer or otherwise reduce to human-perceivable form any part of the Tool and Utility Software except to the extent the law in Your jurisdiction permits this where necessary for the purposes of integrating the operation of the Software with the operation of other software or systems used by You. Before carrying out such action, You shall give DataRobot no less than 30 days’ written notice and the exception will not apply if DataRobot is prepared to carry out such action at a reasonable commercial fee or provides the information necessary to achieve such integration within a reasonable period;
-    (c) access any part of the Tool and Utility Software in order to build a competing product or service;
-    (d) attempt to obtain, or assist third parties in obtaining, access to the Tool and Utility Software, other than as provided under this Section 2.
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
 
-3. TERM AND TERMINATION
-    3.1. This Agreement starts on the Effective Date and will continue until the expiry of the Term, at which point this Agreement and the licenses granted under the terms of this Agreement will automatically terminate.
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
 
-    3.2. On termination or expiry of this Agreement for any reason:
-        (a) this Section 3.2, Section 6 (Limitation of Liability), Section 8 (Entire Agreement) and Section 9 (General) will survive alongside any other Sections that are intended to survive termination or expiration of this Agreement in order to achieve the fundamental purposes of this Agreement;
-        (b) any rights, remedies, obligations or liabilities of the parties that have accrued up to the date of termination which existed at or before the date of termination will not be affected.
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
 
-4. PROPRIETARY RIGHTS
-The Tool and Utility Software and Documentation are the proprietary intellectual property of DataRobot and its licensors.  DataRobot retains sole and exclusive ownership of all right, title, and interest in and to the Tool and Utility Software and any other technology used to provide them.
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
 
-5. NO WARRANTY
-    5.1. The Tool and Utility Software is provided “as is” without any warranty and all other conditions, warranties or other terms which might have effect or be implied or incorporated into this Agreement whether by statute, common law or otherwise are excluded.
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
 
-6. LIMITATION OF LIABILITY
-    6.1. Neither party’s liability for any damages (whether for breach of contract, misrepresentations, negligence, strict liability, other torts or otherwise) under this Agreement will exceed an amount equal to $10,000. This limitation will apply notwithstanding any failure of essential purpose of any remedy.
-    6.2. Nothing in this Agreement will limit or exclude either party’s liability for:
-        (a) any matter which by law may not be excluded or limited;
-        (b) in the case of You, for breach of Section 2(c) (Restrictions on Use)
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
 
-7. NOTICES
-    7.1. All notices required to be given under this Agreement shall be in writing and delivered by hand, email, first class prepaid mail or recorded delivery mail.
-    7.2. Notices for DataRobot shall be sent to legal@datarobot.com or DataRobot Inc., 225 Franklin St.; 13th Floor, Boston, MA 02110, U.S.A., Attn: Legal.
-    7.3. Notice will be deemed given:
-        (a) when received, if delivered by hand or email; or
-        (b) the next business day after it is sent, if sent by first class prepaid mail or recorded delivery;
-        (c) five business days following postage if sent internationally.
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
 
-8. ENTIRE AGREEMENT
-This Agreement and any documents referred to in it are the complete and exclusive statement of the parties’ agreement and supersede all proposals or prior arrangements, understandings or agreements between the parties relating to the subject matter of this Agreement.
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
 
-9. GENERAL
-    9.1. Unless it expressly states otherwise, this Agreement does not give rise to any rights for a third party to enforce any term of this Agreement.
-    9.2. Any waiver or modification of the provisions of this Agreement will only be effective if in writing and signed by both parties. Waivers and amendments to this Agreement shall be effective only if made by non-pre-printed agreements clearly understood by both parties to be an amendment or waiver to this Agreement.
-    9.3. If the whole or any part of a provision of this Agreement is held invalid, illegal or unenforceable, the validity, legality and enforceability of the remaining provisions will be unaffected. If any invalid, unenforceable or illegal provision would be valid, enforceable or legal if part of it were deleted, the provision shall apply with whatever modification is necessary to give effect to the commercial intention of the parties.
-    9.4. No failure or delay by a party to exercise any right or remedy provided under this Agreement or by law will constitute a waiver of that or any other right or remedy, nor will it prevent or restrict the further exercise of that or any other right or remedy. No single or partial exercise of such right or remedy will prevent or restrict the further exercise of that or any other right or remedy.
-    9.5. This Agreement and any dispute (whether contractual or non-contractual) arising out of or in connection with this Agreement, its subject matter or formation will be governed by and interpreted and construed in accordance with the laws of the Commonwealth of Massachusetts, without regard to conflict of law principles, and will be subject to the exclusive jurisdiction of the federal and state courts located in Boston, Massachusetts. Each party consents to the exclusive personal jurisdiction and venue of such courts.
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2025 DataRobot
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
