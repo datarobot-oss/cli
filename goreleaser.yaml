@@ -15,51 +15,66 @@ before:
     - go generate ./...
 
 builds:
-  - env:
-      - CGO_ENABLED=0
+  - <<: &build_defaults
+      env:
+        - CGO_ENABLED=0
 
-    binary: "dr"
-    mod_timestamp: "{{ .CommitTimestamp }}"
+      binary: "dr"
+      mod_timestamp: "{{ .CommitTimestamp }}"
 
-    goos:
-      - linux
-      - darwin
-      - freebsd
-      - openbsd
-      - windows
+      ldflags:
+        - >
+          -s -w
+          -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
+          -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
+          -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
 
-    goarch:
-      - amd64
-      - arm
-      - arm64
-      - ppc64le
-      - s390x
-      - riscv64
+      goarch:
+        - amd64
+        - arm
+        - arm64
+        - ppc64le
+        - s390x
+        - riscv64
 
-    goarm:
-      - '7'
-      - '6'
+      goarm:
+        - '7'
+        - '6'
+    id: linux
+    goos: linux
 
+  - <<: *build_defaults
+    id: darwin
+    goos: darwin
     ignore:
       - goos: darwin
         goarch: '386'
-      - goos: openbsd
-        goarch: arm
-      - goos: openbsd
-        goarch: arm64
+
+  - <<: *build_defaults
+    id: freebsd
+    goos: freebsd
+    ignore:
       - goos: freebsd
         goarch: arm
       - goos: freebsd
         goarch: arm64
+
+  - <<: *build_defaults
+    id: openbsd
+    goos: openbsd
+    ignore:
+      - goos: openbsd
+        goarch: arm
+      - goos: openbsd
+        goarch: arm64
+
+  - <<: *build_defaults
+    id: windows
+    goos: windows
+    ignore:
       - goos: windows
         goarch: arm
 
-    ldflags:
-      - >
-        -s -w
-        -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
-        -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
-        -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
 
 archives:
   - formats: [tar.gz]
@@ -87,4 +102,37 @@ changelog:
 
 release:
   footer: |
-    **Full Changelog**: https://github.com/datarobot/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+#binary_signs:
+#  - id: trusted-signing-binary
+#    cmd: pwsh
+#    args:
+#      - -c
+#      - |
+#        Install-Module -Name Microsoft.TrustedSigning -Force
+#        Invoke-TrustedSigning -File "${artifact}" `
+#          -TrustedSigningAccountName "{{ .Env.AZURE_ACCOUNT_NAME }}" `
+#          -CertificateProfileName "{{ .Env.AZURE_CERTIFICATE_PROFILE_NAME }}" `
+#          -Verbose
+#    # Define the signature output file (optional but good practice)
+#    signature: "${artifact}.sig"
+#    ids: [windows]
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [darwin]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+
+        # Whether to wait for the notarization to finish.
+        # Not recommended, as it could take a really long time.
+        wait: true
+
+        timeout: 20m

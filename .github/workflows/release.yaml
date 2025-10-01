@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install PowerShell
+        uses: PSModule/install-powershell@v1
+        with:
+          Version: 7.5.0
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -32,3 +37,22 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_ACCOUNT_NAME: ${{ secrets.AZURE_ACCOUNT_NAME }}
+          AZURE_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          # The base64 of the contents of your '.p12' key.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+
+          # The password to open the '.p12' key.
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+
+          # The base64 of the contents of your '.p8' key.
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+          # The ID of the '.p8' key.
+          # You can find it in the filename, as well as the Apple Developer Portal
+          # website.
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+
+          # The issuer UUID.
+          # You can find it in the Apple Developer Portal website.
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
