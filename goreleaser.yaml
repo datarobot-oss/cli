@@ -15,51 +15,65 @@ before:
     - go generate ./...
 
 builds:
-  - env:
-      - CGO_ENABLED=0
+  - <<: &build_defaults
+      env:
+        - CGO_ENABLED=0
 
-    binary: "dr"
-    mod_timestamp: "{{ .CommitTimestamp }}"
+      binary: "dr"
+      mod_timestamp: "{{ .CommitTimestamp }}"
 
-    goos:
-      - linux
-      - darwin
-      - freebsd
-      - openbsd
-      - windows
+      ldflags:
+        - >
+          -s -w
+          -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
+          -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
+          -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
 
-    goarch:
-      - amd64
-      - arm
-      - arm64
-      - ppc64le
-      - s390x
-      - riscv64
+      goarch:
+        - amd64
+        - arm
+        - arm64
+        - ppc64le
+        - s390x
+        - riscv64
 
-    goarm:
-      - '7'
-      - '6'
+      goarm:
+        - '7'
+        - '6'
+    id: linux
+    goos: [linux]
 
+  - <<: *build_defaults
+    id: darwin
+    goos: [darwin]
     ignore:
       - goos: darwin
         goarch: '386'
-      - goos: openbsd
-        goarch: arm
-      - goos: openbsd
-        goarch: arm64
+
+  - <<: *build_defaults
+    id: freebsd
+    goos: [freebsd]
+    ignore:
       - goos: freebsd
         goarch: arm
       - goos: freebsd
         goarch: arm64
+
+  - <<: *build_defaults
+    id: openbsd
+    goos: [openbsd]
+    ignore:
+      - goos: openbsd
+        goarch: arm
+      - goos: openbsd
+        goarch: arm64
+
+  - <<: *build_defaults
+    id: windows
+    goos: [windows]
+    ignore:
       - goos: windows
         goarch: arm
-
-    ldflags:
-      - >
-        -s -w
-        -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
-        -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
-        -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
 
 archives:
   - formats: [tar.gz]
@@ -87,4 +101,36 @@ changelog:
 
 release:
   footer: |
-    **Full Changelog**: https://github.com/datarobot/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: dr
+    url_template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    download_strategy: GitDownloadStrategy
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Formula
+    homepage: "https://github.com/datarobot-oss/cli"
+    description: "DataRobot command-line interface."
+    license: "Apache-2.0"
+    skip_upload: true
+    custom_block: |
+      head "https://github.com/datarobot-oss/cli.git", branch: "main"
+    dependencies:
+      - name: go
+        type: build
+    test: |
+      system bin/"dr", "version"
+    install: |
+      system "go", "build", "-ldflags", "-X github.com/datarobot/cli/internal/version.Version={{ .Tag }} -X github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }} -X github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}", "-o", bin/"dr"
+    repository:
+      owner: datarobot-oss
+      name: homebrew-taps
+      branch: main
+      pull_request:
+        enabled: true
+        draft: false
+      git:
+        url: 'https://{{ .Env.GITHUB_TOKEN }}@github.com:datarobot-oss/homebrew-taps.git'
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
