@@ -129,9 +129,7 @@ brews:
         enabled: true
         draft: false
       git:
-        url: 'git@github.com:datarobot-oss/homebrew-taps.git'
-        private_key: '{{ .Env.SSH_KEY_PATH }}'
-        ssh_command: 'ssh -i {{ .Env.SSH_KEY_PATH }} -o SomeOption=yes'
+        url: 'https://{{ .Env.GITHUB_TOKEN }}@github.com:datarobot-oss/homebrew-taps.git'
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
