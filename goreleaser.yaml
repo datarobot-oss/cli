@@ -108,7 +108,7 @@ release:
 brews:
   - name: dr
     url_template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-    download_strategy: GitDownloadStrategy
+    download_strategy: CurlDownloadStrategy
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
     directory: Formula
     homepage: "https://github.com/datarobot-oss/cli"
