@@ -105,25 +105,26 @@ release:
   footer: |
     **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-brews:
-  - name: dr
-    url_template: "https://github.com/datarobot-oss/cli/archive/refs/tags/{{ .Tag }}.tar.gz"
-    download_strategy: CurlDownloadStrategy
+homebrew_casks:
+  - name: dr-cli
+    hooks:
+      post:
+        # This is temporary while we wait for notarization to be available with help from IT
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dr"]
+          end
+    binary: dr
+    url:
+      template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+      verified: "github.com/datarobot-oss/cli/"
+    homepage: "https://www.datarobot.com"
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-    directory: Formula
-    homepage: "https://github.com/datarobot-oss/cli"
+    directory: Casks
     description: "DataRobot command-line interface."
-    license: "Apache-2.0"
     skip_upload: "{{ if contains .Tag \"rc\" }}true{{ else }}false{{ end }}"
     custom_block: |
       head "https://github.com/datarobot-oss/cli.git", branch: "main"
-    dependencies:
-      - name: go
-        type: build
-    test: |
-      system bin/"dr", "version"
-    install: |
-      system "go", "build", *std_go_args(ldflags: "-s -w -X github.com/datarobot/cli/internal/version.Version={{ .Tag }} -X github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }} -X github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}")
     repository:
       owner: datarobot-oss
       name: homebrew-taps
