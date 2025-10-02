@@ -41,18 +41,18 @@ builds:
         - '7'
         - '6'
     id: linux
-    goos: linux
+    goos: [linux]
 
   - <<: *build_defaults
     id: darwin
-    goos: darwin
+    goos: [darwin]
     ignore:
       - goos: darwin
         goarch: '386'
 
   - <<: *build_defaults
     id: freebsd
-    goos: freebsd
+    goos: [freebsd]
     ignore:
       - goos: freebsd
         goarch: arm
@@ -61,7 +61,7 @@ builds:
 
   - <<: *build_defaults
     id: openbsd
-    goos: openbsd
+    goos: [openbsd]
     ignore:
       - goos: openbsd
         goarch: arm
@@ -70,11 +70,10 @@ builds:
 
   - <<: *build_defaults
     id: windows
-    goos: windows
+    goos: [windows]
     ignore:
       - goos: windows
         goarch: arm
-
 
 archives:
   - formats: [tar.gz]
@@ -104,35 +103,35 @@ release:
   footer: |
     **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-#binary_signs:
-#  - id: trusted-signing-binary
-#    cmd: pwsh
-#    args:
-#      - -c
-#      - |
-#        Install-Module -Name Microsoft.TrustedSigning -Force
-#        Invoke-TrustedSigning -File "${artifact}" `
-#          -TrustedSigningAccountName "{{ .Env.AZURE_ACCOUNT_NAME }}" `
-#          -CertificateProfileName "{{ .Env.AZURE_CERTIFICATE_PROFILE_NAME }}" `
-#          -Verbose
-#    # Define the signature output file (optional but good practice)
-#    signature: "${artifact}.sig"
-#    ids: [windows]
-
-notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids: [darwin]
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
-      notarize:
-        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
-        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
-        key: "{{.Env.MACOS_NOTARY_KEY}}"
-
-        # Whether to wait for the notarization to finish.
-        # Not recommended, as it could take a really long time.
-        wait: true
-
-        timeout: 20m
+brews:
+  - name: dr
+    url_template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    download_strategy: GitDownloadStrategy
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Formula
+    homepage: "https://github.com/datarobot-oss/cli"
+    description: "DataRobot command-line interface."
+    license: "Apache-2.0"
+    skip_upload: true
+    custom_block: |
+      head "https://github.com/datarobot-oss/cli.git", branch: "main"
+    dependencies:
+      - name: go
+        type: build
+    test: system bin/"dr" version
+    install: |
+      system go build -o bin/"dr"
+    repository:
+      owner: datarobot-oss
+      name: homebrew-taps
+      branch: main
+      pull_request:
+        enabled: true
+        draft: false
+      git:
+        url: 'git@github.com:datarobot-oss/homebrew-taps.git'
+        private_key: '{{ .Env.SSH_KEY_PATH }}'
+        ssh_command: 'ssh -i {{ .Env.SSH_KEY_PATH }} -o SomeOption=yes'
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
