@@ -132,7 +132,7 @@ brews:
         enabled: true
         draft: false
       git:
-        url: 'ssh://git@github.com:datarobot-oss/homebrew-taps.git'
+        url: 'git@github.com:datarobot-oss/homebrew-taps.git'
         private_key: '{{ .Env.HOMEBREW_TAPS_SSH_KEY }}'
 
     commit_author:
