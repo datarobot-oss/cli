@@ -118,9 +118,10 @@ brews:
     dependencies:
       - name: go
         type: build
-    test: system bin/"dr" version
+    test: |
+      system bin/"dr", "version"
     install: |
-      system go build -o bin/"dr"
+      system "go", "build", "-ldflags", "-X github.com/datarobot/cli/internal/version.Version={{ .Tag }} -X github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }} -X github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}", "-o", bin/"dr"
     repository:
       owner: datarobot-oss
       name: homebrew-taps
