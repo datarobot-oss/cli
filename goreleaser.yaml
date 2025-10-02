@@ -107,7 +107,7 @@ release:
 
 brews:
   - name: dr
-    url_template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    url_template: "https://github.com/datarobot-oss/cli/archive/refs/tags/{{ .Tag }}.tar.gz"
     download_strategy: CurlDownloadStrategy
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
     directory: Formula
@@ -123,7 +123,7 @@ brews:
     test: |
       system bin/"dr", "version"
     install: |
-      system "go", "build", *std_go_args(ldflags: "-s -w -X github.com/datarobot/cli/internal/version.Version={{ .Tag }} -X github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }} -X github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"), "-o", bin/"dr"
+      system "go", "build", *std_go_args(ldflags: "-s -w -X github.com/datarobot/cli/internal/version.Version={{ .Tag }} -X github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }} -X github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}")
     repository:
       owner: datarobot-oss
       name: homebrew-taps
