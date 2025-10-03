@@ -74,7 +74,7 @@ var EditCmd = &cobra.Command{
 
 var UpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update Datarobot credentials in .env file",
+	Short: "Automatically update Datarobot credentials in .env file",
 	Long:  "Automatically populate .env file with fresh Datarobot credentials",
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenvFile := ".env"
