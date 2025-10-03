@@ -10,6 +10,7 @@ package dotenv
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -206,13 +207,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		if m.envResponses == nil {
 			m.envResponses = make(map[string]string)
-
+			// Capture existing env var values
+			for _, prompt := range m.prompts {
+				existingEnvValue, ok := os.LookupEnv(prompt.Env)
+				if ok {
+					m.envResponses[prompt.Env] = existingEnvValue
+				}
+			}
 			for _, v := range m.variables {
 				if v.name != "" {
 					if v.commented {
 						m.envResponses["# "+v.name] = v.value
 					} else {
-						m.envResponses[v.name] = v.value
+						existingEnvValue, ok := os.LookupEnv(v.name)
+						if ok {
+							m.envResponses[v.name] = existingEnvValue
+						} else {
+							m.envResponses[v.name] = v.value
+						}
 					}
 				}
 			}

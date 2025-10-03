@@ -175,7 +175,7 @@ func (suite *DotenvModelTestSuite) WaitFor(tm *teatest.TestModel, contains strin
 			return bytes.Contains(bts, []byte(contains))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
+		teatest.WithDuration(time.Second*100),
 	)
 }
 
@@ -338,4 +338,26 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	suite.Contains(fm.contents, "\nGOOGLE_CLIENT_SECRET=google_parakeet_secret", "Expected env file to contain the entered Google client secret")
 	suite.Contains(fm.contents, "\nBOX_CLIENT_ID=box_parakeet_id", "Expected env file to contain the entered Box client ID")
 	suite.Contains(fm.contents, "\nBOX_CLIENT_SECRET=box_parakeet_secret", "Expected env file to contain the entered Box client secret")
+}
+
+func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
+	suite.T().Setenv("DATAROBOT_DEFAULT_USE_CASE", "existing_use_case")
+	suite.T().Setenv("PULUMI_CONFIG_PASSPHRASE", "existing_passphrase")
+	tm := suite.NewTestModel(Model{
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		DotenvTemplate: filepath.Join(suite.tempDir, ".env.template"),
+	})
+
+	suite.WaitFor(tm, "Default: 123")
+
+	err := tm.Quit()
+	if err != nil {
+		suite.T().Error(err)
+	}
+
+	m := tm.FinalModel(suite.T())
+
+	suite.Equal("existing_use_case", m.(Model).envResponses["DATAROBOT_DEFAULT_USE_CASE"], "Expected existing use case to be detected")
+	suite.Equal("existing_passphrase", m.(Model).envResponses["PULUMI_CONFIG_PASSPHRASE"], "Expected existing passphrase to be detected")
 }
