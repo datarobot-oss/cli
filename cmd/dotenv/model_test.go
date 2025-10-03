@@ -175,7 +175,7 @@ func (suite *DotenvModelTestSuite) WaitFor(tm *teatest.TestModel, contains strin
 			return bytes.Contains(bts, []byte(contains))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*100),
+		teatest.WithDuration(time.Second*3),
 	)
 }
 
