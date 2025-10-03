@@ -28,8 +28,8 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		EditCmd,
+		SetupCmd,
 		UpdateCmd,
-		WizardCmd,
 	)
 
 	return cmd
@@ -72,23 +72,9 @@ var EditCmd = &cobra.Command{
 	},
 }
 
-var UpdateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Automatically update Datarobot credentials in .env file",
-	Long:  "Automatically populate .env file with fresh Datarobot credentials",
-	Run: func(_ *cobra.Command, _ []string) {
-		dotenvFile := ".env"
-
-		_, _, _, err := writeUsingTemplateFile(dotenvFile)
-		if err != nil {
-			log.Error(err)
-		}
-	},
-}
-
-var WizardCmd = &cobra.Command{
-	Use:   "wizard",
-	Short: "Edit .env file using wizard",
+var SetupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Edit .env file using setup wizard",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
@@ -120,5 +106,19 @@ var WizardCmd = &cobra.Command{
 		_, err = p.Run()
 
 		return err
+	},
+}
+
+var UpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Automatically update Datarobot credentials in .env file",
+	Long:  "Automatically populate .env file with fresh Datarobot credentials",
+	Run: func(_ *cobra.Command, _ []string) {
+		dotenvFile := ".env"
+
+		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		if err != nil {
+			log.Error(err)
+		}
 	},
 }
