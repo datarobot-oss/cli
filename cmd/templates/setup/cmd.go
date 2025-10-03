@@ -14,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{
@@ -33,8 +34,8 @@ the template configuration process step by step.`,
 
 // RunTea starts the template setup TUI
 func RunTea() error {
-	if len(os.Getenv("DEBUG")) > 0 {
-		f, err := tea.LogToFile("debug.log", "debug")
+	if viper.GetBool("debug") {
+		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
 			fmt.Println("fatal:", err)
 			os.Exit(1)

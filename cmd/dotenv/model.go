@@ -32,6 +32,7 @@ const (
 
 type Model struct {
 	screen             screens
+	initialScreen      screens
 	DotenvFile         string
 	DotenvTemplate     string
 	variables          []variable
@@ -64,10 +65,16 @@ type (
 		prompts  []envbuilder.UserPrompt
 		requires map[string]bool
 	}
+
+	openEditorMsg struct{}
 )
 
 func promptFinishedCmd() tea.Msg {
 	return promptFinishedMsg{}
+}
+
+func openEditorCmd() tea.Msg {
+	return openEditorMsg{}
 }
 
 func (m Model) saveEnvFile() tea.Cmd {
@@ -171,7 +178,43 @@ func (m Model) updatedContents() string {
 	return m.contents[:deEnd] + additions + m.contents[deEnd:]
 }
 
+func (m Model) responsesFromVariables() map[string]string {
+	if m.envResponses != nil {
+		return m.envResponses
+	}
+
+	responses := make(map[string]string)
+
+	for _, v := range m.variables {
+		if v.name == "" {
+			continue
+		}
+
+		if v.commented {
+			responses["# "+v.name] = v.value
+		} else {
+			// Capture existing env var values
+			existingEnvValue, ok := os.LookupEnv(v.name)
+			if ok {
+				responses[v.name] = existingEnvValue
+			} else {
+				responses[v.name] = v.value
+			}
+		}
+	}
+
+	return responses
+}
+
 func (m Model) Init() tea.Cmd {
+	if m.initialScreen == editorScreen {
+		return tea.Batch(openEditorCmd, tea.WindowSize())
+	}
+
+	if m.initialScreen == wizardScreen {
+		return tea.Batch(m.loadPrompts(), tea.WindowSize())
+	}
+
 	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
 }
 
@@ -204,28 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.prompts = msg.prompts
 		m.requires = msg.requires
 		m.currentPromptIndex = 0
-
-		if m.envResponses == nil {
-			m.envResponses = make(map[string]string)
-		}
-
-		for _, v := range m.variables {
-			if v.name == "" {
-				continue
-			}
-
-			if v.commented {
-				m.envResponses["# "+v.name] = v.value
-			} else {
-				// Capture existing env var values
-				existingEnvValue, ok := os.LookupEnv(v.name)
-				if ok {
-					m.envResponses[v.name] = existingEnvValue
-				} else {
-					m.envResponses[v.name] = v.value
-				}
-			}
-		}
+		m.envResponses = m.responsesFromVariables()
 
 		if len(m.prompts) == 0 {
 			m.screen = listScreen
@@ -233,6 +255,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		return m.updateCurrentPrompt()
+	case openEditorMsg:
+		m.screen = editorScreen
+		m.envResponses = m.responsesFromVariables()
+
+		ta := textarea.New()
+		ta.SetWidth(m.width - 1)
+		ta.SetHeight(m.height - 14)
+		ta.SetValue(m.contents)
+		ta.CursorStart()
+		cmd := ta.Focus()
+		m.textarea = ta
+
+		return m, tea.Batch(cmd, func() tea.Msg {
+			return tea.KeyMsg{
+				Type:  tea.KeyRunes,
+				Runes: []rune("ctrl+home"),
+			}
+		})
 	}
 
 	switch m.screen {
@@ -245,21 +285,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case "enter":
 				return m, m.SuccessCmd
 			case "e":
-				m.screen = editorScreen
-				ta := textarea.New()
-				ta.SetWidth(m.width - 1)
-				ta.SetHeight(m.height - 14)
-				ta.SetValue(m.contents)
-				ta.CursorStart()
-				cmd := ta.Focus()
-				m.textarea = ta
-
-				return m, tea.Batch(cmd, func() tea.Msg {
-					return tea.KeyMsg{
-						Type:  tea.KeyRunes,
-						Runes: []rune("ctrl+home"),
-					}
-				})
+				return m, openEditorCmd
 			}
 		case errMsg:
 			m.err = msg.err
@@ -368,7 +394,7 @@ func (m Model) View() string {
 
 		sb.WriteString("\n")
 
-		if len(m.prompts) > 0 {
+		if len(m.variables) > 0 {
 			sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
 			sb.WriteString("\n")
 		}
