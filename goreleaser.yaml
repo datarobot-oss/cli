@@ -34,7 +34,6 @@ builds:
         - arm64
         - riscv64
 
-  - <<: *build_defaults
     id: linux
     goos: [linux]
 
