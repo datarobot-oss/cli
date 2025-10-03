@@ -31,31 +31,20 @@ builds:
 
       goarch:
         - amd64
-        - arm
         - arm64
-        - ppc64le
-        - s390x
         - riscv64
 
-      goarm:
-        - '7'
-        - '6'
     id: linux
     goos: [linux]
 
   - <<: *build_defaults
     id: darwin
     goos: [darwin]
-    ignore:
-      - goos: darwin
-        goarch: '386'
 
   - <<: *build_defaults
     id: freebsd
     goos: [freebsd]
     ignore:
-      - goos: freebsd
-        goarch: arm
       - goos: freebsd
         goarch: arm64
 
@@ -64,16 +53,11 @@ builds:
     goos: [openbsd]
     ignore:
       - goos: openbsd
-        goarch: arm
-      - goos: openbsd
         goarch: arm64
 
   - <<: *build_defaults
     id: windows
     goos: [windows]
-    ignore:
-      - goos: windows
-        goarch: arm
 
 archives:
   - formats: [tar.gz]
