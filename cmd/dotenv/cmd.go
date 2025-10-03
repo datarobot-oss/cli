@@ -9,22 +9,116 @@
 package dotenv
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
-var Cmd = &cobra.Command{
-	Use:   "dotenv",
-	Short: "Add Datarobot credentials to .env file",
-	Long:  "Generate or update .env file with Datarobot credentials",
-	Run:   Run,
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dotenv",
+		Short: "Commands to modify .env file",
+		Long:  "Edit, generate or update .env file with Datarobot credentials",
+	}
+
+	cmd.AddCommand(
+		EditCmd,
+		SetupCmd,
+		UpdateCmd,
+	)
+
+	return cmd
 }
 
-func Run(_ *cobra.Command, _ []string) {
-	dotenvFile := ".env"
+var EditCmd = &cobra.Command{
+	Use:   "edit",
+	Short: "Edit .env file using built-in editor",
+	RunE: func(_ *cobra.Command, _ []string) error {
+		if viper.GetBool("debug") {
+			f, err := tea.LogToFile("tea-debug.log", "debug")
+			if err != nil {
+				fmt.Println("fatal:", err)
+				os.Exit(1)
+			}
+			defer f.Close()
+		}
 
-	_, _, _, err := writeUsingTemplateFile(dotenvFile)
-	if err != nil {
-		log.Error(err)
-	}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		dotenvFile := filepath.Join(cwd, ".env")
+		templateLines, templateFileUsed := readTemplate(dotenvFile)
+		variables, contents, _ := variablesFromTemplate(templateLines)
+
+		m := Model{
+			initialScreen:  editorScreen,
+			DotenvFile:     dotenvFile,
+			DotenvTemplate: templateFileUsed,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+		}
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		_, err = p.Run()
+
+		return err
+	},
+}
+
+var SetupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Edit .env file using setup wizard",
+	RunE: func(_ *cobra.Command, _ []string) error {
+		if viper.GetBool("debug") {
+			f, err := tea.LogToFile("tea-debug.log", "debug")
+			if err != nil {
+				fmt.Println("fatal:", err)
+				os.Exit(1)
+			}
+			defer f.Close()
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		dotenvFile := filepath.Join(cwd, ".env")
+		templateLines, templateFileUsed := readTemplate(dotenvFile)
+		variables, contents, _ := variablesFromTemplate(templateLines)
+
+		m := Model{
+			initialScreen:  wizardScreen,
+			DotenvFile:     dotenvFile,
+			DotenvTemplate: templateFileUsed,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+		}
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		_, err = p.Run()
+
+		return err
+	},
+}
+
+var UpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Automatically update Datarobot credentials in .env file",
+	Long:  "Automatically populate .env file with fresh Datarobot credentials",
+	Run: func(_ *cobra.Command, _ []string) {
+		dotenvFile := ".env"
+
+		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		if err != nil {
+			log.Error(err)
+		}
+	},
 }
