@@ -34,26 +34,13 @@ builds:
         - arm64
         - riscv64
 
+  - <<: *build_defaults
     id: linux
     goos: [linux]
 
   - <<: *build_defaults
     id: darwin
     goos: [darwin]
-
-  - <<: *build_defaults
-    id: freebsd
-    goos: [freebsd]
-    ignore:
-      - goos: freebsd
-        goarch: arm64
-
-  - <<: *build_defaults
-    id: openbsd
-    goos: [openbsd]
-    ignore:
-      - goos: openbsd
-        goarch: arm64
 
   - <<: *build_defaults
     id: windows
