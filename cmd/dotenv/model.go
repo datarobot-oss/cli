@@ -139,23 +139,23 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 func (m Model) updatedContents() string {
 	additions := ""
 
-	for env, value := range m.envResponses {
+	for name, value := range m.envResponses {
 		// Find existing variable using a regex checking for the variable name at the start of a line
 		// to avoid matching comments
-		varRegex := regexp.MustCompile(fmt.Sprintf(`\n%s *= *[^\n]*\n`, env))
+		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, name))
 		varBeginEnd := varRegex.FindStringIndex(m.contents)
 
-		varLine := fmt.Sprintf("%s=%v\n", env, value)
+		varString := fmt.Sprintf("%s=%v", name, value)
 
 		if varBeginEnd == nil {
 			if value != "" {
-				additions = additions + varLine
+				additions = additions + varString + "\n"
 			}
 		} else {
 			// Replace existing value
 			varBegin, varEnd := varBeginEnd[0], varBeginEnd[1]
 
-			m.contents = m.contents[:varBegin] + "\n" + varLine + m.contents[varEnd:]
+			m.contents = m.contents[:varBegin] + varString + m.contents[varEnd:]
 		}
 	}
 
@@ -164,7 +164,7 @@ func (m Model) updatedContents() string {
 	}
 
 	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
-	deRegex := regexp.MustCompile(`\nDATAROBOT_ENDPOINT *= *[^\n]*\n`)
+	deRegex := regexp.MustCompile(`(?m)^DATAROBOT_ENDPOINT *= *[^\n]*$`)
 	deBeginEnd := deRegex.FindStringIndex(m.contents)
 
 	if deBeginEnd == nil {
@@ -172,7 +172,7 @@ func (m Model) updatedContents() string {
 		return additions + m.contents
 	}
 
-	_, deEnd := deBeginEnd[0], deBeginEnd[1]
+	deEnd := deBeginEnd[1]
 
 	// Insert the new variables after DATAROBOT_ENDPOINT line
 	return m.contents[:deEnd] + additions + m.contents[deEnd:]
