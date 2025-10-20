@@ -208,7 +208,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 
 	// Accept default for use case
 	suite.WaitFor(tm, "The default use case for this application")
-	suite.Send(tm, "enter")
+	suite.Send(tm, "case", "enter")
 
 	// Leave data source blank
 	suite.WaitFor(tm, "The data source to use for this application")
@@ -228,7 +228,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 
 	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
 	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=123\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=\n", "Expected env file to contain the default use case")
+	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 }
 
@@ -245,7 +245,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 
 	// Accept default for use case
 	suite.WaitFor(tm, "The default use case for this application")
-	suite.Send(tm, "enter")
+	suite.Send(tm, "case", "enter")
 
 	// Set data source to google
 	suite.WaitFor(tm, "The data source to use for this application")
@@ -274,7 +274,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 
 	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
 	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=123\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=\n", "Expected env file to contain the default use case")
+	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
@@ -293,7 +293,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 
 	// Accept default for use case
 	suite.WaitFor(tm, "The default use case for this application")
-	suite.Send(tm, "enter")
+	suite.Send(tm, "case", "enter")
 
 	// Set data source to google and box
 	suite.WaitFor(tm, "The data source to use for this application")
@@ -332,7 +332,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 
 	suite.FileExists(expectedFilePath, "Expected environment file to be created at default path")
 	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=123\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=\n", "Expected env file to contain the default use case")
+	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
