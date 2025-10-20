@@ -14,6 +14,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/charmbracelet/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,7 +56,8 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
 	for _, yamlFile := range yamlFiles {
 		prompts, roots, err := filePrompts(yamlFile)
 		if err != nil {
-			return nil, nil, err
+			log.Debug(err)
+			continue
 		}
 
 		allPrompts = append(allPrompts, prompts...)
