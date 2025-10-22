@@ -1,16 +1,8 @@
+version: "2"
 run:
-  go: "1.24.7"
-
-output:
-  # Make output more digestible with quickfix in vim/emacs/etc.
-  sort-results: true
-  print-issued-lines: false
-
+  go: 1.24.7
 linters:
   enable:
-    - nolintlint
-    - revive
-    - staticcheck
     - asasalint
     - bodyclose
     - contextcheck
@@ -21,25 +13,43 @@ linters:
     - loggercheck
     - misspell
     - nestif
+    - nolintlint
     - perfsprint
     - prealloc
     - predeclared
+    - revive
     - testifylint
     - unconvert
     - usestdlibvars
     - wsl
-
-linters-settings:
-  govet:
-    # These govet checks are disabled by default, but they're useful.
-    enable:
-      - nilness
-      - reflectvaluecompare
-      - sortslice
-      - unusedwrite
-      - defers
-      - atomic
-      - nilfunc
-      - printf
-      - sortslice
-      - tests
+  settings:
+    govet:
+      enable:
+        - nilness
+        - reflectvaluecompare
+        - sortslice
+        - unusedwrite
+        - defers
+        - atomic
+        - nilfunc
+        - printf
+        - sortslice
+        - tests
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
