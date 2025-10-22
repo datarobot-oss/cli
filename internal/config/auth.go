@@ -10,6 +10,7 @@ package config
 
 import (
 	"errors"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -100,11 +101,43 @@ func urlFromShortcut(selectedOption string) string {
 	}
 }
 
+func verifyToken(datarobotHost, token string) (bool, error) {
+	// Verifies if the datarobot host + api key pair correspond to a valid pair.
+	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
+	if err != nil {
+		return false, err
+	}
+
+	bearer := "Bearer " + token
+	req.Header.Add("Authorization", bearer)
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
 func GetAPIKey() string {
-	if token := os.Getenv("DATAROBOT_API_TOKEN"); token != "" {
-		return token
+	datarobotHost := GetBaseURL()
+	token := os.Getenv("DATAROBOT_API_TOKEN")
+
+	if token != "" {
+		if isValid, _ := verifyToken(datarobotHost, token); isValid {
+			return token
+		}
 	}
 
 	// Returns the API key if there is one, otherwise returns an empty string
-	return viper.GetString(DataRobotAPIKey)
+	token = viper.GetString(DataRobotAPIKey)
+	if isValid, _ := verifyToken(datarobotHost, token); isValid {
+		return token
+	}
+
+	return ""
 }
