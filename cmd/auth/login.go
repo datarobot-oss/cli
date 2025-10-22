@@ -30,12 +30,7 @@ func LoginAction() error {
 		datarobotHost = config.GetBaseURL()
 	}
 
-	isValidKeyPair, err := verifyAPIKey(datarobotHost)
-	if err != nil {
-		return err
-	}
-
-	if isValidKeyPair {
+	if token := config.GetAPIKey(); token != "" {
 		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
 
 		selectedOption, err := reader.ReadString('\n')

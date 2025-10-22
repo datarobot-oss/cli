@@ -84,7 +84,7 @@ homebrew_casks:
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dr"]
           end
-    binary: dr
+    binaries: [ dr ]
     url:
       template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
       verified: "github.com/datarobot-oss/cli/"
