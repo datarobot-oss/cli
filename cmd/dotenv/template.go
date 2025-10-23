@@ -140,7 +140,9 @@ func writeUsingTemplateFile(dotenvFile string) ([]variable, string, string, erro
 func writeContents(contents, dotenvFile, templateFile string) error {
 	// Strip any existing header comments from the contents
 	lines := strings.Split(contents, "\n")
-	var filteredLines []string
+
+	filteredLines := make([]string, 0, len(lines))
+
 	strippedHeader := false
 
 	for _, line := range lines {
@@ -153,9 +155,12 @@ func writeContents(contents, dotenvFile, templateFile string) error {
 		// Skip empty lines immediately after header
 		if !strippedHeader && trimmed == "" {
 			strippedHeader = true
+
 			continue
 		}
+
 		strippedHeader = true
+
 		filteredLines = append(filteredLines, line)
 	}
 
@@ -169,6 +174,7 @@ func writeContents(contents, dotenvFile, templateFile string) error {
 	defer f.Close()
 
 	timestamp := time.Now().Format(time.RFC3339)
+
 	var header string
 	if templateFile == "" {
 		header = "# Edited using `dr dotenv` on " + timestamp + "\n\n"

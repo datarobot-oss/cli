@@ -117,11 +117,11 @@ func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
 
 	// First save
 	_, _, _, err := writeUsingTemplateFile(suite.dotfile)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Second save (simulating user editing and saving again)
 	_, _, _, err = writeUsingTemplateFile(suite.dotfile)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Read the file and count how many times the header appears
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
@@ -130,6 +130,7 @@ func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
 	// Count header comment lines (lines starting with #)
 	lines := strings.Split(content, "\n")
 	headerCount := 0
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "# Edited using") {

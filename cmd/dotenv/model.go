@@ -98,6 +98,7 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
 	}
+
 	if editor == "" {
 		editor = "vi" // fallback to vi
 	}

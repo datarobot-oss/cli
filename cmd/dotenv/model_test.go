@@ -377,11 +377,14 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 
 	// Test EDITOR fallback
 	suite.T().Setenv("VISUAL", "")
+
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vim", "Expected EDITOR as fallback")
 
 	// Test vi fallback when neither is set
 	suite.T().Setenv("EDITOR", "")
+
 	cmd = m.externalEditorCmd()
+
 	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
 }
