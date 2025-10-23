@@ -301,6 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		var cmd tea.Cmd
+
 		m.textarea, cmd = m.textarea.Update(msg)
 		m.contents = m.textarea.Value()
 
@@ -363,6 +364,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		var cmd tea.Cmd
+
 		m.currentPrompt, cmd = m.currentPrompt.Update(msg)
 
 		return m, cmd

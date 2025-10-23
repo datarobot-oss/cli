@@ -50,7 +50,7 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 		"DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n\nUSE_DATAROBOT_LLM_GATEWAY=\n",
 		contents,
 	)
-	suite.Equal("", dotenvTemplateUsed)
+	suite.Empty(dotenvTemplateUsed)
 
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
 	suite.Equal(

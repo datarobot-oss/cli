@@ -177,6 +177,7 @@ func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 		}
 
 		var cmd tea.Cmd
+
 		pm.list, cmd = pm.list.Update(msg)
 
 		return pm, cmd
@@ -191,6 +192,7 @@ func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+
 	pm.input, cmd = pm.input.Update(msg)
 
 	return pm, cmd

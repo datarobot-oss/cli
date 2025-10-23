@@ -182,6 +182,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	prevValue := m.input.Value()
 
 	var cmd tea.Cmd
+
 	m.input, cmd = m.input.Update(msg)
 
 	if prevValue != m.input.Value() {

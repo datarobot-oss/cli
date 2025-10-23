@@ -54,7 +54,7 @@ func LoginAction() error {
 		log.Error(err)
 	}
 
-	viper.Set(config.DataRobotAPIKey, strings.Replace(key, "\n", "", -1))
+	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
 	writeConfigFile()
 

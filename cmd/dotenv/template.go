@@ -26,7 +26,7 @@ USE_DATAROBOT_LLM_GATEWAY=
 
 func backup(dotenvFile string) error {
 	if _, err := os.Stat(dotenvFile); err == nil {
-		backupFile := dotenvFile + "." + time.Now().Format(time.RFC3339)
+		backupFile := dotenvFile + ".backup." + time.Now().Format("2006-01-02_15-04-05")
 
 		err = os.Rename(dotenvFile, backupFile)
 		if err != nil {

@@ -57,6 +57,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
 				os.Exit(1)
+
 				return
 			}
 
@@ -69,15 +70,16 @@ func Cmd() *cobra.Command { //nolint: cyclop
 			if !runner.Installed() {
 				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
 				os.Exit(1)
+
 				return
 			}
 
 			tasks, err := runner.ListTasks()
-
 			if opts.ListTasks || len(args) == 0 {
 				if err != nil {
 					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 					os.Exit(1)
+
 					return
 				}
 
@@ -86,6 +88,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 				}
 
 				w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
+
 				for _, t := range tasks {
 					desc := strings.ReplaceAll(t.Desc, "\n", " ")
 
@@ -104,6 +107,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 				if err = w.Flush(); err != nil {
 					fmt.Fprintln(os.Stderr, "Error:", err)
 					os.Exit(1)
+
 					return
 				}
 
