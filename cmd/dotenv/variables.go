@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/misc"
+	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/spf13/viper"
 )
 
@@ -28,7 +28,7 @@ type variable struct {
 
 func newFromLine(line string) variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
-	result := misc.NamedStringMatches(expr, line)
+	result := regexp2.NamedStringMatches(expr, line)
 	v := variable{}
 
 	v.name = result["name"]

@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package misc
+package regexp2
 
 import (
 	"regexp"
