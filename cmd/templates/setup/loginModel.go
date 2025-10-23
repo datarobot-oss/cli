@@ -21,7 +21,7 @@ import (
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/misc"
+	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/spf13/viper"
 )
 
@@ -84,7 +84,7 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		msg.WriteString(authURL)
 		msg.WriteString("\n\n")
 
-		misc.Open(authURL)
+		open.Open(authURL)
 
 		return startedMsg{
 			server:  server,

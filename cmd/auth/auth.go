@@ -16,7 +16,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
-	"github.com/datarobot/cli/internal/misc"
+	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/spf13/viper"
 )
 
@@ -55,7 +55,7 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 		fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
 		fmt.Printf("%s\n\n", authURL)
 
-		misc.Open(authURL)
+		open.Open(authURL)
 
 		err := server.Serve(listen)
 		if err != http.ErrServerClosed {
