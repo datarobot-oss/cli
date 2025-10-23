@@ -23,6 +23,23 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
+const (
+	// Key bindings
+	keyQuit         = "q"
+	keyInteractive  = "i"
+	keyEdit         = "e"
+	keyOpenExternal = "o"
+	keyEscape       = "esc"
+	keyEnter        = "enter"
+
+	// Editor fallback
+	defaultEditor = "vi"
+
+	// Environment variables
+	envVisual = "VISUAL"
+	envEditor = "EDITOR"
+)
+
 type screens int
 
 const (
@@ -94,13 +111,13 @@ func (m Model) openInExternalEditor() tea.Cmd {
 }
 
 func (m Model) externalEditorCmd() *exec.Cmd {
-	editor := os.Getenv("VISUAL")
+	editor := os.Getenv(envVisual)
 	if editor == "" {
-		editor = os.Getenv("EDITOR")
+		editor = os.Getenv(envEditor)
 	}
 
 	if editor == "" {
-		editor = "vi" // fallback to vi
+		editor = defaultEditor // fallback to vi
 	}
 
 	return exec.Command(editor, m.DotenvFile)
@@ -193,7 +210,7 @@ func (m Model) updatedContents() string {
 	}
 
 	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
-	deRegex := regexp.MustCompile(`(?m)^DATAROBOT_ENDPOINT *= *[^\n]*$`)
+	deRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, datarobotEndpointVar))
 	deBeginEnd := deRegex.FindStringIndex(m.contents)
 
 	if deBeginEnd == nil {
@@ -309,13 +326,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "q":
+			case keyQuit:
 				return m, m.SuccessCmd
-			case "i":
+			case keyInteractive:
 				return m, m.loadPrompts()
-			case "e":
+			case keyEdit:
 				return m, openEditorCmd
-			case "o":
+			case keyOpenExternal:
 				return m, m.openInExternalEditor()
 			}
 		case errMsg:
@@ -326,9 +343,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "enter":
+			case keyEnter:
 				return m, m.saveEditedFile()
-			case "esc":
+			case keyEscape:
 				// Quit without saving
 				return m, m.SuccessCmd
 			}
@@ -345,7 +362,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "esc":
+			case keyEscape:
 				m.screen = listScreen
 				return m, nil
 			}
