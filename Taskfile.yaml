@@ -20,6 +20,10 @@ tasks:
       - echo "🛠️ Dev Commands"
       - task --list
 
+  default:
+    cmds:
+      - task help
+
   install-tools:
     silent: true
     desc: "Install static checkers & other binaries"
