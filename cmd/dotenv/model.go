@@ -11,6 +11,7 @@ package dotenv
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -75,6 +76,33 @@ func promptFinishedCmd() tea.Msg {
 
 func openEditorCmd() tea.Msg {
 	return openEditorMsg{}
+}
+
+func (m Model) openInExternalEditor() tea.Cmd {
+	return tea.ExecProcess(m.externalEditorCmd(), func(err error) tea.Msg {
+		if err != nil {
+			return errMsg{err}
+		}
+		// Reload the file after editing
+		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
+		if err != nil {
+			return errMsg{err}
+		}
+		// Don't prompt user, just return to list screen
+		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, false}
+	})
+}
+
+func (m Model) externalEditorCmd() *exec.Cmd {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi" // fallback to vi
+	}
+
+	return exec.Command(editor, m.DotenvFile)
 }
 
 func (m Model) saveEnvFile() tea.Cmd {
@@ -284,6 +312,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, m.loadPrompts()
 			case "e":
 				return m, openEditorCmd
+			case "o":
+				return m, m.openInExternalEditor()
 			case "q":
 				return m, m.SuccessCmd
 			}
@@ -405,6 +435,8 @@ func (m Model) View() string {
 		}
 
 		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
 		sb.WriteString("\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit without saving."))
 	case editorScreen:

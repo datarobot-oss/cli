@@ -361,3 +361,27 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 	suite.Equal("existing_use_case", m.(Model).envResponses["DATAROBOT_DEFAULT_USE_CASE"], "Expected existing use case to be detected")
 	suite.Equal("existing_passphrase", m.(Model).envResponses["PULUMI_CONFIG_PASSPHRASE"], "Expected existing passphrase to be detected")
 }
+
+func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
+	// Test VISUAL takes precedence
+	suite.T().Setenv("VISUAL", "nano")
+	suite.T().Setenv("EDITOR", "vim")
+
+	m := Model{
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+	}
+
+	cmd := m.externalEditorCmd()
+	suite.Contains(cmd.Path, "nano", "Expected VISUAL to take precedence")
+	suite.Equal([]string{"nano", m.DotenvFile}, cmd.Args, "Expected correct arguments")
+
+	// Test EDITOR fallback
+	suite.T().Setenv("VISUAL", "")
+	cmd = m.externalEditorCmd()
+	suite.Contains(cmd.Path, "vim", "Expected EDITOR as fallback")
+
+	// Test vi fallback when neither is set
+	suite.T().Setenv("EDITOR", "")
+	cmd = m.externalEditorCmd()
+	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
+}
