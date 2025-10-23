@@ -175,8 +175,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
-		case "ctrl+c":
-			return m, tea.Quit
 		case "q":
 			if m.screen != cloneScreen && m.screen != dotenvScreen {
 				return m, tea.Quit

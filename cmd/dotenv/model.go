@@ -11,6 +11,7 @@ package dotenv
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -20,6 +21,23 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
+)
+
+const (
+	// Key bindings
+	keyQuit         = "q"
+	keyInteractive  = "i"
+	keyEdit         = "e"
+	keyOpenExternal = "o"
+	keyEscape       = "esc"
+	keyEnter        = "enter"
+
+	// Editor fallback
+	defaultEditor = "vi"
+
+	// Environment variables
+	envVisual = "VISUAL"
+	envEditor = "EDITOR"
 )
 
 type screens int
@@ -77,6 +95,34 @@ func openEditorCmd() tea.Msg {
 	return openEditorMsg{}
 }
 
+func (m Model) openInExternalEditor() tea.Cmd {
+	return tea.ExecProcess(m.externalEditorCmd(), func(err error) tea.Msg {
+		if err != nil {
+			return errMsg{err}
+		}
+		// Reload the file after editing
+		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
+		if err != nil {
+			return errMsg{err}
+		}
+		// Don't prompt user, just return to list screen
+		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, false}
+	})
+}
+
+func (m Model) externalEditorCmd() *exec.Cmd {
+	editor := os.Getenv(envVisual)
+	if editor == "" {
+		editor = os.Getenv(envEditor)
+	}
+
+	if editor == "" {
+		editor = defaultEditor // fallback to vi
+	}
+
+	return exec.Command(editor, m.DotenvFile)
+}
+
 func (m Model) saveEnvFile() tea.Cmd {
 	return func() tea.Msg {
 		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
@@ -91,7 +137,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 func (m Model) saveEditedFile() tea.Cmd {
 	return func() tea.Msg {
 		lines := slices.Collect(strings.Lines(m.contents))
-		variables, _, _ := variablesFromTemplate(lines)
+		variables := parseVariablesOnly(lines)
 
 		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
 		if err != nil {
@@ -164,7 +210,7 @@ func (m Model) updatedContents() string {
 	}
 
 	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
-	deRegex := regexp.MustCompile(`(?m)^DATAROBOT_ENDPOINT *= *[^\n]*$`)
+	deRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, datarobotEndpointVar))
 	deBeginEnd := deRegex.FindStringIndex(m.contents)
 
 	if deBeginEnd == nil {
@@ -280,12 +326,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "w":
-				return m, m.loadPrompts()
-			case "enter":
+			case keyQuit:
 				return m, m.SuccessCmd
-			case "e":
+			case keyInteractive:
+				return m, m.loadPrompts()
+			case keyEdit:
 				return m, openEditorCmd
+			case keyOpenExternal:
+				return m, m.openInExternalEditor()
 			}
 		case errMsg:
 			m.err = msg.err
@@ -295,8 +343,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "esc":
+			case keyEnter:
 				return m, m.saveEditedFile()
+			case keyEscape:
+				// Quit without saving
+				return m, m.SuccessCmd
 			}
 		}
 
@@ -311,7 +362,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "esc":
+			case keyEscape:
 				m.screen = listScreen
 				return m, nil
 			}
@@ -403,11 +454,15 @@ func (m Model) View() string {
 
 		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish and exit."))
+		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit without saving."))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
+		sb.WriteString(tui.BaseTextStyle.Render("Press enter for the menu"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving"))
 
 	case wizardScreen:
 		if m.currentPromptIndex < len(m.prompts) {

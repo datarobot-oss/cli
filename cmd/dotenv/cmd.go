@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -38,7 +40,7 @@ func Cmd() *cobra.Command {
 var EditCmd = &cobra.Command{
 	Use:   "edit",
 	Short: "Edit .env file using built-in editor",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
@@ -55,7 +57,9 @@ var EditCmd = &cobra.Command{
 
 		dotenvFile := filepath.Join(cwd, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		variables, contents, _ := variablesFromTemplate(templateLines)
+		// Use parseVariablesOnly to avoid auto-populating values during manual editing
+		variables := parseVariablesOnly(templateLines)
+		contents := strings.Join(templateLines, "")
 
 		m := Model{
 			initialScreen:  editorScreen,
@@ -65,7 +69,11 @@ var EditCmd = &cobra.Command{
 			contents:       contents,
 			SuccessCmd:     tea.Quit,
 		}
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(
+			tui.NewInterruptibleModel(m),
+			tea.WithAltScreen(),
+			tea.WithContext(cmd.Context()),
+		)
 		_, err = p.Run()
 
 		return err
@@ -75,7 +83,7 @@ var EditCmd = &cobra.Command{
 var SetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Edit .env file using setup wizard",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
@@ -102,7 +110,11 @@ var SetupCmd = &cobra.Command{
 			contents:       contents,
 			SuccessCmd:     tea.Quit,
 		}
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(
+			tui.NewInterruptibleModel(m),
+			tea.WithAltScreen(),
+			tea.WithContext(cmd.Context()),
+		)
 		_, err = p.Run()
 
 		return err

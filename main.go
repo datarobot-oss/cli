@@ -9,14 +9,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/datarobot/cli/cmd"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
+	// Create a context that's canceled on interrupt signals
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
