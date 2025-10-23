@@ -9,8 +9,14 @@
 package dotenv
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,18 +46,108 @@ DATAROBOT_API_TOKEN=
 USE_DATAROBOT_LLM_GATEWAY=
 `
 
-func backup(dotenvFile string) error {
-	if _, err := os.Stat(dotenvFile); err == nil {
-		backupFile := dotenvFile + backupSuffix + time.Now().Format(backupTimeFormat)
-
-		err = os.Rename(dotenvFile, backupFile)
+// getStateDir returns the XDG_STATE_HOME directory for the dr app
+func getStateDir() (string, error) {
+	stateDir := os.Getenv("XDG_STATE_HOME")
+	if stateDir == "" {
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return err
+			return "", fmt.Errorf("failed to get user home directory: %w", err)
 		}
-
-		log.Info("Backing up " + dotenvFile + " as " + backupFile)
+		stateDir = filepath.Join(homeDir, ".local", "state")
 	}
+	
+	drStateDir := filepath.Join(stateDir, "dr", "backups")
+	if err := os.MkdirAll(drStateDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create state directory: %w", err)
+	}
+	
+	return drStateDir, nil
+}
 
+// getBackupBaseName creates a unique backup file name based on the original file path
+func getBackupBaseName(dotenvFile string) string {
+	absPath, err := filepath.Abs(dotenvFile)
+	if err != nil {
+		absPath = dotenvFile
+	}
+	
+	// Create a short hash of the full path to make it unique but recognizable
+	hash := sha256.Sum256([]byte(absPath))
+	shortHash := hex.EncodeToString(hash[:])[:8]
+	
+	// Use the base filename and hash to create a recognizable name
+	baseName := filepath.Base(absPath)
+	return fmt.Sprintf("%s_%s", baseName, shortHash)
+}
+
+// cleanOldBackups keeps only the 3 most recent backup files for a given base name
+func cleanOldBackups(stateDir, baseName string) error {
+	pattern := filepath.Join(stateDir, baseName+"_*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	
+	if len(matches) <= 3 {
+		return nil
+	}
+	
+	// Sort by modification time (newest first)
+	sort.Slice(matches, func(i, j int) bool {
+		infoI, errI := os.Stat(matches[i])
+		infoJ, errJ := os.Stat(matches[j])
+		if errI != nil || errJ != nil {
+			return false
+		}
+		return infoI.ModTime().After(infoJ.ModTime())
+	})
+	
+	// Remove old backups (keep only 3 most recent)
+	for i := 3; i < len(matches); i++ {
+		if err := os.Remove(matches[i]); err != nil {
+			log.Warn("Failed to remove old backup", "file", matches[i], "error", err)
+		}
+	}
+	
+	return nil
+}
+
+func backup(dotenvFile string) error {
+	if _, err := os.Stat(dotenvFile); err != nil {
+		// File doesn't exist, nothing to backup
+		return nil
+	}
+	
+	stateDir, err := getStateDir()
+	if err != nil {
+		return err
+	}
+	
+	baseName := getBackupBaseName(dotenvFile)
+	timestamp := time.Now().Format()
+	backupFileName := fmt.Sprintf("%s_%s", baseName, timestamp)
+	backupPath := filepath.Join(stateDir, backupFileName)
+	
+	// Read the original file
+	content, err := os.ReadFile(dotenvFile)
+	if err != nil {
+		return fmt.Errorf("failed to read file for backup: %w", err)
+	}
+	
+	// Write to backup location
+	if err := os.WriteFile(backupPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write backup file: %w", err)
+	}
+	
+	absPath, _ := filepath.Abs(dotenvFile)
+	log.Info("Backed up file", "original", absPath, "backup", backupPath)
+	
+	// Clean up old backups
+	if err := cleanOldBackups(stateDir, baseName); err != nil {
+		log.Warn("Failed to clean old backups", "error", err)
+	}
+	
 	return nil
 }
 
