@@ -21,7 +21,7 @@ linters:
     - testifylint
     - unconvert
     - usestdlibvars
-    - wsl
+    - wsl_v5
   settings:
     govet:
       enable:
@@ -35,6 +35,11 @@ linters:
         - printf
         - sortslice
         - tests
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - ["misc"]
   exclusions:
     generated: lax
     presets:
@@ -46,6 +51,11 @@ linters:
       - third_party$
       - builtin$
       - examples$
+    rules:
+      - linters:
+          - revive
+        text: "var-naming: avoid meaningless package names"
+        path: internal/misc/
 formatters:
   exclusions:
     generated: lax

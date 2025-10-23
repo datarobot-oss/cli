@@ -70,6 +70,7 @@ func Cmd() *cobra.Command {
 			}
 
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), info)
+
 			return nil
 		},
 	}

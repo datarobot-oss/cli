@@ -91,8 +91,8 @@ func getTemplates() tea.Cmd {
 		// We do this by checking if the URL of any of the templates matches the current git remote URL
 		// If it does, we set that template as selected in the list
 		md := exec.Command("git", "config", "--get", "remote.origin.url")
-		out, err := md.Output()
 
+		out, err := md.Output()
 		if err == nil { //nolint: nestif
 			remoteURL := strings.TrimSpace(string(out))
 			log.Debug("Current git remote URL: " + remoteURL)
