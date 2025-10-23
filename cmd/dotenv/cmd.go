@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -55,7 +56,9 @@ var EditCmd = &cobra.Command{
 
 		dotenvFile := filepath.Join(cwd, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		variables, contents, _ := variablesFromTemplate(templateLines)
+		// Use parseVariablesOnly to avoid auto-populating values during manual editing
+		variables := parseVariablesOnly(templateLines)
+		contents := strings.Join(templateLines, "")
 
 		m := Model{
 			initialScreen:  editorScreen,

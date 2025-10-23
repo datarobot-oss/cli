@@ -102,6 +102,22 @@ func variablesFromTemplate(templateLines []string) ([]variable, string, bool) {
 	return variables, contents.String(), changed
 }
 
+// parseVariablesOnly parses variables from template lines without attempting to auto-populate them.
+// This is used when the user manually edits the file to avoid unnecessary API calls and errors.
+func parseVariablesOnly(templateLines []string) []variable {
+	variables := make([]variable, 0)
+
+	for _, templateLine := range templateLines {
+		v := newFromLine(templateLine)
+
+		if v.name != "" {
+			variables = append(variables, v)
+		}
+	}
+
+	return variables
+}
+
 func writeUsingTemplateFile(dotenvFile string) ([]variable, string, string, error) {
 	templateLines, templateFileUsed := readTemplate(dotenvFile)
 

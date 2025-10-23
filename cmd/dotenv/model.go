@@ -91,7 +91,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 func (m Model) saveEditedFile() tea.Cmd {
 	return func() tea.Msg {
 		lines := slices.Collect(strings.Lines(m.contents))
-		variables, _, _ := variablesFromTemplate(lines)
+		variables := parseVariablesOnly(lines)
 
 		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
 		if err != nil {
@@ -280,12 +280,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "w":
+			case "i":
 				return m, m.loadPrompts()
-			case "enter":
-				return m, m.SuccessCmd
 			case "e":
 				return m, openEditorCmd
+			case "q":
+				return m, m.SuccessCmd
 			}
 		case errMsg:
 			m.err = msg.err
@@ -295,8 +295,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case "esc":
+			case "enter":
 				return m, m.saveEditedFile()
+			case "esc":
+				// Quit without saving
+				return m, m.SuccessCmd
 			}
 		}
 
@@ -403,11 +406,13 @@ func (m Model) View() string {
 
 		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish and exit."))
+		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit without saving."))
 	case editorScreen:
 		sb.WriteString(m.textarea.View())
 		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press esc to save and exit"))
+		sb.WriteString(tui.BaseTextStyle.Render("Press enter for the menu"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving"))
 
 	case wizardScreen:
 		if m.currentPromptIndex < len(m.prompts) {
