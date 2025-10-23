@@ -69,7 +69,9 @@ func (v *variable) setValue() {
 		var err error
 
 		v.value, err = conf.getValue()
-		if err != nil {
+		if err != nil && v.value != "" {
+			// Only log error if we actually got a non-empty value with an error
+			// Ignore "empty url" and similar errors when exiting setup
 			log.Error(err)
 		}
 	}
