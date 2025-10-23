@@ -9,10 +9,12 @@
 package setup
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,13 +29,13 @@ This interactive command:
 
 This command launches an interactive terminal interface to guide you through
 the template configuration process step by step.`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		return RunTea()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return RunTea(cmd.Context())
 	},
 }
 
 // RunTea starts the template setup TUI
-func RunTea() error {
+func RunTea(ctx context.Context) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -44,7 +46,11 @@ func RunTea() error {
 	}
 
 	m := NewModel()
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(
+		tui.NewInterruptibleModel(m),
+		tea.WithAltScreen(),
+		tea.WithContext(ctx),
+	)
 	_, err := p.Run()
 
 	return err

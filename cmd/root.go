@@ -9,6 +9,8 @@
 package cmd
 
 import (
+	"context"
+
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/completion"
@@ -28,7 +30,7 @@ var RootCmd = &cobra.Command{
 	Short: "The " + internalVersion.AppName,
 	Long: `
 	The ` + internalVersion.AppName + ` is a command-line interface for interacting with
-	DataRobot's application templates and authentication. It allows users to 
+	DataRobot's application templates and authentication. It allows users to
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
 	// Show help by default when no subcommands match
@@ -38,6 +40,11 @@ var RootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
 	return RootCmd.Execute()
+}
+
+// ExecuteContext executes the root command with the given context.
+func ExecuteContext(ctx context.Context) error {
+	return RootCmd.ExecuteContext(ctx)
 }
 
 func init() {

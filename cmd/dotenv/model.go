@@ -308,14 +308,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
+			case "q":
+				return m, m.SuccessCmd
 			case "i":
 				return m, m.loadPrompts()
 			case "e":
 				return m, openEditorCmd
 			case "o":
 				return m, m.openInExternalEditor()
-			case "q":
-				return m, m.SuccessCmd
 			}
 		case errMsg:
 			m.err = msg.err
