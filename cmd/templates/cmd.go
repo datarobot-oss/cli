@@ -27,7 +27,6 @@ func Cmd() *cobra.Command {
 		clone.Cmd,
 		list.Cmd,
 		setup.Cmd,
-		statusCmd,
 	)
 
 	return cmd
