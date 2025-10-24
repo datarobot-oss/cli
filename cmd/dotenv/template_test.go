@@ -147,7 +147,6 @@ func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
 	suite.Regexp(`# Edited using .dr dotenv. .* on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
 
 	os.Remove(suite.template)
-
 }
 
 func (suite *TemplateTestSuite) TestGetStateDir() {
@@ -156,14 +155,15 @@ func (suite *TemplateTestSuite) TestGetStateDir() {
 	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
 
 	stateDir, err := getStateDir()
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Equal(filepath.Join(xdgStateHome, "dr", "backups"), stateDir)
 	suite.DirExists(stateDir)
 
 	// Test without XDG_STATE_HOME (should use default)
 	suite.T().Setenv("XDG_STATE_HOME", "")
+
 	stateDir, err = getStateDir()
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Contains(stateDir, filepath.Join(".local", "state", "dr", "backups"))
 }
 
@@ -173,10 +173,10 @@ func (suite *TemplateTestSuite) TestGetBackupBaseName() {
 
 	// Should contain the filename
 	suite.Contains(baseName, ".env")
-	
+
 	// Should contain an underscore separator
 	suite.Contains(baseName, "_")
-	
+
 	// Should have the format: filename_hash
 	parts := strings.Split(baseName, "_")
 	suite.Len(parts, 2)
@@ -196,8 +196,8 @@ func (suite *TemplateTestSuite) TestGetBackupBaseName() {
 func (suite *TemplateTestSuite) TestBackupCreatesFile() {
 	// Create a test file to backup
 	testContent := "DATAROBOT_ENDPOINT=test\n"
-	err := os.WriteFile(suite.dotfile, []byte(testContent), 0644)
-	suite.NoError(err)
+	err := os.WriteFile(suite.dotfile, []byte(testContent), 0o644)
+	suite.Require().NoError(err)
 
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
@@ -205,7 +205,7 @@ func (suite *TemplateTestSuite) TestBackupCreatesFile() {
 
 	// Perform backup
 	err = backup(suite.dotfile)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Verify backup was created
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
@@ -215,18 +215,18 @@ func (suite *TemplateTestSuite) TestBackupCreatesFile() {
 	baseName := getBackupBaseName(suite.dotfile)
 	pattern := filepath.Join(stateDir, baseName+"_*")
 	matches, err := filepath.Glob(pattern)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(matches, 1, "Expected exactly one backup file")
 
 	// Verify backup content
 	backupContent, err := os.ReadFile(matches[0])
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Equal(testContent, string(backupContent))
 
 	// Verify original file still exists
 	suite.FileExists(suite.dotfile)
 	originalContent, err := os.ReadFile(suite.dotfile)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Equal(testContent, string(originalContent))
 }
 
@@ -238,7 +238,7 @@ func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 	// Try to backup a file that doesn't exist
 	nonExistentFile := filepath.Join(suite.tempDir, "nonexistent.env")
 	err := backup(nonExistentFile)
-	suite.NoError(err, "Backing up non-existent file should not error")
+	suite.Require().NoError(err, "Backing up non-existent file should not error")
 
 	// Verify no backup was created
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
@@ -247,7 +247,7 @@ func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 		pattern := filepath.Join(stateDir, baseName+"_*")
 		matches, err := filepath.Glob(pattern)
 		suite.NoError(err)
-		suite.Len(matches, 0, "No backup should be created for non-existent file")
+		suite.Empty(matches, "No backup should be created for non-existent file")
 	}
 }
 
@@ -256,8 +256,8 @@ func (suite *TemplateTestSuite) TestCleanOldBackups() {
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
 	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
-	err := os.MkdirAll(stateDir, 0755)
-	suite.NoError(err)
+	err := os.MkdirAll(stateDir, 0o755)
+	suite.Require().NoError(err)
 
 	baseName := getBackupBaseName(suite.dotfile)
 
@@ -265,9 +265,9 @@ func (suite *TemplateTestSuite) TestCleanOldBackups() {
 	for i := 0; i < 5; i++ {
 		timestamp := time.Now().Add(-time.Duration(5-i) * time.Hour).Format("2006-01-02_15-04-05")
 		backupFileName := filepath.Join(stateDir, baseName+"_"+timestamp)
-		err := os.WriteFile(backupFileName, []byte("content"+string(rune(i))), 0644)
-		suite.NoError(err)
-		
+		err := os.WriteFile(backupFileName, []byte("content"+string(rune(i))), 0o644)
+		suite.Require().NoError(err)
+
 		// Small delay to ensure different modification times
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -275,16 +275,16 @@ func (suite *TemplateTestSuite) TestCleanOldBackups() {
 	// Verify we have 5 backups
 	pattern := filepath.Join(stateDir, baseName+"_*")
 	matches, err := filepath.Glob(pattern)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(matches, 5)
 
 	// Clean old backups
 	err = cleanOldBackups(stateDir, baseName)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Should only have 3 remaining
 	matches, err = filepath.Glob(pattern)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(matches, 3, "Should keep only 3 most recent backups")
 }
 
@@ -293,8 +293,8 @@ func (suite *TemplateTestSuite) TestCleanOldBackupsKeepsThreeOrLess() {
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
 	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
-	err := os.MkdirAll(stateDir, 0755)
-	suite.NoError(err)
+	err := os.MkdirAll(stateDir, 0o755)
+	suite.Require().NoError(err)
 
 	baseName := getBackupBaseName(suite.dotfile)
 
@@ -302,18 +302,18 @@ func (suite *TemplateTestSuite) TestCleanOldBackupsKeepsThreeOrLess() {
 	for i := 0; i < 2; i++ {
 		timestamp := time.Now().Add(-time.Duration(2-i) * time.Hour).Format("2006-01-02_15-04-05")
 		backupFileName := filepath.Join(stateDir, baseName+"_"+timestamp)
-		err := os.WriteFile(backupFileName, []byte("content"), 0644)
-		suite.NoError(err)
+		err := os.WriteFile(backupFileName, []byte("content"), 0o644)
+		suite.Require().NoError(err)
 	}
 
 	// Clean old backups
 	err = cleanOldBackups(stateDir, baseName)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Should still have 2 (no deletion)
 	pattern := filepath.Join(stateDir, baseName+"_*")
 	matches, err := filepath.Glob(pattern)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(matches, 2, "Should not delete when 3 or fewer backups exist")
 }
 
@@ -324,27 +324,27 @@ func (suite *TemplateTestSuite) TestMultipleBackupsIntegration() {
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
 
 	// Create initial file
-	err := os.WriteFile(suite.dotfile, []byte("version1"), 0644)
-	suite.NoError(err)
+	err := os.WriteFile(suite.dotfile, []byte("version1"), 0o644)
+	suite.Require().NoError(err)
 
 	// Create 4 backups with delays to ensure unique timestamps
 	for i := 0; i < 4; i++ {
 		// Sleep for over a second to ensure different timestamps
 		time.Sleep(1100 * time.Millisecond)
-		
+
 		err = backup(suite.dotfile)
-		suite.NoError(err)
-		
+		suite.Require().NoError(err)
+
 		// Update file content
-		err = os.WriteFile(suite.dotfile, []byte("version"+string(rune(i+2))), 0644)
-		suite.NoError(err)
+		err = os.WriteFile(suite.dotfile, []byte("version"+string(rune(i+2))), 0o644)
+		suite.Require().NoError(err)
 	}
 
 	// Should only have 3 backups due to automatic cleanup
 	baseName := getBackupBaseName(suite.dotfile)
 	pattern := filepath.Join(stateDir, baseName+"_*")
 	matches, err := filepath.Glob(pattern)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(matches, 3, "Should maintain only 3 backups after cleanup")
 }
 
@@ -356,29 +356,29 @@ func (suite *TemplateTestSuite) TestBackupDifferentFiles() {
 	// Create two different .env files in different directories
 	dir1 := filepath.Join(suite.tempDir, "project1")
 	dir2 := filepath.Join(suite.tempDir, "project2")
-	err := os.MkdirAll(dir1, 0755)
-	suite.NoError(err)
-	err = os.MkdirAll(dir2, 0755)
-	suite.NoError(err)
+	err := os.MkdirAll(dir1, 0o755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(dir2, 0o755)
+	suite.Require().NoError(err)
 
 	file1 := filepath.Join(dir1, ".env")
 	file2 := filepath.Join(dir2, ".env")
 
-	err = os.WriteFile(file1, []byte("project1 content"), 0644)
-	suite.NoError(err)
-	err = os.WriteFile(file2, []byte("project2 content"), 0644)
-	suite.NoError(err)
+	err = os.WriteFile(file1, []byte("project1 content"), 0o644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file2, []byte("project2 content"), 0o644)
+	suite.Require().NoError(err)
 
 	// Backup both files
 	err = backup(file1)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	err = backup(file2)
-	suite.NoError(err)
+	suite.Require().NoError(err)
 
 	// Verify both backups exist with different names
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
 	allBackups, err := filepath.Glob(filepath.Join(stateDir, "*"))
-	suite.NoError(err)
+	suite.Require().NoError(err)
 	suite.Len(allBackups, 2, "Should have backups for both files")
 
 	// Verify the base names are different

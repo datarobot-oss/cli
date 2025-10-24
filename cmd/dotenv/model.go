@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
@@ -26,11 +27,11 @@ import (
 const (
 	// Key bindings
 	keyQuit         = "q"
-	keyInteractive  = "i"
+	keyInteractive  = "w"
 	keyEdit         = "e"
 	keyOpenExternal = "o"
-	keyEscape       = "esc"
-	keyEnter        = "enter"
+	keyExit         = "esc"
+	keySave         = "ctrl+s"
 
 	// Editor fallback
 	defaultEditor = "vi"
@@ -343,9 +344,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case keyEnter:
+			case keySave:
 				return m, m.saveEditedFile()
-			case keyEscape:
+			case keyExit:
 				// Quit without saving
 				return m, m.SuccessCmd
 			}
@@ -362,7 +363,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case keyEscape:
+			case keyExit:
 				m.screen = listScreen
 				return m, nil
 			}
@@ -427,25 +428,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 func (m Model) View() string {
 	var sb strings.Builder
 
+	var content strings.Builder
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(tui.DrPurple).
+		Padding(1, 2)
+
 	switch m.screen {
 	case listScreen:
-		fmt.Fprintf(&sb, "Variables found in %s:\n\n", m.DotenvFile)
+		sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
+		sb.WriteString("\n\n")
+		fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
 
 		for _, v := range m.variables {
 			if v.commented {
-				fmt.Fprintf(&sb, "# ")
+				fmt.Fprintf(&content, "# ")
 			}
 
-			fmt.Fprintf(&sb, "%s: ", v.name)
+			fmt.Fprintf(&content, "%s: ", v.name)
 
 			if v.secret {
-				fmt.Fprintf(&sb, "***\n")
+				fmt.Fprintf(&content, "***\n")
 			} else {
-				fmt.Fprintf(&sb, "%s\n", v.value)
+				fmt.Fprintf(&content, "%s\n", v.value)
 			}
 		}
 
-		sb.WriteString("\n")
+		sb.WriteString(boxStyle.Render(content.String()))
+		sb.WriteString("\n\n")
 
 		if len(m.variables) > 0 {
 			sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
@@ -456,21 +467,24 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit without saving."))
+		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit."))
 	case editorScreen:
-		sb.WriteString(m.textarea.View())
+		sb.WriteString(tui.WelcomeStyle.Render("Edit Mode"))
 		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press enter for the menu"))
+		sb.WriteString(boxStyle.Width(m.width - 8).Render(m.textarea.View()))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+s to save and go to menu."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving"))
+		sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving."))
 
 	case wizardScreen:
+		sb.WriteString(tui.WelcomeStyle.Render("Interactive Setup"))
+		sb.WriteString("\n\n")
+
 		if m.currentPromptIndex < len(m.prompts) {
-			sb.WriteString(m.currentPrompt.View())
+			sb.WriteString(boxStyle.Render(m.currentPrompt.View()))
 		} else {
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render("No prompts left"))
-			sb.WriteString("\n")
+			sb.WriteString(boxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
 		}
 	}
 
