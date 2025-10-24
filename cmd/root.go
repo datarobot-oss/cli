@@ -12,6 +12,7 @@ import (
 	"context"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/dotenv"
@@ -56,6 +57,7 @@ func init() {
 	}
 
 	RootCmd.AddCommand(
+		allcommands.Cmd(),
 		auth.Cmd(),
 		completion.Cmd(),
 		dotenv.Cmd(),
