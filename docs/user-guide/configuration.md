@@ -2,7 +2,7 @@
 
 Understanding DataRobot CLI configuration files and settings.
 
-## Configuration Location
+## Configuration location
 
 The CLI stores configuration in a platform-specific location:
 
@@ -12,9 +12,9 @@ The CLI stores configuration in a platform-specific location:
 | macOS | `~/.datarobot/config.yaml` |
 | Windows | `%USERPROFILE%\.datarobot\config.yaml` |
 
-## Configuration Structure
+## Configuration structure
 
-### Main Configuration File
+### Main configuration file
 
 `~/.datarobot/config.yaml`:
 
@@ -24,25 +24,25 @@ datarobot:
   endpoint: https://app.datarobot.com
   api_key: encrypted_key_here
   api_version: v2
-  
+
 # CLI Preferences
 preferences:
   default_timeout: 30
   verify_ssl: true
   log_level: warn
-  
+
 # Template Settings
 templates:
   default_clone_dir: ~/datarobot-templates
   auto_update_check: true
-  
+
 # Task Runner Settings
 tasks:
   default_concurrency: 2
   show_command_output: true
 ```
 
-### Environment-Specific Configs
+### Environment-specific configs
 
 You can maintain multiple configurations:
 
@@ -64,72 +64,72 @@ export DATAROBOT_CONFIG_PATH=~/.datarobot/dev-config.yaml
 dr templates list
 ```
 
-## Configuration Options
+## Configuration options
 
-### Connection Settings
+### Connection settings
 
 ```yaml
 datarobot:
   # Required: DataRobot instance URL
   endpoint: https://app.datarobot.com
-  
+
   # Required: API authentication key
   api_key: your_encrypted_key
-  
+
   # Optional: API version (default: v2)
   api_version: v2
-  
+
   # Optional: Connection timeout in seconds (default: 30)
   timeout: 30
-  
+
   # Optional: Verify SSL certificates (default: true)
   verify_ssl: true
-  
+
   # Optional: Custom CA certificate path
   ca_cert_path: /path/to/ca-cert.pem
 ```
 
-### User Preferences
+### User preferences
 
 ```yaml
 preferences:
   # Log level: debug, info, warn, error (default: warn)
   log_level: info
-  
+
   # Enable color output (default: true)
   color_output: true
-  
+
   # Default editor for text editing (default: $EDITOR or vim)
   editor: code
-  
+
   # Auto-check for CLI updates (default: true)
   check_updates: true
 ```
 
-### Template Settings
+### Template settings
 
 ```yaml
 templates:
   # Default directory for cloning templates
   default_clone_dir: ~/datarobot-projects
-  
+
   # Auto-update check for templates (default: false)
   auto_update_check: false
-  
+
   # Preferred Git protocol: https or ssh (default: https)
   git_protocol: https
 ```
 
-### Task Runner Settings
+### Task runner settings
 
 ```yaml
 tasks:
   # Maximum concurrent tasks (default: 2)
   default_concurrency: 4
-  
+
   # Show task command output (default: true)
   show_command_output: true
-  
+
   # Continue on task error (default: false)
   continue_on_error: false
 ```
@@ -157,7 +157,7 @@ export DATAROBOT_TIMEOUT=60
 export DATAROBOT_VERIFY_SSL=true
 ```
 
-### CLI Behavior
+### CLI behavior
 
 ```bash
 # Log level: debug, info, warn, error
@@ -183,14 +183,14 @@ export DR_CONCURRENCY=4
 export DR_TASK_TIMEOUT=300
 ```
 
-## Configuration Priority
+## Configuration priority
 
 Settings are loaded in this order (highest to lowest priority):
 
-1. **Command-line flags**: `dr --verbose`
-2. **Environment variables**: `DATAROBOT_ENDPOINT=...`
-3. **Config file**: `~/.datarobot/config.yaml`
-4. **Default values**: Built-in defaults
+1. **Command-line flags**: `dr --verbose`.
+2. **Environment variables**: `DATAROBOT_ENDPOINT=...`.
+3. **Config file**: `~/.datarobot/config.yaml`.
+4. **Default values**: Built-in defaults.
 
 Example:
 
@@ -206,9 +206,9 @@ dr --verbose templates list
 # Uses verbose (info) level
 ```
 
-## Security Best Practices
+## Security best practices
 
-### 1. Protect Configuration Files
+### 1. Protect configuration files
 
 ```bash
 # Verify permissions (should be 600)
@@ -219,7 +219,7 @@ chmod 600 ~/.datarobot/config.yaml
 chmod 700 ~/.datarobot/
 ```
 
-### 2. Don't Commit Credentials
+### 2. Don't commit credentials
 
 Add to `.gitignore`:
 
@@ -231,7 +231,7 @@ config.yaml
 !.env.template
 ```
 
-### 3. Use Environment-Specific Configs
+### 3. Use environment-specific configs
 
 ```bash
 # Never use production credentials in development
@@ -242,7 +242,7 @@ config.yaml
 └── prod-config.yaml     # Production
 ```
 
-### 4. Avoid Environment Variables for Secrets
+### 4. Avoid environment variables for secrets
 
 ```bash
 # ❌ Don't do this (visible in process list)
@@ -252,9 +252,9 @@ export DATAROBOT_API_KEY=my_secret_key
 dr auth login
 ```
 
-## Advanced Configuration
+## Advanced configuration
 
-### Custom Templates Directory
+### Custom templates directory
 
 ```yaml
 templates:
@@ -267,7 +267,7 @@ Or via environment:
 export DR_TEMPLATES_DIR=~/workspace/datarobot
 ```
 
-### Proxy Configuration
+### Proxy configuration
 
 ```yaml
 datarobot:
@@ -284,7 +284,7 @@ export HTTPS_PROXY=http://proxy.company.com:8080
 export NO_PROXY=localhost,127.0.0.1
 ```
 
-### Custom CA Certificates
+### Custom CA certificates
 
 For self-signed certificates:
 
@@ -301,7 +301,7 @@ Or via environment:
 export DATAROBOT_CA_CERT=/etc/ssl/certs/mycompany-ca.pem
 ```
 
-### Debugging Configuration
+### Debugging configuration
 
 Enable debug logging:
 
@@ -316,9 +316,9 @@ Or temporarily:
 dr --debug templates list
 ```
 
-## Configuration Examples
+## Configuration examples
 
-### Development Environment
+### Development environment
 
 `~/.datarobot/dev-config.yaml`:
 
@@ -326,14 +326,14 @@ dr --debug templates list
 datarobot:
   endpoint: https://dev.datarobot.com
   api_key: dev_encrypted_key
-  
+
 preferences:
   log_level: debug
   color_output: true
-  
+
 templates:
   default_clone_dir: ~/dev/datarobot-templates
-  
+
 tasks:
   default_concurrency: 2
   show_command_output: true
@@ -347,7 +347,7 @@ export DATAROBOT_CONFIG_PATH=~/.datarobot/dev-config.yaml
 dr templates list
 ```
 
-### Production Environment
+### Production environment
 
 `~/.datarobot/prod-config.yaml`:
 
@@ -356,14 +356,14 @@ datarobot:
   endpoint: https://app.datarobot.com
   api_key: prod_encrypted_key
   timeout: 60
-  
+
 preferences:
   log_level: error
   color_output: false
-  
+
 templates:
   default_clone_dir: ~/production/datarobot-templates
-  
+
 tasks:
   default_concurrency: 1
   show_command_output: false
@@ -377,7 +377,7 @@ export DATAROBOT_CONFIG_PATH=~/.datarobot/prod-config.yaml
 dr run deploy
 ```
 
-### Enterprise with Proxy
+### Enterprise with proxy
 
 `~/.datarobot/enterprise-config.yaml`:
 
@@ -389,14 +389,14 @@ datarobot:
   verify_ssl: true
   ca_cert_path: /etc/ssl/certs/enterprise-ca.pem
   timeout: 120
-  
+
 preferences:
   log_level: warn
 ```
 
 ## Troubleshooting
 
-### Configuration Not Loading
+### Configuration not loading
 
 ```bash
 # Check if config file exists
@@ -409,7 +409,7 @@ cat ~/.datarobot/config.yaml
 env | grep DATAROBOT
 ```
 
-### Invalid Configuration
+### Invalid configuration
 
 ```bash
 # The CLI will report syntax errors
@@ -420,7 +420,7 @@ Error: Failed to parse config file: yaml: line 5: could not find expected ':'
 vim ~/.datarobot/config.yaml
 ```
 
-### Permission Denied
+### Permission denied
 
 ```bash
 # Fix file permissions
@@ -430,7 +430,7 @@ chmod 600 ~/.datarobot/config.yaml
 chmod 700 ~/.datarobot/
 ```
 
-### Multiple Configs
+### Multiple configs
 
 ```bash
 # List all config files
@@ -442,6 +442,6 @@ export DATAROBOT_CONFIG_PATH=~/.datarobot/dev-config.yaml
 
 ## See Also
 
-- [Getting Started](getting-started.md) - Initial setup
-- [Authentication](authentication.md) - Managing credentials
-- [auth command](../commands/auth.md) - Authentication commands
+- [Getting started](getting-started.md)&mdash;initial setup.
+- [Authentication](authentication.md)&mdash;managing credentials.
+- [auth command](../commands/auth.md)&mdash;authentication commands.

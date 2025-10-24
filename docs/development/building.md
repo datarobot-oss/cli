@@ -11,15 +11,15 @@ This guide covers building, testing, and developing the DataRobot CLI.
 - [Debugging](#debugging)
 - [Release Process](#release-process)
 
-## Building from Source
+## Building from source
 
 ### Prerequisites
 
-- **Go 1.24.7+**: [Download](https://golang.org/dl/)
-- **Git**: Version control
-- **Task**: Task runner ([install](https://taskfile.dev/installation/))
+- **Go 1.24.7+**&mdash;[Download](https://golang.org/dl/).
+- **Git**&mdash;version control.
+- **Task**&mdash;task runner ([install](https://taskfile.dev/installation/)).
 
-### Quick Build
+### Quick build
 
 ```bash
 # Clone repository
@@ -36,7 +36,7 @@ task build
 ./dist/dr version
 ```
 
-### Available Tasks
+### Available tasks
 
 ```bash
 # Show all tasks
@@ -52,7 +52,7 @@ task clean              # Clean build artifacts
 task install-tools      # Install development tools
 ```
 
-### Build Options
+### Build options
 
 ```bash
 # Development build (with debug info)
@@ -70,9 +70,9 @@ GOOS=darwin GOARCH=arm64 go build -o dist/dr-darwin-arm64 main.go
 GOOS=windows GOARCH=amd64 go build -o dist/dr-windows-amd64.exe main.go
 ```
 
-## Project Architecture
+## Project architecture
 
-### Directory Structure
+### Directory structure
 
 ```
 cli/
@@ -161,7 +161,7 @@ Uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for interactive UI
 type Model struct {
     // State
     screen screens
-    
+
     // Sub-models
     textInput textinput.Model
     list      list.Model
@@ -312,10 +312,10 @@ import (
 func TestLogin(t *testing.T) {
     // Arrange
     mockAPI := &MockAPI{}
-    
+
     // Act
     err := performLogin(mockAPI)
-    
+
     // Assert
     assert.NoError(t, err)
 }
@@ -329,13 +329,13 @@ func TestConfigReadWrite(t *testing.T) {
     // Create temp config
     tmpDir := t.TempDir()
     configPath := filepath.Join(tmpDir, "config.yaml")
-    
+
     // Write config
     err := SaveConfig(configPath, &Config{
         Endpoint: "https://test.datarobot.com",
     })
     assert.NoError(t, err)
-    
+
     // Read config
     config, err := LoadConfig(configPath)
     assert.NoError(t, err)
@@ -353,12 +353,12 @@ func TestDotenvModel(t *testing.T) {
     m := Model{
         // Setup model
     }
-    
+
     tm := teatest.NewTestModel(t, m)
-    
+
     // Send keypress
     tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-    
+
     // Wait for update
     teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
         return bytes.Contains(bts, []byte("Expected output"))

@@ -253,7 +253,7 @@ After authentication, credentials are stored in:
 datarobot:
   endpoint: https://app.datarobot.com
   api_key: <encrypted_key>
-  
+
 # User preferences
 preferences:
   default_timeout: 30

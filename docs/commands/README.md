@@ -2,7 +2,7 @@
 
 Complete reference documentation for all DataRobot CLI commands.
 
-## Global Flags
+## Global flags
 
 These flags are available for all commands:
 
@@ -14,18 +14,18 @@ These flags are available for all commands:
 
 ## Commands
 
-### Main Commands
+### Main commands
 
 | Command | Description |
 |---------|-------------|
-| [`auth`](auth.md) | Authenticate with DataRobot |
-| [`templates`](templates.md) | Manage application templates |
-| [`run`](run.md) | Execute application tasks |
-| [`dotenv`](dotenv.md) | Manage environment variables |
-| [`completion`](completion.md) | Generate shell completions |
-| [`version`](version.md) | Show version information |
+| [`auth`](auth.md) | Authenticate with DataRobot. |
+| [`templates`](templates.md) | Manage application templates. |
+| [`run`](run.md) | Execute application tasks. |
+| [`dotenv`](dotenv.md) | Manage environment variables. |
+| [`completion`](completion.md) | Generate shell completions. |
+| [`version`](version.md) | Show version information. |
 
-### Command Tree
+### Command tree
 
 ```
 dr
@@ -48,7 +48,7 @@ dr
 └── version            Version information
 ```
 
-## Quick Examples
+## Quick examples
 
 ### Authentication
 
@@ -100,7 +100,7 @@ dr run dev
 dr run lint test --parallel
 ```
 
-### Shell Completions
+### Shell completions
 
 ```bash
 # Bash (Linux)
@@ -113,41 +113,41 @@ dr completion zsh > "${fpath[1]}/_dr"
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-## Command Details
+## Command details
 
 For detailed documentation on each command, see:
 
-- **[auth](auth.md)** - Authentication management
-  - `login` - OAuth authentication
-  - `logout` - Remove credentials
-  - `set-url` - Configure DataRobot URL
+- **[auth](auth.md)**&mdash;authentication management.
+  - `login`&mdash;OAuth authentication.
+  - `logout`&mdash;remove credentials.
+  - `set-url`&mdash;configure DataRobot URL.
 
-- **[templates](templates.md)** - Template operations
-  - `list` - List available templates
-  - `clone` - Clone a template repository
-  - `setup` - Interactive wizard for full setup
-  - `status` - Show current template status
+- **[templates](templates.md)**&mdash;template operations.
+  - `list`&mdash;list available templates.
+  - `clone`&mdash;clone a template repository.
+  - `setup`&mdash;interactive wizard for full setup.
+  - `status`&mdash;show current template status.
 
-- **[run](run.md)** - Task execution
-  - Run tasks defined in Taskfile
-  - Support for parallel execution
-  - Watch mode for continuous tasks
+- **[run](run.md)**&mdash;task execution.
+  - Run tasks defined in Taskfile.
+  - Support for parallel execution.
+  - Watch mode for continuous tasks.
 
-- **[dotenv](dotenv.md)** - Environment management
-  - Interactive configuration wizard
-  - Direct file editing
-  - Variable validation
+- **[dotenv](dotenv.md)**&mdash;environment management.
+  - Interactive configuration wizard.
+  - Direct file editing.
+  - Variable validation.
 
-- **[completion](completion.md)** - Shell completions
-  - Bash, Zsh, Fish, PowerShell support
-  - Auto-complete commands and flags
+- **[completion](completion.md)**&mdash;shell completions.
+  - Bash, Zsh, Fish, PowerShell support.
+  - Auto-complete commands and flags.
 
-- **[version](version.md)** - Version information
-  - Show CLI version
-  - Build information
-  - Runtime details
+- **[version](version.md)**&mdash;version information.
+  - Show CLI version.
+  - Build information.
+  - Runtime details.
 
-## Getting Help
+## Getting help
 
 ```bash
 # General help
@@ -164,7 +164,7 @@ dr auth login --help
 dr templates clone --help
 ```
 
-## Environment Variables
+## Environment variables
 
 Global environment variables that affect all commands:
 
@@ -182,16 +182,14 @@ NO_COLOR                       # Disable color output
 DR_DEBUG                       # Enable debug mode
 ```
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Command usage error |
-| 130 | Interrupted (Ctrl+C) |
-
-## See Also
+|------|---------|  
+| 0 | Success. |
+| 1 | General error. |
+| 2 | Command usage error. |
+| 130 | Interrupted (Ctrl+C). |## See Also
 
 - [Getting Started Guide](../user-guide/getting-started.md)
 - [User Guide](../user-guide/)

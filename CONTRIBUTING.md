@@ -15,22 +15,22 @@ Thank you for your interest in contributing to the DataRobot CLI! This document 
 - [Requesting Features](#requesting-features)
 - [Project Maintainers](#project-maintainers)
 
-## Code of Conduct
+## Code of conduct
 
 Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to maintain a welcoming and inclusive community.
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 Before contributing, ensure you have:
 
-- **Go 1.24.7 or later** - [Installation guide](https://golang.org/doc/install)
-- **Git** - Version control
-- **Task** - Task runner ([installation](https://taskfile.dev/installation/))
-- **Make** (optional) - For some build tasks
+- **Go 1.24.7 or later**&mdash;[Installation guide](https://golang.org/doc/install).
+- **Git**&mdash;version control.
+- **Task**&mdash;task runner ([installation](https://taskfile.dev/installation/)).
+- **Make** (optional)&mdash;for some build tasks.
 
-### Development Setup
+### Development setup
 
 1. **Fork the repository**
 
@@ -56,26 +56,26 @@ Before contributing, ensure you have:
    ```
 
    This installs:
-   - `golangci-lint` - Linter
-   - `gofumpt` - Formatter
-   - `goreleaser` - Release tool
+   - `golangci-lint`&mdash;linter.
+   - `gofumpt`&mdash;formatter.
+   - `goreleaser`&mdash;release tool.
 
 5. **Verify setup**
 
    ```bash
    # Build the CLI
    task build
-   
+
    # Run tests
    task test
-   
+
    # Run linters
    task lint
    ```
 
-## Making Changes
+## Making changes
 
-### Branching Strategy
+### Branching strategy
 
 1. **Keep your fork up to date**
 
@@ -94,13 +94,13 @@ Before contributing, ensure you have:
    ```
 
    Branch naming conventions:
-   - `feature/` - New features
-   - `fix/` - Bug fixes
-   - `docs/` - Documentation changes
-   - `refactor/` - Code refactoring
-   - `test/` - Test additions/changes
+   - `feature/`&mdash;new features.
+   - `fix/`&mdash;bug fixes.
+   - `docs/`&mdash;documentation changes.
+   - `refactor/`&mdash;code refactoring.
+   - `test/`&mdash;test additions/changes.
 
-### Development Workflow
+### Development workflow
 
 1. **Make your changes**
 
@@ -123,10 +123,10 @@ Before contributing, ensure you have:
    ```bash
    # Run all tests
    task test
-   
+
    # Run tests with coverage
    task test-coverage
-   
+
    # Run specific tests
    go test ./cmd/auth/...
    ```
@@ -140,7 +140,7 @@ Before contributing, ensure you have:
 
 ## Testing
 
-### Running Tests
+### Running tests
 
 ```bash
 # All tests
@@ -159,7 +159,7 @@ go test -v ./...
 go test -run TestFunctionName ./cmd/auth
 ```
 
-### Writing Tests
+### Writing tests
 
 Follow Go testing conventions:
 
@@ -175,20 +175,20 @@ import (
 func TestLogin(t *testing.T) {
     // Arrange
     expected := "success"
-    
+
     // Act
     result := performLogin()
-    
+
     // Assert
     assert.Equal(t, expected, result)
 }
 ```
 
-### Test Coverage
+### Test coverage
 
-- Aim for **>80%** test coverage for new code
-- All exported functions should have tests
-- Test both success and error cases
+- Aim for **>80%** test coverage for new code.
+- All exported functions should have tests.
+- Test both success and error cases.
 
 ```bash
 # View coverage report
@@ -199,9 +199,9 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
-## Code Style
+## Code style
 
-### Go Conventions
+### Go conventions
 
 Follow [Effective Go](https://golang.org/doc/effective_go.html) and [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
 
@@ -213,14 +213,14 @@ Key points:
    ```
 
 2. **Naming**:
-   - Use `camelCase` for private variables/functions
-   - Use `PascalCase` for exported variables/functions
-   - Use descriptive names (avoid abbreviations)
+   - Use `camelCase` for private variables/functions.
+   - Use `PascalCase` for exported variables/functions.
+   - Use descriptive names (avoid abbreviations).
 
 3. **Comments**:
-   - Document all exported functions, types, and constants
-   - Use complete sentences
-   - Start with the name being documented
+   - Document all exported functions, types, and constants.
+   - Use complete sentences.
+   - Start with the name being documented.
 
    ```go
    // Execute runs the root command and returns an error if it fails.
@@ -230,10 +230,10 @@ Key points:
    }
    ```
 
-4. **Error Handling**:
-   - Always check errors
-   - Wrap errors with context
-   - Use `fmt.Errorf` with `%w` for wrapping
+4. **Error handling**:
+   - Always check errors.
+   - Wrap errors with context.
+   - Use `fmt.Errorf` with `%w` for wrapping.
 
    ```go
    if err != nil {
@@ -256,7 +256,7 @@ Configuration is in `.golangci.yml`. Common issues:
 - Inefficient code
 - Style violations
 
-### Copyright Headers
+### Copyright headers
 
 All source files must include the copyright header:
 
@@ -272,9 +272,9 @@ All source files must include the copyright header:
 package yourpackage
 ```
 
-## Submitting Changes
+## Submitting changes
 
-### Commit Messages
+### Commit messages
 
 Write clear, descriptive commit messages:
 
@@ -287,13 +287,13 @@ Write clear, descriptive commit messages:
 ```
 
 Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Test additions/changes
-- `chore`: Build process or auxiliary tool changes
+- `feat`&mdash;new feature.
+- `fix`&mdash;bug fix.
+- `docs`&mdash;documentation changes.
+- `style`&mdash;code style changes (formatting, etc.).
+- `refactor`&mdash;code refactoring.
+- `test`&mdash;test additions/changes.
+- `chore`&mdash;build process or auxiliary tool changes.
 
 Example:
 
@@ -306,7 +306,7 @@ Task names are discovered from the current Taskfile.gen.yaml.
 Closes #123
 ```
 
-### Pull Request Process
+### Pull request process
 
 1. **Update your branch**
 
@@ -328,99 +328,99 @@ Closes #123
    - Fill out the PR template
    - Link related issues
 
-4. **PR Requirements**
+4. **PR requirements**
 
-   - [ ] Tests pass (`task test`)
-   - [ ] Linters pass (`task lint`)
-   - [ ] Code is formatted (`task fmt`)
-   - [ ] Documentation updated (if needed)
-   - [ ] Commit messages follow convention
-   - [ ] PR description explains changes
+   - [ ] Tests pass (`task test`).
+   - [ ] Linters pass (`task lint`).
+   - [ ] Code is formatted (`task fmt`).
+   - [ ] Documentation updated (if needed).
+   - [ ] Commit messages follow convention.
+   - [ ] PR description explains changes.
 
-5. **Code Review**
+5. **Code review**
 
-   - Address review comments
-   - Push updates to your branch
-   - Request re-review when ready
+   - Address review comments.
+   - Push updates to your branch.
+   - Request re-review when ready.
 
 6. **Merge**
 
-   - Maintainers will merge after approval
-   - Delete your branch after merge
+   - Maintainers will merge after approval.
+   - Delete your branch after merge.
 
 ### Documentation
 
 Update documentation when making changes:
 
-- **Code comments** - For internal documentation
-- **README.md** - For project overview changes
-- **docs/** - For user-facing documentation
-- **CHANGELOG.md** - For notable changes
+- **Code comments**&mdash;for internal documentation.
+- **README.md**&mdash;for project overview changes.
+- **docs/**&mdash;for user-facing documentation.
+- **CHANGELOG.md**&mdash;for notable changes.
 
-## Reporting Bugs
+## Reporting bugs
 
-### Before Reporting
+### Before reporting
 
-1. Check existing issues
-2. Update to latest version
-3. Search discussions
+1. Check existing issues.
+2. Update to latest version.
+3. Search discussions.
 
-### Bug Report Template
+### Bug report template
 
 Open an issue with:
 
 **Title**: Brief description of the bug
 
 **Description**:
-- What happened
-- What you expected
-- Steps to reproduce
+- What happened.
+- What you expected.
+- Steps to reproduce.
 
 **Environment**:
-- OS: macOS/Linux/Windows
-- CLI version: `dr version`
-- Go version: `go version`
+- OS: macOS/Linux/Windows.
+- CLI version: `dr version`.
+- Go version: `go version`.
 
-**Additional Context**:
-- Error messages
-- Log output (`dr --debug`)
-- Screenshots (if applicable)
+**Additional context**:
+- Error messages.
+- Log output (`dr --debug`).
+- Screenshots (if applicable).
 
-### Security Vulnerabilities
+### Security vulnerabilities
 
 **DO NOT** open a GitHub issue for security vulnerabilities.
 
 Instead:
-1. Email: oss-community-management@datarobot.com
-2. Include detailed description
-3. Include steps to reproduce
-4. Wait for maintainer response
+1. Email: oss-community-management@datarobot.com.
+2. Include detailed description.
+3. Include steps to reproduce.
+4. Wait for maintainer response.
 
-## Requesting Features
+## Requesting features
 
-### Feature Request Template
+### Feature request template
 
 **Title**: Clear feature description
 
-**Problem Statement**:
+**Problem statement**:
 - What problem does this solve?
 - Who benefits from this feature?
 
-**Proposed Solution**:
+**Proposed solution**:
 - How should it work?
-- Example usage
+- Example usage.
 
-**Alternatives Considered**:
-- Other approaches
-- Why this solution is preferred
+**Alternatives considered**:
+- Other approaches.
+- Why this solution is preferred.
 
-**Additional Context**:
-- Use cases
-- Similar features in other tools
+**Additional context**:
+- Use cases.
+- Similar features in other tools.
 
-## Development Tips
+## Development tips
 
-### Useful Commands
+### Useful commands
 
 ```bash
 # Run CLI in development
@@ -454,7 +454,7 @@ log.Debug("Variable value", "key", value)
 dr --debug templates list
 ```
 
-### Testing Locally
+### Testing locally
 
 ```bash
 # Build and install locally
@@ -466,47 +466,47 @@ dr-dev auth login
 dr-dev templates list
 ```
 
-## Project Structure
+## Project structure
 
 ```
 cli/
-├── cmd/                    # Command implementations
-│   ├── auth/              # Authentication commands
-│   ├── completion/        # Shell completion
-│   ├── dotenv/            # Environment management
-│   ├── run/               # Task runner
-│   ├── templates/         # Template commands
-│   └── version/           # Version command
-├── internal/              # Private application code
-│   ├── config/           # Configuration management
-│   ├── drapi/            # DataRobot API client
-│   ├── envbuilder/       # Environment builder
-│   ├── task/             # Task discovery
-│   └── version/          # Version info
-├── tui/                   # Terminal UI components
-├── docs/                  # Documentation
-├── main.go               # Entry point
-├── Taskfile.yaml         # Task definitions
-└── go.mod                # Go module definition
+├── cmd/                    # Command implementations.
+│   ├── auth/              # Authentication commands.
+│   ├── completion/        # Shell completion.
+│   ├── dotenv/            # Environment management.
+│   ├── run/               # Task runner.
+│   ├── templates/         # Template commands.
+│   └── version/           # Version command.
+├── internal/              # Private application code.
+│   ├── config/           # Configuration management.
+│   ├── drapi/            # DataRobot API client.
+│   ├── envbuilder/       # Environment builder.
+│   ├── task/             # Task discovery.
+│   └── version/          # Version info.
+├── tui/                   # Terminal UI components.
+├── docs/                  # Documentation.
+├── main.go               # Entry point.
+├── Taskfile.yaml         # Task definitions.
+└── go.mod                # Go module definition.
 ```
 
-## Project Maintainers
+## Project maintainers
 
 - DataRobot CLI Team
 
-## Getting Help
+## Getting help
 
 - 📖 [Documentation](docs/)
 - 💬 [GitHub Discussions](https://github.com/datarobot/cli/discussions)
 - 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
 - 📧 Email: oss-community-management@datarobot.com
 
-## Response Times
+## Response times
 
 Maintainers will make every effort to respond to:
-- Issues: Within 3-5 business days
-- Pull Requests: Within 5-7 business days
-- Security Issues: Within 1-2 business days
+- Issues: Within 3-5 business days.
+- Pull requests: Within 5-7 business days.
+- Security issues: Within 1-2 business days.
 
 If you don't receive a response within these timeframes, please email oss-community-management@datarobot.com.
 

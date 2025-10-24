@@ -2,41 +2,41 @@
 
 This section covers the DataRobot template system in detail.
 
-## What are Templates?
+## What are templates?
 
 DataRobot templates are pre-configured application scaffolds that help you quickly build and deploy custom applications to DataRobot. Each template includes:
 
-- Application source code
-- Configuration prompts
-- Environment setup
-- Task definitions
-- Documentation
+- Application source code.
+- Configuration prompts.
+- Environment setup.
+- Task definitions.
+- Documentation.
 
 ## Documentation
 
-### Core Concepts
+### Core concepts
 
-- **[Template Structure](structure.md)** - How templates are organized
-  - Repository layout
-  - Metadata files
-  - Multi-component templates
-  - Best practices
+- **[Template structure](structure.md)**&mdash;how templates are organized.
+  - Repository layout.
+  - Metadata files.
+  - Multi-component templates.
+  - Best practices.
 
-- **[Interactive Configuration](interactive-config.md)** - The configuration wizard
-  - Prompt system architecture
-  - Input types (text, selection, multi-select)
-  - Conditional prompts
-  - Validation and error handling
+- **[Interactive configuration](interactive-config.md)**&mdash;the configuration wizard.
+  - Prompt system architecture.
+  - Input types (text, selection, multi-select).
+  - Conditional prompts.
+  - Validation and error handling.
 
-- **[Environment Variables](environment-variables.md)** - Managing .env files
-  - .env.template format
-  - Variable types (required, optional, secret)
-  - Security best practices
-  - Advanced features
+- **[Environment variables](environment-variables.md)**&mdash;managing .env files.
+  - .env.template format.
+  - Variable types (required, optional, secret).
+  - Security best practices.
+  - Advanced features.
 
-## Quick Start
+## Quick start
 
-### Using a Template
+### Using a template
 
 ```bash
 # List available templates
@@ -52,7 +52,7 @@ dr dotenv --wizard
 dr run dev
 ```
 
-### Creating a Template
+### Creating a template
 
 ```bash
 # 1. Create structure
@@ -88,9 +88,9 @@ EOF
 dr templates setup
 ```
 
-## Template Types
+## Template types
 
-### Single-Page Applications
+### Single-page applications
 
 Simple applications with one component:
 
@@ -103,7 +103,7 @@ my-spa-template/
 └── Taskfile.gen.yaml
 ```
 
-### Full-Stack Applications
+### Full-stack applications
 
 Applications with multiple components:
 
@@ -138,9 +138,9 @@ my-microservices-template/
 └── docker-compose.yml
 ```
 
-## Common Patterns
+## Common patterns
 
-### Database Configuration
+### Database configuration
 
 ```yaml
 prompts:
@@ -157,7 +157,7 @@ prompts:
     help: "Database connection string"
 ```
 
-### Feature Flags
+### Feature flags
 
 ```yaml
 prompts:
@@ -188,17 +188,17 @@ prompts:
         requires: "saml_config"
 ```
 
-## Best Practices
+## Best practices
 
-### 1. Clear Documentation
+### 1. Clear documentation
 
 Include README with:
-- Quick start guide
-- Available tasks
-- Configuration options
-- Deployment instructions
+- Quick start guide.
+- Available tasks.
+- Configuration options.
+- Deployment instructions.
 
-### 2. Sensible Defaults
+### 2. Sensible defaults
 
 Provide defaults in `.env.template`:
 
@@ -209,7 +209,7 @@ DEBUG=true
 LOG_LEVEL=info
 ```
 
-### 3. Helpful Prompts
+### 3. Helpful prompts
 
 Use descriptive help text:
 
@@ -219,7 +219,7 @@ prompts:
     help: "PostgreSQL connection string (format: postgresql://user:pass@host:5432/dbname)"
 ```
 
-### 4. Organized Structure
+### 4. Organized structure
 
 Keep related files together:
 
@@ -231,21 +231,21 @@ src/
 └── utils/        # Utilities
 ```
 
-### 5. Security First
+### 5. Security first
 
-- Never commit `.env` files
-- Use strong secrets
-- Restrict file permissions
-- Mask sensitive values
+- Never commit `.env` files.
+- Use strong secrets.
+- Restrict file permissions.
+- Mask sensitive values.
 
 ## Examples
 
 Browse the [DataRobot Template Gallery](https://github.com/datarobot/templates) for example templates:
 
-- **python-streamlit** - Streamlit dashboard
-- **react-frontend** - React web application
-- **fastapi-backend** - FastAPI REST API
-- **full-stack-app** - Complete web application
+- **python-streamlit**&mdash;Streamlit dashboard.
+- **react-frontend**&mdash;React web application.
+- **fastapi-backend**&mdash;FastAPI REST API.
+- **full-stack-app**&mdash;complete web application.
 
 ## See Also
 

@@ -38,9 +38,9 @@ The configuration system consists of three main layers:
 - `internal/envbuilder/discovery.go` - Prompt discovery from templates
 - `cmd/templates/setup/model.go` - Template setup wizard orchestration
 
-## Configuration Flow
+## Configuration flow
 
-### 1. Template Setup Wizard
+### 1. Template setup wizard
 
 When you run `dr templates setup`, the wizard flow is:
 
@@ -60,7 +60,7 @@ Environment Configuration
 Completion
 ```
 
-### 2. Environment Configuration
+### 2. Environment configuration
 
 The environment configuration phase (dotenv wizard):
 
@@ -84,9 +84,9 @@ Generate .env File
 Save Configuration
 ```
 
-## Prompt Types
+## Prompt types
 
-### Text Input Prompts
+### Text input prompts
 
 Simple text entry for values:
 
@@ -231,13 +231,13 @@ prompts:
 ```
 Q: Do you want to use a database?
    [x] Yes  ← User selects this (requires: "database_config")
-   
+
    → Section "database_config" is now enabled
 
 Q: Select database type
    (Now shown because section is enabled)
    > PostgreSQL
-   
+
 Q: Enter database connection string
    (Also shown because section is enabled)
    > postgresql://localhost:5432/db
@@ -433,12 +433,12 @@ Prompts can validate input:
 ```go
 func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
     pm.Values = pm.GetValues()
-    
+
     // Don't submit if required and empty
     if !pm.prompt.Optional && len(pm.Values[0]) == 0 {
         return pm, nil  // Stay on prompt
     }
-    
+
     return pm, pm.successCmd  // Proceed
 }
 ```

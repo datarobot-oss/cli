@@ -12,12 +12,12 @@ dr completion <shell>
 
 The `completion` command generates shell completion scripts that enable auto-completion for the DataRobot CLI. Completions provide command, subcommand, and flag suggestions when you press Tab.
 
-## Supported Shells
+## Supported shells
 
-- `bash` - Bourne Again Shell
-- `zsh` - Z Shell
-- `fish` - Friendly Interactive Shell
-- `powershell` - PowerShell
+- `bash`&mdash;Bourne Again Shell.
+- `zsh`&mdash;Z Shell.
+- `fish`&mdash;Friendly Interactive Shell.
+- `powershell`&mdash;PowerShell.
 
 ## Usage
 
@@ -117,7 +117,7 @@ dr completion powershell | Out-String | Invoke-Expression
 
 ## Examples
 
-### Generate Completion Script
+### Generate completion script
 
 ```bash
 # View the generated script
@@ -133,7 +133,7 @@ dr completion fish > dr-completion.fish
 dr completion powershell > dr-completion.ps1
 ```
 
-### Install for Multiple Shells
+### Install for multiple shells
 
 If you use multiple shells:
 
@@ -148,7 +148,7 @@ dr completion zsh > ~/.zsh/completions/_dr
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-### Update Completions
+### Update completions
 
 After updating the CLI:
 
@@ -165,9 +165,9 @@ exec zsh
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-## Completion Behavior
+## Completion behavior
 
-### Command Completion
+### Command completion
 
 ```bash
 $ dr <Tab>
@@ -180,7 +180,7 @@ $ dr templates <Tab>
 clone      list       setup      status
 ```
 
-### Flag Completion
+### Flag completion
 
 ```bash
 $ dr run --<Tab>
@@ -192,7 +192,7 @@ $ dr --<Tab>
 --debug    --help     --verbose
 ```
 
-### Argument Completion
+### Argument completion
 
 Some commands support argument completion:
 
@@ -208,7 +208,7 @@ build  dev  deploy  lint  test
 
 ## Troubleshooting
 
-### Completions Not Working
+### Completions not working
 
 **Bash:**
 
@@ -216,7 +216,7 @@ build  dev  deploy  lint  test
    ```bash
    # macOS
    brew list bash-completion@2
-   
+
    # Linux
    dpkg -l | grep bash-completion
    ```
@@ -282,7 +282,7 @@ build  dev  deploy  lint  test
    ```powershell
    Get-ExecutionPolicy
    ```
-   
+
    If restricted:
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -298,7 +298,7 @@ build  dev  deploy  lint  test
    . $PROFILE
    ```
 
-### Permission Denied
+### Permission denied
 
 Use user-level installation instead of system-wide:
 
@@ -314,7 +314,7 @@ dr completion zsh > ~/.zsh/completions/_dr
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 ```
 
-### Outdated Completions
+### Outdated completions
 
 After updating the CLI, regenerate completions:
 
@@ -332,9 +332,9 @@ exec zsh
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-## Completion Features
+## Completion features
 
-### Intelligent Suggestions
+### Intelligent suggestions
 
 Completions are context-aware:
 
@@ -348,7 +348,7 @@ dr run --l<Tab>
 # Shows: --list (not all flags)
 ```
 
-### Description Support
+### Description support
 
 In Fish and PowerShell, completions include descriptions:
 
@@ -360,7 +360,7 @@ setup   (Interactive template setup wizard)
 status  (Show current template status)
 ```
 
-### Dynamic Completion
+### Dynamic completion
 
 Some completions are generated dynamically:
 
@@ -375,9 +375,9 @@ dr run <Tab>
 dr completion <Tab>
 ```
 
-## Advanced Configuration
+## Advanced configuration
 
-### Custom Completion Scripts
+### Custom completion scripts
 
 You can extend or modify generated completions:
 
@@ -392,7 +392,7 @@ vim ~/dr-completion-custom.bash
 source ~/dr-completion-custom.bash
 ```
 
-### Completion Performance
+### Completion performance
 
 For faster completions, especially with dynamic suggestions:
 
@@ -405,6 +405,6 @@ dr templates list > ~/.dr-templates-cache
 
 ## See Also
 
-- [Shell Completion Guide](../user-guide/shell-completions.md) - Detailed setup instructions
-- [Getting Started](../user-guide/getting-started.md) - Initial setup
-- Command completion is powered by [Cobra](https://github.com/spf13/cobra)
+- [Shell completion guide](../user-guide/shell-completions.md)&mdash;detailed setup instructions.
+- [Getting started](../user-guide/getting-started.md)&mdash;initial setup.
+- Command completion is powered by [Cobra](https://github.com/spf13/cobra).

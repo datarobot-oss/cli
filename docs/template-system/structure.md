@@ -6,7 +6,7 @@ Understanding how DataRobot application templates are organized and configured.
 
 DataRobot templates are Git repositories that contain application code, configuration, and metadata for deploying custom applications to DataRobot. The CLI provides tools to clone, configure, and manage these templates.
 
-## Template Repository Structure
+## Template repository structure
 
 A typical template repository:
 
@@ -27,7 +27,7 @@ my-datarobot-template/
 └── package.json            # Node dependencies (if applicable)
 ```
 
-## Template Metadata
+## Template metadata
 
 ### .datarobot Directory
 
@@ -92,7 +92,7 @@ requirements:
     - CREATE_CUSTOM_APPLICATION
 ```
 
-## Environment Configuration
+## Environment configuration
 
 ### .env.template
 

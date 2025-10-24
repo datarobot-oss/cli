@@ -11,7 +11,7 @@ DataRobot templates use `.env` files to store configuration variables needed by 
 - Validate configuration
 - Manage secrets securely
 
-## File Structure
+## File structure
 
 ### .env.template
 
@@ -38,10 +38,10 @@ DATAROBOT_API_KEY=
 ```
 
 **Characteristics:**
-- Committed to version control
-- Contains empty required variables
-- Comments indicate optional variables
-- Includes documentation comments
+- Committed to version control.
+- Contains empty required variables.
+- Comments indicate optional variables.
+- Includes documentation comments.
 
 ### .env
 
@@ -64,14 +64,14 @@ DATABASE_POOL_SIZE=5
 ```
 
 **Characteristics:**
-- Generated from `.env.template`
-- Contains actual values
-- **Never committed** (in `.gitignore`)
-- User-specific configuration
+- Generated from `.env.template`.
+- Contains actual values.
+- **Never committed** (in `.gitignore`).
+- User-specific configuration.
 
-## Creating Environment Files
+## Creating environment files
 
-### Using the Wizard
+### Using the wizard
 
 The interactive wizard guides you through configuration:
 
@@ -87,14 +87,14 @@ or
 dr templates setup
 ```
 
-**Wizard Flow:**
-1. Loads `.env.template`
-2. Discovers configuration prompts
-3. Shows interactive questions
-4. Validates inputs
-5. Generates `.env` file
+**Wizard flow:**
+1. Loads `.env.template`.
+2. Discovers configuration prompts.
+3. Shows interactive questions.
+4. Validates inputs.
+5. Generates `.env` file.
 
-### Manual Creation
+### Manual creation
 
 Copy and edit manually:
 

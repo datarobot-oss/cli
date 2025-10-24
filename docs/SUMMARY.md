@@ -198,6 +198,6 @@ See [CHANGELOG.md](../CHANGELOG.md) for version history.
 
 ---
 
-**Last updated**: October 23, 2025  
-**CLI version**: 0.1.0+  
+**Last updated**: October 23, 2025
+**CLI version**: 0.1.0+
 **Status**: Active development

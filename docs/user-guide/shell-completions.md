@@ -2,10 +2,10 @@
 
 The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. Shell completions provide:
 
-- Command and subcommand suggestions
-- Flag and option completions
-- Faster command entry with tab completion
-- Discovery of available commands
+- Command and subcommand suggestions.
+- Flag and option completions.
+- Faster command entry with tab completion.
+- Discovery of available commands.
 
 ## Installation
 
@@ -40,7 +40,7 @@ dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
 source ~/.bash_profile
 ```
 
-#### Temporary Session
+#### Temporary session
 
 For the current session only:
 
@@ -89,7 +89,7 @@ rm -f ~/.zcompdump
 source ~/.zshrc
 ```
 
-#### Temporary Session
+#### Temporary session
 
 For the current session only:
 
@@ -107,7 +107,7 @@ dr completion fish > ~/.config/fish/completions/dr.fish
 source ~/.config/fish/config.fish
 ```
 
-#### Temporary Session
+#### Temporary session
 
 For the current session only:
 
@@ -117,7 +117,7 @@ dr completion fish | source
 
 ### PowerShell
 
-#### Persistent Installation
+#### Persistent installation
 
 Add to your PowerShell profile:
 
@@ -142,7 +142,7 @@ dr completion powershell >> $PROFILE
 . $PROFILE
 ```
 
-#### Temporary Session
+#### Temporary session
 
 For the current session only:
 
@@ -154,7 +154,7 @@ dr completion powershell | Out-String | Invoke-Expression
 
 Once installed, completions work automatically when you press `Tab`:
 
-### Command Completion
+### Command completion
 
 ```bash
 # Type 'dr' and press Tab to see all commands
@@ -170,7 +170,7 @@ dr templates <Tab>
 # Shows: clone, list, setup, status
 ```
 
-### Flag Completion
+### Flag completion
 
 ```bash
 # Type a command and -- then Tab to see flags
@@ -182,7 +182,7 @@ dr run --par<Tab>
 # Completes to: dr run --parallel
 ```
 
-### Argument Completion
+### Argument completion
 
 For commands that support it:
 
@@ -205,14 +205,14 @@ Test that completions are working:
 dr te<Tab>
 # Should complete to: dr templates
 
-# Try flag completion  
+# Try flag completion
 dr run --l<Tab>
 # Should complete to: dr run --list
 ```
 
 ## Troubleshooting
 
-### Completions Not Working
+### Completions not working
 
 #### Bash
 
@@ -220,7 +220,7 @@ dr run --l<Tab>
    ```bash
    # macOS
    brew list bash-completion@2
-   
+
    # Linux (Ubuntu/Debian)
    dpkg -l | grep bash-completion
    ```
@@ -290,7 +290,7 @@ dr run --l<Tab>
    ```powershell
    Get-ExecutionPolicy
    ```
-   
+
    If it's `Restricted`, change it:
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -306,7 +306,7 @@ dr run --l<Tab>
    . $PROFILE
    ```
 
-### Permission Denied
+### Permission denied
 
 If you get permission errors when installing:
 
@@ -319,7 +319,7 @@ dr completion bash > ~/.bash_completions/dr
 source ~/.bash_completions/dr
 ```
 
-### Completion Cache Issues
+### Completion cache issues
 
 For Zsh, if completions are outdated:
 
@@ -331,9 +331,9 @@ rm -f ~/.zcompdump*
 compinit
 ```
 
-## Advanced Configuration
+## Advanced configuration
 
-### Custom Completion Behavior
+### Custom completion behavior
 
 You can customize how completions work by modifying the generated script.
 
@@ -350,7 +350,7 @@ vim ~/dr-completion.bash
 source ~/dr-completion.bash
 ```
 
-### Multiple Shell Support
+### Multiple shell support
 
 If you use multiple shells, install completions for each:
 
@@ -361,7 +361,7 @@ dr completion zsh > ~/.zsh/completions/_dr
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-## Updating Completions
+## Updating completions
 
 When the CLI is updated, regenerate completions:
 
@@ -382,6 +382,6 @@ dr completion powershell > $PROFILE
 
 ## See Also
 
-- [Getting Started](getting-started.md) - Initial setup guide
-- [Command Reference](../commands/) - Complete command documentation
-- [Cobra Documentation](https://github.com/spf13/cobra/blob/main/shell_completions.md) - Underlying completion framework
+- [Getting started](getting-started.md)&mdash;initial setup guide.
+- [Command reference](../commands/)&mdash;complete command documentation.
+- [Cobra documentation](https://github.com/spf13/cobra/blob/main/shell_completions.md)&mdash;underlying completion framework.

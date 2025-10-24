@@ -6,13 +6,13 @@ This guide will help you install and start using the DataRobot CLI (`dr`) for ma
 
 Before you begin, ensure you have:
 
-- **DataRobot Account**: Access to a DataRobot instance (cloud or self-managed)
-- **Git**: For cloning templates (version 2.0+)
-- **Terminal**: Command-line interface access
+- **DataRobot account**&mdash;access to a DataRobot instance (cloud or self-managed).
+- **Git**&mdash;for cloning templates (version 2.0+).
+- **Terminal**&mdash;command-line interface access.
 
 ## Installation
 
-### Option 1: Download Binary (Recommended)
+### Option 1: Download binary (recommended)
 
 Download the latest release for your operating system:
 
@@ -48,7 +48,7 @@ sudo mv dr-linux-arm64 /usr/local/bin/dr
 
 Download `dr-windows-amd64.exe` from the [releases page](https://github.com/datarobot/cli/releases/latest) and add it to your PATH.
 
-### Option 2: Build from Source
+### Option 2: Build from source
 
 If you have Go 1.24.7 or later installed:
 
@@ -67,7 +67,7 @@ task build
 sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
-### Verify Installation
+### Verify installation
 
 ```bash
 dr version
@@ -111,14 +111,14 @@ dr auth login
 ```
 
 This will:
-1. Open your default web browser
-2. Redirect you to DataRobot's login page
-3. Request authorization
-4. Automatically save your credentials
+1. Open your default web browser.
+2. Redirect you to the DataRobot login page.
+3. Request authorization.
+4. Automatically save your credentials.
 
 Your API key will be securely stored in `~/.datarobot/config.yaml`.
 
-### 3. Verify Authentication
+### 3. Verify authentication
 
 Check that you're logged in:
 
@@ -128,11 +128,11 @@ dr templates list
 
 This should display a list of available templates from your DataRobot instance.
 
-## Your First Template
+## Your first template
 
 Now that you're set up, let's create your first application from a template.
 
-### Using the Setup Wizard (Recommended)
+### Using the setup wizard (recommended)
 
 The easiest way to get started:
 
@@ -141,32 +141,32 @@ dr templates setup
 ```
 
 This interactive wizard will:
-1. Display available templates
-2. Help you select and clone a template
-3. Guide you through environment configuration
-4. Set up all required variables
+1. Display available templates.
+2. Help you select and clone a template.
+3. Guide you through environment configuration.
+4. Set up all required variables.
 
 Follow the on-screen prompts to complete the setup.
 
-### Manual Setup
+### Manual setup
 
 If you prefer manual control:
 
 ```bash
-# 1. List available templates
+# 1. List available templates.
 dr templates list
 
-# 2. Clone a specific template
-dr templates clone your-template-name
+# 2. Clone a specific template.
+dr templates clone TEMPLATE_NAME
 
-# 3. Navigate to the template directory
-cd your-template-name
+# 3. Navigate to the template directory.
+cd TEMPLATE_NAME
 
-# 4. Configure environment variables
+# 4. Configure environment variables.
 dr dotenv
 ```
 
-## Running Your Application
+## Running your application
 
 Once your template is set up:
 
@@ -182,14 +182,14 @@ dr run build
 dr run test
 ```
 
-## Next Steps
+## Next steps
 
-- **[Authentication Guide](authentication.md)** - Learn about authentication options
-- **[Working with Templates](templates.md)** - Detailed template management
-- **[Shell Completions](shell-completions.md)** - Set up command auto-completion
-- **[Command Reference](../commands/)** - Complete command documentation
+- **[Authentication guide](authentication.md)**&mdash;learn about authentication options.
+- **[Working with templates](templates.md)**&mdash;detailed template management.
+- **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion.
+- **[Command reference](../commands/)**&mdash;complete command documentation.
 
-## Common Issues
+## Common issues
 
 ### "dr: command not found"
 
@@ -224,7 +224,7 @@ dr auth logout
 dr auth login
 ```
 
-## Getting Help
+## Getting help
 
 For additional help:
 
@@ -242,11 +242,11 @@ dr --verbose templates list
 dr --debug templates list
 ```
 
-## Configuration Location
+## Configuration location
 
 Configuration files are stored in:
 
-- **Linux/macOS**: `~/.datarobot/config.yaml`
-- **Windows**: `%USERPROFILE%\.datarobot\config.yaml`
+- **Linux/macOS**&mdash;`~/.datarobot/config.yaml`.
+- **Windows**&mdash;`%USERPROFILE%\.datarobot\config.yaml`.
 
 See [Configuration Files](configuration.md) for more details.
