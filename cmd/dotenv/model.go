@@ -34,12 +34,8 @@ const (
 	keyExit         = "esc"
 	keySave         = "ctrl+s"
 
-	// Editor fallback
+	// Editor fallback if env vars are not set
 	defaultEditor = "vi"
-
-	// Environment variables
-	envVisual = "VISUAL"
-	envEditor = "EDITOR"
 )
 
 type screens int

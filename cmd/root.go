@@ -38,7 +38,7 @@ var RootCmd = &cobra.Command{
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
 	// Show help by default when no subcommands match
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
 		// but before the command is run. Any logic that needs to happen
 		// before ANY command execution should go here.
@@ -60,7 +60,7 @@ func ExecuteContext(ctx context.Context) error {
 func init() {
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
-	"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
@@ -76,7 +76,6 @@ func init() {
 		templates.Cmd(),
 		version.Cmd(),
 	)
-
 }
 
 func initializeConfig(cmd *cobra.Command) error {
@@ -92,18 +91,34 @@ func initializeConfig(cmd *cobra.Command) error {
 	// such as those used by the DataRobot platform or other SDKs
 	// and clients
 	// Also map DATAROBOT_API_ENDPOINT because of the R SDK
-	viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
+	}
 
 	// map USE_DATAROBOT_LLM_GATEWAY
-	viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
+	err = viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
+	}
 
-	viper.BindEnv("editor", "EDITOR")
-	viper.BindEnv("visual", "VISUAL")
+	err = viper.BindEnv("editor", "EDITOR")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for editor: %w", err)
+	}
 
-	config.ReadConfigFile(configFilePath)
+	err = viper.BindEnv("visual", "VISUAL")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for visual: %w", err)
+	}
+
+	err = config.ReadConfigFile(configFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
 
 	// Bind Cobra flags to Viper
-	err := viper.BindPFlags(cmd.Flags())
+	err = viper.BindPFlags(cmd.Flags())
 	if err != nil {
 		return err
 	}
@@ -117,6 +132,7 @@ func initializeConfig(cmd *cobra.Command) error {
 	for key := range viper.AllSettings() {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
 
 	for _, key := range keys {

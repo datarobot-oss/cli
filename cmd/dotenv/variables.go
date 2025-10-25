@@ -87,8 +87,6 @@ type variableConfig = struct {
 	secret   bool
 }
 
-// knownVariables maps well-known environment variable names to their configurations
-
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
 		getValue: func() (string, error) {
