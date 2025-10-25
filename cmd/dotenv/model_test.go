@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -366,6 +367,10 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// Test VISUAL takes precedence
 	suite.T().Setenv("VISUAL", "nano")
 	suite.T().Setenv("EDITOR", "vim")
+
+	// Initialize Viper to read the environment variables
+	viper.BindEnv("visual", "VISUAL")
+	viper.BindEnv("editor", "EDITOR")
 
 	m := Model{
 		DotenvFile: filepath.Join(suite.tempDir, ".env"),
