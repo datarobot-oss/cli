@@ -111,6 +111,8 @@ func initializeConfig(cmd *cobra.Command) error {
 	fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
 	// Print out the viper configuration for debugging
 	// Alphabetically, and redacting sensitive information
+	// TODO There has to be a better way of marking sensitive data
+	// perhaps with leebenson/conform?
 	keys := make([]string, 0, len(viper.AllSettings()))
 	for key := range viper.AllSettings() {
 		keys = append(keys, key)
