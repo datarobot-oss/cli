@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,11 @@ func Run(args []string) error {
 	}
 
 	fmt.Println(out)
+
+	fmt.Println(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s cloned.", template.Name)))
+	fmt.Println(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+	fmt.Println()
+	fmt.Println(tui.BaseTextStyle.Render("cd " + updatedDir))
 
 	return nil
 }
