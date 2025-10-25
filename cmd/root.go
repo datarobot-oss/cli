@@ -37,11 +37,9 @@ var RootCmd = &cobra.Command{
 	`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// PersistentPreRunE is a hook called after flags are parsed but before the command is run
-
-		// Reinitialize config to ensure flags are bound
-		// This allows us to centralize all configuration logic in one place
-		// and also allows the app to pick up configuration changes in realtime
+		// PersistentPreRunE is a hook called after flags are parsed
+		// but before the command is run. Any logic that needs to happen
+		// before ANY command execution should go here.
 		return initializeConfig(cmd)
 	},
 }
@@ -59,7 +57,6 @@ func ExecuteContext(ctx context.Context) error {
 
 func init() {
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "", "path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
-	cobra.OnInitialize(initConfig)
 
 	err := config.ReadConfigFile("")
 	if err != nil {
