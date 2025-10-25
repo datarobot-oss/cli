@@ -91,6 +91,9 @@ func initializeConfig(cmd *cobra.Command) error {
 	// Also map USE_USE_DATAROBOT_LLM_GATEWAY
 	viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
 
+	viper.BindEnv("editor", "EDITOR")
+	viper.BindEnv("visual", "VISUAL")
+
 	config.ReadConfigFile(configFilePath)
 
 	// Bind Cobra flags to Viper

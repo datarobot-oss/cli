@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -112,9 +113,9 @@ func (m Model) openInExternalEditor() tea.Cmd {
 }
 
 func (m Model) externalEditorCmd() *exec.Cmd {
-	editor := os.Getenv(envVisual)
+	editor := viper.GetString("visual")
 	if editor == "" {
-		editor = os.Getenv(envEditor)
+		editor = viper.GetString("editor")
 	}
 
 	if editor == "" {
