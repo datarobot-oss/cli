@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	configFileDir  = filepath.Join(".config", "datarobot")
+	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
 	configFileName = "drconfig.yaml"
 )
 
