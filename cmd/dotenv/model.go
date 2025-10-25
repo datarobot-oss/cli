@@ -19,14 +19,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
 
 const (
 	// Key bindings
-	keyQuit         = "q"
+	keyQuit         = "enter"
 	keyInteractive  = "w"
 	keyEdit         = "e"
 	keyOpenExternal = "o"
@@ -430,11 +429,6 @@ func (m Model) View() string {
 
 	var content strings.Builder
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(tui.DrPurple).
-		Padding(1, 2)
-
 	switch m.screen {
 	case listScreen:
 		sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
@@ -455,7 +449,7 @@ func (m Model) View() string {
 			}
 		}
 
-		sb.WriteString(boxStyle.Render(content.String()))
+		sb.WriteString(tui.BoxStyle.Render(content.String()))
 		sb.WriteString("\n\n")
 
 		if len(m.variables) > 0 {
@@ -467,11 +461,11 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit."))
+		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
 	case editorScreen:
 		sb.WriteString(tui.WelcomeStyle.Render("Edit Mode"))
 		sb.WriteString("\n\n")
-		sb.WriteString(boxStyle.Width(m.width - 8).Render(m.textarea.View()))
+		sb.WriteString(tui.BoxStyle.Width(m.width - 8).Render(m.textarea.View()))
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+s to save and go to menu."))
 		sb.WriteString("\n")
@@ -482,9 +476,9 @@ func (m Model) View() string {
 		sb.WriteString("\n\n")
 
 		if m.currentPromptIndex < len(m.prompts) {
-			sb.WriteString(boxStyle.Render(m.currentPrompt.View()))
+			sb.WriteString(tui.BoxStyle.Render(m.currentPrompt.View()))
 		} else {
-			sb.WriteString(boxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
+			sb.WriteString(tui.BoxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
 		}
 	}
 

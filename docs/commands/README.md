@@ -185,7 +185,7 @@ DR_DEBUG                       # Enable debug mode
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|  
+|------|---------|
 | 0 | Success. |
 | 1 | General error. |
 | 2 | Command usage error. |
