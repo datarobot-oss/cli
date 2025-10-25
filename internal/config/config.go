@@ -77,8 +77,10 @@ func ReadConfigFile(filePath string) error {
 	// Ignore error if config file not found, because that's fine
 	// but return on all other errors
 	if err := viper.ReadInConfig(); err != nil {
-		var notFoundErr *viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFoundErr) {
+		// The zero-value struct looks weird, but we are using
+		// errors.As which only does type checking. We don't
+		// need an actual instance of the error.
+		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
 			return err
 		}
 	}
