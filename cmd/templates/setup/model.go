@@ -41,9 +41,8 @@ const (
 )
 
 type Model struct {
-	screen      screens
-	template    drapi.Template
-	exitMessage string
+	screen   screens
+	template drapi.Template
 
 	host   textinput.Model
 	login  LoginModel
@@ -218,9 +217,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, m.dotenv.Init()
 	case dotenvUpdatedMsg:
 		m.screen = exitScreen
-		m.exitMessage = fmt.Sprintf("Template '%s' cloned and initialized in '%s' directory.\n\n",
-			m.template.Name, m.clone.Dir,
-		)
 
 		return m, tea.Sequence(tea.ExitAltScreen, exit)
 	case exitMsg:
@@ -332,7 +328,12 @@ func (m Model) View() string {
 	case dotenvScreen:
 		sb.WriteString(m.dotenv.View())
 	case exitScreen:
-		sb.WriteString(m.exitMessage)
+		sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s cloned and initialized.", m.template.Name)))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("cd " + m.clone.Dir))
+		sb.WriteString("\n")
 	}
 
 	return sb.String()

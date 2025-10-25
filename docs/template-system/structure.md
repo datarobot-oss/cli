@@ -29,7 +29,7 @@ my-datarobot-template/
 
 ## Template metadata
 
-### .datarobot Directory
+### .datarobot directory
 
 The `.datarobot` directory contains template-specific configuration:
 
@@ -136,14 +136,40 @@ DATABASE_POOL_SIZE=5
 
 **Note:** `.env` should be in `.gitignore` and never committed.
 
-## Task Definitions
+## Task definitions
 
 ### Taskfile.gen.yaml
 
-Generated task definitions for running common operations:
+The CLI automatically generates `Taskfile.gen.yaml` to aggregate component tasks. This file includes a `dotenv` directive to load environment variables from `.env`.
+
+**Generated structure:**
 
 ```yaml
 version: '3'
+
+dotenv: [".env"]
+
+includes:
+  backend:
+    taskfile: ./backend/Taskfile.yaml
+    dir: ./backend
+  frontend:
+    taskfile: ./frontend/Taskfile.yaml
+    dir: ./frontend
+```
+
+**Important:** Component Taskfiles cannot have their own `dotenv` directives. The CLI detects conflicts and prevents generation if a component Taskfile already has a `dotenv` declaration.
+
+### Component Taskfiles
+
+Component directories define their own tasks:
+
+**backend/Taskfile.yaml:**
+
+```yaml
+version: '3'
+
+# Note: No dotenv directive allowed here
 
 tasks:
   dev:
@@ -151,43 +177,43 @@ tasks:
     cmds:
       - python -m uvicorn src.app.main:app --reload
 
-  build:
-    desc: Build application
-    cmds:
-      - docker build -t {{.APP_NAME}} .
-
   test:
     desc: Run tests
     cmds:
       - pytest src/tests/
 
-  lint:
-    desc: Run linters
+  build:
+    desc: Build application
     cmds:
-      - pylint src/
-      - black --check src/
-
-  deploy:
-    desc: Deploy to DataRobot
-    deps: [build]
-    cmds:
-      - dr deploy
+      - docker build -t {{.APP_NAME}} .
 ```
 
-Usage:
+### Running tasks
+
+The `dr run` command requires a `.env` file to be present:
 
 ```bash
-# List tasks
+# List all available tasks
 dr run --list
 
-# Run a task
+# Run a specific task
 dr run dev
 
 # Run multiple tasks
 dr run lint test
+
+# Run tasks in parallel
+dr run lint test --parallel
 ```
 
-## Multi-Level Configuration
+If you're not in a DataRobot template directory (no `.env` file), you'll see:
+
+```
+You don't seem to be in a DataRobot Template directory.
+This command requires a .env file to be present.
+```
+
+## Multi-level configuration
 
 Templates can have nested `.datarobot` directories for component-specific configuration:
 
@@ -206,7 +232,7 @@ my-template/
 └── .env.template
 ```
 
-### Discovery Order
+### Discovery order
 
 The CLI discovers prompts in this order:
 
@@ -214,7 +240,7 @@ The CLI discovers prompts in this order:
 2. Subdirectory prompts (depth-first search, up to depth 2)
 3. Merged and deduplicated
 
-### Example: Backend Prompts
+### Example: backend prompts
 
 `backend/.datarobot/prompts.yaml`:
 
@@ -232,7 +258,7 @@ prompts:
     section: "backend"
 ```
 
-### Example: Frontend Prompts
+### Example: frontend prompts
 
 `frontend/.datarobot/prompts.yaml`:
 
@@ -251,7 +277,7 @@ prompts:
     section: "frontend"
 ```
 
-## Template Lifecycle
+## Template lifecycle
 
 ### 1. Discovery
 
@@ -265,9 +291,9 @@ dr templates list
 Output:
 ```
 Available templates:
-* python-streamlit     - Streamlit application template
-* react-frontend      - React frontend template
-* fastapi-backend     - FastAPI backend template
+* python-streamlit     - Streamlit application template.
+* react-frontend       - React frontend template.
+* fastapi-backend      - FastAPI backend template.
 ```
 
 ### 2. Cloning
@@ -305,7 +331,7 @@ dr dotenv --wizard
 Work on your application:
 
 ```bash
-# Run development server
+# Run development server (requires .env file)
 dr run dev
 
 # Run tests
@@ -315,6 +341,8 @@ dr run test
 dr run build
 ```
 
+**Note:** All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv --wizard` to create your `.env` file.
+
 ### 5. Deployment
 
 Deploy to DataRobot:
@@ -323,9 +351,9 @@ Deploy to DataRobot:
 dr run deploy
 ```
 
-## Template Types
+## Template types
 
-### Python Templates
+### Python templates
 
 ```
 python-template/
@@ -344,7 +372,7 @@ python-template/
 - Source code in `src/`
 - Tests in `tests/`
 
-### Node.js Templates
+### Node.js templates
 
 ```
 node-template/
@@ -361,7 +389,7 @@ node-template/
 - Source code in `src/`
 - npm scripts integration
 
-### Multi-Language Templates
+### Multi-language templates
 
 ```
 full-stack-template/
@@ -383,40 +411,43 @@ full-stack-template/
 - Component-specific configuration
 - Docker composition
 
-## Best Practices
+## Best practices
 
-### 1. Version Control
+### 1. Version control
 
 ```bash
 # .gitignore should include:
 .env
+Taskfile.gen.yaml
 *.log
 __pycache__/
 node_modules/
 dist/
 ```
 
+**Note:** Always exclude `.env` and `Taskfile.gen.yaml` from version control. The CLI generates `Taskfile.gen.yaml` automatically.
+
 ### 2. Documentation
 
 Include clear README:
 
 ```markdown
-# My Template
+# My template
 
-## Quick Start
+## Quick start
 
 1. Clone: `dr templates clone my-template`
 2. Configure: `dr templates setup`
 3. Run: `dr run dev`
 
-## Available Tasks
+## Available tasks
 
-- `dr run dev` - Development server
-- `dr run test` - Run tests
-- `dr run build` - Build for production
+- `dr run dev`&mdash;development server.
+- `dr run test`&mdash;run tests.
+- `dr run build`&mdash;build for production.
 ```
 
-### 3. Sensible Defaults
+### 3. Sensible defaults
 
 Provide defaults in `.env.template`:
 
@@ -427,7 +458,7 @@ DEBUG=true
 LOG_LEVEL=info
 ```
 
-### 4. Clear Prompts
+### 4. Clear prompts
 
 Use descriptive help text:
 
@@ -437,7 +468,7 @@ prompts:
     help: "PostgreSQL connection string (format: postgresql://user:pass@host:5432/dbname)"
 ```
 
-### 5. Organized Structure
+### 5. Organized structure
 
 Keep related files together:
 
@@ -449,9 +480,9 @@ src/
 └── utils/        # Utilities
 ```
 
-## Template Updates
+## Template updates
 
-### Checking for Updates
+### Checking for updates
 
 ```bash
 # Check current template status
@@ -464,7 +495,7 @@ dr templates status
 # - Available updates
 ```
 
-### Updating Templates
+### Updating templates
 
 ```bash
 # Update to latest version
@@ -474,9 +505,9 @@ git pull origin main
 dr dotenv --wizard
 ```
 
-## Creating Your Own Template
+## Creating your own template
 
-### 1. Start with Base Structure
+### 1. Start with base structure
 
 ```bash
 mkdir my-new-template
@@ -484,7 +515,7 @@ cd my-new-template
 git init
 ```
 
-### 2. Add Template Files
+### 2. Add template files
 
 Create necessary files:
 
@@ -502,7 +533,7 @@ touch src/app/main.py
 touch Taskfile.gen.yaml
 ```
 
-### 3. Define Prompts
+### 3. Define prompts
 
 `.datarobot/prompts.yaml`:
 
@@ -514,7 +545,7 @@ prompts:
     optional: false
 ```
 
-### 4. Create Environment Template
+### 4. Create environment template
 
 `.env.template`:
 
@@ -523,9 +554,9 @@ APP_NAME=
 DATAROBOT_ENDPOINT=
 ```
 
-### 5. Define Tasks
+### 5. Define tasks
 
-`Taskfile.gen.yaml`:
+Create component Taskfiles (e.g., `backend/Taskfile.yaml`):
 
 ```yaml
 version: '3'
@@ -537,7 +568,7 @@ tasks:
       - echo "Starting {{.APP_NAME}}"
 ```
 
-### 6. Test Template
+### 6. Test template
 
 ```bash
 # Test setup locally
@@ -547,7 +578,7 @@ dr templates setup
 dr run --list
 ```
 
-### 7. Publish Template
+### 7. Publish template
 
 ```bash
 # Push to GitHub
@@ -558,8 +589,9 @@ git push origin main
 # Register with DataRobot (contact your admin)
 ```
 
-## See Also
+## See also
 
-- [Interactive Configuration](interactive-config.md) - Configuration wizard details
-- [Environment Variables](environment-variables.md) - Managing .env files
-- [Command Reference: templates](../commands/templates.md) - Template commands
+- [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
+- [Environment variables](environment-variables.md)&mdash;managing .env files.
+- [dr run](../commands/run.md)&mdash;task execution.
+- [Command reference: templates](../commands/templates.md)&mdash;template commands.

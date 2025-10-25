@@ -32,7 +32,7 @@ type promptModel struct {
 
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrRed)
 )
 
 type item envbuilder.PromptOption
@@ -245,6 +245,7 @@ func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
 func (pm promptModel) View() string {
 	var sb strings.Builder
 
+	sb.Write([]byte(tui.SubTitleStyle.Render(fmt.Sprintf("Variable: %v", pm.prompt.Env))))
 	sb.WriteString("\n\n")
 	sb.WriteString(tui.BaseTextStyle.Render(pm.prompt.Help))
 	sb.WriteString("\n")
