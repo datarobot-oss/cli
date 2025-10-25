@@ -64,11 +64,13 @@ func ReadConfigFile(filePath string) error {
 			return fmt.Errorf("config file must have .yaml or .yml extension: %s", filePath)
 		}
 
+		fmt.Println("Using custom config path:", filePath)
 		dir := filepath.Dir(filePath)
 		filename := filepath.Base(filePath)
 		viper.SetConfigName(filename)
 		viper.AddConfigPath(dir)
 	} else {
+		fmt.Println("Using default config path")
 		viper.SetConfigName(configFileName)
 		viper.AddConfigPath(defaultConfigFileDir)
 	}

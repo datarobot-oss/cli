@@ -10,6 +10,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
@@ -56,12 +57,17 @@ func ExecuteContext(ctx context.Context) error {
 }
 
 func init() {
-	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "", "path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+	// Configure persistent flags
+	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
+	"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+	// verbose and debug are special
+	// flags that
+	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
+	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 
-	err := config.ReadConfigFile("")
-	if err != nil {
-		log.Fatal(err)
-	}
+	setLogLevel()
 
 	RootCmd.AddCommand(
 		auth.Cmd(),
@@ -71,10 +77,7 @@ func init() {
 		templates.Cmd(),
 		version.Cmd(),
 	)
-	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
-	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
-	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+
 }
 
 func initializeConfig(cmd *cobra.Command) error {
@@ -84,6 +87,9 @@ func initializeConfig(cmd *cobra.Command) error {
 	// DATAROBOT_ to config keys
 	viper.AutomaticEnv()
 
+	// Also map USE_USE_DATAROBOT_LLM_GATEWAY
+	viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
+
 	config.ReadConfigFile(configFilePath)
 
 	// Bind Cobra flags to Viper
@@ -92,12 +98,16 @@ func initializeConfig(cmd *cobra.Command) error {
 		return err
 	}
 
-	log.Debug("Configuration initialized. Using config file:", viper.ConfigFileUsed())
+	fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
+	// Print out the viper configuration for debugging
+	for key, value := range viper.AllSettings() {
+		fmt.Printf("  %s: %v\n", key, value)
+	}
 
 	return nil
 }
 
-func initConfig() {
+func setLogLevel() {
 	if viper.GetBool("debug") {
 		log.SetLevel(log.DebugLevel)
 	} else if viper.GetBool("verbose") {
