@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	configFileDir  = filepath.Join(".config", "datarobot")
+	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
 	configFileName = "drconfig.yaml"
 )
 
@@ -73,7 +73,13 @@ func ReadConfigFile(filePath string) error {
 		viper.AddConfigPath(defaultConfigFileDir)
 	}
 
+	// Read in the config file
+	// Ignore error if config file not found, because that's fine
+	// but return on all other errors
 	if err := viper.ReadInConfig(); err != nil {
+		// The zero-value struct looks weird, but we are using
+		// errors.As which only does type checking. We don't
+		// need an actual instance of the error.
 		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
 			return err
 		}

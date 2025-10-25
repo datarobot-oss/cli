@@ -10,6 +10,8 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"sort"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
@@ -24,6 +26,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var configFilePath string
+
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
@@ -34,6 +38,12 @@ var RootCmd = &cobra.Command{
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
 	// Show help by default when no subcommands match
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		// PersistentPreRunE is a hook called after flags are parsed
+		// but before the command is run. Any logic that needs to happen
+		// before ANY command execution should go here.
+		return initializeConfig(cmd)
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -48,12 +58,15 @@ func ExecuteContext(ctx context.Context) error {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	// Configure persistent flags
+	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
+		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
+	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 
-	err := config.ReadConfigFile("")
-	if err != nil {
-		log.Fatal(err)
-	}
+	setLogLevel()
 
 	RootCmd.AddCommand(
 		auth.Cmd(),
@@ -63,13 +76,79 @@ func init() {
 		templates.Cmd(),
 		version.Cmd(),
 	)
-	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
-	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
-	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
-func initConfig() {
+func initializeConfig(cmd *cobra.Command) error {
+	// Set up Viper to process environment variables
+	// TODO Would we prefer to make this `DATAROBOT_CLI`?
+	viper.SetEnvPrefix("DATAROBOT")
+	// Automatically map environment variables that are prefixed
+	// DATAROBOT_ to config keys
+	// This will capture DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN
+	viper.AutomaticEnv()
+
+	// Now map non-standard environment variables to config keys
+	// such as those used by the DataRobot platform or other SDKs
+	// and clients
+	// Also map DATAROBOT_API_ENDPOINT because of the R SDK
+	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
+	}
+
+	// map USE_DATAROBOT_LLM_GATEWAY
+	err = viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
+	}
+
+	err = viper.BindEnv("editor", "EDITOR")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for editor: %w", err)
+	}
+
+	err = viper.BindEnv("visual", "VISUAL")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for visual: %w", err)
+	}
+
+	err = config.ReadConfigFile(configFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Bind Cobra flags to Viper
+	err = viper.BindPFlags(cmd.Flags())
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
+	// Print out the viper configuration for debugging
+	// Alphabetically, and redacting sensitive information
+	// TODO There has to be a better way of marking sensitive data
+	// perhaps with leebenson/conform?
+	keys := make([]string, 0, len(viper.AllSettings()))
+	for key := range viper.AllSettings() {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := viper.Get(key)
+		// TODO Skip token because its sensitive
+		if key == "token" {
+			fmt.Printf("  %s: %s\n", key, "****")
+		} else {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
+
+	return nil
+}
+
+func setLogLevel() {
 	if viper.GetBool("debug") {
 		log.SetLevel(log.DebugLevel)
 	} else if viper.GetBool("verbose") {
