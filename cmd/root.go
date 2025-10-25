@@ -11,6 +11,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
@@ -100,7 +101,15 @@ func initializeConfig(cmd *cobra.Command) error {
 
 	fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
 	// Print out the viper configuration for debugging
-	for key, value := range viper.AllSettings() {
+	// Alphabetically, and redacting sensitive information
+	keys := make([]string, 0, len(viper.AllSettings()))
+	for key := range viper.AllSettings() {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := viper.Get(key)
 		// TODO Skip token because its sensitive
 		if key == "token" {
 			fmt.Printf("  %s: %s\n", key, "****")
