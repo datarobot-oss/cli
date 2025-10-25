@@ -77,7 +77,7 @@ dr templates setup
 dr templates status
 ```
 
-### Environment Configuration
+### Environment configuration
 
 ```bash
 # Interactive wizard
@@ -87,7 +87,7 @@ dr dotenv --wizard
 dr dotenv
 ```
 
-### Running Tasks
+### Running tasks
 
 ```bash
 # List available tasks
@@ -129,9 +129,10 @@ For detailed documentation on each command, see:
   - `status`&mdash;show current template status.
 
 - **[run](run.md)**&mdash;task execution.
-  - Run tasks defined in Taskfile.
-  - Support for parallel execution.
-  - Watch mode for continuous tasks.
+  - Execute template tasks.
+  - List available tasks.
+  - Parallel execution support.
+  - Watch mode for development.
 
 - **[dotenv](dotenv.md)**&mdash;environment management.
   - Interactive configuration wizard.
@@ -189,8 +190,8 @@ DR_DEBUG                       # Enable debug mode
 | 0 | Success. |
 | 1 | General error. |
 | 2 | Command usage error. |
-| 130 | Interrupted (Ctrl+C). |## See Also
+| 130 | Interrupted (Ctrl+C). |## See also
 
-- [Getting Started Guide](../user-guide/getting-started.md)
-- [User Guide](../user-guide/)
-- [Template System](../template-system/)
+- [Getting started guide](../user-guide/getting-started.md)
+- [User guide](../user-guide/)
+- [Template system](../template-system/)
