@@ -37,6 +37,8 @@ var RootCmd = &cobra.Command{
 	`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// PersistentPreRunE is a hook called after flags are parsed but before the command is run
+
 		// Reinitialize config to ensure flags are bound
 		// This allows us to centralize all configuration logic in one place
 		// and also allows the app to pick up configuration changes in realtime
@@ -56,7 +58,7 @@ func ExecuteContext(ctx context.Context) error {
 }
 
 func init() {
-	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "", "path to config file (default locations: $HOME/.datarobot/drconfig.yaml, /etc/datarobot/config.yaml)")
+	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "", "path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
 	cobra.OnInitialize(initConfig)
 
 	err := config.ReadConfigFile("")
@@ -79,9 +81,10 @@ func init() {
 }
 
 func initializeConfig(cmd *cobra.Command) error {
-	// Set up Viper to use environment variables; all vars that are
-	// prefixed with DATAROBOT_ will be considered
+	// Set up Viper to process environment variables
 	viper.SetEnvPrefix("DATAROBOT")
+	// Automatically map environment variables that are prefixed
+	// DATAROBOT_ to config keys
 	viper.AutomaticEnv()
 
 	config.ReadConfigFile(configFilePath)
