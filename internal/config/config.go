@@ -73,8 +73,12 @@ func ReadConfigFile(filePath string) error {
 		viper.AddConfigPath(defaultConfigFileDir)
 	}
 
+	// Read in the config file
+	// Ignore error if config file not found, because that's fine
+	// but return on all other errors
 	if err := viper.ReadInConfig(); err != nil {
-		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
+		var notFoundErr *viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFoundErr) {
 			return err
 		}
 	}

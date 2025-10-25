@@ -24,6 +24,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var configFilePath string
+
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
@@ -34,6 +36,12 @@ var RootCmd = &cobra.Command{
 	clone, configure, and deploy applications to their DataRobot production environment.
 	`,
 	// Show help by default when no subcommands match
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Reinitialize config to ensure flags are bound
+		// This allows us to centralize all configuration logic in one place
+		// and also allows the app to pick up configuration changes in realtime
+		return initializeConfig(cmd)
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -48,6 +56,7 @@ func ExecuteContext(ctx context.Context) error {
 }
 
 func init() {
+	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "", "path to config file (default locations: $HOME/.datarobot/drconfig.yaml, /etc/datarobot/config.yaml)")
 	cobra.OnInitialize(initConfig)
 
 	err := config.ReadConfigFile("")
@@ -67,6 +76,25 @@ func init() {
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+}
+
+func initializeConfig(cmd *cobra.Command) error {
+	// Set up Viper to use environment variables; all vars that are
+	// prefixed with DATAROBOT_ will be considered
+	viper.SetEnvPrefix("DATAROBOT")
+	viper.AutomaticEnv()
+
+	config.ReadConfigFile(configFilePath)
+
+	// Bind Cobra flags to Viper
+	err := viper.BindPFlags(cmd.Flags())
+	if err != nil {
+		return err
+	}
+
+	log.Debug("Configuration initialized. Using config file:", viper.ConfigFileUsed())
+
+	return nil
 }
 
 func initConfig() {
