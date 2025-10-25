@@ -61,8 +61,6 @@ func init() {
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
 	"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
-	// verbose and debug are special
-	// flags that
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
@@ -83,12 +81,20 @@ func init() {
 
 func initializeConfig(cmd *cobra.Command) error {
 	// Set up Viper to process environment variables
+	// TODO Would we prefer to make this `DATAROBOT_CLI`?
 	viper.SetEnvPrefix("DATAROBOT")
 	// Automatically map environment variables that are prefixed
 	// DATAROBOT_ to config keys
+	// This will capture DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN
 	viper.AutomaticEnv()
 
-	// Also map USE_USE_DATAROBOT_LLM_GATEWAY
+	// Now map non-standard environment variables to config keys
+	// such as those used by the DataRobot platform or other SDKs
+	// and clients
+	// Also map DATAROBOT_API_ENDPOINT because of the R SDK
+	viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+
+	// map USE_DATAROBOT_LLM_GATEWAY
 	viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
 
 	viper.BindEnv("editor", "EDITOR")
