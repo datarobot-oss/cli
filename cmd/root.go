@@ -101,7 +101,12 @@ func initializeConfig(cmd *cobra.Command) error {
 	fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
 	// Print out the viper configuration for debugging
 	for key, value := range viper.AllSettings() {
-		fmt.Printf("  %s: %v\n", key, value)
+		// TODO Skip token because its sensitive
+		if key == "token" {
+			fmt.Printf("  %s: %s\n", key, "****")
+		} else {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
 	}
 
 	return nil
