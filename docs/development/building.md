@@ -209,14 +209,18 @@ Each command is self-contained:
 ```go
 // cmd/templates/list/cmd.go
 var Cmd = &cobra.Command{
-    Use:   "list",
-    Short: "List templates",
+    Use:     "list",
+    Short:   "List templates",
+    GroupID: "core",
     RunE: func(cmd *cobra.Command, args []string) error {
         // Implementation
         return listTemplates()
     },
 }
 ```
+
+Each command can be assigned to a group via `GroupID` for better organization in `dr help` views. Commands without a `GroupID` are listed under "Additional Commands".
+
 
 #### Model-View-Update (Bubble Tea)
 
