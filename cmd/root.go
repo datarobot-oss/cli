@@ -10,6 +10,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
@@ -57,7 +58,6 @@ func init() {
 	}
 
 	RootCmd.AddCommand(
-		allcommands.Cmd(),
 		auth.Cmd(),
 		completion.Cmd(),
 		dotenv.Cmd(),
@@ -65,8 +65,26 @@ func init() {
 		templates.Cmd(),
 		version.Cmd(),
 	)
+
+	// Override the default help command to add --all-commands flag
+	defaultHelpFunc := RootCmd.HelpFunc()
+
+	RootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		showAllCommands, _ := cmd.Flags().GetBool("all-commands")
+
+		if showAllCommands {
+			output := allcommands.GenerateCommandTree(cmd.Root())
+
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
+		} else {
+			// Use default help behavior
+			defaultHelpFunc(cmd, args)
+		}
+	})
+
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
+	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }

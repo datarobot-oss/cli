@@ -24,7 +24,7 @@ func Cmd() *cobra.Command {
 		Long:  "Display all available commands, subcommands, and their flags in a tree format",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			output := generateCommandTree(cmd.Root())
+			output := GenerateCommandTree(cmd.Root())
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 
@@ -35,7 +35,8 @@ func Cmd() *cobra.Command {
 	return cmd
 }
 
-func generateCommandTree(rootCmd *cobra.Command) string {
+// GenerateCommandTree generates a tree representation of all commands and flags
+func GenerateCommandTree(rootCmd *cobra.Command) string {
 	var builder strings.Builder
 
 	builder.WriteString(rootCmd.Name() + "\n")
