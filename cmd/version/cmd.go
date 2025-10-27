@@ -61,7 +61,6 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "version",
-		GroupID: "other",
 		Short:   "Show the " + version.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
