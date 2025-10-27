@@ -60,8 +60,9 @@ func Cmd() *cobra.Command {
 	options.format = FormatText
 
 	cmd := &cobra.Command{
-		Use:   "version",
-		Short: "Show the " + version.AppName + " version information",
+		Use:     "version",
+		GroupID: "other",
+		Short:   "Show the " + version.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := getVersion(options)

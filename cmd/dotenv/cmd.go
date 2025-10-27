@@ -23,9 +23,10 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dotenv",
-		Short: "Commands to modify .env file",
-		Long:  "Edit, generate or update .env file with Datarobot credentials",
+		Use:     "dotenv",
+		GroupID: "core",
+		Short:   "Commands to modify .env file",
+		Long:    "Edit, generate or update .env file with Datarobot credentials",
 	}
 
 	cmd.AddCommand(
