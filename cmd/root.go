@@ -102,16 +102,6 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
 	}
 
-	err = viper.BindEnv("editor", "EDITOR")
-	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for editor: %w", err)
-	}
-
-	err = viper.BindEnv("visual", "VISUAL")
-	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for visual: %w", err)
-	}
-
 	err = config.ReadConfigFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)

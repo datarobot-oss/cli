@@ -108,7 +108,12 @@ func (m Model) openInExternalEditor() tea.Cmd {
 	})
 }
 
-func (m Model) externalEditorCmd() *exec.Cmd {
+func (m Model) externalEditorCmd() (*exec.Cmd, error) {
+	// EXTERNAL_EDITOR mapping to VISUAL and EDITOR
+	err := viper.BindEnv("external_editor", "VISUAL", "EDITOR")
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind environment variables for external_editor: %w", err)
+	}
 	// Determine the editor to use
 	// Priority: VISUAL > EDITOR > defaultEditor
 	editor := viper.GetString("visual")
@@ -120,7 +125,8 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 		editor = defaultEditor // fallback to vi
 	}
 
-	return exec.Command(editor, m.DotenvFile)
+	cmd := exec.Command(editor, m.DotenvFile)
+	return cmd, nil
 }
 
 func (m Model) saveEnvFile() tea.Cmd {
