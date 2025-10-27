@@ -39,3 +39,5 @@ tmp
 # Test coverage
 coverage.txt
 
+# Tea
+tea-debug.log
