@@ -74,9 +74,9 @@ GOOS=windows GOARCH=amd64 go build -o dist/dr-windows-amd64.exe main.go
 
 ### Directory structure
 
-```
+```sh
 cli/
-├── cmd/                      # Command implementations (Cobra)
+├── cmd/                     # Command implementations (Cobra)
 │   ├── root.go              # Root command and global flags
 │   ├── auth/                # Authentication commands
 │   │   ├── cmd.go           # Auth command group
@@ -119,10 +119,10 @@ cli/
 │   │   └── runner.go        # Task execution
 │   └── version/             # Version information
 │       └── version.go
-├── tui/                      # Terminal UI shared components
+├── tui/                     # Terminal UI shared components
 │   ├── banner.go            # ASCII banner
 │   └── theme.go             # Color theme
-├── docs/                     # Documentation
+├── docs/                    # Documentation
 ├── main.go                  # Application entry point
 ├── go.mod                   # Go module dependencies
 ├── go.sum                   # Dependency checksums
@@ -134,7 +134,11 @@ cli/
 
 #### Command Layer (cmd/)
 
-Uses [Cobra](https://github.com/spf13/cobra) for CLI framework:
+The CLI is built using the [Cobra](https://github.com/spf13/cobra) framework.
+
+Commands are organized hierarchically, and there should be a one-to-one mapping between commands and files/directories. For example, the `templates` command group is in `cmd/templates/`, with subcommands in their own directories.
+
+Code in the `cmd/` folder should primarily handle command-line parsing, argument validation, and orchestrating calls to internal packages. There should be minimal to no business logic here. **Consider this the UI layer of the application.**
 
 ```go
 // cmd/root.go - Root command definition
@@ -173,9 +177,13 @@ func (m Model) Update(tea.Msg) (tea.Model, tea.Cmd)
 func (m Model) View() string
 ```
 
+#### Internal Packages (internal/)
+
+Houses core business logic, API clients, configuration management, etc.
+
 #### Configuration (internal/config/)
 
-Uses [Viper](https://github.com/spf13/viper) for configuration:
+Uses [Viper](https://github.com/spf13/viper) for configuration as well as a state registry:
 
 ```go
 // Load config
@@ -216,6 +224,23 @@ var Cmd = &cobra.Command{
         return listTemplates()
     },
 }
+```
+
+`RunE` is the main execution function. Cobra also provides `PreRunE`, `PostRunE`, and other hooks. Prefer to use these for setup/teardown, validation, etc.:
+
+```go
+PersistPreRunE: func(cmd *cobra.Command, args []string) error {
+    // Setup logging
+    return setupLogging()
+},
+PreRunE: func(cmd *cobra.Command, args []string) error {
+    // Validate args
+    return validateArgs(args)
+},
+PostRunE: func(cmd *cobra.Command, args []string) error {
+    // Cleanup
+    return nil
+},
 ```
 
 #### Model-View-Update (Bubble Tea)
