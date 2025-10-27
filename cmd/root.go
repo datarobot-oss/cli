@@ -60,6 +60,7 @@ func init() {
 	// Add command groups
 	RootCmd.AddGroup(
 		&cobra.Group{ID: "core", Title: "Core Commands:"},
+		&cobra.Group{ID: "advanced", Title: "Advanced Commands:"},
 		&cobra.Group{ID: "plugin", Title: "Plugin Commands:"},
 	)
 
