@@ -41,10 +41,22 @@ func GenerateCommandTree(rootCmd *cobra.Command) string {
 
 	builder.WriteString(rootCmd.Name() + "\n")
 
-	// Print global/persistent flags first
+	// Get all commands and sort them
+	commands := rootCmd.Commands()
+	sort.Slice(commands, func(i, j int) bool {
+		return commands[i].Name() < commands[j].Name()
+	})
+
+	for i, subCmd := range commands {
+		isLast := i == len(commands)-1
+
+		printCommand(&builder, subCmd, "", isLast)
+	}
+
+	// Print global/persistent flags at the bottom
 	globalFlags := collectPersistentFlags(rootCmd)
 	if len(globalFlags) > 0 {
-		builder.WriteString("Global Flags:\n")
+		builder.WriteString("\nGlobal Flags:\n")
 
 		for i, flag := range globalFlags {
 			isFlagLast := i == len(globalFlags)-1
@@ -59,20 +71,6 @@ func GenerateCommandTree(rootCmd *cobra.Command) string {
 
 			fmt.Fprintf(&builder, "%s%s\n", flagConnector, flag)
 		}
-
-		builder.WriteString("\n")
-	}
-
-	// Get all commands and sort them
-	commands := rootCmd.Commands()
-	sort.Slice(commands, func(i, j int) bool {
-		return commands[i].Name() < commands[j].Name()
-	})
-
-	for i, subCmd := range commands {
-		isLast := i == len(commands)-1
-
-		printCommand(&builder, subCmd, "", isLast)
 	}
 
 	return builder.String()
