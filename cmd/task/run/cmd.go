@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/task"
@@ -23,25 +22,8 @@ import (
 )
 
 type taskRunOptions struct {
-	Dir         string
-	ListTasks   bool
-	Concurrency int
-	Parallel    bool
-	WatchTask   bool
-	AnswerYes   bool
-	Silent      bool
-	ExitCode    bool
-}
-
-func (o *taskRunOptions) RunOpts() task.RunOpts {
-	return task.RunOpts{
-		Concurrency: o.Concurrency,
-		Parallel:    o.Parallel,
-		WatchTask:   o.WatchTask,
-		AnswerYes:   o.AnswerYes,
-		Silent:      o.Silent,
-		ExitCode:    o.ExitCode,
-	}
+	Dir      string
+	taskOpts task.RunOpts
 }
 
 func Cmd() *cobra.Command { //nolint: cyclop
@@ -93,59 +75,19 @@ func Cmd() *cobra.Command { //nolint: cyclop
 				return
 			}
 
-			tasks, err := runner.ListTasks()
-			if opts.ListTasks || len(args) == 0 {
-				if err != nil {
-					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
-					os.Exit(1)
-
-					return
-				}
-
-				if !opts.Silent {
-					fmt.Println("Available tasks:")
-				}
-
-				w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
-
-				for _, t := range tasks {
-					desc := strings.ReplaceAll(t.Desc, "\n", " ")
-
-					_, _ = fmt.Fprint(w, "* ")
-					_, _ = fmt.Fprint(w, t.Name)
-
-					if len(t.Aliases) > 0 {
-						_, _ = fmt.Fprintf(w, " (%s)", strings.Join(t.Aliases, ", "))
-					}
-
-					_, _ = fmt.Fprintf(w, " \t%s", desc)
-
-					_, _ = fmt.Fprint(w, "\n")
-				}
-
-				if err = w.Flush(); err != nil {
-					fmt.Fprintln(os.Stderr, "Error:", err)
-					os.Exit(1)
-
-					return
-				}
-
-				return
-			}
-
 			taskNames := args
 
-			if !opts.Silent {
+			if !opts.taskOpts.Silent {
 				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
-			err = runner.Run(taskNames, opts.RunOpts())
+			err = runner.Run(taskNames, opts.taskOpts)
 			if err != nil { //nolint: nestif
 				exitCode := 1
 
 				if exitErr, ok := err.(*exec.ExitError); ok {
 					// Only propagate if --exit-code was requested
-					if opts.ExitCode {
+					if opts.taskOpts.ExitCode {
 						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
 							exitCode = status.ExitStatus()
 						}
@@ -159,13 +101,12 @@ func Cmd() *cobra.Command { //nolint: cyclop
 	}
 
 	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "Directory to look for tasks.")
-	cmd.Flags().BoolVarP(&opts.ListTasks, "list", "l", false, "List all available tasks.")
-	cmd.Flags().BoolVarP(&opts.Parallel, "parallel", "p", false, "Run tasks in parallel.")
-	cmd.Flags().IntVarP(&opts.Concurrency, "concurrency", "C", 2, "Number of concurrent tasks to run.")
-	cmd.Flags().BoolVarP(&opts.WatchTask, "watch", "w", false, "Enables watch of the given task.")
-	cmd.Flags().BoolVarP(&opts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
-	cmd.Flags().BoolVarP(&opts.ExitCode, "exit-code", "x", false, "Pass-through the exit code of the task command.")
-	cmd.Flags().BoolVarP(&opts.Silent, "silent", "s", false, "Disables echoing.")
+	cmd.Flags().BoolVarP(&opts.taskOpts.Parallel, "parallel", "p", false, "Run tasks in parallel.")
+	cmd.Flags().IntVarP(&opts.taskOpts.Concurrency, "concurrency", "C", 2, "Number of concurrent tasks to run.")
+	cmd.Flags().BoolVarP(&opts.taskOpts.WatchTask, "watch", "w", false, "Enables watch of the given task.")
+	cmd.Flags().BoolVarP(&opts.taskOpts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
+	cmd.Flags().BoolVarP(&opts.taskOpts.ExitCode, "exit-code", "x", false, "Pass-through the exit code of the task command.")
+	cmd.Flags().BoolVarP(&opts.taskOpts.Silent, "silent", "s", false, "Disables echoing.")
 
 	return cmd
 }
