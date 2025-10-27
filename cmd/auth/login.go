@@ -20,6 +20,48 @@ import (
 	"github.com/spf13/viper"
 )
 
+// EnsureAuthenticated checks if valid authentication exists, and if not,
+// triggers the login flow automatically. This is a non-interactive version
+// intended for use in automated workflows. Returns true if authentication
+// is valid or was successfully obtained.
+func EnsureAuthenticated() bool {
+	datarobotHost := config.GetBaseURL()
+	if datarobotHost == "" {
+		log.Warn("No DataRobot URL configured. Running auth setup...")
+		SetURLAction()
+
+		datarobotHost = config.GetBaseURL()
+		if datarobotHost == "" {
+			log.Error("Failed to configure DataRobot URL")
+			return false
+		}
+	}
+
+	if token := config.GetAPIKey(); token != "" {
+		// Valid token exists
+		return true
+	}
+
+	// No valid token, attempt to get one
+	log.Warn("No valid API key found. Starting authentication flow...")
+
+	// Auto-retrieve new credentials without prompting
+	viper.Set(config.DataRobotAPIKey, "")
+
+	key, err := apiKeyCallbackFunc(datarobotHost)
+	if err != nil {
+		log.Error("Failed to retrieve API key", "error", err)
+		return false
+	}
+
+	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
+	WriteConfigFileSilent()
+
+	log.Info("Authentication successful")
+
+	return true
+}
+
 func LoginAction() error {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -49,7 +91,7 @@ func LoginAction() error {
 		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
 	}
 
-	key, err := waitForAPIKeyCallback(datarobotHost)
+	key, err := apiKeyCallbackFunc(datarobotHost)
 	if err != nil {
 		log.Error(err)
 	}

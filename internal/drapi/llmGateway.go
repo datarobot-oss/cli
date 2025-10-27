@@ -9,12 +9,19 @@
 package drapi
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/config"
 )
 
 func IsLLMGatewayEnabled() (bool, error) {
+	// Ensure valid authentication before making API call.
+	if !auth.EnsureAuthenticated() {
+		return false, errors.New("authentication required")
+	}
+
 	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/genai/llms/")
 	if err != nil {
 		return false, err

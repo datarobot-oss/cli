@@ -128,7 +128,7 @@ var UpdateCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenvFile := ".env"
 
-		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		_, _, _, err := writeUsingTemplateFileWithAuth(dotenvFile)
 		if err != nil {
 			log.Error(err)
 		}
