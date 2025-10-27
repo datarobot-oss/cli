@@ -12,7 +12,6 @@ import (
 	"regexp"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/misc/regexp2"
@@ -101,22 +100,12 @@ var knownVariables = map[string]variableConfig{
 	},
 	"DATAROBOT_API_TOKEN": {
 		getValue: func() (string, error) {
-			// Ensure authentication is valid before retrieving API key
-			if !auth.EnsureAuthenticated() {
-				return "", nil
-			}
-
 			return config.GetAPIKey(), nil
 		},
 		secret: true,
 	},
 	"USE_DATAROBOT_LLM_GATEWAY": {
 		getValue: func() (string, error) {
-			// Ensure authentication before checking LLM gateway
-			if !auth.EnsureAuthenticated() {
-				return "", nil
-			}
-
 			enabled, err := drapi.IsLLMGatewayEnabled()
 			if err != nil {
 				return "", err

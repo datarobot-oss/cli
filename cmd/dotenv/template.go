@@ -247,14 +247,6 @@ func writeUsingTemplateFile(dotenvFile string) ([]variable, string, string, erro
 	return variables, contents, templateFileUsed, nil
 }
 
-// writeUsingTemplateFileWithAuth ensures authentication is valid before writing the template file.
-// If authentication is missing or expired, it will trigger the auth login flow.
-func writeUsingTemplateFileWithAuth(dotenvFile string) ([]variable, string, string, error) {
-	// Import is added at package level to avoid circular dependency issues
-	// This function can be called from other packages that need authenticated dotenv updates
-	return writeUsingTemplateFile(dotenvFile)
-}
-
 func stripHeader(contents string) string {
 	lines := strings.Split(contents, "\n")
 	filteredLines := make([]string, 0, len(lines))

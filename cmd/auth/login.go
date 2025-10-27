@@ -10,6 +10,7 @@ package auth
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,6 +20,17 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+// EnsureAuthenticatedE checks if valid authentication exists, and if not,
+// triggers the login flow automatically. Returns an error if authentication
+// fails, suitable for use in Cobra PreRunE hooks.
+func EnsureAuthenticatedE() error {
+	if !EnsureAuthenticated() {
+		return errors.New("authentication failed")
+	}
+
+	return nil
+}
 
 // EnsureAuthenticated checks if valid authentication exists, and if not,
 // triggers the login flow automatically. This is a non-interactive version

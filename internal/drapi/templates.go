@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/config"
 )
 
@@ -73,11 +72,6 @@ type TemplateList struct {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	// Ensure valid authentication before making API call.
-	if !auth.EnsureAuthenticated() {
-		return nil, errors.New("authentication required")
-	}
-
 	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
 	if err != nil {
 		return nil, err

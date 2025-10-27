@@ -2,28 +2,48 @@
 
 ## Overview
 
-The CLI provides a reusable authentication mechanism that you can use with any command that requires valid DataRobot credentials.
+The CLI provides a reusable authentication mechanism that you can use with any command that requires valid DataRobot credentials. Authentication is handled using Cobra's `PreRunE` hooks, which ensure credentials are valid before a command executes.
 
-## Using EnsureAuthenticated
+## Using authentication in commands
 
-The `auth.EnsureAuthenticated()` function provides an easy way to ensure valid authentication exists before executing commands that require it.
+### PreRunE hook (recommended)
+
+The recommended approach is to use the `auth.EnsureAuthenticatedE()` function in your command's `PreRunE` hook:
+
+```go
+import "github.com/datarobot/cli/cmd/auth"
+
+var MyCmd = &cobra.Command{
+    Use:   "mycommand",
+    Short: "My command description",
+    PreRunE: func(_ *cobra.Command, _ []string) error {
+        return auth.EnsureAuthenticatedE()
+    },
+    Run: func(_ *cobra.Command, _ []string) {
+        // Command implementation
+        // Authentication is guaranteed to be valid here
+    },
+}
+```
 
 ### How it works
 
 1. **Checks for valid credentials**&mdash;first checks if a valid API key already exists.
 2. **Auto-configures URL if missing**&mdash;if no DataRobot URL is configured, prompts you to set it up.
 3. **Retrieves new credentials**&mdash;if credentials are missing or expired, automatically triggers the browser-based login flow.
-4. **Non-interactive for automation**&mdash;designed to work in automated workflows without requiring manual intervention beyond the initial browser login.
+4. **Fails early**&mdash;if authentication cannot be established, the command won't run and returns an error.
 
-### Example usage
+### Direct call (for non-command code)
+
+For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated()` directly:
 
 ```go
 import "github.com/datarobot/cli/cmd/auth"
 
-func MyCommand() error {
+func MyFunction() error {
     // Ensure valid authentication before proceeding.
     if !auth.EnsureAuthenticated() {
-        return fmt.Errorf("authentication failed")
+        return errors.New("authentication failed")
     }
     
     // Continue with authenticated operations.
@@ -36,16 +56,19 @@ func MyCommand() error {
 
 ### When to use
 
-Use `auth.EnsureAuthenticated()` in any command that:
+Add authentication to any command that:
 
 - Makes API calls to DataRobot endpoints.
 - Needs to populate DataRobot credentials in configuration files.
-- Requires valid authentication but shouldn't fail if credentials are missing or expired.
+- Requires valid authentication to function correctly.
 
-### Current implementations
+### Commands with authentication
+
+The following commands use `PreRunE` to ensure authentication:
 
 - **`dr dotenv update`**&mdash;automatically ensures authentication before updating environment variables.
-- **Variables in dotenv**&mdash;variables that require authentication (`DATAROBOT_API_TOKEN`, `USE_DATAROBOT_LLM_GATEWAY`) call `EnsureAuthenticated()` when their values are retrieved.
+- **`dr templates list`**&mdash;requires authentication to fetch templates from the API.
+- **`dr templates clone`**&mdash;requires authentication to fetch template details.
 
 ## Manual login
 
