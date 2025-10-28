@@ -35,7 +35,7 @@ func (suite *ConfigTestSuite) SetupTest() {
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {
 	err := CreateConfigFileDirIfNotExists()
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	expectedDir := filepath.Join(suite.tempDir, ".config/datarobot")
 
