@@ -89,7 +89,8 @@ func initializeConfig(cmd *cobra.Command) error {
 
 	// Now map other environment variables to config keys
 	// such as those used by the DataRobot platform or other SDKs
-	// and clients
+	// and clients. If the DATAROBOT_CLI equivalents are not set,
+	// then Viper will fallback to these
 	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
 	if err != nil {
 		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
