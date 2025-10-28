@@ -78,22 +78,26 @@ func init() {
 	)
 }
 
+// initializeConfig initializes the configuration by reading from
+// various sources such as environment variables and config files.
 func initializeConfig(cmd *cobra.Command) error {
 	// Set up Viper to process environment variables
-	// TODO Would we prefer to make this `DATAROBOT_CLI`?
-	viper.SetEnvPrefix("DATAROBOT")
-	// Automatically map environment variables that are prefixed
-	// DATAROBOT_ to config keys
-	// This will capture DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN
+	// First automatically map any environment variables
+	// that are prefixed with DATAROBOT_CLI_ to config keys
+	viper.SetEnvPrefix("DATAROBOT_CLI")
 	viper.AutomaticEnv()
 
-	// Now map non-standard environment variables to config keys
+	// Now map other environment variables to config keys
 	// such as those used by the DataRobot platform or other SDKs
 	// and clients
-	// Also map DATAROBOT_API_ENDPOINT because of the R SDK
 	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
 	if err != nil {
 		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
+	}
+
+	err = viper.BindEnv("api_token", "DATAROBOT_API_TOKEN")
+	if err != nil {
+		return fmt.Errorf("failed to bind environment variables for api_token: %w", err)
 	}
 
 	// map USE_DATAROBOT_LLM_GATEWAY
