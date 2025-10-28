@@ -48,11 +48,9 @@ Bash:
   $ source <(` + version.CliName + ` completion bash)
 
   # To load completions for each session, execute once:
+
   # Linux:
   $ ` + version.CliName + ` completion bash > /etc/bash_completion.d/` + version.CliName + `
-
-  # macOS (with Homebrew):
-  $ ` + version.CliName + ` completion bash > /usr/local/etc/bash_completion.d/` + version.CliName + `
 
 Zsh:
 
@@ -60,8 +58,8 @@ Zsh:
   # to enable it.  You can execute the following once:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
-  # To load completions for each session, execute once:
-  $ ` + version.CliName + ` completion zsh > "${fpath[1]}/_` + version.CliName + `"
+  # Linux or MacOS:
+  $ ` + version.CliName + ` completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr` + version.CliName + `
 
 Fish:
 
