@@ -60,7 +60,7 @@ You can maintain multiple configurations:
 Switch between them:
 
 ```bash
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 dr templates list
 ```
 
@@ -167,7 +167,7 @@ export DR_LOG_LEVEL=debug
 export NO_COLOR=1
 
 # Custom config file path
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/custom-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 
 # Editor for text editing
 export EDITOR=nano
@@ -343,7 +343,7 @@ tasks:
 Usage:
 
 ```bash
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 dr templates list
 ```
 
@@ -373,7 +373,7 @@ tasks:
 Usage:
 
 ```bash
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/prod-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/prod-config.yaml
 dr run deploy
 ```
 
@@ -437,7 +437,7 @@ chmod 700 ~/.datarobot/
 find ~/.datarobot -name "*.yaml"
 
 # Switch between them
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 ```
 
 ## See Also

@@ -288,13 +288,13 @@ Never commit or share:
 
 ```bash
 # Development
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/dev-config.yaml
-dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG_PATH
+export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 
 # Production
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/prod-config.yaml
-dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG_PATH
+export DATAROBOT_CLI_CONFIG=~/.datarobot/prod-config.yaml
+dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 ```
 
@@ -320,7 +320,7 @@ export DATAROBOT_ENDPOINT=https://app.datarobot.com
 export DATAROBOT_API_KEY=your-api-key
 
 # Custom config file location
-export DATAROBOT_CLI_CONFIG_PATH=~/.datarobot/custom-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 ```
 
 ## Common Issues
