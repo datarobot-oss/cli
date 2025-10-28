@@ -171,12 +171,11 @@ Global environment variables that affect all commands:
 
 ```bash
 # Configuration
-DATAROBOT_CONFIG_PATH          # Custom config file location
 DATAROBOT_ENDPOINT             # DataRobot URL
 DATAROBOT_API_KEY              # API key (not recommended)
 
 # Logging
-DR_LOG_LEVEL                   # Log level: debug, info, warn, error
+# DR_LOG_LEVEL                   # Log level: debug, info, warn, error
 NO_COLOR                       # Disable color output
 
 # Development
