@@ -118,7 +118,7 @@ func LoginAction() error {
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to DataRobot",
-	Long:  `Login to DataRobot to get and store an API key that can be used for other operation in the cli.`,
+	Long:  `Login to DataRobot to get and store an API key that can be used for other operations in the cli.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		err := LoginAction()
 		if err != nil {
