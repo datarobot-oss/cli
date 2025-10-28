@@ -31,9 +31,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 
 			rootTaskfile, err := discovery.Discover(dir, 2)
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
-				os.Exit(1)
-
+				task.ExitWithError(err)
 				return
 			}
 

@@ -9,12 +9,8 @@
 package compose
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/datarobot/cli/internal/task"
-
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -23,9 +19,7 @@ func Run() error {
 
 	_, err := discovery.Discover(".", 2)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
-		os.Exit(1)
-
+		task.ExitWithError(err)
 		return nil
 	}
 
