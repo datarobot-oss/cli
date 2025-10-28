@@ -42,10 +42,6 @@ func GetBaseURL() string {
 		}
 	}
 
-	if url, err := schemeHostOnly(viper.GetString(DataRobotURL)); err == nil {
-		return url
-	}
-
 	return ""
 }
 
