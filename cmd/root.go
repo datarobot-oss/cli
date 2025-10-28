@@ -64,6 +64,7 @@ func init() {
 		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
+	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 
@@ -103,12 +104,6 @@ func init() {
 			defaultHelpFunc(cmd, args)
 		}
 	})
-
-	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
-	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
-	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
-	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
 
 // initializeConfig initializes the configuration by reading from
