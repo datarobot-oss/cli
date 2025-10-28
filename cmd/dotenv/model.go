@@ -110,12 +110,7 @@ func (m Model) openInExternalEditor() tea.Cmd {
 
 func (m Model) externalEditorCmd() *exec.Cmd {
 	// Determine the editor to use
-	// Priority: VISUAL > EDITOR > defaultEditor
-	editor := viper.GetString("visual")
-	if editor == "" {
-		editor = viper.GetString("editor")
-	}
-
+	editor := viper.GetString("external_editor")
 	if editor == "" {
 		editor = defaultEditor // fallback to vi
 	}
