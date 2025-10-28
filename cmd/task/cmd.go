@@ -17,8 +17,9 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "task",
-		Short: "Run or generate Taskfile.yaml commands",
+		Use:     "task",
+		GroupID: "core",
+		Short:   "Run or generate Taskfile.yaml commands",
 	}
 
 	cmd.AddCommand(

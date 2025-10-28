@@ -18,6 +18,7 @@ import (
 	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/task"
+	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/cmd/version"
 	"github.com/datarobot/cli/internal/config"
@@ -71,6 +72,7 @@ func init() {
 		auth.Cmd(),
 		completion.Cmd(),
 		dotenv.Cmd(),
+		run.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
 		version.Cmd(),
