@@ -573,8 +573,8 @@ Use optional: false for required fields:
 
 ```yaml
 prompts:
-  - key: "api_key"
-    env: "API_KEY"
+  - key: "api_token"
+    env: "api_token"
     help: "Enter your DataRobot API key"
     optional: false  # Required!
 ```

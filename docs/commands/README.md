@@ -173,14 +173,7 @@ Global environment variables that affect all commands:
 # Configuration
 DATAROBOT_CONFIG_PATH          # Custom config file location
 DATAROBOT_ENDPOINT             # DataRobot URL
-DATAROBOT_API_KEY              # API key (not recommended)
-
-# Logging
-DR_LOG_LEVEL                   # Log level: debug, info, warn, error
-NO_COLOR                       # Disable color output
-
-# Development
-DR_DEBUG                       # Enable debug mode
+DATAROBOT_API_TOKEN            # API token (not recommended)
 ```
 
 ## Exit codes

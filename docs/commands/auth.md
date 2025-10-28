@@ -252,7 +252,7 @@ After authentication, credentials are stored in:
 ```yaml
 datarobot:
   endpoint: https://app.datarobot.com
-  api_key: <encrypted_key>
+  token: <encrypted_key>
 
 # User preferences
 preferences:
@@ -317,7 +317,7 @@ Override configuration with environment variables:
 export DATAROBOT_ENDPOINT=https://app.datarobot.com
 
 # Override API key (not recommended)
-export DATAROBOT_API_KEY=your-api-key
+export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
 export DATAROBOT_CONFIG_PATH=~/.datarobot/custom-config.yaml

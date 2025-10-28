@@ -21,7 +21,7 @@ The template provided by the repository (committed to Git):
 # Required Configuration
 APP_NAME=
 DATAROBOT_ENDPOINT=
-DATAROBOT_API_KEY=
+DATAROBOT_API_TOKEN=
 
 # Optional Configuration
 # DEBUG=false
@@ -51,7 +51,7 @@ The actual configuration file (never committed):
 # Required Configuration
 APP_NAME=my-awesome-app
 DATAROBOT_ENDPOINT=https://app.datarobot.com
-DATAROBOT_API_KEY=***
+DATAROBOT_API_TOKEN=***
 
 # Optional Configuration
 DEBUG=true
@@ -131,7 +131,7 @@ Variables found in .env:
 
 APP_NAME: my-awesome-app
 DATAROBOT_ENDPOINT: https://app.datarobot.com
-DATAROBOT_API_KEY: ***
+DATAROBOT_API_TOKEN: ***
 DEBUG: true
 
 Press w to set up variables interactively.
@@ -175,7 +175,7 @@ Must be set before running the application:
 # .env.template shows these without comments
 APP_NAME=
 DATAROBOT_ENDPOINT=
-DATAROBOT_API_KEY=
+DATAROBOT_API_TOKEN=
 ```
 
 The wizard enforces that these are filled:
@@ -215,14 +215,14 @@ Automatically detected by name patterns:
 
 **Displayed as masked:**
 ```
-DATAROBOT_API_KEY: ***
+DATAROBOT_API_TOKEN: ***
 DATABASE_PASSWORD: ***
 JWT_SECRET: ***
 ```
 
 **Editor shows values:**
 ```
-DATAROBOT_API_KEY=abc123def456...█
+DATAROBOT_API_TOKEN=abc123def456...█
 ```
 
 ### Conditional Variables
@@ -311,7 +311,7 @@ DATABASE_URL=mongodb://localhost:27017/dbname
 
 ```bash
 # API Key
-DATAROBOT_API_KEY=your_api_key_here
+DATAROBOT_API_TOKEN=your_api_token_here
 
 # OAuth
 AUTH_PROVIDER=oauth2
@@ -421,11 +421,11 @@ dr run deploy
 
 ```python
 # ✗ Bad
-api_key = "abc123"
+api_token = "abc123"
 
 # ✓ Good
 import os
-api_key = os.getenv("DATAROBOT_API_KEY")
+api_token = os.getenv("DATAROBOT_API_TOKEN")
 ```
 
 ## Validation
@@ -438,7 +438,7 @@ The CLI validates that required variables are set:
 $ dr run dev
 Error: Missing required environment variables:
   - APP_NAME
-  - DATAROBOT_API_KEY
+  - DATAROBOT_API_TOKEN
 
 Please run: dr dotenv --wizard
 ```
