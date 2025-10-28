@@ -246,7 +246,7 @@ func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 		baseName := getBackupBaseName(nonExistentFile)
 		pattern := filepath.Join(stateDir, baseName+"_*")
 		matches, err := filepath.Glob(pattern)
-		suite.NoError(err)
+		suite.Require().NoError(err)
 		suite.Empty(matches, "No backup should be created for non-existent file")
 	}
 }
