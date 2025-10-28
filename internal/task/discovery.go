@@ -94,7 +94,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		Includes: includes,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to creat the root Taskfile: %w", err)
+		return "", fmt.Errorf("failed to create the root Taskfile: %w", err)
 	}
 
 	return rootTaskfilePath, nil
