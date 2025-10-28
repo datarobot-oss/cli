@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
-	configFileName = "drconfig.yaml"
-	defaultConfigFileDir = filepath.Join(os.Getenv("HOME"), configFileDir)
+	configFileDir         = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
+	configFileName        = "drconfig.yaml"
+	defaultConfigFileDir  = filepath.Join(os.Getenv("HOME"), configFileDir)
 	defaultConfigFilePath = filepath.Join(defaultConfigFileDir, configFileName)
 )
 
