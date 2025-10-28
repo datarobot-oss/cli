@@ -51,7 +51,7 @@ irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
 
 # Windows
-$version = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+$env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 ```
 ### Installation from source
 
