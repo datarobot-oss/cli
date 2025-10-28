@@ -32,7 +32,8 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 
 Install the latest version with a single command:
 
-#### macOS and Linux
+#### macOS/Linux
+
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
@@ -46,15 +47,20 @@ irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 
 ### Install Specific Version
 
-```bash
-# macOS/Linux
-curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
+#### macOS/Linux
 
-# Windows
+```bash
+curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
+```
+
+#### Windows
+
+```powershell
 $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 ```
-### Installation from source
 
+### Installation from source
+---
 ### Prerequisites
 
 - Go 1.24.7 or later (for building from source).
