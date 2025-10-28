@@ -110,7 +110,7 @@ tasks:
   smoke-test:
     desc: "Run smoke tests"
     cmds:
-      - ./run_smoke_test.sh
+      - ./smoke_test_scripts/run_smoke_test.sh
 
   copyright:
     silent: true
