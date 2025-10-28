@@ -49,7 +49,7 @@ func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {
 
 func (suite *ConfigTestSuite) TestReadConfigFileNoPreviousFile() {
 	err := ReadConfigFile("")
-	suite.NoError(err, "Expected no error when reading config file without a previous file") //nolint: testifylint
+	suite.Require().NoError(err, "Expected no error when reading config file without a previous file")
 
 	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.NoFileExists(expectedFilePath, "Expected config file to not be created at default path")
@@ -67,7 +67,7 @@ func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
 	readYamlData := make(map[string]string)
 
 	err := ReadConfigFile("")
-	suite.NoError(err, "Expected no error when reading config file without a previous file") //nolint: testifylint
+	suite.Require().NoError(err, "Expected no error when reading config file without a previous file")
 
 	host := viper.GetString("host")
 	suite.Equal(host, readYamlData["host"], "Expected config file to have the same host")

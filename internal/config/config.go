@@ -19,13 +19,15 @@ import (
 )
 
 var (
-	configFileDir         = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
-	configFileName        = "drconfig.yaml"
-	defaultConfigFileDir  = filepath.Join(os.Getenv("HOME"), configFileDir)
-	defaultConfigFilePath = filepath.Join(defaultConfigFileDir, configFileName)
+	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
+	configFileName = "drconfig.yaml"
 )
 
 func CreateConfigFileDirIfNotExists() error {
+	// Set the default config file directory here to aid in testing
+	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+	defaultConfigFilePath := filepath.Join(defaultConfigFileDir, configFileName)
+
 	_, err := os.Stat(defaultConfigFilePath)
 	if err == nil {
 		// File exists, do nothing
@@ -52,6 +54,9 @@ func CreateConfigFileDirIfNotExists() error {
 }
 
 func ReadConfigFile(filePath string) error {
+	// Set the default config file directory here to aid in testing
+	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+
 	viper.SetConfigType("yaml")
 
 	if filePath != "" {

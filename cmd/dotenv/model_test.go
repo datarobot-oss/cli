@@ -369,8 +369,8 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	suite.T().Setenv("EDITOR", "vim")
 
 	// Initialize Viper to read the environment variables
-	viper.BindEnv("visual", "VISUAL")
-	viper.BindEnv("editor", "EDITOR")
+	err := viper.BindEnv("external_editor", "VISUAL", "EDITOR")
+	suite.Require().NoError(err, "Failed to bind VISUAL and EDITOR environment variables")
 
 	m := Model{
 		DotenvFile: filepath.Join(suite.tempDir, ".env"),
