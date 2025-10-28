@@ -4,8 +4,11 @@
 #   Install latest version:
 #     irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 #
-#   Install specific version:
+#   Install specific version (using variable):
 #     $version = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+#
+#   Install specific version (using environment variable):
+#     $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 #
 #   Custom install directory:
 #     $env:INSTALL_DIR = "C:\custom\path"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
@@ -19,7 +22,21 @@ $ErrorActionPreference = 'Stop'
 # Configuration
 $REPO = "datarobot-oss/cli"
 $BINARY_NAME = "dr"
+# Configuration
+$REPO = "datarobot-oss/cli"
+$BINARY_NAME = "dr"
+$INSTALL_DIR_EXPLICITLY_SET = [bool]$env:INSTALL_DIR
 $INSTALL_DIR = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\$BINARY_NAME" }
+
+# Determine version to install
+# Priority: 1) $env:VERSION, 2) $version variable, 3) $Version parameter, 4) "latest"
+if ($env:VERSION) {
+    $Version = $env:VERSION
+} elseif (Get-Variable -Name "version" -Scope Global -ErrorAction SilentlyContinue) {
+    $Version = $Global:version
+} elseif (-not $Version) {
+    $Version = "latest"
+}
 
 # Use version from environment variable if set
 if ($env:VERSION) {
