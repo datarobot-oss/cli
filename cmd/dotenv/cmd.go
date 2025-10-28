@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -23,9 +24,10 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dotenv",
-		Short: "Commands to modify .env file",
-		Long:  "Edit, generate or update .env file with Datarobot credentials",
+		Use:     "dotenv",
+		GroupID: "core",
+		Short:   "Commands to modify .env file",
+		Long:    "Edit, generate or update .env file with Datarobot credentials",
 	}
 
 	cmd.AddCommand(
@@ -125,6 +127,9 @@ var UpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Automatically update Datarobot credentials in .env file",
 	Long:  "Automatically populate .env file with fresh Datarobot credentials",
+	PreRunE: func(_ *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE()
+	},
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenvFile := ".env"
 

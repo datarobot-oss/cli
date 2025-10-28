@@ -23,6 +23,10 @@ import (
 // Store the API key in a file in the users home directory.
 // In the real world this would probably need to be encrypted.
 
+// apiKeyCallbackFunc is a variable that holds the function for retrieving API keys.
+// This can be overridden in tests to mock the browser-based authentication flow.
+var apiKeyCallbackFunc = waitForAPIKeyCallback
+
 func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.

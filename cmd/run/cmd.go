@@ -9,6 +9,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/task"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +48,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{
+		GroupID: "core",
 		Use:     "run [task1, task2, ...] [flags]",
 		Aliases: []string{"r"},
 		Short:   "Run an application template task",
@@ -55,6 +58,22 @@ func Cmd() *cobra.Command { //nolint: cyclop
 
 			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
 			if err != nil {
+				if errors.Is(err, task.ErrNotInTemplate) {
+					fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
+					fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a .env file to be present."))
+					os.Exit(1)
+
+					return
+				}
+
+				if errors.Is(err, task.ErrTaskfileHasDotenv) {
+					fmt.Fprintln(os.Stderr, tui.ErrorStyle.Render("Error: Cannot generate Taskfile because an existing Taskfile already has a dotenv directive."))
+					fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render(err.Error()))
+					os.Exit(1)
+
+					return
+				}
+
 				_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
 				os.Exit(1)
 

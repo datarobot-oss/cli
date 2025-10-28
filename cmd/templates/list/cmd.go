@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +34,9 @@ var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available templates",
 	Long:  `List all available templates in the DataRobot application.`,
+	PreRunE: func(_ *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE()
+	},
 	Run: func(_ *cobra.Command, _ []string) {
 		err := Run()
 		if err != nil {

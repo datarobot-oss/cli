@@ -19,7 +19,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -27,7 +26,7 @@ import (
 
 const (
 	// Key bindings
-	keyQuit         = "q"
+	keyQuit         = "enter"
 	keyInteractive  = "w"
 	keyEdit         = "e"
 	keyOpenExternal = "o"
@@ -266,8 +265,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.height = msg.Height
 
 		if m.screen == editorScreen {
-			m.textarea.SetWidth(m.width - 1)
-			m.textarea.SetHeight(m.height - 12)
+			// Width: BoxStyle.Width uses (width-8), then Padding(1,2)=4 chars + borders=2 chars = 14 total
+			m.textarea.SetWidth(m.width - 14)
+			// Height: header(2) + BoxStyle padding(2) + borders(2) + instructions(4) + status(3) = 13 total
+			m.textarea.SetHeight(m.height - 13)
 		}
 
 		return m, nil
@@ -301,8 +302,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.envResponses = m.responsesFromVariables()
 
 		ta := textarea.New()
-		ta.SetWidth(m.width - 1)
-		ta.SetHeight(m.height - 14)
+		// Width: BoxStyle.Width uses (width-8), then Padding(1,2)=4 chars + borders=2 chars = 14 total
+		ta.SetWidth(m.width - 14)
+		// Height: header(2) + BoxStyle padding(2) + borders(2) + instructions(4) + status(3) = 13 total
+		ta.SetHeight(m.height - 13)
 		ta.SetValue(m.contents)
 		ta.CursorStart()
 		cmd := ta.Focus()
@@ -424,11 +427,6 @@ func (m Model) View() string {
 
 	var content strings.Builder
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(tui.DrPurple).
-		Padding(1, 2)
-
 	switch m.screen {
 	case listScreen:
 		sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
@@ -449,7 +447,7 @@ func (m Model) View() string {
 			}
 		}
 
-		sb.WriteString(boxStyle.Render(content.String()))
+		sb.WriteString(tui.BoxStyle.Render(content.String()))
 		sb.WriteString("\n\n")
 
 		if len(m.variables) > 0 {
@@ -461,11 +459,11 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press q to quit."))
+		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
 	case editorScreen:
 		sb.WriteString(tui.WelcomeStyle.Render("Edit Mode"))
 		sb.WriteString("\n\n")
-		sb.WriteString(boxStyle.Width(m.width - 8).Render(m.textarea.View()))
+		sb.WriteString(tui.BoxStyle.Width(m.width - 8).Render(m.textarea.View()))
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+s to save and go to menu."))
 		sb.WriteString("\n")
@@ -476,10 +474,17 @@ func (m Model) View() string {
 		sb.WriteString("\n\n")
 
 		if m.currentPromptIndex < len(m.prompts) {
-			sb.WriteString(boxStyle.Render(m.currentPrompt.View()))
+			sb.WriteString(tui.BoxStyle.Render(m.currentPrompt.View()))
 		} else {
-			sb.WriteString(boxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
+			sb.WriteString(tui.BoxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
 		}
+	}
+
+	// Add status bar showing working directory
+	workDir := filepath.Dir(m.DotenvFile)
+	if workDir != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.StatusBarStyle.Render("📁 Working in: " + workDir))
 	}
 
 	return sb.String()

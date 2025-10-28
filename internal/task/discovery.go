@@ -11,6 +11,7 @@ package task
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"text/template"
 
 	"github.com/charmbracelet/log"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed Taskfile.tmpl.yaml
@@ -33,6 +35,16 @@ type componentInclude struct {
 type taskfileTmplData struct {
 	Hash     string
 	Includes []componentInclude
+}
+
+var (
+	ErrNotInTemplate     = errors.New("not in a DataRobot template directory")
+	ErrTaskfileHasDotenv = errors.New("existing Taskfile already has dotenv directive")
+)
+
+// taskfileMetadata is used to parse just the dotenv directive from a Taskfile
+type taskfileMetadata struct {
+	Dotenv interface{} `yaml:"dotenv"`
 }
 
 // depth gets our current directory depth by file path
@@ -56,6 +68,12 @@ func NewTaskDiscovery(rootTaskfileName string) *Discovery {
 }
 
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
+	// Check if .env file exists in the root directory
+	envPath := filepath.Join(root, ".env")
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		return "", ErrNotInTemplate
+	}
+
 	includes, err := d.findComponents(root, maxDepth)
 	if err != nil {
 		return "", fmt.Errorf("failed to discover components: %w", err)
@@ -65,13 +83,18 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		return "", nil
 	}
 
+	// Check if any discovered Taskfiles already have a dotenv directive
+	if err := d.checkForDotenvConflicts(root, includes); err != nil {
+		return "", err
+	}
+
 	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
 
 	err = d.genRootTaskfile(rootTaskfilePath, taskfileTmplData{
 		Includes: includes,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to creat the root Taskfile: %w", err)
+		return "", fmt.Errorf("failed to create the root Taskfile: %w", err)
 	}
 
 	return rootTaskfilePath, nil
@@ -134,6 +157,40 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 	})
 
 	return includes, err
+}
+
+// checkForDotenvConflicts checks if any of the discovered Taskfiles already have a dotenv directive
+func (d *Discovery) checkForDotenvConflicts(root string, includes []componentInclude) error {
+	for _, include := range includes {
+		taskfilePath := filepath.Join(root, include.Taskfile)
+
+		hasDotenv, err := d.taskfileHasDotenv(taskfilePath)
+		if err != nil {
+			log.Debugf("Error checking Taskfile %s for dotenv directive: %v", taskfilePath, err)
+			continue
+		}
+
+		if hasDotenv {
+			return fmt.Errorf("%w: %s", ErrTaskfileHasDotenv, taskfilePath)
+		}
+	}
+
+	return nil
+}
+
+// taskfileHasDotenv checks if a Taskfile has a dotenv directive
+func (d *Discovery) taskfileHasDotenv(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+
+	var meta taskfileMetadata
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return false, err
+	}
+
+	return meta.Dotenv != nil, nil
 }
 
 func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) error {

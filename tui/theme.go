@@ -27,11 +27,23 @@ var (
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
 
 	// Specific UI styles
-	LogoStyle    = BaseTextStyle
-	WelcomeStyle = BaseTextStyle.Bold(true)
-)
-
-// Header renders the common header with DataRobot logo
+	LogoStyle     = BaseTextStyle
+	WelcomeStyle  = BaseTextStyle.Bold(true)
+	SubTitleStyle = BaseTextStyle.Bold(true).
+			Foreground(DrPurpleLight).
+			BorderBottom(true).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(DrGreen)
+	BoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(DrPurple).
+			Padding(1, 2)
+	StatusBarStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(DrPurpleLight).
+			Foreground(DrPurpleLight).
+			Padding(0, 1)
+) // Header renders the common header with DataRobot logo
 func Header() string {
 	style := lipgloss.NewStyle().
 		Background(DrGreen).

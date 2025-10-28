@@ -107,6 +107,11 @@ tasks:
     cmds:
       - go test -v -count=1 -race -shuffle=on -coverprofile=coverage.txt ./...
 
+  smoke-test:
+    desc: "Run smoke tests"
+    cmds:
+      - ./run_smoke_test.sh
+
   copyright:
     silent: true
     desc: "Apply copyrights to all files"

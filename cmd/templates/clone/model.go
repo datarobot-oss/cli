@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/tui"
 )
 
 type Model struct {
@@ -204,9 +205,18 @@ func (m Model) View() string {
 
 	if m.cloning {
 		sb.WriteString("Cloning into " + m.input.Value() + "...")
+
 		return sb.String()
 	} else if m.finished {
-		sb.WriteString(m.out + "\nFinished cloning into " + m.input.Value() + ".\n")
+		sb.WriteString(m.out)
+		sb.WriteString("\n")
+		sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s cloned.", m.template.Name)))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("cd " + m.Dir))
+		sb.WriteString("\n")
+
 		return sb.String()
 	}
 
