@@ -44,7 +44,7 @@ func (suite *TemplateTestSuite) SetupTest() {
 func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 	_, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
 
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
@@ -69,7 +69,7 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 
 	variables, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
 
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
