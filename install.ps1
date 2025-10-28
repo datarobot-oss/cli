@@ -113,6 +113,31 @@ function Get-LatestVersion {
     }
 }
 
+# Compare versions (returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2)
+function Compare-Versions {
+    param(
+        [string]$Version1,
+        [string]$Version2
+    )
+
+    # Remove 'v' prefix
+    $v1 = $Version1 -replace '^v', ''
+    $v2 = $Version2 -replace '^v', ''
+
+    try {
+        $ver1 = [version]$v1
+        $ver2 = [version]$v2
+
+        if ($ver1 -lt $ver2) { return -1 }
+        elseif ($ver1 -eq $ver2) { return 0 }
+        else { return 1 }
+    } catch {
+        # Fallback to string comparison
+        if ($v1 -eq $v2) { return 0 }
+        return -1
+    }
+}
+
 # Check if binary is already installed
 function Test-ExistingInstallation {
     param(
@@ -122,8 +147,29 @@ function Test-ExistingInstallation {
 
     if (Test-Path $BinaryPath) {
         try {
-            $currentVersion = & $BinaryPath version 2>$null | Select-Object -First 1
-            if ($currentVersion -match $TargetVersion) {
+            $currentVersionOutput = & $BinaryPath version 2>$null | Select-Object -First 1
+
+            # Extract version number (e.g., "v1.2.3" from "dr version v1.2.3")
+            if ($currentVersionOutput -match '(v?\d+\.\d+\.\d+)') {
+                $currentVersion = $matches[1]
+            } else {
+                Write-Warn "Unable to determine current version"
+                Write-Step "Proceeding with installation of $TargetVersion"
+                return $false
+            }
+
+            # Normalize versions (ensure both have 'v' prefix)
+            if ($currentVersion -notmatch '^v') {
+                $currentVersion = "v$currentVersion"
+            }
+
+            Write-Step "Current installation: $currentVersion"
+            Write-Step "Target version: $TargetVersion"
+
+            # Check if versions are the same
+            $comparison = Compare-Versions -Version1 $currentVersion -Version2 $TargetVersion
+
+            if ($comparison -eq 0) {
                 Write-Info "DataRobot CLI $TargetVersion is already installed"
                 Write-Step "Installation location: $BinaryPath"
 
@@ -134,14 +180,43 @@ function Test-ExistingInstallation {
                     Show-PathInstructions
                 }
 
+                Write-Host ""
+                Write-Info "Already up to date!"
                 return $true
-            } else {
-                Write-Step "Found existing installation: $currentVersion"
-                Write-Step "Upgrading to: $TargetVersion"
-                return $false
+            }
+            elseif ($comparison -lt 0) {
+                # Update available
+                Write-Info "Update available: $currentVersion → $TargetVersion"
+                Write-Host ""
+                $response = Read-Host "Would you like to upgrade to $TargetVersion? [Y/n]"
+
+                if ($response -match '^[Nn](o)?$') {
+                    Write-Info "Installation cancelled"
+                    exit 0
+                } else {
+                    Write-Host ""
+                    Write-Info "Upgrading DataRobot CLI..."
+                    return $false
+                }
+            }
+            else {
+                # Downgrade
+                Write-Warn "Target version ($TargetVersion) is older than current version ($currentVersion)"
+                Write-Host ""
+                $response = Read-Host "Would you like to downgrade to $TargetVersion? [y/N]"
+
+                if ($response -match '^[Yy](es)?$') {
+                    Write-Host ""
+                    Write-Info "Downgrading DataRobot CLI..."
+                    return $false
+                } else {
+                    Write-Info "Installation cancelled"
+                    exit 0
+                }
             }
         } catch {
             # If version check fails, proceed with installation
+            Write-Warn "Version check failed, proceeding with installation"
             return $false
         }
     }

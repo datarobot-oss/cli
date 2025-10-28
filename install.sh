@@ -126,22 +126,109 @@ get_version() {
     printf "   ${BOLD}Version:${NC} %s\n" "$VERSION"
 }
 
+# Compare versions (returns 0 if v1 < v2, 1 if v1 >= v2)
+compare_versions() {
+    local v1=$1
+    local v2=$2
+
+    # Remove 'v' prefix and extract version numbers
+    v1=$(echo "$v1" | sed 's/^v//')
+    v2=$(echo "$v2" | sed 's/^v//')
+
+    # Compare versions
+    if [ "$v1" = "$v2" ]; then
+        return 1  # Same version
+    fi
+
+    # Use sort -V for version comparison if available
+    if printf '%s\n' "$v1" "$v2" | sort -V -C 2>/dev/null; then
+        return 0  # v1 < v2 (update available)
+    else
+        return 1  # v1 >= v2 (no update needed)
+    fi
+}
+
 # Check if binary is already installed
 check_existing_installation() {
     if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
         CURRENT_VERSION=$("$INSTALL_DIR/$BINARY_NAME" version 2>/dev/null | head -n1 || echo "unknown")
-        if echo "$CURRENT_VERSION" | grep -q "$VERSION"; then
-            info "DataRobot CLI $VERSION is already installed at $INSTALL_DIR/$BINARY_NAME"
+
+        # Extract just the version number (e.g., "v1.2.3" from "dr version v1.2.3")
+        CURRENT_VERSION=$(echo "$CURRENT_VERSION" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+
+        if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "unknown" ]; then
+            warn "Unable to determine current version"
+            step "Proceeding with installation of $VERSION"
+            return 0
+        fi
+
+        # Normalize versions (ensure both have 'v' prefix)
+        case "$CURRENT_VERSION" in
+            v*) ;;
+            *) CURRENT_VERSION="v$CURRENT_VERSION" ;;
+        esac
+
+        step "Current installation: $CURRENT_VERSION"
+        step "Target version: $VERSION"
+
+        # Check if versions are the same
+        if [ "$CURRENT_VERSION" = "$VERSION" ]; then
+            info "DataRobot CLI $VERSION is already installed"
             step "Installation location: $INSTALL_DIR/$BINARY_NAME"
 
             if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
                 warn "$INSTALL_DIR is not in your PATH"
                 show_path_instructions
             fi
+
+            echo ""
+            info "Already up to date!"
             exit 0
+        fi
+
+        # Check if update is available
+        if compare_versions "$CURRENT_VERSION" "$VERSION"; then
+            info "Update available: $CURRENT_VERSION → $VERSION"
+
+            # Ask user if they want to update (only in interactive mode)
+            if [ -t 0 ]; then
+                echo ""
+                printf "${BOLD}Would you like to upgrade to $VERSION? [Y/n]${NC} "
+                read -r response
+                case "$response" in
+                    [nN][oO]|[nN])
+                        info "Installation cancelled"
+                        exit 0
+                        ;;
+                    *)
+                        echo ""
+                        info "Upgrading DataRobot CLI..."
+                        ;;
+                esac
+            else
+                step "Upgrading to: $VERSION"
+            fi
         else
-            step "Found existing installation: $CURRENT_VERSION"
-            step "Upgrading to: $VERSION"
+            warn "Target version ($VERSION) is older than current version ($CURRENT_VERSION)"
+
+            # Ask user if they want to downgrade
+            if [ -t 0 ]; then
+                echo ""
+                printf "${BOLD}Would you like to downgrade to $VERSION? [y/N]${NC} "
+                read -r response
+                case "$response" in
+                    [yY][eE][sS]|[yY])
+                        echo ""
+                        info "Downgrading DataRobot CLI..."
+                        ;;
+                    *)
+                        info "Installation cancelled"
+                        exit 0
+                        ;;
+                esac
+            else
+                step "Downgrading to: $VERSION"
+            fi
         fi
     fi
 }
