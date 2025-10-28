@@ -15,9 +15,10 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "auth",
-		Short: "DataRobot authentication commands",
-		Long:  `Authentication commands for ` + version.AppName + `.`,
+		Use:     "auth",
+		GroupID: "core",
+		Short:   "DataRobot authentication commands",
+		Long:    `Authentication commands for ` + version.AppName + `.`,
 	}
 
 	cmd.AddCommand(
