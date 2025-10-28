@@ -57,6 +57,16 @@ func init() {
 		log.Fatal(err)
 	}
 
+	// Add command groups
+	RootCmd.AddGroup(
+		&cobra.Group{ID: "core", Title: "Core Commands:"},
+		&cobra.Group{ID: "advanced", Title: "Advanced Commands:"},
+		&cobra.Group{ID: "plugin", Title: "Plugin Commands:"},
+	)
+
+	// Add commands here to ensure that they are available here.
+	// Be sure to set the command's GroupID field appropriately;
+	// otherwise the command will be added under 'Additional Commands'.
 	RootCmd.AddCommand(
 		auth.Cmd(),
 		completion.Cmd(),

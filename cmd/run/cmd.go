@@ -48,6 +48,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{
+		GroupID: "core",
 		Use:     "run [task1, task2, ...] [flags]",
 		Aliases: []string{"r"},
 		Short:   "Run an application template task",
