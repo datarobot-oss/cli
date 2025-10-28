@@ -9,6 +9,8 @@ The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. 
 
 ## Installation
 
+Setting up shell completions involves generating and installing the appropriate completion script for your shell. This can take many forms depending on how your shell environment is configured. Some examples are provided below -- these are not definitive.
+
 ### Bash
 
 #### Linux
@@ -21,23 +23,29 @@ dr completion bash | sudo tee /etc/bash_completion.d/dr
 source ~/.bashrc
 ```
 
-#### macOS
+```zsh
+# If shell completion is not already enabled in your environment you will need
+# to enable it.  You can execute the following once:
+# echo "autoload -U compinit; compinit" >> ~/.zshrc
 
-First, ensure bash-completion is installed:
-
-```bash
-# Using Homebrew
-brew install bash-completion@2
+  # To load completions for each session, execute once:
+  $ dr completion zsh > "${fpath[1]}/_dr"
 ```
 
-Then install the completion script:
+#### MacOS
 
-```bash
-# Generate and install completion script
-dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
+The default shell in MacOS is zsh. Shell completions for zsh
+typically go in one of the following directories:
 
-# Reload your shell
-source ~/.bash_profile
+1. `/usr/local/share/zsh/site-functions/`
+2. `/opt/homebrew/share/zsh/site-functions/`
+3. `${ZDOTDIR:-$HOME}/.zsh/completions/`
+
+Run `echo $fpath` to see all possibilities. For example, if you
+wish to put CLI completions into ZDOTDIR, then
+
+```zsh
+dr completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
 ```
 
 #### Temporary session
