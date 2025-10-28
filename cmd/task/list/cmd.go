@@ -18,14 +18,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func Cmd() *cobra.Command { //nolint: cyclop
+func Cmd() *cobra.Command {
 	var dir string
 
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"l"},
 		Short:   "List tasks",
-		Run: func(_ *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
@@ -57,6 +57,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 			}
 
 			fmt.Println("Available tasks:")
+
 			w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
 
 			for _, t := range tasks {

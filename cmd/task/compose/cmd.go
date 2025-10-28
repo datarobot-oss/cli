@@ -26,11 +26,11 @@ func Run() error {
 	return nil
 }
 
-func Cmd() *cobra.Command { //nolint: cyclop
+func Cmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "compose",
 		Short: "Compose Taskfile.yaml from multiple files in subdirectories",
-		Run: func(_ *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			err := Run()
 			if err != nil {
 				log.Fatal(err)

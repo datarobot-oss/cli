@@ -120,8 +120,6 @@ func ExitWithError(err error) {
 
 	_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
 	os.Exit(1)
-
-	return
 }
 
 // findComponents looks for the {T,t}askfile.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given root directory,

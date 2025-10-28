@@ -24,7 +24,7 @@ type taskRunOptions struct {
 	taskOpts task.RunOpts
 }
 
-func Cmd() *cobra.Command { //nolint: cyclop
+func Cmd() *cobra.Command {
 	var opts taskRunOptions
 
 	cmd := &cobra.Command{
