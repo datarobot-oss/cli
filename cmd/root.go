@@ -137,11 +137,21 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
 	}
 
+	// map VISUAL and EDITOR to external_editor config key
 	err = viper.BindEnv("external_editor", "VISUAL", "EDITOR")
 	if err != nil {
 		return fmt.Errorf("failed to bind environment variables for external_editor: %w", err)
 	}
 
+	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
+	// use the environment variable value
+	if configFilePath == "" {
+		if envConfigPath := viper.GetString("config"); envConfigPath != "" {
+			configFilePath = envConfigPath
+		}
+	}
+
+	// Now read the config file
 	err = config.ReadConfigFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
