@@ -18,6 +18,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -139,6 +140,9 @@ var Cmd = &cobra.Command{
 	Use:   "clone",
 	Short: "Clone application template",
 	Long:  `Clone application template into user provided directory.`,
+	PreRunE: func(_ *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE()
+	},
 	Run: func(_ *cobra.Command, args []string) {
 		err := Run(args)
 		if err != nil {
