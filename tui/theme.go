@@ -38,9 +38,12 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(DrPurple).
 			Padding(1, 2)
-)
-
-// Header renders the common header with DataRobot logo
+	StatusBarStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(DrPurpleLight).
+			Foreground(DrPurpleLight).
+			Padding(0, 1)
+) // Header renders the common header with DataRobot logo
 func Header() string {
 	style := lipgloss.NewStyle().
 		Background(DrGreen).

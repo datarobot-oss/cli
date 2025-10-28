@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
@@ -73,6 +74,90 @@ func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
 
+// matchTemplateByGitRemote attempts to match a template from the list based on the current git remote URL
+func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template, bool) {
+	md := exec.Command("git", "config", "--get", "remote.origin.url")
+
+	out, err := md.Output()
+	if err != nil {
+		log.Debug("Failed to get current git remote URL", "error", err)
+		return drapi.Template{}, false
+	}
+
+	remoteURL := strings.TrimSpace(string(out))
+	log.Debug("Current git remote URL: " + remoteURL)
+
+	urlRepoRegex := ".com[:|/]([^.]*)"
+	compiledRegex := regexp.MustCompile(urlRepoRegex)
+	matches := compiledRegex.FindStringSubmatch(remoteURL)
+
+	if len(matches) <= 1 {
+		return drapi.Template{}, false
+	}
+
+	repoName := matches[1]
+	log.Debug("Detected repo name: " + repoName)
+
+	for _, t := range templatesList.Templates {
+		tRepoMatches := compiledRegex.FindStringSubmatch(t.Repository.URL)
+		if len(tRepoMatches) > 1 && tRepoMatches[1] == repoName {
+			log.Debug("Found matching template: " + t.Name)
+			return t, true
+		}
+	}
+
+	return drapi.Template{}, false
+}
+
+// handleExistingRepo handles the case where we're already in a DataRobot repo
+func handleExistingRepo(repoRoot string) tea.Msg {
+	log.Debug("Already in a DataRobot repo at: " + repoRoot)
+
+	templatesList, err := drapi.GetTemplates()
+	if err != nil {
+		log.Warn("Failed to get templates, proceeding with dotenv setup anyway", "error", err)
+
+		return templateInDirMsg{
+			dotenvFile: filepath.Join(repoRoot, ".env"),
+			template:   drapi.Template{},
+		}
+	}
+
+	template, found := matchTemplateByGitRemote(templatesList)
+	if found {
+		return templateInDirMsg{
+			dotenvFile: filepath.Join(repoRoot, ".env"),
+			template:   template,
+		}
+	}
+
+	log.Debug("Could not match git remote to a template, proceeding with dotenv setup")
+
+	return templateInDirMsg{
+		dotenvFile: filepath.Join(repoRoot, ".env"),
+		template:   drapi.Template{},
+	}
+}
+
+// handleGitRepoWithoutDataRobotCLI handles the case where we're in a git repo but .datarobot/cli doesn't exist yet
+func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList) tea.Msg {
+	template, found := matchTemplateByGitRemote(templatesList)
+	if !found {
+		return templatesLoadedMsg{templatesList}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Error("Failed to get current working directory", "error", err)
+		return templatesLoadedMsg{templatesList}
+	}
+
+	return templateInDirMsg{
+		dotenvFile: filepath.Join(cwd, ".env"),
+		template:   template,
+	}
+}
+
 func getTemplates() tea.Cmd {
 	return func() tea.Msg {
 		datarobotHost := config.GetBaseURL()
@@ -80,53 +165,20 @@ func getTemplates() tea.Cmd {
 			return getHostMsg{}
 		}
 
+		// Check if we're already in a DataRobot repo by looking for .datarobot/cli folder
+		repoRoot, err := repo.FindRepoRoot()
+		if err == nil && repoRoot != "" {
+			return handleExistingRepo(repoRoot)
+		}
+
+		// Not in a DataRobot repo, show the template gallery
 		templatesList, err := drapi.GetTemplates()
 		if err != nil {
 			return authKeyStartMsg{}
 		}
 
-		// We need to detect if we're already in a template repo to allow users to rerun setup on their
-		// Current Template
-		// We do this by checking if the URL of any of the templates matches the current git remote URL
-		// If it does, we set that template as selected in the list
-		md := exec.Command("git", "config", "--get", "remote.origin.url")
-
-		out, err := md.Output()
-		if err == nil { //nolint: nestif
-			remoteURL := strings.TrimSpace(string(out))
-			log.Debug("Current git remote URL: " + remoteURL)
-
-			urlRepoRegex := ".com[:|/]([^.]*)"
-			compiledRegex := regexp.MustCompile(urlRepoRegex)
-			matches := compiledRegex.FindStringSubmatch(remoteURL)
-
-			if len(matches) > 1 {
-				repoName := matches[1]
-				log.Debug("Detected repo name: " + repoName)
-
-				for _, t := range templatesList.Templates {
-					tRepoMatches := compiledRegex.FindStringSubmatch(t.Repository.URL)
-					if len(tRepoMatches) > 1 && tRepoMatches[1] == repoName {
-						log.Debug("Found matching template: " + t.Name)
-
-						cwd, err := os.Getwd()
-						if err != nil {
-							log.Error("Failed to get current working directory", "error", err)
-							break
-						}
-
-						return templateInDirMsg{
-							dotenvFile: filepath.Join(cwd, ".env"),
-							template:   t,
-						}
-					}
-				}
-			}
-		} else {
-			log.Debug("Failed to get current git remote URL. Assuming we're not in a repo and continuing.", "error", err)
-		}
-
-		return templatesLoadedMsg{templatesList}
+		// Check if we're in a git repo that matches a template URL (for cases where .datarobot/cli doesn't exist yet)
+		return handleGitRepoWithoutDataRobotCLI(templatesList)
 	}
 }
 

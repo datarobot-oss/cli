@@ -271,8 +271,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.height = msg.Height
 
 		if m.screen == editorScreen {
-			m.textarea.SetWidth(m.width - 1)
-			m.textarea.SetHeight(m.height - 12)
+			// Width: BoxStyle.Width uses (width-8), then Padding(1,2)=4 chars + borders=2 chars = 14 total
+			m.textarea.SetWidth(m.width - 14)
+			// Height: header(2) + BoxStyle padding(2) + borders(2) + instructions(4) + status(3) = 13 total
+			m.textarea.SetHeight(m.height - 13)
 		}
 
 		return m, nil
@@ -306,8 +308,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.envResponses = m.responsesFromVariables()
 
 		ta := textarea.New()
-		ta.SetWidth(m.width - 1)
-		ta.SetHeight(m.height - 14)
+		// Width: BoxStyle.Width uses (width-8), then Padding(1,2)=4 chars + borders=2 chars = 14 total
+		ta.SetWidth(m.width - 14)
+		// Height: header(2) + BoxStyle padding(2) + borders(2) + instructions(4) + status(3) = 13 total
+		ta.SetHeight(m.height - 13)
 		ta.SetValue(m.contents)
 		ta.CursorStart()
 		cmd := ta.Focus()
@@ -480,6 +484,13 @@ func (m Model) View() string {
 		} else {
 			sb.WriteString(tui.BoxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
 		}
+	}
+
+	// Add status bar showing working directory
+	workDir := filepath.Dir(m.DotenvFile)
+	if workDir != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.StatusBarStyle.Render("📁 Working in: " + workDir))
 	}
 
 	return sb.String()
