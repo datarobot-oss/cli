@@ -21,6 +21,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -32,12 +33,8 @@ const (
 	keyExit         = "esc"
 	keySave         = "ctrl+s"
 
-	// Editor fallback
+	// Editor fallback if env vars are not set
 	defaultEditor = "vi"
-
-	// Environment variables
-	envVisual = "VISUAL"
-	envEditor = "EDITOR"
 )
 
 type screens int
@@ -111,11 +108,8 @@ func (m Model) openInExternalEditor() tea.Cmd {
 }
 
 func (m Model) externalEditorCmd() *exec.Cmd {
-	editor := os.Getenv(envVisual)
-	if editor == "" {
-		editor = os.Getenv(envEditor)
-	}
-
+	// Determine the editor to use
+	editor := viper.GetString("external_editor")
 	if editor == "" {
 		editor = defaultEditor // fallback to vi
 	}

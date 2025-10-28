@@ -36,14 +36,10 @@ func schemeHostOnly(longURL string) (string, error) {
 }
 
 func GetBaseURL() string {
-	if endpoint := os.Getenv("DATAROBOT_ENDPOINT"); endpoint != "" {
+	if endpoint := viper.GetString(DataRobotURL); endpoint != "" {
 		if newURL, err := schemeHostOnly(endpoint); err == nil {
 			return newURL
 		}
-	}
-
-	if url, err := schemeHostOnly(viper.GetString(DataRobotURL)); err == nil {
-		return url
 	}
 
 	return ""

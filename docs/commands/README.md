@@ -171,7 +171,6 @@ Global environment variables that affect all commands:
 
 ```bash
 # Configuration
-DATAROBOT_CONFIG_PATH          # Custom config file location
 DATAROBOT_ENDPOINT             # DataRobot URL
 DATAROBOT_API_KEY              # API key (not recommended)
 

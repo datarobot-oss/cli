@@ -13,13 +13,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/viper"
 )
 
 var (
-	configFileDir  = filepath.Join(".config", "datarobot")
+	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
 	configFileName = "drconfig.yaml"
 )
 
@@ -73,11 +74,45 @@ func ReadConfigFile(filePath string) error {
 		viper.AddConfigPath(defaultConfigFileDir)
 	}
 
+	// Read in the config file
+	// Ignore error if config file not found, because that's fine
+	// but return on all other errors
 	if err := viper.ReadInConfig(); err != nil {
+		// The zero-value struct looks weird, but we are using
+		// errors.As which only does type checking. We don't
+		// need an actual instance of the error.
 		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
 			return err
 		}
 	}
 
+	if viper.GetBool("debug") {
+		DebugViperConfig()
+	}
+
 	return nil
+}
+
+func DebugViperConfig() {
+	fmt.Printf("Configuration initialized. Using config file: %s\n", viper.ConfigFileUsed())
+	// Print out the viper configuration for debugging
+	// Alphabetically, and redacting sensitive information
+	// TODO There has to be a better way of marking sensitive data
+	// perhaps with leebenson/conform?
+	keys := make([]string, 0, len(viper.AllSettings()))
+	for key := range viper.AllSettings() {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := viper.Get(key)
+		// TODO Come up with a better way of redacting sensitive information
+		if key == "token" {
+			fmt.Printf("  %s: %s\n", key, "****")
+		} else {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
 }

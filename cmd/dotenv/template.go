@@ -47,6 +47,7 @@ USE_DATAROBOT_LLM_GATEWAY=
 
 // getStateDir returns the XDG_STATE_HOME directory for the dr app
 func getStateDir() (string, error) {
+	// TODO Rewrite this to retrieve state dir from Viper config
 	stateDir := os.Getenv("XDG_STATE_HOME")
 	if stateDir == "" {
 		homeDir, err := os.UserHomeDir()
