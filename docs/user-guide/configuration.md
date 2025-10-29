@@ -21,7 +21,7 @@ The CLI stores configuration in a platform-specific location:
 ```yaml
 # DataRobot Connection
 endpoint: https://app.datarobot.com
-token: encrypted_key_here
+token: api key here
 ```
 
 ### Environment-specific configs
@@ -55,7 +55,7 @@ dr templates list
 endpoint: https://app.datarobot.com
 
 # Required: API authentication key
-token:your_encrypted_key
+token: api key here
 ```
 
 ## Environment Variables
@@ -175,7 +175,7 @@ dr --debug templates list
 
 ```yaml
 endpoint: https://dev.datarobot.com
-token: dev_encrypted_key
+token: api token for dev
 ```
 
 Usage:
@@ -191,7 +191,7 @@ dr templates list
 
 ```yaml
 endpoint: https://app.datarobot.com
-token: prod_encrypted_key
+token: api key for prod
 ```
 
 Usage:
@@ -208,7 +208,7 @@ dr run deploy
 ```yaml
 datarobot:
   endpoint: https://datarobot.enterprise.com
-  token:enterprise_key
+  token: enterprise_key
   proxy: http://proxy.enterprise.com:3128
   verify_ssl: true
   ca_cert_path: /etc/ssl/certs/enterprise-ca.pem
