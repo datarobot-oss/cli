@@ -62,6 +62,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 		}
 	}))
 	viper.Set(config.DataRobotURL, server.URL+"/api/v2")
+
 	err = config.CreateConfigFileDirIfNotExists()
 	require.NoError(t, err)
 
@@ -153,6 +154,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	originalHome := os.Getenv("HOME")
+
 	os.Setenv("HOME", tempDir)
 
 	defer os.Setenv("HOME", originalHome)
@@ -160,6 +162,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 	viper.Reset()
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
+
 	viper.Set(config.DataRobotURL, "")
 	baseURL := config.GetBaseURL()
 	assert.Empty(t, baseURL, "Expected GetBaseURL to return empty string")
