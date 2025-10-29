@@ -42,7 +42,7 @@ are typically stored in one of the following directories:
 - `${ZDOTDIR:-$HOME}/.zsh/completions/`
 
 Run `echo $fpath` to see all possibilities. For example, if you
-wish to put CLI completions into ZDOTDIR, then
+wish to put CLI completions into ZDOTDIR, then run:
 
 ```zsh
 dr completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
