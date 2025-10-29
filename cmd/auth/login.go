@@ -106,7 +106,11 @@ func LoginAction(ctx context.Context) error {
 
 	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error(err)
+		return err
+	}
+
+	if key == "" {
+		return nil
 	}
 
 	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))

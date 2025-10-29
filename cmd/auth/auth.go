@@ -79,6 +79,7 @@ func waitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 		return apiKey, nil
 	case <-ctx.Done():
 		fmt.Println("\nCtrl-C received, exiting...")
+		return "", fmt.Errorf("interrupt request received")
 	}
 
 	return "", nil
