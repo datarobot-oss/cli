@@ -124,7 +124,7 @@ To test the release process without publishing, use the commands below. They cre
 
 ```bash
 # Dry run (builds but doesn't publish)
-goreleaser release --snapshot --clean
+goreleaser release --snapshot --clean --skip=sign
 
 # Check output in the dist/ directory
 ls -la dist/

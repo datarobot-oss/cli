@@ -87,7 +87,7 @@ homebrew_casks:
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
     directory: Casks
     description: "DataRobot command-line interface."
-    skip_upload: "{{ if contains .Tag \"rc\" }}true{{ else }}false{{ end }}"
+    skip_upload: "{{ if .IsSnapshot }}true{{ else if contains .Tag \"rc\" }}true{{ else }}false{{ end }}"
     repository:
       owner: datarobot-oss
       name: homebrew-taps
@@ -97,7 +97,7 @@ homebrew_casks:
         draft: false
       git:
         url: 'git@github.com:datarobot-oss/homebrew-taps.git'
-        private_key: '{{ .Env.HOMEBREW_TAPS_SSH_KEY }}'
+        private_key: '{{ envOrDefault "HOMEBREW_TAPS_SSH_KEY" "dummy" }}'
 
     commit_author:
       name: goreleaserbot
@@ -120,8 +120,8 @@ binary_signs:
       - |
         Install-Module -Name Microsoft.TrustedSigning -Force
         Invoke-TrustedSigning -File "${artifact}" `
-          -TrustedSigningAccountName "{{ .Env.AZURE_ACCOUNT_NAME }}" `
-          -CertificateProfileName "{{ .Env.AZURE_CERTIFICATE_PROFILE_NAME }}" `
+          -TrustedSigningAccountName "{{ envOrDefault "AZURE_ACCOUNT_NAME" "snapshot" }}" `
+          -CertificateProfileName "{{ envOrDefault "AZURE_CERTIFICATE_PROFILE_NAME" "snapshot" }}" `
           -Verbose
     # Define the signature output file (optional but good practice)
     signature: "${artifact}.sig"
