@@ -217,6 +217,47 @@ jobs:
         run: |
           task smoke-test DR_API_TOKEN="$DR_API_TOKEN"
 
+  smoke-test-windows:
+    runs-on: windows-latest
+    name: Run Smoke Tests (windows-latest)
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.7'
+
+      - name: Install windows version of expect
+        run: |
+          go install github.com/hymkor/expect@latest
+
+      - name: Build the DR CLI Binary
+        run:  task build
+
+      - name: Move the Binary and Add Executable to PATH
+        shell: powershell
+        run: |
+          mv .\dist\dr "$env:LOCALAPPDATA\Programs"
+          $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
+          echo $INSTALL_DIR
+          $path = [Environment]::GetEnvironmentVariable("Path", "User")
+          echo $path
+          $newPath = "$path;$INSTALL_DIR"
+          echo $newPath
+          [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+
+      - name: Run Smoke Tests for Binary
+        run: |
+          task smoke-test-windows
+
   smoke-test-installs:
     strategy:
       matrix:
