@@ -54,10 +54,8 @@ func Run(_ *cobra.Command, _ []string) {
 			return
 		}
 
-		fmt.Printf("Added " + taskfileName + " file to .gitignore\n")
+		fmt.Println("Added " + taskfileName + " file to .gitignore")
 	}
-
-	return
 }
 
 func Cmd() *cobra.Command {
