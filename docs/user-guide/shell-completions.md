@@ -37,9 +37,9 @@ source ~/.bashrc
 The default shell in MacOS is zsh. Shell completions for zsh
 are typically stored in one of the following directories:
 
-1. `/usr/local/share/zsh/site-functions/`
-2. `/opt/homebrew/share/zsh/site-functions/`
-3. `${ZDOTDIR:-$HOME}/.zsh/completions/`
+- `/usr/local/share/zsh/site-functions/`
+- `/opt/homebrew/share/zsh/site-functions/`
+- `${ZDOTDIR:-$HOME}/.zsh/completions/`
 
 Run `echo $fpath` to see all possibilities. For example, if you
 wish to put CLI completions into ZDOTDIR, then
