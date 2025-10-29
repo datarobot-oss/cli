@@ -40,6 +40,7 @@ type taskfileTmplData struct {
 
 var (
 	ErrNotInTemplate     = errors.New("not in a DataRobot template directory")
+	ErrNoTaskFilesFound  = errors.New("no Taskfiles found in child directories")
 	ErrTaskfileHasDotenv = errors.New("existing Taskfile already has dotenv directive")
 )
 
@@ -81,7 +82,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	}
 
 	if len(includes) == 0 {
-		return "", nil
+		return "", ErrNoTaskFilesFound
 	}
 
 	// Check if any discovered Taskfiles already have a dotenv directive
