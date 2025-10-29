@@ -28,14 +28,46 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 
 ## Installation
 
+### Quick Install (Recommended)
+
+Install the latest version with a single command:
+
+#### macOS/Linux
+
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+```
+
+#### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+```
+
+### Install Specific Version
+
+#### macOS/Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
+```
+
+#### Windows
+
+```powershell
+$env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+```
+
+### Installation from source
+---
 ### Prerequisites
 
 - Go 1.24.7 or later (for building from source).
 - Git.
 - [Task](https://taskfile.dev/) (for development and task running).
 
-### From source
-
+### Build from source
 ```bash
 # Clone the repository
 git clone https://github.com/datarobot/cli.git
@@ -48,19 +80,6 @@ task build
 ./dist/dr version
 ```
 
-### Binary installation
-
-Download the latest release for your platform from the [releases page](https://github.com/datarobot/cli/releases).
-
-```bash
-# macOS (example)
-curl -LO https://github.com/datarobot/cli/releases/latest/download/dr-darwin-amd64
-chmod +x dr-darwin-amd64
-sudo mv dr-darwin-amd64 /usr/local/bin/dr
-
-# Verify installation
-dr version
-```
 
 ## Quick start
 
