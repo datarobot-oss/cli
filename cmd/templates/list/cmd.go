@@ -34,8 +34,8 @@ var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available templates",
 	Long:  `List all available templates in the DataRobot application.`,
-	PreRunE: func(_ *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE()
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	Run: func(_ *cobra.Command, _ []string) {
 		err := Run()
