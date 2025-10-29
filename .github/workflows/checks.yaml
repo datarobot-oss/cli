@@ -57,7 +57,6 @@ jobs:
         run: |
           task lint
 
-
   test:
     runs-on: ubuntu-latest
     name: Run Tests
@@ -212,3 +211,32 @@ jobs:
       - name: Run smoke tests for binary
         run: |
           task smoke-test
+
+  smoke-test-installs:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: Run Installation
+    steps:
+      - name: Install for Ubuntu and MacOS
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+
+      - name: Install for windows
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+
+      - name: Check DR runs without errors (Ubuntu and MacOS)
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          dr --help
+
+      - name: Check DR runs without errors (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
+        run: |
+          C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help
