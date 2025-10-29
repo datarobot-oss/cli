@@ -20,26 +20,8 @@ The CLI stores configuration in a platform-specific location:
 
 ```yaml
 # DataRobot Connection
-datarobot:
-  endpoint: https://app.datarobot.com
-  api_key: encrypted_key_here
-  api_version: v2
-
-# CLI Preferences
-preferences:
-  default_timeout: 30
-  verify_ssl: true
-  log_level: warn
-
-# Template Settings
-templates:
-  default_clone_dir: ~/datarobot-templates
-  auto_update_check: true
-
-# Task Runner Settings
-tasks:
-  default_concurrency: 2
-  show_command_output: true
+endpoint: https://app.datarobot.com
+token: api key here
 ```
 
 ### Environment-specific configs
@@ -69,69 +51,11 @@ dr templates list
 ### Connection settings
 
 ```yaml
-datarobot:
-  # Required: DataRobot instance URL
-  endpoint: https://app.datarobot.com
+# Required: DataRobot instance URL
+endpoint: https://app.datarobot.com
 
-  # Required: API authentication key
-  api_key: your_encrypted_key
-
-  # Optional: API version (default: v2)
-  api_version: v2
-
-  # Optional: Connection timeout in seconds (default: 30)
-  timeout: 30
-
-  # Optional: Verify SSL certificates (default: true)
-  verify_ssl: true
-
-  # Optional: Custom CA certificate path
-  ca_cert_path: /path/to/ca-cert.pem
-```
-
-### User preferences
-
-```yaml
-preferences:
-  # Log level: debug, info, warn, error (default: warn)
-  log_level: info
-
-  # Enable color output (default: true)
-  color_output: true
-
-  # Default editor for text editing (default: $EDITOR or vim)
-  editor: code
-
-  # Auto-check for CLI updates (default: true)
-  check_updates: true
-```
-
-### Template settings
-
-```yaml
-templates:
-  # Default directory for cloning templates
-  default_clone_dir: ~/datarobot-projects
-
-  # Auto-update check for templates (default: false)
-  auto_update_check: false
-
-  # Preferred Git protocol: https or ssh (default: https)
-  git_protocol: https
-```
-
-### Task runner settings
-
-```yaml
-tasks:
-  # Maximum concurrent tasks (default: 2)
-  default_concurrency: 4
-
-  # Show task command output (default: true)
-  show_command_output: true
-
-  # Continue on task error (default: false)
-  continue_on_error: false
+# Required: API authentication key
+token: api key here
 ```
 
 ## Environment Variables
@@ -144,28 +68,13 @@ Override configuration with environment variables:
 # DataRobot endpoint URL
 export DATAROBOT_ENDPOINT=https://app.datarobot.com
 
-# API key (not recommended for security)
-export DATAROBOT_API_KEY=your_api_key
-
-# API version
-export DATAROBOT_API_VERSION=v2
-
-# Connection timeout (seconds)
-export DATAROBOT_TIMEOUT=60
-
-# Verify SSL
-export DATAROBOT_VERIFY_SSL=true
+# API token (not recommended for security)
+export DATAROBOT_API_TOKEN=your_api_token
 ```
 
 ### CLI behavior
 
 ```bash
-# Log level: debug, info, warn, error
-export DR_LOG_LEVEL=debug
-
-# Disable color output
-export NO_COLOR=1
-
 # Custom config file path
 export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 
@@ -173,38 +82,15 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 export EDITOR=nano
 ```
 
-### Task Runner
-
-```bash
-# Default concurrency
-export DR_CONCURRENCY=4
-
-# Task timeout
-export DR_TASK_TIMEOUT=300
-```
 
 ## Configuration priority
 
-Settings are loaded in this order (highest to lowest priority):
+Settings are loaded in order of precedence:
 
-1. **Command-line flags**: `dr --verbose`.
-2. **Environment variables**: `DATAROBOT_ENDPOINT=...`.
-3. **Config file**: `~/.datarobot/config.yaml`.
-4. **Default values**: Built-in defaults.
-
-Example:
-
-```bash
-# Config file has:
-# log_level: warn
-
-# Environment variable overrides it:
-export DR_LOG_LEVEL=debug
-
-# Command flag overrides everything:
-dr --verbose templates list
-# Uses verbose (info) level
-```
+1. flags (command-line arguments, i.e. `--config <path>`)
+2. environment variables (i.e. `DATAROBOT_CLI_CONFIG_PATH=...`)
+3. config files (i.e. `~/.datarobot/config.yaml`)
+4. defaults (built-in defaults)
 
 ## Security best practices
 
@@ -246,7 +132,7 @@ config.yaml
 
 ```bash
 # ❌ Don't do this (visible in process list)
-export DATAROBOT_API_KEY=my_secret_key
+export DATAROBOT_API_TOKEN=my_secret_token
 
 # ✅ Do this instead (use config file)
 dr auth login
@@ -267,47 +153,12 @@ Or via environment:
 export DR_TEMPLATES_DIR=~/workspace/datarobot
 ```
 
-### Proxy configuration
-
-```yaml
-datarobot:
-  endpoint: https://app.datarobot.com
-  proxy: http://proxy.company.com:8080
-  no_proxy: localhost,127.0.0.1
-```
-
-Or via standard proxy environment variables:
-
-```bash
-export HTTP_PROXY=http://proxy.company.com:8080
-export HTTPS_PROXY=http://proxy.company.com:8080
-export NO_PROXY=localhost,127.0.0.1
-```
-
-### Custom CA certificates
-
-For self-signed certificates:
-
-```yaml
-datarobot:
-  endpoint: https://datarobot.mycompany.com
-  verify_ssl: true
-  ca_cert_path: /etc/ssl/certs/mycompany-ca.pem
-```
-
-Or via environment:
-
-```bash
-export DATAROBOT_CA_CERT=/etc/ssl/certs/mycompany-ca.pem
-```
-
 ### Debugging configuration
 
 Enable debug logging:
 
 ```yaml
-preferences:
-  log_level: debug
+debug: true
 ```
 
 Or temporarily:
@@ -323,21 +174,8 @@ dr --debug templates list
 `~/.datarobot/dev-config.yaml`:
 
 ```yaml
-datarobot:
-  endpoint: https://dev.datarobot.com
-  api_key: dev_encrypted_key
-
-preferences:
-  log_level: debug
-  color_output: true
-
-templates:
-  default_clone_dir: ~/dev/datarobot-templates
-
-tasks:
-  default_concurrency: 2
-  show_command_output: true
-  continue_on_error: true
+endpoint: https://dev.datarobot.com
+token: api token for dev
 ```
 
 Usage:
@@ -352,22 +190,8 @@ dr templates list
 `~/.datarobot/prod-config.yaml`:
 
 ```yaml
-datarobot:
-  endpoint: https://app.datarobot.com
-  api_key: prod_encrypted_key
-  timeout: 60
-
-preferences:
-  log_level: error
-  color_output: false
-
-templates:
-  default_clone_dir: ~/production/datarobot-templates
-
-tasks:
-  default_concurrency: 1
-  show_command_output: false
-  continue_on_error: false
+endpoint: https://app.datarobot.com
+token: api key for prod
 ```
 
 Usage:
@@ -384,7 +208,7 @@ dr run deploy
 ```yaml
 datarobot:
   endpoint: https://datarobot.enterprise.com
-  api_key: enterprise_key
+  token: enterprise_key
   proxy: http://proxy.enterprise.com:3128
   verify_ssl: true
   ca_cert_path: /etc/ssl/certs/enterprise-ca.pem

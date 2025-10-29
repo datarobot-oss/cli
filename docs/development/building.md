@@ -441,10 +441,6 @@ dlv debug main.go -- templates list
 ```bash
 # Enable debug mode
 go run main.go --debug templates list
-
-# Or set environment variable
-export DR_LOG_LEVEL=debug
-go run main.go templates list
 ```
 
 ### Add Debug Statements
@@ -461,7 +457,7 @@ log.Error("Operation failed", "error", err)
 
 ## Release Process
 
-See [Release Documentation](release.md) for detailed release process.
+See [Release Documentation](../../README.md#release) for detailed release process.
 
 ### Quick Release
 

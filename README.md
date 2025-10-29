@@ -155,7 +155,9 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
   - [Building from source](docs/development/building.md)
   - [Architecture](docs/development/architecture.md)
   - [Testing](docs/development/testing.md)
-  - [Release process](docs/development/release.md)## Commands
+  - [Release process](#release)
+  
+## Commands
 
 ### Main commands
 
