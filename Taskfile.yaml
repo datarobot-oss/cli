@@ -112,6 +112,11 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_smoke_test.sh
 
+  release-test:
+    desc: "Check to see if the release process would complete successfully"
+    cmds:
+      - '{{.BIN_DIR}}/goreleaser release --snapshot --clean --skip=sign'
+
   copyright:
     silent: true
     desc: "Apply copyrights to all files"
