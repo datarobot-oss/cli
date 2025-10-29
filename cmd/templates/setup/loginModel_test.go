@@ -83,6 +83,7 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 	_, _ = suiteName, testName
 
 	os.RemoveAll(suite.tempDir) // Clean up the temporary directory after each test
+
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)

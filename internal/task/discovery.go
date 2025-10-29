@@ -119,6 +119,7 @@ func ExitWithError(err error) {
 	}
 
 	_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks:", err)
+
 	os.Exit(1)
 }
 

@@ -336,7 +336,7 @@ To test the release process without publishing:
 
 ```bash
 # Dry run.
-goreleaser release --snapshot --clean
+goreleaser release --snapshot --clean --skip=sign
 ```
 
 ## Contributing
