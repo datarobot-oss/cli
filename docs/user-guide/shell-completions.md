@@ -9,7 +9,7 @@ The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. 
 
 ## Installation
 
-Setting up shell completions involves generating and installing the appropriate completion script for your shell. This can take many forms depending on how your shell environment is configured. Some examples are provided below -- these are not definitive.
+Setting up shell completions involves generating and installing the appropriate completion script for your shell. This can take many forms, depending on how your shell environment is configured. Some examples are provided below&mdash;however, these are not definitive.
 
 ### Bash
 
