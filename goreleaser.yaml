@@ -111,3 +111,18 @@ notarize:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
       notarize:
+
+binary_signs:
+  - id: trusted-signing-binary
+    cmd: pwsh
+    args:
+      - -c
+      - |
+        Install-Module -Name Microsoft.TrustedSigning -Force
+        Invoke-TrustedSigning -File "${artifact}" `
+          -TrustedSigningAccountName "{{ .Env.AZURE_ACCOUNT_NAME }}" `
+          -CertificateProfileName "{{ .Env.AZURE_CERTIFICATE_PROFILE_NAME }}" `
+          -Verbose
+    # Define the signature output file (optional but good practice)
+    signature: "${artifact}.sig"
+    ids: [windows]
