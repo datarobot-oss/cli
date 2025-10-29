@@ -65,7 +65,7 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathHomeShortcutExistingFile(
 	createdMsg := dirStatus(testFileName)
 
 	testUser, err := user.Current()
-	suite.NoError(err, "Expected no error retrieving current user") //nolint: testifylint
+	suite.Require().NoError(err, "Expected no error retrieving current user")
 
 	expectedDir := filepath.Join(testUser.HomeDir, "squak/squak")
 

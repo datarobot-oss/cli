@@ -44,7 +44,7 @@ func (suite *TemplateTestSuite) SetupTest() {
 func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 	_, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
 
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
@@ -69,7 +69,7 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 
 	variables, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
 
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
@@ -246,7 +246,7 @@ func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 		baseName := getBackupBaseName(nonExistentFile)
 		pattern := filepath.Join(stateDir, baseName+"_*")
 		matches, err := filepath.Glob(pattern)
-		suite.NoError(err)
+		suite.Require().NoError(err)
 		suite.Empty(matches, "No backup should be created for non-existent file")
 	}
 }

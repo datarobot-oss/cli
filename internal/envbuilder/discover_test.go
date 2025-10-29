@@ -113,7 +113,7 @@ func (suite *DiscoverTestSuite) SetupTest() {
 
 func (suite *DiscoverTestSuite) TestDiscoverFindsFiles() {
 	foundPaths, err := Discover(suite.tempDir, 5)
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.Len(foundPaths, 2, "Expected to find 2 YAML files")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
@@ -143,7 +143,7 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
 	defer os.RemoveAll(parakeetDir)
 
 	foundPaths, err := Discover(suite.tempDir, 5)
-	suite.NoError(err) //nolint: testifylint
+	suite.Require().NoError(err)
 
 	suite.Len(foundPaths, 3, "Expected to find 3 YAML files")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
