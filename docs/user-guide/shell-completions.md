@@ -34,7 +34,7 @@ source ~/.bashrc
 
 #### macOS
 
-The default shell in MacOS is zsh. Shell completions for zsh
+The default shell in MacOS is `zsh`. Shell completions for `zsh`
 are typically stored in one of the following directories:
 
 - `/usr/local/share/zsh/site-functions/`
