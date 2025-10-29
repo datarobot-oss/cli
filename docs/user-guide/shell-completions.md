@@ -32,7 +32,7 @@ source ~/.bashrc
   $ dr completion zsh > "${fpath[1]}/_dr"
 ```
 
-#### MacOS
+#### macOS
 
 The default shell in MacOS is zsh. Shell completions for zsh
 typically go in one of the following directories:
