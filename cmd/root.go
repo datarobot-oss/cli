@@ -79,7 +79,7 @@ func init() {
 		&cobra.Group{ID: "plugin", Title: "Plugin Commands:"},
 	)
 
-	// Add commands here to ensure that they are available here.
+	// Add commands here to ensure that they are available to users.
 	// Be sure to set the command's GroupID field appropriately;
 	// otherwise the command will be added under 'Additional Commands'.
 	RootCmd.AddCommand(
