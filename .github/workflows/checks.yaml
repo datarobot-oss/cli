@@ -222,12 +222,12 @@ jobs:
       - name: Install for Ubuntu and MacOS
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/cdevent/CFX-3891/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
 
       - name: Install for windows
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
-          irm https://raw.githubusercontent.com/datarobot-oss/cli/cdevent/CFX-3891/install.ps1 | iex
+          irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 
       - name: Check DR runs without errors (Ubuntu and MacOS)
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
