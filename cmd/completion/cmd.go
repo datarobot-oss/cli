@@ -39,7 +39,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
 		Short: "Generate shell completion script",
-		Long:  `Generate shell completion script for supported shells. This will be output
+		Long: `Generate shell completion script for supported shells. This will be output
 		to stdout so it can be redirected to the appropriate location.`,
 		Example: `To load completions:
 

@@ -10,6 +10,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ import (
 // This can be overridden in tests to mock the browser-based authentication flow.
 var apiKeyCallbackFunc = waitForAPIKeyCallback
 
-func waitForAPIKeyCallback(datarobotHost string) (string, error) {
+func waitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, error) {
 	addr := "localhost:51164"
 	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
 
@@ -67,16 +68,20 @@ func waitForAPIKeyCallback(datarobotHost string) (string, error) {
 		}
 	}()
 
+	select {
 	// Wait for the key from the handler
-	apiKey := <-apiKeyChan
+	case apiKey := <-apiKeyChan:
+		fmt.Println("Successfully consumed API Key from API Request")
+		// Now shut down the server after key is received
+		if err := server.Shutdown(ctx); err != nil {
+			return "", fmt.Errorf("error during shutdown: %v", err)
+		}
 
-	fmt.Println("Successfully consumed API Key from API Request")
-	// Now shut down the server after key is received
-	if err := server.Shutdown(context.Background()); err != nil {
-		return "", fmt.Errorf("error during shutdown: %v", err)
+		return apiKey, nil
+	case <-ctx.Done():
+		fmt.Println("\nCtrl-C received, exiting...")
+		return "", errors.New("interrupt request received")
 	}
-
-	return apiKey, nil
 }
 
 func WriteConfigFileSilent() {

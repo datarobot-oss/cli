@@ -140,8 +140,8 @@ var Cmd = &cobra.Command{
 	Use:   "clone",
 	Short: "Clone application template",
 	Long:  `Clone application template into user provided directory.`,
-	PreRunE: func(_ *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE()
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	Run: func(_ *cobra.Command, args []string) {
 		err := Run(args)

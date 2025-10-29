@@ -10,6 +10,7 @@ package auth
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -24,8 +25,8 @@ import (
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns an error if authentication
 // fails, suitable for use in Cobra PreRunE hooks.
-func EnsureAuthenticatedE() error {
-	if !EnsureAuthenticated() {
+func EnsureAuthenticatedE(ctx context.Context) error {
+	if !EnsureAuthenticated(ctx) {
 		return errors.New("authentication failed")
 	}
 
@@ -36,7 +37,7 @@ func EnsureAuthenticatedE() error {
 // triggers the login flow automatically. This is a non-interactive version
 // intended for use in automated workflows. Returns true if authentication
 // is valid or was successfully obtained.
-func EnsureAuthenticated() bool {
+func EnsureAuthenticated(ctx context.Context) bool {
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
@@ -60,7 +61,7 @@ func EnsureAuthenticated() bool {
 	// Auto-retrieve new credentials without prompting
 	viper.Set(config.DataRobotAPIKey, "")
 
-	key, err := apiKeyCallbackFunc(datarobotHost)
+	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
 		log.Error("Failed to retrieve API key", "error", err)
 		return false
@@ -74,7 +75,7 @@ func EnsureAuthenticated() bool {
 	return true
 }
 
-func LoginAction() error {
+func LoginAction(ctx context.Context) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	datarobotHost := config.GetBaseURL()
@@ -103,9 +104,13 @@ func LoginAction() error {
 		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
 	}
 
-	key, err := apiKeyCallbackFunc(datarobotHost)
+	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error(err)
+		return err
+	}
+
+	if key == "" {
+		return nil
 	}
 
 	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
@@ -119,8 +124,8 @@ var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to DataRobot",
 	Long:  `Login to DataRobot to get and store an API key that can be used for other operations in the cli.`,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := LoginAction()
+	Run: func(cmd *cobra.Command, _ []string) {
+		err := LoginAction(cmd.Context())
 		if err != nil {
 			log.Error(err)
 		}

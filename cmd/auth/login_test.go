@@ -9,6 +9,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -84,12 +85,12 @@ func TestEnsureAuthenticated_MissingCredentials(t *testing.T) {
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	// Mock the callback to simulate failure to retrieve API key.
-	apiKeyCallbackFunc = func(_ string) (string, error) {
+	apiKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("simulated authentication failure")
 	}
 
 	// EnsureAuthenticated should detect missing credentials.
-	result := EnsureAuthenticated()
+	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false with missing credentials")
 
 	// Verify the URL is properly configured.
@@ -108,11 +109,11 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	assert.Empty(t, apiKey, "Expected GetAPIKey to return empty string for expired token")
 
 	// Mock the callback to simulate failure to refresh expired credentials.
-	apiKeyCallbackFunc = func(_ string) (string, error) {
+	apiKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("simulated authentication failure")
 	}
 
-	result := EnsureAuthenticated()
+	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false with expired credentials")
 }
 
@@ -126,7 +127,7 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	apiKey := config.GetAPIKey()
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token")
 
-	result := EnsureAuthenticated()
+	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid credentials")
 }
 
@@ -140,7 +141,7 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 	apiKey := config.GetAPIKey()
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token from environment")
 
-	result := EnsureAuthenticated()
+	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid environment credentials")
 }
 
@@ -163,7 +164,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 	baseURL := config.GetBaseURL()
 	assert.Empty(t, baseURL, "Expected GetBaseURL to return empty string")
 
-	result := EnsureAuthenticated()
+	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false without configured URL")
 }
 

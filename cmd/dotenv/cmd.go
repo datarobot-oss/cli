@@ -127,8 +127,8 @@ var UpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Automatically update Datarobot credentials in .env file",
 	Long:  "Automatically populate .env file with fresh Datarobot credentials",
-	PreRunE: func(_ *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE()
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenvFile := ".env"

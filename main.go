@@ -13,14 +13,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"syscall"
 
 	"github.com/datarobot/cli/cmd"
 )
 
 func main() {
 	// Create a context that's canceled on interrupt signals
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
