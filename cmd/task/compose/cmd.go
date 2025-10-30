@@ -38,24 +38,27 @@ func Run(_ *cobra.Command, _ []string) {
 	}
 
 	contents := string(contentBytes)
+	taskfileIgnore := "/" + taskfileName
 
-	if !strings.Contains(contents, taskfileName) {
-		f, err := os.Create(".gitignore")
-		if err != nil {
-			log.Error(fmt.Errorf("failed to create .gitignore file: %w", err))
-			return
-		}
-
-		defer f.Close()
-
-		_, err = f.WriteString(taskfileName + "\n\n" + contents)
-		if err != nil {
-			log.Error(fmt.Errorf("failed to write to .gitignore file: %w", err))
-			return
-		}
-
-		fmt.Println("Added " + taskfileName + " file to .gitignore")
+	if strings.Contains(contents, "\n"+taskfileIgnore+"\n") || strings.HasPrefix(contents, taskfileIgnore+"\n") {
+		return
 	}
+
+	f, err := os.Create(".gitignore")
+	if err != nil {
+		log.Error(fmt.Errorf("failed to create .gitignore file: %w", err))
+		return
+	}
+
+	defer f.Close()
+
+	_, err = f.WriteString(taskfileIgnore + "\n\n" + contents)
+	if err != nil {
+		log.Error(fmt.Errorf("failed to write to .gitignore file: %w", err))
+		return
+	}
+
+	fmt.Println("Added " + taskfileIgnore + " line to .gitignore")
 }
 
 func Cmd() *cobra.Command {
