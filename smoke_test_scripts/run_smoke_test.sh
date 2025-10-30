@@ -32,18 +32,18 @@ expect ./smoke_test_scripts/expect_auth_setURL.exp
 # `https://testing.example.com/account/developer-tools?cliRedirect=true`
 expect ./smoke_test_scripts/expect_auth_login.exp
 
-# TODO: This seemingly isn't working in GitHub Actions - $HOME/.config/datarobot/drconfig.yaml isn't created
-# # Check if we have the auth URL correctly set
-# auth_endpoint_check=$(cat $HOME/.config/datarobot/drconfig.yaml | grep endpoint | grep ${testing_url}/api/v2)
-# if [[ -n "$auth_endpoint_check" ]]; then
-#   echo "Assertion passed: We have expected expected 'endpoint' auth URL value in config."
-#   echo "Value: $auth_endpoint_check"
-# else
-#   echo "Assertion failed: We don't have expected 'endpoint' auth URL value."
-#   # Print ~/.config/datarobot/drconfig.yaml (if it exists) to aid in debugging if needed
-#   cat ~/.config/datarobot/drconfig.yaml
-#   exit 1
-# fi
+# Check if we have the auth URL correctly set
+auth_endpoint_check=$(cat $HOME/.config/datarobot/drconfig.yaml | grep endpoint | grep ${testing_url}/api/v2)
+# auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG/.config/datarobot/drconfig.yaml | grep endpoint | grep ${testing_url}/api/v2)
+if [[ -n "$auth_endpoint_check" ]]; then
+  echo "Assertion passed: We have expected expected 'endpoint' auth URL value in config."
+  echo "Value: $auth_endpoint_check"
+else
+  echo "Assertion failed: We don't have expected 'endpoint' auth URL value."
+  # Print ~/.config/datarobot/drconfig.yaml (if it exists) to aid in debugging if needed
+  cat ~/.config/datarobot/drconfig.yaml
+  exit 1
+fi
 
 # Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://testing.example.com"
 # The expect script "hits" the `e` key, then `ctrl-s` and finally `enter` (via carriage return/newline)
