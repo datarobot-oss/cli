@@ -9,40 +9,33 @@ function Write-ErrorMsg {
     exit 1
 }
 
+function Write-Delimiter {
+    param([string]$Message)
+    Write-Host
+    Write-Host ("=" * 20) -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host $Message -NoNewline
+    Write-Host " " -NoNewline
+    Write-Host ("=" * 20)
+}
+
+function Write-End {
+    Write-Host ("=" * 20) -NoNewline
+    Write-Host " END " -NoNewline
+    Write-Host ("=" * 20)
+}
+
 # Main smoke test flow
 function Smoke-Test {
-    Write-Host 'Running smoke tests for Windows.'
+    Write-Host 'Running smoke tests for Windows...'
 
-    $path = [Environment]::GetEnvironmentVariable("Path", "User")
+    Write-Delimiter "Execute dr help"
+    dr help
+    Write-End
 
-    Write-Host "path: " -NoNewline
-    Write-Host $path
-
-    $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
-
-    Write-Host "INSTALL_DIR: " -NoNewline
-    Write-Host $INSTALL_DIR
-
-    Write-Host "=========== DEBUGGING ==========="
-
-    Write-Host pwd
-    Write-Host ls
-
-    Write-Host cd C:\
-    Write-Host ls
-
-    Write-Host cd Users
-    Write-Host ls
-
-    Write-Host "================"
-
-    cd "$env:LOCALAPPDATA\Programs"
-    Write-Host ls
-
-    cd $INSTALL_DIR
-    Write-Host ls
-
-    Get-Command dr
+    Write-Delimiter "Execute dr version"
+    dr version
+    Write-End
 
     Write-Host 'Smoke tests for Windows completed.'
 }

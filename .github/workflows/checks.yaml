@@ -233,26 +233,27 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.7'
+          go-version: '1.25.3'
 
-      - name: Install windows version of expect
-        run: |
-          go install github.com/hymkor/expect@latest
+      - name: Use Go Releaser to Build Windows Executable
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser # Other value is 'goreleaser-pro'
+          version: '~> v2'
+          args: release --snapshot --clean --skip homebrew --skip archive
 
-      - name: Build the DR CLI Binary
-        run:  task build
-
-      - name: Move the Binary and Add Executable to PATH
+      - name: Move the Executable to Newly Created Directory and add to PATH
         shell: powershell
         run: |
-          mv .\dist\dr "$env:LOCALAPPDATA\Programs"
+          # Create new directory
           $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
-          echo $INSTALL_DIR
-          $path = [Environment]::GetEnvironmentVariable("Path", "User")
-          echo $path
-          $newPath = "$path;$INSTALL_DIR"
-          echo $newPath
-          [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+          mkdir "$INSTALL_DIR"
+
+          # Move executable to newly created directory
+          mv .\dist\windows_windows_amd64_v1\dr.exe "$INSTALL_DIR"
+
+          # Add to PATH (GitHub Actions specific approach)
+          echo "$INSTALL_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Run Smoke Tests for Binary
         run: |
