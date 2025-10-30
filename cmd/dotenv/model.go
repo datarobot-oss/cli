@@ -215,7 +215,8 @@ func (m Model) updatedContents() string {
 	deEnd := deBeginEnd[1]
 
 	// Insert the new variables after DATAROBOT_ENDPOINT line
-	return m.contents[:deEnd] + additions + m.contents[deEnd:]
+
+	return m.contents[:deEnd] + "\n" + additions + m.contents[deEnd:]
 }
 
 func (m Model) responsesFromVariables() map[string]string {
