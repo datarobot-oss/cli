@@ -59,6 +59,9 @@ func ExecuteContext(ctx context.Context) error {
 }
 
 func init() {
+	// Allow invoking commands in a case-insensitive manner
+	cobra.EnableCaseInsensitive = true
+
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
 		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
