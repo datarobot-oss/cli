@@ -203,7 +203,7 @@ Add periods consistently to all levels
 **Multi-line Scripts**
 ```markdown
 ✅ # Clone the repository.
-   git clone https://github.com/datarobot/cli.git
+   git clone https://github.com/datarobot-oss/cli.git
    cd cli
    
    # Build the CLI.

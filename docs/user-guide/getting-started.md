@@ -54,7 +54,7 @@ If you have Go 1.24.7 or later installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/datarobot/cli.git
+git clone https://github.com/datarobot-oss/cli.git
 cd cli
 
 # Install Task (if not already installed)

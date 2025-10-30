@@ -23,11 +23,11 @@ This guide covers building, testing, and developing the DataRobot CLI.
 
 ```bash
 # Clone repository
-git clone https://github.com/datarobot/cli.git
+git clone https://github.com/datarobot-oss/cli.git
 cd cli
 
 # Install development tools
-task install-tools
+task dev-init
 
 # Build binary
 task build
@@ -49,6 +49,7 @@ task test-coverage      # Run tests with coverage
 task lint               # Run linters
 task fmt                # Format code
 task clean              # Clean build artifacts
+task dev-init           # Setup development environment
 task install-tools      # Install development tools
 ```
 
@@ -280,9 +281,9 @@ func (m Model) View() string {
 
 ```bash
 # Clone and setup
-git clone https://github.com/datarobot/cli.git
+git clone https://github.com/datarobot-oss/cli.git
 cd cli
-task install-tools
+task dev-init
 ```
 
 ### 2. Create Feature Branch

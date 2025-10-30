@@ -70,7 +70,7 @@ $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli
 ### Build from source
 ```bash
 # Clone the repository
-git clone https://github.com/datarobot/cli.git
+git clone https://github.com/datarobot-oss/cli.git
 cd cli
 
 # Build the CLI
@@ -252,11 +252,11 @@ choco install go-task
 2. **Clone and build**
 
 ```bash
-git clone https://github.com/datarobot/cli.git
+git clone https://github.com/datarobot-oss/cli.git
 cd cli
 
 # Install development tools
-task install-tools
+task dev-init
 
 # Build the CLI
 task build
