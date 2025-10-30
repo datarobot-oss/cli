@@ -176,6 +176,9 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updatedContents merges environment variable responses into the file contents.
+// It updates existing variables in-place and appends new variables after DATAROBOT_ENDPOINT.
+// If DATAROBOT_ENDPOINT is not found, new variables are prepended to the file.
 func (m Model) updatedContents() string {
 	additions := ""
 
