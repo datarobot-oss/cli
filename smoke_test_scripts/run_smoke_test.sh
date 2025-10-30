@@ -13,6 +13,8 @@ dr completion bash > completion_bash.sh
 function_check=$(cat completion_bash.sh | grep __start_dr\()
 if [[ -n "$function_check" ]]; then
   echo "Assertion passed: We have expected completion_bash.sh file."
+  # Remove created bash file - especially helpful when running smoke tests locally
+  rm completion_bash.sh
 else
   echo "Assertion failed: We don't have expected completion_bash.sh file w/ expected function: __start_dr()."
   # Print completion_bash.sh (if it exists) to aid in debugging if needed
