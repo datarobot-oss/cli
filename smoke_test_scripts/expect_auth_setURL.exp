@@ -1,20 +1,18 @@
 #!/usr/local/bin/expect -f
 
-set timeout -1
+set timeout 10
 
 spawn dr auth setURL
 
 # If we get an overwrite prompt be sure to say yes to it first
 expect {
-    "please enter the URL you use" {
-        send -- "https://testing.example.com\r\n"
-    }
-    "do you want to overwrite? (y/N)" {
+    "do you want to overwrite" {
         send -- "y\r\n"
-        "please enter the URL you use" {
-            send -- "https://testing.example.com\r\n"
-        }
     }
+    timeout
 }
+
+expect "please enter the URL you use"
+send -- "https://testing.example.com\r\n"
 
 expect eof
