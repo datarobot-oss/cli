@@ -69,12 +69,14 @@ func SaveURLToConfig(newURL string) error {
 	if newURL == "" {
 		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
+
 		_ = viper.WriteConfig()
 
 		return nil
 	}
 
 	viper.Set(DataRobotURL, newURL+"/api/v2")
+
 	_ = viper.WriteConfig()
 
 	return nil

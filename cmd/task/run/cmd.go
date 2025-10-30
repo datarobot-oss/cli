@@ -49,6 +49,7 @@ func Cmd() *cobra.Command {
 
 			if !runner.Installed() {
 				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
+
 				os.Exit(1)
 
 				return
@@ -74,6 +75,7 @@ func Cmd() *cobra.Command {
 				}
 
 				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+
 				os.Exit(exitCode)
 			}
 		},
