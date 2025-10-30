@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -180,6 +181,9 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 // It updates existing variables in-place and appends new variables after DATAROBOT_ENDPOINT.
 // If DATAROBOT_ENDPOINT is not found, new variables are prepended to the file.
 func (m Model) updatedContents() string {
+	// There has to be a better way to write out an .env file. This is messy.
+	// Like parsing the entire dotenv into a structure, modifying the structure,
+	// then serializing it.
 	additions := ""
 
 	for name, value := range m.envResponses {
@@ -206,20 +210,23 @@ func (m Model) updatedContents() string {
 		return m.contents
 	}
 
-	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
-	endpointRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
-	endpointMatch := endpointRegex.FindStringIndex(m.contents)
+	// If the variables isn't in - append them one line below DATAROBOT_ENDPOINT
+	// If DATAROBOT_ENDPOINT is not found, prepend to the file
+	endpointLineRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
+	endpointLineMatch := endpointLineRegex.FindStringIndex(m.contents)
 
-	if endpointMatch == nil {
+	if endpointLineMatch == nil {
+		log.Debug("DATAROBOT_ENDPOINT not found, prepending new variables to the beginning of the file")
 		// Insert the new variables at the beginning
 		return additions + m.contents
 	}
 
-	insertPos := endpointMatch[1]
+	insertPos := endpointLineMatch[1]
 
 	// Insert the new variables after DATAROBOT_ENDPOINT line
+	updatedContents := m.contents[:insertPos] + additions + m.contents[insertPos:]
 
-	return m.contents[:insertPos] + additions + m.contents[insertPos:]
+	return updatedContents
 }
 
 func (m Model) responsesFromVariables() map[string]string {
