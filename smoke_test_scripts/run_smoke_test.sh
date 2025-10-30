@@ -35,10 +35,6 @@ dr run
 # The expect script "hits" the `y` key for "yes", then `https://testing.example.com`
 expect ./smoke_test_scripts/expect_auth_setURL.exp
 
-# Test previous setURL usage took effect by calling `dr auth login` and we should have the value shown in output:
-# `https://testing.example.com/account/developer-tools?cliRedirect=true`
-expect ./smoke_test_scripts/expect_auth_login.exp
-
 # Check if we have the auth URL correctly set
 auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG | grep endpoint | grep ${testing_url}/api/v2)
 if [[ -n "$auth_endpoint_check" ]]; then
@@ -50,6 +46,10 @@ else
   cat $DATAROBOT_CLI_CONFIG
   exit 1
 fi
+
+# Test `dr auth login` and we should have the value shown in output:
+# `https://testing.example.com/account/developer-tools?cliRedirect=true`
+expect ./smoke_test_scripts/expect_auth_login.exp
 
 # Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://testing.example.com"
 # The expect script "hits" the `e` key, then `ctrl-s` and finally `enter` (via carriage return/newline)
