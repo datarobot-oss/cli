@@ -1,0 +1,7 @@
+all-commands: false
+config: ""
+debug: false
+endpoint: ""
+help: false
+token: ""
+verbose: false

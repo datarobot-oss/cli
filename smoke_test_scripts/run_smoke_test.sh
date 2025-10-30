@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Using `DATAROBOT_CLI_CONFIG` to be sure we can save/update config file in GitHub Action runners
+testing_dr_cli_config_dir="$(pwd)/.config/datarobot/"
+mkdir -p $testing_dr_cli_config_dir
+export DATAROBOT_CLI_CONFIG="${testing_dr_cli_config_dir}drconfig.yaml"
+touch $DATAROBOT_CLI_CONFIG
+cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > $DATAROBOT_CLI_CONFIG
+
 # Used to test `dr dotenv setup`
 testing_url="https://testing.example.com"
 export DATAROBOT_ENDPOINT=${testing_url}
@@ -33,15 +40,14 @@ expect ./smoke_test_scripts/expect_auth_setURL.exp
 expect ./smoke_test_scripts/expect_auth_login.exp
 
 # Check if we have the auth URL correctly set
-auth_endpoint_check=$(cat $HOME/.config/datarobot/drconfig.yaml | grep endpoint | grep ${testing_url}/api/v2)
-# auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG/.config/datarobot/drconfig.yaml | grep endpoint | grep ${testing_url}/api/v2)
+auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG | grep endpoint | grep ${testing_url}/api/v2)
 if [[ -n "$auth_endpoint_check" ]]; then
   echo "Assertion passed: We have expected expected 'endpoint' auth URL value in config."
   echo "Value: $auth_endpoint_check"
 else
   echo "Assertion failed: We don't have expected 'endpoint' auth URL value."
   # Print ~/.config/datarobot/drconfig.yaml (if it exists) to aid in debugging if needed
-  cat ~/.config/datarobot/drconfig.yaml
+  cat $DATAROBOT_CLI_CONFIG
   exit 1
 fi
 
