@@ -28,7 +28,6 @@ expect ./smoke_test_scripts/expect_auth_setURL.exp
 
 # Test previous setURL usage took effect by calling `dr auth login` and we should have the value shown in output:
 # `https://testing.example.com/account/developer-tools?cliRedirect=true`
-# We're currently using `ctrl-z` in the expect script - waiting on: [CFX-3940]
 expect ./smoke_test_scripts/expect_auth_login.exp
 
 # TODO: This seemingly isn't working in GitHub Actions - $HOME/.config/datarobot/drconfig.yaml isn't created
