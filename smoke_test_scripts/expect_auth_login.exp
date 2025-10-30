@@ -14,6 +14,6 @@ expect {
 
 expect "https://testing.example.com/account/developer-tools?cliRedirect=true"
 sleep 3
-# ctrl-z
-send -- {^Z}
+# ctrl-c
+send -- {^C}
 expect eof
