@@ -11,11 +11,14 @@ package update
 import (
 	"fmt"
 
+	//"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/spf13/cobra"
 )
 
 func Run(_ *cobra.Command, _ []string) {
 	fmt.Println("dr component update")
+
+	// compose.Run(nil, nil)
 }
 
 func Cmd() *cobra.Command {
