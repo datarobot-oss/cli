@@ -204,19 +204,19 @@ func (m Model) updatedContents() string {
 	}
 
 	// If the variables isn't in - append them below DATAROBOT_ENDPOINT
-	deRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
-	deBeginEnd := deRegex.FindStringIndex(m.contents)
+	endpointRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
+	endpointMatch := endpointRegex.FindStringIndex(m.contents)
 
-	if deBeginEnd == nil {
+	if endpointMatch == nil {
 		// Insert the new variables at the beginning
 		return additions + m.contents
 	}
 
-	deEnd := deBeginEnd[1]
+	insertPos := endpointMatch[1]
 
 	// Insert the new variables after DATAROBOT_ENDPOINT line
 
-	return m.contents[:deEnd] + additions + m.contents[deEnd:]
+	return m.contents[:insertPos] + additions + m.contents[insertPos:]
 }
 
 func (m Model) responsesFromVariables() map[string]string {
