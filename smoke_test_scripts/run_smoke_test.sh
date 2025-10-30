@@ -33,7 +33,7 @@ dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
 # The expect script "hits" the `y` key for "yes", then `https://testing.example.com`
-expect ./smoke_test_scripts/expect_auth_setURL.exp
+expect ./smoke_test_scripts/expect_auth_setURL.exp $DATAROBOT_CLI_CONFIG
 
 # Check if we have the auth URL correctly set
 auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG | grep endpoint | grep ${testing_url}/api/v2)

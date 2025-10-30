@@ -2,7 +2,9 @@
 
 set timeout 10
 
-spawn dr auth setURL
+set datarobot_cli_config [lindex $argv 0]; # Grab the first command line parameter
+
+spawn dr auth setURL --config $datarobot_cli_config
 
 # If we get an overwrite prompt be sure to say yes to it first
 expect {
