@@ -201,24 +201,24 @@ func validateEnvironment() tea.Msg {
 }
 
 func executeQuickstart() tea.Msg {
-	// TODO: Implement quickstart script execution logic
-	// - Look for quickstart.py or quickstart.sh in .datarobot/cli/bin
-	// - Execute the script with appropriate parameters
-	// - Capture and handle output
-	// Return stepErrorMsg{err} if execution fails
-	time.Sleep(1000 * time.Millisecond) // Simulate work
+	// Look for quickstart.py or quickstart.sh in .datarobot/cli/bin relative to CWD
+	executablePath := filepath.Join(".datarobot", "cli", "bin")
 
-	var executablePath = filepath.Join(".datarobot", "cli", "bin")
+	// Try to find quickstart.py first
 	quickstartScript := filepath.Join(executablePath, "quickstart.py")
-	log.Println("Looking for quickstart script at:", quickstartScript)
+
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
+		// If .py doesn't exist, try .sh
 		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
-	}
-	log.Println("Looking for quickstart script at:", quickstartScript)
-	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
-		return stepErrorMsg{err: fmt.Errorf("No quickstart script found.")}
+
+		if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
+			return stepErrorMsg{err: fmt.Errorf("no quickstart script found in %s (tried quickstart.py and quickstart.sh)", executablePath)}
+		}
 	}
 
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	log.Println("Found quickstart script at:", quickstartScript)
+
+	// TODO: Execute the script and capture output
+	// For now, just return success after finding it
 	return stepCompleteMsg{}
 }
