@@ -19,6 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -202,35 +203,39 @@ func validateEnvironment() tea.Msg {
 }
 
 func executeQuickstart() tea.Msg {
-	// Look for quickstart.py or quickstart.sh in .datarobot/cli/bin relative to CWD
-	executablePath := filepath.Join(".datarobot", "cli", "bin")
+	// Look for any executable file named quickstart* in the configured path relative to CWD
+	executablePath := internal.QuickstartScriptPath
 
-	// Try to find quickstart.py first
-	quickstartScript := filepath.Join(executablePath, "quickstart.py")
+	// Find files matching quickstart*
+	matches, err := filepath.Glob(filepath.Join(executablePath, "quickstart*"))
+	if err != nil {
+		return stepErrorMsg{err: fmt.Errorf("failed to search for quickstart script: %w", err)}
+	}
 
-	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
-		// If .py doesn't exist, try .sh
-		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
+	// Find the first executable file
+	var quickstartScript string
 
-		if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
-			return stepErrorMsg{err: fmt.Errorf("no quickstart script found in %s (tried quickstart.py and quickstart.sh)", executablePath)}
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil {
+			continue
 		}
+
+		// Check if it's a regular file and executable
+		if !info.IsDir() && info.Mode()&0111 != 0 {
+			quickstartScript = match
+			break
+		}
+	}
+
+	if quickstartScript == "" {
+		return stepErrorMsg{err: fmt.Errorf("no executable quickstart script found in %s", executablePath)}
 	}
 
 	log.Println("Found quickstart script at:", quickstartScript)
 
-	// Determine the interpreter based on file extension
-	var cmd *exec.Cmd
-
-	if strings.HasSuffix(quickstartScript, ".py") {
-		// Execute Python script
-		cmd = exec.Command("python3", quickstartScript)
-	} else if strings.HasSuffix(quickstartScript, ".sh") {
-		// Execute shell script
-		cmd = exec.Command("bash", quickstartScript)
-	} else {
-		return stepErrorMsg{err: fmt.Errorf("unsupported script type: %s", quickstartScript)}
-	}
+	// Execute the script directly (it should have a shebang or be executable)
+	cmd := exec.Command(quickstartScript)
 
 	// Set up command to inherit stdin/stdout/stderr for interactive execution
 	cmd.Stdin = os.Stdin
