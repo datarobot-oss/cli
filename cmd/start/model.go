@@ -172,14 +172,9 @@ func (m StartModel) View() string {
 
 func startQuickstart() tea.Msg {
 	// TODO: Implement quickstart initialization logic
-	// Use internal.repo module to determine if we are in a DR repo
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
-	if !repo.IsInRepo() {
-		return stepErrorMsg{err: fmt.Errorf("not inside a DataRobot repository")}
-	}
-
 	time.Sleep(50 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
@@ -187,10 +182,15 @@ func startQuickstart() tea.Msg {
 
 func checkPrerequisites() tea.Msg {
 	// TODO: Implement prerequisites checking logic
+	// - Check we are in a DR repository
 	// - Check for required tools (git, docker, etc.)
 	// - Verify template configuration
 	// - Validate directory structure
 	// Return stepErrorMsg{err} if prerequisites are not met
+	if !repo.IsInRepo() {
+		return stepErrorMsg{err: fmt.Errorf("not inside a DataRobot repository")}
+	}
+
 	time.Sleep(1100 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
