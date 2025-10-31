@@ -63,6 +63,7 @@ type Model struct {
 	envResponses       map[string]string
 	currentPromptIndex int
 	currentPrompt      promptModel
+	hasPrompts         *bool // Cache whether prompts are available
 }
 
 type (
@@ -141,6 +142,20 @@ func (m Model) saveEditedFile() tea.Cmd {
 
 		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate, false}
 	}
+}
+
+func (m Model) checkPromptsAvailable() bool {
+	// Use cached result if available
+	if m.hasPrompts != nil {
+		return *m.hasPrompts
+	}
+
+	// Check if prompts exist by attempting to gather them
+	currentDir := filepath.Dir(m.DotenvFile)
+
+	userPrompts, _, err := envbuilder.GatherUserPrompts(currentDir)
+
+	return err == nil && len(userPrompts) > 0
 }
 
 func (m Model) loadPrompts() tea.Cmd {
@@ -302,6 +317,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.currentPromptIndex = 0
 		m.envResponses = m.responsesFromVariables()
 
+		// Cache the result
+		hasPrompts := len(m.prompts) > 0
+		m.hasPrompts = &hasPrompts
+
 		if len(m.prompts) == 0 {
 			m.screen = listScreen
 			return m, nil
@@ -461,7 +480,7 @@ func (m Model) View() string {
 		sb.WriteString(tui.BoxStyle.Render(content.String()))
 		sb.WriteString("\n\n")
 
-		if len(m.variables) > 0 {
+		if m.checkPromptsAvailable() && len(m.variables) > 0 {
 			sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
 			sb.WriteString("\n")
 		}
