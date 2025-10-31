@@ -9,34 +9,30 @@
 package start
 
 import (
-	"github.com/charmbracelet/log"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "start",
+		Use:     "start",
 		Aliases: []string{"quickstart"},
 		GroupID: "core",
-		Short: "Run the application quickstart process",
+		Short:   "Run the application quickstart process",
 		Long: `Run the application quickstart process for the current template.
 Running this command performs the following actions:
 - Validating the environment
 - Checking template prerequisites
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			log.Info("Starting application quickstart process...")
-			log.Info("This feature is under development and will be available in a future release.")
+			m := NewModel()
+			p := tea.NewProgram(tui.NewInterruptibleModel(m))
 
-		// Look for quickstart implementation in .datarobot/cli/bin, relative to pwd
-		// Check template prerequisites
-			log.Info("Checking template prerequisites...")
-		// Validate environment
-			log.Info("Validating environment...")
-		// Execute quickstart.py or quickstart.sh
-			log.Info("Executing quickstart script...")
+			if _, err := p.Run(); err != nil {
+				return err
+			}
 
-			log.Info("Application quickstart process completed.")
 			return nil
 		},
 	}
