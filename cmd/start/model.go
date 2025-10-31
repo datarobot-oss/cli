@@ -44,6 +44,10 @@ type StartModel struct {
 	err      error
 }
 
+type allStepsCompleteMsg struct {
+	quickstartScript string
+}
+
 type stepCompleteMsg struct{}
 
 type stepErrorMsg struct {
@@ -64,7 +68,6 @@ func NewStartModel() StartModel {
 			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			{description: "Validating environment...", fn: validateEnvironment},
 			{description: "Executing quickstart script...", fn: executeQuickstart},
-			{description: "Application quickstart process completed.", fn: completeQuickstart},
 		},
 		current:  0,
 		done:     false,
@@ -102,6 +105,12 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+	case allStepsCompleteMsg:
+		m.done = true
+		log.Println("Just kidding, didn't do a damn thing.")
+		log.Println("We did find the quickstart script at:", msg.quickstartScript)
+		return m, tea.Quit
+
 	case stepCompleteMsg:
 		if m.current < len(m.steps)-1 {
 			m.current++
@@ -124,8 +133,15 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m StartModel) View() string {
 	if m.quitting {
 		if m.err != nil {
+			// Display error message
+			// as well as the model step in which this error occurred.
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-			return fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error())
+
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error()))
+			sb.WriteString(fmt.Sprintf("Occurred in: %s\n", m.CurrentStep().description))
+
+			return sb.String()
 		}
 
 		return ""
@@ -209,13 +225,5 @@ func executeQuickstart() tea.Msg {
 	}
 
 	time.Sleep(500 * time.Millisecond) // Simulate work
-	return stepCompleteMsg{}
-}
-
-func completeQuickstart() tea.Msg {
-	// We're done! Now just let the user know what's up.
-	time.Sleep(1000 * time.Millisecond) // Simulate work
-	log.Println("Just kidding, none of this actually did anything.")
-
-	return stepCompleteMsg{}
+	return allStepsCompleteMsg{quickstartScript: quickstartScript}
 }
