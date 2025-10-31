@@ -10,6 +10,12 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+// TUI configuration constants
+const (
+	// DebugLogFile is the filename for TUI debug logs
+	DebugLogFile = "dr-tui-debug.log"
+)
+
 // DataRobot brand colors, utilizing the Design System palette
 const (
 	DrPurple      = lipgloss.Color("#7770F9") // purple-60
