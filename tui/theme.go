@@ -8,13 +8,32 @@
 
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
 
 // TUI configuration constants
 const (
 	// DebugLogFile is the filename for TUI debug logs
 	DebugLogFile = "dr-tui-debug.log"
 )
+
+// SetupDebugLogging configures debug logging for the TUI if debug mode is enabled.
+// It should be called at the start of TUI programs when debug logging is needed.
+// Returns a cleanup function that should be deferred to close the log file.
+func SetupDebugLogging() (cleanup func(), err error) {
+	f, err := tea.LogToFile(DebugLogFile, "debug")
+	if err != nil {
+		fmt.Println("fatal:", err)
+		os.Exit(1)
+	}
+
+	return func() { f.Close() }, nil
+}
 
 // DataRobot brand colors, utilizing the Design System palette
 const (
