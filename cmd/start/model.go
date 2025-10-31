@@ -44,10 +44,6 @@ type StartModel struct {
 	err      error
 }
 
-type allStepsCompleteMsg struct {
-	quickstartScript string
-}
-
 type stepCompleteMsg struct{}
 
 type stepErrorMsg struct {
@@ -105,18 +101,14 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-	case allStepsCompleteMsg:
-		m.done = true
-		log.Println("Just kidding, didn't do a damn thing.")
-		log.Println("We did find the quickstart script at:", msg.quickstartScript)
-		return m, tea.Quit
-
 	case stepCompleteMsg:
+		// See if there's a next step, and move to it
 		if m.current < len(m.steps)-1 {
 			m.current++
 			return m, m.executeCurrentStep()
 		}
 
+		// No more steps, we're done
 		m.done = true
 		return m, tea.Quit
 
@@ -138,6 +130,7 @@ func (m StartModel) View() string {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 
 			var sb strings.Builder
+			sb.WriteString("\n")
 			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error()))
 			sb.WriteString(fmt.Sprintf("Occurred in: %s\n", m.CurrentStep().description))
 
@@ -217,13 +210,15 @@ func executeQuickstart() tea.Msg {
 
 	var executablePath = filepath.Join(".datarobot", "cli", "bin")
 	quickstartScript := filepath.Join(executablePath, "quickstart.py")
+	log.Println("Looking for quickstart script at:", quickstartScript)
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
 		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
 	}
+	log.Println("Looking for quickstart script at:", quickstartScript)
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
 		return stepErrorMsg{err: fmt.Errorf("No quickstart script found.")}
 	}
 
 	time.Sleep(500 * time.Millisecond) // Simulate work
-	return allStepsCompleteMsg{quickstartScript: quickstartScript}
+	return stepCompleteMsg{}
 }
