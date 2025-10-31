@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 // RunTea starts the template setup TUI, optionally from the start command
 func RunTea(ctx context.Context, fromStartCommand bool) error {
 	if viper.GetBool("debug") {
-		f, err := tea.LogToFile("dr-tui-debug.log", "debug")
+		f, err := tea.LogToFile(tui.DebugLogFile, "debug")
 		if err != nil {
 			fmt.Println("fatal: ", err)
 			os.Exit(1)
