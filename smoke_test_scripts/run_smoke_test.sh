@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Used throughout testing
-testing_url="https://testing.example.com"
+testing_url="https://app.datarobot.com"
 
 # Using `DATAROBOT_CLI_CONFIG` to be sure we can save/update config file in GitHub Action runners
 testing_dr_cli_config_dir="$(pwd)/.config/datarobot/"
@@ -31,7 +31,7 @@ fi
 dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
-# The expect script "hits" the `y` key for "yes", then `https://testing.example.com`
+# The expect script "hits" the `y` key for "yes", then `https://app.datarobot.com`
 expect ./smoke_test_scripts/expect_auth_setURL.exp $DATAROBOT_CLI_CONFIG
 
 # Check if we have the auth URL correctly set
@@ -48,13 +48,13 @@ else
 fi
 
 # Test `dr auth login` and we should have the value shown in output:
-# `https://testing.example.com/account/developer-tools?cliRedirect=true`
+# `https://app.datarobot.com/account/developer-tools?cliRedirect=true`
 expect ./smoke_test_scripts/expect_auth_login.exp
 
 # Used to test `dr dotenv setup`
 export DATAROBOT_ENDPOINT=${testing_url}
 
-# Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://testing.example.com"
+# Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://app.datarobot.com"
 # The expect script "hits" the `e` key, then `ctrl-s` and finally `enter` (via carriage return/newline)
 expect ./smoke_test_scripts/expect_dotenv_setup.exp
 # Check if we have the value correctly set
