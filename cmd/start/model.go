@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -218,7 +219,32 @@ func executeQuickstart() tea.Msg {
 
 	log.Println("Found quickstart script at:", quickstartScript)
 
-	// TODO: Execute the script and capture output
-	// For now, just return success after finding it
+	// Determine the interpreter based on file extension
+	var cmd *exec.Cmd
+
+	if strings.HasSuffix(quickstartScript, ".py") {
+		// Execute Python script
+		cmd = exec.Command("python3", quickstartScript)
+	} else if strings.HasSuffix(quickstartScript, ".sh") {
+		// Execute shell script
+		cmd = exec.Command("bash", quickstartScript)
+	} else {
+		return stepErrorMsg{err: fmt.Errorf("unsupported script type: %s", quickstartScript)}
+	}
+
+	// Set up command to inherit stdin/stdout/stderr for interactive execution
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Execute the script
+	log.Println("Executing quickstart script...")
+
+	if err := cmd.Run(); err != nil {
+		return stepErrorMsg{err: fmt.Errorf("failed to execute quickstart script: %w", err)}
+	}
+
+	log.Println("Quickstart script completed successfully")
+
 	return stepCompleteMsg{}
 }
