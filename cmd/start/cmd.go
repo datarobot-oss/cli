@@ -9,9 +9,13 @@
 package start
 
 import (
+	"fmt"
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type startOptions struct {
@@ -31,15 +35,15 @@ Running this command performs the following actions:
 - Checking template prerequisites
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// if viper.GetBool("debug") {
-			// 	f, err := tea.LogToFile("tea-debug.log", "debug")
-			// 	if err != nil {
-			// 		fmt.Println("fatal:", err)
-			// 		os.Exit(1)
-			// 	}
+			if viper.GetBool("debug") {
+				f, err := tea.LogToFile("tea-debug.log", "debug")
+				if err != nil {
+					fmt.Println("fatal:", err)
+					os.Exit(1)
+				}
 
-			// 	defer f.Close()
-			// }
+				defer f.Close()
+			}
 
 			m := NewStartModel()
 			p := tea.NewProgram(tui.NewInterruptibleModel(m))
