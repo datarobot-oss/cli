@@ -34,7 +34,6 @@ tasks:
 
         go install mvdan.cc/gofumpt@latest
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} v2.6.0
-        # go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
         go install github.com/goreleaser/goreleaser/v2@latest
 
   dev-init:
