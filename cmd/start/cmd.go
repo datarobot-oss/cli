@@ -9,8 +9,7 @@
 package start
 
 import (
-	"fmt"
-
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
@@ -26,13 +25,19 @@ Running this command performs the following actions:
 - Checking template prerequisites
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-		log.Info("Starting application quickstart process...")
+			log.Info("Starting application quickstart process...")
+			log.Info("This feature is under development and will be available in a future release.")
+
 		// Look for quickstart implementation in .datarobot/cli/bin, relative to pwd
 		// Check template prerequisites
+			log.Info("Checking template prerequisites...")
 		// Validate environment
+			log.Info("Validating environment...")
 		// Execute quickstart.py or quickstart.sh
+			log.Info("Executing quickstart script...")
 
-		return nil
+			log.Info("Application quickstart process completed.")
+			return nil
 		},
 	}
 
