@@ -18,14 +18,24 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
+type step struct {
+	description string
+	fn          func() tea.Msg
+}
+
 type StartModel struct {
-	steps    []string
+	steps    []step
 	current  int
 	done     bool
 	quitting bool
+	err      error
 }
 
 type stepCompleteMsg struct{}
+
+type stepErrorMsg struct {
+	err error
+}
 
 var (
 	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
@@ -36,28 +46,34 @@ var (
 
 func NewStartModel() StartModel {
 	return StartModel{
-		steps: []string{
-			"Starting application quickstart process...",
-			"This feature is under development and will be available in a future release.",
-			"Checking template prerequisites...",
-			"Validating environment...",
-			"Executing quickstart script...",
-			"Application quickstart process completed.",
+		steps: []step{
+			{description: "Starting application quickstart process...", fn: startQuickstart},
+			{description: "Checking template prerequisites...", fn: checkPrerequisites},
+			{description: "Validating environment...", fn: validateEnvironment},
+			{description: "Executing quickstart script...", fn: executeQuickstart},
+			{description: "Application quickstart process completed.", fn: completeQuickstart},
 		},
 		current:  0,
 		done:     false,
 		quitting: false,
+		err:      nil,
 	}
 }
 
 func (m StartModel) Init() tea.Cmd {
-	return tick()
+	return m.executeCurrentStep()
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(_ time.Time) tea.Msg {
-		return stepCompleteMsg{}
-	})
+func (m StartModel) executeCurrentStep() tea.Cmd {
+	if m.current >= len(m.steps) {
+		return nil
+	}
+
+	currentStep := m.steps[m.current]
+
+	return func() tea.Msg {
+		return currentStep.fn()
+	}
 }
 
 func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -72,10 +88,16 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepCompleteMsg:
 		if m.current < len(m.steps)-1 {
 			m.current++
-			return m, tick()
+			return m, m.executeCurrentStep()
 		}
 
 		m.done = true
+		return m, tea.Quit
+
+	case stepErrorMsg:
+		m.err = msg.err
+		m.quitting = true
+
 		return m, tea.Quit
 	}
 
@@ -84,6 +106,11 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m StartModel) View() string {
 	if m.quitting {
+		if m.err != nil {
+			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+			return fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error())
+		}
+
 		return ""
 	}
 
@@ -95,20 +122,75 @@ func (m StartModel) View() string {
 
 	for i, step := range m.steps {
 		if i < m.current {
-			sb.WriteString(fmt.Sprintf("  %s %s\n", checkMark, dimStyle.Render(step)))
+			sb.WriteString(fmt.Sprintf("  %s %s\n", checkMark, dimStyle.Render(step.description)))
 		} else if i == m.current {
-			sb.WriteString(fmt.Sprintf("  %s %s\n", arrow, step))
+			sb.WriteString(fmt.Sprintf("  %s %s\n", arrow, step.description))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(step)))
+			sb.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(step.description)))
 		}
 	}
 
 	if !m.done {
 		sb.WriteString("\n")
-		sb.WriteString(dimStyle.Render("  Press q or Ctrl+C to quit"))
+		sb.WriteString(tui.Footer())
 	}
 
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+// Step function stubs
+
+func startQuickstart() tea.Msg {
+	// TODO: Implement quickstart initialization logic
+	// - Set up initial state
+	// - Display welcome message
+	// - Prepare for subsequent steps
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
+	return stepCompleteMsg{}
+}
+
+func checkPrerequisites() tea.Msg {
+	// TODO: Implement prerequisites checking logic
+	// - Check for required tools (git, docker, etc.)
+	// - Verify template configuration
+	// - Validate directory structure
+	// Return stepErrorMsg{err} if prerequisites are not met
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
+	return stepCompleteMsg{}
+}
+
+func validateEnvironment() tea.Msg {
+	// TODO: Implement environment validation logic
+	// - Check environment variables
+	// - Verify credentials if needed
+	// - Validate system requirements
+	// Return stepErrorMsg{err} if validation fails
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
+	return stepCompleteMsg{}
+}
+
+func executeQuickstart() tea.Msg {
+	// TODO: Implement quickstart script execution logic
+	// - Look for quickstart.py or quickstart.sh in .datarobot/cli/bin
+	// - Execute the script with appropriate parameters
+	// - Capture and handle output
+	// Return stepErrorMsg{err} if execution fails
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
+	return stepCompleteMsg{}
+}
+
+func completeQuickstart() tea.Msg {
+	// TODO: Implement completion logic
+	// - Display success message
+	// - Show next steps or instructions
+	// - Clean up temporary resources
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
+	return stepCompleteMsg{}
 }
