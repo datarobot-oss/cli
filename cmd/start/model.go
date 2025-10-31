@@ -18,8 +18,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	// "github.com/charmbracelet/log"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -164,7 +162,7 @@ func startQuickstart() tea.Msg {
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	time.Sleep(50 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
 }
@@ -175,7 +173,7 @@ func checkPrerequisites() tea.Msg {
 	// - Verify template configuration
 	// - Validate directory structure
 	// Return stepErrorMsg{err} if prerequisites are not met
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	time.Sleep(1100 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
 }
@@ -186,7 +184,7 @@ func validateEnvironment() tea.Msg {
 	// - Verify credentials if needed
 	// - Validate system requirements
 	// Return stepErrorMsg{err} if validation fails
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	time.Sleep(100 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
 }
@@ -197,19 +195,11 @@ func executeQuickstart() tea.Msg {
 	// - Execute the script with appropriate parameters
 	// - Capture and handle output
 	// Return stepErrorMsg{err} if execution fails
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	time.Sleep(1000 * time.Millisecond) // Simulate work
 
-	return stepCompleteMsg{}
-}
-
-func completeQuickstart() tea.Msg {
-	// find the quickstart script at `.datarobot/cli/bin/quickstart.py` or `quickstart.sh`
-	// and execute it, passing any necessary parameters.
-	log.Println("Looking for quickstart.py script...")
 	var executablePath = filepath.Join(".datarobot", "cli", "bin")
 	quickstartScript := filepath.Join(executablePath, "quickstart.py")
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
-		log.Println("quickstart.py not found, looking for quickstart.sh")
 		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
 
 		// TODO: Implement completion logic
@@ -222,4 +212,14 @@ func completeQuickstart() tea.Msg {
 	}
 
 	return stepErrorMsg{err: fmt.Errorf("no quickstart script found")}
+
+}
+
+func completeQuickstart() tea.Msg {
+	// find the quickstart script at `.datarobot/cli/bin/quickstart.py` or `quickstart.sh`
+	// and execute it, passing any necessary parameters.
+	time.Sleep(1000 * time.Millisecond) // Simulate work
+	log.Println("Just kidding, none of this actually did anything.")
+
+	return stepCompleteMsg{}
 }
