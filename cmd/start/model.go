@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -202,10 +203,12 @@ func executeQuickstart() tea.Msg {
 func completeQuickstart() tea.Msg {
 	// find the quickstart script at `.datarobot/cli/bin/quickstart.py` or `quickstart.sh`
 	// and execute it, passing any necessary parameters.
-	quickstartScript := filepath.Join(".datarobot", "cli", "bin", "quickstart.py")
+	log.Debug("Looking for quickstart.py script...")
+	var executablePath = filepath.Join(".datarobot", "cli", "bin")
+	quickstartScript := filepath.Join(executablePath, "quickstart.py")
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
-		quickstartScript = filepath.Join(".datarobot", "cli", "bin", "quickstart.sh")
-
+		log.Debug("quickstart.py not found, looking for quickstart.sh")
+		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
 
 		// TODO: Implement completion logic
 		// - Display success message
