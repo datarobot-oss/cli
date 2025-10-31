@@ -50,7 +50,7 @@ Download `dr-windows-amd64.exe` from the [releases page](https://github.com/data
 
 ### Option 2: Build from source
 
-If you have Go 1.24.7 or later installed:
+If you have Go 1.25.3 or later installed:
 
 ```bash
 # Clone the repository
@@ -76,7 +76,7 @@ dr version
 You should see output similar to:
 
 ```
-DataRobot CLI version 0.1.0 (commit: abc1234, built date: 2025-10-23, runtime: go1.24.7)
+DataRobot CLI version 0.1.0 (commit: abc1234, built date: 2025-10-23, runtime: go1.25.3)
 ```
 
 ## Initial Setup
