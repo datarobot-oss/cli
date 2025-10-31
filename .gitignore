@@ -41,7 +41,7 @@ coverage.txt
 coverage.html
 
 # Tea
-tea-debug.log
+dr-tui-debug.log
 
 # IDEs/Editors
 *.sublime-project
