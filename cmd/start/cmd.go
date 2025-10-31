@@ -14,7 +14,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type startOptions struct {
+	AnswerYes bool
+}
+
 func Cmd() *cobra.Command {
+	var opts startOptions
+
 	cmd := &cobra.Command{
 		Use:     "start",
 		Aliases: []string{"quickstart"},
@@ -36,6 +42,8 @@ Running this command performs the following actions:
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&opts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
 
 	return cmd
 }
