@@ -18,7 +18,7 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-type Model struct {
+type StartModel struct {
 	steps    []string
 	current  int
 	done     bool
@@ -34,8 +34,8 @@ var (
 	boldStyle = lipgloss.NewStyle().Bold(true)
 )
 
-func NewModel() Model {
-	return Model{
+func NewStartModel() StartModel {
+	return StartModel{
 		steps: []string{
 			"Starting application quickstart process...",
 			"This feature is under development and will be available in a future release.",
@@ -50,7 +50,7 @@ func NewModel() Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m StartModel) Init() tea.Cmd {
 	return tick()
 }
 
@@ -60,7 +60,7 @@ func tick() tea.Cmd {
 	})
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -82,7 +82,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m StartModel) View() string {
 	if m.quitting {
 		return ""
 	}

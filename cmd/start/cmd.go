@@ -32,7 +32,7 @@ Running this command performs the following actions:
 - Checking template prerequisites
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m := NewModel()
+			m := NewStartModel()
 			p := tea.NewProgram(tui.NewInterruptibleModel(m))
 
 			if _, err := p.Run(); err != nil {
