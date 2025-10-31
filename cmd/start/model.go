@@ -23,7 +23,9 @@ import (
 
 // step represents a single step in the quickstart process
 type step struct {
+	// description is a brief summary of the step
 	description string
+	// fn is the function that performs the step's Update action
 	fn          func() tea.Msg
 }
 
@@ -201,23 +203,17 @@ func executeQuickstart() tea.Msg {
 	quickstartScript := filepath.Join(executablePath, "quickstart.py")
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
 		quickstartScript = filepath.Join(executablePath, "quickstart.sh")
-
-		// TODO: Implement completion logic
-		// - Display success message
-		// - Show next steps or instructions
-		// - Clean up temporary resources
-		time.Sleep(500 * time.Millisecond) // Simulate work
-
-		return stepCompleteMsg{}
+	}
+	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
+		return stepErrorMsg{err: fmt.Errorf("No quickstart script found.")}
 	}
 
-	return stepErrorMsg{err: fmt.Errorf("no quickstart script found")}
-
+	time.Sleep(500 * time.Millisecond) // Simulate work
+	return stepCompleteMsg{}
 }
 
 func completeQuickstart() tea.Msg {
-	// find the quickstart script at `.datarobot/cli/bin/quickstart.py` or `quickstart.sh`
-	// and execute it, passing any necessary parameters.
+	// We're done! Now just let the user know what's up.
 	time.Sleep(1000 * time.Millisecond) // Simulate work
 	log.Println("Just kidding, none of this actually did anything.")
 
