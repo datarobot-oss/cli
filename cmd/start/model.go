@@ -19,7 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -134,7 +134,7 @@ func (m StartModel) View() string {
 			var sb strings.Builder
 			sb.WriteString("\n")
 			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error()))
-			sb.WriteString(fmt.Sprintf("Occurred in: %s\n", m.CurrentStep().description))
+			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Occurred in:"), m.CurrentStep().description))
 
 			return sb.String()
 		}
@@ -172,9 +172,14 @@ func (m StartModel) View() string {
 
 func startQuickstart() tea.Msg {
 	// TODO: Implement quickstart initialization logic
+	// Use internal.repo module to determine if we are in a DR repo
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
+	if !repo.IsInRepo() {
+		return stepErrorMsg{err: fmt.Errorf("not inside a DataRobot repository")}
+	}
+
 	time.Sleep(50 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
@@ -203,8 +208,11 @@ func validateEnvironment() tea.Msg {
 }
 
 func executeQuickstart() tea.Msg {
+	// If we are, look for a quickstart script in the standard location
+	// of .datarobot/cli/bin
+
 	// Look for any executable file named quickstart* in the configured path relative to CWD
-	executablePath := internal.QuickstartScriptPath
+	executablePath := repo.QuickstartScriptPath
 
 	// Find files matching quickstart*
 	matches, err := filepath.Glob(filepath.Join(executablePath, "quickstart*"))
