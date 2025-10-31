@@ -63,7 +63,7 @@ $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli
 ---
 ### Prerequisites
 
-- Go 1.24.7 or later (for building from source).
+- Go 1.25.3 or later (for building from source).
 - Git.
 - [Task](https://taskfile.dev/) (for development and task running).
 
