@@ -10,6 +10,8 @@ package start
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,18 +83,6 @@ func (m StartModel) executeCurrentStep() tea.Cmd {
 
 	return func() tea.Msg {
 		return currentStep.fn()
-	}
-}
-
-func (m StartModel) NextStep() step {
-	if m.current+1 < len(m.steps) {
-		return m.steps[m.current+1]
-	}
-}
-
-func (m StartModel) PreviousStep() step {
-	if m.current-1 >= 0 {
-		return m.steps[m.current-1]
 	}
 }
 
@@ -215,13 +205,16 @@ func completeQuickstart() tea.Msg {
 	quickstartScript := filepath.Join(".datarobot", "cli", "bin", "quickstart.py")
 	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
 		quickstartScript = filepath.Join(".datarobot", "cli", "bin", "quickstart.sh")
-		
 
-	// TODO: Implement completion logic
-	// - Display success message
-	// - Show next steps or instructions
-	// - Clean up temporary resources
-	time.Sleep(500 * time.Millisecond) // Simulate work
 
-	return stepCompleteMsg{}
+		// TODO: Implement completion logic
+		// - Display success message
+		// - Show next steps or instructions
+		// - Clean up temporary resources
+		time.Sleep(500 * time.Millisecond) // Simulate work
+
+		return stepCompleteMsg{}
+	}
+
+	return stepErrorMsg{err: fmt.Errorf("no quickstart script found")}
 }
