@@ -160,11 +160,9 @@ func (m StartModel) View() string {
 // Step function stubs
 
 func startQuickstart() tea.Msg {
-	// TODO: Implement quickstart initialization logic
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
-	time.Sleep(50 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
 }
@@ -180,6 +178,8 @@ func checkPrerequisites() tea.Msg {
 		return stepErrorMsg{err: fmt.Errorf("not inside a DataRobot repository")}
 	}
 
+	// TODO invoke internal.repo.tools module
+
 	time.Sleep(1100 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
@@ -188,10 +188,11 @@ func checkPrerequisites() tea.Msg {
 func validateEnvironment() tea.Msg {
 	// TODO: Implement environment validation logic
 	// - Check environment variables
-	// - Verify credentials if needed
 	// - Validate system requirements
 	// Return stepErrorMsg{err} if validation fails
 	time.Sleep(100 * time.Millisecond) // Simulate work
+
+	// TODO invoke logic in internal.envvalidator
 
 	return stepCompleteMsg{}
 }
@@ -235,6 +236,9 @@ func executeQuickstart() tea.Msg {
 	cmd := exec.Command(quickstartScript)
 
 	// Set up command to inherit stdin/stdout/stderr for interactive execution
+	// TODO This needs to interrupt the TUI properly so that users
+	// can actually see the output and interact with the script
+	// and only after this has completed do we return to the TUI
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
