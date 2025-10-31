@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Be sure to get DR_API_TOKEN from args
+args=("$@")
+DR_API_TOKEN=${args[0]}
+
 # Used throughout testing
 testing_url="https://app.datarobot.com"
 
@@ -9,6 +13,9 @@ mkdir -p $testing_dr_cli_config_dir
 export DATAROBOT_CLI_CONFIG="${testing_dr_cli_config_dir}drconfig.yaml"
 touch $DATAROBOT_CLI_CONFIG
 cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > $DATAROBOT_CLI_CONFIG
+
+# Set API token in our ephemeral config file
+yq -i ".token = \"$DR_API_TOKEN\"" $DATAROBOT_CLI_CONFIG
 
 dr help
 dr help run
