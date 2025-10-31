@@ -10,8 +10,6 @@ package setup
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/tui"
@@ -37,12 +35,12 @@ the template configuration process step by step.`,
 // RunTea starts the template setup TUI
 func RunTea(ctx context.Context) error {
 	if viper.GetBool("debug") {
-		f, err := tea.LogToFile(tui.DebugLogFile, "debug")
+		cleanup, err := tui.SetupDebugLogging()
 		if err != nil {
-			fmt.Println("fatal:", err)
-			os.Exit(1)
+			return err
 		}
-		defer f.Close()
+
+		defer cleanup()
 	}
 
 	m := NewModel()
