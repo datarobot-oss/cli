@@ -18,11 +18,19 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
+// step represents a single step in the quickstart process
 type step struct {
 	description string
 	fn          func() tea.Msg
 }
 
+type ModelWithSteps interface {
+	CurrentStep() step
+	NextStep() step
+	PreviousStep() step
+}
+
+// StartModel defines the model for the start command's TUI
 type StartModel struct {
 	steps    []step
 	current  int
@@ -69,11 +77,27 @@ func (m StartModel) executeCurrentStep() tea.Cmd {
 		return nil
 	}
 
-	currentStep := m.steps[m.current]
+	currentStep := m.CurrentStep()
 
 	return func() tea.Msg {
 		return currentStep.fn()
 	}
+}
+
+func (m StartModel) NextStep() step {
+	if m.current+1 < len(m.steps) {
+		return m.steps[m.current+1]
+	}
+}
+
+func (m StartModel) PreviousStep() step {
+	if m.current-1 >= 0 {
+		return m.steps[m.current-1]
+	}
+}
+
+func (m StartModel) CurrentStep() step {
+	return m.steps[m.current]
 }
 
 func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
