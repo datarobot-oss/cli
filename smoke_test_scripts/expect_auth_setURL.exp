@@ -15,6 +15,6 @@ expect {
 }
 
 expect "please enter the URL you use"
-send -- "https://testing.example.com\r\n"
+send -- "https://app.datarobot.com\r\n"
 
 expect eof

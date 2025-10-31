@@ -7,12 +7,12 @@ spawn dr auth login
 # If we get an prompt for needed URL be sure to set it first
 expect {
     "please enter the URL you use" {
-        send -- "https://testing.example.com\r\n"
+        send -- "https://app.datarobot.com\r\n"
     }
     timeout
 }
 
-expect "https://testing.example.com/account/developer-tools?cliRedirect=true"
+expect "https://app.datarobot.com/account/developer-tools?cliRedirect=true"
 sleep 3
 # ctrl-c
 send -- {^C}

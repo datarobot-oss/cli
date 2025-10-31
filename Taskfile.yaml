@@ -10,6 +10,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
+  GOLANGCI_LINT_VERSION: "v2.6.0"
 
 dotenv: [".env"]
 
@@ -33,7 +34,20 @@ tasks:
         export GOBIN={{.BIN_DIR}}
 
         go install mvdan.cc/gofumpt@latest
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         go install github.com/goreleaser/goreleaser/v2@latest
+    status:
+      - "{{.BIN_DIR}}/gofumpt --version"
+      - "{{.BIN_DIR}}/golangci-lint --version"
+      - "{{.BIN_DIR}}/goreleaser --version"
+
+  uninstall-tools:
+    silent: true
+    desc: "Uninstall static checkers & other binaries"
+    cmds:
+      - "rm {{.BIN_DIR}}/gofumpt"
+      - "rm {{.BIN_DIR}}/golangci-lint"
+      - "rm {{.BIN_DIR}}/goreleaser"
 
   dev-init:
     silent: true
@@ -109,7 +123,7 @@ tasks:
   smoke-test:
     desc: "Run smoke tests"
     cmds:
-      - ./smoke_test_scripts/run_smoke_test.sh
+      - ./smoke_test_scripts/run_smoke_test.sh {{.DR_API_TOKEN}}
 
   copyright:
     silent: true
