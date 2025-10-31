@@ -1,0 +1,38 @@
+#!/usr/local/bin/expect -f
+
+set timeout -1
+
+spawn dr templates setup
+
+expect "more"
+# Filter
+send -- {/}
+
+expect "Filter"
+send -- "talk\r\n"
+
+expect "Talk to My Docs"
+send -- "\r\n"
+
+expect "talk-to-my-docs-agents"
+send -- "\r\n"
+
+expect "Interactive Setup"
+send -- "\r\n"
+
+expect "DATAROBOT_DEFAULT_USE_CASE"
+send -- "\r\n"
+
+expect "SESSION_SECRET_KEY"
+send -- "TESTING_SESSION_SECRET_KEY\r\n"
+
+expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
+send -- "\r\n"
+
+expect "data_source"
+send -- "\r\n"
+
+expect "Environment Variables Menu"
+send -- "\r\n"
+
+expect eof
