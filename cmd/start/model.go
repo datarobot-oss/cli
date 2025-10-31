@@ -26,8 +26,8 @@ type step struct {
 
 type ModelWithSteps interface {
 	CurrentStep() step
-	NextStep() step
-	PreviousStep() step
+	NextStep() step // do i really need this
+	PreviousStep() step // do i really need this
 }
 
 // StartModel defines the model for the start command's TUI
@@ -210,6 +210,13 @@ func executeQuickstart() tea.Msg {
 }
 
 func completeQuickstart() tea.Msg {
+	// find the quickstart script at `.datarobot/cli/bin/quickstart.py` or `quickstart.sh`
+	// and execute it, passing any necessary parameters.
+	quickstartScript := filepath.Join(".datarobot", "cli", "bin", "quickstart.py")
+	if _, err := os.Stat(quickstartScript); os.IsNotExist(err) {
+		quickstartScript = filepath.Join(".datarobot", "cli", "bin", "quickstart.sh")
+		
+
 	// TODO: Implement completion logic
 	// - Display success message
 	// - Show next steps or instructions
