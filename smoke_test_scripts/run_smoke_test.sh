@@ -7,6 +7,14 @@ DR_API_TOKEN=${args[0]}
 # Used throughout testing
 testing_url="https://app.datarobot.com"
 
+# Determine if we can access URL
+wget -q --spider $testing_url
+if [ $? -eq 0 ]; then
+    url_accessible=1
+else
+    url_accessible=0
+fi
+
 # Using `DATAROBOT_CLI_CONFIG` to be sure we can save/update config file in GitHub Action runners
 testing_dr_cli_config_dir="$(pwd)/.config/datarobot/"
 mkdir -p $testing_dr_cli_config_dir
@@ -77,25 +85,29 @@ else
 fi
 
 # Test templates - Confirm expect script has cloned TTMDocs and that .env has expected value
-expect ./smoke_test_scripts/expect_templates_setup.exp
-testing_session_secret_key="TESTING_SESSION_SECRET_KEY"
-DIRECTORY="./talk-to-my-docs-agents"
-if [ -d "$DIRECTORY" ]; then
-  echo "✅ Directory ($DIRECTORY) exists."
+if [ "$url_accessible" -eq 0 ]; then
+  echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
 else
-  echo "❌ Directory ($DIRECTORY) does not exist."
-  exit 1
+  expect ./smoke_test_scripts/expect_templates_setup.exp
+  testing_session_secret_key="TESTING_SESSION_SECRET_KEY"
+  DIRECTORY="./talk-to-my-docs-agents"
+  if [ -d "$DIRECTORY" ]; then
+    echo "✅ Directory ($DIRECTORY) exists."
+  else
+    echo "❌ Directory ($DIRECTORY) does not exist."
+    exit 1
+  fi
+  cd $DIRECTORY
+  session_secret_key_check=$(cat .env | grep SESSION_SECRET_KEY=${testing_session_secret_key})
+  if [[ -n "$session_secret_key_check" ]]; then
+    echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
+  else
+    echo "❌ Assertion failed: We don't have expected SESSION_SECRET_KEY value in created .env file."
+    # Print .env (if it exists) to aid in debugging if needed
+    cat .env
+    exit 1
+  fi
+  # Now delete directory to clean up
+  cd ..
+  rm -rf $DIRECTORY
 fi
-cd $DIRECTORY
-session_secret_key_check=$(cat .env | grep SESSION_SECRET_KEY=${testing_session_secret_key})
-if [[ -n "$session_secret_key_check" ]]; then
-  echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
-else
-  echo "❌ Assertion failed: We don't have expected SESSION_SECRET_KEY value in created .env file."
-  # Print .env (if it exists) to aid in debugging if needed
-  cat .env
-  exit 1
-fi
-# Now delete directory to clean up
-cd ..
-rm -rf $DIRECTORY
