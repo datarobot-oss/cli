@@ -45,7 +45,7 @@ var EditCmd = &cobra.Command{
 	Short: "Edit .env file using built-in editor",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
+			f, err := tea.LogToFile("dr-tui-debug.log", "debug")
 			if err != nil {
 				fmt.Println("fatal:", err)
 				os.Exit(1)
@@ -99,7 +99,7 @@ var SetupCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
+			f, err := tea.LogToFile("dr-tui-debug.log", "debug")
 			if err != nil {
 				fmt.Println("fatal:", err)
 				os.Exit(1)
