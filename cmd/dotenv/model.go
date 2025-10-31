@@ -455,59 +455,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 func (m Model) View() string {
 	var sb strings.Builder
 
-	var content strings.Builder
-
 	switch m.screen {
 	case listScreen:
-		sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
-		sb.WriteString("\n\n")
-		fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
-
-		for _, v := range m.variables {
-			if v.commented {
-				fmt.Fprintf(&content, "# ")
-			}
-
-			fmt.Fprintf(&content, "%s: ", v.name)
-
-			if v.secret {
-				fmt.Fprintf(&content, "***\n")
-			} else {
-				fmt.Fprintf(&content, "%s\n", v.value)
-			}
-		}
-
-		sb.WriteString(tui.BoxStyle.Render(content.String()))
-		sb.WriteString("\n\n")
-
-		if m.checkPromptsAvailable() && len(m.variables) > 0 {
-			sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
-			sb.WriteString("\n")
-		}
-
-		sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
+		sb.WriteString(m.viewListScreen())
 	case editorScreen:
-		sb.WriteString(tui.WelcomeStyle.Render("Edit Mode"))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BoxStyle.Width(m.width - 8).Render(m.textarea.View()))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+s to save and go to menu."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving."))
-
+		sb.WriteString(m.viewEditorScreen())
 	case wizardScreen:
-		sb.WriteString(tui.WelcomeStyle.Render("Interactive Setup"))
-		sb.WriteString("\n\n")
-
-		if m.currentPromptIndex < len(m.prompts) {
-			sb.WriteString(tui.BoxStyle.Render(m.currentPrompt.View()))
-		} else {
-			sb.WriteString(tui.BoxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
-		}
+		sb.WriteString(m.viewWizardScreen())
 	}
 
 	// Add status bar showing working directory
@@ -515,6 +469,75 @@ func (m Model) View() string {
 	if workDir != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.StatusBarStyle.Render("📁 Working in: " + workDir))
+	}
+
+	return sb.String()
+}
+
+func (m Model) viewListScreen() string {
+	var sb strings.Builder
+
+	var content strings.Builder
+
+	sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
+	sb.WriteString("\n\n")
+	fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
+
+	for _, v := range m.variables {
+		if v.commented {
+			fmt.Fprintf(&content, "# ")
+		}
+
+		fmt.Fprintf(&content, "%s: ", v.name)
+
+		if v.secret {
+			fmt.Fprintf(&content, "***\n")
+		} else {
+			fmt.Fprintf(&content, "%s\n", v.value)
+		}
+	}
+
+	sb.WriteString(tui.BoxStyle.Render(content.String()))
+	sb.WriteString("\n\n")
+
+	if m.checkPromptsAvailable() && len(m.variables) > 0 {
+		sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
+	sb.WriteString("\n")
+	sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
+	sb.WriteString("\n")
+	sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
+
+	return sb.String()
+}
+
+func (m Model) viewEditorScreen() string {
+	var sb strings.Builder
+
+	sb.WriteString(tui.WelcomeStyle.Render("Edit Mode"))
+	sb.WriteString("\n\n")
+	sb.WriteString(tui.BoxStyle.Width(m.width - 8).Render(m.textarea.View()))
+	sb.WriteString("\n\n")
+	sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+s to save and go to menu."))
+	sb.WriteString("\n")
+	sb.WriteString(tui.BaseTextStyle.Render("Press esc to quit without saving."))
+
+	return sb.String()
+}
+
+func (m Model) viewWizardScreen() string {
+	var sb strings.Builder
+
+	sb.WriteString(tui.WelcomeStyle.Render("Interactive Setup"))
+	sb.WriteString("\n\n")
+
+	if m.currentPromptIndex < len(m.prompts) {
+		sb.WriteString(tui.BoxStyle.Render(m.currentPrompt.View()))
+	} else {
+		sb.WriteString(tui.BoxStyle.Render(tui.BaseTextStyle.Render("No prompts left")))
 	}
 
 	return sb.String()
