@@ -6,26 +6,36 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package remove
+package list
 
 import (
 	"fmt"
 
-	//"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/datarobot/cli/internal/copier"
+
 	"github.com/spf13/cobra"
 )
 
-func Run(_ *cobra.Command, _ []string) {
-	fmt.Println("dr component remove")
+func RunE(_ *cobra.Command, _ []string) error {
+	fmt.Println("dr component list")
 
-	// compose.Run(nil, nil)
+	answers, err := copier.AnswersFromPath(".")
+	if err != nil {
+		return err
+	}
+
+	for _, answer := range answers {
+		fmt.Println(answer.FileName, answer.Repo)
+	}
+
+	return nil
 }
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Remove component",
-		Run:   Run,
+		Use:   "list",
+		Short: "List components",
+		RunE:  RunE,
 	}
 
 	return cmd
