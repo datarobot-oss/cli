@@ -210,7 +210,7 @@ func (m Model) updatedContents() string {
 		return m.contents
 	}
 
-	// If the variables isn't in - append them one line below DATAROBOT_ENDPOINT
+	// If the variables aren't in file - append them below DATAROBOT_ENDPOINT
 	// If DATAROBOT_ENDPOINT is not found, prepend to the file
 	endpointLineRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
 	endpointLineMatch := endpointLineRegex.FindStringIndex(m.contents)
