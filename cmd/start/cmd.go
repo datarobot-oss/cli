@@ -24,7 +24,6 @@ type startOptions struct {
 
 func Cmd() *cobra.Command {
 	var opts startOptions
-
 	cmd := &cobra.Command{
 		Use:     "start",
 		Aliases: []string{"quickstart"},
@@ -42,6 +41,7 @@ Running this command performs the following actions:
 					fmt.Println("fatal:", err)
 					os.Exit(1)
 				}
+
 				defer f.Close()
 			}
 
