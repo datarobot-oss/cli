@@ -125,23 +125,6 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m StartModel) View() string {
-	if m.quitting {
-		if m.err != nil {
-			// Display error message
-			// as well as the model step in which this error occurred.
-			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-
-			var sb strings.Builder
-			sb.WriteString("\n")
-			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Error:"), m.err.Error()))
-			sb.WriteString(fmt.Sprintf("\n%s %s\n\n", errorStyle.Render("Occurred in:"), m.CurrentStep().description))
-
-			return sb.String()
-		}
-
-		return ""
-	}
-
 	var sb strings.Builder
 
 	sb.WriteString("\n")
@@ -158,7 +141,13 @@ func (m StartModel) View() string {
 		}
 	}
 
-	if !m.done {
+	// If there's an error, display it at the end after showing the steps
+	if m.err != nil {
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+
+		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("%s %s\n", errorStyle.Render("Error:"), m.err.Error()))
+	} else if !m.done && !m.quitting {
 		sb.WriteString("\n")
 		sb.WriteString(tui.Footer())
 	}
@@ -251,6 +240,7 @@ func executeQuickstart() tea.Msg {
 	cmd.Stderr = os.Stderr
 
 	// Execute the script
+	// TODO After user confirmation
 	log.Println("Executing quickstart script...")
 
 	if err := cmd.Run(); err != nil {
