@@ -2,12 +2,26 @@
 
 Welcome to the DataRobot CLI documentation. This directory contains comprehensive guides and references for using and developing the DataRobot CLI tool.
 
+## Quick Install
+
+Install the latest version with a single command that auto-detects your operating system:
+
+**macOS/Linux:**
+######
+
+    curl https://datarobot-oss.github.io/cli/install | sh
+
+**Windows (PowerShell):**
+######
+    irm https://datarobot-oss.github.io/cli/winstall | iex
+
+For more installation options, see [Getting Started](user-guide/getting-started.md).
+
 ## Documentation structure
 
 ### 📚 User Guide
 
 End-user documentation for using the CLI:
-
 - [Getting started](user-guide/getting-started.md)&mdash;installation and initial setup.
 - [Authentication](user-guide/authentication.md)&mdash;setting up DataRobot credentials.
 - [Working with templates](user-guide/templates.md)&mdash;clone and manage application templates.
