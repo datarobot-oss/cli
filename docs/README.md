@@ -8,7 +8,7 @@ Install the latest version with a single command that auto-detects your operatin
 
 **macOS/Linux:**
 ```bash
-curl -fsSL https://datarobot-oss.github.io/cli/install | sh
+curl https://datarobot-oss.github.io/cli/install | sh
 ```
 
 **Windows (PowerShell):**
@@ -23,7 +23,6 @@ For more installation options, see [Getting Started](user-guide/getting-started.
 ### 📚 User Guide
 
 End-user documentation for using the CLI:
-
 - [Getting started](user-guide/getting-started.md)&mdash;installation and initial setup.
 - [Authentication](user-guide/authentication.md)&mdash;setting up DataRobot credentials.
 - [Working with templates](user-guide/templates.md)&mdash;clone and manage application templates.
