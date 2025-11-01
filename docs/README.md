@@ -7,14 +7,13 @@ Welcome to the DataRobot CLI documentation. This directory contains comprehensiv
 Install the latest version with a single command that auto-detects your operating system:
 
 **macOS/Linux:**
-```bash
-curl https://datarobot-oss.github.io/cli/install | sh
-```
+######
+
+    curl https://datarobot-oss.github.io/cli/install | sh
 
 **Windows (PowerShell):**
-```powershell
-irm https://datarobot-oss.github.io/cli/winstall | iex
-```
+######
+    irm https://datarobot-oss.github.io/cli/winstall | iex
 
 For more installation options, see [Getting Started](user-guide/getting-started.md).
 

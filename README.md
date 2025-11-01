@@ -34,30 +34,24 @@ Install the latest version with a single command:
 
 #### macOS/Linux
 
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
-```
+######
+    curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
 
 #### Windows (PowerShell)
 
-```powershell
-irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
-```
+######
+    irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 
 ### Install Specific Version
 
 #### macOS/Linux
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
-```
+######
+    curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
 
 #### Windows
-
-```powershell
-$env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
-```
+######
+    $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 
 ### Installation from source
 ---
@@ -156,7 +150,7 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
   - [Architecture](docs/development/architecture.md)
   - [Testing](docs/development/testing.md)
   - [Release process](#release)
-  
+
 ## Commands
 
 ### Main commands
