@@ -8,12 +8,12 @@ Install the latest version with a single command that auto-detects your operatin
 
 **macOS/Linux:**
 ```bash
-curl -fsSL https://datarobot-oss.github.io/cli | sh
+curl -fsSL https://datarobot-oss.github.io/cli/install | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://datarobot-oss.github.io/cli | iex
+irm https://datarobot-oss.github.io/cli/winstall | iex
 ```
 
 For more installation options, see [Getting Started](user-guide/getting-started.md).
