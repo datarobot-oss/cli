@@ -370,6 +370,79 @@ verify_installation() {
     fi
 }
 
+# Install shell completions
+install_completions() {
+    local completion_installed=0
+
+    # Detect shell and install appropriate completions
+    case "$SHELL" in
+        */zsh)
+            # Check for Oh-My-Zsh first (most common)
+            if [ -d "$HOME/.oh-my-zsh" ]; then
+                local comp_dir="$HOME/.oh-my-zsh/custom/completions"
+                mkdir -p "$comp_dir"
+
+                if "$INSTALL_DIR/$BINARY_NAME" completion zsh > "$comp_dir/_$BINARY_NAME" 2>/dev/null; then
+                    step "Installed Zsh completions to $comp_dir/_$BINARY_NAME"
+                    rm -f "$HOME/.zcompdump"* 2>/dev/null
+                    completion_installed=1
+                fi
+            # Try standard Zsh completion directory
+            elif [ -d "$HOME/.zsh" ] || mkdir -p "$HOME/.zsh/completions" 2>/dev/null; then
+                local comp_dir="$HOME/.zsh/completions"
+
+                if "$INSTALL_DIR/$BINARY_NAME" completion zsh > "$comp_dir/_$BINARY_NAME" 2>/dev/null; then
+                    step "Installed Zsh completions to $comp_dir/_$BINARY_NAME"
+                    rm -f "$HOME/.zcompdump"* 2>/dev/null
+
+                    # Add to fpath if not already there
+                    local zshrc="$HOME/.zshrc"
+                    if [ -f "$zshrc" ] && ! grep -q "$comp_dir" "$zshrc" 2>/dev/null; then
+                        echo "" >> "$zshrc"
+                        echo "# Added by DataRobot CLI installer" >> "$zshrc"
+                        echo "fpath=($comp_dir \$fpath)" >> "$zshrc"
+                        echo "autoload -U compinit && compinit" >> "$zshrc"
+                    fi
+                    completion_installed=1
+                fi
+            fi
+            ;;
+        */bash)
+            # Try user-level completion directory
+            local comp_dir="$HOME/.bash_completions"
+            mkdir -p "$comp_dir" 2>/dev/null
+
+            if "$INSTALL_DIR/$BINARY_NAME" completion bash > "$comp_dir/$BINARY_NAME" 2>/dev/null; then
+                step "Installed Bash completions to $comp_dir/$BINARY_NAME"
+
+                # Add sourcing to bashrc if not already there
+                local bashrc="$HOME/.bashrc"
+                if [ -f "$bashrc" ] && ! grep -q "$comp_dir/$BINARY_NAME" "$bashrc" 2>/dev/null; then
+                    echo "" >> "$bashrc"
+                    echo "# Added by DataRobot CLI installer" >> "$bashrc"
+                    echo "[ -f $comp_dir/$BINARY_NAME ] && source $comp_dir/$BINARY_NAME" >> "$bashrc"
+                fi
+                completion_installed=1
+            fi
+            ;;
+        */fish)
+            local comp_dir="$HOME/.config/fish/completions"
+            mkdir -p "$comp_dir" 2>/dev/null
+
+            if "$INSTALL_DIR/$BINARY_NAME" completion fish > "$comp_dir/$BINARY_NAME.fish" 2>/dev/null; then
+                step "Installed Fish completions to $comp_dir/$BINARY_NAME.fish"
+                completion_installed=1
+            fi
+            ;;
+    esac
+
+    if [ $completion_installed -eq 1 ]; then
+        step "Shell completions installed! Restart your shell to activate."
+    else
+        step "To install completions later, run: $BINARY_NAME completion <shell>"
+    fi
+}
+
 # Check if install directory is in PATH
 check_path() {
     if echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
@@ -435,6 +508,10 @@ EOF
 
     IN_PATH=0
     check_path && IN_PATH=1
+
+    echo ""
+    info "Setting up shell completions..."
+    install_completions
 
     echo ""
     if [ $IN_PATH -eq 1 ]; then

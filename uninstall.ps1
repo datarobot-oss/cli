@@ -136,6 +136,57 @@ function Remove-FromPath {
     }
 }
 
+# Remove shell completions
+function Remove-Completions {
+    $removed = $false
+
+    # PowerShell completion - check profile
+    $profilePath = $PROFILE
+    if (Test-Path $profilePath) {
+        $content = Get-Content $profilePath -Raw
+
+        # Check if profile has dr completion reference
+        if ($content -match "$BINARY_NAME completion powershell|$BINARY_NAME\.ps1") {
+            Write-Step "Found completion reference in PowerShell profile"
+
+            try {
+                # Create backup
+                $backupPath = "$profilePath.bak.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                Copy-Item $profilePath $backupPath
+
+                # Remove lines containing dr completion
+                $newContent = ($content -split "`n" | Where-Object {
+                    $_ -notmatch "$BINARY_NAME completion powershell" -and
+                    $_ -notmatch "$BINARY_NAME\.ps1" -and
+                    $_ -notmatch "Added by DataRobot CLI installer"
+                }) -join "`n"
+
+                Set-Content -Path $profilePath -Value $newContent
+                Write-Success "Removed completion from PowerShell profile"
+                $removed = $true
+            } catch {
+                Write-Warn "Failed to remove completion from profile: $_"
+            }
+        }
+    }
+
+    # Remove standalone completion script if it exists
+    $completionScript = Join-Path (Split-Path $profilePath) "$BINARY_NAME.ps1"
+    if (Test-Path $completionScript) {
+        try {
+            Remove-Item $completionScript -Force
+            Write-Success "Removed completion script: $completionScript"
+            $removed = $true
+        } catch {
+            Write-Warn "Failed to remove completion script: $_"
+        }
+    }
+
+    if (-not $removed) {
+        Write-Step "No shell completions found"
+    }
+}
+
 # Confirm uninstallation
 function Confirm-Uninstall {
     Write-Host ""
@@ -165,6 +216,10 @@ function Uninstall-DataRobotCLI {
     Write-Host ""
     Write-Info "Checking PATH environment variables..."
     Remove-FromPath
+
+    Write-Host ""
+    Write-Info "Removing shell completions..."
+    Remove-Completions
 
     Write-Host ""
     Write-Info "Uninstallation complete!"

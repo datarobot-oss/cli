@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -79,6 +80,9 @@ func Cmd() *cobra.Command {
 				os.Exit(exitCode)
 			}
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return completeTaskNames(&opts)
+		},
 	}
 
 	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "Directory to look for tasks.")
@@ -89,5 +93,65 @@ func Cmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.taskOpts.ExitCode, "exit-code", "x", false, "Pass-through the exit code of the task command.")
 	cmd.Flags().BoolVarP(&opts.taskOpts.Silent, "silent", "s", false, "Disables echoing.")
 
+	// Register directory completion for the dir flag
+	_ = cmd.RegisterFlagCompletionFunc("dir", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveFilterDirs
+	})
+
 	return cmd
+}
+
+// completeTaskNames provides shell completion for task names
+func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective) {
+	binaryName := "task"
+
+	// Try to find a Taskfile - check for standard Taskfile first,
+	// then fall back to generated template Taskfile
+	var taskfilePath string
+
+	// Check for standard Taskfile.yaml (used in CLI repo itself)
+	standardTaskfile := filepath.Join(opts.Dir, "Taskfile.yaml")
+	if _, err := os.Stat(standardTaskfile); err == nil {
+		taskfilePath = standardTaskfile
+	} else {
+		// Try template discovery with Taskfile.gen.yaml
+		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+
+		discoveredTaskfile, err := discovery.Discover(opts.Dir, 2)
+		if err != nil {
+			// No Taskfile found - return no completions
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		taskfilePath = discoveredTaskfile
+	}
+
+	runner := task.NewTaskRunner(task.RunnerOpts{
+		BinaryName: binaryName,
+		Taskfile:   taskfilePath,
+		Dir:        opts.Dir,
+	})
+
+	if !runner.Installed() {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	tasks, err := runner.ListTasks()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	// Build completion suggestions with task name and description
+	completions := make([]string, 0, len(tasks))
+
+	for _, t := range tasks {
+		desc := t.Desc
+		if desc == "" {
+			desc = t.Summary
+		}
+		// Format: "taskname\tdescription"
+		completions = append(completions, fmt.Sprintf("%s\t%s", t.Name, desc))
+	}
+
+	return completions, cobra.ShellCompDirectiveNoFileComp
 }
