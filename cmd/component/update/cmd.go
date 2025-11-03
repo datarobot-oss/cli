@@ -21,12 +21,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func RunE(_ *cobra.Command, args []string) error {
+func PreRunE(_ *cobra.Command, args []string) error {
 	if !repo.IsInRepoRoot() {
-		log.Error("Should be in repository root directory")
-		os.Exit(1)
+		return fmt.Errorf("should be in repository root directory")
 	}
 
+	if len(args) == 0 || args[0] == "" {
+		return fmt.Errorf("answers_file required")
+	}
+
+	return nil
+}
+
+func RunE(_ *cobra.Command, args []string) error {
 	yamlFile := args[0]
 
 	fmt.Printf("Updating component %s\n", yamlFile)
@@ -55,9 +62,10 @@ func RunE(_ *cobra.Command, args []string) error {
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Update component",
-		RunE:  RunE,
+		Use:     "update answers_file",
+		Short:   "Update component",
+		PreRunE: PreRunE,
+		RunE:    RunE,
 	}
 
 	return cmd
