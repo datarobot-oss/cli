@@ -23,11 +23,11 @@ import (
 
 func PreRunE(_ *cobra.Command, args []string) error {
 	if !repo.IsInRepoRoot() {
-		return fmt.Errorf("should be in repository root directory")
+		return errors.New("should be in repository root directory")
 	}
 
 	if len(args) == 0 || args[0] == "" {
-		return fmt.Errorf("component_url required")
+		return errors.New("component_url required")
 	}
 
 	return nil

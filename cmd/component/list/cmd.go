@@ -18,8 +18,6 @@ import (
 )
 
 func RunE(_ *cobra.Command, _ []string) error {
-	fmt.Println("dr component list")
-
 	answers, err := copier.AnswersFromPath(".")
 	if err != nil {
 		return err
