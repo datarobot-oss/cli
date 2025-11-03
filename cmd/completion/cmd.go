@@ -38,9 +38,11 @@ func supportedShells() []string {
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
-		Short: "Generate shell completion script",
+		Short: "Generate or manage shell completion scripts",
 		Long: `Generate shell completion script for supported shells. This will be output
-		to stdout so it can be redirected to the appropriate location.`,
+		to stdout so it can be redirected to the appropriate location.
+
+You can also use the 'install' subcommand to install completions interactively.`,
 		Example: `To load completions:
 
 Bash:
@@ -98,6 +100,12 @@ PowerShell:
 			}
 		},
 	}
+
+	// Add subcommands
+	cmd.AddCommand(
+		installCmd(),
+		uninstallCmd(),
+	)
 
 	return cmd
 }
