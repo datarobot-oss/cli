@@ -309,15 +309,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, cmd
 	case listScreen:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch keypress := msg.String(); keypress {
-			case "esc":
-				// return m, getHost
-				return m, nil
-			}
-		}
-
 		m.list, cmd = m.list.Update(msg)
 
 		return m, cmd
