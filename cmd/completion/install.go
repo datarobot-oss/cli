@@ -32,23 +32,33 @@ func installCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "install",
+		Use:   "install [shell]",
 		Short: "Install shell completions interactively",
 		Long: `Install shell completions automatically by detecting your shell and
 installing to the appropriate location.
 
 This command will:
-- Detect your current shell
+- Detect your current shell (or use specified shell)
 - Install completions to the standard location
 - Clear completion cache (if needed)
 - Show instructions to activate completions`,
 		Example: `  # Install completions for your current shell
   ` + version.CliName + ` completion install
 
+  # Install completions for a specific shell
+  ` + version.CliName + ` completion install bash
+  ` + version.CliName + ` completion install zsh
+
   # Force reinstall even if already installed
   ` + version.CliName + ` completion install --force`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInstall(cmd.Root(), force)
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: supportedShells(),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var shell string
+			if len(args) > 0 {
+				shell = args[0]
+			}
+			return runInstall(cmd.Root(), shell, force)
 		},
 	}
 
@@ -57,13 +67,25 @@ This command will:
 	return cmd
 }
 
-func runInstall(rootCmd *cobra.Command, force bool) error {
-	shell, err := detectShell()
-	if err != nil {
-		return err
+func runInstall(rootCmd *cobra.Command, specifiedShell string, force bool) error {
+	var shell string
+
+	var err error
+
+	if specifiedShell != "" {
+		// Use specified shell
+		shell = specifiedShell
+		fmt.Printf("%s Installing for shell: %s\n", infoStyle.Render("→"), shell)
+	} else {
+		// Detect current shell
+		shell, err = detectShell()
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
 	}
 
-	fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
 	fmt.Println()
 
 	var installPath string
@@ -179,6 +201,38 @@ func installBash(rootCmd *cobra.Command, force bool) (string, func(*cobra.Comman
 	installPath := filepath.Join(compDir, version.CliName)
 
 	installFunc := func(rootCmd *cobra.Command) error {
+		// Check if bash-completion is available
+		if !isBashCompletionAvailable() {
+			fmt.Println()
+			fmt.Printf("%s Bash completion framework not detected\n", warnStyle.Render("⚠"))
+			fmt.Println()
+			fmt.Println("Bash completions require the bash-completion package.")
+			fmt.Println()
+			fmt.Println("To install:")
+			fmt.Println()
+
+			if runtime.GOOS == "darwin" {
+				fmt.Println(infoStyle.Render("  # macOS (Homebrew)"))
+				fmt.Println(infoStyle.Render("  brew install bash-completion@2"))
+				fmt.Println()
+				fmt.Println(infoStyle.Render("  # Then add to ~/.bash_profile:"))
+				fmt.Println(infoStyle.Render(`  export BASH_COMPLETION_COMPAT_DIR="/opt/homebrew/etc/bash_completion.d"`))
+				fmt.Println(infoStyle.Render(`  [[ -r "/opt/homebrew/etc/profile.d/bash_completion.sh" ]] && . "/opt/homebrew/etc/profile.d/bash_completion.sh"`))
+			} else {
+				fmt.Println(infoStyle.Render("  # Ubuntu/Debian"))
+				fmt.Println(infoStyle.Render("  sudo apt-get install bash-completion"))
+				fmt.Println()
+				fmt.Println(infoStyle.Render("  # RHEL/CentOS"))
+				fmt.Println(infoStyle.Render("  sudo yum install bash-completion"))
+			}
+
+			fmt.Println()
+			fmt.Println("After installing bash-completion, run this command again.")
+			fmt.Println()
+
+			return fmt.Errorf("bash-completion not available")
+		}
+
 		// Create directory
 		if err := os.MkdirAll(compDir, 0755); err != nil {
 			return err
@@ -206,6 +260,40 @@ func installBash(rootCmd *cobra.Command, force bool) (string, func(*cobra.Comman
 	}
 
 	return installPath, installFunc
+}
+
+func isBashCompletionAvailable() bool {
+	// Check if bash-completion is installed by looking for the main completion file
+	// or checking if the _get_comp_words_by_ref function would be available
+
+	// Common locations for bash-completion
+	locations := []string{
+		"/usr/share/bash-completion/bash_completion",
+		"/etc/bash_completion",
+		"/usr/local/etc/bash_completion", // Homebrew on older systems
+		"/opt/homebrew/etc/profile.d/bash_completion.sh", // Homebrew on Apple Silicon
+		"/usr/local/etc/profile.d/bash_completion.sh", // Homebrew on Intel Macs
+	}
+
+	for _, loc := range locations {
+		if fileExists(loc) {
+			return true
+		}
+	}
+
+	// Also check if bash-completion is in Homebrew
+	if runtime.GOOS == "darwin" {
+		// Try to find brew and check if bash-completion is installed
+		brewPath, err := exec.LookPath("brew")
+		if err == nil {
+			cmd := exec.Command(brewPath, "list", "bash-completion@2")
+			if err := cmd.Run(); err == nil {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func installFish(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command) error) {
@@ -244,8 +332,13 @@ func showActivationInstructions(shell Shell) {
 		fmt.Println("  2. Or reload your configuration:")
 		fmt.Println(infoStyle.Render("     source ~/.zshrc"))
 	case ShellBash:
-		fmt.Println("  1. Restart your shell or reload configuration:")
+		fmt.Println("  1. Make sure bash-completion is installed (see above if needed)")
+		fmt.Println()
+		fmt.Println("  2. Restart your shell or reload configuration:")
 		fmt.Println(infoStyle.Render("     source ~/.bashrc"))
+		fmt.Println()
+		fmt.Println("  3. If using macOS, make sure your ~/.bash_profile sources ~/.bashrc:")
+		fmt.Println(infoStyle.Render(`     echo "[ -r ~/.bashrc ] && . ~/.bashrc" >> ~/.bash_profile`))
 	case ShellFish:
 		fmt.Println("  1. Completions are active immediately")
 		fmt.Println("  2. Or restart fish:")
@@ -333,26 +426,48 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 
 func uninstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "uninstall",
+		Use:   "uninstall [shell]",
 		Short: "Uninstall shell completions",
 		Long:  `Uninstall shell completions by detecting your shell and removing from the standard location.`,
 		Example: `  # Uninstall completions for your current shell
-  ` + version.CliName + ` completion uninstall`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return runUninstall()
+  ` + version.CliName + ` completion uninstall
+
+  # Uninstall completions for a specific shell
+  ` + version.CliName + ` completion uninstall bash
+  ` + version.CliName + ` completion uninstall zsh`,
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: supportedShells(),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var shell string
+			if len(args) > 0 {
+				shell = args[0]
+			}
+			return runUninstall(shell)
 		},
 	}
 
 	return cmd
 }
 
-func runUninstall() error {
-	shell, err := detectShell()
-	if err != nil {
-		return err
+func runUninstall(specifiedShell string) error {
+	var shell string
+
+	var err error
+
+	if specifiedShell != "" {
+		// Use specified shell
+		shell = specifiedShell
+		fmt.Printf("%s Uninstalling for shell: %s\n", infoStyle.Render("→"), shell)
+	} else {
+		// Detect current shell
+		shell, err = detectShell()
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
 	}
 
-	fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
 	fmt.Println()
 
 	var removed bool
