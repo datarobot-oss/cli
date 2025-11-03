@@ -9,23 +9,55 @@
 package update
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 
-	//"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/spf13/cobra"
 )
 
-func Run(_ *cobra.Command, _ []string) {
-	fmt.Println("dr component update")
+func RunE(_ *cobra.Command, args []string) error {
+	if !repo.IsInRepoRoot() {
+		log.Error("Should be in repository root directory")
+		os.Exit(1)
+	}
 
-	// compose.Run(nil, nil)
+	yamlFile := args[0]
+
+	fmt.Printf("Updating component %s\n", yamlFile)
+
+	err := copier.ExecUpdate(yamlFile)
+	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			log.Error("uv is not installed")
+			os.Exit(1)
+
+			return nil
+		}
+
+		log.Error(err)
+		os.Exit(1)
+
+		return nil
+	}
+
+	fmt.Printf("Component %s updated\n", yamlFile)
+
+	compose.Run(nil, nil)
+
+	return nil
 }
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update component",
-		Run:   Run,
+		RunE:  RunE,
 	}
 
 	return cmd

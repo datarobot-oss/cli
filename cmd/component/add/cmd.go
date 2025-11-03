@@ -9,8 +9,10 @@
 package add
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/task/compose"
@@ -31,9 +33,16 @@ func RunE(_ *cobra.Command, args []string) error {
 
 	err := copier.ExecAdd(repoURL)
 	if err != nil {
-		log.Error(err)
+		if errors.Is(err, exec.ErrNotFound) {
+			log.Error("uv is not installed")
+			os.Exit(1)
 
-		// Prevent printing usage instructions on child command error
+			return nil
+		}
+
+		log.Error(err)
+		os.Exit(1)
+
 		return nil
 	}
 
