@@ -9,7 +9,6 @@
 package templates
 
 import (
-	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/version"
@@ -25,7 +24,7 @@ func Cmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		clone.Cmd,
+		// clone.Cmd,  # CFX-3969 disabled for now
 		list.Cmd,
 		setup.Cmd,
 	)
