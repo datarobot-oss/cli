@@ -120,6 +120,22 @@ tasks:
     cmds:
       - go test -v -count=1 -race -shuffle=on -coverprofile=coverage.txt ./...
 
+  test-coverage:
+    silent: true
+    desc: "Run tests with coverage rendered in HTML"
+    cmds:
+      - task test
+      - go tool cover -html=coverage.txt -o coverage.html
+      - |
+        {{if eq OS "darwin"}}
+          open ./coverage.html
+        {{else if eq OS "linux"}}
+          xdg-open ./coverage.html
+        {{else}}
+          echo "Running on OS other than Mac/Linux - assuming Windows."
+          start ./coverage.html
+        {{end}}
+
   smoke-test:
     desc: "Run smoke tests"
     cmds:

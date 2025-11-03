@@ -38,6 +38,7 @@ tmp
 
 # Test coverage
 coverage.txt
+coverage.html
 
 # Tea
 tea-debug.log
