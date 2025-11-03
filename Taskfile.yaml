@@ -141,6 +141,11 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_smoke_test.sh {{.DR_API_TOKEN}}
 
+  smoke-test-windows:
+    desc: "Run smoke tests (Windows)"
+    cmds:
+      - powershell.exe -File ./smoke_test_scripts/windows/run_smoke_test.ps1
+
   copyright:
     silent: true
     desc: "Apply copyrights to all files"
