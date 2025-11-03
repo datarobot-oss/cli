@@ -4,9 +4,9 @@ Guidelines for developing and contributing to this project.
 
 ## List of project maintainers
 
+- AJ Alon <aj.alon@datarobot.com>
 - Carson Gee <carson.gee@datarobot.com>
 - Yuriy Hrytsyuk <yuriy.hrytsyuk@datarobot.com>
-- AJ Alon <aj.alon@datarobot.com>
 
 ## Opening new issues
 
