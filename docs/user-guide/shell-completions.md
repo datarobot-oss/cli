@@ -9,9 +9,43 @@ The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. 
 
 ## Installation
 
-Shell completions are **automatically installed** when you install the DataRobot CLI using the official install script. The installer detects your shell and configures completions appropriately.
+### Automatic Installation
 
-If completions weren't installed automatically or you want to install them manually, follow the instructions below for your shell.
+Shell completions can be installed in three ways:
+
+1. **Installation Script** (Recommended for first-time install)
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+   ```
+   The installer automatically detects your shell and configures completions.
+
+2. **Interactive Command** (Recommended for managing completions)
+   ```bash
+   dr completion install
+   ```
+   Detects your shell and installs completions to the appropriate location.
+
+3. **Manual Installation** (For advanced users)
+   Follow the shell-specific instructions below.
+
+### Interactive Commands
+
+The CLI provides commands to manage completions easily:
+
+```bash
+# Install completions for your current shell
+dr completion install
+
+# Force reinstall (useful after updates)
+dr completion install --force
+
+# Uninstall completions
+dr completion uninstall
+```
+
+### Manual Installation
+
+If you prefer manual installation or the automatic methods don't work, follow the instructions below for your shell.
 
 ### Bash
 
