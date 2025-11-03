@@ -9,6 +9,7 @@
 package completion
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,7 +24,6 @@ import (
 
 var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true)
 	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
@@ -58,6 +58,7 @@ This command will:
 			if len(args) > 0 {
 				shell = args[0]
 			}
+
 			return runInstall(cmd.Root(), shell, force)
 		},
 	}
@@ -68,39 +69,18 @@ This command will:
 }
 
 func runInstall(rootCmd *cobra.Command, specifiedShell string, force bool) error {
-	var shell string
-
-	var err error
-
-	if specifiedShell != "" {
-		// Use specified shell
-		shell = specifiedShell
-		fmt.Printf("%s Installing for shell: %s\n", infoStyle.Render("→"), shell)
-	} else {
-		// Detect current shell
-		shell, err = detectShell()
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
+	shell, err := resolveShell(specifiedShell)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println()
 
-	var installPath string
+	shellType := Shell(shell)
 
-	var installFunc func(*cobra.Command) error
-
-	switch Shell(shell) {
-	case ShellZsh:
-		installPath, installFunc = installZsh(rootCmd, force)
-	case ShellBash:
-		installPath, installFunc = installBash(rootCmd, force)
-	case ShellFish:
-		installPath, installFunc = installFish(rootCmd, force)
-	default:
-		return fmt.Errorf("unsupported shell: %s", shell)
+	installPath, installFunc, err := getInstallFunc(rootCmd, shellType, force)
+	if err != nil {
+		return err
 	}
 
 	// Check if already installed
@@ -121,9 +101,46 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force bool) error
 	fmt.Println()
 
 	// Show activation instructions
-	showActivationInstructions(Shell(shell))
+	showActivationInstructions(shellType)
 
 	return nil
+}
+
+func resolveShell(specifiedShell string) (string, error) {
+	if specifiedShell != "" {
+		// Use specified shell
+		fmt.Printf("%s Installing for shell: %s\n", infoStyle.Render("→"), specifiedShell)
+
+		return specifiedShell, nil
+	}
+
+	// Detect current shell
+	shell, err := detectShell()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
+
+	return shell, nil
+}
+
+func getInstallFunc(rootCmd *cobra.Command, shellType Shell, force bool) (string, func(*cobra.Command) error, error) {
+	switch shellType {
+	case ShellZsh:
+		path, fn := installZsh(rootCmd, force)
+		return path, fn, nil
+	case ShellBash:
+		path, fn := installBash(rootCmd, force)
+		return path, fn, nil
+	case ShellFish:
+		path, fn := installFish(rootCmd, force)
+		return path, fn, nil
+	case ShellPowerShell:
+		return "", nil, errors.New("PowerShell completions installation not yet supported via this command. Use: dr completion powershell")
+	default:
+		return "", nil, fmt.Errorf("unsupported shell: %s", shellType)
+	}
 }
 
 func detectShell() (string, error) {
@@ -138,10 +155,10 @@ func detectShell() (string, error) {
 		return "powershell", nil
 	}
 
-	return "", fmt.Errorf("could not detect shell. Please set SHELL environment variable")
+	return "", errors.New("could not detect shell. Please set SHELL environment variable")
 }
 
-func installZsh(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command) error) {
+func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	var installPath string
 
 	var compDir string
@@ -158,7 +175,7 @@ func installZsh(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command
 
 	installFunc := func(rootCmd *cobra.Command) error {
 		// Create directory
-		if err := os.MkdirAll(compDir, 0755); err != nil {
+		if err := os.MkdirAll(compDir, 0o755); err != nil {
 			return err
 		}
 
@@ -196,7 +213,7 @@ func installZsh(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command
 	return installPath, installFunc
 }
 
-func installBash(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command) error) {
+func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	compDir := filepath.Join(os.Getenv("HOME"), ".bash_completions")
 	installPath := filepath.Join(compDir, version.CliName)
 
@@ -230,11 +247,11 @@ func installBash(rootCmd *cobra.Command, force bool) (string, func(*cobra.Comman
 			fmt.Println("After installing bash-completion, run this command again.")
 			fmt.Println()
 
-			return fmt.Errorf("bash-completion not available")
+			return errors.New("bash-completion not available")
 		}
 
 		// Create directory
-		if err := os.MkdirAll(compDir, 0755); err != nil {
+		if err := os.MkdirAll(compDir, 0o755); err != nil {
 			return err
 		}
 
@@ -270,9 +287,9 @@ func isBashCompletionAvailable() bool {
 	locations := []string{
 		"/usr/share/bash-completion/bash_completion",
 		"/etc/bash_completion",
-		"/usr/local/etc/bash_completion", // Homebrew on older systems
+		"/usr/local/etc/bash_completion",                 // Homebrew on older systems
 		"/opt/homebrew/etc/profile.d/bash_completion.sh", // Homebrew on Apple Silicon
-		"/usr/local/etc/profile.d/bash_completion.sh", // Homebrew on Intel Macs
+		"/usr/local/etc/profile.d/bash_completion.sh",    // Homebrew on Intel Macs
 	}
 
 	for _, loc := range locations {
@@ -296,13 +313,13 @@ func isBashCompletionAvailable() bool {
 	return false
 }
 
-func installFish(rootCmd *cobra.Command, force bool) (string, func(*cobra.Command) error) {
+func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	compDir := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions")
 	installPath := filepath.Join(compDir, version.CliName+".fish")
 
 	installFunc := func(rootCmd *cobra.Command) error {
 		// Create directory
-		if err := os.MkdirAll(compDir, 0755); err != nil {
+		if err := os.MkdirAll(compDir, 0o755); err != nil {
 			return err
 		}
 
@@ -343,6 +360,9 @@ func showActivationInstructions(shell Shell) {
 		fmt.Println("  1. Completions are active immediately")
 		fmt.Println("  2. Or restart fish:")
 		fmt.Println(infoStyle.Render("     exec fish"))
+	case ShellPowerShell:
+		fmt.Println("  1. Source the completion script in your PowerShell profile")
+		fmt.Println(infoStyle.Render("     See: dr completion powershell --help"))
 	}
 
 	fmt.Println()
@@ -354,7 +374,7 @@ func showActivationInstructions(shell Shell) {
 func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Check if file exists
 	if !fileExists(zshrc) {
-		return fmt.Errorf("~/.zshrc not found, please create it first")
+		return errors.New("~/.zshrc not found, please create it first")
 	}
 
 	// Read file
@@ -369,19 +389,17 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 	}
 
 	// Append to file
-	f, err := os.OpenFile(zshrc, os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(zshrc, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	_, err = f.WriteString(fmt.Sprintf("\n# Added by %s completion installer\n", version.CliName))
-	if err != nil {
+	if _, err = fmt.Fprintf(f, "\n# Added by %s completion installer\n", version.CliName); err != nil {
 		return err
 	}
 
-	_, err = f.WriteString(fmt.Sprintf("fpath=(%s $fpath)\n", compDir))
-	if err != nil {
+	if _, err = fmt.Fprintf(f, "fpath=(%s $fpath)\n", compDir); err != nil {
 		return err
 	}
 
@@ -393,7 +411,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Check if file exists
 	if !fileExists(bashrc) {
-		return fmt.Errorf("~/.bashrc not found, please create it first")
+		return errors.New("~/.bashrc not found, please create it first")
 	}
 
 	// Read file
@@ -408,18 +426,17 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	}
 
 	// Append to file
-	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	_, err = f.WriteString(fmt.Sprintf("\n# Added by %s completion installer\n", version.CliName))
-	if err != nil {
+	if _, err = fmt.Fprintf(f, "\n# Added by %s completion installer\n", version.CliName); err != nil {
 		return err
 	}
 
-	_, err = f.WriteString(fmt.Sprintf("[ -f %s ] && source %s\n", completionFile, completionFile))
+	_, err = fmt.Fprintf(f, "[ -f %s ] && source %s\n", completionFile, completionFile)
 
 	return err
 }
@@ -442,6 +459,7 @@ func uninstallCmd() *cobra.Command {
 			if len(args) > 0 {
 				shell = args[0]
 			}
+
 			return runUninstall(shell)
 		},
 	}
@@ -479,6 +497,8 @@ func runUninstall(specifiedShell string) error {
 		removed = uninstallBash()
 	case ShellFish:
 		removed = uninstallFish()
+	case ShellPowerShell:
+		return errors.New("PowerShell completions uninstallation not yet supported via this command")
 	default:
 		return fmt.Errorf("unsupported shell: %s", shell)
 	}
@@ -502,6 +522,7 @@ func uninstallZsh() bool {
 	if fileExists(path1) {
 		_ = os.Remove(path1)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path1)
+
 		removed = true
 	}
 
@@ -510,6 +531,7 @@ func uninstallZsh() bool {
 	if fileExists(path2) {
 		_ = os.Remove(path2)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path2)
+
 		removed = true
 	}
 
@@ -566,20 +588,4 @@ func dirExists(path string) bool {
 	}
 
 	return info.IsDir()
-}
-
-func getShellExecutable() string {
-	shell := os.Getenv("SHELL")
-	if shell != "" {
-		return shell
-	}
-
-	// Try to find in PATH
-	for _, sh := range []string{"zsh", "bash", "fish"} {
-		if path, err := exec.LookPath(sh); err == nil {
-			return path
-		}
-	}
-
-	return ""
 }

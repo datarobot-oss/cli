@@ -80,7 +80,7 @@ func Cmd() *cobra.Command {
 				os.Exit(exitCode)
 			}
 		},
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return completeTaskNames(&opts)
 		},
 	}
