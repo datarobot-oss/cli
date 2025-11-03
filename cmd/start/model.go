@@ -198,7 +198,7 @@ func validateEnvironment() tea.Msg {
 }
 
 func executeQuickstart() tea.Msg {
-	// If we are, look for a quickstart script in the standard location
+	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin
 
 	// Look for any executable file named quickstart* in the configured path relative to CWD
