@@ -10,22 +10,45 @@ package add
 
 import (
 	"fmt"
+	"os"
 
-	//"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/spf13/cobra"
 )
 
-func Run(_ *cobra.Command, _ []string) {
-	fmt.Println("dr component add")
+func RunE(_ *cobra.Command, args []string) error {
+	if !repo.IsInRepoRoot() {
+		log.Error("Should be in repository root directory")
+		os.Exit(1)
+	}
 
-	// compose.Run(nil, nil)
+	repoURL := args[0]
+
+	fmt.Printf("Adding component %s\n", repoURL)
+
+	err := copier.ExecAdd(repoURL)
+	if err != nil {
+		log.Error(err)
+
+		// Prevent printing usage instructions on child command error
+		return nil
+	}
+
+	fmt.Printf("Component %s added\n", repoURL)
+
+	compose.Run(nil, nil)
+
+	return nil
 }
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add component",
-		Run:   Run,
+		RunE:  RunE,
 	}
 
 	return cmd

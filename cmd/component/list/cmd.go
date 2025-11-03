@@ -10,9 +10,10 @@ package list
 
 import (
 	"fmt"
+	"os"
+	"text/tabwriter"
 
 	"github.com/datarobot/cli/internal/copier"
-
 	"github.com/spf13/cobra"
 )
 
@@ -24,9 +25,15 @@ func RunE(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintf(w, "Answers file\tRepository\n")
+
 	for _, answer := range answers {
-		fmt.Println(answer.FileName, answer.Repo)
+		fmt.Fprintf(w, "%s\t%s\n", answer.FileName, answer.Repo)
 	}
+
+	w.Flush()
 
 	return nil
 }

@@ -67,3 +67,14 @@ func IsInRepo() bool {
 	repoRoot, err := FindRepoRoot()
 	return err == nil && repoRoot != ""
 }
+
+func IsInRepoRoot() bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+
+	repoRoot, err := FindRepoRoot()
+
+	return err == nil && repoRoot == cwd
+}
