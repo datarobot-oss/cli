@@ -35,23 +35,23 @@ Install the latest version with a single command:
 #### macOS/Linux
 
 ######
-    curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+    curl https://cli.datarobot.com/install | sh
 
 #### Windows (PowerShell)
 
 ######
-    irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+    irm https://cli.datarobot.com/winstall | iex
 
 ### Install Specific Version
 
 #### macOS/Linux
 
 ######
-    curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- v0.1.0
+    curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
 
 #### Windows
 ######
-    $env:VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+    $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 
 ### Installation from source
 ---

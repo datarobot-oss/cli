@@ -9,11 +9,11 @@ Install the latest version with a single command that auto-detects your operatin
 **macOS/Linux:**
 ######
 
-    curl https://datarobot-oss.github.io/cli/install | sh
+    curl https://cli.datarobot.com/install | sh
 
 **Windows (PowerShell):**
 ######
-    irm https://datarobot-oss.github.io/cli/winstall | iex
+    irm https://cli.datarobot.com/cli/winstall | iex
 
 For more installation options, see [Getting Started](user-guide/getting-started.md).
 
