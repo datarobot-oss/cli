@@ -260,7 +260,21 @@ dr run --l<Tab>
 
 #### Bash
 
-1. Check that bash-completion is installed:
+**Important**: Bash completions require the `bash-completion` package to be installed first.
+
+1. Install bash-completion if not already installed:
+   ```bash
+   # macOS (Homebrew)
+   brew install bash-completion@2
+
+   # Ubuntu/Debian
+   sudo apt-get install bash-completion
+
+   # RHEL/CentOS
+   sudo yum install bash-completion
+   ```
+
+2. Check that bash-completion is loaded:
    ```bash
    # macOS
    brew list bash-completion@2
