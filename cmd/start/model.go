@@ -9,6 +9,7 @@
 package start
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -28,17 +29,16 @@ type step struct {
 	// description is a brief summary of the step
 	description string
 	// fn is the function that performs the step's Update action
-	fn          func() tea.Msg
+	fn func() tea.Msg
 }
 
 type ModelWithSteps interface {
-	CurrentStep() step
-	NextStep() step // do i really need this
-	PreviousStep() step // do i really need this
+	currentStep() step
+	nextStep() step     // do i really need this
+	previousStep() step // do i really need this
 }
 
-// StartModel defines the model for the start command's TUI
-type StartModel struct {
+type Model struct {
 	steps    []step
 	current  int
 	done     bool
@@ -59,8 +59,8 @@ var (
 	boldStyle = lipgloss.NewStyle().Bold(true)
 )
 
-func NewStartModel() StartModel {
-	return StartModel{
+func NewStartModel() Model {
+	return Model{
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
 			{description: "Checking template prerequisites...", fn: checkPrerequisites},
@@ -74,27 +74,27 @@ func NewStartModel() StartModel {
 	}
 }
 
-func (m StartModel) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return m.executeCurrentStep()
 }
 
-func (m StartModel) executeCurrentStep() tea.Cmd {
+func (m Model) executeCurrentStep() tea.Cmd {
 	if m.current >= len(m.steps) {
 		return nil
 	}
 
-	currentStep := m.CurrentStep()
+	currentStep := m.currentStep()
 
 	return func() tea.Msg {
 		return currentStep.fn()
 	}
 }
 
-func (m StartModel) CurrentStep() step {
+func (m Model) currentStep() step {
 	return m.steps[m.current]
 }
 
-func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -112,6 +112,7 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// No more steps, we're done
 		m.done = true
+
 		return m, tea.Quit
 
 	case stepErrorMsg:
@@ -124,7 +125,7 @@ func (m StartModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m StartModel) View() string {
+func (m Model) View() string {
 	var sb strings.Builder
 
 	sb.WriteString("\n")
@@ -163,7 +164,6 @@ func startQuickstart() tea.Msg {
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
-
 	return stepCompleteMsg{}
 }
 
@@ -175,7 +175,7 @@ func checkPrerequisites() tea.Msg {
 	// - Validate directory structure
 	// Return stepErrorMsg{err} if prerequisites are not met
 	if !repo.IsInRepo() {
-		return stepErrorMsg{err: fmt.Errorf("not inside a DataRobot repository")}
+		return stepErrorMsg{err: errors.New("not inside a DataRobot repository")}
 	}
 
 	// TODO invoke internal.repo.tools module
@@ -220,7 +220,7 @@ func executeQuickstart() tea.Msg {
 		}
 
 		// Check if it's a regular file and executable
-		if !info.IsDir() && info.Mode()&0111 != 0 {
+		if !info.IsDir() && info.Mode()&0o111 != 0 {
 			quickstartScript = match
 			break
 		}

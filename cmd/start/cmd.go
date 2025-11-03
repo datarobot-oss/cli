@@ -24,6 +24,7 @@ type startOptions struct {
 
 func Cmd() *cobra.Command {
 	var opts startOptions
+
 	cmd := &cobra.Command{
 		Use:     "start",
 		Aliases: []string{"quickstart"},
@@ -34,7 +35,7 @@ Running this command performs the following actions:
 - Validating the environment
 - Checking template prerequisites
 - Executing the quickstart script associated with the template, if available.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if viper.GetBool("debug") {
 				f, err := tea.LogToFile("tea-debug.log", "debug")
 				if err != nil {
