@@ -10,10 +10,10 @@ spawn dr completion install --yes
 
 expect {
     -re "Completion (already )?installed" {
-        puts "\n✅ Completion install succeeded"
+        puts "\n[OK] Completion install succeeded"
     }
     timeout {
-        puts "\n❌ Timeout waiting for install confirmation"
+        puts "\n[ERROR] Timeout waiting for install confirmation"
         exit 1
     }
     eof
@@ -26,14 +26,14 @@ spawn dr completion uninstall --yes
 
 expect {
     -re "(Completion uninstalled|No completion found)" {
-        puts "\n✅ Completion uninstall succeeded"
+        puts "\n[OK] Completion uninstall succeeded"
     }
     timeout {
-        puts "\n❌ Timeout waiting for uninstall confirmation"
+        puts "\n[ERROR] Timeout waiting for uninstall confirmation"
         exit 1
     }
     eof
 }
 
 expect eof
-puts "\n✅ All completion tests passed"
+puts "\n[OK] All completion tests passed"
