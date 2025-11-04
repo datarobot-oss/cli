@@ -18,14 +18,15 @@ import (
 type Prerequisite struct {
 	Name    string
 	Command string
+	installString string
 }
 
 // RequiredTools lists all tools required for the quickstart process
 var RequiredTools = []Prerequisite{
-	{Name: "Python", Command: "python3"},
-	{Name: "uv", Command: "uv"},
-	{Name: "task", Command: "task"},
-	{Name: "pulumi", Command: "pulumi"},
+	{Name: "Python", Command: "python3", installString: "pip install python3"},
+	{Name: "uv", Command: "uv", installString: "pip install uv"},
+	{Name: "task", Command: "task", installString: "brew install task"},
+	{Name: "pulumi", Command: "pulumi", installString: "brew install pulumi"},
 }
 
 // CheckPrerequisites verifies that all required tools are installed
