@@ -49,7 +49,7 @@ expect ./smoke_test_scripts/expect_completion.exp
 
 # Test dr run command (it will fail since there's no Taskfile, but we want to ensure it doesn't hang)
 echo "Testing dr run command..."
-timeout 5 dr run 2>&1 || true
+dr run 2>&1 || true
 echo "✅ dr run completed (expected to fail with no Taskfile)"
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
@@ -72,7 +72,7 @@ fi
 # Test `dr auth login` and we should have the value shown in output:
 # `https://app.datarobot.com/account/developer-tools?cliRedirect=true`
 echo "Testing dr auth login..."
-timeout 30 expect ./smoke_test_scripts/expect_auth_login.exp || echo "⚠️  dr auth login test timed out (expected in CI)"
+expect ./smoke_test_scripts/expect_auth_login.exp || echo "⚠️  dr auth login test timed out (expected in CI)"
 
 # Used to test `dr dotenv setup`
 export DATAROBOT_ENDPOINT=${testing_url}
@@ -97,7 +97,7 @@ if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
 else
   echo "Testing dr templates setup..."
-  timeout 60 expect ./smoke_test_scripts/expect_templates_setup.exp || {
+  expect ./smoke_test_scripts/expect_templates_setup.exp || {
     echo "⚠️  dr templates setup test timed out"
     exit 0
   }
