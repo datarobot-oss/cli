@@ -1,0 +1,50 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
+package copier
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Answers struct {
+	FileName string
+	Repo     string `yaml:"_src_path"`
+}
+
+func AnswersFromPath(path string) ([]Answers, error) {
+	pattern := filepath.Join(path, ".datarobot/answers/*.y*ml")
+
+	yamlFiles, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Answers, 0)
+
+	for _, yamlFile := range yamlFiles {
+		data, err := os.ReadFile(yamlFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read yaml file %s: %w", yamlFile, err)
+		}
+
+		fileParsed := Answers{FileName: yamlFile}
+
+		if err = yaml.Unmarshal(data, &fileParsed); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal yaml file %s: %w", yamlFile, err)
+		}
+
+		result = append(result, fileParsed)
+	}
+
+	return result, nil
+}

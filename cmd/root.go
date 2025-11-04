@@ -16,6 +16,7 @@ import (
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/completion"
+	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
@@ -89,6 +90,7 @@ func init() {
 	RootCmd.AddCommand(
 		auth.Cmd(),
 		completion.Cmd(),
+		component.Cmd(),
 		dotenv.Cmd(),
 		run.Cmd(),
 		start.Cmd(),
