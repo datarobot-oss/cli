@@ -2,6 +2,9 @@
 
 set timeout -1
 
+# Use TERM=dumb to prevent terminal color probing which causes OSC sequences
+set env(TERM) dumb
+
 spawn dr templates setup
 
 expect "more"
