@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -120,57 +119,42 @@ func (tl TemplateList) SortByName() TemplateList {
 	return tl
 }
 
-var (
-	cachedTemplates *TemplateList
-	templatesOnce   sync.Once
-	errTemplates    error
-)
-
 func GetTemplates() (*TemplateList, error) {
-	templatesOnce.Do(func() {
-		datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
-		if err != nil {
-			errTemplates = err
-			return
-		}
+	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
+	if err != nil {
+		return nil, err
+	}
 
-		log.Info("Fetching templates from " + datarobotEndpoint)
+	log.Info("Fetching templates from " + datarobotEndpoint)
 
-		req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
-		if err != nil {
-			errTemplates = err
-			return
-		}
+	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
+	if err != nil {
+		return nil, err
+	}
 
-		bearer := "Bearer " + config.GetAPIKey()
-		req.Header.Add("Authorization", bearer)
+	bearer := "Bearer " + config.GetAPIKey()
+	req.Header.Add("Authorization", bearer)
 
-		client := &http.Client{}
+	client := &http.Client{}
 
-		resp, err := client.Do(req)
-		if err != nil {
-			errTemplates = err
-			return
-		}
-		defer resp.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			errTemplates = errors.New("Response status code is " + resp.Status)
-			return
-		}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("Response status code is " + resp.Status)
+	}
 
-		var templateList TemplateList
+	var templateList TemplateList
 
-		err = json.NewDecoder(resp.Body).Decode(&templateList)
-		if err != nil {
-			errTemplates = err
-			return
-		}
+	err = json.NewDecoder(resp.Body).Decode(&templateList)
+	if err != nil {
+		return nil, err
+	}
 
-		cachedTemplates = &templateList
-	})
-
-	return cachedTemplates, errTemplates
+	return &templateList, nil
 }
 
 func GetPublicTemplatesSorted() (*TemplateList, error) {
