@@ -9,7 +9,6 @@
 package dotenv
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +17,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
-	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -60,68 +58,17 @@ var EditCmd = &cobra.Command{
 			return err
 		}
 
-		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
-		screen := editorScreen
-
 		dotenvFile := filepath.Join(cwd, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
 		// Use parseVariablesOnly to avoid auto-populating values during manual editing
 		variables := parseVariablesOnly(templateLines)
 		contents := strings.Join(templateLines, "")
 
+		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
+		screen := editorScreen
 		if repo.IsInRepo() {
-			repoRoot, err := repo.FindRepoRoot()
-			if err != nil {
-				log.Fatalf("Error determining repo root: %v", err)
-			}
-
-			userPrompts, _, err := envbuilder.GatherUserPrompts(repoRoot)
-			if err != nil {
-				log.Fatalf("Error gathering user prompts: %v", err)
-			}
-
-			// Create a new empty string set
-			existingEnvVarsSet := make(map[string]struct{})
-			// Add elements to the set
-			for _, value := range variables {
-				existingEnvVarsSet[value.name] = struct{}{}
-			}
-
-			extraEnvVarsFound := false
-
-			for _, up := range userPrompts {
-				_, exists := existingEnvVarsSet[up.Env]
-				// If we have an Env Var we don't yet know about account for it
-				if !exists {
-					extraEnvVarsFound = true
-					// Add it to set
-					existingEnvVarsSet[up.Env] = struct{}{}
-					// Add it to variables
-					variables = append(variables, variable{name: up.Env, value: up.Default})
-				}
-			}
-
-			if extraEnvVarsFound {
-				fmt.Println("Environment Configuration")
-				fmt.Println("=========================")
-				fmt.Println("")
-				fmt.Println("Editing .env file with component-specific variables...")
-				fmt.Println("")
-				for _, fv := range userPrompts {
-					fmt.Println(fv.Env + " = " + fv.Default)
-				}
-				fmt.Println("")
-				fmt.Println("Configure required missing variables now? (y/N): ")
-
-				reader := bufio.NewReader(os.Stdin)
-				selectedOption, err := reader.ReadString('\n')
-				if err != nil {
-					return err
-				}
-
-				if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
-					screen = wizardScreen
-				}
+			if handleExtraEnvVars(variables) {
+				screen = wizardScreen
 			}
 		}
 
