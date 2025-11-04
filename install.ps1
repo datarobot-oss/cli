@@ -95,7 +95,13 @@ function Get-LatestVersion {
     if ($RequestedVersion -eq "latest") {
         Write-Step "Fetching latest version..."
         try {
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest" -Method Get
+            # Prepare headers with authentication if GITHUB_TOKEN is available
+            $headers = @{}
+            if ($env:GITHUB_TOKEN) {
+                $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+            }
+
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest" -Method Get -Headers $headers
             $version = $response.tag_name
             Write-Host "   Version: " -NoNewline
             Write-Host $version -ForegroundColor White

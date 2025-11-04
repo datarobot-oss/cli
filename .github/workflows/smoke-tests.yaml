@@ -1,4 +1,4 @@
-name: Daily Smoke Tests
+name: Smoke Tests
 
 concurrency:
   group: ${{ github.ref_name }}-smoke
@@ -11,8 +11,8 @@ on:
   issue_comment:
     types: [created] # Trigger only when a comment is created
   schedule:
-    # Run every 30 minutes
-    - cron: '*/30 * * * *'
+    # Run every 4 hours to avoid rate limits (6 times per day)
+    - cron: '0 */4 * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -117,11 +117,15 @@ jobs:
     steps:
       - name: Install for Ubuntu and MacOS
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
 
       - name: Install for windows
         if: ${{ matrix.os == 'windows-latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
 

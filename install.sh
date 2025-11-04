@@ -104,10 +104,25 @@ check_requirements() {
 get_version() {
     if [ "$VERSION" = "latest" ]; then
         step "Fetching latest version..."
+
+        # Prepare auth header if GITHUB_TOKEN is available
+        AUTH_HEADER=""
+        if [ -n "$GITHUB_TOKEN" ]; then
+            AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
+        fi
+
         if command -v curl >/dev/null 2>&1; then
-            VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            if [ -n "$AUTH_HEADER" ]; then
+                VERSION=$(curl -fsSL -H "$AUTH_HEADER" "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            else
+                VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            fi
         else
-            VERSION=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            if [ -n "$AUTH_HEADER" ]; then
+                VERSION=$(wget -qO- --header="$AUTH_HEADER" "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            else
+                VERSION=$(wget -qO- "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+            fi
         fi
 
         if [ -z "$VERSION" ]; then
