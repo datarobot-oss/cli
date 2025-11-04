@@ -113,7 +113,7 @@ func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template
 func handleExistingRepo(repoRoot string) tea.Msg {
 	log.Debug("Already in a DataRobot repo at: " + repoRoot)
 
-	templatesList, err := drapi.GetTemplates()
+	templatesList, err := drapi.GetPublicTemplatesSorted()
 	if err != nil {
 		log.Warn("Failed to get templates, proceeding with dotenv setup anyway", "error", err)
 
@@ -172,7 +172,7 @@ func getTemplates() tea.Cmd {
 		}
 
 		// Not in a DataRobot repo, show the template gallery
-		templatesList, err := drapi.GetTemplates()
+		templatesList, err := drapi.GetPublicTemplatesSorted()
 		if err != nil {
 			return authKeyStartMsg{}
 		}

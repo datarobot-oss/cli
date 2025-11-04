@@ -13,7 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
@@ -31,11 +33,11 @@ type Template struct {
 	Repository Repository `json:"repository"`
 	MediaURL   string     `json:"mediaURL"`
 
+	CreatedAt time.Time `json:"createdAt"`
 	// CreatedBy        string `json:"createdBy"`
 	// CreatorFirstName string `json:"creatorFirstName"`
 	// CreatorLastName  string `json:"creatorLastName"`
 	// CreatorUserhash  string `json:"creatorUserhash"`
-	// CreatedAt        string `json:"createdAt"`
 	// EditedBy         string `json:"editedBy"`
 	// EditorFirstName  string `json:"editorFirstName"`
 	// EditorLastName   string `json:"editorLastName"`
@@ -69,6 +71,52 @@ type TemplateList struct {
 	TotalCount int        `json:"totalCount"`
 	Next       string     `json:"next"`
 	Previous   string     `json:"previous"`
+}
+
+func (tl TemplateList) ExcludePremium() TemplateList {
+	var filtered []Template
+
+	for _, t := range tl.Templates {
+		if !t.IsPremium {
+			filtered = append(filtered, t)
+		}
+	}
+
+	// Updated the template list counts accordingly
+	return TemplateList{
+		Templates:  filtered,
+		Count:      len(filtered),
+		TotalCount: len(filtered),
+		Next:       tl.Next,
+		Previous:   tl.Previous,
+	}
+}
+
+func (tl TemplateList) SortNewestFirst() TemplateList {
+	// Create a copy of the slice to avoid modifying the cached data
+	sorted := make([]Template, len(tl.Templates))
+	copy(sorted, tl.Templates)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
+	})
+
+	tl.Templates = sorted
+
+	return tl
+}
+
+func (tl TemplateList) SortByName() TemplateList {
+	sorted := make([]Template, len(tl.Templates))
+	copy(sorted, tl.Templates)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	tl.Templates = sorted
+
+	return tl
 }
 
 func GetTemplates() (*TemplateList, error) {
@@ -107,6 +155,17 @@ func GetTemplates() (*TemplateList, error) {
 	}
 
 	return &templateList, nil
+}
+
+func GetPublicTemplatesSorted() (*TemplateList, error) {
+	templates, err := GetTemplates()
+	if err != nil {
+		return nil, err
+	}
+
+	result := (*templates).ExcludePremium().SortByName().SortNewestFirst()
+
+	return &result, nil
 }
 
 func GetTemplate(id string) (*Template, error) {
