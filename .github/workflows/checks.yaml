@@ -269,12 +269,14 @@ jobs:
       - name: Install for Ubuntu and MacOS
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+          yes | curl -fsSL https://cli.datarobot.com/install | sh
 
       - name: Install for windows
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
-          irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+          $responses = @('y', 'y')
+          $input = $responses -join "`n"
+          $input | irm https://cli.datarobot.com/winstall | iex
 
       - name: Check DR runs without errors (Ubuntu and MacOS)
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
