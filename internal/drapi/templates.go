@@ -13,7 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
@@ -31,11 +34,11 @@ type Template struct {
 	Repository Repository `json:"repository"`
 	MediaURL   string     `json:"mediaURL"`
 
+	CreatedAt time.Time `json:"createdAt"`
 	// CreatedBy        string `json:"createdBy"`
 	// CreatorFirstName string `json:"creatorFirstName"`
 	// CreatorLastName  string `json:"creatorLastName"`
 	// CreatorUserhash  string `json:"creatorUserhash"`
-	// CreatedAt        string `json:"createdAt"`
 	// EditedBy         string `json:"editedBy"`
 	// EditorFirstName  string `json:"editorFirstName"`
 	// EditorLastName   string `json:"editorLastName"`
@@ -71,42 +74,115 @@ type TemplateList struct {
 	Previous   string     `json:"previous"`
 }
 
+func (tl TemplateList) ExcludePremium() TemplateList {
+	var filtered []Template
+
+	for _, t := range tl.Templates {
+		if !t.IsPremium {
+			filtered = append(filtered, t)
+		}
+	}
+
+	// Updated the template list counts accordingly
+	return TemplateList{
+		Templates:  filtered,
+		Count:      len(filtered),
+		TotalCount: len(filtered),
+		Next:       tl.Next,
+		Previous:   tl.Previous,
+	}
+}
+
+// This doesn't work in practive because "createdAt" is not included in the API response yet.
+func (tl TemplateList) SortNewestFirst() TemplateList {
+	// Create a copy of the slice to avoid modifying the cached data
+	sorted := make([]Template, len(tl.Templates))
+	copy(sorted, tl.Templates)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
+	})
+
+	tl.Templates = sorted
+
+	return tl
+}
+
+func (tl TemplateList) ReverseSortByName() TemplateList {
+	sorted := make([]Template, len(tl.Templates))
+	copy(sorted, tl.Templates)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Name > sorted[j].Name
+	})
+
+	tl.Templates = sorted
+
+	return tl
+}
+
+var (
+	cachedTemplates *TemplateList
+	templatesOnce   sync.Once
+	errTemplates    error
+)
+
 func GetTemplates() (*TemplateList, error) {
-	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
+	templatesOnce.Do(func() {
+		datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
+		if err != nil {
+			errTemplates = err
+			return
+		}
+
+		log.Info("Fetching templates from " + datarobotEndpoint)
+
+		req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
+		if err != nil {
+			errTemplates = err
+			return
+		}
+
+		bearer := "Bearer " + config.GetAPIKey()
+		req.Header.Add("Authorization", bearer)
+
+		client := &http.Client{}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			errTemplates = err
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			errTemplates = errors.New("Response status code is " + resp.Status)
+			return
+		}
+
+		var templateList TemplateList
+
+		err = json.NewDecoder(resp.Body).Decode(&templateList)
+		if err != nil {
+			errTemplates = err
+			return
+		}
+
+		cachedTemplates = &templateList
+	})
+
+	return cachedTemplates, errTemplates
+}
+
+func GetPublicTemplatesSorted() (*TemplateList, error) {
+	templates, err := GetTemplates()
 	if err != nil {
 		return nil, err
 	}
 
-	log.Info("Fetching templates from " + datarobotEndpoint)
+	result := (*templates).ExcludePremium().ReverseSortByName()
 
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	bearer := "Bearer " + config.GetAPIKey()
-	req.Header.Add("Authorization", bearer)
-
-	client := &http.Client{}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Response status code is " + resp.Status)
-	}
-
-	var templateList TemplateList
-
-	err = json.NewDecoder(resp.Body).Decode(&templateList)
-	if err != nil {
-		return nil, err
-	}
-
-	return &templateList, nil
+	return &result, nil
 }
 
 func GetTemplate(id string) (*Template, error) {
