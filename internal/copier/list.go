@@ -22,7 +22,7 @@ type Answers struct {
 }
 
 func AnswersFromPath(path string) ([]Answers, error) {
-	pattern := filepath.Join(path, ".datarobot/answers/*.yml")
+	pattern := filepath.Join(path, ".datarobot/answers/*.y*ml")
 
 	yamlFiles, err := filepath.Glob(pattern)
 	if err != nil {
