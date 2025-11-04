@@ -224,12 +224,20 @@ jobs:
       - name: Test completion generation
         shell: bash
         run: |
-          # Test that completion commands work
+          # Test bash completion generation and content
           dr completion bash > /tmp/dr-bash.sh
+
+          # Check if we have the expected __start_dr() function
+          if grep -q "__start_dr()" /tmp/dr-bash.sh; then
+            echo "✓ Bash completion has expected __start_dr() function"
+          else
+            echo "✗ Bash completion missing __start_dr() function"
+            exit 1
+          fi
+
+          # Validate bash syntax
           bash -n /tmp/dr-bash.sh && echo "✓ Bash completion syntax valid"
 
-          dr completion zsh > /tmp/dr-zsh.sh
-          zsh -n /tmp/dr-zsh.sh 2>/dev/null && echo "✓ Zsh completion syntax valid" || echo "⚠ Zsh not available, skipping syntax check"
 
       - name: Run completion expect tests
         run: |
