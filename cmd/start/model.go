@@ -21,6 +21,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -178,7 +179,9 @@ func checkPrerequisites() tea.Msg {
 		return stepErrorMsg{err: errors.New("not inside a DataRobot repository")}
 	}
 
-	// TODO invoke internal.repo.tools module
+	if err := tools.CheckPrerequisites(); err != nil {
+		return stepErrorMsg{err: err}
+	}
 
 	time.Sleep(1100 * time.Millisecond) // Simulate work
 
