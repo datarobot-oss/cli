@@ -9,8 +9,8 @@ on:
     branches:
       - main
   schedule:
-    # Run daily at 2 AM UTC
-    - cron: '0 2 * * *'
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
