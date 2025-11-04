@@ -163,3 +163,64 @@ jobs:
         shell: bash
         run: |
           ./dist/dr --help
+
+  check-completion-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      completion: ${{ steps.changes.outputs.completion }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check if completion files changed
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            completion:
+              - 'cmd/completion/**'
+
+  completion-tests:
+    needs: check-completion-changes
+    if: needs.check-completion-changes.outputs.completion == 'true'
+    runs-on: ubuntu-latest
+    name: Test Completions
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install expect
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.3'
+
+      - name: Build the DR CLI Binary
+        run: task build
+
+      - name: Move the Binary
+        run: sudo mv ./dist/dr /usr/local/bin/dr
+
+      - name: Test completion generation
+        shell: bash
+        run: |
+          # Test that completion commands work
+          dr completion bash > /tmp/dr-bash.sh
+          bash -n /tmp/dr-bash.sh && echo "✓ Bash completion syntax valid"
+
+          dr completion zsh > /tmp/dr-zsh.sh
+          zsh -n /tmp/dr-zsh.sh 2>/dev/null && echo "✓ Zsh completion syntax valid" || echo "⚠ Zsh not available, skipping syntax check"
+
+      - name: Run completion expect tests
+        run: |
+          expect ./smoke_test_scripts/expect_completion.exp

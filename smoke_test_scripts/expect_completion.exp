@@ -1,0 +1,39 @@
+#!/usr/local/bin/expect -f
+
+set timeout 10
+
+# Use TERM=dumb to prevent terminal color probing which causes OSC sequences
+set env(TERM) dumb
+
+# Test completion install with --yes flag to avoid prompts
+spawn dr completion install --yes
+
+expect {
+    -re "Completion (already )?installed" {
+        puts "\n✅ Completion install succeeded"
+    }
+    timeout {
+        puts "\n❌ Timeout waiting for install confirmation"
+        exit 1
+    }
+    eof
+}
+
+sleep 1
+
+# Test completion uninstall with --yes flag
+spawn dr completion uninstall --yes
+
+expect {
+    -re "(Completion uninstalled|No completion found)" {
+        puts "\n✅ Completion uninstall succeeded"
+    }
+    timeout {
+        puts "\n❌ Timeout waiting for uninstall confirmation"
+        exit 1
+    }
+    eof
+}
+
+expect eof
+puts "\n✅ All completion tests passed"

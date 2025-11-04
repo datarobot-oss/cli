@@ -43,6 +43,10 @@ else
   exit 1
 fi
 
+# Test completion install/uninstall interactively
+echo "Testing completion install/uninstall..."
+expect ./smoke_test_scripts/expect_completion.exp
+
 dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
