@@ -2,6 +2,9 @@
 
 set timeout 10
 
+# Use TERM=dumb to prevent terminal color probing which causes OSC sequences
+set env(TERM) dumb
+
 set datarobot_cli_config [lindex $argv 0]; # Grab the first command line parameter
 
 spawn dr auth setURL --config $datarobot_cli_config

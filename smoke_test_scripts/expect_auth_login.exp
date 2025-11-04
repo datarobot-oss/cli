@@ -2,6 +2,9 @@
 
 set timeout 20
 
+# Use TERM=dumb to prevent terminal color probing which causes OSC sequences
+set env(TERM) dumb
+
 spawn dr auth login
 
 # If we get an prompt for needed URL be sure to set it first
