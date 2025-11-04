@@ -117,6 +117,60 @@ remove_from_path() {
     fi
 }
 
+# Remove shell completions
+remove_completions() {
+    local removed=0
+
+    # Zsh completions
+    local zsh_locations="
+        $HOME/.oh-my-zsh/custom/completions/_$BINARY_NAME
+        $HOME/.zsh/completions/_$BINARY_NAME
+    "
+
+    for location in $zsh_locations; do
+        if [ -f "$location" ]; then
+            rm -f "$location"
+            step "Removed Zsh completion from $location"
+            removed=1
+        fi
+    done
+
+    # Clear Zsh completion cache
+    if [ $removed -eq 1 ]; then
+        rm -f "$HOME/.zcompdump"* 2>/dev/null
+    fi
+
+    # Bash completions
+    local bash_locations="
+        $HOME/.bash_completions/$BINARY_NAME
+        /etc/bash_completion.d/$BINARY_NAME
+    "
+
+    for location in $bash_locations; do
+        if [ -f "$location" ]; then
+            if [ -w "$location" ]; then
+                rm -f "$location"
+                step "Removed Bash completion from $location"
+                removed=1
+            else
+                step "Skipping $location (no write permission)"
+            fi
+        fi
+    done
+
+    # Fish completions
+    local fish_completion="$HOME/.config/fish/completions/$BINARY_NAME.fish"
+    if [ -f "$fish_completion" ]; then
+        rm -f "$fish_completion"
+        step "Removed Fish completion from $fish_completion"
+        removed=1
+    fi
+
+    if [ $removed -eq 0 ]; then
+        step "No shell completions found"
+    fi
+}
+
 # Confirm uninstallation
 confirm_uninstall() {
     if [ -t 0 ]; then  # Check if stdin is a terminal (interactive)
@@ -163,6 +217,10 @@ EOF
     echo ""
     info "Checking shell profiles..."
     remove_from_path
+
+    echo ""
+    info "Removing shell completions..."
+    remove_completions
 
     echo ""
     info "Uninstallation complete!"

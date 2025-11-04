@@ -88,5 +88,10 @@ func Cmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&dir, "dir", "d", ".", "Directory to look for tasks.")
 
+	// Register directory completion for the dir flag
+	_ = cmd.RegisterFlagCompletionFunc("dir", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveFilterDirs
+	})
+
 	return cmd
 }

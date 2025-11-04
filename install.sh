@@ -370,6 +370,62 @@ verify_installation() {
     fi
 }
 
+# Prompt user to install shell completions
+prompt_completion_install() {
+    local shell_name=""
+
+    # Detect shell name for display
+    case "$SHELL" in
+        */zsh) shell_name="Zsh" ;;
+        */bash) shell_name="Bash" ;;
+        */fish) shell_name="Fish" ;;
+        *) shell_name="your shell" ;;
+    esac
+
+    # Only prompt in interactive mode
+    if [ -t 0 ]; then
+        echo ""
+        printf "${BOLD}Would you like to install shell completions for $shell_name? [Y/n]${NC} "
+        read -r response
+
+        case "$response" in
+            [nN][oO]|[nN])
+                echo ""
+                info "Skipping completion installation"
+                step "You can install completions later with:"
+                printf "   ${BLUE}$BINARY_NAME completion install --yes${NC}\n"
+                return 1
+                ;;
+            *)
+                echo ""
+                info "Installing shell completions..."
+                return 0
+                ;;
+        esac
+    else
+        # Non-interactive mode, skip completions
+        step "To install completions, run: $BINARY_NAME completion install --yes"
+        return 1
+    fi
+}
+
+# Install shell completions using the built-in command
+install_completions() {
+    # Update PATH temporarily for this script
+    export PATH="$INSTALL_DIR:$PATH"
+
+    # Use the interactive completion installer
+    if "$INSTALL_DIR/$BINARY_NAME" completion install --yes 2>/dev/null; then
+        printf "   ${GREEN}✓${NC} Shell completions installed successfully\n"
+        step "Restart your shell to activate completions"
+        return 0
+    else
+        warn "Failed to install completions automatically"
+        step "Install manually with: $BINARY_NAME completion install --yes"
+        return 1
+    fi
+}
+
 # Check if install directory is in PATH
 check_path() {
     if echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
@@ -435,6 +491,11 @@ EOF
 
     IN_PATH=0
     check_path && IN_PATH=1
+
+    # Prompt for completion installation
+    if prompt_completion_install; then
+        install_completions
+    fi
 
     echo ""
     if [ $IN_PATH -eq 1 ]; then

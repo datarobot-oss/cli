@@ -359,6 +359,68 @@ function Test-Installation {
     }
 }
 
+# Prompt user to install shell completions
+function Invoke-CompletionPrompt {
+    param([string]$BinaryPath)
+
+    Write-Host ""
+    $response = Read-Host "Would you like to install shell completions for PowerShell? [Y/n]"
+
+    if ($response -match '^[Nn](o)?$') {
+        Write-Host ""
+        Write-Info "Skipping completion installation"
+        Write-Step "You can install completions later with:"
+        Write-Host "  $BINARY_NAME completion install --yes" -ForegroundColor Blue
+        return $false
+    }
+
+    return $true
+}
+
+# Install PowerShell completions using the built-in command
+function Install-Completions {
+    param([string]$BinaryPath)
+
+    Write-Host ""
+    Write-Info "Installing shell completions..."
+
+    try {
+        # Note: PowerShell doesn't have the interactive install command yet
+        # Fall back to the manual method
+        $completionScript = & $BinaryPath completion powershell 2>$null | Out-String
+
+        if (-not $completionScript) {
+            Write-Warn "Failed to generate completion script"
+            Write-Step "Install manually with: $BINARY_NAME completion powershell --help"
+            return $false
+        }
+
+        # Check if profile exists
+        if (-not (Test-Path $PROFILE)) {
+            New-Item -Path $PROFILE -ItemType File -Force | Out-Null
+        }
+
+        # Check if completion is already in profile
+        $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+        if ($profileContent -and $profileContent -match "$BINARY_NAME completion") {
+            Write-Success "Shell completions already installed"
+            return $true
+        }
+
+        # Add completion to profile
+        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' completion powershell | Out-String | Invoke-Expression"
+        Add-Content -Path $PROFILE -Value $completionLine
+
+        Write-Success "Shell completions installed successfully"
+        Write-Step "Restart PowerShell or run: . `$PROFILE"
+        return $true
+    } catch {
+        Write-Warn "Failed to install completions: $_"
+        Write-Step "Install manually with: $BINARY_NAME completion powershell --help"
+        return $false
+    }
+}
+
 # Main installation flow
 function Install-DataRobotCLI {
     Write-Host $banner -ForegroundColor Cyan
@@ -388,6 +450,11 @@ function Install-DataRobotCLI {
     Test-Installation -BinaryPath $binaryPath
 
     $inPath = Add-ToPath
+
+    # Prompt for completion installation
+    if (Invoke-CompletionPrompt -BinaryPath $binaryPath) {
+        Install-Completions -BinaryPath $binaryPath
+    }
 
     Write-Host ""
     if ($inPath) {

@@ -150,4 +150,29 @@ var Cmd = &cobra.Command{
 			return
 		}
 	},
+	ValidArgsFunction: completeTemplateIDs,
+}
+
+// completeTemplateIDs provides shell completion for template IDs
+func completeTemplateIDs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	// Only complete the first argument (template ID)
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Fetch templates from the API
+	templateList, err := drapi.GetTemplates()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	// Build completion suggestions with ID and description
+	completions := make([]string, 0, len(templateList.Templates))
+
+	for _, template := range templateList.Templates {
+		// Format: "id\tdescription"
+		completions = append(completions, fmt.Sprintf("%s\t%s", template.ID, template.Name))
+	}
+
+	return completions, cobra.ShellCompDirectiveNoFileComp
 }

@@ -9,7 +9,43 @@ The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. 
 
 ## Installation
 
-Setting up shell completions involves generating and installing the appropriate completion script for your shell. This can take many forms, depending on how your shell environment is configured. Some examples are provided below&mdash;however, these are not definitive.
+### Automatic Installation
+
+Shell completions can be installed in three ways:
+
+1. **Installation Script** (Recommended for first-time install)
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+   ```
+   The installer automatically detects your shell and configures completions.
+
+2. **Interactive Command** (Recommended for managing completions)
+   ```bash
+   dr completion install
+   ```
+   Detects your shell and installs completions to the appropriate location.
+
+3. **Manual Installation** (For advanced users)
+   Follow the shell-specific instructions below.
+
+### Interactive Commands
+
+The CLI provides commands to manage completions easily:
+
+```bash
+# Install completions for your current shell
+dr completion install
+
+# Force reinstall (useful after updates)
+dr completion install --force
+
+# Uninstall completions
+dr completion uninstall
+```
+
+### Manual Installation
+
+If you prefer manual installation or the automatic methods don't work, follow the instructions below for your shell.
 
 ### Bash
 
@@ -224,7 +260,21 @@ dr run --l<Tab>
 
 #### Bash
 
-1. Check that bash-completion is installed:
+**Important**: Bash completions require the `bash-completion` package to be installed first.
+
+1. Install bash-completion if not already installed:
+   ```bash
+   # macOS (Homebrew)
+   brew install bash-completion@2
+
+   # Ubuntu/Debian
+   sudo apt-get install bash-completion
+
+   # RHEL/CentOS
+   sudo yum install bash-completion
+   ```
+
+2. Check that bash-completion is loaded:
    ```bash
    # macOS
    brew list bash-completion@2

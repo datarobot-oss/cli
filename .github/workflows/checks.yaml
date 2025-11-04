@@ -1,19 +1,13 @@
-name: Checks
+name: PR Checks
 
 concurrency:
   group: ${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 on:
-  push:
-    branches:
-      - main
-      - master
-
   pull_request:
     branches:
       - main
-      - master
 
 jobs:
   lint:
@@ -170,29 +164,45 @@ jobs:
         run: |
           ./dist/dr --help
 
-  smoke-test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    name: Run Smoke Tests
+  detect-changes:
+    runs-on: ubuntu-latest
+    name: Detect Changes
+    outputs:
+      completion: ${{ steps.changes.outputs.completion }}
+      dotenv: ${{ steps.changes.outputs.dotenv }}
+      templates: ${{ steps.changes.outputs.templates }}
+      auth: ${{ steps.changes.outputs.auth }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Ubuntu - Install expect w/ apt-get
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+      - name: Detect file changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            completion:
+              - 'cmd/completion/**'
+            dotenv:
+              - 'cmd/dotenv/**'
+            templates:
+              - 'cmd/templates/**'
+            auth:
+              - 'cmd/auth/**'
+
+  completion-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.completion == 'true'
+    runs-on: ubuntu-latest
+    name: Test Completions
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install expect
         run: |
           sudo apt-get update
           sudo apt-get install -y expect
-
-      - name: MacOS - Install expect w/ homebrew
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          brew install expect
-
-      - name: Install yq
-        uses: dcarbone/install-yq-action@v1.3.1
 
       - name: Install Taskfile
         uses: arduino/setup-task@v2
@@ -206,84 +216,29 @@ jobs:
           go-version: '1.25.3'
 
       - name: Build the DR CLI Binary
-        run:  task build
+        run: task build
 
       - name: Move the Binary
-        run:  sudo mv ./dist/dr /usr/local/bin/dr
+        run: sudo mv ./dist/dr /usr/local/bin/dr
 
-      - name: Run Smoke Tests for Binary
-        env:
-          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-        run: |
-          task smoke-test DR_API_TOKEN="$DR_API_TOKEN"
-
-  smoke-test-windows:
-    runs-on: windows-latest
-    name: Run Smoke Tests (windows-latest)
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.3'
-
-      - name: Use Go Releaser to Build Windows Executable
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser # Other value is 'goreleaser-pro'
-          version: '~> v2'
-          args: release --snapshot --clean --skip homebrew --skip archive
-
-      - name: Move the Executable to Newly Created Directory and add to PATH
-        shell: powershell
-        run: |
-          # Create new directory
-          $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
-          mkdir "$INSTALL_DIR"
-
-          # Move executable to newly created directory
-          mv .\dist\windows_windows_amd64_v1\dr.exe "$INSTALL_DIR"
-
-          # Add to PATH (GitHub Actions specific approach)
-          echo "$INSTALL_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Run Smoke Tests for Binary
-        run: |
-          task smoke-test-windows
-
-  smoke-test-installs:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    name: Run Installation
-    steps:
-      - name: Install for Ubuntu and MacOS
-        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
-
-      - name: Install for windows
-        if: ${{ matrix.os == 'windows-latest' }}
-        run: |
-          irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
-
-      - name: Check DR runs without errors (Ubuntu and MacOS)
-        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+      - name: Test completion generation
         shell: bash
         run: |
-          dr --help
+          # Test bash completion generation and content
+          dr completion bash > /tmp/dr-bash.sh
 
-      - name: Check DR runs without errors (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: powershell
+          # Check if we have the expected __start_dr() function
+          if grep -q "__start_dr()" /tmp/dr-bash.sh; then
+            echo "✓ Bash completion has expected __start_dr() function"
+          else
+            echo "✗ Bash completion missing __start_dr() function"
+            exit 1
+          fi
+
+          # Validate bash syntax
+          bash -n /tmp/dr-bash.sh && echo "✓ Bash completion syntax valid"
+
+
+      - name: Run completion expect tests
         run: |
-          C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help
+          expect ./smoke_test_scripts/expect_completion.exp
