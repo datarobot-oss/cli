@@ -297,8 +297,8 @@ jobs:
         if: ${{ matrix.os == 'windows-latest' }}
         shell: powershell
         run: |
-          .\dist\dr.exe --help
-          .\dist\dr.exe version
+          & "dist/dr.exe" --help
+          & "dist/dr.exe" version
           Write-Host "[OK] Binary runs successfully"
 
   # Comprehensive installation tests for main branch - full lifecycle testing
