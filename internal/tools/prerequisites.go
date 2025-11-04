@@ -20,15 +20,13 @@ type Prerequisite struct {
 	Command string
 }
 
-var (
-	// RequiredTools lists all tools required for the quickstart process
-	RequiredTools = []Prerequisite{
-		{Name: "Python", Command: "python3"},
-		{Name: "uv", Command: "uv"},
-		{Name: "task", Command: "task"},
-		{Name: "pulumi", Command: "pulumi"},
-	}
-)
+// RequiredTools lists all tools required for the quickstart process
+var RequiredTools = []Prerequisite{
+	{Name: "Python", Command: "python3"},
+	{Name: "uv", Command: "uv"},
+	{Name: "task", Command: "task"},
+	{Name: "pulumi", Command: "pulumi"},
+}
 
 // CheckPrerequisites verifies that all required tools are installed
 func CheckPrerequisites() error {

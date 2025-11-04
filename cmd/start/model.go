@@ -203,7 +203,6 @@ func validateEnvironment() tea.Msg {
 func executeQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin
-
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
 		return stepErrorMsg{err: err}
@@ -260,5 +259,5 @@ func findQuickstartScript() (string, error) {
 
 	absExecutablePath, _ := filepath.Abs(executablePath)
 
-	return "", fmt.Errorf("no executable quickstart script found in %s.", absExecutablePath)
+	return "", fmt.Errorf("no executable quickstart script found in %s", absExecutablePath)
 }
