@@ -370,76 +370,59 @@ verify_installation() {
     fi
 }
 
-# Install shell completions
-install_completions() {
-    local completion_installed=0
+# Prompt user to install shell completions
+prompt_completion_install() {
+    local shell_name=""
 
-    # Detect shell and install appropriate completions
+    # Detect shell name for display
     case "$SHELL" in
-        */zsh)
-            # Check for Oh-My-Zsh first (most common)
-            if [ -d "$HOME/.oh-my-zsh" ]; then
-                local comp_dir="$HOME/.oh-my-zsh/custom/completions"
-                mkdir -p "$comp_dir"
-
-                if "$INSTALL_DIR/$BINARY_NAME" completion zsh > "$comp_dir/_$BINARY_NAME" 2>/dev/null; then
-                    step "Installed Zsh completions to $comp_dir/_$BINARY_NAME"
-                    rm -f "$HOME/.zcompdump"* 2>/dev/null
-                    completion_installed=1
-                fi
-            # Try standard Zsh completion directory
-            elif [ -d "$HOME/.zsh" ] || mkdir -p "$HOME/.zsh/completions" 2>/dev/null; then
-                local comp_dir="$HOME/.zsh/completions"
-
-                if "$INSTALL_DIR/$BINARY_NAME" completion zsh > "$comp_dir/_$BINARY_NAME" 2>/dev/null; then
-                    step "Installed Zsh completions to $comp_dir/_$BINARY_NAME"
-                    rm -f "$HOME/.zcompdump"* 2>/dev/null
-
-                    # Add to fpath if not already there
-                    local zshrc="$HOME/.zshrc"
-                    if [ -f "$zshrc" ] && ! grep -q "$comp_dir" "$zshrc" 2>/dev/null; then
-                        echo "" >> "$zshrc"
-                        echo "# Added by DataRobot CLI installer" >> "$zshrc"
-                        echo "fpath=($comp_dir \$fpath)" >> "$zshrc"
-                        echo "autoload -U compinit && compinit" >> "$zshrc"
-                    fi
-                    completion_installed=1
-                fi
-            fi
-            ;;
-        */bash)
-            # Try user-level completion directory
-            local comp_dir="$HOME/.bash_completions"
-            mkdir -p "$comp_dir" 2>/dev/null
-
-            if "$INSTALL_DIR/$BINARY_NAME" completion bash > "$comp_dir/$BINARY_NAME" 2>/dev/null; then
-                step "Installed Bash completions to $comp_dir/$BINARY_NAME"
-
-                # Add sourcing to bashrc if not already there
-                local bashrc="$HOME/.bashrc"
-                if [ -f "$bashrc" ] && ! grep -q "$comp_dir/$BINARY_NAME" "$bashrc" 2>/dev/null; then
-                    echo "" >> "$bashrc"
-                    echo "# Added by DataRobot CLI installer" >> "$bashrc"
-                    echo "[ -f $comp_dir/$BINARY_NAME ] && source $comp_dir/$BINARY_NAME" >> "$bashrc"
-                fi
-                completion_installed=1
-            fi
-            ;;
-        */fish)
-            local comp_dir="$HOME/.config/fish/completions"
-            mkdir -p "$comp_dir" 2>/dev/null
-
-            if "$INSTALL_DIR/$BINARY_NAME" completion fish > "$comp_dir/$BINARY_NAME.fish" 2>/dev/null; then
-                step "Installed Fish completions to $comp_dir/$BINARY_NAME.fish"
-                completion_installed=1
-            fi
-            ;;
+        */zsh) shell_name="Zsh" ;;
+        */bash) shell_name="Bash" ;;
+        */fish) shell_name="Fish" ;;
+        *) shell_name="your shell" ;;
     esac
 
-    if [ $completion_installed -eq 1 ]; then
-        step "Shell completions installed! Restart your shell to activate."
+    # Only prompt in interactive mode
+    if [ -t 0 ]; then
+        echo ""
+        printf "${BOLD}Would you like to install shell completions for $shell_name? [Y/n]${NC} "
+        read -r response
+
+        case "$response" in
+            [nN][oO]|[nN])
+                echo ""
+                info "Skipping completion installation"
+                step "You can install completions later with:"
+                printf "   ${BLUE}$BINARY_NAME completion install --yes${NC}\n"
+                return 1
+                ;;
+            *)
+                echo ""
+                info "Installing shell completions..."
+                return 0
+                ;;
+        esac
     else
-        step "To install completions later, run: $BINARY_NAME completion <shell>"
+        # Non-interactive mode, skip completions
+        step "To install completions, run: $BINARY_NAME completion install --yes"
+        return 1
+    fi
+}
+
+# Install shell completions using the built-in command
+install_completions() {
+    # Update PATH temporarily for this script
+    export PATH="$INSTALL_DIR:$PATH"
+
+    # Use the interactive completion installer
+    if "$INSTALL_DIR/$BINARY_NAME" completion install --yes 2>/dev/null; then
+        printf "   ${GREEN}✓${NC} Shell completions installed successfully\n"
+        step "Restart your shell to activate completions"
+        return 0
+    else
+        warn "Failed to install completions automatically"
+        step "Install manually with: $BINARY_NAME completion install --yes"
+        return 1
     fi
 }
 
@@ -509,9 +492,10 @@ EOF
     IN_PATH=0
     check_path && IN_PATH=1
 
-    echo ""
-    info "Setting up shell completions..."
-    install_completions
+    # Prompt for completion installation
+    if prompt_completion_install; then
+        install_completions
+    fi
 
     echo ""
     if [ $IN_PATH -eq 1 ]; then
