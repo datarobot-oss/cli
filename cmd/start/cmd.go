@@ -29,7 +29,7 @@ func Cmd() *cobra.Command {
 		Use:     "start",
 		Aliases: []string{"quickstart"},
 		GroupID: "core",
-		Short:   "Run the application quickstart process",
+		Short:   "Run the application quickstart process.",
 		Long: `Run the application quickstart process for the current template.
 Running this command performs the following actions:
 - Validating the environment
