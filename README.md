@@ -1,5 +1,7 @@
 # DataRobot CLI
 
+Dummy commit - trying to test PR comments triggering smoke tests but we have to merge to main to get updates to the respective github YAML file to take effect.
+
 [![Go Report Card](https://goreportcard.com/badge/github.com/datarobot/cli)](https://goreportcard.com/report/github.com/datarobot/cli)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.txt)
 
