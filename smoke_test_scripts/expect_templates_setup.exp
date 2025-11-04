@@ -11,6 +11,7 @@ send -- {/}
 expect "Filter"
 send -- "talk\r\n"
 
+sleep 1
 expect "Talk to My Docs"
 send -- "\r\n"
 
