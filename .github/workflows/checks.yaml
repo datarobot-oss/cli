@@ -260,6 +260,7 @@ jobs:
           task smoke-test-windows
 
   smoke-test-installs:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main')
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
