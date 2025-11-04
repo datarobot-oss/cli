@@ -259,20 +259,66 @@ jobs:
         run: |
           task smoke-test-windows
 
-  smoke-test-installs:
+  # Lightweight smoke tests for PRs - just verify binary builds and runs
+  smoke-test-pr:
+    if: github.event_name == 'pull_request'
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    name: Run Installation
+    name: PR Smoke Test (${{ matrix.os }})
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.3'
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the DR CLI Binary
+        run: task build
+
+      - name: Test binary runs (Unix)
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          ./dist/dr --help
+          ./dist/dr version
+          echo "✓ Binary runs successfully"
+
+      - name: Test binary runs (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
+        run: |
+          .\dist\dr.exe --help
+          .\dist\dr.exe version
+          Write-Host "✓ Binary runs successfully"
+
+  # Comprehensive installation tests for main branch - full lifecycle testing
+  smoke-test-installs:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: Full Install Test (${{ matrix.os }})
     steps:
       - name: Install for Ubuntu and MacOS
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        shell: bash
         run: |
           yes | curl -fsSL https://cli.datarobot.com/install | sh
 
-      - name: Install for windows
+      - name: Install for Windows
         if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
         run: |
           $responses = @('y', 'y')
           $input = $responses -join "`n"
@@ -289,3 +335,43 @@ jobs:
         shell: powershell
         run: |
           C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help
+
+      - name: Uninstall binary (Ubuntu and MacOS)
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          # Remove binary
+          rm -f ~/.local/bin/dr
+          echo "✓ Binary removed"
+
+      - name: Uninstall binary (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
+        run: |
+          # Remove installation directory
+          $installDir = "$env:LOCALAPPDATA\Programs\dr"
+          if (Test-Path $installDir) {
+            Remove-Item -Path $installDir -Recurse -Force
+          }
+          Write-Host "✓ Binary removed"
+
+      - name: Verify binary removed (Ubuntu and MacOS)
+        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          if [ -f ~/.local/bin/dr ]; then
+            echo "ERROR: dr binary still exists after uninstall"
+            exit 1
+          fi
+          echo "✓ Binary successfully removed"
+
+      - name: Verify binary removed (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: powershell
+        run: |
+          $installDir = "$env:LOCALAPPDATA\Programs\dr"
+          if (Test-Path "$installDir\dr.exe") {
+            Write-Host "ERROR: dr.exe still exists after uninstall"
+            exit 1
+          }
+          Write-Host "✓ Binary successfully removed"
