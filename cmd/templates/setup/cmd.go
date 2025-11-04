@@ -21,14 +21,19 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Setup template configuration (interactive mode)",
-	Long: `Setup and configure the current template with an interactive setup wizard.
+	Short: "🎉 Interactive template setup wizard",
+	Long: `Launch the interactive template setup wizard to get started with DataRobot AI applications.
 
-This interactive command:
-- Helps with setting up the template configuration
+🎯 This wizard will help you:
+  1️⃣  Choose an AI application template
+  2️⃣  Clone it to your computer  
+  3️⃣  Configure your environment
+  4️⃣  Get you ready to build!
 
-This command launches an interactive terminal interface to guide you through
-the template configuration process step by step.`,
+⏱️  Takes about 3-5 minutes
+🎉  You'll have a working AI app at the end
+
+💡 Perfect for first-time users or starting new projects.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return RunTea(cmd.Context())
 	},

@@ -338,32 +338,57 @@ func (m Model) View() string {
 	switch m.screen {
 	case welcomeScreen:
 		// Render welcome content
-		welcome := tui.WelcomeStyle.Render("Welcome to " + version.AppName)
+		welcome := tui.WelcomeStyle.Render("🎉 Welcome to " + version.AppName + " Setup Wizard!")
 		sb.WriteString(welcome)
 		sb.WriteString("\n\n")
 
-		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you:"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("  1️⃣  Choose an AI application template"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("  2️⃣  Clone it to your computer"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("  3️⃣  Configure your environment"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("  4️⃣  Get you ready to build!"))
+		sb.WriteString("\n\n")
+
+		sb.WriteString(tui.BaseTextStyle.Render("⏱️  Takes about 3-5 minutes"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("🎯  You'll have a working AI app at the end"))
+		sb.WriteString("\n\n")
+
+		sb.WriteString(tui.BaseTextStyle.Render("Ready to get started? Press Enter to continue..."))
 		sb.WriteString("\n\n")
 
 		// Render footer with quit instructions
 		sb.WriteString(tui.Footer())
 	case hostScreen:
-		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString(tui.BaseTextStyle.Render("🌐 DataRobot URL Configuration"))
 		sb.WriteString("\n\n")
-		sb.WriteString("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering\n")
-		sb.WriteString("Please enter 1 if you're using https://app.datarobot.com\n")
-		sb.WriteString("Please enter 2 if you're using https://app.eu.datarobot.com\n")
-		sb.WriteString("Please enter 3 if you're using https://app.jp.datarobot.com\n")
-		sb.WriteString("Otherwise, please enter the URL you use\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Choose your DataRobot environment:"))
+		sb.WriteString("\n\n")
+		sb.WriteString("┌─────────────────────────────────────────────────────┐\n")
+		sb.WriteString("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │\n")
+		sb.WriteString("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │\n")
+		sb.WriteString("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │\n")
+		sb.WriteString("│  [4] 🏢 Custom/On-Prem   Enter your custom URL         │\n")
+		sb.WriteString("└─────────────────────────────────────────────────────┘\n")
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("🔗 Don't know which one? Check your DataRobot login page URL"))
+		sb.WriteString("\n\n")
 
 		sb.WriteString(m.host.View())
 	case loginScreen:
-		sb.WriteString(tui.BaseTextStyle.Render("This wizard will help you set up a new DataRobot application template."))
+		sb.WriteString(tui.BaseTextStyle.Render("🔐 DataRobot Authentication"))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("We'll now authenticate you with DataRobot using your browser."))
 		sb.WriteString("\n\n")
 
 		sb.WriteString(m.login.View())
 
-		sb.WriteString(tui.BaseTextStyle.Render("Press Esc to change DataRobot URL"))
+		sb.WriteString("\n")
+		sb.WriteString(tui.BaseTextStyle.Render("💡 Press Esc to change DataRobot URL"))
 	case listScreen:
 		sb.WriteString(m.list.View())
 	case cloneScreen:
