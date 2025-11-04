@@ -419,6 +419,16 @@ go test -race ./...
 go test -run TestLogin ./cmd/auth
 ```
 
+### Running Smoke Tests Using GitHub Actions
+
+We have smoke tests that are not currently run on Pull Requests however _can_ be using PR comments to trigger them.
+
+These are the appropriate comments to trigger respective tests:
+
+- /trigger-smoke-test
+- /trigger-windows-smoke-test
+- /trigger-installs-smoke-test
+
 ## Debugging
 
 ### Using Delve
