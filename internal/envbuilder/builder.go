@@ -25,7 +25,7 @@ type UserPrompt struct {
 	Type     string         `yaml:"type"`
 	Multiple bool           `yaml:"multiple"`
 	Options  []PromptOption `yaml:"options,omitempty"`
-	Default  any            `yaml:"default,omitempty"`
+	Default  string         `yaml:"default,omitempty"`
 	Help     string         `yaml:"help"`
 	Optional bool           `yaml:"optional,omitempty"`
 }

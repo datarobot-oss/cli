@@ -258,7 +258,7 @@ func (pm promptModel) View() string {
 
 	sb.WriteString("\n")
 
-	if pm.prompt.Default != "" && pm.prompt.Default != nil {
+	if pm.prompt.Default != "" {
 		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %v", pm.prompt.Default)))
 		sb.WriteString("\n")
 	}
