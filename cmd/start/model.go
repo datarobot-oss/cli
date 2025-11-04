@@ -201,33 +201,9 @@ func executeQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin
 
-	// Look for any executable file named quickstart* in the configured path relative to CWD
-	executablePath := repo.QuickstartScriptPath
-
-	// Find files matching quickstart*
-	matches, err := filepath.Glob(filepath.Join(executablePath, "quickstart*"))
+	quickstartScript, err := findQuickstartScript()
 	if err != nil {
-		return stepErrorMsg{err: fmt.Errorf("failed to search for quickstart script: %w", err)}
-	}
-
-	// Find the first executable file
-	var quickstartScript string
-
-	for _, match := range matches {
-		info, err := os.Stat(match)
-		if err != nil {
-			continue
-		}
-
-		// Check if it's a regular file and executable
-		if !info.IsDir() && info.Mode()&0o111 != 0 {
-			quickstartScript = match
-			break
-		}
-	}
-
-	if quickstartScript == "" {
-		return stepErrorMsg{err: fmt.Errorf("no executable quickstart script found in %s", executablePath)}
+		return stepErrorMsg{err: err}
 	}
 
 	log.Println("Found quickstart script at:", quickstartScript)
@@ -254,4 +230,32 @@ func executeQuickstart() tea.Msg {
 	log.Println("Quickstart script completed successfully")
 
 	return stepCompleteMsg{}
+}
+
+func findQuickstartScript() (string, error) {
+	// Look for any executable file named quickstart* in the configured path relative to CWD
+	executablePath := repo.QuickstartScriptPath
+
+	// Find files matching quickstart*
+	matches, err := filepath.Glob(filepath.Join(executablePath, "quickstart*"))
+	if err != nil {
+		return "", fmt.Errorf("failed to search for quickstart script: %w", err)
+	}
+
+	// Find the first executable file
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil {
+			continue
+		}
+
+		// Check if it's a regular file and executable
+		if !info.IsDir() && info.Mode()&0o111 != 0 {
+			return match, nil
+		}
+	}
+
+	absExecutablePath, _ := filepath.Abs(executablePath)
+
+	return "", fmt.Errorf("no executable quickstart script found in %s.", absExecutablePath)
 }
