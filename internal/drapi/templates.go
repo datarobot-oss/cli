@@ -93,7 +93,6 @@ func (tl TemplateList) ExcludePremium() TemplateList {
 	}
 }
 
-// This doesn't work in practive because "createdAt" is not included in the API response yet.
 func (tl TemplateList) SortNewestFirst() TemplateList {
 	// Create a copy of the slice to avoid modifying the cached data
 	sorted := make([]Template, len(tl.Templates))
@@ -180,7 +179,7 @@ func GetPublicTemplatesSorted() (*TemplateList, error) {
 		return nil, err
 	}
 
-	result := (*templates).ExcludePremium().ReverseSortByName()
+	result := (*templates).ExcludePremium().ReverseSortByName().SortNewestFirst()
 
 	return &result, nil
 }
