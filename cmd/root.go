@@ -35,12 +35,24 @@ var configFilePath string
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
-	Short: "The " + internalVersion.AppName,
-	Long: `
-	The ` + internalVersion.AppName + ` is a command-line interface for interacting with
-	DataRobot's application templates and authentication. It allows users to
-	clone, configure, and deploy applications to their DataRobot production environment.
-	`,
+	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
+	Long: `🚀 DataRobot CLI - Build AI Applications Faster
+
+The DataRobot CLI helps you quickly set up, configure, and deploy AI applications 
+using pre-built templates. Get from idea to production in minutes, not hours.
+
+✨ What you can do:
+  • Choose from ready-made AI application templates
+  • Set up your development environment quickly  
+  • Deploy to DataRobot with a single command
+  • Manage environment variables and configurations
+
+🎯 Quick Start:
+  dr templates setup    # Interactive setup wizard
+  dr run dev           # Start development server
+  dr --help            # Show all available commands
+
+💡 New to DataRobot CLI? Run 'dr templates setup' to get started!`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
