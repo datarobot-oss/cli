@@ -291,7 +291,7 @@ jobs:
         run: |
           ./dist/dr --help
           ./dist/dr version
-          echo "✓ Binary runs successfully"
+          echo "[OK] Binary runs successfully"
 
       - name: Test binary runs (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
@@ -299,7 +299,7 @@ jobs:
         run: |
           .\dist\dr.exe --help
           .\dist\dr.exe version
-          Write-Host "✓ Binary runs successfully"
+          Write-Host "[OK] Binary runs successfully"
 
   # Comprehensive installation tests for main branch - full lifecycle testing
   smoke-test-installs:
@@ -342,7 +342,7 @@ jobs:
         run: |
           # Remove binary
           rm -f ~/.local/bin/dr
-          echo "✓ Binary removed"
+          echo "[OK] Binary removed"
 
       - name: Uninstall binary (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
@@ -353,17 +353,17 @@ jobs:
           if (Test-Path $installDir) {
             Remove-Item -Path $installDir -Recurse -Force
           }
-          Write-Host "✓ Binary removed"
+          Write-Host "[OK] Binary removed"
 
       - name: Verify binary removed (Ubuntu and MacOS)
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
         shell: bash
         run: |
           if [ -f ~/.local/bin/dr ]; then
-            echo "ERROR: dr binary still exists after uninstall"
+            echo "[ERROR] dr binary still exists after uninstall"
             exit 1
           fi
-          echo "✓ Binary successfully removed"
+          echo "[OK] Binary successfully removed"
 
       - name: Verify binary removed (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
@@ -371,7 +371,7 @@ jobs:
         run: |
           $installDir = "$env:LOCALAPPDATA\Programs\dr"
           if (Test-Path "$installDir\dr.exe") {
-            Write-Host "ERROR: dr.exe still exists after uninstall"
+            Write-Host "[ERROR] dr.exe still exists after uninstall"
             exit 1
           }
-          Write-Host "✓ Binary successfully removed"
+          Write-Host "[OK] Binary successfully removed"
