@@ -196,23 +196,52 @@ dr run --help
 
 ## Shell completion
 
-The CLI supports shell completions for Bash, Zsh, Fish, and PowerShell. See [Shell Completion Guide](docs/user-guide/shell-completions.md) for detailed setup instructions.
+The CLI supports shell completions for Bash, Zsh, Fish, and PowerShell with automatic installation and configuration.
 
-### Quick setup
+### Quick setup (Recommended)
 
-**Bash (Linux)**
+The easiest way to install completions is using the interactive installer:
+
 ```bash
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+# Install completions for your current shell
+dr completion install --yes
+
+# Preview what would be installed (default behavior)
+dr completion install
+
+# Install for a specific shell
+dr completion install bash --yes
+dr completion install zsh --yes
 ```
 
-**Bash (macOS)**
+The installer will:
+- Detect your shell automatically
+- Install completions to the correct location
+- Configure your shell profile
+- Clear completion caches
+
+**Note:** Installation scripts (`install.sh` and `install.ps1`) automatically prompt to install completions during initial setup.
+
+### Manual setup
+
+If you prefer manual installation, generate the completion script:
+
+**Bash**
 ```bash
-dr completion bash > /usr/local/etc/bash_completion.d/dr
+# Linux
+dr completion bash | sudo tee /etc/bash_completion.d/dr
+
+# macOS (requires bash-completion from Homebrew)
+dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
 ```
 
 **Zsh**
 ```bash
-dr completion zsh > "${fpath[1]}/_dr"
+# Oh-My-Zsh
+dr completion zsh > ~/.oh-my-zsh/custom/completions/_dr
+
+# Standard Zsh
+dr completion zsh > ~/.zsh/completions/_dr
 ```
 
 **Fish**
@@ -223,7 +252,16 @@ dr completion fish > ~/.config/fish/completions/dr.fish
 **PowerShell**
 ```powershell
 dr completion powershell | Out-String | Invoke-Expression
+# To persist, add to your PowerShell profile
 ```
+
+### Uninstalling completions
+
+```bash
+dr completion uninstall --yes
+```
+
+See the [Shell Completion Guide](docs/user-guide/shell-completions.md) for detailed instructions and troubleshooting.
 
 ## Development
 

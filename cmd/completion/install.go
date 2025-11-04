@@ -44,19 +44,24 @@ installing to the appropriate location.
 This command will:
 - Detect your current shell (or use specified shell)
 - Show what will be installed and where
-- Ask for confirmation (unless --yes or --dry-run is used)
+- Ask for confirmation (unless --yes is specified)
 - Install completions to the standard location
 - Clear completion cache (if needed)
-- Show instructions to activate completions`,
-		Example: `  # Preview what would be installed (dry-run mode)
+- Show instructions to activate completions
+
+By default, runs in preview mode. Use --yes to install directly.`,
+		Example: `  # Preview what would be installed (default behavior)
   ` + version.CliName + ` completion install
 
-  # Install completions for your current shell with confirmation
+  # Install completions for your current shell
   ` + version.CliName + ` completion install --yes
 
   # Install completions for a specific shell
   ` + version.CliName + ` completion install bash --yes
   ` + version.CliName + ` completion install zsh --yes
+
+  # Preview installation for a specific shell
+  ` + version.CliName + ` completion install bash
 
   # Force reinstall even if already installed
   ` + version.CliName + ` completion install --force --yes`,
@@ -68,13 +73,23 @@ This command will:
 				shell = args[0]
 			}
 
-			return runInstall(cmd.Root(), shell, force, yes, dryRun)
+			// Determine if we're in dry-run mode
+			// If --yes is specified, disable dry-run (unless --dry-run=true was explicitly set)
+			effectiveDryRun := dryRun
+			if yes && !cmd.Flags().Changed("dry-run") {
+				effectiveDryRun = false
+			} else if !yes && !cmd.Flags().Changed("dry-run") {
+				// Default to dry-run if --yes is not specified
+				effectiveDryRun = true
+			}
+
+			return runInstall(cmd.Root(), shell, force, yes, effectiveDryRun)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force reinstall even if already installed")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm installation without prompting")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", true, "Show what would be installed without making changes (default: true)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be installed without making changes")
 
 	return cmd
 }
@@ -536,12 +551,14 @@ func uninstallCmd() *cobra.Command {
 This command will:
 - Detect your current shell (or use specified shell)
 - Show what will be removed
-- Ask for confirmation (unless --yes or --dry-run is used)
-- Remove completion files`,
-		Example: `  # Preview what would be removed (dry-run mode)
+- Ask for confirmation (unless --yes is specified)
+- Remove completion files
+
+By default, runs in preview mode. Use --yes to uninstall directly.`,
+		Example: `  # Preview what would be removed (default behavior)
   ` + version.CliName + ` completion uninstall
 
-  # Uninstall completions for your current shell with confirmation
+  # Uninstall completions for your current shell
   ` + version.CliName + ` completion uninstall --yes
 
   # Uninstall completions for a specific shell
@@ -549,18 +566,28 @@ This command will:
   ` + version.CliName + ` completion uninstall zsh --yes`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: supportedShells(),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			var shell string
 			if len(args) > 0 {
 				shell = args[0]
 			}
 
-			return runUninstall(shell, yes, dryRun)
+			// Determine if we're in dry-run mode
+			// If --yes is specified, disable dry-run (unless --dry-run=true was explicitly set)
+			effectiveDryRun := dryRun
+			if yes && !cmd.Flags().Changed("dry-run") {
+				effectiveDryRun = false
+			} else if !yes && !cmd.Flags().Changed("dry-run") {
+				// Default to dry-run if --yes is not specified
+				effectiveDryRun = true
+			}
+
+			return runUninstall(shell, yes, effectiveDryRun)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm uninstallation without prompting")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", true, "Show what would be removed without making changes (default: true)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be removed without making changes")
 
 	return cmd
 }
