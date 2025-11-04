@@ -107,12 +107,12 @@ func (tl TemplateList) SortNewestFirst() TemplateList {
 	return tl
 }
 
-func (tl TemplateList) ReverseSortByName() TemplateList {
+func (tl TemplateList) SortByName() TemplateList {
 	sorted := make([]Template, len(tl.Templates))
 	copy(sorted, tl.Templates)
 
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Name > sorted[j].Name
+		return sorted[i].Name < sorted[j].Name
 	})
 
 	tl.Templates = sorted
@@ -179,7 +179,7 @@ func GetPublicTemplatesSorted() (*TemplateList, error) {
 		return nil, err
 	}
 
-	result := (*templates).ExcludePremium().ReverseSortByName().SortNewestFirst()
+	result := (*templates).ExcludePremium().SortByName().SortNewestFirst()
 
 	return &result, nil
 }
