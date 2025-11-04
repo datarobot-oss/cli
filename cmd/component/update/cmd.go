@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/component/list"
@@ -38,6 +39,31 @@ func PreRunE(_ *cobra.Command, args []string) error {
 
 func RunE(_ *cobra.Command, args []string) error {
 	yamlFile := args[0]
+
+	if !isYamlFile(yamlFile) {
+		answers, err := copier.AnswersFromPath(".")
+		if err != nil {
+			return err
+		}
+
+		answerMatches := make([]string, 0, len(answers))
+
+		for _, answer := range answers {
+			if strings.Contains(answer.FileName, yamlFile) {
+				answerMatches = append(answerMatches, answer.FileName)
+			}
+		}
+
+		if len(answerMatches) != 1 {
+			_ = list.RunE(nil, nil)
+
+			fmt.Println()
+
+			return fmt.Errorf("answers_file that matches %s not found", yamlFile)
+		}
+
+		yamlFile = answerMatches[0]
+	}
 
 	fmt.Printf("Updating component %s\n", yamlFile)
 
@@ -72,4 +98,14 @@ func Cmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func isYamlFile(yamlFile string) bool {
+	info, err := os.Stat(yamlFile)
+
+	if errors.Is(err, os.ErrNotExist) || info.IsDir() {
+		return false
+	}
+
+	return strings.HasSuffix(yamlFile, ".yaml") || strings.HasSuffix(yamlFile, ".yml")
 }
