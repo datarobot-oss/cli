@@ -166,6 +166,7 @@ jobs:
 
   detect-changes:
     runs-on: ubuntu-latest
+    name: Detect Changes
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
