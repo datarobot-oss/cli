@@ -8,9 +8,8 @@ on:
   push:
     branches:
       - main
-  on:
-    issue_comment:
-      types: [created] # Trigger only when a comment is created
+  issue_comment:
+    types: [created] # Trigger only when a comment is created
   schedule:
     # Run every 30 minutes
     - cron: '*/30 * * * *'
