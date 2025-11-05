@@ -94,6 +94,9 @@ var EditCmd = &cobra.Command{
 var SetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Edit .env file using setup wizard",
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE(cmd.Context())
+	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
