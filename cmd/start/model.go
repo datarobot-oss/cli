@@ -183,8 +183,6 @@ func checkPrerequisites() tea.Msg {
 		return stepErrorMsg{err: err}
 	}
 
-	time.Sleep(1100 * time.Millisecond) // Simulate work
-
 	return stepCompleteMsg{}
 }
 
