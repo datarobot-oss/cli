@@ -31,7 +31,7 @@ type step struct {
 	// description is a brief summary of the step
 	description string
 	// fn is the function that performs the step's Update action
-	fn func() tea.Msg
+	fn func(*Model) tea.Msg
 }
 
 type ModelWithSteps interface {
@@ -41,20 +41,21 @@ type ModelWithSteps interface {
 }
 
 type Model struct {
-	steps       []step
-	current     int
-	done        bool
-	quitting    bool
-	err         error
-	stepCompleteMessage         string // Optional message from the completed step
+	steps                []step
+	current              int
+	done                 bool
+	quitting             bool
+	err                  error
+	stepCompleteMessage  string // Optional message from the completed step
 	quickstartScriptPath string // Path to the quickstart script to execute
 	waiting              bool   // Whether to wait for user input before proceeding
 }
 
 type stepCompleteMsg struct {
-	message string // Optional message to display to the user
-	waiting bool   // Whether to wait for user input before proceeding
-	done   bool   // Whether the quickstart process is complete
+	message              string // Optional message to display to the user
+	waiting              bool   // Whether to wait for user input before proceeding
+	done                 bool   // Whether the quickstart process is complete
+	quickstartScriptPath string // Path to quickstart script found (if any)
 }
 
 type stepErrorMsg struct {
@@ -69,28 +70,28 @@ const (
 )
 
 var (
-	checkMark  = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
-	arrow      = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
-	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
+	arrow     = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
+	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 func NewStartModel() Model {
 	return Model{
 		steps: []step{
-			{description: "Starting application quickstart process...", fn: startQuickstart},
-			{description: "Checking template prerequisites...", fn: checkPrerequisites},
+			{description: "Starting application quickstart process...", fn: (*Model).startQuickstart},
+			{description: "Checking template prerequisites...", fn: (*Model).checkPrerequisites},
 			// TODO Implement validateEnvironment
-			// {description: "Validating environment...", fn: validateEnvironment},
-			{description: "Locating quickstart script...", fn: findQuickstart},
-			{description: "Executing quickstart script...", fn: executeQuickstart},
+			// {description: "Validating environment...", fn: (*Model).validateEnvironment},
+			{description: "Locating quickstart script...", fn: (*Model).findQuickstart},
+			{description: "Executing quickstart script...", fn: (*Model).executeQuickstart},
 		},
-		current:  0,
-		done:     false,
-		quitting: false,
-		err:      nil,
-		stepCompleteMessage: "",
+		current:              0,
+		done:                 false,
+		quitting:             false,
+		err:                  nil,
+		stepCompleteMessage:  "",
 		quickstartScriptPath: "",
-		waiting:  false,
+		waiting:              false,
 	}
 }
 
@@ -106,7 +107,7 @@ func (m Model) executeCurrentStep() tea.Cmd {
 	currentStep := m.currentStep()
 
 	return func() tea.Msg {
-		return currentStep.fn()
+		return currentStep.fn(&m)
 	}
 }
 
@@ -127,6 +128,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Store any message from the completed step
 		if msg.message != "" {
 			m.stepCompleteMessage = msg.message
+		}
+
+		// Store quickstart script path if provided
+		if msg.quickstartScriptPath != "" {
+			m.quickstartScriptPath = msg.quickstartScriptPath
 		}
 
 		// See if there's a next step, and move to it
@@ -201,16 +207,14 @@ func (m Model) View() string {
 	return sb.String()
 }
 
-// Step function stubs
-
-func startQuickstart() tea.Msg {
+func (m *Model) startQuickstart() tea.Msg {
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
 	return stepCompleteMsg{}
 }
 
-func checkPrerequisites() tea.Msg {
+func (m *Model) checkPrerequisites() tea.Msg {
 	// Return stepErrorMsg{err} if prerequisites are not met
 
 	// Are we in a DataRobot repository?
@@ -232,7 +236,7 @@ func checkPrerequisites() tea.Msg {
 	return stepCompleteMsg{}
 }
 
-// func validateEnvironment() tea.Msg {
+// func (m *Model) validateEnvironment() tea.Msg {
 // 	// TODO: Implement environment validation logic
 // 	// - Check environment variables
 // 	// - Validate system requirements
@@ -244,9 +248,9 @@ func checkPrerequisites() tea.Msg {
 // 	return stepCompleteMsg{}
 // }
 
-func findQuickstart() tea.Msg {
+func (m *Model) findQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
-	// of .datarobot/cli/bin. If we find it, print its path and execute it after user confirmation.
+	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
 	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
 	// run `dr template setup`.
 	quickstartScript, err := findQuickstartScript()
@@ -263,19 +267,23 @@ func findQuickstart() tea.Msg {
 	log.Println("Found quickstart script at:", quickstartScript)
 
 	fmt.Printf("\nA quickstart script has been found at: %s\n", quickstartScript)
-	return stepCompleteMsg{message: "Do you want to execute this script? (y/n): ", waiting: true}
+
+	return stepCompleteMsg{
+		message:              "Do you want to execute this script? (y/n): ",
+		waiting:              true,
+		quickstartScriptPath: quickstartScript,
+	}
 }
 
-func executeQuickstart() tea.Msg {
-	// Get the quickstart script path from the model, and execute it
-	// If none was found, then tell the user
-
-	quickstartScript, err := findQuickstartScript()
-	if err != nil {
-		return stepErrorMsg{err: err}
+func (m *Model) executeQuickstart() tea.Msg {
+	// Execute the quickstart script that was found and stored in the model
+	// If no script path is set, then we should just tell the user to run `dr template setup`
+	if m.quickstartScriptPath == "" {
+		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
+
 	// Execute the script directly (it should have a shebang or be executable)
-	cmd := exec.Command(quickstartScript)
+	cmd := exec.Command(m.quickstartScriptPath)
 
 	// Set up command to inherit stdin/stdout/stderr for interactive execution
 	// TODO This needs to interrupt the TUI properly so that users
