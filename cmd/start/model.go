@@ -75,7 +75,8 @@ func NewStartModel() Model {
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
 			{description: "Checking template prerequisites...", fn: checkPrerequisites},
-			{description: "Validating environment...", fn: validateEnvironment},
+			// TODO Implement validateEnvironment
+			// {description: "Validating environment...", fn: validateEnvironment},
 			{description: "Executing quickstart script...", fn: executeQuickstart},
 		},
 		current:  0,
