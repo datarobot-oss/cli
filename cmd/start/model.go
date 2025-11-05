@@ -337,7 +337,10 @@ func findQuickstart(m *Model) tea.Msg {
 
 	// If we don't find a script, we'll proceed to run templates setup in the next step
 	if quickstartScript == "" {
-		return stepCompleteMsg{message: "No quickstart script found. Will proceed with template setup...\n"}
+		return stepCompleteMsg{
+			message: "No quickstart script found. Will proceed with template setup...\n",
+			waiting: true,
+		}
 	}
 
 	// If the user set the '--yes' flag, then just proceed to execute the script
