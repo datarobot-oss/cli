@@ -202,13 +202,24 @@ func validateEnvironment() tea.Msg {
 
 func executeQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
-	// of .datarobot/cli/bin
+	// of .datarobot/cli/bin. If we find it, print its path and execute it after user confirmation.
+	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
+	// run `dr template setup`.
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
 		return stepErrorMsg{err: err}
 	}
 
 	log.Println("Found quickstart script at:", quickstartScript)
+
+	// TODO Can we make this a reusable step?
+	fmt.Print("Do you want to execute this script? (y/n): ")
+	var response string
+	fmt.Scanln(&response)
+	if response != "y" {
+		log.Println("Aborting quickstart script execution.")
+		return stepCompleteMsg{}
+	}
 
 	// Execute the script directly (it should have a shebang or be executable)
 	cmd := exec.Command(quickstartScript)

@@ -40,6 +40,12 @@ func CheckPrerequisites() error {
 	}
 
 	if len(missing) > 0 {
+		fmt.Println("Please install the following tools:")
+		for _, tool := range RequiredTools {
+			if !isInstalled(tool.Command) {
+				fmt.Printf(" - %s: %s\n", tool.Name, tool.installString)
+			}
+		}
 		return fmt.Errorf("missing required tools: %s", strings.Join(missing, ", "))
 	}
 
