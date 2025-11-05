@@ -55,7 +55,10 @@ type stepCompleteMsg struct {
 	waiting              bool   // Whether to wait for user input before proceeding
 	done                 bool   // Whether the quickstart process is complete
 	quickstartScriptPath string // Path to quickstart script found (if any)
+	executeScript        bool   // Whether to execute the script immediately
 }
+
+type scriptCompleteMsg struct{}
 
 type stepErrorMsg struct {
 	err error // Error encountered during step execution
@@ -141,6 +144,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 
 		return m, tea.Quit
+
+	case scriptCompleteMsg:
+		// Script execution completed, quit the program
+		return m, tea.Quit
 	}
 
 	return m, nil
@@ -150,10 +157,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If we're waiting for user confirmation
 	if m.waiting {
 		switch msg.String() {
-		case "y", "Y":
-			// User confirmed, proceed to next step
+		case "y", "Y", "enter":
+			// User confirmed, execute the script
 			m.waiting = false
 			m.stepCompleteMessage = ""
+
+			if m.quickstartScriptPath != "" {
+				cmd := exec.Command(m.quickstartScriptPath)
+				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+					return scriptCompleteMsg{}
+				})
+			}
 
 			return m.executeNextStep()
 		case "n", "N", "q", "esc", "ctrl+c":
@@ -184,6 +198,14 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	// Store quickstart script path if provided
 	if msg.quickstartScriptPath != "" {
 		m.quickstartScriptPath = msg.quickstartScriptPath
+	}
+
+	// If this step requires executing a script, do it now
+	if msg.executeScript && m.quickstartScriptPath != "" {
+		cmd := exec.Command(m.quickstartScriptPath)
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return scriptCompleteMsg{}
+		})
 	}
 
 	// If this step requires waiting for user input, set the flag and stop
@@ -239,7 +261,7 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 
 		if m.waiting {
-			sb.WriteString(dimStyle.Render("Press 'y' to confirm, 'n' to cancel"))
+			sb.WriteString(dimStyle.Render("Press 'y' or ENTER to confirm, 'n' to cancel"))
 		} else {
 			sb.WriteString(tui.Footer())
 		}
@@ -322,19 +344,11 @@ func executeQuickstart(m *Model) tea.Msg {
 		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
 
-	// Now execute the script. Remember that tea.ExecProcess will temporarily
-	// suspend the TUI, allowing the script to take full control of the terminal
-	// until it completes.
-	cmd := exec.Command(m.quickstartScriptPath)
-
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			return stepErrorMsg{err: fmt.Errorf(errScriptExecutionFailed, err)}
-		}
-
-		return stepCompleteMsg{}
-	})
+	// Signal that we should execute the script
+	// The actual execution happens in handleStepComplete to ensure proper tea.ExecProcess handling
+	return stepCompleteMsg{executeScript: true}
 }
+
 
 func findQuickstartScript() (string, error) {
 	// Look for any executable file named quickstart* in the configured path relative to CWD

@@ -47,7 +47,7 @@ Running this command performs the following actions:
 			}
 
 			m := NewStartModel()
-			p := tea.NewProgram(tui.NewInterruptibleModel(m))
+			p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 			if _, err := p.Run(); err != nil {
 				return err
