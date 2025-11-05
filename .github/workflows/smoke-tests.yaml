@@ -21,7 +21,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/trigger-smoke-test')
     name: Run Smoke Tests (${{ matrix.os }})
     steps:
       - name: Checkout Code
@@ -112,7 +111,6 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/trigger-installs-smoke-test')
     name: Installation Test (${{ matrix.os }})
     steps:
       - name: Install for Ubuntu and MacOS
