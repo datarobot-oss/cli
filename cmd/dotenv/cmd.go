@@ -34,7 +34,7 @@ func Cmd() *cobra.Command {
 
 Manage your .env file and application configuration:
   • Edit environment variables interactively
-  • Set up configuration with guided wizard
+  • Set up configuration with a guided wizard
   • Update DataRobot credentials automatically
 
 🎯 Your .env file contains API keys, database connections, and other settings 

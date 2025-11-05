@@ -48,7 +48,7 @@ func SetURLAction() {
 	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL         │")
 	fmt.Println("└─────────────────────────────────────────────────────┘")
 	fmt.Println("")
-	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL")
+	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL.")
 	fmt.Println("")
 	fmt.Print("Enter your choice (1-4): ")
 

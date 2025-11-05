@@ -33,7 +33,7 @@ var Cmd = &cobra.Command{
 ⏱️  Takes about 3-5 minutes
 🎉  You'll have a working AI app at the end
 
-💡 Perfect for first-time users or starting new projects.`,
+💡 Perfect for first-time users or someone starting a new project.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return RunTea(cmd.Context())
 	},

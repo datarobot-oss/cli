@@ -48,7 +48,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
   • Manage environment variables and configurations
 
 🎯 Quick Start:
-  dr templates setup    # Interactive setup wizard
+  dr templates setup   # Interactive setup wizard
   dr run dev           # Start development server
   dr --help            # Show all available commands
 
