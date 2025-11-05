@@ -36,4 +36,4 @@ expect {
 }
 
 expect eof
-puts "\n[OK] All completion tests passed"
+puts "\n All completion tests passed"

@@ -72,10 +72,10 @@ jobs:
           script: |
             const installStatus = '${{ needs.installation-tests.result }}';
             const installEmoji = installStatus === 'success' ? '✅' : '❌';
-            const overallMessage = installStatus === 'success' 
-              ? 'All installation tests passed!' 
+            const overallMessage = installStatus === 'success'
+              ? 'All installation tests passed!'
               : 'Installation tests failed.';
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
