@@ -44,9 +44,9 @@ else
   exit 1
 fi
 
-# # Test completion install/uninstall interactively
-# echo "Testing completion install/uninstall..."
-# expect ./smoke_test_scripts/expect_completion.exp
+# Test completion install/uninstall interactively
+echo "Testing completion install/uninstall..."
+expect ./smoke_test_scripts/expect_completion.exp
 
 # Test dr run command (it will fail since there's no Taskfile, but we want to ensure it doesn't hang)
 echo "Testing dr run command..."
