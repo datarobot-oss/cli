@@ -164,7 +164,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			if m.quickstartScriptPath != "" {
 				cmd := exec.Command(m.quickstartScriptPath)
-				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+
+				return m, tea.ExecProcess(cmd, func(_ error) tea.Msg {
 					return scriptCompleteMsg{}
 				})
 			}
@@ -203,7 +204,8 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	// If this step requires executing a script, do it now
 	if msg.executeScript && m.quickstartScriptPath != "" {
 		cmd := exec.Command(m.quickstartScriptPath)
-		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+
+		return m, tea.ExecProcess(cmd, func(_ error) tea.Msg {
 			return scriptCompleteMsg{}
 		})
 	}
@@ -352,7 +354,6 @@ func executeQuickstart(m *Model) tea.Msg {
 	// The actual execution happens in handleStepComplete to ensure proper tea.ExecProcess handling
 	return stepCompleteMsg{executeScript: true}
 }
-
 
 func findQuickstartScript() (string, error) {
 	// Look for any executable file named quickstart* in the configured path relative to CWD
