@@ -227,6 +227,10 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var sb strings.Builder
 
+	// Show crazy DR header
+	sb.WriteString(tui.Header())
+	sb.WriteString("\n\n")
+
 	// Show welcome message
 	sb.WriteString(tui.WelcomeStyle.Render("DataRobot Quickstart"))
 	sb.WriteString("\n\n")
