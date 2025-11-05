@@ -1,4 +1,4 @@
-name: Smoke Tests
+name: Daily Smoke Tests
 
 concurrency:
   group: ${{ github.ref_name }}-smoke
@@ -8,8 +8,6 @@ on:
   push:
     branches:
       - main
-  issue_comment:
-    types: [created] # Trigger only when a comment is created
   schedule:
     # Run every 4 hours to avoid rate limits (6 times per day)
     - cron: '0 */4 * * *'
@@ -65,7 +63,6 @@ jobs:
 
   windows-smoke-test:
     runs-on: windows-latest
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/trigger-windows-smoke-test')
     name: Run Smoke Tests (windows-latest)
     steps:
       - name: Checkout Code
@@ -118,14 +115,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
+          curl -fsSL https://cli.datarobot.com/install | sh
 
       - name: Install for windows
         if: ${{ matrix.os == 'windows-latest' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex
+          irm https://cli.datarobot.com/winstall | iex
 
       - name: Check DR runs without errors (Ubuntu and MacOS)
         if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
