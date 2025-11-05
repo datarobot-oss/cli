@@ -14,9 +14,9 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 jobs:
-  build:
+  build-windows:
     runs-on: ubuntu-latest
-    name: Build Binaries
+    name: Build Windows Binary
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -39,16 +39,6 @@ jobs:
           version: '~> v2'
           args: release --snapshot --clean --skip homebrew --skip archive
 
-      - name: Build Linux/macOS Binary
-        run: task build
-
-      - name: Upload Linux/macOS Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: dr-unix
-          path: dist/dr
-          retention-days: 1
-
       - name: Upload Windows Binary
         uses: actions/upload-artifact@v4
         with:
@@ -57,7 +47,6 @@ jobs:
           retention-days: 1
 
   smoke-test:
-    needs: build
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -66,17 +55,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Download Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: dr-unix
-          path: /tmp/dr-bin
-
-      - name: Move Binary to PATH
-        run: |
-          chmod +x /tmp/dr-bin/dr
-          sudo mv /tmp/dr-bin/dr /usr/local/bin/dr
 
       - name: Ubuntu - Install expect w/ apt-get
         if: matrix.os == 'ubuntu-latest'
@@ -98,6 +76,17 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.3'
+
+      - name: Build the DR CLI Binary
+        run: task build
+
+      - name: Move the Binary
+        run: sudo mv ./dist/dr /usr/local/bin/dr
+
       - name: Run Smoke Tests for Binary
         env:
           DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
@@ -105,7 +94,7 @@ jobs:
           task smoke-test DR_API_TOKEN="$DR_API_TOKEN"
 
   windows-smoke-test:
-    needs: build
+    needs: build-windows
     runs-on: windows-latest
     name: Run Smoke Tests (windows-latest)
     steps:

@@ -5,12 +5,12 @@ on:
     types: [labeled]
 
 jobs:
-  build:
+  build-windows:
     if: |
       github.event.label.name == 'run-smoke-tests' ||
       github.event.label.name == 'go'
     runs-on: ubuntu-latest
-    name: Build Binaries
+    name: Build Windows Binary
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -33,16 +33,6 @@ jobs:
           version: '~> v2'
           args: release --snapshot --clean --skip homebrew --skip archive
 
-      - name: Build Linux Binary
-        run: task build
-
-      - name: Upload Linux Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: dr-linux
-          path: dist/dr
-          retention-days: 1
-
       - name: Upload Windows Binary
         uses: actions/upload-artifact@v4
         with:
@@ -51,7 +41,9 @@ jobs:
           retention-days: 1
 
   notify-start:
-    needs: build
+    if: |
+      github.event.label.name == 'run-smoke-tests' ||
+      github.event.label.name == 'go'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -68,7 +60,7 @@ jobs:
             });
 
   linux-smoke-tests:
-    needs: [build, notify-start]
+    needs: notify-start
     runs-on: ubuntu-latest
     name: Linux Smoke Tests
     steps:
@@ -80,22 +72,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y expect
 
-      - name: Download Linux Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: dr-linux
-          path: /tmp/dr-bin
-
-      - name: Move Binary to PATH
-        run: |
-          chmod +x /tmp/dr-bin/dr
-          sudo mv /tmp/dr-bin/dr /usr/local/bin/dr
-
       - name: Install Taskfile
         uses: arduino/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.3'
+
+      - name: Build the DR CLI Binary
+        run: task build
+
+      - name: Move Binary to PATH
+        run: sudo mv ./dist/dr /usr/local/bin/dr
 
       - name: Run Smoke Tests
         run: task smoke-test
@@ -103,7 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows-smoke-tests:
-    needs: [build, notify-start]
+    needs: [build-windows, notify-start]
     runs-on: windows-latest
     name: Windows Smoke Tests
     steps:
