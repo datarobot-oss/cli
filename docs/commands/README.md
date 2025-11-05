@@ -7,10 +7,13 @@ Complete reference documentation for all DataRobot CLI commands.
 These flags are available for all commands:
 
 ```bash
-  -v, --verbose    Enable verbose output (info level logging)
-      --debug      Enable debug output (debug level logging)
-  -h, --help       Show help information
+  -v, --verbose      Enable verbose output (info level logging)
+      --debug        Enable debug output (debug level logging)
+      --skip-auth    Skip authentication checks (for advanced users)
+  -h, --help         Show help information
 ```
+
+> **⚠️ Warning:** The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
 
 ## Commands
 

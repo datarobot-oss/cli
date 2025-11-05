@@ -82,6 +82,23 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 export EDITOR=nano
 ```
 
+### Advanced flags
+
+The CLI supports advanced command-line flags for special use cases:
+
+```bash
+# Skip authentication checks (advanced users only)
+dr templates list --skip-auth
+
+# Enable verbose logging
+dr templates list --verbose
+
+# Enable debug logging
+dr templates list --debug
+```
+
+> **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks and should only be used when you understand the implications. Commands requiring API access will likely fail without valid credentials.
+
 
 ## Configuration priority
 
