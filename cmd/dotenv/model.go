@@ -213,6 +213,7 @@ func (m Model) updatedContents() string {
 		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, name))
 		varBeginEnd := varRegex.FindStringIndex(m.contents)
 
+		// TO NOTE: This variable name is a bit of a misnomer as the string may contain info used for a value's respective comment - see below.
 		var varString string
 
 		// Handle special case where we have a comment (Derived from 'Help' portion of DR yaml values.)
