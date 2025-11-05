@@ -53,7 +53,7 @@ type stepErrorMsg struct {
 	err error
 }
 
-// Error messages used in the start command
+// er messages used in the start command
 const (
 	errNotInRepo               = "not inside a DataRobot repository"
 	errScriptExecutionFailed   = "failed to execute quickstart script: %w"
@@ -191,6 +191,8 @@ func checkPrerequisites() tea.Msg {
 		return stepErrorMsg{err: err}
 	}
 
+	time.Sleep(500 * time.Millisecond) // Simulate work
+
 	return stepCompleteMsg{}
 }
 
@@ -213,6 +215,8 @@ func executeQuickstart() tea.Msg {
 	// run `dr template setup`.
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
+		log.Println("Could not find quickstart script.")
+		fmt.Print("Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n")
 		return stepErrorMsg{err: err}
 	}
 
