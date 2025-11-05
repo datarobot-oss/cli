@@ -9,6 +9,12 @@ the review may happen while you are asleep / otherwise not able to respond quick
 
 ## CHANGES
 
+<!--
+Available slash commands (comment on PR to trigger):
+- /trigger-smoke-test or /trigger-test-smoke - Run smoke tests on this PR
+- /trigger-install-test or /trigger-test-install - Run installation tests on this PR
+-->
+
 <!-- Recommended Additional Sections:
 ## SCREENSHOTS
 ## TODO
