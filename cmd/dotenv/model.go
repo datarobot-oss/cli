@@ -213,7 +213,24 @@ func (m Model) updatedContents() string {
 		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, name))
 		varBeginEnd := varRegex.FindStringIndex(m.contents)
 
-		varString := fmt.Sprintf("%s=%v", name, value)
+		// TO NOTE: This variable name is a bit of a misnomer as the string may contain info used for a value's respective comment - see below.
+		var varString string
+
+		// Handle special case where we have a comment (Derived from 'Help' portion of DR yaml values.)
+		// If this Help value was parsed from YAML it will have been prepended to the string but separated by the constant `dotenvCommentDelimiter`
+		// If this constant (`__DR_CLI_DOTENV_COMMENT__`) is present we can split along that and therefore tease out the value we want as a comment above the Env Var
+		// For example when this variable `value` is this string:
+		// "The path to the VertexAI application credentials JSON file.__DR_CLI_DOTENV_COMMENT__VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered"
+		// It will render as:
+		// # The path to the VertexAI application credentials JSON file.
+		// VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered
+		if strings.Contains(value, dotenvCommentDelimiter) {
+			parts := strings.Split(value, dotenvCommentDelimiter)
+			varString = fmt.Sprintf("# %v\n", parts[0])
+			varString += fmt.Sprintf("%s=%v", name, parts[1])
+		} else {
+			varString = fmt.Sprintf("%s=%v", name, value)
+		}
 
 		if varBeginEnd == nil {
 			if value != "" {
@@ -418,6 +435,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				if currentPrompt.Env != "" {
 					m.envResponses[currentPrompt.Env] = strings.Join(values, ",")
+
+					if currentPrompt.Help != "" {
+						// If we have 'Help' value we'll end up using it as a comment above the value but for now prepend it and use const delimiter
+						m.envResponses[currentPrompt.Env] = currentPrompt.Help + dotenvCommentDelimiter + m.envResponses[currentPrompt.Env]
+					}
 				}
 
 				m.currentPromptIndex++
