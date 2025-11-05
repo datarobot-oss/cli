@@ -1,0 +1,56 @@
+name: Comment Commands
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-comment:
+    # Only run on PRs (not issues)
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Handle smoke test command
+        if: contains(github.event.comment.body, '/trigger-smoke-test') || contains(github.event.comment.body, '/trigger-test-smoke')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Add reaction
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+            // Add label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['run-smoke-tests']
+            });
+
+      - name: Handle install test command
+        if: contains(github.event.comment.body, '/trigger-install-test') || contains(github.event.comment.body, '/trigger-test-install')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Add reaction
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'package'
+            });
+
+            // Add label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['run-install-tests']
+            });

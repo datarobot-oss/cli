@@ -3,6 +3,7 @@
 # Be sure to get DR_API_TOKEN from args
 args=("$@")
 DR_API_TOKEN=${args[0]}
+export TERM="dumb"
 
 # Used throughout testing
 testing_url="https://app.datarobot.com"
@@ -47,6 +48,7 @@ fi
 echo "Testing completion install/uninstall..."
 expect ./smoke_test_scripts/expect_completion.exp
 
+echo "Testing dr run command..."
 dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
@@ -68,6 +70,7 @@ fi
 
 # Test `dr auth login` and we should have the value shown in output:
 # `https://app.datarobot.com/account/developer-tools?cliRedirect=true`
+echo "Testing dr auth login..."
 expect ./smoke_test_scripts/expect_auth_login.exp
 
 # Used to test `dr dotenv setup`
@@ -92,6 +95,7 @@ fi
 if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
 else
+  echo "Testing dr templates setup..."
   expect ./smoke_test_scripts/expect_templates_setup.exp
   testing_session_secret_key="TESTING_SESSION_SECRET_KEY"
   DIRECTORY="./talk-to-my-docs-agents"

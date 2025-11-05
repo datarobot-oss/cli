@@ -12,7 +12,7 @@ expect "more"
 send -- {/}
 
 expect "Filter"
-send -- "talk\r\n"
+send -- "talk\n"
 
 sleep 1
 expect "Talk to My Docs"

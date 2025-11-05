@@ -164,6 +164,14 @@ jobs:
         run: |
           ./dist/dr --help
 
+      - name: Upload Ubuntu Binary for completion tests
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-ubuntu-checks
+          path: dist/dr
+          retention-days: 1
+
   detect-changes:
     runs-on: ubuntu-latest
     name: Detect Changes
@@ -172,6 +180,7 @@ jobs:
       dotenv: ${{ steps.changes.outputs.dotenv }}
       templates: ${{ steps.changes.outputs.templates }}
       auth: ${{ steps.changes.outputs.auth }}
+      go_code: ${{ steps.changes.outputs.go_code }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -189,15 +198,49 @@ jobs:
               - 'cmd/templates/**'
             auth:
               - 'cmd/auth/**'
+            go_code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+
+  auto-label:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
+    runs-on: ubuntu-latest
+    name: Auto Label Go Changes
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Add label for Go code changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['go']
+            })
 
   completion-tests:
-    needs: detect-changes
+    needs: [build, detect-changes]
     if: needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
     name: Test Completions
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Download Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: dr-ubuntu-checks
+          path: /tmp/dr-bin
+
+      - name: Move Binary to PATH
+        run: |
+          chmod +x /tmp/dr-bin/dr
+          sudo mv /tmp/dr-bin/dr /usr/local/bin/dr
 
       - name: Install expect
         run: |
@@ -209,17 +252,6 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.3'
-
-      - name: Build the DR CLI Binary
-        run: task build
-
-      - name: Move the Binary
-        run: sudo mv ./dist/dr /usr/local/bin/dr
 
       - name: Test completion generation
         shell: bash
