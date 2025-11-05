@@ -84,8 +84,11 @@ func EnsureAuthenticated(ctx context.Context) bool {
 func LoginAction(ctx context.Context) error {
 	reader := bufio.NewReader(os.Stdin)
 
+	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
+	// when authentication is intentionally disabled, say if the user is offline, or in
+	// a CI/CD environment, or in a script.
 	if viper.GetBool("skip_auth") {
-		return errors.New("login has been disabled via --skip-auth flag.")
+		return errors.New("login has been disabled via --skip-auth flag")
 	}
 
 	datarobotHost := config.GetBaseURL()

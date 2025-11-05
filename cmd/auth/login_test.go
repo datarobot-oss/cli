@@ -159,12 +159,18 @@ func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 
 	// Don't set any credentials
 	viper.Set(config.DataRobotAPIKey, "")
+
+	existingToken := os.Getenv("DATAROBOT_API_TOKEN")
+
 	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	defer os.Setenv("DATAROBOT_API_TOKEN", existingToken)
 
 	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via config")
 
 	os.Setenv("DATAROBOT_CLI_SKIP_AUTH", "true")
+
 	defer os.Unsetenv("DATAROBOT_CLI_SKIP_AUTH")
 
 	result = EnsureAuthenticated(context.Background())
