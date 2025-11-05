@@ -162,6 +162,8 @@ Scripts must start with `quickstart` (case-sensitive):
 - ❌ `Quickstart.sh` (wrong case)
 - ❌ `start.sh` (wrong name)
 
+If there are multiple scripts matching the pattern, the first one found in lexicographical order will be executed.
+
 ### Platform requirements
 
 **Unix/Linux/macOS:**
@@ -172,40 +174,6 @@ Scripts must start with `quickstart` (case-sensitive):
 **Windows:**
 
 - Must have executable extension: `.exe`, `.bat`, `.cmd`, or `.ps1`
-
-### Example quickstart script
-
-**`.datarobot/cli/bin/quickstart.sh`:**
-
-```bash
-#!/bin/bash
-set -e
-
-echo "🚀 Starting DataRobot application..."
-
-# Verify .env exists
-if [ ! -f .env ]; then
-    echo "❌ .env file not found. Please run 'dr templates setup' first."
-    exit 1
-fi
-
-# Load environment variables
-source .env
-
-# Install dependencies
-echo "📦 Installing dependencies..."
-pip install -r requirements.txt
-
-# Start the application
-echo "✨ Launching $APP_NAME..."
-dr run dev
-```
-
-Make it executable:
-
-```bash
-chmod +x .datarobot/cli/bin/quickstart.sh
-```
 
 ### When to use quickstart scripts
 
