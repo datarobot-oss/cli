@@ -216,6 +216,13 @@ func (m Model) updatedContents() string {
 		var varString string
 
 		// Handle special case where we have a comment (Derived from 'Help' portion of DR yaml values.)
+		// If this Help value was parsed from YAML it will have been prepended to the string but separated by the constant `dotenvCommentDelimiter`
+		// If this constant (`__DR_CLI_DOTENV_COMMENT__`) is present we can split along that and therefore tease out the value we want as a comment above the Env Var
+		// For example when this variable `value` is this string:
+		// "The path to the VertexAI application credentials JSON file.__DR_CLI_DOTENV_COMMENT__VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered"
+		// It will render as:
+		// # The path to the VertexAI application credentials JSON file.
+		// VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered
 		if strings.Contains(value, dotenvCommentDelimiter) {
 			parts := strings.Split(value, dotenvCommentDelimiter)
 			varString = fmt.Sprintf("# %v\n", parts[0])

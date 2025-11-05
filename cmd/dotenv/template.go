@@ -36,7 +36,7 @@ const (
 	headerPrefixEdited  = "# Edited using `dr dotenv`"
 
 	// Comment signifier
-	dotenvCommentDelimiter = "DOTENV_COMMENT"
+	dotenvCommentDelimiter = "__DR_CLI_DOTENV_COMMENT__"
 
 	// Common variable names
 	datarobotEndpointVar = "DATAROBOT_ENDPOINT"
