@@ -9,6 +9,7 @@
 package start
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
@@ -327,40 +329,42 @@ func checkPrerequisites(_ *Model) tea.Msg {
 func findQuickstart(m *Model) tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
-	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
-	// run `dr template setup`.
+	// If we do not find it, invoke `dr templates setup` to help the user configure their template.
+	// If the user has set the '--yes' flag, skip confirmation and execute immediately.
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
 		return stepErrorMsg{err: err}
 	}
 
-	// If we don't find a script, tell the user they can run `dr template setup` instead.
-	if quickstartScript == "" {
-		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n", done: true}
-	}
+	// If --yes flag is set, don't wait for confirmation
+	waitForConfirmation := !m.opts.AnswerYes
 
-	// If the user set the '--yes' flag, then just proceed to execute the script
-	// otherwise wait for confirmation
-	if m.opts.AnswerYes {
+	// If we don't find a script, we'll proceed to run templates setup in the next step
+	if quickstartScript == "" {
 		return stepCompleteMsg{
-			message:              fmt.Sprintf("Quickstart found at: %s. Executing script...", quickstartScript),
-			executeScript:        true,
-			quickstartScriptPath: quickstartScript,
+			message:              "No quickstart script found. Will proceed with template setup...\n",
+			waiting:              waitForConfirmation,
+			quickstartScriptPath: "",
 		}
 	}
 
 	return stepCompleteMsg{
-		message:              fmt.Sprintf("Quickstart found at: %s. Do you want to execute this script? (y/n): ", quickstartScript),
-		waiting:              true,
+		message:              fmt.Sprintf("Quickstart found at: %s. Will proceed with execution...\n", quickstartScript),
+		waiting:              waitForConfirmation,
 		quickstartScriptPath: quickstartScript,
 	}
 }
 
 func executeQuickstart(m *Model) tea.Msg {
 	// Execute the quickstart script that was found and stored in the model
-	// If no script path is set, then we should just tell the user to run `dr template setup`
+	// If no script path is set, then we should invoke `dr templates setup` after user confirmation
 	if m.quickstartScriptPath == "" {
-		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
+		// Invoke the templates setup command seamlessly
+		if err := setup.RunTea(context.Background()); err != nil {
+			return stepErrorMsg{err: fmt.Errorf("failed to run template setup: %w", err)}
+		}
+
+		return stepCompleteMsg{message: "Template setup completed successfully.\n", done: true}
 	}
 
 	// Signal that we should execute the script

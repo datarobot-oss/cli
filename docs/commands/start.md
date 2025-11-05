@@ -1,0 +1,246 @@
+# dr start
+
+Run the application quickstart process for the current template.
+
+## Synopsis
+
+The `start` command (also available as `quickstart`) provides an automated way to initialize and launch your DataRobot application. It performs several checks and either executes a template-specific quickstart script or seamlessly launches the interactive template setup wizard.
+
+```bash
+dr start [flags]
+```
+
+## Aliases
+
+- `dr start`
+- `dr quickstart`
+
+## Description
+
+The `start` command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
+
+1. **Prerequisite checks**&mdash;verifies that you're in a DataRobot repository and have required tools installed.
+2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/`.
+3. **Execution**&mdash;either:
+   - Runs the quickstart script if found (after user confirmation, unless `--yes` is specified).
+   - Launches the interactive `dr templates setup` wizard if no script is found.
+
+This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If no script exists, the command gracefully falls back to the standard setup wizard.
+
+## Flags
+
+```text
+  -y, --yes     Assume "yes" as answer to all prompts and execute immediately
+  -h, --help    Show help information
+```
+
+### Global flags
+
+All [global flags](README.md#global-flags) are also available.
+
+## Quickstart Scripts
+
+### Location
+
+Quickstart scripts must be placed in:
+
+```
+.datarobot/cli/bin/
+```
+
+### Naming convention
+
+Scripts must start with `quickstart` (case-sensitive):
+
+- ✅ `quickstart`
+- ✅ `quickstart.sh`
+- ✅ `quickstart.py`
+- ✅ `quickstart-dev`
+- ❌ `Quickstart.sh` (wrong case)
+- ❌ `start.sh` (wrong name)
+
+If there are multiple scripts matching the pattern, the first one found in lexicographical order will be executed.
+
+### Platform-specific requirements
+
+**Unix/Linux/macOS:**
+
+- Script must have executable permissions (`chmod +x`)
+- Can be any executable file (shell script, Python, compiled binary, etc.)
+
+**Windows:**
+
+- Must have executable extension: `.exe`, `.bat`, `.cmd`, or `.ps1`
+
+## Examples
+
+### Basic usage
+
+Run the quickstart process interactively:
+
+```bash
+dr start
+```
+
+If a quickstart script is found:
+
+```text
+DataRobot Quickstart
+
+  ✓ Starting application quickstart process...
+  ✓ Checking template prerequisites...
+  ✓ Locating quickstart script...
+  → Executing quickstart script...
+
+Quickstart found at: .datarobot/cli/bin/quickstart.sh. Do you want to execute this script? (y/n):
+```
+
+If no quickstart script is found:
+
+```text
+DataRobot Quickstart
+
+  ✓ Starting application quickstart process...
+  ✓ Checking template prerequisites...
+  ✓ Locating quickstart script...
+  → Executing quickstart script...
+
+No quickstart script found. Will proceed with template setup...
+```
+
+The command will then seamlessly launch the interactive setup wizard.
+
+### Non-interactive mode
+
+Skip all prompts and execute immediately:
+
+```bash
+dr start --yes
+```
+
+This is useful for:
+
+- CI/CD pipelines
+- Automated deployments
+- Scripted workflows
+
+### Using the alias
+
+```bash
+dr quickstart
+```
+
+## Behavior
+
+### When a quickstart script exists
+
+1. Script is detected in `.datarobot/cli/bin/`
+2. User is prompted for confirmation (unless `--yes` is used)
+3. Script executes with full terminal control
+4. Command completes when script finishes
+
+### When no quickstart script exists
+
+1. No script is found in `.datarobot/cli/bin/`
+2. User is notified
+3. Interactive `dr templates setup` wizard launches automatically
+4. User completes template configuration through the wizard
+
+### Prerequisites checked
+
+Before proceeding, the command verifies:
+
+- ✅ Current directory is within a DataRobot repository (contains `.datarobot/` directory)
+- ✅ Required tools are installed (Git, etc.)
+
+If prerequisites fail, the command exits with an error message.
+
+## Error handling
+
+### Not in a DataRobot repository
+
+```bash
+$ dr start
+Error: not inside a DataRobot repository
+
+# Solution: Navigate to a DataRobot template directory or run:
+$ dr templates setup
+```
+
+### Missing prerequisites
+
+```bash
+$ dr start
+Error: required tool 'git' not found
+
+# Solution: Install the missing tool
+```
+
+### Script execution failure
+
+If a quickstart script fails, the error is displayed and the command exits. Check the script's output for details.
+
+## When to use `dr start`
+
+### ✅ Good use cases
+
+- **First-time setup**&mdash;initializing a newly cloned template.
+- **Quick restart**&mdash;restarting development after a break.
+- **Onboarding**&mdash;helping new team members get started quickly.
+- **CI/CD**&mdash;automating application initialization in pipelines.
+
+### ❌ When not to use
+
+- **Template not cloned**&mdash;use `dr templates setup` instead to clone and configure.
+- **Making configuration changes**&mdash;use `dr dotenv` to modify environment variables.
+- **Running specific tasks**&mdash;use `dr run <task>` for targeted task execution.
+
+## See also
+
+- [`dr templates setup`](templates.md#setup)&mdash;interactive template setup wizard.
+- [`dr run`](run.md)&mdash;execute specific application tasks.
+- [`dr dotenv`](dotenv.md)&mdash;manage environment configuration.
+- [Template Structure](../template-system/structure.md)&mdash;understanding template organization.
+
+## Tips
+
+### Creating a custom quickstart script
+
+1. **Create the directory structure:**
+
+   ```bash
+   mkdir -p .datarobot/cli/bin
+   ```
+
+2. **Create your script:**
+
+   ```bash
+   # Create the script
+   cat > .datarobot/cli/bin/quickstart.sh <<'EOF'
+   #!/bin/bash
+   echo "Starting my custom quickstart..."
+   dr run build
+   dr run dev
+   EOF
+   ```
+
+3. **Make it executable:**
+
+   ```bash
+   chmod +x .datarobot/cli/bin/quickstart.sh
+   ```
+
+4. **Test it:**
+
+   ```bash
+   dr start --yes
+   ```
+
+### Best practices
+
+- **Keep scripts simple**&mdash;focus on essential initialization steps.
+- **Provide clear output**&mdash;use echo statements to show progress.
+- **Handle errors gracefully**&mdash;use `set -e` in bash scripts to exit on errors.
+- **Check prerequisites**&mdash;verify .env exists and required tools are installed.
+- **Make it idempotent**&mdash;script should be safe to run multiple times.
+- **Document behavior**&mdash;add comments explaining what the script does.

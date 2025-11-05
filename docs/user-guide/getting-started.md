@@ -168,7 +168,31 @@ dr dotenv
 
 ## Running your application
 
-Once your template is set up:
+Once your template is set up, you have several options to run it:
+
+### Quick start (recommended)
+
+Use the `start` command for automated initialization:
+
+```bash
+dr start
+```
+
+This command will:
+
+- Check prerequisites and validate your environment.
+- Execute a template-specific quickstart script if available.
+- Fall back to the setup wizard if no script exists.
+
+For non-interactive mode (useful in scripts or CI/CD):
+
+```bash
+dr start --yes
+```
+
+### Running specific tasks
+
+For more control, execute individual tasks:
 
 ```bash
 # List available tasks

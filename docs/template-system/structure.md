@@ -14,7 +14,10 @@ A typical template repository:
 my-datarobot-template/
 ├── .datarobot/               # Template metadata
 │   ├── prompts.yaml         # Configuration prompts
-│   └── config.yaml          # Template settings
+│   ├── config.yaml          # Template settings
+│   └── cli/                 # CLI-specific files
+│       └── bin/             # Quickstart scripts
+│           └── quickstart.sh
 ├── .env.template            # Environment variable template
 ├── .gitignore
 ├── README.md
@@ -135,6 +138,55 @@ DATABASE_POOL_SIZE=5
 ```
 
 **Note:** `.env` should be in `.gitignore` and never committed.
+
+## Quickstart scripts
+
+Templates can optionally provide quickstart scripts to automate application initialization. These scripts are executed by the `dr start` command.
+
+### Location
+
+Quickstart scripts must be placed in:
+
+```text
+.datarobot/cli/bin/
+```
+
+### Naming convention
+
+Scripts must start with `quickstart` (case-sensitive):
+
+- ✅ `quickstart`
+- ✅ `quickstart.sh`
+- ✅ `quickstart.py`
+- ✅ `quickstart-dev`
+- ❌ `Quickstart.sh` (wrong case)
+- ❌ `start.sh` (wrong name)
+
+If there are multiple scripts matching the pattern, the first one found in lexicographical order will be executed.
+
+### Platform requirements
+
+**Unix/Linux/macOS:**
+
+- Must have executable permissions (`chmod +x`)
+- Can be any executable file (shell script, Python script, compiled binary, etc.)
+
+**Windows:**
+
+- Must have executable extension: `.exe`, `.bat`, `.cmd`, or `.ps1`
+
+### When to use quickstart scripts
+
+Quickstart scripts are useful for:
+
+- **Multi-step initialization**&mdash;when your application requires several setup steps.
+- **Dependency management**&mdash;installing packages or tools before starting.
+- **Environment validation**&mdash;checking prerequisites before launch.
+- **Custom workflows**&mdash;template-specific initialization logic.
+
+### Fallback behavior
+
+If no quickstart script is found, `dr start` automatically launches the interactive `dr templates setup` wizard instead, ensuring users can always get started even without a custom script.
 
 ## Task definitions
 
