@@ -40,6 +40,7 @@ type ModelWithSteps interface {
 }
 
 type Model struct {
+	opts                 StartOpts
 	steps                []step
 	current              int
 	done                 bool
@@ -76,7 +77,7 @@ var (
 	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
-func NewStartModel() Model {
+func NewStartModel(opts StartOpts) Model {
 	return Model{
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
@@ -86,6 +87,7 @@ func NewStartModel() Model {
 			{description: "Locating quickstart script...", fn: findQuickstart},
 			{description: "Executing quickstart script...", fn: executeQuickstart},
 		},
+		opts:                 opts,
 		current:              0,
 		done:                 false,
 		quitting:             false,
@@ -328,7 +330,7 @@ func checkPrerequisites(_ *Model) tea.Msg {
 // 	return stepCompleteMsg{}
 // }
 
-func findQuickstart(_ *Model) tea.Msg {
+func findQuickstart(m *Model) tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
 	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
@@ -341,6 +343,16 @@ func findQuickstart(_ *Model) tea.Msg {
 	// If we don't find a script, tell the user they can run `dr template setup` instead.
 	if quickstartScript == "" {
 		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n", done: true}
+	}
+
+	// If the user set the '--yes' flag, then just proceed to execute the script
+	// otherwise wait for confirmation
+	if m.opts.AnswerYes {
+		return stepCompleteMsg{
+			message:              fmt.Sprintf("Quickstart found at: %s. Executing script...", quickstartScript),
+			executeScript: 		  true,
+			quickstartScriptPath: quickstartScript,
+		}
 	}
 
 	return stepCompleteMsg{

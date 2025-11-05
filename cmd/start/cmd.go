@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-type startOptions struct {
+type StartOpts struct {
 	AnswerYes bool
 }
 
 func Cmd() *cobra.Command {
-	var opts startOptions
+	var opts StartOpts
 
 	cmd := &cobra.Command{
 		Use:     "start",
@@ -46,7 +46,7 @@ The following actions will be performed:
 				defer f.Close()
 			}
 
-			m := NewStartModel()
+			m := NewStartModel(opts)
 			p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 			if _, err := p.Run(); err != nil {
