@@ -118,35 +118,10 @@ func (m Model) currentStep() step {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "esc", "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
-		}
+		return m.handleKeyPress(msg)
 
 	case stepCompleteMsg:
-		// Store any message from the completed step
-		if msg.message != "" {
-			m.stepCompleteMessage = msg.message
-		}
-
-		// Store quickstart script path if provided
-		if msg.quickstartScriptPath != "" {
-			m.quickstartScriptPath = msg.quickstartScriptPath
-		}
-
-		// See if there's a next step, and move to it
-		if m.current < len(m.steps)-1 {
-			m.current++
-			return m, m.executeCurrentStep()
-		}
-
-		m.waiting = msg.waiting
-
-		// No more steps, we're done
-		m.done = true
-
-		return m, tea.Quit
+		return m.handleStepComplete(msg)
 
 	case stepErrorMsg:
 		m.err = msg.err
@@ -156,6 +131,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If we're waiting for user confirmation
+	if m.waiting {
+		switch msg.String() {
+		case "y", "Y":
+			// User confirmed, proceed to next step
+			m.waiting = false
+			m.stepCompleteMessage = ""
+			m.current++
+
+			return m, m.executeCurrentStep()
+		case "n", "N", "q", "esc", "ctrl+c":
+			// User declined or quit
+			m.quitting = true
+			return m, tea.Quit
+		}
+		// Ignore other keys when waiting
+		return m, nil
+	}
+
+	// Normal key handling when not waiting
+	switch msg.String() {
+	case "q", "esc", "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
+	// Store any message from the completed step
+	if msg.message != "" {
+		m.stepCompleteMessage = msg.message
+	}
+
+	// Store quickstart script path if provided
+	if msg.quickstartScriptPath != "" {
+		m.quickstartScriptPath = msg.quickstartScriptPath
+	}
+
+	// If this step requires waiting for user input, set the flag and stop
+	if msg.waiting {
+		m.waiting = true
+		return m, nil
+	}
+
+	// If this step marks completion, we're done
+	if msg.done {
+		m.done = true
+		return m, tea.Quit
+	}
+
+	// See if there's a next step, and move to it
+	if m.current < len(m.steps)-1 {
+		m.current++
+		return m, m.executeCurrentStep()
+	}
+
+	// No more steps, we're done
+	m.done = true
+
+	return m, tea.Quit
 }
 
 func (m Model) View() string {
@@ -175,27 +215,30 @@ func (m Model) View() string {
 		}
 	}
 
-	// If there's an error, display it at the end after showing the steps
-	if m.err != nil {
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
-	} else {
-		// Display step message if available
-		if m.stepCompleteMessage != "" {
-			sb.WriteString("\n")
-			sb.WriteString(tui.BaseTextStyle.Render(m.stepCompleteMessage))
-			sb.WriteString("\n")
-		}
+	sb.WriteString("\n")
 
-		if !m.done && !m.quitting {
-			sb.WriteString("\n")
-			sb.WriteString(tui.Footer())
-		}
+	// Display error or status message
+	if m.err != nil {
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
+
+		return sb.String()
 	}
 
-	// Wait for user input if required
-	if m.waiting {
-		sb.WriteString(tui.BaseTextStyle.Render("\nPress 'y' to confirm, 'n' to cancel: "))
+	// Display step message if available
+	if m.stepCompleteMessage != "" {
+		sb.WriteString(tui.BaseTextStyle.Render(m.stepCompleteMessage))
+		sb.WriteString("\n")
+	}
+
+	// Display footer if not done
+	if !m.done && !m.quitting {
+		sb.WriteString("\n")
+
+		if m.waiting {
+			sb.WriteString(dimStyle.Render("Press 'y' to confirm, 'n' to cancel"))
+		} else {
+			sb.WriteString(tui.Footer())
+		}
 	}
 
 	sb.WriteString("\n")
@@ -258,16 +301,11 @@ func findQuickstart(_ *Model) tea.Msg {
 
 	// If we don't find a script, tell the user they can run `dr template setup` instead.
 	if quickstartScript == "" {
-		log.Println("No quickstart script found")
 		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
 
-	log.Println("Found quickstart script at:", quickstartScript)
-
-	fmt.Printf("\nA quickstart script has been found at: %s\n", quickstartScript)
-
 	return stepCompleteMsg{
-		message:              "Do you want to execute this script? (y/n): ",
+		message:              fmt.Sprintf("Quickstart found at: %s. Do you want to execute this script? (y/n): ", quickstartScript),
 		waiting:              true,
 		quickstartScriptPath: quickstartScript,
 	}
