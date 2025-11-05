@@ -38,6 +38,12 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 // intended for use in automated workflows. Returns true if authentication
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool {
+	if viper.GetBool("skip_auth") {
+		log.Warn("Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail.")
+
+		return true
+	}
+
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
