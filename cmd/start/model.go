@@ -78,12 +78,12 @@ var (
 func NewStartModel() Model {
 	return Model{
 		steps: []step{
-			{description: "Starting application quickstart process...", fn: (*Model).startQuickstart},
-			{description: "Checking template prerequisites...", fn: (*Model).checkPrerequisites},
+			{description: "Starting application quickstart process...", fn: startQuickstart},
+			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			// TODO Implement validateEnvironment
-			// {description: "Validating environment...", fn: (*Model).validateEnvironment},
-			{description: "Locating quickstart script...", fn: (*Model).findQuickstart},
-			{description: "Executing quickstart script...", fn: (*Model).executeQuickstart},
+			// {description: "Validating environment...", fn: validateEnvironment},
+			{description: "Locating quickstart script...", fn: findQuickstart},
+			{description: "Executing quickstart script...", fn: executeQuickstart},
 		},
 		current:              0,
 		done:                 false,
@@ -207,14 +207,16 @@ func (m Model) View() string {
 	return sb.String()
 }
 
-func (m *Model) startQuickstart() tea.Msg {
+// Step functions
+
+func startQuickstart(_ *Model) tea.Msg {
 	// - Set up initial state
 	// - Display welcome message
 	// - Prepare for subsequent steps
 	return stepCompleteMsg{}
 }
 
-func (m *Model) checkPrerequisites() tea.Msg {
+func checkPrerequisites(_ *Model) tea.Msg {
 	// Return stepErrorMsg{err} if prerequisites are not met
 
 	// Are we in a DataRobot repository?
@@ -236,7 +238,7 @@ func (m *Model) checkPrerequisites() tea.Msg {
 	return stepCompleteMsg{}
 }
 
-// func (m *Model) validateEnvironment() tea.Msg {
+// func validateEnvironment(m *Model) tea.Msg {
 // 	// TODO: Implement environment validation logic
 // 	// - Check environment variables
 // 	// - Validate system requirements
@@ -248,7 +250,7 @@ func (m *Model) checkPrerequisites() tea.Msg {
 // 	return stepCompleteMsg{}
 // }
 
-func (m *Model) findQuickstart() tea.Msg {
+func findQuickstart(_ *Model) tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
 	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
@@ -275,7 +277,7 @@ func (m *Model) findQuickstart() tea.Msg {
 	}
 }
 
-func (m *Model) executeQuickstart() tea.Msg {
+func executeQuickstart(m *Model) tea.Msg {
 	// Execute the quickstart script that was found and stored in the model
 	// If no script path is set, then we should just tell the user to run `dr template setup`
 	if m.quickstartScriptPath == "" {
