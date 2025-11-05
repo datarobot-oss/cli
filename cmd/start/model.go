@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ type Model struct {
 	done        bool
 	quitting    bool
 	err         error
-	stepMessage         string // Optional message from the completed step
+	stepCompleteMessage         string // Optional message from the completed step
 	quickstartScriptPath string // Path to the quickstart script to execute
 	waiting              bool   // Whether to wait for user input before proceeding
 }
@@ -87,6 +88,9 @@ func NewStartModel() Model {
 		done:     false,
 		quitting: false,
 		err:      nil,
+		stepCompleteMessage: "",
+		quickstartScriptPath: "",
+		waiting:  false,
 	}
 }
 
@@ -122,7 +126,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepCompleteMsg:
 		// Store any message from the completed step
 		if msg.message != "" {
-			m.stepMessage = msg.message
+			m.stepCompleteMessage = msg.message
 		}
 
 		// See if there's a next step, and move to it
@@ -130,6 +134,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current++
 			return m, m.executeCurrentStep()
 		}
+
+		m.waiting = msg.waiting
 
 		// No more steps, we're done
 		m.done = true
@@ -173,9 +179,9 @@ func (m Model) View() string {
 		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
 	} else {
 		// Display step message if available
-		if m.stepMessage != "" {
+		if m.stepCompleteMessage != "" {
 			sb.WriteString("\n")
-			sb.WriteString(tui.BaseTextStyle.Render(m.stepMessage))
+			sb.WriteString(tui.BaseTextStyle.Render(m.stepCompleteMessage))
 			sb.WriteString("\n")
 		}
 
@@ -309,12 +315,30 @@ func findQuickstartScript() (string, error) {
 			continue
 		}
 
-		// Check if it's a regular file and executable
-		if !info.IsDir() && info.Mode()&0o111 != 0 {
+		// Skip directories
+		if info.IsDir() {
+			continue
+		}
+
+		// Check if file is executable
+		if isExecutable(match, info) {
 			return match, nil
 		}
 	}
 
 	// No executable script found - this is not an error
 	return "", nil
+}
+
+// isExecutable determines if a file is executable based on platform-specific rules
+func isExecutable(path string, info os.FileInfo) bool {
+	// On Windows, check for common executable extensions
+	if runtime.GOOS == "windows" {
+		ext := strings.ToLower(filepath.Ext(path))
+		return ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ".ps1"
+	}
+
+	// On Unix-like systems, check execute permission bits
+	// 0o111 checks if any execute bit is set (user, group, or other)
+	return info.Mode()&0o111 != 0
 }
