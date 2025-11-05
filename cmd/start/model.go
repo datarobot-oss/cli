@@ -66,9 +66,8 @@ type stepErrorMsg struct {
 
 // err messages used in the start command
 const (
-	errNotInRepo             = "not inside a DataRobot repository"
-	errScriptExecutionFailed = "failed to execute quickstart script: %w"
-	errScriptSearchFailed    = "failed to search for quickstart script: %w"
+	errNotInRepo          = "not inside a DataRobot repository"
+	errScriptSearchFailed = "failed to search for quickstart script: %w"
 )
 
 var (
@@ -142,8 +141,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepErrorMsg:
 		m.err = msg.err
 		m.quitting = true
-
-		return m, tea.Quit
+		// Don't quit immediately - wait for user to see the error and press a key
+		return m, nil
 
 	case scriptCompleteMsg:
 		// Script execution completed, quit the program
@@ -154,6 +153,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If there's an error, any key press quits
+	if m.err != nil {
+		return m, tea.Quit
+	}
+
 	// If we're waiting for user confirmation
 	if m.waiting {
 		switch msg.String() {
@@ -252,6 +256,9 @@ func (m Model) View() string {
 	// Display error or status message
 	if m.err != nil {
 		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
+		sb.WriteString("\n")
+		sb.WriteString(dimStyle.Render("Press any key to exit"))
+		sb.WriteString("\n")
 
 		return sb.String()
 	}
