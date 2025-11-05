@@ -99,7 +99,7 @@ func LoginAction(ctx context.Context) error {
 	}
 
 	if token := config.GetAPIKey(); token != "" {
-		fmt.Println("🔑You're already logged in to DataRobot, do you want to login with a different account? (y/N): ")
+		fmt.Println("🔑 You're already logged in to DataRobot. Do you want to login with a different account? (y/N): ")
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
@@ -110,7 +110,7 @@ func LoginAction(ctx context.Context) error {
 			// Set the DataRobot API key to be an empty string
 			viper.Set(config.DataRobotAPIKey, "")
 		} else {
-			fmt.Println("✅ Keeping current login. You're all set!")
+			fmt.Println("✅ Keeping the current login. You're all set!")
 			return nil
 		}
 	} else {
@@ -139,9 +139,9 @@ var loginCmd = &cobra.Command{
 	Long: `Login to DataRobot using OAuth authentication in your browser.
 
 This command will:
-  1. Open your default browser
-  2. Redirect you to DataRobot login page  
-  3. Securely store your API key for future CLI operations`,
+  1. Open your default browser.
+  2. Redirect you to DataRobot login page.
+  3. Securely store your API key for future CLI operations.`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		err := LoginAction(cmd.Context())
 		if err != nil {
