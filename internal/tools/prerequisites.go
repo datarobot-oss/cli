@@ -29,6 +29,18 @@ var RequiredTools = []Prerequisite{
 	{Name: "pulumi", Command: "pulumi", installString: "brew install pulumi"},
 }
 
+func CheckPrerequisite(name string) error {
+	for _, tool := range RequiredTools {
+		if tool.Name == name {
+			if !isInstalled(tool.Command) {
+				return fmt.Errorf("%s is not installed", name)
+			}
+		}
+	}
+
+	return nil
+}
+
 // CheckPrerequisites verifies that all required tools are installed
 func CheckPrerequisites() error {
 	var missing []string
