@@ -118,7 +118,7 @@ func (m Model) currentStep() step {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
+		return m.handleKey(msg)
 
 	case stepCompleteMsg:
 		return m.handleStepComplete(msg)
@@ -133,7 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If we're waiting for user confirmation
 	if m.waiting {
 		switch msg.String() {
