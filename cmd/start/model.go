@@ -40,14 +40,17 @@ type ModelWithSteps interface {
 }
 
 type Model struct {
-	steps    []step
-	current  int
-	done     bool
-	quitting bool
-	err      error
+	steps       []step
+	current     int
+	done        bool
+	quitting    bool
+	err         error
+	stepMessage string // Optional message from the completed step
 }
 
-type stepCompleteMsg struct{}
+type stepCompleteMsg struct {
+	message string // Optional message to display to the user
+}
 
 type stepErrorMsg struct {
 	err error
@@ -55,10 +58,9 @@ type stepErrorMsg struct {
 
 // er messages used in the start command
 const (
-	errNotInRepo               = "not inside a DataRobot repository"
-	errScriptExecutionFailed   = "failed to execute quickstart script: %w"
-	errScriptSearchFailed      = "failed to search for quickstart script: %w"
-	errNoExecutableScriptFound = "no executable quickstart script found in %s"
+	errNotInRepo             = "not inside a DataRobot repository"
+	errScriptExecutionFailed = "failed to execute quickstart script: %w"
+	errScriptSearchFailed    = "failed to search for quickstart script: %w"
 )
 
 var (
@@ -113,6 +115,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case stepCompleteMsg:
+		// Store any message from the completed step
+		if msg.message != "" {
+			m.stepMessage = msg.message
+		}
+
 		// See if there's a next step, and move to it
 		if m.current < len(m.steps)-1 {
 			m.current++
@@ -157,9 +164,19 @@ func (m Model) View() string {
 
 		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("%s %s\n", errorStyle.Render("Error:"), m.err.Error()))
-	} else if !m.done && !m.quitting {
-		sb.WriteString("\n")
-		sb.WriteString(tui.Footer())
+	} else {
+		// Display step message if available
+		if m.stepMessage != "" {
+			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+			sb.WriteString("\n")
+			sb.WriteString(infoStyle.Render(m.stepMessage))
+			sb.WriteString("\n")
+		}
+
+		if !m.done && !m.quitting {
+			sb.WriteString("\n")
+			sb.WriteString(tui.Footer())
+		}
 	}
 
 	sb.WriteString("\n")
@@ -215,9 +232,13 @@ func executeQuickstart() tea.Msg {
 	// run `dr template setup`.
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
-		log.Println("Could not find quickstart script.")
-		fmt.Print("Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n")
 		return stepErrorMsg{err: err}
+	}
+
+	// If we don't find a script, tell the user they can run `dr template setup`
+	// instead.
+	if quickstartScript == "" {
+		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n"}
 	}
 
 	log.Println("Found quickstart script at:", quickstartScript)
@@ -278,7 +299,6 @@ func findQuickstartScript() (string, error) {
 		}
 	}
 
-	absExecutablePath, _ := filepath.Abs(executablePath)
-
-	return "", fmt.Errorf(errNoExecutableScriptFound, absExecutablePath)
+	// No executable script found - this is not an error
+	return "", nil
 }
