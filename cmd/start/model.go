@@ -47,7 +47,7 @@ type Model struct {
 	err                  error
 	stepCompleteMessage  string // Optional message from the completed step
 	quickstartScriptPath string // Path to the quickstart script to execute
-	waiting              bool   // Whether to wait for user input before proceeding
+	waitingToExecute     bool   // Whether to wait for user input before proceeding
 }
 
 type stepCompleteMsg struct {
@@ -92,7 +92,7 @@ func NewStartModel() Model {
 		err:                  nil,
 		stepCompleteMessage:  "",
 		quickstartScriptPath: "",
-		waiting:              false,
+		waitingToExecute:     false,
 	}
 }
 
@@ -167,11 +167,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// If we're waiting for user confirmation to execute the script
-	if m.waiting {
+	if m.waitingToExecute {
 		switch msg.String() {
 		case "y", "Y", "enter":
 			// Punch it, Chewie!
-			m.waiting = false
+			m.waitingToExecute = false
 			m.stepCompleteMessage = ""
 
 			if m.quickstartScriptPath != "" {
@@ -216,7 +216,7 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 
 	// If this step requires waiting for user input, set the flag and stop
 	if msg.waiting {
-		m.waiting = true
+		m.waitingToExecute = true
 		return m, nil
 	}
 
@@ -273,7 +273,7 @@ func (m Model) View() string {
 	if !m.done && !m.quitting {
 		sb.WriteString("\n")
 
-		if m.waiting {
+		if m.waitingToExecute {
 			sb.WriteString(dimStyle.Render("Press 'y' or ENTER to confirm, 'n' to cancel"))
 		} else {
 			sb.WriteString(tui.Footer())
