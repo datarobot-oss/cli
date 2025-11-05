@@ -198,20 +198,22 @@ func startQuickstart() tea.Msg {
 }
 
 func checkPrerequisites() tea.Msg {
-	// TODO: Implement prerequisites checking logic
-	// - Check we are in a DR repository
-	// - Check for required tools (git, docker, etc.)
-	// - Verify template configuration
-	// - Validate directory structure
 	// Return stepErrorMsg{err} if prerequisites are not met
+
+	// Are we in a DataRobot repository?
 	if !repo.IsInRepo() {
 		return stepErrorMsg{err: errors.New(errNotInRepo)}
 	}
 
+	// Do we have the required tools?
 	if err := tools.CheckPrerequisites(); err != nil {
 		return stepErrorMsg{err: err}
 	}
 
+	// TODO Is template configuration correct?
+	// TODO Do we need to validate the directory structure?
+
+	// Are we working hard?
 	time.Sleep(500 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
