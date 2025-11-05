@@ -280,28 +280,22 @@ func executeQuickstart(m *Model) tea.Msg {
 		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
 
-	// Execute the script directly (it should have a shebang or be executable)
-	cmd := exec.Command(m.quickstartScriptPath)
-
-	// Set up command to inherit stdin/stdout/stderr for interactive execution
-	// TODO This needs to interrupt the TUI properly so that users
-	// can actually see the output and interact with the script
-	// and only after this has completed do we return to the TUI
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// Execute the script
-	// TODO After user confirmation
 	log.Println("Executing quickstart script...")
 
-	if err := cmd.Run(); err != nil {
-		return stepErrorMsg{err: fmt.Errorf(errScriptExecutionFailed, err)}
-	}
+	// Now execute the script. Remember that tea.ExecProcess will temporarily
+	// suspend the TUI, allowing the script to take full control of the terminal
+	// until it completes.
+	cmd := exec.Command(m.quickstartScriptPath)
 
-	log.Println("Quickstart script completed successfully")
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err != nil {
+			return stepErrorMsg{err: fmt.Errorf(errScriptExecutionFailed, err)}
+		}
 
-	return stepCompleteMsg{}
+		log.Println("Quickstart script completed successfully")
+
+		return stepCompleteMsg{}
+	})
 }
 
 func findQuickstartScript() (string, error) {
