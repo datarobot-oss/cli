@@ -84,6 +84,10 @@ func EnsureAuthenticated(ctx context.Context) bool {
 func LoginAction(ctx context.Context) error {
 	reader := bufio.NewReader(os.Stdin)
 
+	if viper.GetBool("skip_auth") {
+		return errors.New("login has been disabled via --skip-auth flag.")
+	}
+
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		SetURLAction()
