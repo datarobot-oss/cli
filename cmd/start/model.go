@@ -130,6 +130,14 @@ func (m Model) currentStep() step {
 	return m.steps[m.current]
 }
 
+func (m Model) execQuickstartScript() tea.Cmd {
+	cmd := exec.Command(m.quickstartScriptPath)
+
+	return tea.ExecProcess(cmd, func(_ error) tea.Msg {
+		return scriptCompleteMsg{}
+	})
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -158,25 +166,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	// If we're waiting for user confirmation
+	// If we're waiting for user confirmation to execute the script
 	if m.waiting {
 		switch msg.String() {
 		case "y", "Y", "enter":
-			// User confirmed, execute the script
+			// Punch it, Chewie!
 			m.waiting = false
 			m.stepCompleteMessage = ""
 
 			if m.quickstartScriptPath != "" {
-				cmd := exec.Command(m.quickstartScriptPath)
-
-				return m, tea.ExecProcess(cmd, func(_ error) tea.Msg {
-					return scriptCompleteMsg{}
-				})
+				return m, m.execQuickstartScript()
 			}
 
 			return m.executeNextStep()
-		case "n", "N", "q", "esc", "ctrl+c":
-			// User declined or quit
+		case "n", "N", "q", "esc":
+			// Just hang on. Hang on, Dak.
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -186,7 +190,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Normal key handling when not waiting
 	switch msg.String() {
-	case "q", "esc", "ctrl+c":
+	case "q", "esc":
 		m.quitting = true
 		return m, tea.Quit
 	}
@@ -207,11 +211,7 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 
 	// If this step requires executing a script, do it now
 	if msg.executeScript && m.quickstartScriptPath != "" {
-		cmd := exec.Command(m.quickstartScriptPath)
-
-		return m, tea.ExecProcess(cmd, func(_ error) tea.Msg {
-			return scriptCompleteMsg{}
-		})
+		return m, m.execQuickstartScript()
 	}
 
 	// If this step requires waiting for user input, set the flag and stop
