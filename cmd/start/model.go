@@ -45,11 +45,15 @@ type Model struct {
 	done        bool
 	quitting    bool
 	err         error
-	stepMessage string // Optional message from the completed step
+	stepMessage         string // Optional message from the completed step
+	quickstartScriptPath string // Path to the quickstart script to execute
+	waiting              bool   // Whether to wait for user input before proceeding
 }
 
 type stepCompleteMsg struct {
 	message string // Optional message to display to the user
+	waiting bool   // Whether to wait for user input before proceeding
+	done   bool   // Whether the quickstart process is complete
 }
 
 type stepErrorMsg struct {
@@ -67,8 +71,6 @@ var (
 	checkMark  = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
 	arrow      = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
 	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 )
 
 func NewStartModel() Model {
@@ -78,6 +80,7 @@ func NewStartModel() Model {
 			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			// TODO Implement validateEnvironment
 			// {description: "Validating environment...", fn: validateEnvironment},
+			{description: "Locating quickstart script...", fn: findQuickstart},
 			{description: "Executing quickstart script...", fn: executeQuickstart},
 		},
 		current:  0,
@@ -167,12 +170,12 @@ func (m Model) View() string {
 	// If there's an error, display it at the end after showing the steps
 	if m.err != nil {
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("%s %s\n", errorStyle.Render("Error:"), m.err.Error()))
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
 	} else {
 		// Display step message if available
 		if m.stepMessage != "" {
 			sb.WriteString("\n")
-			sb.WriteString(infoStyle.Render(m.stepMessage))
+			sb.WriteString(tui.BaseTextStyle.Render(m.stepMessage))
 			sb.WriteString("\n")
 		}
 
@@ -180,6 +183,11 @@ func (m Model) View() string {
 			sb.WriteString("\n")
 			sb.WriteString(tui.Footer())
 		}
+	}
+
+	// Wait for user input if required
+	if m.waiting {
+		sb.WriteString(tui.BaseTextStyle.Render("\nPress 'y' to confirm, 'n' to cancel: "))
 	}
 
 	sb.WriteString("\n")
@@ -230,7 +238,7 @@ func checkPrerequisites() tea.Msg {
 // 	return stepCompleteMsg{}
 // }
 
-func executeQuickstart() tea.Msg {
+func findQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, print its path and execute it after user confirmation.
 	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
@@ -240,26 +248,26 @@ func executeQuickstart() tea.Msg {
 		return stepErrorMsg{err: err}
 	}
 
-	// If we don't find a script, tell the user they can run `dr template setup`
-	// instead.
+	// If we don't find a script, tell the user they can run `dr template setup` instead.
 	if quickstartScript == "" {
-		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n"}
+		log.Println("No quickstart script found")
+		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
 
 	log.Println("Found quickstart script at:", quickstartScript)
 
-	// TODO Can we make this a reusable step?
-	fmt.Print("Do you want to execute this script? (y/n): ")
+	fmt.Printf("\nA quickstart script has been found at: %s\n", quickstartScript)
+	return stepCompleteMsg{message: "Do you want to execute this script? (y/n): ", waiting: true}
+}
 
-	var response string
+func executeQuickstart() tea.Msg {
+	// Get the quickstart script path from the model, and execute it
+	// If none was found, then tell the user
 
-	fmt.Scanln(&response)
-
-	if response != "y" {
-		log.Println("Aborting quickstart script execution.")
-		return stepCompleteMsg{}
+	quickstartScript, err := findQuickstartScript()
+	if err != nil {
+		return stepErrorMsg{err: err}
 	}
-
 	// Execute the script directly (it should have a shebang or be executable)
 	cmd := exec.Command(quickstartScript)
 
