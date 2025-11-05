@@ -53,6 +53,14 @@ type stepErrorMsg struct {
 	err error
 }
 
+// Error messages used in the start command
+const (
+	errNotInRepo               = "not inside a DataRobot repository"
+	errScriptExecutionFailed   = "failed to execute quickstart script: %w"
+	errScriptSearchFailed      = "failed to search for quickstart script: %w"
+	errNoExecutableScriptFound = "no executable quickstart script found in %s"
+)
+
 var (
 	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
 	arrow     = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
@@ -176,7 +184,7 @@ func checkPrerequisites() tea.Msg {
 	// - Validate directory structure
 	// Return stepErrorMsg{err} if prerequisites are not met
 	if !repo.IsInRepo() {
-		return stepErrorMsg{err: errors.New("not inside a DataRobot repository")}
+		return stepErrorMsg{err: errors.New(errNotInRepo)}
 	}
 
 	if err := tools.CheckPrerequisites(); err != nil {
@@ -235,7 +243,7 @@ func executeQuickstart() tea.Msg {
 	log.Println("Executing quickstart script...")
 
 	if err := cmd.Run(); err != nil {
-		return stepErrorMsg{err: fmt.Errorf("failed to execute quickstart script: %w", err)}
+		return stepErrorMsg{err: fmt.Errorf(errScriptExecutionFailed, err)}
 	}
 
 	log.Println("Quickstart script completed successfully")
@@ -250,7 +258,7 @@ func findQuickstartScript() (string, error) {
 	// Find files matching quickstart*
 	matches, err := filepath.Glob(filepath.Join(executablePath, "quickstart*"))
 	if err != nil {
-		return "", fmt.Errorf("failed to search for quickstart script: %w", err)
+		return "", fmt.Errorf(errScriptSearchFailed, err)
 	}
 
 	// Find the first executable file
@@ -268,5 +276,5 @@ func findQuickstartScript() (string, error) {
 
 	absExecutablePath, _ := filepath.Abs(executablePath)
 
-	return "", fmt.Errorf("no executable quickstart script found in %s", absExecutablePath)
+	return "", fmt.Errorf(errNoExecutableScriptFound, absExecutablePath)
 }
