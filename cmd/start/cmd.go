@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-type StartOpts struct {
+type Options struct {
 	AnswerYes bool
 }
 
 func Cmd() *cobra.Command {
-	var opts StartOpts
+	var opts Options
 
 	cmd := &cobra.Command{
 		Use:     "start",

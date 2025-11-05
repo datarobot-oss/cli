@@ -33,14 +33,8 @@ type step struct {
 	fn func(*Model) tea.Msg
 }
 
-type ModelWithSteps interface {
-	currentStep() step
-	nextStep() step     // do i really need this
-	previousStep() step // do i really need this
-}
-
 type Model struct {
-	opts                 StartOpts
+	opts                 Options
 	steps                []step
 	current              int
 	done                 bool
@@ -77,7 +71,7 @@ var (
 	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
-func NewStartModel(opts StartOpts) Model {
+func NewStartModel(opts Options) Model {
 	return Model{
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
@@ -350,7 +344,7 @@ func findQuickstart(m *Model) tea.Msg {
 	if m.opts.AnswerYes {
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Quickstart found at: %s. Executing script...", quickstartScript),
-			executeScript: 		  true,
+			executeScript:        true,
 			quickstartScriptPath: quickstartScript,
 		}
 	}
