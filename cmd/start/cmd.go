@@ -31,9 +31,9 @@ func Cmd() *cobra.Command {
 		GroupID: "core",
 		Short:   "Run the application quickstart process",
 		Long: `Run the application quickstart process for the current template.
-Running this command performs the following actions:
-- Validating the environment
-- Checking template prerequisites
+The following actions will be performed:
+- Checking for prerequisite tooling
+- Validating the environment (TODO)
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if viper.GetBool("debug") {
