@@ -144,8 +144,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var sb strings.Builder
 
-	sb.WriteString("\n")
-	sb.WriteString(boldStyle.Render("DataRobot Quickstart"))
+	// Show the DataRobot banner
+	sb.WriteString(tui.Header())
+	sb.WriteString("\n\n")
+
+	// Show welcome message
+	sb.WriteString(tui.WelcomeStyle.Render("DataRobot Quickstart"))
 	sb.WriteString("\n\n")
 
 	for i, step := range m.steps {
