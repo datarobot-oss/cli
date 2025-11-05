@@ -9,6 +9,7 @@
 package start
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
@@ -327,16 +329,15 @@ func checkPrerequisites(_ *Model) tea.Msg {
 func findQuickstart(m *Model) tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
-	// If we do not find it, tell the user that we couldn't find one and suggest that they instead
-	// run `dr template setup`.
+	// If we do not find it, we'll invoke `dr templates setup` to help the user configure their template.
 	quickstartScript, err := findQuickstartScript()
 	if err != nil {
 		return stepErrorMsg{err: err}
 	}
 
-	// If we don't find a script, tell the user they can run `dr template setup` instead.
+	// If we don't find a script, we'll proceed to run templates setup in the next step
 	if quickstartScript == "" {
-		return stepCompleteMsg{message: "Could not find a quickstart script. You can run 'dr template setup' to set up your application.\n", done: true}
+		return stepCompleteMsg{message: "No quickstart script found. Will proceed with template setup...\n"}
 	}
 
 	// If the user set the '--yes' flag, then just proceed to execute the script
@@ -358,9 +359,14 @@ func findQuickstart(m *Model) tea.Msg {
 
 func executeQuickstart(m *Model) tea.Msg {
 	// Execute the quickstart script that was found and stored in the model
-	// If no script path is set, then we should just tell the user to run `dr template setup`
+	// If no script path is set, then we should invoke `dr templates setup` after user confirmation
 	if m.quickstartScriptPath == "" {
-		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
+		// Invoke the templates setup command seamlessly
+		if err := setup.RunTea(context.Background()); err != nil {
+			return stepErrorMsg{err: fmt.Errorf("failed to run template setup: %w", err)}
+		}
+
+		return stepCompleteMsg{message: "Template setup completed successfully.\n", done: true}
 	}
 
 	// Signal that we should execute the script
