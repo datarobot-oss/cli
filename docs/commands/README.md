@@ -23,6 +23,7 @@ These flags are available for all commands:
 |---------|-------------|
 | [`auth`](auth.md) | Authenticate with DataRobot. |
 | [`templates`](templates.md) | Manage application templates. |
+| [`start`](start.md) | Run the application quickstart process. |
 | [`run`](run.md) | Execute application tasks. |
 | [`dotenv`](dotenv.md) | Manage environment variables. |
 | [`completion`](completion.md) | Generate shell completions. |
@@ -41,6 +42,7 @@ dr
 │   ├── clone          Clone a template
 │   ├── setup          Interactive setup wizard
 │   └── status         Show template status
+├── start              Run quickstart process (alias: quickstart)
 ├── run                Task execution
 ├── dotenv             Environment configuration
 ├── completion         Shell completion
@@ -78,6 +80,19 @@ dr templates setup
 
 # Check status
 dr templates status
+```
+
+### Quickstart
+
+```bash
+# Run quickstart process (interactive)
+dr start
+
+# Run with auto-yes
+dr start --yes
+
+# Using the alias
+dr quickstart
 ```
 
 ### Environment configuration
@@ -185,7 +200,9 @@ DATAROBOT_API_TOKEN            # API token (not recommended)
 | 0 | Success. |
 | 1 | General error. |
 | 2 | Command usage error. |
-| 130 | Interrupted (Ctrl+C). |## See also
+| 130 | Interrupted (Ctrl+C). |
+
+## See also
 
 - [Getting started guide](../user-guide/getting-started.md)
 - [User guide](../user-guide/)

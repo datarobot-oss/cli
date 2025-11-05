@@ -100,12 +100,19 @@ Use the interactive setup wizard to clone and configure a template:
 dr templates setup
 ```
 
-This guides you through the following:
+Follow the prompts to select a template, clone it, and configure environment variables.
 
-- Selecting a template from available options.
-- Cloning the template repository.
-- Configuring environment variables interactively.
-- Setting up application-specific settings.
+### 3. Start your application
+
+Once configured, launch your application with the quickstart command:
+
+```bash
+dr start
+```
+
+This will either execute your template's quickstart script or guide you through the setup process if one hasn't been completed yet.
+
+## Commands
 
 ### 3. Run tasks
 
