@@ -213,7 +213,16 @@ func (m Model) updatedContents() string {
 		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, name))
 		varBeginEnd := varRegex.FindStringIndex(m.contents)
 
-		varString := fmt.Sprintf("%s=%v", name, value)
+		var varString string
+
+		// Handle special case where we have a comment (Derived from 'Help' portion of DR yaml values.)
+		if strings.Contains(value, dotenvCommentDelimiter) {
+			parts := strings.Split(value, dotenvCommentDelimiter)
+			varString = fmt.Sprintf("# %v\n", parts[0])
+			varString += fmt.Sprintf("%s=%v", name, parts[1])
+		} else {
+			varString = fmt.Sprintf("%s=%v", name, value)
+		}
 
 		if varBeginEnd == nil {
 			if value != "" {
@@ -418,6 +427,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				if currentPrompt.Env != "" {
 					m.envResponses[currentPrompt.Env] = strings.Join(values, ",")
+
+					if currentPrompt.Help != "" {
+						// If we have 'Help' value we'll end up using it as a comment above the value but for now prepend it and use const delimiter
+						m.envResponses[currentPrompt.Env] = currentPrompt.Help + dotenvCommentDelimiter + m.envResponses[currentPrompt.Env]
+					}
 				}
 
 				m.currentPromptIndex++

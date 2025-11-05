@@ -25,11 +25,12 @@ import (
 )
 
 type variable struct {
-	name      string
-	value     string
-	secret    bool
-	changed   bool
-	commented bool
+	name        string
+	value       string
+	description string
+	secret      bool
+	changed     bool
+	commented   bool
 }
 
 type Variables []variable
@@ -155,7 +156,7 @@ func handleExtraEnvVars(variables Variables) bool {
 			// Add it to set
 			existingEnvVarsSet[up.Env] = struct{}{}
 			// Add it to variables
-			variables = append(variables, variable{name: up.Env, value: up.Default})
+			variables = append(variables, variable{name: up.Env, value: up.Default, description: up.Help})
 		}
 	}
 
