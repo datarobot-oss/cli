@@ -425,9 +425,8 @@ We have smoke tests that are not currently run on Pull Requests however _can_ be
 
 These are the appropriate comments to trigger respective tests:
 
-- /trigger-smoke-test
-- /trigger-windows-smoke-test
-- /trigger-installs-smoke-test
+- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR
+- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR
 
 ## Debugging
 
