@@ -11,7 +11,6 @@ package start
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +110,20 @@ func (m Model) executeCurrentStep() tea.Cmd {
 	}
 }
 
+func (m Model) executeNextStep() (Model, tea.Cmd) {
+	// Check if there are more steps
+	if m.current >= len(m.steps)-1 {
+		// No more steps, we're done
+		m.done = true
+		return m, tea.Quit
+	}
+
+	// Move to next step and execute it
+	m.current++
+
+	return m, m.executeCurrentStep()
+}
+
 func (m Model) currentStep() step {
 	return m.steps[m.current]
 }
@@ -141,9 +154,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// User confirmed, proceed to next step
 			m.waiting = false
 			m.stepCompleteMessage = ""
-			m.current++
 
-			return m, m.executeCurrentStep()
+			return m.executeNextStep()
 		case "n", "N", "q", "esc", "ctrl+c":
 			// User declined or quit
 			m.quitting = true
@@ -186,16 +198,8 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	// See if there's a next step, and move to it
-	if m.current < len(m.steps)-1 {
-		m.current++
-		return m, m.executeCurrentStep()
-	}
-
-	// No more steps, we're done
-	m.done = true
-
-	return m, tea.Quit
+	// Move to next step
+	return m.executeNextStep()
 }
 
 func (m Model) View() string {
@@ -318,8 +322,6 @@ func executeQuickstart(m *Model) tea.Msg {
 		return stepCompleteMsg{message: "No quickstart script found. You can run 'dr template setup' to set up your application.\n", done: true}
 	}
 
-	log.Println("Executing quickstart script...")
-
 	// Now execute the script. Remember that tea.ExecProcess will temporarily
 	// suspend the TUI, allowing the script to take full control of the terminal
 	// until it completes.
@@ -329,8 +331,6 @@ func executeQuickstart(m *Model) tea.Msg {
 		if err != nil {
 			return stepErrorMsg{err: fmt.Errorf(errScriptExecutionFailed, err)}
 		}
-
-		log.Println("Quickstart script completed successfully")
 
 		return stepCompleteMsg{}
 	})
