@@ -3,6 +3,7 @@
 # Be sure to get DR_API_TOKEN from args
 args=("$@")
 DR_API_TOKEN=${args[0]}
+export TERM="dumb"
 
 # Used throughout testing
 testing_url="https://app.datarobot.com"

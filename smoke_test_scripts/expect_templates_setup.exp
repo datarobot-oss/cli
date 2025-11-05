@@ -11,6 +11,7 @@ expect "more"
 # Filter
 send -- {/}
 
+sleep 1
 expect "Filter"
 send -- "talk\r\n"
 
@@ -22,12 +23,15 @@ sleep 1
 expect "talk-to-my-docs-agents"
 send -- "\r\n"
 
+sleep 1
 expect "Interactive Setup"
 send -- "\r\n"
 
+sleep 1
 expect "DATAROBOT_DEFAULT_USE_CASE"
 send -- "\r\n"
 
+sleep 1
 expect "SESSION_SECRET_KEY"
 send -- "TESTING_SESSION_SECRET_KEY\r\n"
 
