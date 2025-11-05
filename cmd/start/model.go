@@ -53,10 +53,10 @@ type stepCompleteMsg struct {
 }
 
 type stepErrorMsg struct {
-	err error
+	err error // Error encountered during step execution
 }
 
-// er messages used in the start command
+// err messages used in the start command
 const (
 	errNotInRepo             = "not inside a DataRobot repository"
 	errScriptExecutionFailed = "failed to execute quickstart script: %w"
@@ -64,10 +64,11 @@ const (
 )
 
 var (
-	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
-	arrow     = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
-	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	boldStyle = lipgloss.NewStyle().Bold(true)
+	checkMark  = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
+	arrow      = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
+	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 )
 
 func NewStartModel() Model {
@@ -165,14 +166,11 @@ func (m Model) View() string {
 
 	// If there's an error, display it at the end after showing the steps
 	if m.err != nil {
-		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
-
 		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("%s %s\n", errorStyle.Render("Error:"), m.err.Error()))
 	} else {
 		// Display step message if available
 		if m.stepMessage != "" {
-			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 			sb.WriteString("\n")
 			sb.WriteString(infoStyle.Render(m.stepMessage))
 			sb.WriteString("\n")
@@ -220,17 +218,17 @@ func checkPrerequisites() tea.Msg {
 	return stepCompleteMsg{}
 }
 
-func validateEnvironment() tea.Msg {
-	// TODO: Implement environment validation logic
-	// - Check environment variables
-	// - Validate system requirements
-	// Return stepErrorMsg{err} if validation fails
-	time.Sleep(100 * time.Millisecond) // Simulate work
+// func validateEnvironment() tea.Msg {
+// 	// TODO: Implement environment validation logic
+// 	// - Check environment variables
+// 	// - Validate system requirements
+// 	// Return stepErrorMsg{err} if validation fails
+// 	time.Sleep(100 * time.Millisecond) // Simulate work
 
-	// TODO invoke logic in internal.envvalidator
+// 	// TODO invoke logic in internal.envvalidator
 
-	return stepCompleteMsg{}
-}
+// 	return stepCompleteMsg{}
+// }
 
 func executeQuickstart() tea.Msg {
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
@@ -252,8 +250,11 @@ func executeQuickstart() tea.Msg {
 
 	// TODO Can we make this a reusable step?
 	fmt.Print("Do you want to execute this script? (y/n): ")
+
 	var response string
+
 	fmt.Scanln(&response)
+
 	if response != "y" {
 		log.Println("Aborting quickstart script execution.")
 		return stepCompleteMsg{}
