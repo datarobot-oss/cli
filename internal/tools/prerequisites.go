@@ -23,10 +23,10 @@ type Prerequisite struct {
 
 // RequiredTools lists all tools required for the quickstart process
 var RequiredTools = []Prerequisite{
-	{Name: "Python", Command: "python3", installString: "pip install python3"},
-	{Name: "uv", Command: "uv", installString: "pip install uv"},
-	{Name: "task", Command: "task", installString: "brew install task"},
-	{Name: "pulumi", Command: "pulumi", installString: "brew install pulumi"},
+	{Name: "Python", Command: "python3", installString: "https://www.python.org/downloads/"},
+	{Name: "uv", Command: "uv", installString: "https://docs.astral.sh/uv/getting-started/installation/"},
+	{Name: "task", Command: "task", installString: "https://taskfile.dev/docs/installation"},
+	{Name: "pulumi", Command: "pulumi", installString: "https://www.pulumi.com/docs/get-started/download-install/"},
 }
 
 func CheckPrerequisite(name string) error {
