@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-type startOptions struct {
+type Options struct {
 	AnswerYes bool
 }
 
 func Cmd() *cobra.Command {
-	var opts startOptions
+	var opts Options
 
 	cmd := &cobra.Command{
 		Use:     "start",
@@ -31,9 +31,9 @@ func Cmd() *cobra.Command {
 		GroupID: "core",
 		Short:   "Run the application quickstart process",
 		Long: `Run the application quickstart process for the current template.
-Running this command performs the following actions:
-- Validating the environment
-- Checking template prerequisites
+The following actions will be performed:
+- Checking for prerequisite tooling
+- Validating the environment (TODO)
 - Executing the quickstart script associated with the template, if available.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if viper.GetBool("debug") {
@@ -46,8 +46,8 @@ Running this command performs the following actions:
 				defer f.Close()
 			}
 
-			m := NewStartModel()
-			p := tea.NewProgram(tui.NewInterruptibleModel(m))
+			m := NewStartModel(opts)
+			p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 			if _, err := p.Run(); err != nil {
 				return err

@@ -38,6 +38,8 @@ func RunE(_ *cobra.Command, args []string) error {
 
 	fmt.Printf("Adding component %s\n", repoURL)
 
+	// TODO Use the tools package to check if uv is installed
+
 	err := copier.ExecAdd(repoURL)
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
