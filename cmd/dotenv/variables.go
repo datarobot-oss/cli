@@ -17,7 +17,6 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
@@ -112,19 +111,6 @@ var knownVariables = map[string]variableConfig{
 			return config.GetAPIKey(), nil
 		},
 		secret: true,
-	},
-	"USE_DATAROBOT_LLM_GATEWAY": {
-		getValue: func() (string, error) {
-			enabled, err := drapi.IsLLMGatewayEnabled()
-			if err != nil {
-				return "", err
-			}
-
-			if enabled {
-				return "true", nil
-			}
-			return "false", nil
-		},
 	},
 }
 

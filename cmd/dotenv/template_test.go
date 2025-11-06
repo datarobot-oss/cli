@@ -49,7 +49,7 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
 	suite.Equal(
-		"DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n\nUSE_DATAROBOT_LLM_GATEWAY=\n",
+		"DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n",
 		contents,
 	)
 	suite.Empty(dotenvTemplateUsed)
@@ -59,11 +59,11 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 
 	// Verify header format with timestamp
 	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Contains(content, "DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n\nUSE_DATAROBOT_LLM_GATEWAY=\n")
+	suite.Contains(content, "DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n")
 }
 
 func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
-	_ = os.WriteFile(suite.template, []byte("USE_DATAROBOT_LLM_GATEWAY=\n"), 0o644)
+	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
 
 	suite.FileExists(suite.template, "Expected dotenv template file to be created")
 
@@ -75,12 +75,12 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 
 	suite.Equal(
 		[]variable{
-			{name: "USE_DATAROBOT_LLM_GATEWAY", value: "", secret: false, changed: false, commented: false},
+			{name: "DATAROBOT_ENDPOINT", value: "", secret: false, changed: false, commented: false},
 		},
 		variables,
 	)
 	suite.Equal(
-		"USE_DATAROBOT_LLM_GATEWAY=\n",
+		"DATAROBOT_ENDPOINT=\n",
 		contents,
 	)
 	suite.Equal(suite.template, dotenvTemplateUsed)
@@ -90,13 +90,13 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 
 	// Verify header format with timestamp and template file reference
 	suite.Regexp(`# Edited using .dr dotenv. from .* on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Contains(content, "USE_DATAROBOT_LLM_GATEWAY=\n")
+	suite.Contains(content, "DATAROBOT_ENDPOINT=\n")
 
 	os.Remove(suite.template)
 }
 
 func (suite *TemplateTestSuite) TestReadTemplate() {
-	_ = os.WriteFile(suite.template, []byte("USE_DATAROBOT_LLM_GATEWAY=\n"), 0o644)
+	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
 
 	suite.FileExists(suite.template, "Expected dotenv template file to be created")
 
@@ -104,7 +104,7 @@ func (suite *TemplateTestSuite) TestReadTemplate() {
 
 	suite.Equal(suite.template, templateFileUsed)
 	suite.Equal(
-		[]string{"USE_DATAROBOT_LLM_GATEWAY=\n"},
+		[]string{"DATAROBOT_ENDPOINT=\n"},
 		templateLines,
 	)
 
@@ -112,7 +112,7 @@ func (suite *TemplateTestSuite) TestReadTemplate() {
 }
 
 func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
-	_ = os.WriteFile(suite.template, []byte("USE_DATAROBOT_LLM_GATEWAY=\n"), 0o644)
+	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
 
 	suite.FileExists(suite.template, "Expected dotenv template file to be created")
 
