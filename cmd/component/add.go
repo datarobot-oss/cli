@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package add
+package component
 
 import (
 	"errors"
@@ -62,13 +62,9 @@ func RunE(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "add component_url",
-		Short:   "Add component",
-		PreRunE: PreRunE,
-		RunE:    RunE,
-	}
-
-	return cmd
+var AddCmd = &cobra.Command{
+	Use:     "add component_url",
+	Short:   "Add component",
+	PreRunE: PreRunE,
+	RunE:    RunE,
 }

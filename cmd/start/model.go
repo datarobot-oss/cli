@@ -70,7 +70,6 @@ const (
 var (
 	checkMark = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✓")
 	arrow     = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
-	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 func NewStartModel(opts Options) Model {
@@ -241,11 +240,11 @@ func (m Model) View() string {
 
 	for i, step := range m.steps {
 		if i < m.current {
-			sb.WriteString(fmt.Sprintf("  %s %s\n", checkMark, dimStyle.Render(step.description)))
+			sb.WriteString(fmt.Sprintf("  %s %s\n", checkMark, tui.DimStyle.Render(step.description)))
 		} else if i == m.current {
 			sb.WriteString(fmt.Sprintf("  %s %s\n", arrow, step.description))
 		} else {
-			sb.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(step.description)))
+			sb.WriteString(fmt.Sprintf("    %s\n", tui.DimStyle.Render(step.description)))
 		}
 	}
 
@@ -255,7 +254,7 @@ func (m Model) View() string {
 	if m.err != nil {
 		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
 		sb.WriteString("\n")
-		sb.WriteString(dimStyle.Render("Press any key to exit"))
+		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
 		sb.WriteString("\n")
 
 		return sb.String()
@@ -272,7 +271,7 @@ func (m Model) View() string {
 		sb.WriteString("\n")
 
 		if m.waitingToExecute {
-			sb.WriteString(dimStyle.Render("Press 'y' or ENTER to confirm, 'n' to cancel"))
+			sb.WriteString(tui.DimStyle.Render("Press 'y' or ENTER to confirm, 'n' to cancel"))
 		} else {
 			sb.WriteString(tui.Footer())
 		}
