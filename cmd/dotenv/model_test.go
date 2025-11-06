@@ -11,11 +11,13 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -361,8 +363,17 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 
 	m := tm.FinalModel(suite.T())
 
-	suite.Equal("existing_use_case", m.(Model).envResponses["DATAROBOT_DEFAULT_USE_CASE"], "Expected existing use case to be detected")
-	suite.Equal("existing_passphrase", m.(Model).envResponses["PULUMI_CONFIG_PASSPHRASE"], "Expected existing passphrase to be detected")
+	usecaseIndex := slices.IndexFunc(m.(Model).prompts, func(p envbuilder.UserPrompt) bool {
+		return p.Env == "DATAROBOT_DEFAULT_USE_CASE"
+	})
+	usecaseValue := m.(Model).prompts[usecaseIndex].Value
+	suite.Equal("existing_use_case", usecaseValue, "Expected existing use case to be detected")
+
+	pulumiIndex := slices.IndexFunc(m.(Model).prompts, func(p envbuilder.UserPrompt) bool {
+		return p.Env == "PULUMI_CONFIG_PASSPHRASE"
+	})
+	pulumiValue := m.(Model).prompts[pulumiIndex].Value
+	suite.Equal("existing_passphrase", pulumiValue, "Expected existing passphrase to be detected")
 }
 
 func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {

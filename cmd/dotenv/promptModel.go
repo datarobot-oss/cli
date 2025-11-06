@@ -85,29 +85,29 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str))
 }
 
-func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	if len(prompt.Options) == 0 {
-		return newTextInputPrompt(prompt, value, successCmd)
+		return newTextInputPrompt(prompt, successCmd)
 	}
 
-	return newListPrompt(prompt, value, successCmd)
+	return newListPrompt(prompt, successCmd)
 }
 
-func newTextInputPrompt(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+func newTextInputPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	// Auto-generate a random secret if:
 	// 1. Generate flag is set
 	// 2. Type is secret_string
 	// 3. No value is currently set
-	if value == "" && prompt.Generate && prompt.Type == envbuilder.PromptTypeSecret {
+	if prompt.Value == "" && prompt.Generate && prompt.Type == envbuilder.PromptTypeSecret {
 		generatedSecret, err := generateRandomSecret(generatedSecretLength)
 		if err == nil {
-			value = generatedSecret
+			prompt.Value = generatedSecret
 		}
 		// If generation fails, just leave value empty and let user enter manually
 	}
 
 	ti := textinput.New()
-	ti.SetValue(value)
+	ti.SetValue(prompt.Value)
 
 	// Mask the input if it's a secret
 	if prompt.Type == envbuilder.PromptTypeSecret {
@@ -124,14 +124,14 @@ func newTextInputPrompt(prompt envbuilder.UserPrompt, value string, successCmd t
 	}, cmd
 }
 
-func newListPrompt(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+func newListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	items := make([]list.Item, 0, len(prompt.Options)+1)
 
 	if prompt.Optional {
 		items = append(items, item{Blank: true, Name: "None (leave blank)"})
 	}
 
-	values := strings.Split(value, ",")
+	values := strings.Split(prompt.Value, ",")
 
 	for _, option := range prompt.Options {
 		if prompt.Multiple && slices.Index(values, option.Value) != -1 {
@@ -143,9 +143,9 @@ func newListPrompt(prompt envbuilder.UserPrompt, value string, successCmd tea.Cm
 
 	l := list.New(items, itemDelegate{prompt.Multiple}, 0, 15)
 
-	if value != "" && !prompt.Multiple {
+	if prompt.Value != "" && !prompt.Multiple {
 		initialIndex := slices.IndexFunc(prompt.Options, func(po envbuilder.PromptOption) bool {
-			return po.Value == value
+			return po.Value == prompt.Value
 		})
 
 		if prompt.Optional || initialIndex == -1 {

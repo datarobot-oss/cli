@@ -59,7 +59,6 @@ type Model struct {
 	height             int
 	SuccessCmd         tea.Cmd
 	prompts            []envbuilder.UserPrompt
-	envResponses       map[string]string
 	currentPromptIndex int
 	currentPrompt      promptModel
 	hasPrompts         *bool // Cache whether prompts are available
@@ -156,6 +155,18 @@ func (m Model) checkPromptsAvailable() bool {
 	return err == nil && len(userPrompts) > 0
 }
 
+func (m Model) findVariable(name string) (variable, bool) {
+	currentVariableIndex := slices.IndexFunc(m.variables, func(v variable) bool {
+		return v.name == name
+	})
+
+	if currentVariableIndex == -1 {
+		return variable{}, false
+	}
+
+	return m.variables[currentVariableIndex], true
+}
+
 func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
@@ -163,6 +174,21 @@ func (m Model) loadPrompts() tea.Cmd {
 		userPrompts, _, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
 			return errMsg{err}
+		}
+
+		for p, prompt := range userPrompts {
+			// Capture existing env var values
+			existingEnvValue, ok := os.LookupEnv(prompt.Env)
+			if ok {
+				prompt.Value = existingEnvValue
+			} else if v, found := m.findVariable(prompt.Env); found {
+				prompt.Value = v.value
+				prompt.Commented = v.commented
+			} else {
+				prompt.Value = prompt.Default
+			}
+
+			userPrompts[p] = prompt
 		}
 
 		return promptsLoadedMsg{userPrompts}
@@ -173,19 +199,7 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	prompt := m.prompts[m.currentPromptIndex]
-
-	envKey := prompt.Env
-	if envKey == "" {
-		envKey = "# " + prompt.Key
-	}
-
-	value, ok := m.envResponses[envKey]
-
-	if !ok && prompt.Default != "" {
-		value = prompt.Default
-	}
-
-	m.currentPrompt, cmd = newPromptModel(prompt, value, promptFinishedCmd)
+	m.currentPrompt, cmd = newPromptModel(prompt, promptFinishedCmd)
 
 	return m, cmd
 }
@@ -197,46 +211,25 @@ func (m Model) updatedContents() string {
 	// There has to be a better way to write out an .env file. This is messy.
 	// Like parsing the entire dotenv into a structure, modifying the structure,
 	// then serializing it.
-	additions := ""
+	var additions strings.Builder
 
-	for name, value := range m.envResponses {
+	for _, prompt := range m.prompts {
 		// Find existing variable using a regex checking for the variable name at the start of a line
 		// to avoid matching comments
-		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, name))
-		varBeginEnd := varRegex.FindStringIndex(m.contents)
+		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, prompt.Env))
 
-		// TO NOTE: This variable name is a bit of a misnomer as the string may contain info used for a value's respective comment - see below.
-		var varString string
-
-		// Handle special case where we have a comment (Derived from 'Help' portion of DR yaml values.)
-		// If this Help value was parsed from YAML it will have been prepended to the string but separated by the constant `dotenvCommentDelimiter`
-		// If this constant (`__DR_CLI_DOTENV_COMMENT__`) is present we can split along that and therefore tease out the value we want as a comment above the Env Var
-		// For example when this variable `value` is this string:
-		// "The path to the VertexAI application credentials JSON file.__DR_CLI_DOTENV_COMMENT__VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered"
-		// It will render as:
-		// # The path to the VertexAI application credentials JSON file.
-		// VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered
-		if strings.Contains(value, dotenvCommentDelimiter) {
-			parts := strings.Split(value, dotenvCommentDelimiter)
-			varString = fmt.Sprintf("# %v\n", parts[0])
-			varString += fmt.Sprintf("%s=%v", name, parts[1])
-		} else {
-			varString = fmt.Sprintf("%s=%v", name, value)
-		}
-
-		if varBeginEnd == nil {
-			if value != "" {
-				additions = additions + varString + "\n"
-			}
-		} else {
+		if varBeginEnd := varRegex.FindStringIndex(m.contents); varBeginEnd != nil {
 			// Replace existing value
 			varBegin, varEnd := varBeginEnd[0], varBeginEnd[1]
 
-			m.contents = m.contents[:varBegin] + varString + m.contents[varEnd:]
+			m.contents = m.contents[:varBegin] + prompt.String() + m.contents[varEnd:]
+		} else {
+			additions.WriteString(prompt.String())
+			additions.WriteString("\n")
 		}
 	}
 
-	if len(additions) == 0 {
+	if additions.Len() == 0 {
 		return m.contents
 	}
 
@@ -248,43 +241,15 @@ func (m Model) updatedContents() string {
 	if endpointLineMatch == nil {
 		log.Debug("DATAROBOT_ENDPOINT not found, prepending new variables to the beginning of the file")
 		// Insert the new variables at the beginning
-		return additions + m.contents
+		return additions.String() + m.contents
 	}
 
 	insertPos := endpointLineMatch[1]
 
 	// Insert the new variables after DATAROBOT_ENDPOINT line
-	updatedContents := m.contents[:insertPos] + additions + m.contents[insertPos:]
+	updatedContents := m.contents[:insertPos] + additions.String() + m.contents[insertPos:]
 
 	return updatedContents
-}
-
-func (m Model) responsesFromVariables() map[string]string {
-	if m.envResponses != nil {
-		return m.envResponses
-	}
-
-	responses := make(map[string]string)
-
-	for _, v := range m.variables {
-		if v.name == "" {
-			continue
-		}
-
-		if v.commented {
-			responses["# "+v.name] = v.value
-		} else {
-			// Capture existing env var values
-			existingEnvValue, ok := os.LookupEnv(v.name)
-			if ok {
-				responses[v.name] = existingEnvValue
-			} else {
-				responses[v.name] = v.value
-			}
-		}
-	}
-
-	return responses
 }
 
 func (m Model) Init() tea.Cmd {
@@ -329,7 +294,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = wizardScreen
 		m.prompts = msg.prompts
 		m.currentPromptIndex = 0
-		m.envResponses = m.responsesFromVariables()
 
 		// Cache the result
 		hasPrompts := len(m.prompts) > 0
@@ -343,7 +307,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m.updateCurrentPrompt()
 	case openEditorMsg:
 		m.screen = editorScreen
-		m.envResponses = m.responsesFromVariables()
 
 		ta := textarea.New()
 		// Width: BoxStyle.Width uses (width-8), then Padding(1,2)=4 chars + borders=2 chars = 14 total
@@ -412,6 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			if m.currentPromptIndex < len(m.prompts) { //nolint: nestif
 				currentPrompt := m.prompts[m.currentPromptIndex]
 				values := m.currentPrompt.Values
+				m.prompts[m.currentPromptIndex].Value = strings.Join(values, ",")
 
 				// Update required sections
 				for _, option := range currentPrompt.Options {
@@ -421,15 +385,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 								m.prompts[p].Active = true
 							}
 						}
-					}
-				}
-
-				if currentPrompt.Env != "" {
-					m.envResponses[currentPrompt.Env] = strings.Join(values, ",")
-
-					if currentPrompt.Help != "" {
-						// If we have 'Help' value we'll end up using it as a comment above the value but for now prepend it and use const delimiter
-						m.envResponses[currentPrompt.Env] = currentPrompt.Help + dotenvCommentDelimiter + m.envResponses[currentPrompt.Env]
 					}
 				}
 

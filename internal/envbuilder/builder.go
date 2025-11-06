@@ -30,8 +30,10 @@ func (pt PromptType) String() string {
 }
 
 type UserPrompt struct {
-	Section string
-	Active  bool
+	Section   string
+	Active    bool
+	Commented bool
+	Value     string
 
 	Env      string         `yaml:"env"`
 	Key      string         `yaml:"key"`
@@ -53,6 +55,30 @@ type PromptOption struct {
 }
 
 type ParsedYaml map[string][]UserPrompt
+
+// It will render as:
+//
+//	# The path to the VertexAI application credentials JSON file.
+//	VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered
+func (up UserPrompt) String() string {
+	result := ""
+
+	if up.Help != "" {
+		result += fmt.Sprintf("# %v\n", up.Help)
+	}
+
+	if up.Commented {
+		result += "# "
+	}
+
+	if up.Env != "" {
+		result += fmt.Sprintf("%s=%v", up.Env, up.Value)
+	} else {
+		result += fmt.Sprintf("# %s=%v", up.Key, up.Value)
+	}
+
+	return result
+}
 
 func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
 	yamlFiles, err := Discover(rootDir, 5)
@@ -101,10 +127,6 @@ func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
 	}
 
 	for p := range prompts {
-		if prompts[p].Key != "" {
-			prompts[p].Env = "# " + prompts[p].Key
-		}
-
 		prompts[p].Section = yamlFile + ":" + prompts[p].Section
 		prompts[p].Active = slices.Contains(roots, prompts[p].Section)
 
