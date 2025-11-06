@@ -39,6 +39,7 @@ func example() {
 ### TUI Standards
 
 - Always wrap new TUI models with the InterruptibleModel from the `tui` package to ensure global Ctrl-C handling.
+- Attempt to use existing TUI components before creating new ones. TUI components can be found in the `tui` package, or from the Bubbles library (https://github.com/charmbracelet/bubbles).
 
 ### Quality Tools
 
