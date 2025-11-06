@@ -9,7 +9,6 @@
 package dotenv
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,12 +44,12 @@ var EditCmd = &cobra.Command{
 	Short: "Edit .env file using built-in editor",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
+			cleanup, err := tui.SetupDebugLogging()
 			if err != nil {
-				fmt.Println("fatal:", err)
-				os.Exit(1)
+				return err
 			}
-			defer f.Close()
+
+			defer cleanup()
 		}
 
 		cwd, err := os.Getwd()
@@ -99,12 +98,12 @@ var SetupCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
+			cleanup, err := tui.SetupDebugLogging()
 			if err != nil {
-				fmt.Println("fatal:", err)
-				os.Exit(1)
+				return err
 			}
-			defer f.Close()
+
+			defer cleanup()
 		}
 
 		cwd, err := os.Getwd()
