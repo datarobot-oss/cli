@@ -20,6 +20,7 @@ func Cmd() *cobra.Command {
 		Use:     "component",
 		GroupID: "core",
 		Short:   "Manage components",
+		Aliases: []string{"c"},
 	}
 
 	cmd.AddCommand(
