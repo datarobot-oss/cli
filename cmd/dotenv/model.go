@@ -59,7 +59,6 @@ type Model struct {
 	height             int
 	SuccessCmd         tea.Cmd
 	prompts            []envbuilder.UserPrompt
-	requires           map[string]bool
 	envResponses       map[string]string
 	currentPromptIndex int
 	currentPrompt      promptModel
@@ -79,8 +78,7 @@ type (
 	promptFinishedMsg struct{}
 
 	promptsLoadedMsg struct {
-		prompts  []envbuilder.UserPrompt
-		requires map[string]bool
+		prompts []envbuilder.UserPrompt
 	}
 
 	openEditorMsg struct{}
@@ -162,18 +160,12 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, roots, err := envbuilder.GatherUserPrompts(currentDir)
+		userPrompts, _, err := envbuilder.GatherUserPrompts(currentDir)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		requires := make(map[string]bool, len(roots))
-
-		for _, root := range roots {
-			requires[root] = true
-		}
-
-		return promptsLoadedMsg{userPrompts, requires}
+		return promptsLoadedMsg{userPrompts}
 	}
 }
 
@@ -336,7 +328,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		// Start in the wizard screen
 		m.screen = wizardScreen
 		m.prompts = msg.prompts
-		m.requires = msg.requires
 		m.currentPromptIndex = 0
 		m.envResponses = m.responsesFromVariables()
 
@@ -424,11 +415,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				// Update required sections
 				for _, option := range currentPrompt.Options {
-					if option.Requires != "" {
-						if option.Value != "" && slices.Contains(values, option.Value) {
-							m.requires[option.Requires] = true
-						} else if option.Value == "" && slices.Contains(values, option.Name) {
-							m.requires[option.Requires] = true
+					if option.Requires != "" && slices.Contains(values, option.Value) {
+						for p := range m.prompts {
+							if m.prompts[p].Section == option.Requires {
+								m.prompts[p].Active = true
+							}
 						}
 					}
 				}
@@ -447,7 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				for m.currentPromptIndex < len(m.prompts) {
 					nextPrompt := m.prompts[m.currentPromptIndex]
 
-					if m.requires[nextPrompt.Section] {
+					if nextPrompt.Active {
 						break
 					}
 

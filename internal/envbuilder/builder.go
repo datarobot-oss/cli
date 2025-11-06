@@ -30,7 +30,9 @@ func (pt PromptType) String() string {
 }
 
 type UserPrompt struct {
-	Section  string
+	Section string
+	Active  bool
+
 	Env      string         `yaml:"env"`
 	Key      string         `yaml:"key"`
 	Type     PromptType     `yaml:"type"`
@@ -92,7 +94,7 @@ func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
 	}
 
 	roots := rootSections(fileParsed)
-	prompts := promptsSorted(fileParsed, yamlFile, roots)
+	prompts := promptsSorted(fileParsed, roots)
 
 	for i, root := range roots {
 		roots[i] = yamlFile + ":" + root
@@ -104,6 +106,7 @@ func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
 		}
 
 		prompts[p].Section = yamlFile + ":" + prompts[p].Section
+		prompts[p].Active = slices.Contains(roots, prompts[p].Section)
 
 		for o := range prompts[p].Options {
 			if prompts[p].Options[o].Requires != "" {
@@ -119,16 +122,16 @@ func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
 	return prompts, roots, nil
 }
 
-func promptsSorted(fileParsed ParsedYaml, yamlFile string, keys []string) []UserPrompt {
+func promptsSorted(fileParsed ParsedYaml, sections []string) []UserPrompt {
 	sortedPrompts := make([]UserPrompt, 0)
 
-	for _, key := range keys {
-		for _, prompt := range fileParsed[key] {
-			prompt.Section = key
+	for _, section := range sections {
+		for _, prompt := range fileParsed[section] {
+			prompt.Section = section
 
 			sortedPrompts = append(sortedPrompts, prompt)
 
-			requiredPrompts := promptsSorted(fileParsed, yamlFile, requiredSections(prompt))
+			requiredPrompts := promptsSorted(fileParsed, requiredSections(prompt))
 			sortedPrompts = append(sortedPrompts, requiredPrompts...)
 		}
 	}

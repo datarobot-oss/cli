@@ -37,20 +37,13 @@ type Variables []variable
 func newFromLine(line string) variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := regexp2.NamedStringMatches(expr, line)
-	v := variable{}
 
-	v.name = result["name"]
-	v.value = result["value"]
-
-	if result["commented"] != "" {
-		v.commented = true
+	return variable{
+		name:      result["name"],
+		value:     result["value"],
+		secret:    knownVariables[result["name"]].secret,
+		commented: result["commented"] != "",
 	}
-
-	if knownVariables[v.name].secret {
-		v.secret = true
-	}
-
-	return v
 }
 
 func (v *variable) String() string {
