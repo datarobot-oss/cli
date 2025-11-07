@@ -73,11 +73,6 @@ fi
 echo "Testing dr auth login..."
 expect ./smoke_test_scripts/expect_auth_login.exp
 
-# Test that `dr dotenv setup` errors when not in a git repository
-# Note: This test is skipped because dr dotenv setup checks authentication before git repo
-# The git repository requirement is validated within the templates test below
-echo "ℹ️ Skipping dotenv error test (auth check happens before git check)"
-
 # Test templates - Confirm expect script has cloned TTMDocs and that .env has expected value
 if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
