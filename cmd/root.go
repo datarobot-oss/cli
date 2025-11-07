@@ -141,12 +141,6 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to bind environment variables for api_token: %w", err)
 	}
 
-	// map USE_DATAROBOT_LLM_GATEWAY
-	err = viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
-	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
-	}
-
 	// map VISUAL and EDITOR to external_editor config key
 	err = viper.BindEnv("external_editor", "VISUAL", "EDITOR")
 	if err != nil {

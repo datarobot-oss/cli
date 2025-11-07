@@ -44,8 +44,6 @@ const (
 
 var defaultEnvTemplate = `DATAROBOT_ENDPOINT=
 DATAROBOT_API_TOKEN=
-
-USE_DATAROBOT_LLM_GATEWAY=
 `
 
 // getStateDir returns the XDG_STATE_HOME directory for the dr app
