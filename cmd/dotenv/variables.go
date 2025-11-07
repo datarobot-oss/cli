@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
 )
 
@@ -146,8 +147,18 @@ func handleExtraEnvVars(variables Variables) bool {
 		fmt.Println("Editing .env file with component-specific variables...")
 		fmt.Println("")
 
-		for _, fv := range userPrompts {
-			fmt.Println(fv.Env + " = " + fv.Default)
+		for _, up := range userPrompts {
+			if !up.HasEnvValue() {
+				continue
+			}
+
+			style := tui.ErrorStyle
+
+			if up.Valid() {
+				style = tui.BaseTextStyle
+			}
+
+			fmt.Println(style.Render(up.StringWithoutHelp()))
 		}
 
 		fmt.Println("")

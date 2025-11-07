@@ -64,8 +64,14 @@ func (up UserPrompt) String() string {
 	result := ""
 
 	if up.Help != "" {
-		result += fmt.Sprintf("# %v\n", up.Help)
+		result += fmt.Sprintf("\n# %v\n", up.Help)
 	}
+
+	return result + up.StringWithoutHelp()
+}
+
+func (up UserPrompt) StringWithoutHelp() string {
+	result := ""
 
 	if up.Commented {
 		result += "# "
@@ -78,6 +84,15 @@ func (up UserPrompt) String() string {
 	}
 
 	return result
+}
+
+// HasEnvValue returns true if prompt has effective value when written to .env file
+func (up UserPrompt) HasEnvValue() bool {
+	return !up.Commented && up.Env != "" && up.Active
+}
+
+func (up UserPrompt) Valid() bool {
+	return up.Optional || up.Value != ""
 }
 
 func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
