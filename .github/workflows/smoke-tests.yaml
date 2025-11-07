@@ -55,13 +55,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Ubuntu - Install expect w/ apt-get
+      - name: Ubuntu - Install dependencies w/ apt-get
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
 
-      - name: MacOS - Install expect w/ homebrew
+      - name: MacOS - Install dependencies w/ homebrew
         if: matrix.os == 'macos-latest'
         run: |
           brew install expect bash-completion
