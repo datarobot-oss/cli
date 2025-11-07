@@ -176,16 +176,8 @@ var ValidateCmd = &cobra.Command{
 		// Parse variables from .env file
 		parsedVars := envbuilder.ParseVariables(templateLines)
 
-		envValues := make(map[string]string)
-
-		for _, v := range parsedVars {
-			if v.Name != "" && !v.Commented {
-				envValues[v.Name] = v.Value
-			}
-		}
-
 		// Validate using envbuilder
-		result := envbuilder.ValidateEnvironment(repoRoot, envValues)
+		result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)
 
 		// Display results with styling
 		varStyle := lipgloss.NewStyle().Foreground(tui.DrPurple).Bold(true)

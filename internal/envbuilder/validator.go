@@ -77,13 +77,13 @@ func (r EnvironmentValidationError) Error() string {
 // 1. Determines which sections are active based on requires dependencies
 // 2. Validates all required UserPrompts in active sections
 // 3. Validates core DataRobot variables (DATAROBOT_ENDPOINT, DATAROBOT_API_TOKEN)
-func ValidateEnvironment(repoRoot string, envValues map[string]string) EnvironmentValidationError {
+func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValidationError {
 	result := EnvironmentValidationError{
 		Results: make([]ValidationResult, 0),
 	}
 
 	// Gather all user prompts from the repository
-	userPrompts, rootSections, err := GatherUserPrompts(repoRoot)
+	userPrompts, _, err := GatherUserPrompts(repoRoot)
 	if err != nil {
 		result.Results = append(result.Results, ValidationResult{
 			Field:   "prompts",
@@ -95,16 +95,13 @@ func ValidateEnvironment(repoRoot string, envValues map[string]string) Environme
 	}
 
 	// Create effective values by merging .env and environment variables
-	effectiveValues := buildEffectiveValues(envValues, userPrompts)
-
-	// Determine which sections are required
-	requiredSections := determineRequiredSections(userPrompts, rootSections, effectiveValues)
+	userPrompts = PromptsWithValues(userPrompts, variables)
 
 	// Validate required prompts
-	validatePrompts(&result, userPrompts, requiredSections, effectiveValues)
+	validatePrompts(&result, userPrompts)
 
 	// Validate core DataRobot variables
-	validateCoreVariables(&result, effectiveValues)
+	validateCoreVariables(&result, variables.valuesMap())
 
 	return result
 }
@@ -198,23 +195,15 @@ func isOptionSelected(option PromptOption, selectedValues []string) bool {
 }
 
 // validatePrompts validates all required prompts in active sections.
-func validatePrompts(
-	result *EnvironmentValidationError,
-	userPrompts []UserPrompt,
-	requiredSections map[string]bool,
-	effectiveValues map[string]string,
-) {
+func validatePrompts(result *EnvironmentValidationError, userPrompts []UserPrompt) {
 	for _, prompt := range userPrompts {
-		if !requiredSections[prompt.Section] || prompt.Optional {
+		if !prompt.Active || prompt.Optional {
 			continue
 		}
 
-		envKey := getEnvKey(prompt)
-		value, hasValue := effectiveValues[envKey]
-
-		if !hasValue || value == "" {
+		if !prompt.Valid() {
 			result.Results = append(result.Results, ValidationResult{
-				Field:   envKey,
+				Field:   prompt.Env,
 				Value:   "",
 				Valid:   false,
 				Message: "required variable is not set",
@@ -222,8 +211,8 @@ func validatePrompts(
 			})
 		} else {
 			result.Results = append(result.Results, ValidationResult{
-				Field:   envKey,
-				Value:   value,
+				Field:   prompt.Env,
+				Value:   prompt.Value,
 				Valid:   true,
 				Message: "variable is set",
 				Help:    prompt.Help,

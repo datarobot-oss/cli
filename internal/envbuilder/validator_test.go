@@ -333,6 +333,7 @@ func TestValidatePrompts(t *testing.T) {
 				Section:  "root",
 				Env:      "REQUIRED_VAR",
 				Optional: false,
+				Active:   true,
 			},
 			{
 				Section:  "inactive",
@@ -341,19 +342,15 @@ func TestValidatePrompts(t *testing.T) {
 			},
 		}
 
-		requiredSections := map[string]bool{
-			"root": true,
-		}
-
-		effectiveValues := map[string]string{
-			"REQUIRED_VAR": "value",
-		}
+		prompts = PromptsWithValues(prompts, []Variable{
+			{Name: "REQUIRED_VAR", Value: "value"},
+		})
 
 		result := &EnvironmentValidationError{
 			Results: make([]ValidationResult, 0),
 		}
 
-		validatePrompts(result, prompts, requiredSections, effectiveValues)
+		validatePrompts(result, prompts)
 
 		if len(result.Results) != 1 {
 			t.Errorf("Expected 1 result, got %d", len(result.Results))
@@ -373,17 +370,11 @@ func TestValidatePrompts(t *testing.T) {
 			},
 		}
 
-		requiredSections := map[string]bool{
-			"root": true,
-		}
-
-		effectiveValues := map[string]string{}
-
 		result := &EnvironmentValidationError{
 			Results: make([]ValidationResult, 0),
 		}
 
-		validatePrompts(result, prompts, requiredSections, effectiveValues)
+		validatePrompts(result, prompts)
 
 		if len(result.Results) != 0 {
 			t.Errorf("Expected 0 results for optional prompt, got %d", len(result.Results))
@@ -397,20 +388,15 @@ func TestValidatePrompts(t *testing.T) {
 				Env:      "MISSING_VAR",
 				Optional: false,
 				Help:     "This variable is required",
+				Active:   true,
 			},
 		}
-
-		requiredSections := map[string]bool{
-			"root": true,
-		}
-
-		effectiveValues := map[string]string{}
 
 		result := &EnvironmentValidationError{
 			Results: make([]ValidationResult, 0),
 		}
 
-		validatePrompts(result, prompts, requiredSections, effectiveValues)
+		validatePrompts(result, prompts)
 
 		if len(result.Results) != 1 {
 			t.Fatalf("Expected 1 result, got %d", len(result.Results))
@@ -516,15 +502,15 @@ func findResultByField(results []ValidationResult, field string) *ValidationResu
 
 func TestValidateEnvironment_Integration(t *testing.T) {
 	t.Run("Validates core variables even with empty prompts", func(t *testing.T) {
-		result := ValidateEnvironment("/nonexistent/path", map[string]string{})
+		result := ValidateEnvironment("/nonexistent/path", Variables{})
 
 		verifyEmptyPromptsValidation(t, result)
 	})
 
 	t.Run("Full validation with test data", func(t *testing.T) {
-		tmpDir, envValues := setupTestEnvironment(t)
+		tmpDir, variables := setupTestEnvironment(t)
 
-		result := ValidateEnvironment(tmpDir, envValues)
+		result := ValidateEnvironment(tmpDir, variables)
 
 		verifyFullValidation(t, result)
 	})
@@ -552,7 +538,7 @@ func verifyEmptyPromptsValidation(t *testing.T, result EnvironmentValidationErro
 	}
 }
 
-func setupTestEnvironment(t *testing.T) (string, map[string]string) {
+func setupTestEnvironment(t *testing.T) (string, Variables) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -575,13 +561,13 @@ func setupTestEnvironment(t *testing.T) (string, map[string]string) {
 		t.Fatalf("Failed to write prompts file: %v", err)
 	}
 
-	envValues := map[string]string{
-		"TEST_VAR":            "test-value",
-		"DATAROBOT_ENDPOINT":  "https://app.datarobot.com",
-		"DATAROBOT_API_TOKEN": "token123",
+	variables := []Variable{
+		{Name: "TEST_VAR", Value: "test-value"},
+		{Name: "DATAROBOT_ENDPOINT", Value: "https://app.datarobot.com"},
+		{Name: "DATAROBOT_API_TOKEN", Value: "token123"},
 	}
 
-	return tmpDir, envValues
+	return tmpDir, variables
 }
 
 func verifyFullValidation(t *testing.T, result EnvironmentValidationError) {

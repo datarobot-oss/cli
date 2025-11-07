@@ -16,10 +16,9 @@ import (
 func PromptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
 	for p, prompt := range prompts {
 		// Capture existing env var values
-		existingEnvValue, ok := os.LookupEnv(prompt.Env)
-		if ok {
+		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
 			prompt.Value = existingEnvValue
-		} else if v, found := variables.find(prompt.Env); found {
+		} else if v, found := variables.find(prompt); found {
 			prompt.Value = v.Value
 			prompt.Commented = v.Commented
 		} else {
@@ -32,14 +31,32 @@ func PromptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
 	return prompts
 }
 
-func (vv Variables) find(name string) (Variable, bool) {
-	currentVariableIndex := slices.IndexFunc(vv, func(v Variable) bool {
-		return v.Name == name
-	})
+func indexByName(value string) func(v Variable) bool {
+	return func(v Variable) bool {
+		return v.Name == value
+	}
+}
 
-	if currentVariableIndex == -1 {
-		return Variable{}, false
+func (vv Variables) find(prompt UserPrompt) (Variable, bool) {
+	if envIndex := slices.IndexFunc(vv, indexByName(prompt.Env)); envIndex != -1 {
+		return vv[envIndex], true
 	}
 
-	return vv[currentVariableIndex], true
+	if keyIndex := slices.IndexFunc(vv, indexByName(prompt.Key)); keyIndex != -1 {
+		return vv[keyIndex], true
+	}
+
+	return Variable{}, false
+}
+
+func (vv Variables) valuesMap() map[string]string {
+	envValues := make(map[string]string)
+
+	for _, v := range vv {
+		if v.Name != "" && !v.Commented {
+			envValues[v.Name] = v.Value
+		}
+	}
+
+	return envValues
 }
