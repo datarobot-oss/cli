@@ -13,9 +13,9 @@ A typical template repository:
 ```
 my-datarobot-template/
 ├── .datarobot/               # Template metadata
+│   ├── prompts.yaml         # Configuration prompts
+│   ├── config.yaml          # Template settings
 │   └── cli/                 # CLI-specific files
-│       ├── prompts.yaml         # Configuration prompts
-│       ├── config.yaml          # Template settings
 │       └── bin/             # Quickstart scripts
 │           └── quickstart.sh
 ├── .env.template            # Environment variable template

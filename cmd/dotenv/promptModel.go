@@ -82,18 +82,44 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	if len(prompt.Options) == 0 {
-		ti := textinput.New()
-		ti.SetValue(value)
-		cmd := ti.Focus()
-		pm := promptModel{
-			prompt:     prompt,
-			input:      ti,
-			successCmd: successCmd,
-		}
-
-		return pm, cmd
+		return newTextInputPrompt(prompt, value, successCmd)
 	}
 
+	return newListPrompt(prompt, value, successCmd)
+}
+
+func newTextInputPrompt(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	// Auto-generate a random secret if:
+	// 1. Generate flag is set
+	// 2. Type is secret_string
+	// 3. No value is currently set
+	if value == "" && prompt.Generate && prompt.Type == envbuilder.PromptTypeSecret {
+		generatedSecret, err := generateRandomSecret(32)
+		if err == nil {
+			value = generatedSecret
+		}
+		// If generation fails, just leave value empty and let user enter manually
+	}
+
+	ti := textinput.New()
+	ti.SetValue(value)
+
+	// Mask the input if it's a secret
+	if prompt.Type == envbuilder.PromptTypeSecret {
+		ti.EchoMode = textinput.EchoPassword
+		ti.EchoCharacter = '•'
+	}
+
+	cmd := ti.Focus()
+
+	return promptModel{
+		prompt:     prompt,
+		input:      ti,
+		successCmd: successCmd,
+	}, cmd
+}
+
+func newListPrompt(prompt envbuilder.UserPrompt, value string, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	items := make([]list.Item, 0, len(prompt.Options)+1)
 
 	if prompt.Optional {
@@ -112,27 +138,25 @@ func newPromptModel(prompt envbuilder.UserPrompt, value string, successCmd tea.C
 
 	l := list.New(items, itemDelegate{prompt.Multiple}, 0, 15)
 
-	if value != "" {
-		if !prompt.Multiple {
-			initialIndex := slices.IndexFunc(prompt.Options, func(po envbuilder.PromptOption) bool {
-				return po.Value == value
-			})
-			if prompt.Optional || initialIndex == -1 {
-				initialIndex++
-			}
+	if value != "" && !prompt.Multiple {
+		initialIndex := slices.IndexFunc(prompt.Options, func(po envbuilder.PromptOption) bool {
+			return po.Value == value
+		})
 
-			l.Select(initialIndex)
+		if prompt.Optional || initialIndex == -1 {
+			initialIndex++
 		}
+
+		l.Select(initialIndex)
 	}
 
 	cmd := tea.WindowSize()
-	pm := promptModel{
+
+	return promptModel{
 		prompt:     prompt,
 		list:       l,
 		successCmd: successCmd,
-	}
-
-	return pm, cmd
+	}, cmd
 }
 
 func (pm promptModel) GetValues() []string {

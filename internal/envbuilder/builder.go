@@ -18,16 +18,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type PromptType string
+
+const (
+	PromptTypeString PromptType = "string"
+	PromptTypeSecret PromptType = "secret_string"
+)
+
+func (pt PromptType) String() string {
+	return string(pt)
+}
+
 type UserPrompt struct {
 	Section  string
 	Env      string         `yaml:"env"`
 	Key      string         `yaml:"key"`
-	Type     string         `yaml:"type"`
+	Type     PromptType     `yaml:"type"`
 	Multiple bool           `yaml:"multiple"`
 	Options  []PromptOption `yaml:"options,omitempty"`
 	Default  string         `yaml:"default,omitempty"`
 	Help     string         `yaml:"help"`
 	Optional bool           `yaml:"optional,omitempty"`
+	Generate bool           `yaml:"generate,omitempty"`
 }
 
 type PromptOption struct {

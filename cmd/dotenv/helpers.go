@@ -9,6 +9,8 @@
 package dotenv
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +19,17 @@ import (
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 )
+
+func generateRandomSecret(length int) (string, error) {
+	bytes := make([]byte, length)
+
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+
+	return base64.URLEncoding.EncodeToString(bytes)[:length], nil
+}
 
 // ensureInRepo checks if we're in a git repository, and returns the repo root path.
 func ensureInRepo() (string, error) {
