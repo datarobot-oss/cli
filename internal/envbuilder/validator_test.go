@@ -1,3 +1,11 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
 package envbuilder
 
 import (
@@ -151,6 +159,7 @@ func TestBuildEffectiveValues(t *testing.T) {
 	t.Run("Environment variables override .env values", func(t *testing.T) {
 		// Set environment variable
 		os.Setenv("TEST_OVERRIDE", "from-env")
+
 		defer os.Unsetenv("TEST_OVERRIDE")
 
 		envValues := map[string]string{
@@ -469,6 +478,7 @@ func TestValidateCoreVariables(t *testing.T) {
 
 	t.Run("Environment variables override .env values", func(t *testing.T) {
 		os.Setenv("DATAROBOT_ENDPOINT", "https://env.datarobot.com")
+
 		defer os.Unsetenv("DATAROBOT_ENDPOINT")
 
 		effectiveValues := map[string]string{
