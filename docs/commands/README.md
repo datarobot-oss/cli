@@ -99,10 +99,13 @@ dr quickstart
 
 ```bash
 # Interactive wizard
-dr dotenv --wizard
+dr dotenv setup
 
 # Editor mode
-dr dotenv
+dr dotenv edit
+
+# Validate configuration
+dr dotenv validate
 ```
 
 ### Running tasks

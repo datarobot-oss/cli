@@ -281,7 +281,7 @@ find ~/.datarobot -name "*.yaml"
 export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 ```
 
-## See Also
+## See also
 
 - [Getting started](getting-started.md)&mdash;initial setup.
 - [Authentication](authentication.md)&mdash;managing credentials.

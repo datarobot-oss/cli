@@ -403,7 +403,7 @@ dr templates list > ~/.dr-templates-cache
 # Use cached list in custom completion script
 ```
 
-## See Also
+## See also
 
 - [Shell completion guide](../user-guide/shell-completions.md)&mdash;detailed setup instructions.
 - [Getting started](../user-guide/getting-started.md)&mdash;initial setup.

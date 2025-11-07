@@ -35,6 +35,11 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrRed)
 )
 
+const (
+	cursorStyle           = '•'
+	generatedSecretLength = 32
+)
+
 type item envbuilder.PromptOption
 
 func (i item) FilterValue() string {
@@ -94,7 +99,7 @@ func newTextInputPrompt(prompt envbuilder.UserPrompt, value string, successCmd t
 	// 2. Type is secret_string
 	// 3. No value is currently set
 	if value == "" && prompt.Generate && prompt.Type == envbuilder.PromptTypeSecret {
-		generatedSecret, err := generateRandomSecret(32)
+		generatedSecret, err := generateRandomSecret(generatedSecretLength)
 		if err == nil {
 			value = generatedSecret
 		}
@@ -107,7 +112,7 @@ func newTextInputPrompt(prompt envbuilder.UserPrompt, value string, successCmd t
 	// Mask the input if it's a secret
 	if prompt.Type == envbuilder.PromptTypeSecret {
 		ti.EchoMode = textinput.EchoPassword
-		ti.EchoCharacter = '•'
+		ti.EchoCharacter = cursorStyle
 	}
 
 	cmd := ti.Focus()
