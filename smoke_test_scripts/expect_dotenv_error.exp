@@ -12,6 +12,10 @@ expect {
         puts "\n✅ Assertion passed: dr dotenv setup correctly errors when not in a git repository."
         exit 0
     }
+    "No valid API key found" {
+        puts "\n❌ Assertion failed: Authentication flow started instead of git repository check."
+        exit 1
+    }
     timeout {
         puts "\n❌ Assertion failed: Expected error message about git repository not found (timeout)."
         exit 1
