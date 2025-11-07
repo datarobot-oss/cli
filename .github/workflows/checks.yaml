@@ -243,7 +243,7 @@ jobs:
           chmod +x /tmp/dr-bin/dr
           sudo mv /tmp/dr-bin/dr /usr/local/bin/dr
 
-      - name: Install expect
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
