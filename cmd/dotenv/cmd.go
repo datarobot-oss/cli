@@ -112,7 +112,7 @@ var SetupCmd = &cobra.Command{
 
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
-			return
+			os.Exit(1)
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
@@ -134,6 +134,7 @@ var SetupCmd = &cobra.Command{
 		_, err = p.Run()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
 		}
 	},
 }
@@ -148,12 +149,13 @@ var UpdateCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			return
+			os.Exit(1)
 		}
 
 		_, _, _, err = writeUsingTemplateFile(dotenv)
 		if err != nil {
 			log.Error(err)
+			os.Exit(1)
 		}
 	},
 }
@@ -164,7 +166,7 @@ var ValidateCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			return
+			os.Exit(1)
 		}
 
 		repoRoot := filepath.Dir(dotenv)

@@ -9,10 +9,8 @@ import (
 func TestValidationResult(t *testing.T) {
 	t.Run("Valid result", func(t *testing.T) {
 		result := ValidationResult{
-			Field:   "TEST_VAR",
-			Value:   "test-value",
-			Valid:   true,
-			Message: "variable is set",
+			Value: "test-value",
+			Valid: true,
 		}
 
 		if !result.Valid {
@@ -26,11 +24,8 @@ func TestValidationResult(t *testing.T) {
 
 	t.Run("Invalid result with help", func(t *testing.T) {
 		result := ValidationResult{
-			Field:   "MISSING_VAR",
-			Value:   "",
-			Valid:   false,
-			Message: "required variable is not set",
-			Help:    "This variable is required for authentication",
+			Valid: false,
+			Help:  "This variable is required for authentication",
 		}
 
 		if result.Valid {
@@ -462,15 +457,7 @@ func TestValidateCoreVariables(t *testing.T) {
 			t.Errorf("Expected 2 results, got %d", len(result.Results))
 		}
 
-		var tokenResult *ValidationResult
-
-		for i := range result.Results {
-			if result.Results[i].Field == "DATAROBOT_API_TOKEN" {
-				tokenResult = &result.Results[i]
-				break
-			}
-		}
-
+		tokenResult := findResultByField(result.Results, "DATAROBOT_API_TOKEN")
 		if tokenResult == nil {
 			t.Fatal("Expected DATAROBOT_API_TOKEN result")
 		}
@@ -495,15 +482,7 @@ func TestValidateCoreVariables(t *testing.T) {
 
 		validateCoreVariables(result, effectiveValues)
 
-		var endpointResult *ValidationResult
-
-		for i := range result.Results {
-			if result.Results[i].Field == "DATAROBOT_ENDPOINT" {
-				endpointResult = &result.Results[i]
-				break
-			}
-		}
-
+		endpointResult := findResultByField(result.Results, "DATAROBOT_ENDPOINT")
 		if endpointResult == nil {
 			t.Fatal("Expected DATAROBOT_ENDPOINT result")
 		}
@@ -514,34 +493,67 @@ func TestValidateCoreVariables(t *testing.T) {
 	})
 }
 
+// Helper function to find a result by field name
+func findResultByField(results []ValidationResult, field string) *ValidationResult {
+	for i := range results {
+		if results[i].Field == field {
+			return &results[i]
+		}
+	}
+
+	return nil
+}
+
 func TestValidateEnvironment_Integration(t *testing.T) {
-	t.Run("Returns error when GatherUserPrompts fails", func(t *testing.T) {
+	t.Run("Validates core variables even with empty prompts", func(t *testing.T) {
 		result := ValidateEnvironment("/nonexistent/path", map[string]string{})
 
-		if !result.HasErrors() {
-			t.Error("Expected validation to fail for nonexistent path")
-		}
-
-		if len(result.Results) == 0 {
-			t.Error("Expected at least one error result")
-		}
-
-		if result.Results[0].Field != "prompts" {
-			t.Error("Expected error about gathering prompts")
-		}
+		verifyEmptyPromptsValidation(t, result)
 	})
 
 	t.Run("Full validation with test data", func(t *testing.T) {
-		// Create a temporary directory with test prompts
-		tmpDir := t.TempDir()
+		tmpDir, envValues := setupTestEnvironment(t)
 
-		promptsDir := filepath.Join(tmpDir, "prompts")
-		if err := os.MkdirAll(promptsDir, 0755); err != nil {
-			t.Fatalf("Failed to create prompts dir: %v", err)
+		result := ValidateEnvironment(tmpDir, envValues)
+
+		verifyFullValidation(t, result)
+	})
+}
+
+func verifyEmptyPromptsValidation(t *testing.T, result EnvironmentValidationError) {
+	t.Helper()
+
+	if !result.HasErrors() {
+		t.Error("Expected validation to have errors for missing core variables")
+	}
+
+	if len(result.Results) != 2 {
+		t.Errorf("Expected 2 results for core variables, got %d", len(result.Results))
+	}
+
+	for _, r := range result.Results {
+		if r.Valid {
+			t.Errorf("Expected %s to be invalid (not set)", r.Field)
 		}
 
-		promptsFile := filepath.Join(promptsDir, "prompts.yaml")
-		promptsContent := `- section: test
+		if r.Field != "DATAROBOT_ENDPOINT" && r.Field != "DATAROBOT_API_TOKEN" {
+			t.Errorf("Unexpected field in results: %s", r.Field)
+		}
+	}
+}
+
+func setupTestEnvironment(t *testing.T) (string, map[string]string) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	promptsDir := filepath.Join(tmpDir, "prompts")
+	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
+		t.Fatalf("Failed to create prompts dir: %v", err)
+	}
+
+	promptsFile := filepath.Join(promptsDir, "prompts.yaml")
+	promptsContent := `- section: test
   prompts:
     - key: test-var
       env: TEST_VAR
@@ -549,27 +561,35 @@ func TestValidateEnvironment_Integration(t *testing.T) {
       optional: false
 `
 
-		if err := os.WriteFile(promptsFile, []byte(promptsContent), 0644); err != nil {
-			t.Fatalf("Failed to write prompts file: %v", err)
-		}
+	if err := os.WriteFile(promptsFile, []byte(promptsContent), 0o644); err != nil {
+		t.Fatalf("Failed to write prompts file: %v", err)
+	}
 
-		envValues := map[string]string{
-			"TEST_VAR":              "test-value",
-			"DATAROBOT_ENDPOINT":    "https://app.datarobot.com",
-			"DATAROBOT_API_TOKEN":   "token123",
-		}
+	envValues := map[string]string{
+		"TEST_VAR":            "test-value",
+		"DATAROBOT_ENDPOINT":  "https://app.datarobot.com",
+		"DATAROBOT_API_TOKEN": "token123",
+	}
 
-		result := ValidateEnvironment(tmpDir, envValues)
+	return tmpDir, envValues
+}
 
-		if result.HasErrors() {
-			t.Errorf("Expected no errors, got: %s", result.Error())
-		}
+func verifyFullValidation(t *testing.T, result EnvironmentValidationError) {
+	t.Helper()
 
-		// Should have results for TEST_VAR + 2 core variables
-		if len(result.Results) < 3 {
-			t.Errorf("Expected at least 3 results, got %d", len(result.Results))
+	if result.HasErrors() {
+		t.Errorf("Expected no errors, got: %s", result.Error())
+	}
+
+	if len(result.Results) < 2 {
+		t.Errorf("Expected at least 2 core variable results, got %d", len(result.Results))
+	}
+
+	for _, r := range result.Results {
+		if !r.Valid {
+			t.Errorf("Expected all results to be valid, but %s is invalid: %s", r.Field, r.Message)
 		}
-	})
+	}
 }
 
 func TestDetermineRequiredSections(t *testing.T) {
