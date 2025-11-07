@@ -76,14 +76,7 @@ expect ./smoke_test_scripts/expect_auth_login.exp
 # Test that `dr dotenv setup` errors when not in a git repository
 echo "Testing dr dotenv setup error handling (no git repo)..."
 export DATAROBOT_ENDPOINT=${testing_url}
-output=$(dr dotenv setup 2>&1 || true)
-if echo "$output" | grep -q "not inside a git repository"; then
-  echo "✅ Assertion passed: dr dotenv setup correctly errors when not in a git repository."
-else
-  echo "❌ Assertion failed: Expected error message about git repository not found."
-  echo "Output: $output"
-  exit 1
-fi
+expect ./smoke_test_scripts/expect_dotenv_error.exp
 
 # Test templates - Confirm expect script has cloned TTMDocs and that .env has expected value
 if [ "$url_accessible" -eq 0 ]; then

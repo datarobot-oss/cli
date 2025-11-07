@@ -1,0 +1,23 @@
+#!/usr/local/bin/expect -f
+# Test that dr dotenv setup errors when not in a git repository
+
+set env(TERM) dumb
+
+set timeout 5
+
+spawn dr dotenv setup
+
+expect {
+    "not inside a git repository" {
+        puts "\n✅ Assertion passed: dr dotenv setup correctly errors when not in a git repository."
+        exit 0
+    }
+    timeout {
+        puts "\n❌ Assertion failed: Expected error message about git repository not found (timeout)."
+        exit 1
+    }
+    eof {
+        puts "\n❌ Assertion failed: Command exited without expected error message."
+        exit 1
+    }
+}
