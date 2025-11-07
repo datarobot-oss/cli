@@ -59,12 +59,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y expect
+          sudo apt-get install -y expect bash-completion
 
       - name: MacOS - Install expect w/ homebrew
         if: matrix.os == 'macos-latest'
         run: |
-          brew install expect
+          brew install expect bash-completion
 
       - name: Install yq
         uses: dcarbone/install-yq-action@v1.3.1

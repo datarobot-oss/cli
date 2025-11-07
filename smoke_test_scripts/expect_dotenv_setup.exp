@@ -12,8 +12,14 @@ set env(TERM) dumb
 
 set timeout -1
 
-# Use TERM=dumb to prevent terminal color probing which causes OSC sequences
-set env(TERM) dumb
+# Get the directory argument (or use current directory if not provided)
+set test_dir [lindex $argv 0]
+if {$test_dir == ""} {
+    set test_dir "."
+}
+
+# Change to the test directory
+cd $test_dir
 
 spawn dr dotenv setup
 
