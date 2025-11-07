@@ -90,9 +90,11 @@ jobs:
         run: sudo mv ./dist/dr /usr/local/bin/dr
 
       - name: Run Smoke Tests
-        run: task smoke-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+        run: |
+          task smoke-test DR_API_TOKEN="$DR_API_TOKEN"
 
   windows-smoke-tests:
     needs: [build-windows, notify-start]
