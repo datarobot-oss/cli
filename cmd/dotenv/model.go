@@ -51,7 +51,7 @@ type Model struct {
 	initialScreen      screens
 	DotenvFile         string
 	DotenvTemplate     string
-	variables          []variable
+	variables          []envbuilder.Variable
 	err                error
 	textarea           textarea.Model
 	contents           string
@@ -68,7 +68,7 @@ type (
 	errMsg struct{ err error }
 
 	dotenvFileUpdatedMsg struct {
-		variables      []variable
+		variables      []envbuilder.Variable
 		contents       string
 		dotenvTemplate string
 		promptUser     bool
@@ -130,7 +130,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 func (m Model) saveEditedFile() tea.Cmd {
 	return func() tea.Msg {
 		lines := slices.Collect(strings.Lines(m.contents))
-		variables := parseVariablesOnly(lines)
+		variables := envbuilder.ParseVariables(lines)
 
 		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
 		if err != nil {
@@ -155,13 +155,13 @@ func (m Model) checkPromptsAvailable() bool {
 	return err == nil && len(userPrompts) > 0
 }
 
-func (m Model) findVariable(name string) (variable, bool) {
-	currentVariableIndex := slices.IndexFunc(m.variables, func(v variable) bool {
-		return v.name == name
+func (m Model) findVariable(name string) (envbuilder.Variable, bool) {
+	currentVariableIndex := slices.IndexFunc(m.variables, func(v envbuilder.Variable) bool {
+		return v.Name == name
 	})
 
 	if currentVariableIndex == -1 {
-		return variable{}, false
+		return envbuilder.Variable{}, false
 	}
 
 	return m.variables[currentVariableIndex], true
@@ -182,8 +182,8 @@ func (m Model) loadPrompts() tea.Cmd {
 			if ok {
 				prompt.Value = existingEnvValue
 			} else if v, found := m.findVariable(prompt.Env); found {
-				prompt.Value = v.value
-				prompt.Commented = v.commented
+				prompt.Value = v.Value
+				prompt.Commented = v.Commented
 			} else {
 				prompt.Value = prompt.Default
 			}
@@ -458,16 +458,16 @@ func (m Model) viewListScreen() string {
 	fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
 
 	for _, v := range m.variables {
-		if v.commented {
+		if v.Commented {
 			fmt.Fprintf(&content, "# ")
 		}
 
-		fmt.Fprintf(&content, "%s: ", v.name)
+		fmt.Fprintf(&content, "%s=", v.Name)
 
-		if v.secret {
+		if v.Secret {
 			fmt.Fprintf(&content, "***\n")
 		} else {
-			fmt.Fprintf(&content, "%s\n", v.value)
+			fmt.Fprintf(&content, "%s\n", v.Value)
 		}
 	}
 
