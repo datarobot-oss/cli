@@ -3,6 +3,11 @@
 # Be sure to get DR_API_TOKEN from args
 args=("$@")
 DR_API_TOKEN=${args[0]}
+if [[ -z "$DR_API_TOKEN" ]]; then
+  echo "❌ The variable 'DR_API_TOKEN' must be supplied as arg."
+  exit 1
+fi
+
 export TERM="dumb"
 
 # Used throughout testing
