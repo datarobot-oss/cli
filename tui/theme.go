@@ -25,6 +25,8 @@ const (
 var (
 	BaseTextStyle = lipgloss.NewStyle().Foreground(DrPurple)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
+	InfoStyle     = lipgloss.NewStyle().Foreground(DrPurpleLight).Bold(true)
+	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	// Specific UI styles
 	LogoStyle     = BaseTextStyle
