@@ -63,8 +63,8 @@ var EditCmd = &cobra.Command{
 
 		dotenvFile := filepath.Join(cwd, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		// Use ParseVariables to avoid auto-populating values during manual editing
-		variables := envbuilder.ParseVariables(templateLines)
+		// Use ParseVariablesOnly to avoid auto-populating values during manual editing
+		variables := envbuilder.ParseVariablesOnly(templateLines)
 		contents := strings.Join(templateLines, "")
 
 		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
@@ -174,7 +174,7 @@ var ValidateCmd = &cobra.Command{
 		templateLines, _ := readTemplate(dotenv)
 
 		// Parse variables from .env file
-		parsedVars := envbuilder.ParseVariables(templateLines)
+		parsedVars := envbuilder.ParseVariablesOnly(templateLines)
 
 		// Validate using envbuilder
 		result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)

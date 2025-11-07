@@ -37,10 +37,10 @@ func (v *Variable) String() string {
 	return v.Name + "=" + v.Value + "\n"
 }
 
-// ParseVariables parses variables from template lines without attempting to auto-populate them.
+// ParseVariablesOnly parses variables from template lines without attempting to auto-populate them.
 // This is used when parsing .env files to extract variable names and values.
 // Commented lines (starting with #) are marked as such.
-func ParseVariables(templateLines []string) []Variable {
+func ParseVariablesOnly(templateLines []string) []Variable {
 	variables := make([]Variable, 0)
 
 	for _, templateLine := range templateLines {

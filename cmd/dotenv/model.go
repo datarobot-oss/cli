@@ -129,7 +129,7 @@ func (m Model) saveEnvFile() tea.Cmd {
 func (m Model) saveEditedFile() tea.Cmd {
 	return func() tea.Msg {
 		lines := slices.Collect(strings.Lines(m.contents))
-		variables := envbuilder.ParseVariables(lines)
+		variables := envbuilder.ParseVariablesOnly(lines)
 
 		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
 		if err != nil {
