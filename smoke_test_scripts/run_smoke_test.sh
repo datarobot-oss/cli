@@ -73,21 +73,15 @@ fi
 echo "Testing dr auth login..."
 expect ./smoke_test_scripts/expect_auth_login.exp
 
-# Used to test `dr dotenv setup`
+# Test that `dr dotenv setup` errors when not in a git repository
+echo "Testing dr dotenv setup error handling (no git repo)..."
 export DATAROBOT_ENDPOINT=${testing_url}
-
-# Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://app.datarobot.com"
-# The expect script "hits" the `e` key, then `ctrl-s` and finally `enter` (via carriage return/newline)
-expect ./smoke_test_scripts/expect_dotenv_setup.exp
-# Check if we have the value correctly set
-endpoint_check=$(cat .env | grep DATAROBOT_ENDPOINT=${testing_url}/api/v2)
-if [[ -n "$endpoint_check" ]]; then
-  echo "✅ Assertion passed: We have expected DATAROBOT_ENDPOINT value (${testing_url}/api/v2) in created .env file."
-  echo "Value: $endpoint_check"
+output=$(dr dotenv setup 2>&1 || true)
+if echo "$output" | grep -q "not inside a git repository"; then
+  echo "✅ Assertion passed: dr dotenv setup correctly errors when not in a git repository."
 else
-  echo "❌ Assertion failed: We don't have expected DATAROBOT_ENDPOINT value in created .env file."
-  # Print .env (if it exists) to aid in debugging if needed
-  cat .env
+  echo "❌ Assertion failed: Expected error message about git repository not found."
+  echo "Output: $output"
   exit 1
 fi
 
@@ -106,15 +100,35 @@ else
     exit 1
   fi
   cd $DIRECTORY
+
+  # Validate the SESSION_SECRET_KEY set during templates setup
   session_secret_key_check=$(cat .env | grep SESSION_SECRET_KEY=${testing_session_secret_key})
   if [[ -n "$session_secret_key_check" ]]; then
     echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
   else
     echo "❌ Assertion failed: We don't have expected SESSION_SECRET_KEY value in created .env file."
-    # Print .env (if it exists) to aid in debugging if needed
     cat .env
     exit 1
   fi
+
+  # Now test dr dotenv setup within the template directory
+  echo "Testing dr dotenv setup within template directory..."
+  export DATAROBOT_ENDPOINT=${testing_url}
+  expect ../smoke_test_scripts/expect_dotenv_setup.exp "."
+
+  # Validate DATAROBOT_ENDPOINT was added/updated
+  endpoint_check=$(cat .env | grep DATAROBOT_ENDPOINT=${testing_url}/api/v2)
+  if [[ -n "$endpoint_check" ]]; then
+    echo "✅ Assertion passed: dr dotenv setup correctly updated DATAROBOT_ENDPOINT in template .env file."
+    echo "Value: $endpoint_check"
+  else
+    echo "❌ Assertion failed: DATAROBOT_ENDPOINT not found or incorrect in .env file."
+    cat .env
+    cd ..
+    rm -rf $DIRECTORY
+    exit 1
+  fi
+
   # Now delete directory to clean up
   cd ..
   rm -rf $DIRECTORY

@@ -61,7 +61,7 @@ jobs:
 
   notify-results:
     needs: [installation-tests]
-    if: always()
+    if: always() && needs.installation-tests.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
