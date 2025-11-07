@@ -10,7 +10,6 @@ package dotenv
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -155,18 +154,6 @@ func (m Model) checkPromptsAvailable() bool {
 	return err == nil && len(userPrompts) > 0
 }
 
-func (m Model) findVariable(name string) (envbuilder.Variable, bool) {
-	currentVariableIndex := slices.IndexFunc(m.variables, func(v envbuilder.Variable) bool {
-		return v.Name == name
-	})
-
-	if currentVariableIndex == -1 {
-		return envbuilder.Variable{}, false
-	}
-
-	return m.variables[currentVariableIndex], true
-}
-
 func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
@@ -176,20 +163,7 @@ func (m Model) loadPrompts() tea.Cmd {
 			return errMsg{err}
 		}
 
-		for p, prompt := range userPrompts {
-			// Capture existing env var values
-			existingEnvValue, ok := os.LookupEnv(prompt.Env)
-			if ok {
-				prompt.Value = existingEnvValue
-			} else if v, found := m.findVariable(prompt.Env); found {
-				prompt.Value = v.Value
-				prompt.Commented = v.Commented
-			} else {
-				prompt.Value = prompt.Default
-			}
-
-			userPrompts[p] = prompt
-		}
+		userPrompts = envbuilder.PromptsWithValues(userPrompts, m.variables)
 
 		return promptsLoadedMsg{userPrompts}
 	}

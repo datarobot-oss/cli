@@ -20,7 +20,7 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-func handleExtraEnvVars(variables envbuilder.Variables) bool {
+func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
 		log.Fatalf("Error determining repo root: %v", err)
@@ -30,6 +30,8 @@ func handleExtraEnvVars(variables envbuilder.Variables) bool {
 	if err != nil {
 		log.Fatalf("Error gathering user prompts: %v", err)
 	}
+
+	userPrompts = envbuilder.PromptsWithValues(userPrompts, variables)
 
 	// Create a new empty string set
 	existingEnvVarsSet := make(map[string]struct{})
