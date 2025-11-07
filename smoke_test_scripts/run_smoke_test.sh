@@ -78,8 +78,10 @@ echo "Testing dr dotenv setup error handling (no git repo)..."
 export DATAROBOT_ENDPOINT=${testing_url}
 # Create a temporary directory that is NOT a git repo
 temp_test_dir=$(mktemp -d)
+# Save the script path before changing directory
+script_dir="$(pwd)/smoke_test_scripts"
 cd "$temp_test_dir"
-expect "$(pwd)/../smoke_test_scripts/expect_dotenv_error.exp"
+expect "$script_dir/expect_dotenv_error.exp"
 cd -
 rm -rf "$temp_test_dir"
 
