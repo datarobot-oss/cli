@@ -483,7 +483,7 @@ git push --tags
 # 4. Upload binaries
 ```
 
-## See Also
+## See also
 
 - [Contributing Guide](../../CONTRIBUTING.md)
 - [Architecture Details](architecture.md)

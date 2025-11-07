@@ -77,7 +77,7 @@ The interactive wizard guides you through configuration:
 
 ```bash
 # In a template directory
-dr dotenv --wizard
+dr dotenv setup
 ```
 
 or
@@ -144,7 +144,7 @@ Press enter to finish and exit.
 Interactive configuration with prompts:
 
 ```bash
-dr dotenv --wizard
+dr dotenv setup
 ```
 
 **Advantages:**
@@ -158,7 +158,7 @@ dr dotenv --wizard
 Edit the file directly:
 
 ```bash
-dr dotenv
+dr dotenv edit
 # Press 'e' to enter editor mode
 
 # Or use external editor
@@ -207,23 +207,49 @@ Enable debug mode? (optional)
 
 ### Secret Variables
 
-Automatically detected by name patterns:
-- `*PASSWORD*`
-- `*SECRET*`
-- `*KEY*`
-- `*TOKEN*`
+Sensitive values that should be masked during input and display.
 
-**Displayed as masked:**
-```
-DATAROBOT_API_TOKEN: ***
-DATABASE_PASSWORD: ***
-JWT_SECRET: ***
+**Defining secret variables:**
+
+```yaml
+# In .datarobot/prompts.yaml
+prompts:
+  - key: "api_key"
+    env: "API_KEY"
+    type: "secret_string"
+    help: "Enter your API key"
 ```
 
-**Editor shows values:**
+**Auto-detection:** Variables with names containing `PASSWORD`, `SECRET`, `KEY`, or `TOKEN` are automatically treated as secrets.
+
+**Display behavior:**
+- Wizard input is masked with bullet characters (••••).
+- Editor view shows as `***`.
+- Actual file contains plain text value.
+
+**Security best practices:**
+- Always add `.env` to `.gitignore`.
+- Use `secret_string` type for all sensitive values.
+- Never commit `.env` files to version control.
+
+### Auto-generated Secrets
+
+Cryptographically secure random values for application secrets:
+
+```yaml
+prompts:
+  - key: "session_secret"
+    env: "SESSION_SECRET"
+    type: "secret_string"
+    generate: true
+    help: "Session encryption key (auto-generated)"
 ```
-DATAROBOT_API_TOKEN=abc123def456...█
-```
+
+**Features:**
+- Generates 32-character random string if no value exists.
+- Uses base64 URL-safe encoding.
+- Preserves existing values (only generates when empty).
+- User can override with custom value.
 
 ### Conditional Variables
 
@@ -430,9 +456,59 @@ api_token = os.getenv("DATAROBOT_API_TOKEN")
 
 ## Validation
 
+### Using dr dotenv validate
+
+Validate your environment configuration against template requirements:
+
+```bash
+dr dotenv validate
+```
+
+**Validates:**
+- All required variables defined in `.datarobot/prompts.yaml`.
+- Core DataRobot variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`).
+- Conditional requirements based on selected options.
+- Both `.env` file and environment variables.
+
+**Example output:**
+
+Successful validation:
+```
+Validating required variables:
+  APP_NAME: my-app
+  DATAROBOT_ENDPOINT: https://app.datarobot.com
+  DATAROBOT_API_TOKEN: ***
+  DATABASE_URL: postgresql://localhost:5432/db
+
+Validation passed: all required variables are set.
+```
+
+Validation errors:
+```
+Validating required variables:
+  APP_NAME: my-app
+  DATAROBOT_ENDPOINT: https://app.datarobot.com
+
+Validation errors:
+
+Error: required variable DATAROBOT_API_TOKEN is not set
+  Description: DataRobot API token for authentication
+  Set this variable in your .env file or run `dr dotenv setup` to configure it.
+
+Error: required variable DATABASE_URL is not set
+  Description: PostgreSQL database connection string
+  Set this variable in your .env file or run `dr dotenv setup` to configure it.
+```
+
+**Use cases:**
+- Pre-flight checks before running tasks.
+- CI/CD pipeline validation.
+- Debugging missing configuration.
+- Troubleshooting application startup issues.
+
 ### Required Variables Check
 
-The CLI validates that required variables are set:
+Commands like `dr run` automatically validate required variables:
 
 ```bash
 $ dr run dev
@@ -440,7 +516,7 @@ Error: Missing required environment variables:
   - APP_NAME
   - DATAROBOT_API_TOKEN
 
-Please run: dr dotenv --wizard
+Please run: dr dotenv setup
 ```
 
 ### Format Validation
@@ -556,8 +632,60 @@ API_URL=${BASE_URL}/api
 API_URL=$BASE_URL/api  # Missing braces
 ```
 
-## See Also
+### Configuration Not Working
 
-- [Interactive Configuration](../template-system/interactive-config.md) - Configuration wizard
-- [Template Structure](../template-system/structure.md) - Template organization
-- [dotenv command](../commands/dotenv.md) - dotenv command reference
+Use `dr dotenv validate` to diagnose issues:
+
+```bash
+# Validate configuration
+dr dotenv validate
+
+# If validation passes but issues persist, check:
+# 1. Environment variables override .env
+env | grep DATAROBOT
+
+# 2. Ensure .env is in correct location (repository root)
+pwd
+ls -la .env
+
+# 3. Check if application is loading .env file
+# Some applications need explicit .env loading
+```
+
+## Common workflows
+
+### Initial setup
+
+```bash
+cd my-template
+dr dotenv setup
+dr dotenv validate
+dr run dev
+```
+
+### Update credentials
+
+```bash
+dr auth login
+dr dotenv update
+dr dotenv validate
+```
+
+### Validate before deployment
+
+```bash
+dr dotenv validate && dr run deploy
+```
+
+### Edit and validate
+
+```bash
+dr dotenv edit
+dr dotenv validate
+```
+
+## See also
+
+- [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
+- [Template structure](structure.md)&mdash;template organization.
+- [dotenv command](../commands/dotenv.md)&mdash;dotenv command reference.

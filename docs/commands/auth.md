@@ -385,7 +385,7 @@ export DATAROBOT_VERIFY_SSL=false
 dr auth login
 ```
 
-## See Also
+## See also
 
 - [Getting Started](../user-guide/getting-started.md) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details

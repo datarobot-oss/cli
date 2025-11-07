@@ -15,8 +15,10 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -35,6 +37,7 @@ func Cmd() *cobra.Command {
 		EditCmd,
 		SetupCmd,
 		UpdateCmd,
+		ValidateCmd,
 	)
 
 	return cmd
@@ -97,7 +100,7 @@ var SetupCmd = &cobra.Command{
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	Run: func(cmd *cobra.Command, _ []string) {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
@@ -107,12 +110,11 @@ var SetupCmd = &cobra.Command{
 			defer f.Close()
 		}
 
-		cwd, err := os.Getwd()
+		repositoryRoot, err := ensureInRepo()
 		if err != nil {
-			return err
+			os.Exit(1)
 		}
-
-		dotenvFile := filepath.Join(cwd, ".env")
+		dotenvFile := filepath.Join(repositoryRoot, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
 		variables, contents, _ := variablesFromTemplate(templateLines)
 
@@ -130,8 +132,10 @@ var SetupCmd = &cobra.Command{
 			tea.WithContext(cmd.Context()),
 		)
 		_, err = p.Run()
-
-		return err
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -143,11 +147,81 @@ var UpdateCmd = &cobra.Command{
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	Run: func(_ *cobra.Command, _ []string) {
-		dotenvFile := ".env"
+		dotenv, err := ensureInRepoWithDotenv()
+		if err != nil {
+			os.Exit(1)
+		}
 
-		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		_, _, _, err = writeUsingTemplateFile(dotenv)
 		if err != nil {
 			log.Error(err)
+			os.Exit(1)
 		}
+	},
+}
+
+var ValidateCmd = &cobra.Command{
+	Use:   "validate",
+	Short: "Validate .env and environment variable configuration against required settings",
+	Run: func(_ *cobra.Command, _ []string) {
+		dotenv, err := ensureInRepoWithDotenv()
+		if err != nil {
+			os.Exit(1)
+		}
+
+		repoRoot := filepath.Dir(dotenv)
+
+		templateLines, _ := readTemplate(dotenv)
+
+		// Parse variables from .env file
+		parsedVars := envbuilder.ParseVariables(templateLines)
+
+		envValues := make(map[string]string)
+
+		for _, v := range parsedVars {
+			if v.Name != "" && !v.Commented {
+				envValues[v.Name] = v.Value
+			}
+		}
+
+		// Validate using envbuilder
+		result := envbuilder.ValidateEnvironment(repoRoot, envValues)
+
+		// Display results with styling
+		varStyle := lipgloss.NewStyle().Foreground(tui.DrPurple).Bold(true)
+		valueStyle := lipgloss.NewStyle().Foreground(tui.DrGreen)
+
+		// First, show all valid variables
+		fmt.Println("\nValidating required variables:")
+
+		for _, valResult := range result.Results {
+			if valResult.Valid {
+				fmt.Printf("  %s: %s\n",
+					varStyle.Render(valResult.Field),
+					valueStyle.Render(valResult.Value))
+			}
+		}
+
+		// Then, show errors if any
+		if result.HasErrors() {
+			fmt.Println("\nValidation errors:")
+
+			for _, valResult := range result.Results {
+				if !valResult.Valid {
+					fmt.Printf("\n%s: required variable %s is not set\n",
+						tui.ErrorStyle.Render("Error"), varStyle.Render(valResult.Field))
+
+					if valResult.Help != "" {
+						fmt.Printf("  Description: %s\n", valResult.Help)
+					}
+
+					fmt.Println("  Set this variable in your .env file or run `dr dotenv setup` to configure it.")
+				}
+			}
+
+			os.Exit(1)
+		}
+
+		fmt.Println("\nValidation passed: all required variables are set.")
 	},
 }

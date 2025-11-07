@@ -24,7 +24,6 @@ import (
 
 const (
 	// File extensions and suffixes
-	backupSuffix   = ".backup."
 	sampleSuffix   = ".sample"
 	templateSuffix = ".template"
 

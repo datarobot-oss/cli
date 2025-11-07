@@ -375,7 +375,7 @@ dr templates setup
 
 # Or configure existing template
 cd my-template
-dr dotenv --wizard
+dr dotenv setup
 ```
 
 ### 4. Development
@@ -393,7 +393,7 @@ dr run test
 dr run build
 ```
 
-**Note:** All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv --wizard` to create your `.env` file.
+**Note:** All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv setup` to create your `.env` file.
 
 ### 5. Deployment
 
@@ -554,7 +554,7 @@ dr templates status
 git pull origin main
 
 # Re-run configuration if needed
-dr dotenv --wizard
+dr dotenv setup
 ```
 
 ## Creating your own template

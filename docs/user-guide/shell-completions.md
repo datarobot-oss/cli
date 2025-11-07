@@ -438,7 +438,7 @@ dr completion fish > ~/.config/fish/completions/dr.fish
 dr completion powershell > $PROFILE
 ```
 
-## See Also
+## See also
 
 - [Getting started](getting-started.md)&mdash;initial setup guide.
 - [Command reference](../commands/)&mdash;complete command documentation.

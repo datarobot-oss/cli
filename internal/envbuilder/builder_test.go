@@ -79,3 +79,45 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	suite.Contains(roots[0], ".datarobot/another_parakeet.yaml:root")
 	suite.Contains(roots[1], ".datarobot/parakeet.yaml:root")
 }
+
+func (suite *BuilderTestSuite) TestUserPromptTypeDeserialization() {
+	yamlContent := `
+root:
+  - key: test-string
+    env: TEST_STRING
+    type: string
+    help: A string type
+  - key: test-secret
+    env: TEST_SECRET
+    type: secret_string
+    help: A secret string type
+  - key: test-boolean
+    env: TEST_BOOLEAN
+    type: boolean
+    help: A boolean type
+  - key: test-unknown
+    env: TEST_UNKNOWN
+    type: some_unknown_type
+    help: An unknown type
+`
+
+	// Create a temporary YAML file
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_types.yaml")
+	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
+	suite.Require().NoError(err)
+
+	// Parse the file
+	prompts, _, err := filePrompts(tmpFile)
+	suite.Require().NoError(err)
+	suite.Require().Len(prompts, 4, "Expected 4 prompts")
+
+	// Verify that Type field is preserved exactly as specified in YAML
+	suite.Equal(PromptTypeString, prompts[0].Type, "Known types work")
+	suite.Equal(PromptTypeSecret, prompts[1].Type, "Known types work")
+	suite.NotEqual(PromptTypeSecret, prompts[0].Type, "Not equal works")
+	suite.NotEqual(PromptTypeSecret, prompts[2].Type, "Not equal works")
+	suite.Equal(PromptType("string"), prompts[0].Type, "String type should be preserved")
+	suite.Equal(PromptType("secret_string"), prompts[1].Type, "Secret string type should be preserved")
+	suite.Equal(PromptType("boolean"), prompts[2].Type, "Boolean type should be preserved")
+	suite.Equal(PromptType("some_unknown_type"), prompts[3].Type, "Unknown type should be preserved")
+}
