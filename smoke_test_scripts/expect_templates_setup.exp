@@ -8,14 +8,14 @@ set env(TERM) dumb
 # Debug: Print the config path
 puts "DATAROBOT_CLI_CONFIG: $env(DATAROBOT_CLI_CONFIG)"
 
-spawn dr templates setup
+spawn dr templates setup --config $env(DATAROBOT_CLI_CONFIG)
 
 # Handle potential authentication prompt with longer timeout
 set timeout 10
 expect {
     "to connect your DataRobot credentials" {
         # Auth prompt appeared - this means token validation failed
-        puts "ERROR: Authentication required - token may be invalid or config not found"
+        puts "\nERROR: Authentication required - token may be invalid or config not found"
         puts "Config path: $env(DATAROBOT_CLI_CONFIG)"
         exit 1
     }
