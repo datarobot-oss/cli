@@ -62,7 +62,7 @@ func (suite *BuilderTestSuite) SetupTest() {
 }
 
 func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
-	prompts, _, err := GatherUserPrompts(suite.tempDir)
+	prompts, err := GatherUserPrompts(suite.tempDir, nil)
 	suite.Require().NoError(err)
 
 	suite.Len(prompts, 6, "Expected to find 6 UserPrompt entries")
@@ -113,7 +113,7 @@ root:
 	suite.Require().NoError(err)
 
 	// Parse the file
-	prompts, _, err := filePrompts(tmpFile)
+	prompts, err := filePrompts(tmpFile)
 	suite.Require().NoError(err)
 	suite.Require().Len(prompts, 4, "Expected 4 prompts")
 

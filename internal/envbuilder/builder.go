@@ -95,55 +95,55 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
-func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
+func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to discover task yaml files: %w", err)
+		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
 	}
 
 	if len(yamlFiles) == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	allPrompts := make([]UserPrompt, 0)
-	allRootKeys := make([]string, 0)
 
 	for _, yamlFile := range yamlFiles {
-		prompts, roots, err := filePrompts(yamlFile)
+		prompts, err := filePrompts(yamlFile)
 		if err != nil {
 			log.Debug(err)
 			continue
 		}
 
 		allPrompts = append(allPrompts, prompts...)
-		allRootKeys = append(allRootKeys, roots...)
 	}
 
-	return allPrompts, allRootKeys, nil
+	allPrompts = promptsWithValues(allPrompts, variables)
+	allPrompts = determineRequiredSections(allPrompts)
+
+	return allPrompts, nil
 }
 
-func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
+func filePrompts(yamlFile string) ([]UserPrompt, error) {
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
+		return nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
 	}
 
 	var fileParsed ParsedYaml
 
 	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
+		return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
 	}
 
 	roots := rootSections(fileParsed)
 	prompts := promptsSorted(fileParsed, roots)
 
-	for i, root := range roots {
-		roots[i] = yamlFile + ":" + root
-	}
-
 	for p := range prompts {
+		if slices.Contains(roots, prompts[p].Section) {
+			prompts[p].Active = true
+		}
+
 		prompts[p].Section = yamlFile + ":" + prompts[p].Section
-		prompts[p].Active = slices.Contains(roots, prompts[p].Section)
 
 		for o := range prompts[p].Options {
 			if prompts[p].Options[o].Requires != "" {
@@ -156,7 +156,7 @@ func filePrompts(yamlFile string) ([]UserPrompt, []string, error) {
 		}
 	}
 
-	return prompts, roots, nil
+	return prompts, nil
 }
 
 func promptsSorted(fileParsed ParsedYaml, sections []string) []UserPrompt {
@@ -168,7 +168,7 @@ func promptsSorted(fileParsed ParsedYaml, sections []string) []UserPrompt {
 
 			sortedPrompts = append(sortedPrompts, prompt)
 
-			requiredPrompts := promptsSorted(fileParsed, requiredSections(prompt))
+			requiredPrompts := promptsSorted(fileParsed, childSections(prompt))
 			sortedPrompts = append(sortedPrompts, requiredPrompts...)
 		}
 	}
@@ -176,11 +176,13 @@ func promptsSorted(fileParsed ParsedYaml, sections []string) []UserPrompt {
 	return sortedPrompts
 }
 
+// rootSections is used only for determining sort order of prompts.
+// Use determineRequiredSections to determine whether given section is required.
 func rootSections(fileParsed ParsedYaml) []string {
-	keys := make(map[string]bool)
+	keys := make(map[string]struct{})
 
 	for key := range maps.Keys(fileParsed) {
-		keys[key] = true
+		keys[key] = struct{}{}
 	}
 
 	for _, prompts := range fileParsed {
@@ -194,7 +196,9 @@ func rootSections(fileParsed ParsedYaml) []string {
 	return slices.Sorted(maps.Keys(keys))
 }
 
-func requiredSections(prompt UserPrompt) []string {
+// childSections is used only for determining sort order of prompts.
+// Use determineRequiredSections to determine whether given section is required.
+func childSections(prompt UserPrompt) []string {
 	keys := make([]string, 0, len(prompt.Options))
 
 	for _, option := range prompt.Options {

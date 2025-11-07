@@ -149,7 +149,7 @@ func (m Model) checkPromptsAvailable() bool {
 	// Check if prompts exist by attempting to gather them
 	currentDir := filepath.Dir(m.DotenvFile)
 
-	userPrompts, _, err := envbuilder.GatherUserPrompts(currentDir)
+	userPrompts, err := envbuilder.GatherUserPrompts(currentDir, nil)
 
 	return err == nil && len(userPrompts) > 0
 }
@@ -158,12 +158,10 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, _, err := envbuilder.GatherUserPrompts(currentDir)
+		userPrompts, err := envbuilder.GatherUserPrompts(currentDir, m.variables)
 		if err != nil {
 			return errMsg{err}
 		}
-
-		userPrompts = envbuilder.PromptsWithValues(userPrompts, m.variables)
 
 		return promptsLoadedMsg{userPrompts}
 	}

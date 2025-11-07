@@ -11,6 +11,7 @@ package envbuilder
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -133,11 +134,11 @@ func TestEnvironmentValidationError_Error(t *testing.T) {
 	})
 }
 
-func TestBuildEffectiveValues(t *testing.T) {
+func TestPromptsWithValues(t *testing.T) {
 	t.Run("Merges .env values", func(t *testing.T) {
-		envValues := map[string]string{
-			"VAR1": "value1",
-			"VAR2": "value2",
+		variables := []Variable{
+			{Name: "VAR1", Value: "value1"},
+			{Name: "VAR2", Value: "value2"},
 		}
 
 		prompts := []UserPrompt{
@@ -145,14 +146,14 @@ func TestBuildEffectiveValues(t *testing.T) {
 			{Env: "VAR2"},
 		}
 
-		result := buildEffectiveValues(envValues, prompts)
+		result := promptsWithValues(prompts, variables)
 
-		if result["VAR1"] != "value1" {
-			t.Errorf("Expected VAR1 to be 'value1', got '%s'", result["VAR1"])
+		if result[0].Value != "value1" {
+			t.Errorf("Expected VAR1 to be 'value1', got '%s'", result[0].Value)
 		}
 
-		if result["VAR2"] != "value2" {
-			t.Errorf("Expected VAR2 to be 'value2', got '%s'", result["VAR2"])
+		if result[1].Value != "value2" {
+			t.Errorf("Expected VAR2 to be 'value2', got '%s'", result[1].Value)
 		}
 	})
 
@@ -162,62 +163,18 @@ func TestBuildEffectiveValues(t *testing.T) {
 
 		defer os.Unsetenv("TEST_OVERRIDE")
 
-		envValues := map[string]string{
-			"TEST_OVERRIDE": "from-dotenv",
+		variables := []Variable{
+			{Name: "TEST_OVERRIDE", Value: "from-dotenv"},
 		}
 
 		prompts := []UserPrompt{
 			{Env: "TEST_OVERRIDE"},
 		}
 
-		result := buildEffectiveValues(envValues, prompts)
+		result := promptsWithValues(prompts, variables)
 
-		if result["TEST_OVERRIDE"] != "from-env" {
-			t.Errorf("Expected TEST_OVERRIDE to be overridden to 'from-env', got '%s'", result["TEST_OVERRIDE"])
-		}
-	})
-
-	t.Run("Skips prompts without Env field", func(t *testing.T) {
-		envValues := map[string]string{
-			"VAR1": "value1",
-		}
-
-		prompts := []UserPrompt{
-			{Env: "VAR1"},
-			{Key: "some-key"}, // No Env field
-		}
-
-		result := buildEffectiveValues(envValues, prompts)
-
-		if len(result) != 1 {
-			t.Errorf("Expected 1 value, got %d", len(result))
-		}
-	})
-}
-
-func TestGetEnvKey(t *testing.T) {
-	t.Run("Returns Env when present", func(t *testing.T) {
-		prompt := UserPrompt{
-			Env: "MY_VAR",
-			Key: "my-key",
-		}
-
-		key := getEnvKey(prompt)
-
-		if key != "MY_VAR" {
-			t.Errorf("Expected 'MY_VAR', got '%s'", key)
-		}
-	})
-
-	t.Run("Returns commented Key when Env is empty", func(t *testing.T) {
-		prompt := UserPrompt{
-			Key: "my-key",
-		}
-
-		key := getEnvKey(prompt)
-
-		if key != "# my-key" {
-			t.Errorf("Expected '# my-key', got '%s'", key)
+		if result[0].Value != "from-env" {
+			t.Errorf("Expected TEST_OVERRIDE to be overridden to 'from-env', got '%s'", result[0].Value)
 		}
 	})
 }
@@ -262,25 +219,23 @@ func TestIsOptionSelected(t *testing.T) {
 	})
 }
 
-func TestEnableRequiredSections(t *testing.T) {
+func TestGetRequiredSections(t *testing.T) {
 	t.Run("No options does nothing", func(t *testing.T) {
 		prompt := UserPrompt{
+			Value:   "value",
 			Options: []PromptOption{},
 		}
 
-		requiredSections := map[string]bool{
-			"root": true,
-		}
+		sections := getRequiredSections(prompt)
 
-		enableRequiredSections(prompt, "value", requiredSections)
-
-		if len(requiredSections) != 1 {
-			t.Error("Expected no changes to requiredSections")
+		if len(sections) != 0 {
+			t.Error("Expected no required sections")
 		}
 	})
 
-	t.Run("Enables section when option is selected", func(t *testing.T) {
+	t.Run("Returns section when option is selected", func(t *testing.T) {
 		prompt := UserPrompt{
+			Value: "yes",
 			Options: []PromptOption{
 				{
 					Name:     "Enable Feature",
@@ -290,19 +245,16 @@ func TestEnableRequiredSections(t *testing.T) {
 			},
 		}
 
-		requiredSections := map[string]bool{
-			"root": true,
-		}
+		sections := getRequiredSections(prompt)
 
-		enableRequiredSections(prompt, "yes", requiredSections)
-
-		if !requiredSections["feature-section"] {
+		if !slices.Contains(sections, "feature-section") {
 			t.Error("Expected feature-section to be enabled")
 		}
 	})
 
 	t.Run("Multiple selections enable multiple sections", func(t *testing.T) {
 		prompt := UserPrompt{
+			Value: "opt1,opt2,opt3",
 			Options: []PromptOption{
 				{Value: "opt1", Requires: "section1"},
 				{Value: "opt2", Requires: "section2"},
@@ -310,17 +262,13 @@ func TestEnableRequiredSections(t *testing.T) {
 			},
 		}
 
-		requiredSections := map[string]bool{
-			"root": true,
-		}
+		sections := getRequiredSections(prompt)
 
-		enableRequiredSections(prompt, "opt1,opt2,opt3", requiredSections)
-
-		if !requiredSections["section1"] {
+		if !slices.Contains(sections, "section1") {
 			t.Error("Expected section1 to be enabled")
 		}
 
-		if !requiredSections["section2"] {
+		if !slices.Contains(sections, "section2") {
 			t.Error("Expected section2 to be enabled")
 		}
 	})
@@ -342,7 +290,7 @@ func TestValidatePrompts(t *testing.T) {
 			},
 		}
 
-		prompts = PromptsWithValues(prompts, []Variable{
+		prompts = promptsWithValues(prompts, []Variable{
 			{Name: "REQUIRED_VAR", Value: "value"},
 		})
 
@@ -588,28 +536,33 @@ func verifyFullValidation(t *testing.T, result EnvironmentValidationError) {
 	}
 }
 
-func TestDetermineRequiredSections(t *testing.T) {
+func TestRootSections(t *testing.T) {
 	t.Run("Initializes with root sections", func(t *testing.T) {
-		prompts := []UserPrompt{}
-		rootSections := []string{"root1", "root2"}
-		effectiveValues := map[string]string{}
+		fileParsed := ParsedYaml{
+			"root1": {},
+			"root2": {},
+		}
 
-		result := determineRequiredSections(prompts, rootSections, effectiveValues)
+		result := rootSections(fileParsed)
 
-		if !result["root1"] {
+		if !slices.Contains(result, "root1") {
 			t.Error("Expected root1 to be required")
 		}
 
-		if !result["root2"] {
+		if !slices.Contains(result, "root2") {
 			t.Error("Expected root2 to be required")
 		}
 	})
+}
 
+func TestDetermineRequiredSections(t *testing.T) {
 	t.Run("Enables dependent sections based on option selection", func(t *testing.T) {
 		prompts := []UserPrompt{
 			{
 				Section: "root",
 				Env:     "FEATURE_TOGGLE",
+				Active:  true,
+				Value:   "yes",
 				Options: []PromptOption{
 					{
 						Name:     "Enable",
@@ -618,20 +571,16 @@ func TestDetermineRequiredSections(t *testing.T) {
 					},
 				},
 			},
+			{Section: "feature-config"},
 		}
 
-		rootSections := []string{"root"}
-		effectiveValues := map[string]string{
-			"FEATURE_TOGGLE": "yes",
-		}
+		prompts = determineRequiredSections(prompts)
 
-		result := determineRequiredSections(prompts, rootSections, effectiveValues)
-
-		if !result["root"] {
+		if !prompts[0].Active {
 			t.Error("Expected root to be required")
 		}
 
-		if !result["feature-config"] {
+		if !prompts[1].Active {
 			t.Error("Expected feature-config to be enabled")
 		}
 	})
@@ -641,6 +590,8 @@ func TestDetermineRequiredSections(t *testing.T) {
 			{
 				Section: "root",
 				Env:     "FEATURE_TOGGLE",
+				Active:  true,
+				Value:   "yes",
 				Options: []PromptOption{
 					{
 						Name:     "Enable",
@@ -654,20 +605,17 @@ func TestDetermineRequiredSections(t *testing.T) {
 					},
 				},
 			},
+			{Section: "feature-config"},
+			{Section: "disable-config"},
 		}
 
-		rootSections := []string{"root"}
-		effectiveValues := map[string]string{
-			"FEATURE_TOGGLE": "yes",
-		}
+		prompts = determineRequiredSections(prompts)
 
-		result := determineRequiredSections(prompts, rootSections, effectiveValues)
-
-		if !result["feature-config"] {
+		if !prompts[1].Active {
 			t.Error("Expected feature-config to be enabled")
 		}
 
-		if result["disable-config"] {
+		if prompts[2].Active {
 			t.Error("Expected disable-config to not be enabled")
 		}
 	})

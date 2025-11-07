@@ -13,7 +13,11 @@ import (
 	"slices"
 )
 
-func PromptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
+func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
+	if len(variables) == 0 {
+		return prompts
+	}
+
 	for p, prompt := range prompts {
 		// Capture existing env var values
 		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {

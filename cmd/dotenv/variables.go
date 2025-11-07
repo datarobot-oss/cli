@@ -26,12 +26,10 @@ func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 		log.Fatalf("Error determining repo root: %v", err)
 	}
 
-	userPrompts, _, err := envbuilder.GatherUserPrompts(repoRoot)
+	userPrompts, err := envbuilder.GatherUserPrompts(repoRoot, variables)
 	if err != nil {
 		log.Fatalf("Error gathering user prompts: %v", err)
 	}
-
-	userPrompts = envbuilder.PromptsWithValues(userPrompts, variables)
 
 	// Create a new empty string set
 	existingEnvVarsSet := make(map[string]struct{})
