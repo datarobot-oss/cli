@@ -186,9 +186,13 @@ func (m Model) updatedContents() string {
 	var additions strings.Builder
 
 	for _, prompt := range m.prompts {
+		if prompt.SkipSaving() {
+			continue
+		}
+
 		// Find existing variable using a regex checking for the variable name at the start of a line
 		// to avoid matching comments
-		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*$`, prompt.Env))
+		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*#\s*)?%s *= *[^\n]*$`, prompt.VarName()))
 
 		if varBeginEnd := varRegex.FindStringIndex(m.contents); varBeginEnd != nil {
 			// Replace existing value
@@ -344,21 +348,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, nil
 			}
 		case promptFinishedMsg:
-			if m.currentPromptIndex < len(m.prompts) { //nolint: nestif
-				currentPrompt := m.prompts[m.currentPromptIndex]
+			if m.currentPromptIndex < len(m.prompts) {
 				values := m.currentPrompt.Values
 				m.prompts[m.currentPromptIndex].Value = strings.Join(values, ",")
+				m.prompts[m.currentPromptIndex].Commented = false
 
 				// Update required sections
-				for _, option := range currentPrompt.Options {
-					if option.Requires != "" && slices.Contains(values, option.Value) {
-						for p := range m.prompts {
-							if m.prompts[p].Section == option.Requires {
-								m.prompts[p].Active = true
-							}
-						}
-					}
-				}
+				m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
 				m.currentPromptIndex++
 				// Advance to next prompt that is required

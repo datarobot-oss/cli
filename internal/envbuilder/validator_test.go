@@ -574,7 +574,7 @@ func TestDetermineRequiredSections(t *testing.T) {
 			{Section: "feature-config"},
 		}
 
-		prompts = determineRequiredSections(prompts)
+		prompts = DetermineRequiredSections(prompts)
 
 		if !prompts[0].Active {
 			t.Error("Expected root to be required")
@@ -609,7 +609,7 @@ func TestDetermineRequiredSections(t *testing.T) {
 			{Section: "disable-config"},
 		}
 
-		prompts = determineRequiredSections(prompts)
+		prompts = DetermineRequiredSections(prompts)
 
 		if !prompts[1].Active {
 			t.Error("Expected feature-config to be enabled")

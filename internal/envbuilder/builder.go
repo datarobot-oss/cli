@@ -31,6 +31,7 @@ func (pt PromptType) String() string {
 
 type UserPrompt struct {
 	Section   string
+	Root      bool
 	Active    bool
 	Commented bool
 	Value     string
@@ -74,17 +75,29 @@ func (up UserPrompt) String() string {
 func (up UserPrompt) StringWithoutHelp() string {
 	result := ""
 
-	if up.Commented {
-		result += "# "
-	}
-
 	if up.Env != "" {
+		if up.Commented || !up.Active {
+			result += "# "
+		}
+
 		result += fmt.Sprintf("%s=%v", up.Env, up.Value)
 	} else {
 		result += fmt.Sprintf("# %s=%v", up.Key, up.Value)
 	}
 
 	return result
+}
+
+func (up UserPrompt) VarName() string {
+	if up.Env != "" {
+		return up.Env
+	}
+
+	return up.Key
+}
+
+func (up UserPrompt) SkipSaving() bool {
+	return !up.Active && up.Value == up.Default
 }
 
 // HasEnvValue returns true if prompt has effective value when written to .env file
@@ -119,7 +132,7 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 	}
 
 	allPrompts = promptsWithValues(allPrompts, variables)
-	allPrompts = determineRequiredSections(allPrompts)
+	allPrompts = DetermineRequiredSections(allPrompts)
 
 	return allPrompts, nil
 }
@@ -141,6 +154,7 @@ func filePrompts(yamlFile string) ([]UserPrompt, error) {
 
 	for p := range prompts {
 		if slices.Contains(roots, prompts[p].Section) {
+			prompts[p].Root = true
 			prompts[p].Active = true
 		}
 
@@ -178,7 +192,7 @@ func promptsSorted(fileParsed ParsedYaml, sections []string) []UserPrompt {
 }
 
 // rootSections is used only for determining sort order of prompts.
-// Use determineRequiredSections to determine whether given section is required.
+// Use DetermineRequiredSections to determine whether given section is required.
 func rootSections(fileParsed ParsedYaml) []string {
 	keys := make(map[string]struct{})
 
@@ -198,7 +212,7 @@ func rootSections(fileParsed ParsedYaml) []string {
 }
 
 // childSections is used only for determining sort order of prompts.
-// Use determineRequiredSections to determine whether given section is required.
+// Use DetermineRequiredSections to determine whether given section is required.
 func childSections(prompt UserPrompt) []string {
 	keys := make([]string, 0, len(prompt.Options))
 

@@ -157,9 +157,15 @@ func (vv Variables) valuesMap() map[string]string {
 	return envValues
 }
 
-// determineRequiredSections calculates which sections are required based on the
+// DetermineRequiredSections calculates which sections are required based on the
 // requires dependencies in selected options.
-func determineRequiredSections(userPrompts []UserPrompt) []UserPrompt {
+func DetermineRequiredSections(userPrompts []UserPrompt) []UserPrompt {
+	for p := range userPrompts {
+		if !userPrompts[p].Root {
+			userPrompts[p].Active = false
+		}
+	}
+
 	activeSections := make(map[string]struct{})
 
 	// Process prompts in order to determine which sections are enabled
