@@ -561,6 +561,7 @@ func TestDetermineRequiredSections(t *testing.T) {
 			{
 				Section: "root",
 				Env:     "FEATURE_TOGGLE",
+				Root:    true,
 				Active:  true,
 				Value:   "yes",
 				Options: []PromptOption{

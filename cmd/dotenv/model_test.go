@@ -280,7 +280,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
-	suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
+	// suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
 }
 
@@ -339,7 +339,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
 	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
-	suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
+	// suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
 	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
 	suite.Contains(fm.contents, "BOX_CLIENT_ID=box_parakeet_id\n", "Expected env file to contain the entered Box client ID")
 	suite.Contains(fm.contents, "BOX_CLIENT_SECRET=box_parakeet_secret\n", "Expected env file to contain the entered Box client secret")

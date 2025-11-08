@@ -15,9 +15,10 @@ import (
 func TestPromptString(t *testing.T) {
 	t.Run("Returns Env when present", func(t *testing.T) {
 		prompt := UserPrompt{
-			Env:   "MY_VAR",
-			Key:   "my-key",
-			Value: "my-value",
+			Env:    "MY_VAR",
+			Key:    "my-key",
+			Value:  "my-value",
+			Active: true,
 		}
 
 		str := prompt.String()
