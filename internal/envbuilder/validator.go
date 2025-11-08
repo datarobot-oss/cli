@@ -103,6 +103,60 @@ func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValida
 	return result
 }
 
+// promptsWithValues updates slice of prompts with values from .env file contents
+// and environment variables (environment variables take precedence).
+func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
+	if len(variables) == 0 {
+		return prompts
+	}
+
+	for p, prompt := range prompts {
+		// Capture existing env var values
+		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
+			prompt.Value = existingEnvValue
+		} else if v, found := variables.find(prompt); found {
+			prompt.Value = v.Value
+			prompt.Commented = v.Commented
+		} else {
+			prompt.Value = prompt.Default
+		}
+
+		prompts[p] = prompt
+	}
+
+	return prompts
+}
+
+func indexByName(value string) func(v Variable) bool {
+	return func(v Variable) bool {
+		return v.Name == value
+	}
+}
+
+func (vv Variables) find(prompt UserPrompt) (Variable, bool) {
+	if envIndex := slices.IndexFunc(vv, indexByName(prompt.Env)); envIndex != -1 {
+		return vv[envIndex], true
+	}
+
+	if keyIndex := slices.IndexFunc(vv, indexByName(prompt.Key)); keyIndex != -1 {
+		return vv[keyIndex], true
+	}
+
+	return Variable{}, false
+}
+
+func (vv Variables) valuesMap() map[string]string {
+	envValues := make(map[string]string)
+
+	for _, v := range vv {
+		if v.Name != "" && !v.Commented {
+			envValues[v.Name] = v.Value
+		}
+	}
+
+	return envValues
+}
+
 // determineRequiredSections calculates which sections are required based on the
 // requires dependencies in selected options.
 func determineRequiredSections(userPrompts []UserPrompt) []UserPrompt {
