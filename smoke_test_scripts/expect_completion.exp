@@ -22,7 +22,7 @@ expect {
 sleep 1
 
 # Test completion uninstall with --yes flag
-spawn dr completion uninstall --yes
+spawn dr self completion uninstall --yes
 
 expect {
     -re "(Completion uninstalled|No completion found)" {

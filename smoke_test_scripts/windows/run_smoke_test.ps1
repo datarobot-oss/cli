@@ -34,7 +34,7 @@ function Smoke-Test {
     Write-End
 
     Write-Delimiter "Execute dr version"
-    dr version
+    dr self version
     Write-End
 
     Write-Host 'Smoke tests for Windows completed.'
