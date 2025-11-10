@@ -15,14 +15,13 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
-	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dotenv"
+	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
-	"github.com/datarobot/cli/cmd/version"
 	"github.com/datarobot/cli/internal/config"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
@@ -68,6 +67,7 @@ func init() {
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
 		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+	RootCmd.PersistentFlags().BoolP("version", "V", false, "display the version")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
@@ -83,6 +83,7 @@ func init() {
 	// Add command groups
 	RootCmd.AddGroup(
 		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},
+		&cobra.Group{ID: "self", Title: tui.BaseTextStyle.Render("Self Commands:")},
 		&cobra.Group{ID: "advanced", Title: tui.BaseTextStyle.Render("Advanced Commands:")},
 		&cobra.Group{ID: "plugin", Title: tui.BaseTextStyle.Render("Plugin Commands:")},
 	)
@@ -92,14 +93,13 @@ func init() {
 	// otherwise the command will be added under 'Additional Commands'.
 	RootCmd.AddCommand(
 		auth.Cmd(),
-		completion.Cmd(),
 		component.Cmd(),
 		dotenv.Cmd(),
 		run.Cmd(),
+		self.Cmd(),
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
-		version.Cmd(),
 	)
 
 	// Override the default help command to add --all-commands flag
@@ -107,11 +107,14 @@ func init() {
 
 	RootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		showAllCommands, _ := cmd.Flags().GetBool("all-commands")
+		showVersion, _ := cmd.Flags().GetBool("version")
 
 		if showAllCommands {
 			output := allcommands.GenerateCommandTree(cmd.Root())
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
+		} else if showVersion {
+			fmt.Fprint(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)

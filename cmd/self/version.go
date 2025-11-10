@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package version
+package self
 
 import (
 	"encoding/json"
@@ -54,7 +54,7 @@ type versionOptions struct {
 	format Format
 }
 
-func Cmd() *cobra.Command {
+func VersionCmd() *cobra.Command {
 	var options versionOptions
 
 	options.format = FormatText
@@ -99,5 +99,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return version.AppName + " version: " + version.FullVersion, nil
+	return version.GetAppNameFullVersionText(), nil
 }

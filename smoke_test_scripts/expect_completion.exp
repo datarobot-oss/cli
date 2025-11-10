@@ -6,7 +6,7 @@ set timeout 10
 set env(TERM) dumb
 
 # Test completion install with --yes flag to avoid prompts
-spawn dr completion install --yes
+spawn dr self completion install --yes
 
 expect {
     -re "Completion (already )?installed" {

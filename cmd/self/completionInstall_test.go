@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package self
 
 import (
 	"os"
@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +62,7 @@ func TestDetectShell(t *testing.T) {
 				t.Skip("Skipping Windows-specific test")
 			}
 
-			shell, err := detectShell()
+			shell, err := internalShell.DetectShell()
 
 			if tt.expectError {
 				if err == nil {
@@ -142,36 +143,36 @@ func TestGetInstallFunc(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		shell       Shell
+		shell       internalShell.Shell
 		force       bool
 		expectError bool
 		errorText   string
 	}{
 		{
 			name:  "bash install",
-			shell: ShellBash,
+			shell: internalShell.Bash,
 			force: false,
 		},
 		{
 			name:  "zsh install",
-			shell: ShellZsh,
+			shell: internalShell.Zsh,
 			force: false,
 		},
 		{
 			name:  "fish install",
-			shell: ShellFish,
+			shell: internalShell.Fish,
 			force: false,
 		},
 		{
 			name:        "powershell not supported",
-			shell:       ShellPowerShell,
+			shell:       internalShell.PowerShell,
 			force:       false,
 			expectError: true,
 			errorText:   "PowerShell",
 		},
 		{
 			name:        "invalid shell",
-			shell:       Shell("invalid"),
+			shell:       internalShell.Shell("invalid"),
 			force:       false,
 			expectError: true,
 			errorText:   "unsupported shell",
@@ -180,7 +181,7 @@ func TestGetInstallFunc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, fn, err := getInstallFunc(rootCmd, tt.shell, tt.force)
+			path, fn, err := getCompletionInstallFunc(rootCmd, tt.shell, tt.force)
 
 			if tt.expectError {
 				if err == nil {
@@ -213,7 +214,7 @@ func TestInstallZsh(t *testing.T) {
 		Short: "DataRobot CLI",
 	}
 
-	path, fn := installZsh(rootCmd, false)
+	path, fn := installCompletionZsh(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -235,7 +236,7 @@ func TestInstallBash(t *testing.T) {
 		Short: "DataRobot CLI",
 	}
 
-	path, fn := installBash(rootCmd, false)
+	path, fn := installCompletionBash(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -257,7 +258,7 @@ func TestInstallFish(t *testing.T) {
 		Short: "DataRobot CLI",
 	}
 
-	path, fn := installFish(rootCmd, false)
+	path, fn := installCompletionFish(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -291,13 +292,13 @@ func TestFindExistingCompletions(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		shell         Shell
+		shell         internalShell.Shell
 		setupFiles    []string
 		expectedCount int
 	}{
 		{
 			name:  "zsh - oh-my-zsh completion",
-			shell: ShellZsh,
+			shell: internalShell.Zsh,
 			setupFiles: []string{
 				filepath.Join(tmpDir, ".oh-my-zsh", "custom", "completions", "_dr"),
 			},
@@ -305,7 +306,7 @@ func TestFindExistingCompletions(t *testing.T) {
 		},
 		{
 			name:  "bash completion",
-			shell: ShellBash,
+			shell: internalShell.Bash,
 			setupFiles: []string{
 				filepath.Join(tmpDir, ".bash_completions", "dr"),
 			},
@@ -313,7 +314,7 @@ func TestFindExistingCompletions(t *testing.T) {
 		},
 		{
 			name:  "fish completion",
-			shell: ShellFish,
+			shell: internalShell.Fish,
 			setupFiles: []string{
 				filepath.Join(tmpDir, ".config", "fish", "completions", "dr.fish"),
 			},
@@ -321,7 +322,7 @@ func TestFindExistingCompletions(t *testing.T) {
 		},
 		{
 			name:          "no completions",
-			shell:         ShellZsh,
+			shell:         internalShell.Zsh,
 			setupFiles:    []string{},
 			expectedCount: 0,
 		},
@@ -361,7 +362,7 @@ func TestFindExistingCompletions(t *testing.T) {
 }
 
 func TestInstallCmd(t *testing.T) {
-	cmd := installCmd()
+	cmd := installCompletionCmd()
 
 	if cmd == nil {
 		t.Fatal("installCmd() returned nil")
@@ -386,7 +387,7 @@ func TestInstallCmd(t *testing.T) {
 }
 
 func TestUninstallCmd(t *testing.T) {
-	cmd := uninstallCmd()
+	cmd := uninstallCompletionCmd()
 
 	if cmd == nil {
 		t.Fatal("uninstallCmd() returned nil")
@@ -416,38 +417,38 @@ func TestGetUninstallPaths(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		shell         Shell
+		shell         internalShell.Shell
 		expectedCount int
 		checkPath     string
 	}{
 		{
 			name:          "zsh paths",
-			shell:         ShellZsh,
+			shell:         internalShell.Zsh,
 			expectedCount: 2,
 			checkPath:     ".oh-my-zsh",
 		},
 		{
 			name:          "bash paths",
-			shell:         ShellBash,
+			shell:         internalShell.Bash,
 			expectedCount: 1,
 			checkPath:     ".bash_completions",
 		},
 		{
 			name:          "fish paths",
-			shell:         ShellFish,
+			shell:         internalShell.Fish,
 			expectedCount: 1,
 			checkPath:     ".config/fish",
 		},
 		{
 			name:          "powershell empty",
-			shell:         ShellPowerShell,
+			shell:         internalShell.PowerShell,
 			expectedCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			paths := getUninstallPaths(tt.shell)
+			paths := getCompletionUninstallPaths(tt.shell)
 
 			if len(paths) != tt.expectedCount {
 				t.Errorf("expected %d paths, got %d", tt.expectedCount, len(paths))
@@ -506,7 +507,7 @@ func TestResolveShell(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shell, err := resolveShell(tt.input)
+			shell, err := internalShell.ResolveShell(tt.input)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -538,7 +539,7 @@ func TestResolveShellForUninstall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shell, err := resolveShellForUninstall(tt.input)
+			shell, err := resolveShellForCompletionUninstall(tt.input)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -553,31 +554,31 @@ func TestResolveShellForUninstall(t *testing.T) {
 func TestPerformUninstall(t *testing.T) {
 	tests := []struct {
 		name        string
-		shell       Shell
+		shell       internalShell.Shell
 		expectError bool
 		errorText   string
 	}{
 		{
 			name:  "zsh uninstall",
-			shell: ShellZsh,
+			shell: internalShell.Zsh,
 		},
 		{
 			name:  "bash uninstall",
-			shell: ShellBash,
+			shell: internalShell.Bash,
 		},
 		{
 			name:  "fish uninstall",
-			shell: ShellFish,
+			shell: internalShell.Fish,
 		},
 		{
 			name:        "powershell not supported",
-			shell:       ShellPowerShell,
+			shell:       internalShell.PowerShell,
 			expectError: true,
 			errorText:   "PowerShell",
 		},
 		{
 			name:        "invalid shell",
-			shell:       Shell("invalid"),
+			shell:       internalShell.Shell("invalid"),
 			expectError: true,
 			errorText:   "unsupported shell",
 		},
@@ -598,7 +599,7 @@ func TestPerformUninstall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := performUninstall(tt.shell)
+			err := performCompletionUninstall(tt.shell)
 
 			if tt.expectError {
 				if err == nil {
@@ -631,7 +632,7 @@ func TestUninstallZsh(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallZsh()
+	removed := uninstallCompletionZsh()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -651,7 +652,7 @@ func TestUninstallZsh(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallZsh()
+	removed = uninstallCompletionZsh()
 
 	if !removed {
 		t.Error("expected true when file exists")
@@ -676,7 +677,7 @@ func TestUninstallBash(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallBash()
+	removed := uninstallCompletionBash()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -696,7 +697,7 @@ func TestUninstallBash(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallBash()
+	removed = uninstallCompletionBash()
 
 	if !removed {
 		t.Error("expected true when file exists")
@@ -721,7 +722,7 @@ func TestUninstallFish(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallFish()
+	removed := uninstallCompletionFish()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -741,7 +742,7 @@ func TestUninstallFish(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallFish()
+	removed = uninstallCompletionFish()
 
 	if !removed {
 		t.Error("expected true when file exists")
