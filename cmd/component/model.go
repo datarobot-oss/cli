@@ -112,7 +112,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch keypress := msg.String(); keypress {
-			case keyExit:
+			// For now exit on any keypress
+			default:
 				return m, tea.Quit
 			}
 		case errMsg:
