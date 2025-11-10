@@ -61,7 +61,7 @@ func VersionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Show the " + version.AppName + " version information",
+		Short: "📋 Show " + version.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := getVersion(options)

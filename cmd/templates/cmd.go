@@ -19,8 +19,15 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "templates",
 		GroupID: "core",
-		Short:   "DataRobot application templates commands",
-		Long:    `Application templates commands for ` + version.AppName + `.`,
+		Short:   "📚 DataRobot application templates commands",
+		Long: `Application templates commands for ` + version.AppName + `.
+
+Manage DataRobot AI application templates:
+  • Browse available templates
+  • Clone templates to your local machine
+  • Set up new projects with interactive wizard
+
+🚀 Quick start: dr templates setup`,
 	}
 
 	cmd.AddCommand(

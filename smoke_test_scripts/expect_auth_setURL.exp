@@ -11,7 +11,7 @@ spawn dr auth setURL --config $datarobot_cli_config
 
 # If we get an overwrite prompt be sure to say yes to it first
 expect {
-    "do you want to overwrite" {
+    "Do you want to login with a different account" {
         send -- "y\r\n"
     }
     timeout

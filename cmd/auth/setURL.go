@@ -37,11 +37,20 @@ func SetURLAction() {
 		}
 	}
 
-	fmt.Println("Please specify your DataRobot URL, or enter the numbers 1 - 3 If you are using that multi tenant cloud offering")
-	fmt.Println("Please enter 1 if you're using https://app.datarobot.com")
-	fmt.Println("Please enter 2 if you're using https://app.eu.datarobot.com")
-	fmt.Println("Please enter 3 if you're using https://app.jp.datarobot.com")
-	fmt.Println("Otherwise, please enter the URL you use")
+	fmt.Println("🌐 DataRobot URL Configuration")
+	fmt.Println("")
+	fmt.Println("Choose your DataRobot environment:")
+	fmt.Println("")
+	fmt.Println("┌─────────────────────────────────────────────────────┐")
+	fmt.Println("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │")
+	fmt.Println("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │")
+	fmt.Println("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │")
+	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL         │")
+	fmt.Println("└─────────────────────────────────────────────────────┘")
+	fmt.Println("")
+	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL.")
+	fmt.Println("")
+	fmt.Print("Enter your choice (1-4): ")
 
 	url, err := reader.ReadString('\n')
 	if err != nil {
@@ -55,9 +64,17 @@ func SetURLAction() {
 }
 
 var setURLCmd = &cobra.Command{
-	Use:   "setURL",
-	Short: "Set URL for Login to DataRobot",
-	Long:  `Set URL for DataRobot to get and store that URL which can be used for other operations in the cli.`,
+	Use:   "set-url",
+	Short: "🌐 Configure your DataRobot environment URL",
+	Long: `Configure your DataRobot environment URL with an interactive selection.
+
+This command helps you choose the correct DataRobot environment:
+  • US Cloud (most common): https://app.datarobot.com
+  • EU Cloud: https://app.eu.datarobot.com  
+  • Japan Cloud: https://app.jp.datarobot.com
+  • Custom/On-Premise: Your organization's DataRobot URL
+
+💡 If you're unsure, check the URL you use to login to DataRobot in your browser.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		SetURLAction()
 	},

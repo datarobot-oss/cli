@@ -32,8 +32,17 @@ func Run() error {
 
 var Cmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all available templates",
-	Long:  `List all available templates in the DataRobot application.`,
+	Short: "📋 List all available AI application templates",
+	Long: `List all available AI application templates from DataRobot.
+
+This command shows you all the pre-built templates you can use to quickly 
+start building AI applications. Each template includes:
+  • Complete application structure
+  • Pre-configured components
+  • Documentation and examples
+  • Ready-to-deploy setup
+
+💡 Use 'dr templates setup' for an interactive selection experience.`,
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},

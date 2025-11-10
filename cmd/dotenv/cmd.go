@@ -29,8 +29,16 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "dotenv",
 		GroupID: "core",
-		Short:   "Commands to modify .env file",
-		Long:    "Edit, generate or update .env file with Datarobot credentials",
+		Short:   "🔧 Environment configuration commands",
+		Long: `Environment configuration commands for managing your application settings.
+
+Manage your .env file and application configuration:
+  • Edit environment variables interactively
+  • Set up configuration with a guided wizard
+  • Update DataRobot credentials automatically
+
+🎯 Your .env file contains API keys, database connections, and other settings 
+   your application needs to run properly.`,
 	}
 
 	cmd.AddCommand(
@@ -45,7 +53,7 @@ func Cmd() *cobra.Command {
 
 var EditCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "Edit .env file using built-in editor",
+	Short: "✏️  Edit .env file using built-in editor",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
@@ -96,7 +104,16 @@ var EditCmd = &cobra.Command{
 
 var SetupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Edit .env file using setup wizard",
+	Short: "🧙 Environment configuration wizard",
+	Long: `Launch the interactive environment configuration wizard.
+
+This wizard will help you:
+  1️⃣  Review required environment variables
+  2️⃣  Configure API keys and credentials
+  3️⃣  Set up database connections (if needed)
+  4️⃣  Validate your configuration
+
+💡 Perfect for first-time setup or when adding new integrations.`,
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
@@ -141,8 +158,15 @@ var SetupCmd = &cobra.Command{
 
 var UpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Automatically update Datarobot credentials in .env file",
-	Long:  "Automatically populate .env file with fresh Datarobot credentials",
+	Short: "🔄 Automatically update DataRobot credentials",
+	Long: `Automatically update your .env file with fresh DataRobot credentials.
+
+This command will:
+  • Refresh your DataRobot API credentials
+  • Update environment variables automatically
+  • Preserve your existing custom settings
+
+💡 Use this when your credentials expire or you need to refresh your connection.`,
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
