@@ -17,7 +17,7 @@ expect {
     timeout
 }
 
-expect "please enter the URL you use"
+expect "Check your DataRobot login page"
 send -- "https://app.datarobot.com\r\n"
 
 expect eof
