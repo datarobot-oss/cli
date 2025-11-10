@@ -33,7 +33,7 @@ func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint:cyclop
+func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -66,13 +66,8 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint:cyclop
 		return nil
 	}
 
-	// TODO: Maybe use additional options to have file preselected and therefore ready to update with an enter keypress?
-	screen := updateScreen
-	if updateFileName == "" {
-		screen = listScreen
-	}
-
-	m := NewUpdateComponentModel(screen, updateFileName)
+	// Currently if we using interactive mode we'll always go the list screen and pre-check a file if passed in args
+	m := NewUpdateComponentModel(updateFileName)
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
@@ -95,6 +90,7 @@ func UpdateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm update without prompting")
+	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to false to automatically confirm update without prompting")
 
 	return cmd

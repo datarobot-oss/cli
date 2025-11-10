@@ -29,7 +29,7 @@ func ListRunE(_ *cobra.Command, _ []string) error {
 		defer f.Close()
 	}
 
-	m := NewComponentModel(listScreen)
+	m := NewComponentModel(listCmd, listScreen)
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
