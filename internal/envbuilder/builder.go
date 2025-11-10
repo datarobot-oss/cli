@@ -64,10 +64,9 @@ type ParsedYaml map[string][]UserPrompt
 func (up UserPrompt) String() string {
 	result := ""
 
-	// Disabling it for now as it duplicates comments on every .env file save
-	//if up.Help != "" {
-	//	result += fmt.Sprintf("\n# %v\n", up.Help)
-	//}
+	if up.Help != "" {
+		result += fmt.Sprintf("\n# %v\n", up.Help)
+	}
 
 	return result + up.StringWithoutHelp()
 }

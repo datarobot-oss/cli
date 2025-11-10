@@ -23,7 +23,6 @@ type Variable struct {
 	Value       string
 	Description string
 	Secret      bool
-	Changed     bool
 	Commented   bool
 }
 
@@ -66,9 +65,8 @@ func NewFromLine(line string) Variable {
 	}
 }
 
-func VariablesFromTemplate(templateLines []string) ([]Variable, string, bool) {
+func VariablesFromTemplate(templateLines []string) ([]Variable, string) {
 	variables := make([]Variable, 0)
-	changed := false
 
 	var contents strings.Builder
 
@@ -86,10 +84,6 @@ func VariablesFromTemplate(templateLines []string) ([]Variable, string, bool) {
 
 		v.setValue()
 
-		if v.Changed {
-			changed = true
-		}
-
 		if v.Value == "" {
 			contents.WriteString(templateLine)
 		} else {
@@ -100,7 +94,7 @@ func VariablesFromTemplate(templateLines []string) ([]Variable, string, bool) {
 		variables = append(variables, v)
 	}
 
-	return variables, contents.String(), changed
+	return variables, contents.String()
 }
 
 func (v *Variable) setValue() {
@@ -109,8 +103,6 @@ func (v *Variable) setValue() {
 	if !found {
 		return
 	}
-
-	oldValue := v.Value
 
 	switch {
 	case conf.viperKey != "":
@@ -124,9 +116,5 @@ func (v *Variable) setValue() {
 			// Ignore "empty url" and similar errors when exiting setup
 			log.Error(err)
 		}
-	}
-
-	if v.Value != oldValue {
-		v.Changed = true
 	}
 }

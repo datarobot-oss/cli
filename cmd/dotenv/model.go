@@ -12,13 +12,11 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -49,7 +47,6 @@ type Model struct {
 	screen             screens
 	initialScreen      screens
 	DotenvFile         string
-	DotenvTemplate     string
 	variables          []envbuilder.Variable
 	err                error
 	textarea           textarea.Model
@@ -67,10 +64,9 @@ type (
 	errMsg struct{ err error }
 
 	dotenvFileUpdatedMsg struct {
-		variables      []envbuilder.Variable
-		contents       string
-		dotenvTemplate string
-		promptUser     bool
+		variables  []envbuilder.Variable
+		contents   string
+		promptUser bool
 	}
 
 	promptFinishedMsg struct{}
@@ -96,12 +92,12 @@ func (m Model) openInExternalEditor() tea.Cmd {
 			return errMsg{err}
 		}
 		// Reload the file after editing
-		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
+		variables, contents, err := readDotenvFileVariables(m.DotenvFile)
 		if err != nil {
 			return errMsg{err}
 		}
 		// Don't prompt user, just return to list screen
-		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, false}
+		return dotenvFileUpdatedMsg{variables, contents, false}
 	})
 }
 
@@ -115,14 +111,14 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 	return exec.Command(editor, m.DotenvFile)
 }
 
-func (m Model) saveEnvFile() tea.Cmd {
+func (m Model) loadVariables() tea.Cmd {
 	return func() tea.Msg {
-		variables, contents, dotenvTemplate, err := writeUsingTemplateFile(m.DotenvFile)
+		variables, contents, err := readDotenvFileVariables(m.DotenvFile)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, contents, dotenvTemplate, true}
+		return dotenvFileUpdatedMsg{variables, contents, true}
 	}
 }
 
@@ -131,12 +127,12 @@ func (m Model) saveEditedFile() tea.Cmd {
 		lines := slices.Collect(strings.Lines(m.contents))
 		variables := envbuilder.ParseVariablesOnly(lines)
 
-		err := writeContents(m.contents, m.DotenvFile, m.DotenvTemplate)
+		err := writeContents(m.contents, m.DotenvFile)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		return dotenvFileUpdatedMsg{variables, m.contents, m.DotenvTemplate, false}
+		return dotenvFileUpdatedMsg{variables, m.contents, false}
 	}
 }
 
@@ -176,58 +172,6 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// updatedContents merges environment variable responses into the file contents.
-// It updates existing variables in-place and appends new variables after DATAROBOT_ENDPOINT.
-// If DATAROBOT_ENDPOINT is not found, new variables are prepended to the file.
-func (m Model) updatedContents() string {
-	// There has to be a better way to write out an .env file. This is messy.
-	// Like parsing the entire dotenv into a structure, modifying the structure,
-	// then serializing it.
-	var additions strings.Builder
-
-	for _, prompt := range m.prompts {
-		if prompt.SkipSaving() {
-			continue
-		}
-
-		// Find existing variable using a regex checking for the variable name at the start of a line
-		// to avoid matching comments
-		varRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*#\s*)?%s *= *[^\n]*$`, prompt.VarName()))
-
-		if varBeginEnd := varRegex.FindStringIndex(m.contents); varBeginEnd != nil {
-			// Replace existing value
-			varBegin, varEnd := varBeginEnd[0], varBeginEnd[1]
-
-			m.contents = m.contents[:varBegin] + prompt.String() + m.contents[varEnd:]
-		} else {
-			additions.WriteString(prompt.String())
-			additions.WriteString("\n")
-		}
-	}
-
-	if additions.Len() == 0 {
-		return m.contents
-	}
-
-	// If the variables aren't in file - append them below DATAROBOT_ENDPOINT
-	// If DATAROBOT_ENDPOINT is not found, prepend to the file
-	endpointLineRegex := regexp.MustCompile(fmt.Sprintf(`(?m)^%s *= *[^\n]*\n`, datarobotEndpointVar))
-	endpointLineMatch := endpointLineRegex.FindStringIndex(m.contents)
-
-	if endpointLineMatch == nil {
-		log.Debug("DATAROBOT_ENDPOINT not found, prepending new variables to the beginning of the file")
-		// Insert the new variables at the beginning
-		return additions.String() + m.contents
-	}
-
-	insertPos := endpointLineMatch[1]
-
-	// Insert the new variables after DATAROBOT_ENDPOINT line
-	updatedContents := m.contents[:insertPos] + additions.String() + m.contents[insertPos:]
-
-	return updatedContents
-}
-
 func (m Model) Init() tea.Cmd {
 	if m.initialScreen == editorScreen {
 		return tea.Batch(openEditorCmd, tea.WindowSize())
@@ -237,7 +181,7 @@ func (m Model) Init() tea.Cmd {
 		return tea.Batch(m.loadPrompts(), tea.WindowSize())
 	}
 
-	return tea.Batch(m.saveEnvFile(), tea.WindowSize())
+	return tea.Batch(m.loadVariables(), tea.WindowSize())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -258,7 +202,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = listScreen
 		m.variables = msg.variables
 		m.contents = msg.contents
-		m.DotenvTemplate = msg.dotenvTemplate
 
 		if msg.promptUser {
 			return m, m.loadPrompts()
@@ -371,7 +314,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				if m.currentPromptIndex >= len(m.prompts) {
 					// Finished all prompts
 					// Update the .env file with the responses
-					m.contents = m.updatedContents()
+					m.contents = envbuilder.UpdatedDotenv(m.prompts)
 
 					return m, m.saveEditedFile()
 				}
