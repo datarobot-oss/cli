@@ -35,23 +35,22 @@ var configFilePath string
 var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
 	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
-	Long: `🚀 DataRobot CLI - Build AI Applications Faster
-
+	Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications 
 using pre-built templates. Get from idea to production in minutes, not hours.
 
-✨ What you can do:
+✨ ` + tui.BaseTextStyle.Render("What you can do:") + `
   • Choose from ready-made AI application templates
   • Set up your development environment quickly  
   • Deploy to DataRobot with a single command
   • Manage environment variables and configurations
 
-🎯 Quick Start:
+🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
   dr templates setup   # Interactive setup wizard
   dr run dev           # Start development server
   dr --help            # Show all available commands
 
-💡 New to DataRobot CLI? Run 'dr templates setup' to get started!`,
+💡 ` + tui.BaseTextStyle.Render("New to DataRobot CLI?") + ` Run 'dr templates setup' to get started!`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
