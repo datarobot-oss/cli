@@ -6,13 +6,14 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package self
 
 import (
 	"bytes"
 	"strings"
 	"testing"
 
+	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +34,7 @@ func TestSupportedShells(t *testing.T) {
 }
 
 func TestCmd(t *testing.T) {
-	cmd := Cmd()
+	cmd := CompletionCmd()
 
 	if cmd == nil {
 		t.Fatal("Cmd() returned nil")
@@ -76,27 +77,27 @@ func TestCmd(t *testing.T) {
 func TestCompletionGeneration(t *testing.T) {
 	tests := []struct {
 		name         string
-		shell        Shell
+		shell        internalShell.Shell
 		expectedText string
 	}{
 		{
 			name:         "bash completion",
-			shell:        ShellBash,
+			shell:        internalShell.Bash,
 			expectedText: "__start_dr",
 		},
 		{
 			name:         "zsh completion",
-			shell:        ShellZsh,
+			shell:        internalShell.Zsh,
 			expectedText: "#compdef",
 		},
 		{
 			name:         "fish completion",
-			shell:        ShellFish,
+			shell:        internalShell.Fish,
 			expectedText: "complete -c dr",
 		},
 		{
 			name:         "powershell completion",
-			shell:        ShellPowerShell,
+			shell:        internalShell.PowerShell,
 			expectedText: "Register-ArgumentCompleter",
 		},
 	}
@@ -114,13 +115,13 @@ func TestCompletionGeneration(t *testing.T) {
 			var err error
 
 			switch tt.shell {
-			case ShellBash:
+			case internalShell.Bash:
 				err = rootCmd.GenBashCompletion(&buf)
-			case ShellZsh:
+			case internalShell.Zsh:
 				err = rootCmd.GenZshCompletion(&buf)
-			case ShellFish:
+			case internalShell.Fish:
 				err = rootCmd.GenFishCompletion(&buf, true)
-			case ShellPowerShell:
+			case internalShell.PowerShell:
 				err = rootCmd.GenPowerShellCompletionWithDesc(&buf)
 			}
 
@@ -143,7 +144,7 @@ func TestCompletionInvalidShell(t *testing.T) {
 		Short: "DataRobot CLI",
 	}
 
-	cmd := Cmd()
+	cmd := CompletionCmd()
 	rootCmd.AddCommand(cmd)
 
 	var buf bytes.Buffer
