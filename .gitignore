@@ -42,3 +42,9 @@ coverage.html
 
 # Tea
 tea-debug.log
+
+# IDEs/Editors
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+*.vscode/
