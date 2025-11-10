@@ -33,9 +33,9 @@ yq -i ".token = \"$DR_API_TOKEN\"" $DATAROBOT_CLI_CONFIG
 
 dr help
 dr help run
-dr version
+dr self version
 
-dr completion bash > completion_bash.sh
+dr self completion bash > completion_bash.sh
 # Check if we have the file with expected __start_dr() function
 function_check=$(cat completion_bash.sh | grep __start_dr\()
 if [[ -n "$function_check" ]]; then
