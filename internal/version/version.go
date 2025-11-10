@@ -47,3 +47,7 @@ func init() {
 
 	FullVersion = fmt.Sprintf("%s (commit: %s, built date: %s, runtime: %s)", Version, GitCommit, BuildDate, runtime.Version())
 }
+
+func GetAppNameFullVersionText() string {
+	return AppName + " version: " + FullVersion
+}
