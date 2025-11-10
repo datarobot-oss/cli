@@ -1,16 +1,16 @@
-# `dr completion` - Shell Completion
+# `dr self completion` - Shell Completion
 
 Generate shell completion scripts for command auto-completion.
 
 ## Synopsis
 
 ```bash
-dr completion <shell>
+dr self completion <shell>
 ```
 
 ## Description
 
-The `completion` command generates shell completion scripts that enable auto-completion for the DataRobot CLI. Completions provide command, subcommand, and flag suggestions when you press Tab.
+The `self completion` command generates shell completion scripts that enable auto-completion for the DataRobot CLI. Completions provide command, subcommand, and flag suggestions when you press Tab.
 
 ## Supported shells
 
@@ -26,7 +26,7 @@ The `completion` command generates shell completion scripts that enable auto-com
 **Linux:**
 ```bash
 # Install system-wide
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Reload shell
 source ~/.bashrc
@@ -36,7 +36,7 @@ source ~/.bashrc
 ```bash
 # Install via Homebrew's bash-completion
 brew install bash-completion@2
-dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
+dr self completion bash > $(brew --prefix)/etc/bash_completion.d/dr
 
 # Reload shell
 source ~/.bash_profile
@@ -44,7 +44,7 @@ source ~/.bash_profile
 
 **Temporary (current session only):**
 ```bash
-source <(dr completion bash)
+source <(dr self completion bash)
 ```
 
 ### Zsh
@@ -64,11 +64,11 @@ compinit
 ```bash
 # Option 1: User completions directory
 mkdir -p ~/.zsh/completions
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 
 # Option 2: System directory
-dr completion zsh > "${fpath[1]}/_dr"
+dr self completion zsh > "${fpath[1]}/_dr"
 
 # Clear cache and reload
 rm -f ~/.zcompdump
@@ -77,14 +77,14 @@ source ~/.zshrc
 
 **Temporary (current session only):**
 ```bash
-source <(dr completion zsh)
+source <(dr self completion zsh)
 ```
 
 ### Fish
 
 ```bash
 # Install completion
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 
 # Reload Fish
 source ~/.config/fish/config.fish
@@ -92,7 +92,7 @@ source ~/.config/fish/config.fish
 
 **Temporary (current session only):**
 ```bash
-dr completion fish | source
+dr self completion fish | source
 ```
 
 ### PowerShell
@@ -101,7 +101,7 @@ dr completion fish | source
 
 ```powershell
 # Generate completion script
-dr completion powershell > dr.ps1
+dr self completion powershell > dr.ps1
 
 # Add to PowerShell profile
 Add-Content $PROFILE ". C:\path\to\dr.ps1"
@@ -112,7 +112,7 @@ Add-Content $PROFILE ". C:\path\to\dr.ps1"
 
 **Temporary (current session only):**
 ```powershell
-dr completion powershell | Out-String | Invoke-Expression
+dr self completion powershell | Out-String | Invoke-Expression
 ```
 
 ## Examples
@@ -121,16 +121,16 @@ dr completion powershell | Out-String | Invoke-Expression
 
 ```bash
 # View the generated script
-dr completion bash
+dr self completion bash
 
 # Save to a file
-dr completion bash > dr-completion.bash
+dr self completion bash > dr-completion.bash
 
 # Save for all shells
-dr completion bash > dr-completion.bash
-dr completion zsh > dr-completion.zsh
-dr completion fish > dr-completion.fish
-dr completion powershell > dr-completion.ps1
+dr self completion bash > dr-completion.bash
+dr self completion zsh > dr-completion.zsh
+dr self completion fish > dr-completion.fish
+dr self completion powershell > dr-completion.ps1
 ```
 
 ### Install for multiple shells
@@ -139,13 +139,13 @@ If you use multiple shells:
 
 ```bash
 # Bash
-dr completion bash > ~/.bash_completions/dr
+dr self completion bash > ~/.bash_completions/dr
 
 # Zsh
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 ```
 
 ### Update completions
@@ -154,15 +154,15 @@ After updating the CLI:
 
 ```bash
 # Bash
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Zsh
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 rm -f ~/.zcompdump
 exec zsh
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 ```
 
 ## Completion behavior
@@ -305,12 +305,12 @@ Use user-level installation instead of system-wide:
 ```bash
 # Bash - user level
 mkdir -p ~/.bash_completions
-dr completion bash > ~/.bash_completions/dr
+dr self completion bash > ~/.bash_completions/dr
 echo 'source ~/.bash_completions/dr' >> ~/.bashrc
 
 # Zsh - user level
 mkdir -p ~/.zsh/completions
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 ```
 
@@ -320,16 +320,16 @@ After updating the CLI, regenerate completions:
 
 ```bash
 # Bash
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 source ~/.bashrc
 
 # Zsh
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 rm -f ~/.zcompdump
 exec zsh
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 ```
 
 ## Completion features
@@ -372,7 +372,7 @@ dr templates clone <Tab>
 dr run <Tab>
 
 # Available shells
-dr completion <Tab>
+dr self completion <Tab>
 ```
 
 ## Advanced configuration
@@ -383,7 +383,7 @@ You can extend or modify generated completions:
 
 ```bash
 # Generate base completion
-dr completion bash > ~/dr-completion-custom.bash
+dr self completion bash > ~/dr-completion-custom.bash
 
 # Edit to add custom logic
 vim ~/dr-completion-custom.bash

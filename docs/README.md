@@ -44,8 +44,7 @@ Detailed documentation for each command:
 - [templates](commands/templates.md)&mdash;template operations.
 - [run](commands/run.md)&mdash;task execution.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management.
-- [completion](commands/completion.md)&mdash;shell completion setup.
-- [version](commands/version.md)&mdash;version information.
+- [self](commands/self.md)&mdash;CLI utility commands (version, completion).
 
 ### 🔧 Development Guide
 
