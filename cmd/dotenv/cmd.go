@@ -63,8 +63,8 @@ var EditCmd = &cobra.Command{
 
 		dotenvFile := filepath.Join(cwd, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		// Use parseVariablesOnly to avoid auto-populating values during manual editing
-		variables := parseVariablesOnly(templateLines)
+		// Use ParseVariablesOnly to avoid auto-populating values during manual editing
+		variables := envbuilder.ParseVariablesOnly(templateLines)
 		contents := strings.Join(templateLines, "")
 
 		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
@@ -116,7 +116,7 @@ var SetupCmd = &cobra.Command{
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		variables, contents, _ := variablesFromTemplate(templateLines)
+		variables, contents, _ := envbuilder.VariablesFromTemplate(templateLines)
 
 		m := Model{
 			initialScreen:  wizardScreen,
@@ -174,18 +174,10 @@ var ValidateCmd = &cobra.Command{
 		templateLines, _ := readTemplate(dotenv)
 
 		// Parse variables from .env file
-		parsedVars := envbuilder.ParseVariables(templateLines)
-
-		envValues := make(map[string]string)
-
-		for _, v := range parsedVars {
-			if v.Name != "" && !v.Commented {
-				envValues[v.Name] = v.Value
-			}
-		}
+		parsedVars := envbuilder.ParseVariablesOnly(templateLines)
 
 		// Validate using envbuilder
-		result := envbuilder.ValidateEnvironment(repoRoot, envValues)
+		result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)
 
 		// Display results with styling
 		varStyle := lipgloss.NewStyle().Foreground(tui.DrPurple).Bold(true)

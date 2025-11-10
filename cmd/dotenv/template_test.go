@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -74,8 +75,8 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
 	suite.Equal(
-		[]variable{
-			{name: "DATAROBOT_ENDPOINT", value: "", secret: false, changed: false, commented: false},
+		[]envbuilder.Variable{
+			{Name: "DATAROBOT_ENDPOINT", Value: "", Secret: false, Changed: false, Commented: false},
 		},
 		variables,
 	)

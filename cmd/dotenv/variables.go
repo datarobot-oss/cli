@@ -12,115 +12,21 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
-	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/tui"
 )
 
-type variable struct {
-	name        string
-	value       string
-	description string
-	secret      bool
-	changed     bool
-	commented   bool
-}
-
-type Variables []variable
-
-func newFromLine(line string) variable {
-	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
-	result := regexp2.NamedStringMatches(expr, line)
-	v := variable{}
-
-	v.name = result["name"]
-	v.value = result["value"]
-
-	if result["commented"] != "" {
-		v.commented = true
-	}
-
-	if knownVariables[v.name].secret {
-		v.secret = true
-	}
-
-	return v
-}
-
-func (v *variable) String() string {
-	if v.commented {
-		return "# " + v.name + "=" + v.value + "\n"
-	}
-
-	return v.name + "=" + v.value + "\n"
-}
-
-func (v *variable) setValue() {
-	conf, found := knownVariables[v.name]
-
-	if !found {
-		return
-	}
-
-	oldValue := v.value
-
-	switch {
-	case conf.viperKey != "":
-		v.value = viper.GetString(conf.viperKey)
-	case conf.getValue != nil:
-		var err error
-
-		v.value, err = conf.getValue()
-		if err != nil && v.value != "" {
-			// Only log error if we actually got a non-empty value with an error
-			// Ignore "empty url" and similar errors when exiting setup
-			log.Error(err)
-		}
-	}
-
-	if v.value != oldValue {
-		v.changed = true
-	}
-}
-
-type variableConfig = struct {
-	viperKey string
-	getValue func() (string, error)
-	secret   bool
-}
-
-var knownVariables = map[string]variableConfig{
-	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func() (string, error) {
-			return config.GetEndpointURL("")
-		},
-	},
-	"DATAROBOT_ENDPOINT": {
-		getValue: func() (string, error) {
-			return config.GetEndpointURL("/api/v2")
-		},
-	},
-	"DATAROBOT_API_TOKEN": {
-		getValue: func() (string, error) {
-			return config.GetAPIKey(), nil
-		},
-		secret: true,
-	},
-}
-
-func handleExtraEnvVars(variables Variables) bool {
+func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
 		log.Fatalf("Error determining repo root: %v", err)
 	}
 
-	userPrompts, _, err := envbuilder.GatherUserPrompts(repoRoot)
+	userPrompts, err := envbuilder.GatherUserPrompts(repoRoot, variables)
 	if err != nil {
 		log.Fatalf("Error gathering user prompts: %v", err)
 	}
@@ -129,7 +35,7 @@ func handleExtraEnvVars(variables Variables) bool {
 	existingEnvVarsSet := make(map[string]struct{})
 	// Add elements to the set
 	for _, value := range variables {
-		existingEnvVarsSet[value.name] = struct{}{}
+		existingEnvVarsSet[value.Name] = struct{}{}
 	}
 
 	extraEnvVarsFound := false
@@ -142,7 +48,7 @@ func handleExtraEnvVars(variables Variables) bool {
 			// Add it to set
 			existingEnvVarsSet[up.Env] = struct{}{}
 			// Add it to variables
-			variables = append(variables, variable{name: up.Env, value: up.Default, description: up.Help})
+			variables = append(variables, envbuilder.Variable{Name: up.Env, Value: up.Default, Description: up.Help})
 		}
 	}
 
@@ -153,8 +59,18 @@ func handleExtraEnvVars(variables Variables) bool {
 		fmt.Println("Editing .env file with component-specific variables...")
 		fmt.Println("")
 
-		for _, fv := range userPrompts {
-			fmt.Println(fv.Env + " = " + fv.Default)
+		for _, up := range userPrompts {
+			if !up.HasEnvValue() {
+				continue
+			}
+
+			style := tui.ErrorStyle
+
+			if up.Valid() {
+				style = tui.BaseTextStyle
+			}
+
+			fmt.Println(style.Render(up.StringWithoutHelp()))
 		}
 
 		fmt.Println("")
