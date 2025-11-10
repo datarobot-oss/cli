@@ -64,6 +64,9 @@ func init() {
 	// Allow invoking commands in a case-insensitive manner
 	cobra.EnableCaseInsensitive = true
 
+	// Disable Cobra's default completion command since we have our own under 'self'
+	RootCmd.CompletionOptions.DisableDefaultCmd = true
+
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
 		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")

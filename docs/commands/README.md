@@ -26,8 +26,7 @@ These flags are available for all commands:
 | [`start`](start.md) | Run the application quickstart process. |
 | [`run`](run.md) | Execute application tasks. |
 | [`dotenv`](dotenv.md) | Manage environment variables. |
-| [`completion`](completion.md) | Generate shell completions. |
-| [`version`](version.md) | Show version information. |
+| [`self`](self.md) | CLI utility commands (version, completion). |
 
 ### Command tree
 
@@ -45,12 +44,13 @@ dr
 ├── start              Run quickstart process (alias: quickstart)
 ├── run                Task execution
 ├── dotenv             Environment configuration
-├── completion         Shell completion
-│   ├── bash           Generate bash completion
-│   ├── zsh            Generate zsh completion
-│   ├── fish           Generate fish completion
-│   └── powershell     Generate PowerShell completion
-└── version            Version information
+└── self               CLI utility commands
+    ├── completion     Shell completion
+    │   ├── bash       Generate bash completion
+    │   ├── zsh        Generate zsh completion
+    │   ├── fish       Generate fish completion
+    │   └── powershell Generate PowerShell completion
+    └── version        Version information
 ```
 
 ## Quick examples
@@ -125,13 +125,13 @@ dr run lint test --parallel
 
 ```bash
 # Bash (Linux)
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Zsh
-dr completion zsh > "${fpath[1]}/_dr"
+dr self completion zsh > "${fpath[1]}/_dr"
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 ```
 
 ## Command details

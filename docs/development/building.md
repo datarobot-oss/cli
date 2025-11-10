@@ -84,8 +84,6 @@ cli/
 │   │   ├── login.go         # Login command
 │   │   ├── logout.go        # Logout command
 │   │   └── setURL.go        # Set URL command
-│   ├── completion/          # Shell completion
-│   │   └── cmd.go           # Completion generation
 │   ├── dotenv/              # Environment variable management
 │   │   ├── cmd.go           # Dotenv command
 │   │   ├── model.go         # TUI model (Bubble Tea)
@@ -100,8 +98,10 @@ cli/
 │   │   ├── list/            # List subcommand
 │   │   ├── setup/           # Setup wizard
 │   │   └── status.go        # Status command
-│   └── version/             # Version command
-│       └── cmd.go
+│   └── self/                # CLI utility commands
+│       ├── cmd.go           # Self command group
+│       ├── completion.go    # Completion generation
+│       └── version.go       # Version command
 ├── internal/                 # Private packages (not importable)
 │   ├── assets/              # Embedded assets
 │   │   └── templates/       # HTML templates
