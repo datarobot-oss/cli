@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/cmd/version"
 	"github.com/datarobot/cli/internal/config"
 	internalVersion "github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -81,9 +82,9 @@ func init() {
 
 	// Add command groups
 	RootCmd.AddGroup(
-		&cobra.Group{ID: "core", Title: "Core Commands:"},
-		&cobra.Group{ID: "advanced", Title: "Advanced Commands:"},
-		&cobra.Group{ID: "plugin", Title: "Plugin Commands:"},
+		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},
+		&cobra.Group{ID: "advanced", Title: tui.BaseTextStyle.Render("Advanced Commands:")},
+		&cobra.Group{ID: "plugin", Title: tui.BaseTextStyle.Render("Plugin Commands:")},
 	)
 
 	// Add commands here to ensure that they are available to users.
@@ -112,7 +113,8 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else {
-			// Use default help behavior
+			// Use default help behavior but with customized template
+			RootCmd.SetHelpTemplate(CustomHelpTemplate)
 			defaultHelpFunc(cmd, args)
 		}
 	})

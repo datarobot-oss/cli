@@ -8,7 +8,13 @@
 
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // DataRobot brand colors, utilizing the Design System palette
 const (
@@ -20,6 +26,20 @@ const (
 	DrYellow      = lipgloss.Color("#F6EB61") // yellow-60
 	DrBlack       = lipgloss.Color("#0B0B0B") // black-90
 )
+
+func SetAnsiForegroundColor(hexColor lipgloss.Color) string {
+	hexString := strings.TrimPrefix(string(hexColor), "#")
+
+	rVal, _ := strconv.ParseUint(hexString[0:2], 16, 8)
+	gVal, _ := strconv.ParseUint(hexString[2:4], 16, 8)
+	bVal, _ := strconv.ParseUint(hexString[4:6], 16, 8)
+
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm", rVal, gVal, bVal)
+}
+
+func ResetForegroundColor() string {
+	return "\033[39m"
+}
 
 // Common style definitions using DataRobot branding
 var (
