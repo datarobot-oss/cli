@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -70,10 +69,9 @@ var EditCmd = &cobra.Command{
 		}
 
 		dotenvFile := filepath.Join(cwd, ".env")
-		templateLines, templateFileUsed := readTemplate(dotenvFile)
+		dotenvFileLines, contents := readDotenvFile(dotenvFile)
 		// Use ParseVariablesOnly to avoid auto-populating values during manual editing
-		variables := envbuilder.ParseVariablesOnly(templateLines)
-		contents := strings.Join(templateLines, "")
+		variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
 		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
 		screen := editorScreen
@@ -84,12 +82,11 @@ var EditCmd = &cobra.Command{
 		}
 
 		m := Model{
-			initialScreen:  screen,
-			DotenvFile:     dotenvFile,
-			DotenvTemplate: templateFileUsed,
-			variables:      variables,
-			contents:       contents,
-			SuccessCmd:     tea.Quit,
+			initialScreen: screen,
+			DotenvFile:    dotenvFile,
+			variables:     variables,
+			contents:      contents,
+			SuccessCmd:    tea.Quit,
 		}
 		p := tea.NewProgram(
 			tui.NewInterruptibleModel(m),
@@ -132,16 +129,15 @@ This wizard will help you:
 			os.Exit(1)
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
-		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		variables, contents, _ := envbuilder.VariablesFromTemplate(templateLines)
+		dotenvFileLines, _ := readDotenvFile(dotenvFile)
+		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 		m := Model{
-			initialScreen:  wizardScreen,
-			DotenvFile:     dotenvFile,
-			DotenvTemplate: templateFileUsed,
-			variables:      variables,
-			contents:       contents,
-			SuccessCmd:     tea.Quit,
+			initialScreen: wizardScreen,
+			DotenvFile:    dotenvFile,
+			variables:     variables,
+			contents:      contents,
+			SuccessCmd:    tea.Quit,
 		}
 		p := tea.NewProgram(
 			tui.NewInterruptibleModel(m),
@@ -176,7 +172,7 @@ This command will:
 			os.Exit(1)
 		}
 
-		_, _, _, err = writeUsingTemplateFile(dotenv)
+		_, _, err = updateDotenvFile(dotenv)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
@@ -195,10 +191,10 @@ var ValidateCmd = &cobra.Command{
 
 		repoRoot := filepath.Dir(dotenv)
 
-		templateLines, _ := readTemplate(dotenv)
+		dotenvFileLines, _ := readDotenvFile(dotenv)
 
 		// Parse variables from .env file
-		parsedVars := envbuilder.ParseVariablesOnly(templateLines)
+		parsedVars := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
 		// Validate using envbuilder
 		result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)

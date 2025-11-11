@@ -97,9 +97,6 @@ func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValida
 	// Validate required prompts
 	validatePrompts(&result, userPrompts)
 
-	// Validate core DataRobot variables
-	validateCoreVariables(&result, variables.valuesMap())
-
 	return result
 }
 
@@ -143,18 +140,6 @@ func (vv Variables) find(prompt UserPrompt) (Variable, bool) {
 	}
 
 	return Variable{}, false
-}
-
-func (vv Variables) valuesMap() map[string]string {
-	envValues := make(map[string]string)
-
-	for _, v := range vv {
-		if v.Name != "" && !v.Commented {
-			envValues[v.Name] = v.Value
-		}
-	}
-
-	return envValues
 }
 
 // DetermineRequiredSections calculates which sections are required based on the
@@ -237,37 +222,6 @@ func validatePrompts(result *EnvironmentValidationError, userPrompts []UserPromp
 				Valid:   true,
 				Message: "variable is set",
 				Help:    prompt.Help,
-			})
-		}
-	}
-}
-
-// validateCoreVariables validates the core DataRobot variables that must always be present.
-func validateCoreVariables(result *EnvironmentValidationError, effectiveValues map[string]string) {
-	requiredVars := []string{"DATAROBOT_ENDPOINT", "DATAROBOT_API_TOKEN"}
-
-	for _, requiredVar := range requiredVars {
-		value := effectiveValues[requiredVar]
-
-		// Check environment variable (overrides .env file)
-		if envValue, ok := os.LookupEnv(requiredVar); ok {
-			value = envValue
-		}
-
-		if value == "" {
-			result.Results = append(result.Results, ValidationResult{
-				Field:   requiredVar,
-				Value:   "",
-				Valid:   false,
-				Message: "required DataRobot variable is not set",
-				Help:    "Set this variable in your .env file or run `dr dotenv setup` to configure it.",
-			})
-		} else {
-			result.Results = append(result.Results, ValidationResult{
-				Field:   requiredVar,
-				Value:   value,
-				Valid:   true,
-				Message: "DataRobot variable is set",
 			})
 		}
 	}

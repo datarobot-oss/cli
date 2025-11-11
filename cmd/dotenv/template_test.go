@@ -25,9 +25,8 @@ func TestTemplateTestSuite(t *testing.T) {
 
 type TemplateTestSuite struct {
 	suite.Suite
-	tempDir  string
-	dotfile  string
-	template string
+	tempDir string
+	dotfile string
 }
 
 func (suite *TemplateTestSuite) SetupTest() {
@@ -35,7 +34,6 @@ func (suite *TemplateTestSuite) SetupTest() {
 	suite.tempDir = dir
 
 	suite.dotfile = filepath.Join(suite.tempDir, ".env")
-	suite.template = filepath.Join(suite.tempDir, ".env.template")
 
 	suite.T().Setenv("DATAROBOT_ENDPOINT", "")
 	suite.T().Setenv("DATAROBOT_ENDPOINT_SHORT", "")
@@ -43,32 +41,28 @@ func (suite *TemplateTestSuite) SetupTest() {
 }
 
 func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
-	_, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
+	_, contents, err := updateDotenvFile(suite.dotfile)
 
 	suite.Require().NoError(err)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
-	suite.Equal(
-		"DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n",
-		contents,
-	)
-	suite.Empty(dotenvTemplateUsed)
+	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", contents)
+	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", contents)
 
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
 	content := string(dotfileContents)
 
 	// Verify header format with timestamp
 	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Contains(content, "DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n")
+	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", content)
+	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", content)
+
+	os.Remove(suite.dotfile)
 }
 
-func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
-	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
-
-	suite.FileExists(suite.template, "Expected dotenv template file to be created")
-
-	variables, contents, dotenvTemplateUsed, err := writeUsingTemplateFile(suite.dotfile)
+func (suite *TemplateTestSuite) TestCreateDotenvFromScratch() {
+	variables, contents, err := updateDotenvFile(suite.dotfile)
 
 	suite.Require().NoError(err)
 
@@ -76,53 +70,51 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithTemplate() {
 
 	suite.Equal(
 		[]envbuilder.Variable{
-			{Name: "DATAROBOT_ENDPOINT", Value: "", Secret: false, Changed: false, Commented: false},
+			{Name: "DATAROBOT_ENDPOINT", Value: "", Secret: false, Commented: false},
+			{Name: "DATAROBOT_API_TOKEN", Value: "", Secret: true, Commented: false},
 		},
 		variables,
 	)
-	suite.Equal(
-		"DATAROBOT_ENDPOINT=\n",
-		contents,
-	)
-	suite.Equal(suite.template, dotenvTemplateUsed)
+	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", contents)
+	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", contents)
 
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
 	content := string(dotfileContents)
 
-	// Verify header format with timestamp and template file reference
-	suite.Regexp(`# Edited using .dr dotenv. from .* on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Contains(content, "DATAROBOT_ENDPOINT=\n")
+	// Verify header format with timestamp
+	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
+	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", content)
+	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", content)
 
-	os.Remove(suite.template)
+	os.Remove(suite.dotfile)
 }
 
-func (suite *TemplateTestSuite) TestReadTemplate() {
-	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
+func (suite *TemplateTestSuite) TestReadDotfile() {
+	_ = os.WriteFile(suite.dotfile, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
 
-	suite.FileExists(suite.template, "Expected dotenv template file to be created")
+	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
-	templateLines, templateFileUsed := readTemplate(suite.dotfile)
+	dotenvFileLines, _ := readDotenvFile(suite.dotfile)
 
-	suite.Equal(suite.template, templateFileUsed)
 	suite.Equal(
 		[]string{"DATAROBOT_ENDPOINT=\n"},
-		templateLines,
+		dotenvFileLines,
 	)
 
-	os.Remove(suite.template)
+	os.Remove(suite.dotfile)
 }
 
 func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
-	_ = os.WriteFile(suite.template, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
+	_ = os.WriteFile(suite.dotfile, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
 
-	suite.FileExists(suite.template, "Expected dotenv template file to be created")
+	suite.FileExists(suite.dotfile, "Expected dotenv template file to be created")
 
 	// First save
-	_, _, _, err := writeUsingTemplateFile(suite.dotfile)
+	_, _, err := updateDotenvFile(suite.dotfile)
 	suite.Require().NoError(err)
 
 	// Second save (simulating user editing and saving again)
-	_, _, _, err = writeUsingTemplateFile(suite.dotfile)
+	_, _, err = updateDotenvFile(suite.dotfile)
 	suite.Require().NoError(err)
 
 	// Read the file and count how many times the header appears
@@ -145,9 +137,9 @@ func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
 
 	// Verify the header format with timestamp
 	suite.Contains(content, "# Edited using `dr dotenv`")
-	suite.Regexp(`# Edited using .dr dotenv. .* on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
+	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
 
-	os.Remove(suite.template)
+	os.Remove(suite.dotfile)
 }
 
 func (suite *TemplateTestSuite) TestGetStateDir() {

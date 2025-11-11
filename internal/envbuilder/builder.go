@@ -35,6 +35,7 @@ type UserPrompt struct {
 	Active    bool
 	Commented bool
 	Value     string
+	Hidden    bool
 
 	Env      string         `yaml:"env"`
 	Key      string         `yaml:"key"`
@@ -64,10 +65,9 @@ type ParsedYaml map[string][]UserPrompt
 func (up UserPrompt) String() string {
 	result := ""
 
-	// Disabling it for now as it duplicates comments on every .env file save
-	//if up.Help != "" {
-	//	result += fmt.Sprintf("\n# %v\n", up.Help)
-	//}
+	if up.Help != "" {
+		result += fmt.Sprintf("\n# %v\n", up.Help)
+	}
 
 	return result + up.StringWithoutHelp()
 }
@@ -109,6 +109,10 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
+func (up UserPrompt) ShouldAsk() bool {
+	return up.Active && !up.Hidden
+}
+
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
@@ -120,6 +124,7 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 	}
 
 	allPrompts := make([]UserPrompt, 0)
+	allPrompts = append(allPrompts, corePrompts...)
 
 	for _, yamlFile := range yamlFiles {
 		prompts, err := filePrompts(yamlFile)
