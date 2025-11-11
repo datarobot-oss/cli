@@ -41,12 +41,12 @@ func SetURLAction() {
 	fmt.Println("")
 	fmt.Println("Choose your DataRobot environment:")
 	fmt.Println("")
-	fmt.Println("┌─────────────────────────────────────────────────────┐")
+	fmt.Println("┌────────────────────────────────────────────────────────┐")
 	fmt.Println("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │")
 	fmt.Println("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │")
 	fmt.Println("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │")
-	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL         │")
-	fmt.Println("└─────────────────────────────────────────────────────┘")
+	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL                 │")
+	fmt.Println("└────────────────────────────────────────────────────────┘")
 	fmt.Println("")
 	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL.")
 	fmt.Println("")
@@ -70,7 +70,7 @@ var setURLCmd = &cobra.Command{
 
 This command helps you choose the correct DataRobot environment:
   • US Cloud (most common): https://app.datarobot.com
-  • EU Cloud: https://app.eu.datarobot.com  
+  • EU Cloud: https://app.eu.datarobot.com
   • Japan Cloud: https://app.jp.datarobot.com
   • Custom/On-Premise: Your organization's DataRobot URL
 
