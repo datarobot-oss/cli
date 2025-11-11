@@ -164,9 +164,32 @@ func (m Model) loadPrompts() tea.Cmd {
 }
 
 func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
+	// Update required sections
+	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
+
+	var prompt envbuilder.UserPrompt
+
+	// Advance to next prompt that is required
+	for m.currentPromptIndex < len(m.prompts) {
+		prompt = m.prompts[m.currentPromptIndex]
+
+		if prompt.ShouldAsk() {
+			break
+		}
+
+		m.currentPromptIndex++
+	}
+
+	if m.currentPromptIndex >= len(m.prompts) {
+		// Finished all prompts
+		// Update the .env file with the responses
+		m.contents = envbuilder.UpdatedDotenv(m.prompts)
+
+		return m, m.saveEditedFile()
+	}
+
 	var cmd tea.Cmd
 
-	prompt := m.prompts[m.currentPromptIndex]
 	m.currentPrompt, cmd = newPromptModel(prompt, promptFinishedCmd)
 
 	return m, cmd
@@ -296,28 +319,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				m.prompts[m.currentPromptIndex].Value = strings.Join(values, ",")
 				m.prompts[m.currentPromptIndex].Commented = false
 
-				// Update required sections
-				m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
-
 				m.currentPromptIndex++
-				// Advance to next prompt that is required
-				for m.currentPromptIndex < len(m.prompts) {
-					nextPrompt := m.prompts[m.currentPromptIndex]
-
-					if nextPrompt.Active {
-						break
-					}
-
-					m.currentPromptIndex++
-				}
-
-				if m.currentPromptIndex >= len(m.prompts) {
-					// Finished all prompts
-					// Update the .env file with the responses
-					m.contents = envbuilder.UpdatedDotenv(m.prompts)
-
-					return m, m.saveEditedFile()
-				}
 
 				return m.updateCurrentPrompt()
 			}

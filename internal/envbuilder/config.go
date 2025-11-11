@@ -36,3 +36,30 @@ var knownVariables = map[string]variableConfig{
 		secret: true,
 	},
 }
+
+const coreSection = "__DR_CLI_CORE_PROMPT"
+
+var corePrompts = []UserPrompt{
+	{
+		Section: coreSection,
+		Root:    true,
+		Active:  true,
+		Hidden:  true,
+
+		Env:      "DATAROBOT_ENDPOINT",
+		Type:     "string",
+		Help:     "The URL of your DataRobot instance API.",
+		Optional: false,
+	},
+	{
+		Section: coreSection,
+		Root:    true,
+		Active:  true,
+		Hidden:  true,
+
+		Env:      "DATAROBOT_API_TOKEN",
+		Type:     "string",
+		Help:     "Refer to https://docs.datarobot.com/en/docs/api/api-quickstart/index.html#configure-your-environment for help.",
+		Optional: false,
+	},
+}

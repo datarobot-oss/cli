@@ -35,6 +35,7 @@ type UserPrompt struct {
 	Active    bool
 	Commented bool
 	Value     string
+	Hidden    bool
 
 	Env      string         `yaml:"env"`
 	Key      string         `yaml:"key"`
@@ -108,6 +109,10 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
+func (up UserPrompt) ShouldAsk() bool {
+	return up.Active && !up.Hidden
+}
+
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
@@ -119,6 +124,7 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 	}
 
 	allPrompts := make([]UserPrompt, 0)
+	allPrompts = append(allPrompts, corePrompts...)
 
 	for _, yamlFile := range yamlFiles {
 		prompts, err := filePrompts(yamlFile)

@@ -65,25 +65,41 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	prompts, err := GatherUserPrompts(suite.tempDir, nil)
 	suite.Require().NoError(err)
 
-	suite.Len(prompts, 6, "Expected to find 6 UserPrompt entries")
+	suite.Len(prompts, 8, "Expected to find 6 UserPrompt entries")
 
-	suite.Equal("INFRA_ENABLE_LLM", prompts[0].Env, "Expected [0] prompt env to match")
-	suite.True(prompts[0].Active, "Expected [0] prompt active to match")
+	i := 0
+	suite.Equal("DATAROBOT_ENDPOINT", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
+	suite.True(prompts[i].Hidden, "Expected prompt[i].Hidden to be true")
 
-	suite.Equal("TEXTGEN_DEPLOYMENT_ID", prompts[1].Env, "Expected [1] prompt env to match")
-	suite.False(prompts[1].Active, "Expected [1] prompt active to match")
+	i++
+	suite.Equal("DATAROBOT_API_TOKEN", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
+	suite.True(prompts[i].Hidden, "Expected prompt[i].Hidden to be true")
 
-	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[2].Env, "Expected [2] prompt env to match")
-	suite.False(prompts[2].Active, "Expected [2] prompt active to match")
+	i++
+	suite.Equal("INFRA_ENABLE_LLM", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
 
-	suite.Equal("DATAROBOT_TIMEOUT_MINUTES", prompts[3].Env, "Expected [3] prompt env to match")
-	suite.False(prompts[3].Active, "Expected [3] prompt active to match")
+	i++
+	suite.Equal("TEXTGEN_DEPLOYMENT_ID", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
 
-	suite.Equal("PULUMI_CONFIG_PASSPHRASE", prompts[4].Env, "Expected [4] prompt env to match")
-	suite.True(prompts[4].Active, "Expected [4] prompt active to match")
+	i++
+	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
 
-	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", prompts[5].Env, "Expected [5] prompt env to match")
-	suite.True(prompts[5].Active, "Expected [5] prompt active to match")
+	i++
+	suite.Equal("DATAROBOT_TIMEOUT_MINUTES", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
+
+	i++
+	suite.Equal("PULUMI_CONFIG_PASSPHRASE", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
+
+	i++
+	suite.Equal("DATAROBOT_DEFAULT_USE_CASE", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
 }
 
 func (suite *BuilderTestSuite) TestUserPromptTypeDeserialization() {
