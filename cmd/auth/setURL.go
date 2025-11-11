@@ -78,4 +78,7 @@ This command helps you choose the correct DataRobot environment:
 	Run: func(_ *cobra.Command, _ []string) {
 		SetURLAction()
 	},
+	PostRunE: func(cmd *cobra.Command, _ []string) error {
+		return EnsureAuthenticatedE(cmd.Context())
+	},
 }

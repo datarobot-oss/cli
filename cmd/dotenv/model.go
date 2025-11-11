@@ -355,7 +355,7 @@ func (m Model) View() string {
 	workDir := filepath.Dir(m.DotenvFile)
 	if workDir != "" {
 		sb.WriteString("\n\n")
-		sb.WriteString(tui.StatusBarStyle.Render("📁 Working in: " + workDir))
+		sb.WriteString(tui.StatusBarStyle.Render("📁 Using template found in: " + workDir))
 	}
 
 	return sb.String()
