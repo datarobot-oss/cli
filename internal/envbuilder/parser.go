@@ -65,27 +65,27 @@ func NewFromLine(line string) Variable {
 	}
 }
 
-func VariablesFromTemplate(templateLines []string) ([]Variable, string) {
+func VariablesFromLines(lines []string) ([]Variable, string) {
 	variables := make([]Variable, 0)
 
 	var contents strings.Builder
 
-	for _, templateLine := range templateLines {
-		v := NewFromLine(templateLine)
+	for _, line := range lines {
+		v := NewFromLine(line)
 
 		if v.Name != "" && v.Commented {
 			variables = append(variables, v)
 		}
 
 		if v.Name == "" || v.Commented {
-			contents.WriteString(templateLine)
+			contents.WriteString(line)
 			continue
 		}
 
 		v.setValue()
 
 		if v.Value == "" {
-			contents.WriteString(templateLine)
+			contents.WriteString(line)
 		} else {
 			log.Info("Adding variable " + v.Name)
 			contents.WriteString(v.String())

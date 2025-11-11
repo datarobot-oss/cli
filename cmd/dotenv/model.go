@@ -183,7 +183,7 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	if m.currentPromptIndex >= len(m.prompts) {
 		// Finished all prompts
 		// Update the .env file with the responses
-		m.contents = envbuilder.UpdatedDotenv(m.prompts)
+		m.contents = envbuilder.DotenvFromPrompts(m.prompts)
 
 		return m, m.saveEditedFile()
 	}

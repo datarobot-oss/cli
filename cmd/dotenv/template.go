@@ -33,8 +33,6 @@ const (
 	headerPrefixEdited  = "# Edited using `dr dotenv`"
 )
 
-var defaultEnvFile = []byte("DATAROBOT_ENDPOINT=\nDATAROBOT_API_TOKEN=\n")
-
 // getStateDir returns the XDG_STATE_HOME directory for the dr app
 func getStateDir() (string, error) {
 	// TODO Rewrite this to retrieve state dir from Viper config
@@ -149,7 +147,7 @@ func backup(dotenvFile string) error {
 func readDotenvFile(dotenvFile string) ([]string, string) {
 	fileContents, err := os.ReadFile(dotenvFile)
 	if errors.Is(err, os.ErrNotExist) {
-		fileContents = defaultEnvFile
+		fileContents = []byte(envbuilder.DefaultDotenvFile())
 	} else if err != nil {
 		log.Debug(err)
 		return nil, ""
@@ -164,7 +162,7 @@ func readDotenvFile(dotenvFile string) ([]string, string) {
 func readDotenvFileVariables(dotenvFile string) ([]envbuilder.Variable, string, error) {
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 
-	variables, contents := envbuilder.VariablesFromTemplate(dotenvFileLines)
+	variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 	return variables, contents, nil
 }
@@ -172,7 +170,7 @@ func readDotenvFileVariables(dotenvFile string) ([]envbuilder.Variable, string, 
 func updateDotenvFile(dotenvFile string) ([]envbuilder.Variable, string, error) {
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 
-	variables, contents := envbuilder.VariablesFromTemplate(dotenvFileLines)
+	variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 	err := writeContents(contents, dotenvFile)
 	if err != nil {

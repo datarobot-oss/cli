@@ -69,7 +69,7 @@ var EditCmd = &cobra.Command{
 		}
 
 		dotenvFile := filepath.Join(cwd, ".env")
-		dotenvFileLines, dotenvFileContents := readDotenvFile(dotenvFile)
+		dotenvFileLines, contents := readDotenvFile(dotenvFile)
 		// Use ParseVariablesOnly to avoid auto-populating values during manual editing
 		variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
@@ -85,7 +85,7 @@ var EditCmd = &cobra.Command{
 			initialScreen: screen,
 			DotenvFile:    dotenvFile,
 			variables:     variables,
-			contents:      dotenvFileContents,
+			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
 		p := tea.NewProgram(
@@ -130,7 +130,7 @@ This wizard will help you:
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
-		variables, contents := envbuilder.VariablesFromTemplate(dotenvFileLines)
+		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 		m := Model{
 			initialScreen: wizardScreen,

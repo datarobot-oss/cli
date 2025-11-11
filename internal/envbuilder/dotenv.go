@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func UpdatedDotenv(prompts []UserPrompt) string {
+func DotenvFromPrompts(prompts []UserPrompt) string {
 	var contents strings.Builder
 
 	for _, prompt := range prompts {
@@ -25,4 +25,8 @@ func UpdatedDotenv(prompts []UserPrompt) string {
 	}
 
 	return contents.String()
+}
+
+func DefaultDotenvFile() string {
+	return DotenvFromPrompts(corePrompts)
 }
