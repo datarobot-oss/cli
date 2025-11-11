@@ -61,9 +61,9 @@ type stepErrorMsg struct {
 	err error // Error encountered during step execution
 }
 
-// err messages used in the start command
+// err messages used in the start command.
 const (
-	errNotInRepo          = "not inside a DataRobot repository"
+	errNotInRepo          = "not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository."
 	errScriptSearchFailed = "failed to search for quickstart script: %w"
 )
 

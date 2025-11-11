@@ -215,6 +215,9 @@ func (m Model) View() string {
 		sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("cd " + m.Dir))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
+		sb.WriteString(tui.InfoStyle.Render("dr start"))
 		sb.WriteString("\n")
 
 		return sb.String()

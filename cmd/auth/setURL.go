@@ -70,12 +70,15 @@ var setURLCmd = &cobra.Command{
 
 This command helps you choose the correct DataRobot environment:
   • US Cloud (most common): https://app.datarobot.com
-  • EU Cloud: https://app.eu.datarobot.com  
+  • EU Cloud: https://app.eu.datarobot.com
   • Japan Cloud: https://app.jp.datarobot.com
   • Custom/On-Premise: Your organization's DataRobot URL
 
 💡 If you're unsure, check the URL you use to login to DataRobot in your browser.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		SetURLAction()
+	},
+	PostRunE: func(cmd *cobra.Command, _ []string) error {
+		return EnsureAuthenticatedE(cmd.Context())
 	},
 }
