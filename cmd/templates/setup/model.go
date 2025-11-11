@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -45,6 +46,10 @@ const (
 type Model struct {
 	screen   screens
 	template drapi.Template
+
+	spinner        spinner.Model
+	isLoading      bool
+	loadingMessage string
 
 	host   textinput.Model
 	login  LoginModel
@@ -203,10 +208,17 @@ func NewModel(fromStartCommand bool) Model {
 
 	// Check if dotenv setup was already completed
 	skipDotenv := state.HasCompletedDotenvSetup()
+	s := spinner.New()
+	s.Spinner = spinner.Points
+	s.Style = tui.InfoStyle
 
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},
+
+		spinner:        s,
+		isLoading:      true,
+		loadingMessage: "",
 
 		host: textinput.New(),
 		login: LoginModel{
@@ -230,7 +242,7 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return getTemplates()
+	return tea.Batch(m.spinner.Tick, getTemplates())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -242,20 +254,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
+	case spinner.TickMsg:
+		if m.isLoading {
+			var cmd tea.Cmd
+
+			m.spinner, cmd = m.spinner.Update(msg)
+
+			return m, cmd
+		}
 	case getHostMsg:
 		m.screen = hostScreen
 		focusCmd := m.host.Focus()
 
 		return m, focusCmd
 	case authKeyStartMsg:
+		m.isLoading = true
+		m.loadingMessage = "Authenticating with DataRobot..."
 		m.screen = loginScreen
 		cmd := m.login.Init()
 
 		return m, cmd
 	case authKeySuccessMsg:
+		m.isLoading = true
+		m.loadingMessage = "Loading templates..."
 		m.screen = listScreen
+
 		return m, getTemplates()
 	case templatesLoadedMsg:
+		m.isLoading = false
+		m.loadingMessage = ""
 		m.screen = listScreen
 		m.list.SetTemplates(msg.templatesList.Templates)
 
@@ -339,9 +366,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		m.login, cmd = m.login.Update(msg)
 
+		if m.isLoading {
+			return m, tea.Batch(cmd, m.spinner.Tick)
+		}
+
 		return m, cmd
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
+
+		if m.isLoading {
+			return m, tea.Batch(cmd, m.spinner.Tick)
+		}
 
 		return m, cmd
 	case cloneScreen:
@@ -390,6 +425,12 @@ func (m Model) View() string {
 		sb.WriteString(tui.BaseTextStyle.Render("🎯 You'll have a working AI app at the end"))
 		sb.WriteString("\n\n")
 
+		// Show spinner if loading
+		if m.isLoading {
+			sb.WriteString(tui.BaseTextStyle.Render(m.spinner.View() + " " + m.loadingMessage))
+			sb.WriteString("\n\n")
+		}
+
 		sb.WriteString(tui.BaseTextStyle.Render("Ready to get started? Press Enter to continue..."))
 		sb.WriteString("\n\n")
 
@@ -415,8 +456,12 @@ func (m Model) View() string {
 		sb.WriteString(tui.BaseTextStyle.Render("🔐 DataRobot Authentication"))
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("We'll now authenticate you with DataRobot using your browser."))
-		sb.WriteString("\n\n")
 
+		sb.WriteString("\n\n")
+	// Show spinner if loading
+		if m.isLoading {
+			sb.WriteString(tui.BaseTextStyle.Render(m.spinner.View() + " " + m.loadingMessage))
+		}
 		sb.WriteString(m.login.View())
 
 		sb.WriteString("\n")
