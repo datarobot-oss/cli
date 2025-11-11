@@ -15,10 +15,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
@@ -27,7 +31,6 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
-	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -47,9 +50,13 @@ type Model struct {
 	screen   screens
 	template drapi.Template
 
-	spinner        spinner.Model
-	isLoading      bool
-	loadingMessage string
+	spinner          spinner.Model
+	help             help.Model
+	keys             keyMap
+	isLoading        bool
+	loadingMessage   string
+	width            int
+	hasAuthenticated bool // Track if we've already authenticated
 
 	host   textinput.Model
 	login  LoginModel
@@ -60,6 +67,21 @@ type Model struct {
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
 	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
+}
+
+type keyMap struct {
+	Enter key.Binding
+	Quit  key.Binding
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Enter, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Enter, k.Quit},
+	}
 }
 
 type (
@@ -75,6 +97,7 @@ type (
 	}
 	dotenvUpdatedMsg struct{}
 	exitMsg          struct{}
+	timerTickMsg     struct{}
 )
 
 func getHost() tea.Msg          { return getHostMsg{} }
@@ -83,6 +106,12 @@ func templateSelected() tea.Msg { return templateSelectedMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
+
+func waitForAutoStart() tea.Cmd {
+	return tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
+		return timerTickMsg{}
+	})
+}
 
 // matchTemplateByGitRemote attempts to match a template from the list based on the current git remote URL
 func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template, bool) {
@@ -209,16 +238,34 @@ func NewModel(fromStartCommand bool) Model {
 	// Check if dotenv setup was already completed
 	skipDotenv := state.HasCompletedDotenvSetup()
 	s := spinner.New()
-	s.Spinner = spinner.Points
+	s.Spinner = spinner.Dot
 	s.Style = tui.InfoStyle
+
+	h := help.New()
+	h.ShowAll = false
+
+	keys := keyMap{
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "next"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "ctrl+c"),
+			key.WithHelp("q", "quit"),
+		),
+	}
 
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},
 
-		spinner:        s,
-		isLoading:      true,
-		loadingMessage: "",
+		spinner:          s,
+		help:             h,
+		keys:             keys,
+		isLoading:        false,
+		loadingMessage:   "",
+		width:            80,
+		hasAuthenticated: false,
 
 		host: textinput.New(),
 		login: LoginModel{
@@ -242,11 +289,14 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, getTemplates())
+	return tea.Batch(m.spinner.Tick, waitForAutoStart())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.help.Width = msg.Width
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "q":
@@ -255,19 +305,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			}
 		}
 	case spinner.TickMsg:
-		if m.isLoading {
-			var cmd tea.Cmd
+		var cmd tea.Cmd
 
-			m.spinner, cmd = m.spinner.Update(msg)
+		m.spinner, cmd = m.spinner.Update(msg)
 
-			return m, cmd
+		return m, cmd
+	case timerTickMsg:
+		// Auto-start after 3 seconds on welcome screen
+		if m.screen == welcomeScreen {
+			m.isLoading = true
+			m.loadingMessage = "Checking authentication and loading templates..."
+
+			return m, getTemplates()
 		}
+
+		return m, nil
 	case getHostMsg:
 		m.screen = hostScreen
 		focusCmd := m.host.Focus()
 
 		return m, focusCmd
 	case authKeyStartMsg:
+		// Prevent double authentication
+		if m.hasAuthenticated {
+			return m, getTemplates()
+		}
+
 		m.isLoading = true
 		m.loadingMessage = "Authenticating with DataRobot..."
 		m.screen = loginScreen
@@ -275,6 +338,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, cmd
 	case authKeySuccessMsg:
+		m.hasAuthenticated = true
 		m.isLoading = true
 		m.loadingMessage = "Loading templates..."
 		m.screen = listScreen
@@ -338,6 +402,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 	switch m.screen {
 	case welcomeScreen:
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch keypress := msg.String(); keypress {
+			case "enter":
+				m.isLoading = true
+				m.loadingMessage = "Checking authentication and loading templates..."
+
+				return m, getTemplates()
+			}
+		}
 	case hostScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -366,17 +440,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		m.login, cmd = m.login.Update(msg)
 
-		if m.isLoading {
-			return m, tea.Batch(cmd, m.spinner.Tick)
-		}
-
 		return m, cmd
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
-
-		if m.isLoading {
-			return m, tea.Batch(cmd, m.spinner.Tick)
-		}
 
 		return m, cmd
 	case cloneScreen:
@@ -395,7 +461,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m Model) View() string { //nolint: cyclop
 	var sb strings.Builder
 
 	// Render header with logo
@@ -404,38 +470,57 @@ func (m Model) View() string {
 
 	switch m.screen {
 	case welcomeScreen:
-		// Render welcome content
-		welcome := tui.WelcomeStyle.Render("🎉 Welcome to " + version.AppName + " Setup Wizard!")
-		sb.WriteString(welcome)
+		// Consolidated styling
+		contentWidth := 60
+
+		title := tui.WelcomeStyle.
+			Width(contentWidth).
+			Align(lipgloss.Center).
+			MarginBottom(1).
+			Render("🎉 Welcome to DataRobot CLI Setup Wizard!")
+
+		subtitle := tui.BaseTextStyle.
+			Width(contentWidth).
+			Render("This wizard helps you:")
+
+		steps := lipgloss.NewStyle().
+			Width(contentWidth).
+			MarginLeft(2).
+			Render(strings.Join([]string{
+				"1️⃣  Choose an AI application template",
+				"2️⃣  Clone it to your computer",
+				"3️⃣  Configure your environment",
+				"4️⃣  Get you ready to build!",
+			}, "\n"))
+
+		info := tui.InfoStyle.
+			Width(contentWidth).
+			MarginTop(1).
+			Render(strings.Join([]string{
+				"⏱️  Takes about 3-5 minutes",
+				"🎯 You'll have a working AI app at the end",
+			}, "\n"))
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Left,
+			title,
+			"",
+			subtitle,
+			steps,
+			"",
+			info,
+			"",
+		)
+
+		sb.WriteString(content)
 		sb.WriteString("\n\n")
 
-		sb.WriteString(tui.BaseTextStyle.Render("This wizard helps you:"))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("  1️⃣ Choose an AI application template."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("  2️⃣ Clone it to your computer."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("  3️⃣ Configure your environment."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("  4️⃣ Get you ready to build!"))
-		sb.WriteString("\n\n")
-
-		sb.WriteString(tui.BaseTextStyle.Render("⏱️ The process takes about 3-5 minutes."))
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("🎯 You'll have a working AI app at the end"))
-		sb.WriteString("\n\n")
-
-		// Show spinner if loading
-		if m.isLoading {
-			sb.WriteString(tui.BaseTextStyle.Render(m.spinner.View() + " " + m.loadingMessage))
-			sb.WriteString("\n\n")
+		// Show help only on welcome screen (not during cloning or dotenv setup)
+		if m.screen == welcomeScreen {
+			helpView := m.help.View(m.keys)
+			sb.WriteString(helpView)
 		}
 
-		sb.WriteString(tui.BaseTextStyle.Render("Ready to get started? Press Enter to continue..."))
-		sb.WriteString("\n\n")
-
-		// Render footer with quit instructions
-		sb.WriteString(tui.Footer())
 	case hostScreen:
 		sb.WriteString(tui.BaseTextStyle.Render("🌐 DataRobot URL Configuration"))
 		sb.WriteString("\n\n")
@@ -456,12 +541,7 @@ func (m Model) View() string {
 		sb.WriteString(tui.BaseTextStyle.Render("🔐 DataRobot Authentication"))
 		sb.WriteString("\n\n")
 		sb.WriteString(tui.BaseTextStyle.Render("We'll now authenticate you with DataRobot using your browser."))
-
-		sb.WriteString("\n\n")
-	// Show spinner if loading
-		if m.isLoading {
-			sb.WriteString(tui.BaseTextStyle.Render(m.spinner.View() + " " + m.loadingMessage))
-		}
+		sb.WriteString("\n")
 		sb.WriteString(m.login.View())
 
 		sb.WriteString("\n")
@@ -496,6 +576,19 @@ func (m Model) View() string {
 			sb.WriteString(tui.InfoStyle.Render("dr start"))
 			sb.WriteString("\n")
 		}
+	}
+
+	// Always show status bar at the bottom
+	sb.WriteString("\n")
+
+	if m.isLoading {
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, m.loadingMessage, m.isLoading))
+	} else if m.screen == welcomeScreen {
+		// Show idle status bar only on welcome screen
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Ready to start your AI journey", false))
+	} else if m.screen == hostScreen {
+		// Show status bar on host selection screen (waiting for input, no spinner)
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Waiting for environment host selection", false))
 	}
 
 	return sb.String()
