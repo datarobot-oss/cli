@@ -13,6 +13,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,7 +36,7 @@ The following actions will be performed:
 - Checking for prerequisite tooling
 - Validating the environment (TODO)
 - Executing the quickstart script associated with the template, if available.`,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if viper.GetBool("debug") {
 				f, err := tea.LogToFile("tea-debug.log", "debug")
 				if err != nil {
@@ -49,8 +50,19 @@ The following actions will be performed:
 			m := NewStartModel(opts)
 			p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
-			if _, err := p.Run(); err != nil {
+			finalModel, err := p.Run()
+			if err != nil {
 				return err
+			}
+
+			// Check if we need to launch template setup after quitting
+			if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
+				if innerModel, ok := startModel.Model.(Model); ok {
+					if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
+						// No quickstart found, launch template setup
+						return setup.RunTea(cmd.Context())
+					}
+				}
 			}
 
 			return nil

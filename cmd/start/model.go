@@ -9,7 +9,6 @@
 package start
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -21,7 +20,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
@@ -63,7 +61,7 @@ type stepErrorMsg struct {
 
 // err messages used in the start command.
 const (
-	errNotInRepo          = "not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository."
+	errNotInRepo          = "not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository"
 	errScriptSearchFailed = "failed to search for quickstart script: %w"
 )
 
@@ -358,12 +356,9 @@ func executeQuickstart(m *Model) tea.Msg {
 	// Execute the quickstart script that was found and stored in the model
 	// If no script path is set, then we should invoke `dr templates setup` after user confirmation
 	if m.quickstartScriptPath == "" {
-		// Invoke the templates setup command seamlessly
-		if err := setup.RunTea(context.Background()); err != nil {
-			return stepErrorMsg{err: fmt.Errorf("failed to run template setup: %w", err)}
-		}
-
-		return stepCompleteMsg{message: "Template setup completed successfully.\n", done: true}
+		// We need to quit this program first, then launch setup
+		// Store that we need to launch setup and signal completion
+		return stepCompleteMsg{message: "Launching template setup...\n", done: true}
 	}
 
 	// Signal that we should execute the script
