@@ -184,14 +184,14 @@ var ValidateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate .env and environment variable configuration against required settings",
 	Run: func(_ *cobra.Command, _ []string) {
-		dotenvFile, err := ensureInRepoWithDotenv()
+		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
 			os.Exit(1)
 		}
 
-		repoRoot := filepath.Dir(dotenvFile)
+		repoRoot := filepath.Dir(dotenv)
 
-		dotenvFileLines, _ := readDotenvFile(dotenvFile)
+		dotenvFileLines, _ := readDotenvFile(dotenv)
 
 		// Parse variables from .env file
 		parsedVars := envbuilder.ParseVariablesOnly(dotenvFileLines)
