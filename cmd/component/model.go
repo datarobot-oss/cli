@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/tui"
@@ -350,7 +351,13 @@ func (m Model) viewComponentDetailScreen() string {
 	// TODO: [CFX-3996] What to display here
 	item := m.list.Items()[m.list.Index()].(ItemDelegate)
 	selectedComponent := item.component
-	sb.WriteString(tui.BaseTextStyle.Render("Component " + selectedComponent.FileName))
+	selectedComponentDetails := copier.ComponentDetailsMap[selectedComponent.SrcPath]
+
+	sb.WriteString("Component file name: " + selectedComponent.FileName)
+	sb.WriteString("\n\n")
+
+	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, "dark")
+	sb.WriteString(readMe)
 	sb.WriteString("\n\n")
 	sb.WriteString(tui.BaseTextStyle.Render("Press any key to return."))
 	sb.WriteString("\n\n")
