@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -32,11 +33,13 @@ type (
 	componentInfoRequestMsg struct {
 		item ItemDelegate
 	}
+	updateCompleteMsg struct {
+		item ItemDelegate
+	}
 )
 
 const (
 	listScreen = screens(iota)
-	updateScreen
 	componentDetailScreen
 )
 
@@ -65,6 +68,15 @@ type Model struct {
 	initiator             initiators
 	list                  list.Model // This list holds the components
 	initialUpdateFileName string
+}
+
+func updateComponent(item ItemDelegate) tea.Cmd {
+	// TODO: DRY up since we have this line copied from /internal/copier package
+	execCmd := exec.Command("uvx", "copier", "update", "-a", item.component.FileName, "-A")
+
+	return tea.ExecProcess(execCmd, func(_ error) tea.Msg {
+		return updateCompleteMsg{item}
+	})
 }
 
 // TODO: This is required by the `list` interface but not sure what we need to do here - especially since, are we filtering at all?
@@ -115,6 +127,19 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	cmd := m.list.SetItems(items)
 
 	return m, cmd
+}
+
+func (m Model) unselectComponent(itemToUnselect ItemDelegate) (Model, tea.Cmd) {
+	for i, item := range m.list.Items() {
+		if item.(ItemDelegate).component == itemToUnselect.component {
+			newItem := item.(ItemDelegate)
+			newItem.checked = false
+
+			return m, m.list.SetItem(i, newItem)
+		}
+	}
+
+	return m, nil
 }
 
 func (m Model) getSelectedComponents() []ItemDelegate {
@@ -214,6 +239,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 	case componentInfoRequestMsg:
 		m.screen = componentDetailScreen
+	case updateCompleteMsg:
+		return m.unselectComponent(msg.item)
 	}
 
 	switch m.screen {
@@ -245,39 +272,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			case "i":
 				// TODO: [CFX-3996] What do we show here?
 				return m, m.showComponentInfo()
+			case tea.KeyEnter.String():
+				if len(m.getSelectedComponents()) > 0 {
+					var cmdsToRun []tea.Cmd
+
+					for _, listItem := range m.getSelectedComponents() {
+						cmdsToRun = append(cmdsToRun, updateComponent(listItem))
+					}
+
+					cmd := tea.Sequence(cmdsToRun...)
+
+					return m, cmd
+				}
 			case tea.KeyEscape.String(), "q":
 				return m, tea.Quit
 			default:
 				// If we have an error allow any keypress to exit screen/quit
 				if m.err != nil {
 					return m, tea.Quit
-				}
-			}
-		case errMsg:
-			m.err = msg.err
-			return m, nil
-		}
-	case updateScreen:
-		// TODO: We're not actually using this update screen/view currently
-		// The logic/handling below involving calling `runUpdate()` needs to be hooked up to some UX (maybe on `Enter` keypress in the list view?)
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case tea.KeyEscape.String():
-				return m, tea.Quit
-			case tea.KeyEnter.String():
-				// TODO: We need to actually hook this up to work and to work with one or more selected components
-				if len(m.getSelectedComponents()) > 0 {
-					// TODO: Be sure to make this able to run for more than one selected component at a time
-					for _, listItem := range m.getSelectedComponents() {
-						// TODO: run copier.ExecUpdate using tea.ExecProcess here
-						err := runUpdate(listItem.component.FileName)
-						if err != nil {
-							m.err = err
-						}
-					}
-
-					return m, nil
 				}
 			}
 		case errMsg:
@@ -305,8 +317,6 @@ func (m Model) View() string {
 		sb.WriteString(m.viewListScreen())
 	case componentDetailScreen:
 		sb.WriteString(m.viewComponentDetailScreen())
-	case updateScreen: // TODO: We're not actually using this update screen/view currently
-		sb.WriteString(m.viewUpdateScreen())
 	}
 
 	return sb.String()
@@ -338,6 +348,15 @@ func (m Model) viewListScreen() string {
 	sb.WriteString(m.list.View())
 	sb.WriteString("\n\n")
 
+	// If we don't have any components selected then grey out the message
+	style := tui.DimStyle
+	if len(m.getSelectedComponents()) > 0 {
+		style = tui.BaseTextStyle
+	}
+
+	sb.WriteString(style.Render("Press enter to run update."))
+
+	sb.WriteString("\t")
 	sb.WriteString(tui.BaseTextStyle.Render("Press esc to exit."))
 
 	return sb.String()
@@ -360,30 +379,6 @@ func (m Model) viewComponentDetailScreen() string {
 	sb.WriteString(readMe)
 	sb.WriteString("\n\n")
 	sb.WriteString(tui.BaseTextStyle.Render("Press any key to return."))
-	sb.WriteString("\n\n")
-
-	return sb.String()
-}
-
-// TODO: We're not actually using this update screen/view currently
-func (m Model) viewUpdateScreen() string {
-	var sb strings.Builder
-
-	// Display error message
-	if m.err != nil {
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
-		sb.WriteString("\n")
-		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
-		sb.WriteString("\n")
-
-		return sb.String()
-	}
-
-	sb.WriteString(tui.WelcomeStyle.Render("Component Update"))
-	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Update component " + m.initialUpdateFileName + " ?"))
-	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press enter to run update."))
 	sb.WriteString("\n\n")
 
 	return sb.String()
