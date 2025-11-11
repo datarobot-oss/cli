@@ -111,7 +111,7 @@ func (m Model) pullRepository() tea.Cmd {
 			return cloneSuccessMsg{out}
 		}
 
-		return nil
+		return cloneErrorMsg{out: fmt.Sprintf("directory '%s' already exists with a different repository", status.dir)}
 	}
 }
 
@@ -236,7 +236,12 @@ func (m Model) View() string {
 	}
 
 	if m.cloneError {
-		sb.WriteString("\nError while cloning:\n" + m.out + "\n")
+		sb.WriteString("\n")
+		sb.WriteString(tui.ErrorStyle.Render("Error"))
+		sb.WriteString(" while cloning: ")
+		sb.WriteString(m.out)
+		sb.WriteString("\nPlease choose a different directory name.")
+		sb.WriteString("\n")
 	} else {
 		sb.WriteString(m.out + "\n")
 	}
