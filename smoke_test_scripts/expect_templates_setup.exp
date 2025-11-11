@@ -48,7 +48,7 @@ send -- "\r\n"
 expect "Interactive Setup"
 send -- "\r\n"
 
-expect "DATAROBOT_DEFAULT_USE_CASE"
+expect "PULUMI_CONFIG_PASSPHRASE"
 send -- "\r\n"
 
 expect "SESSION_SECRET_KEY"
@@ -57,7 +57,7 @@ send -- "TESTING_SESSION_SECRET_KEY\r\n"
 expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
 send -- "\r\n"
 
-expect "data_source"
+expect "data source to use for this application"
 send -- "\r\n"
 
 expect "Environment Variables Menu"
