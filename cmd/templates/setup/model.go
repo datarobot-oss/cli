@@ -57,6 +57,7 @@ type Model struct {
 	loadingMessage   string
 	width            int
 	hasAuthenticated bool // Track if we've already authenticated
+	countdown        int  // Countdown timer for welcome screen
 
 	host   textinput.Model
 	login  LoginModel
@@ -97,7 +98,7 @@ type (
 	}
 	dotenvUpdatedMsg struct{}
 	exitMsg          struct{}
-	timerTickMsg     struct{}
+	countdownTickMsg struct{}
 )
 
 func getHost() tea.Msg          { return getHostMsg{} }
@@ -107,9 +108,9 @@ func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
 
-func waitForAutoStart() tea.Cmd {
-	return tea.Tick(3*time.Second, func(_ time.Time) tea.Msg {
-		return timerTickMsg{}
+func tickCountdown() tea.Cmd {
+	return tea.Tick(1*time.Second, func(_ time.Time) tea.Msg {
+		return countdownTickMsg{}
 	})
 }
 
@@ -266,6 +267,7 @@ func NewModel(fromStartCommand bool) Model {
 		loadingMessage:   "",
 		width:            80,
 		hasAuthenticated: false,
+		countdown:        3, // Start with 3 seconds
 
 		host: textinput.New(),
 		login: LoginModel{
@@ -289,7 +291,7 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, waitForAutoStart())
+	return tea.Batch(m.spinner.Tick, tickCountdown())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -310,18 +312,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.spinner, cmd = m.spinner.Update(msg)
 
 		return m, cmd
-	case timerTickMsg:
-		// Auto-start after 3 seconds on welcome screen
-		if m.screen == welcomeScreen {
-			m.isLoading = true
-			m.loadingMessage = "Checking authentication and loading templates..."
+	case countdownTickMsg:
+		// Countdown timer on welcome screen
+		if m.screen == welcomeScreen && m.countdown > 0 {
+			m.countdown--
+			if m.countdown == 0 {
+				// Time's up, auto-start
+				m.isLoading = true
+				m.loadingMessage = "Checking authentication and loading templates..."
 
-			return m, getTemplates()
+				return m, getTemplates()
+			}
+
+			// Continue countdown
+			return m, tickCountdown()
 		}
 
 		return m, nil
 	case getHostMsg:
 		m.screen = hostScreen
+		m.isLoading = false
+		m.loadingMessage = ""
 		focusCmd := m.host.Focus()
 
 		return m, focusCmd
@@ -501,6 +512,22 @@ func (m Model) View() string { //nolint: cyclop
 				"🎯 You'll have a working AI app at the end",
 			}, "\n"))
 
+		// Countdown message
+		countdownMsg := ""
+
+		if m.countdown > 0 {
+			plural := "s"
+			if m.countdown == 1 {
+				plural = ""
+			}
+
+			countdownMsg = tui.BaseTextStyle.
+				Width(contentWidth).
+				Align(lipgloss.Center).
+				Faint(true).
+				Render(fmt.Sprintf("Starting in %d second%s... (or press Enter)", m.countdown, plural))
+		}
+
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
 			title,
@@ -510,6 +537,7 @@ func (m Model) View() string { //nolint: cyclop
 			"",
 			info,
 			"",
+			countdownMsg,
 		)
 
 		sb.WriteString(content)
