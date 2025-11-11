@@ -180,7 +180,6 @@ jobs:
       dotenv: ${{ steps.changes.outputs.dotenv }}
       templates: ${{ steps.changes.outputs.templates }}
       auth: ${{ steps.changes.outputs.auth }}
-      go_code: ${{ steps.changes.outputs.go_code }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -198,30 +197,6 @@ jobs:
               - 'cmd/templates/**'
             auth:
               - 'cmd/auth/**'
-            go_code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-
-  auto-label:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true'
-    runs-on: ubuntu-latest
-    name: Auto Label Go Changes
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Add label for Go code changes
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: ['go']
-            })
 
   completion-tests:
     needs: [build, detect-changes]
