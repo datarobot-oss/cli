@@ -19,7 +19,7 @@
   <a href="https://github.com/datarobot-oss/cli/tags">
     <img src="https://img.shields.io/github/v/tag/datarobot-oss/cli?label=version" alt="Latest Release">
   </a>
-  <a href="/LICENSE">
+  <a href="LICENSE.txt">
     <img src="https://img.shields.io/github/license/datarobot-oss/cli" alt="License">
   </a>
 </p>
