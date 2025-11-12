@@ -95,6 +95,8 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	tm := suite.NewTestModel(NewModel(false))
 
+	suite.WaitFor(tm, "Starting in")
+	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "https://app.datarobot.com")
 	suite.Send(tm, "1", "enter")
 	suite.WaitFor(tm, "cliRedirect=true")
@@ -115,6 +117,8 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	tm := suite.NewTestModel(NewModel(false))
 
+	suite.WaitFor(tm, "Starting in")
+	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "https://app.eu.datarobot.com")
 	suite.Send(tm, "2", "enter")
 	suite.WaitFor(tm, "cliRedirect=true")
@@ -135,6 +139,8 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	tm := suite.NewTestModel(NewModel(false))
 
+	suite.WaitFor(tm, "Starting in")
+	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "3", "enter")
 	suite.WaitFor(tm, "cliRedirect=true")
@@ -155,8 +161,15 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "https://app.jp.datarobot.com")
-	suite.Send(tm, "https://app.parakeet.datarobot.com", "enter")
+	suite.WaitFor(tm, "Starting in")
+	suite.Send(tm, "enter")
+	suite.WaitFor(tm, "Enter your custom URL")
+	// Type the custom URL character by character
+	for _, ch := range "https://custom.url.com" {
+		suite.Send(tm, string(ch))
+	}
+
+	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "cliRedirect=true")
 	suite.Send(tm, "esc")
 
@@ -169,12 +182,14 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	yamlData := make(map[string]string)
 
 	_ = yaml.Unmarshal(yamlFile, &yamlData)
-	suite.Equal("https://app.parakeet.datarobot.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
+	suite.Equal("https://custom.url.com/api/v2", yamlData["endpoint"], "Expected config file to have the selected host")
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
+	suite.WaitFor(tm, "Starting in")
+	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
 
