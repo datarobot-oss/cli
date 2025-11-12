@@ -14,12 +14,16 @@ import (
 	"os/exec"
 )
 
+func Add(repoURL string) *exec.Cmd {
+	return exec.Command("uvx", "copier", "copy", repoURL, ".")
+}
+
 func ExecAdd(repoURL string) error {
 	if repoURL == "" {
 		return errors.New("repository URL is missing")
 	}
 
-	cmd := exec.Command("uvx", "copier", "copy", repoURL, ".")
+	cmd := Add(repoURL)
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -27,12 +31,16 @@ func ExecAdd(repoURL string) error {
 	return cmd.Run()
 }
 
+func Update(yamlFile string) *exec.Cmd {
+	return exec.Command("uvx", "copier", "update", "-a", yamlFile, "-A")
+}
+
 func ExecUpdate(yamlFile string) error {
 	if yamlFile == "" {
 		return errors.New("path to yaml file is missing")
 	}
 
-	cmd := exec.Command("uvx", "copier", "update", "-a", yamlFile, "-A")
+	cmd := Update(yamlFile)
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
