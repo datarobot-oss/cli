@@ -294,7 +294,6 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-
 	return tea.Batch(m.spinner.Tick, getTemplates(1))
 }
 
