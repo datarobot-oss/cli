@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -64,27 +63,18 @@ type Model struct {
 	err                   error
 	infoMessage           string
 	screen                screens
-	initialScreen         screens // TODO: I don't think we need this.
 	initiator             initiators
 	list                  list.Model // This list holds the components
 	initialUpdateFileName string
 }
 
 func updateComponent(item ItemDelegate) tea.Cmd {
-	// TODO: DRY up since we have this line copied from /internal/copier package
-	execCmd := exec.Command("uvx", "copier", "update", "-a", item.component.FileName, "-A")
-
-	return tea.ExecProcess(execCmd, func(_ error) tea.Msg {
+	return tea.ExecProcess(copier.Update(item.component.FileName), func(_ error) tea.Msg {
 		return updateCompleteMsg{item}
 	})
 }
 
-// TODO: This is required by the `list` interface but not sure what we need to do here - especially since, are we filtering at all?
 func (i ItemDelegate) FilterValue() string {
-	if i.component.FileName != "" {
-		return i.component.FileName
-	}
-
 	return i.component.FileName
 }
 
@@ -158,16 +148,14 @@ func (m Model) getSelectedComponents() []ItemDelegate {
 
 func NewComponentModel(initiator initiators, initialScreen screens) Model {
 	return Model{
-		screen:        initialScreen,
-		initialScreen: initialScreen,
-		initiator:     initiator,
+		screen:    initialScreen,
+		initiator: initiator,
 	}
 }
 
 func NewUpdateComponentModel(updateFileName string) Model {
 	return Model{
-		screen:        listScreen,
-		initialScreen: listScreen,
+		screen: listScreen,
 		// Only value here we're actually setting from the function args
 		initialUpdateFileName: updateFileName,
 	}
