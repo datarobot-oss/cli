@@ -40,44 +40,51 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
 - 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
-## Table of Contents
+## Table of contents
 
 - [Installation](#installation)
-- [Quick Start](#quick-start)
+- [Quick start](#quick-start)
 - [Documentation](#documentation)
 - [Commands](#commands)
-- [Shell Completion](#shell-completion)
+- [Shell completion](#shell-completion)
 - [Development](#development)
 - [Release](#release)
 - [Contributing](#contributing)
 - [License](#license)
 
+---
+
 ## Installation
 
-### Quick Install (Recommended)
+### Quick install (recommended)
 
 Install the latest version with a single command:
 
 #### macOS/Linux
 
-######
-    curl https://cli.datarobot.com/install | sh
+```bash
+curl https://cli.datarobot.com/install | sh
+```
 
 #### Windows (PowerShell)
 
-######
-    irm https://cli.datarobot.com/winstall | iex
+```powershell
+irm https://cli.datarobot.com/winstall | iex
+```
 
-### Install Specific Version
+### Install specific version
 
 #### macOS/Linux
 
-######
-    curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
+```bash
+curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
+```
 
-#### Windows
-######
-    $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
+#### Windows (PowerShell)
+
+```powershell
+$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
+```
 
 ### Installation from source
 ---
@@ -99,7 +106,6 @@ task build
 # The binary is available at ./dist/dr
 ./dist/dr version
 ```
-
 
 ## Quick start
 
@@ -224,7 +230,7 @@ dr run --help
 
 The CLI supports shell completions for Bash, Zsh, Fish, and PowerShell with automatic installation and configuration.
 
-### Quick setup (Recommended)
+### Quick setup (recommended)
 
 The easiest way to install completions is using the interactive installer:
 
