@@ -9,7 +9,6 @@
 package start
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -292,18 +291,12 @@ func startQuickstart(_ *Model) tea.Msg {
 func checkPrerequisites(_ *Model) tea.Msg {
 	// Return stepErrorMsg{err} if prerequisites are not met
 
-	// Are we in a DataRobot repository?
-	if !repo.IsInRepo() {
-		return stepErrorMsg{err: errors.New(errNotInRepo)}
-	}
-
 	// Do we have the required tools?
 	if err := tools.CheckPrerequisites(); err != nil {
 		return stepErrorMsg{err: err}
 	}
 
 	// TODO Is template configuration correct?
-	// TODO Do we need to validate the directory structure?
 
 	// Are we working hard?
 	time.Sleep(500 * time.Millisecond) // Simulate work
