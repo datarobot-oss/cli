@@ -70,7 +70,7 @@ curl https://cli.datarobot.com/install | sh
 irm https://cli.datarobot.com/winstall | iex
 ```
 
-> <details><summary>Alternative installation methods</summary>
+<details><summary>Alternative installation methods</summary>
 
 ### Install specific version
 
