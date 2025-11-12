@@ -16,15 +16,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/tui"
 )
 
+type keyMap struct {
+	Enter key.Binding
+	Back  key.Binding
+	Quit  key.Binding
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Enter, k.Back, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Enter, k.Back, k.Quit},
+	}
+}
+
 type Model struct {
 	template   drapi.Template
 	input      textinput.Model
+	spinner    spinner.Model
+	help       help.Model
+	keys       keyMap
 	debounceID int
 	cloning    bool
 	exists     string
@@ -33,13 +56,16 @@ type Model struct {
 	finished   bool
 	out        string
 	Dir        string
+	width      int
 	SuccessCmd tea.Cmd
+	BackCmd    tea.Cmd
 }
 
 type (
 	focusInputMsg    struct{}
 	validateInputMsg struct{ id int }
 	validMsg         struct{}
+	backMsg          struct{}
 	dirStatusMsg     struct {
 		dir     string
 		exists  bool
@@ -50,6 +76,7 @@ type (
 )
 
 func focusInput() tea.Msg { return focusInputMsg{} }
+func back() tea.Msg       { return backMsg{} }
 
 func dirExists(dir string) bool {
 	_, err := os.Stat(dir)
@@ -128,22 +155,41 @@ func (m Model) validateDir() tea.Cmd {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(focusInput, m.validateDir())
+	return tea.Batch(m.spinner.Tick, focusInput, m.validateDir())
 }
 
 const debounceDuration = 350 * time.Millisecond
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.help.Width = msg.Width
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+
+		m.spinner, cmd = m.spinner.Update(msg)
+
+		return m, cmd
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "enter":
+			if m.input.Value() == "" {
+				return m, nil
+			}
+
 			m.input.Blur()
 			m.cloning = true
 			m.Dir = cleanDirPath(m.input.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
+		case "esc":
+			if !m.cloning && !m.finished {
+				return m, back
+			}
 		}
+	case backMsg:
+		return m, m.BackCmd
 	case focusInputMsg:
 		focusCmd := m.input.Focus()
 		return m, focusCmd
@@ -201,10 +247,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 func (m Model) View() string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Template %s\n", m.template.Name))
+	// Title
+	title := tui.BaseTextStyle.
+		Bold(true).
+		Render("📦 Clone Template: " + m.template.Name)
+
+	sb.WriteString(title)
+	sb.WriteString("\n\n")
 
 	if m.cloning {
-		sb.WriteString("Cloning into " + m.input.Value() + "...")
+		// Show cloning progress
+		message := lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Render(fmt.Sprintf("Cloning into %s...", m.input.Value()))
+
+		sb.WriteString(message)
 
 		return sb.String()
 	} else if m.finished {
@@ -223,34 +280,99 @@ func (m Model) View() string {
 		return sb.String()
 	}
 
-	sb.WriteString("Enter destination directory\n")
-	sb.WriteString(m.input.View())
+	// Instruction
+	instruction := tui.BaseTextStyle.
+		Render("Enter the destination directory for your project:")
+
+	sb.WriteString(instruction)
+	sb.WriteString("\n\n")
+
+	// Input field with styled frame
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+		Padding(0, 1).
+		Width(60)
+
+	styledInput := inputStyle.Render(m.input.View())
+	sb.WriteString(styledInput)
 	sb.WriteString("\n")
 
+	// Status messages
 	if m.exists != "" {
+		sb.WriteString("\n")
+
+		var statusMsg string
 		if m.repoURL == m.template.Repository.URL {
-			sb.WriteString("\nDirectory '" + m.exists + "' will be pulled from origin\n")
+			statusMsg = tui.InfoStyle.Render(fmt.Sprintf("💡 Directory '%s' exists and will be updated from origin", m.exists))
 		} else {
-			sb.WriteString("\nDirectory '" + m.exists + "' contains different repository: '" + m.repoURL + "'\n")
+			statusMsg = tui.ErrorStyle.Render(fmt.Sprintf("⚠️  Directory '%s' contains a different repository: '%s'", m.exists, m.repoURL))
 		}
+
+		sb.WriteString(statusMsg)
+		sb.WriteString("\n")
 	}
 
 	if m.cloneError {
 		sb.WriteString("\n")
-		sb.WriteString(tui.ErrorStyle.Render("Error"))
-		sb.WriteString(" while cloning: ")
-		sb.WriteString(m.out)
-		sb.WriteString("\nPlease choose a different directory name.")
+
+		errorMsg := lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#EF5350"}).
+			Render("❌ Error: " + m.out)
+
+		sb.WriteString(errorMsg)
 		sb.WriteString("\n")
-	} else {
-		sb.WriteString(m.out + "\n")
+		sb.WriteString(tui.BaseTextStyle.Faint(true).Render("Please choose a different directory name."))
+		sb.WriteString("\n")
 	}
 
+	// Help section
+	sb.WriteString("\n")
+
+	helpView := m.help.View(m.keys)
+	sb.WriteString(helpView)
+	sb.WriteString("\n")
+
+	// Status bar
+	sb.WriteString("\n")
+	sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Enter directory name and press Enter to clone", false))
+
 	return sb.String()
+}
+
+// IsCloning returns whether the repository is currently being cloned
+func (m Model) IsCloning() bool {
+	return m.cloning
 }
 
 func (m *Model) SetTemplate(template drapi.Template) {
 	m.input = textinput.New()
 	m.input.SetValue(template.DefaultDir())
+	m.input.Placeholder = "e.g., ~/projects/my-ai-app"
+	m.input.CharLimit = 256
 	m.template = template
+
+	m.spinner = spinner.New()
+	m.spinner.Spinner = spinner.Dot
+	m.spinner.Style = tui.InfoStyle
+
+	m.help = help.New()
+	m.help.ShowAll = false
+
+	m.keys = keyMap{
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "clone"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "back to templates"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("ctrl+c"),
+			key.WithHelp("ctrl+c", "quit"),
+		),
+	}
+
+	m.width = 80
 }

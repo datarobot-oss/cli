@@ -95,8 +95,6 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Starting in")
-	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "US Cloud")
 	suite.Send(tm, "1", "enter")
 	suite.WaitFor(tm, "If your browser didn't open automatically")
@@ -117,8 +115,6 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Starting in")
-	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "EU Cloud")
 	suite.Send(tm, "2", "enter")
 	suite.WaitFor(tm, "If your browser didn't open automatically")
@@ -139,8 +135,6 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Starting in")
-	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "Japan Cloud")
 	suite.Send(tm, "3", "enter")
 	suite.WaitFor(tm, "If your browser didn't open automatically")
@@ -161,8 +155,6 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Starting in")
-	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "Enter your custom URL")
 	// Type the custom URL character by character
 	for _, ch := range "https://custom.url.com" {
@@ -188,8 +180,6 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Starting in")
-	suite.Send(tm, "enter")
 	suite.WaitFor(tm, "Japan Cloud")
 	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
 

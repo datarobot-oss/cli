@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -57,7 +56,6 @@ type Model struct {
 	loadingMessage   string
 	width            int
 	hasAuthenticated bool // Track if we've already authenticated
-	countdown        int  // Countdown timer for welcome screen
 
 	host   textinput.Model
 	login  LoginModel
@@ -91,6 +89,7 @@ type (
 	authKeySuccessMsg   struct{}
 	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
 	templateSelectedMsg struct{}
+	backToListMsg       struct{}
 	templateClonedMsg   struct{}
 	templateInDirMsg    struct {
 		dotenvFile string
@@ -98,21 +97,15 @@ type (
 	}
 	dotenvUpdatedMsg struct{}
 	exitMsg          struct{}
-	countdownTickMsg struct{}
 )
 
 func getHost() tea.Msg          { return getHostMsg{} }
 func authSuccess() tea.Msg      { return authKeySuccessMsg{} }
 func templateSelected() tea.Msg { return templateSelectedMsg{} }
+func backToList() tea.Msg       { return backToListMsg{} }
 func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
-
-func tickCountdown() tea.Cmd {
-	return tea.Tick(1*time.Second, func(_ time.Time) tea.Msg {
-		return countdownTickMsg{}
-	})
-}
 
 // matchTemplateByGitRemote attempts to match a template from the list based on the current git remote URL
 func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template, bool) {
@@ -263,11 +256,10 @@ func NewModel(fromStartCommand bool) Model {
 		spinner:          s,
 		help:             h,
 		keys:             keys,
-		isLoading:        false,
-		loadingMessage:   "",
+		isLoading:        true,
+		loadingMessage:   "Checking authentication and loading templates...",
 		width:            80,
 		hasAuthenticated: false,
-		countdown:        3, // Start with 3 seconds
 
 		host: textinput.New(),
 		login: LoginModel{
@@ -280,6 +272,7 @@ func NewModel(fromStartCommand bool) Model {
 		},
 		clone: clone.Model{
 			SuccessCmd: templateCloned,
+			BackCmd:    backToList,
 		},
 		dotenv: dotenv.Model{
 			SuccessCmd: dotenvUpdated,
@@ -291,7 +284,7 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, tickCountdown())
+	return tea.Batch(m.spinner.Tick, getTemplates())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -312,23 +305,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.spinner, cmd = m.spinner.Update(msg)
 
 		return m, cmd
-	case countdownTickMsg:
-		// Countdown timer on welcome screen
-		if m.screen == welcomeScreen && m.countdown > 0 {
-			m.countdown--
-			if m.countdown == 0 {
-				// Time's up, auto-start
-				m.isLoading = true
-				m.loadingMessage = "Checking authentication and loading templates..."
-
-				return m, getTemplates()
-			}
-
-			// Continue countdown
-			return m, tickCountdown()
-		}
-
-		return m, nil
 	case getHostMsg:
 		m.screen = hostScreen
 		m.isLoading = false
@@ -368,6 +344,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.clone.SetTemplate(m.template)
 
 		return m, m.clone.Init()
+	case backToListMsg:
+		m.screen = listScreen
+
+		return m, m.list.Init()
 	case templateClonedMsg:
 		// Skip dotenv if it was already completed
 		if m.skipDotenvSetup {
@@ -376,6 +356,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, tea.Sequence(tea.ExitAltScreen, exit)
 		}
 
+		m.isLoading = false
+		m.loadingMessage = ""
 		m.screen = dotenvScreen
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
 		m.dotenvSetupCompleted = true
@@ -413,16 +395,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 	switch m.screen {
 	case welcomeScreen:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch keypress := msg.String(); keypress {
-			case "enter":
-				m.isLoading = true
-				m.loadingMessage = "Checking authentication and loading templates..."
-
-				return m, getTemplates()
-			}
-		}
+		// No interaction needed - loading starts automatically
 	case hostScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -461,6 +434,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, cmd
 	case cloneScreen:
 		m.clone, cmd = m.clone.Update(msg)
+
+		// Show loading status when cloning starts
+		if m.clone.IsCloning() && !m.isLoading {
+			m.isLoading = true
+			m.loadingMessage = "Cloning template to your computer..."
+		}
 
 		return m, cmd
 	case dotenvScreen:
@@ -521,22 +500,6 @@ func (m Model) View() string { //nolint: cyclop
 				"🎯 You'll have a working AI app at the end",
 			}, "\n"))
 
-		// Countdown message
-		countdownMsg := ""
-
-		if m.countdown > 0 {
-			plural := "s"
-			if m.countdown == 1 {
-				plural = ""
-			}
-
-			countdownMsg = tui.BaseTextStyle.
-				Width(contentWidth).
-				Align(lipgloss.Left).
-				Faint(true).
-				Render(fmt.Sprintf("Starting in %d second%s... (or press Enter)", m.countdown, plural))
-		}
-
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
 			title,
@@ -545,18 +508,10 @@ func (m Model) View() string { //nolint: cyclop
 			steps,
 			"",
 			info,
-			"",
-			countdownMsg,
 		)
 
 		sb.WriteString(content)
 		sb.WriteString("\n\n")
-
-		// Show help only on welcome screen (not during cloning or dotenv setup)
-		if m.screen == welcomeScreen {
-			helpView := m.help.View(m.keys)
-			sb.WriteString(helpView)
-		}
 
 	case hostScreen:
 		contentWidth := 60
@@ -672,6 +627,9 @@ func (m Model) View() string { //nolint: cyclop
 	} else if m.screen == hostScreen {
 		// Show status bar on host selection screen (waiting for input, no spinner)
 		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Waiting for environment host selection", false))
+	} else if m.screen == listScreen {
+		// Show status bar on template selection screen
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Choose your template to get started", false))
 	}
 
 	return sb.String()
