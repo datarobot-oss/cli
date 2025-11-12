@@ -50,6 +50,8 @@ type Model struct {
 	list   list.Model
 	clone  clone.Model
 	dotenv dotenv.Model
+
+	fromStartCommand bool // true if invoked from dr start
 }
 
 type (
@@ -190,7 +192,7 @@ func saveHost(host string) tea.Cmd {
 	}
 }
 
-func NewModel() Model {
+func NewModel(fromStartCommand bool) Model {
 	err := config.ReadConfigFile("")
 	if err != nil {
 		log.Error("Failed to read config file", "error", err)
@@ -215,6 +217,8 @@ func NewModel() Model {
 		dotenv: dotenv.Model{
 			SuccessCmd: dotenvUpdated,
 		},
+
+		fromStartCommand: fromStartCommand,
 	}
 }
 
@@ -398,13 +402,18 @@ func (m Model) View() string {
 	case exitScreen:
 		sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s cloned and initialized.", m.template.Name)))
 		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("cd " + m.clone.Dir))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
-		sb.WriteString(tui.InfoStyle.Render("dr start"))
-		sb.WriteString("\n")
+
+		if m.fromStartCommand {
+			sb.WriteString(tui.BaseTextStyle.Render("You can now start running your AI application!"))
+		} else {
+			sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("cd " + m.clone.Dir))
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
+			sb.WriteString(tui.InfoStyle.Render("dr start"))
+			sb.WriteString("\n")
+		}
 	}
 
 	return sb.String()

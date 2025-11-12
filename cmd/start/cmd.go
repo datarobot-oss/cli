@@ -60,7 +60,7 @@ The following actions will be performed:
 				if innerModel, ok := startModel.Model.(Model); ok {
 					if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
 						// No quickstart found, launch template setup
-						return setup.RunTea(cmd.Context())
+						return setup.RunTeaFromStart(cmd.Context(), true)
 					}
 				}
 			}
