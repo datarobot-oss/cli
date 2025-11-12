@@ -19,13 +19,13 @@ dr start [flags]
 
 The `start` command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
 
-1. **Prerequisite checks**&mdash;verifies that you're in a DataRobot repository and have required tools installed.
-2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/`.
+1. **Prerequisite checks**&mdash;verifies that required tools are installed.
+2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/` (if in a DataRobot repository).
 3. **Execution**&mdash;either:
    - Runs the quickstart script if found (after user confirmation, unless `--yes` is specified).
-   - Launches the interactive `dr templates setup` wizard if no script is found.
+   - Launches the interactive `dr templates setup` wizard if no script is found or not in a repository.
 
-This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If no script exists, the command gracefully falls back to the standard setup wizard.
+This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If you're not in a DataRobot repository or no script exists, the command gracefully falls back to the standard setup wizard.
 
 ## Flags
 
@@ -141,7 +141,7 @@ dr quickstart
 
 ### When no quickstart script exists
 
-1. No script is found in `.datarobot/cli/bin/`
+1. No script is found in `.datarobot/cli/bin/` (or not in a DataRobot repository)
 2. User is notified
 3. Interactive `dr templates setup` wizard launches automatically
 4. User completes template configuration through the wizard
@@ -150,22 +150,26 @@ dr quickstart
 
 Before proceeding, the command verifies:
 
-- ✅ Current directory is within a DataRobot repository (contains `.datarobot/` directory)
 - ✅ Required tools are installed (Git, etc.)
 
-If prerequisites fail, the command exits with an error message.
+When searching for a quickstart script, the command checks:
+
+- ✅ Current directory is within a DataRobot repository (contains `.datarobot/` directory)
+
+If the repository check fails, the command automatically launches the template setup wizard instead of exiting with an error.
 
 ## Error handling
 
 ### Not in a DataRobot repository
 
+If you're not in a DataRobot repository, the command automatically launches the template setup wizard:
+
 ```bash
 $ dr start
-Error: not inside a DataRobot repository
-
-# Solution: Navigate to a DataRobot template directory or run:
-$ dr templates setup
+# Automatically launches: dr templates setup
 ```
+
+No manual intervention is needed - the command handles this gracefully.
 
 ### Missing prerequisites
 
@@ -184,14 +188,14 @@ If a quickstart script fails, the error is displayed and the command exits. Chec
 
 ### ✅ Good use cases
 
-- **First-time setup**&mdash;initializing a newly cloned template.
+- **First-time setup**&mdash;initializing a newly cloned template or starting from scratch.
 - **Quick restart**&mdash;restarting development after a break.
 - **Onboarding**&mdash;helping new team members get started quickly.
 - **CI/CD**&mdash;automating application initialization in pipelines.
+- **General entry point**&mdash;universal command that works whether you have a template or not.
 
 ### ❌ When not to use
 
-- **Template not cloned**&mdash;use `dr templates setup` instead to clone and configure.
 - **Making configuration changes**&mdash;use `dr dotenv` to modify environment variables.
 - **Running specific tasks**&mdash;use `dr run <task>` for targeted task execution.
 

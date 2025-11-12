@@ -367,7 +367,6 @@ func findQuickstartScript() (string, error) {
 		return "", errors.New(errNotInRepo)
 	}
 
-
 	// Look for any executable file named quickstart* in the configured path relative to CWD
 	executablePath := repo.QuickstartScriptPath
 
