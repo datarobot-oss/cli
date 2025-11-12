@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://datarobot.com">Homepage</a>
   ·
-  <a href="https://docs.datarobot.com/en/docs/agentic-ai/agentic-develop/index.html">Documentation</a>
+  <a href="https://docs.datarobot.com/">Documentation</a>
   ·
   <a href="https://docs.datarobot.com/en/docs/get-started/troubleshooting/general-help.html">Support</a>
 </p>
