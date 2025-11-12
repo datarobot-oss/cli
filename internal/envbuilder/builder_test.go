@@ -143,3 +143,33 @@ root:
 	suite.Equal(PromptType("boolean"), prompts[2].Type, "Boolean type should be preserved")
 	suite.Equal(PromptType("some_unknown_type"), prompts[3].Type, "Unknown type should be preserved")
 }
+
+func (suite *BuilderTestSuite) TestUserPromptMultilineHelpString() {
+	yamlContent := `
+root:
+  - key: test-string
+    env: TEST_STRING
+    type: string
+    help: |-
+        A string type.
+        With a multiline help string.
+  - key: test-secret
+    env: TEST_SECRET
+    type: secret_string
+    help: A secret string type
+`
+
+	// Create a temporary YAML file
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_multiline_help_string.yaml")
+	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
+	suite.Require().NoError(err)
+
+	// Parse the file
+	prompts, err := filePrompts(tmpFile)
+	suite.Require().NoError(err)
+	suite.Require().Len(prompts, 2, "Expected 2 prompts")
+
+	// Verify that our multiline string has a newline in it
+	suite.Equal("A string type.\nWith a multiline help string.", prompts[0].Help)
+	suite.Equal("A secret string type", prompts[1].Help)
+}

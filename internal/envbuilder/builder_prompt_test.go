@@ -40,4 +40,36 @@ func TestPromptString(t *testing.T) {
 			t.Errorf("Expected '# my-key=my-value', got '%s'", str)
 		}
 	})
+
+	t.Run("Returns help as comment above env var when help is present", func(t *testing.T) {
+		prompt := UserPrompt{
+			Env:    "MY_VAR",
+			Key:    "my-key",
+			Value:  "my-value",
+			Active: true,
+			Help:   "Lorem Ipsum.",
+		}
+
+		str := prompt.String()
+
+		if str != "\n# Lorem Ipsum.\nMY_VAR=my-value" {
+			t.Errorf("Expected '\n# Lorem Ipsum.\nMY_VAR=my-value', got '%s'", str)
+		}
+	})
+
+	t.Run("Returns multiline comment when multiline help is present", func(t *testing.T) {
+		prompt := UserPrompt{
+			Env:    "MY_VAR",
+			Key:    "my-key",
+			Value:  "my-value",
+			Active: true,
+			Help:   "Lorem Ipsum.\nMore info here.",
+		}
+
+		str := prompt.String()
+
+		if str != "\n# Lorem Ipsum.\n# More info here.\nMY_VAR=my-value" {
+			t.Errorf("Expected '\n# Lorem Ipsum.\n# More info here.\nMY_VAR=my-value', got '%s'", str)
+		}
+	})
 }
