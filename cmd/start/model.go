@@ -9,6 +9,7 @@
 package start
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -297,6 +298,7 @@ func checkPrerequisites(_ *Model) tea.Msg {
 	}
 
 	// TODO Is template configuration correct?
+	// TODO Do we need to validate the directory structure?
 
 	// Are we working hard?
 	time.Sleep(500 * time.Millisecond) // Simulate work
@@ -360,6 +362,12 @@ func executeQuickstart(m *Model) tea.Msg {
 }
 
 func findQuickstartScript() (string, error) {
+	// Are we in a DataRobot repository?
+	if !repo.IsInRepo() {
+		return "", errors.New(errNotInRepo)
+	}
+
+
 	// Look for any executable file named quickstart* in the configured path relative to CWD
 	executablePath := repo.QuickstartScriptPath
 
