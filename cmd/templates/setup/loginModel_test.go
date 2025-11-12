@@ -96,7 +96,8 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "US Cloud")
-	suite.Send(tm, "1", "enter")
+	// US Cloud is already selected by default (first item)
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
@@ -115,8 +116,10 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "EU Cloud")
-	suite.Send(tm, "2", "enter")
+	suite.WaitFor(tm, "US Cloud")
+	// Navigate down to EU Cloud (second item)
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
@@ -135,8 +138,11 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Japan Cloud")
-	suite.Send(tm, "3", "enter")
+	suite.WaitFor(tm, "US Cloud")
+	// Navigate down to Japan Cloud (third item)
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
@@ -155,13 +161,20 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Enter your custom URL")
+	suite.WaitFor(tm, "US Cloud")
+	// Navigate down to Custom/On-Prem (fourth item)
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	suite.WaitFor(tm, "Custom DataRobot URL")
 	// Type the custom URL character by character
 	for _, ch := range "https://custom.url.com" {
 		suite.Send(tm, string(ch))
 	}
 
-	suite.Send(tm, "enter")
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
@@ -180,8 +193,17 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 	tm := suite.NewTestModel(NewModel(false))
 
-	suite.WaitFor(tm, "Japan Cloud")
-	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
+	suite.WaitFor(tm, "US Cloud")
+	// Navigate down to Custom/On-Prem and enter it
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	suite.WaitFor(tm, "Custom DataRobot URL")
+	// Type invalid text and quit
+	suite.Send(tm, "squak-squak")
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 
 	suite.Quit(tm)
 

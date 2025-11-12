@@ -19,7 +19,6 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
@@ -57,15 +56,14 @@ type Model struct {
 	width            int
 	hasAuthenticated bool // Track if we've already authenticated
 
-	host   textinput.Model
-	login  LoginModel
-	list   list.Model
-	clone  clone.Model
-	dotenv dotenv.Model
-
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
 	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
+	hostModel HostModel
+	login     LoginModel
+	list      list.Model
+	clone     clone.Model
+	dotenv    dotenv.Model
 }
 
 type keyMap struct {
@@ -261,7 +259,7 @@ func NewModel(fromStartCommand bool) Model {
 		width:            80,
 		hasAuthenticated: false,
 
-		host: textinput.New(),
+		hostModel: NewHostModel(),
 		login: LoginModel{
 			APIKeyChan: make(chan string, 1),
 			GetHostCmd: getHost,
@@ -309,9 +307,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = hostScreen
 		m.isLoading = false
 		m.loadingMessage = ""
-		focusCmd := m.host.Focus()
+		m.hostModel.SuccessCmd = saveHost
 
-		return m, focusCmd
+		return m, m.hostModel.Init()
 	case authKeyStartMsg:
 		// Prevent double authentication
 		if m.hasAuthenticated {
@@ -397,19 +395,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	case welcomeScreen:
 		// No interaction needed - loading starts automatically
 	case hostScreen:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch keypress := msg.String(); keypress {
-			case "enter":
-				host := m.host.Value()
-				m.host.SetValue("")
-				m.host.Blur()
-
-				return m, saveHost(host)
-			}
-		}
-
-		m.host, cmd = m.host.Update(msg)
+		m.hostModel, cmd = m.hostModel.Update(msg)
 
 		return m, cmd
 	case loginScreen:
@@ -514,57 +500,8 @@ func (m Model) View() string { //nolint: cyclop
 		sb.WriteString("\n\n")
 
 	case hostScreen:
-		contentWidth := 60
+		sb.WriteString(m.hostModel.View())
 
-		title := tui.BaseTextStyle.
-			Width(contentWidth).
-			Render("🌐 DataRobot URL Configuration")
-
-		subtitle := tui.BaseTextStyle.
-			Width(contentWidth).
-			MarginTop(1).
-			Render("Choose your DataRobot environment:")
-
-		// Style for URLs
-		urlStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
-			Underline(true)
-
-		// Create styled frame for options
-		optionStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
-			Padding(1, 2).
-			Width(contentWidth)
-
-		optionsContent := strings.Join([]string{
-			"[1] 🇺🇸 US Cloud        " + urlStyle.Render("https://app.datarobot.com"),
-			"[2] 🇪🇺 EU Cloud        " + urlStyle.Render("https://app.eu.datarobot.com"),
-			"[3] 🇯🇵 Japan Cloud     " + urlStyle.Render("https://app.jp.datarobot.com"),
-			"[4] 🏢 Custom/On-Prem   Enter your custom URL",
-		}, "\n")
-
-		options := optionStyle.Render(optionsContent)
-
-		hint := tui.BaseTextStyle.
-			Width(contentWidth).
-			Faint(true).
-			MarginTop(1).
-			Render("� Don't know which one? Check your DataRobot login page URL")
-
-		content := lipgloss.JoinVertical(
-			lipgloss.Left,
-			title,
-			subtitle,
-			"",
-			options,
-			"",
-			hint,
-			"",
-			m.host.View(),
-		)
-
-		sb.WriteString(content)
 	case loginScreen:
 		title := tui.BaseTextStyle.
 			Bold(true).
