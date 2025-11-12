@@ -21,8 +21,6 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - [Documentation](#documentation)
 - [Commands](#commands)
 - [Shell Completion](#shell-completion)
-- [Development](#development)
-- [Release](#release)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -34,44 +32,28 @@ Install the latest version with a single command:
 
 #### macOS/Linux
 
-######
-    curl https://cli.datarobot.com/install | sh
+```bash
+curl https://cli.datarobot.com/install | sh
+```
 
 #### Windows (PowerShell)
 
-######
-    irm https://cli.datarobot.com/winstall | iex
+```powershell
+irm https://cli.datarobot.com/winstall | iex
+```
 
 ### Install Specific Version
 
-#### macOS/Linux
+#### macOS/Linux (Specific Version)
 
-######
-    curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
-
-#### Windows
-######
-    $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
-
-### Installation from source
----
-### Prerequisites
-
-- Go 1.25.3 or later (for building from source).
-- Git.
-- [Task](https://taskfile.dev/) (for development and task running).
-
-### Build from source
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
-cd cli
+curl https://cli.datarobot.com/install | sh -s -- v0.1.0
+```
 
-# Build the CLI
-task build
+#### Windows (Specific Version)
 
-# The binary is available at ./dist/dr
-./dist/dr version
+```powershell
+$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 ```
 
 
@@ -112,9 +94,7 @@ dr start
 
 This will either execute your template's quickstart script or guide you through the setup process if one hasn't been completed yet.
 
-## Commands
-
-### 3. Run tasks
+### 4. Run tasks
 
 Execute tasks defined in your template Taskfile:
 
@@ -152,11 +132,7 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
   - [dotenv](docs/commands/dotenv.md)&mdash;environment file management.
   - [completion](docs/commands/completion.md)&mdash;shell completion setup.
 
-- **[Development guide](docs/development/)**&mdash;for contributors.
-  - [Building from source](docs/development/building.md)
-  - [Architecture](docs/development/architecture.md)
-  - [Testing](docs/development/testing.md)
-  - [Release process](#release)
+- **[Development guide](docs/development/)**&mdash;for contributors, see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Commands
 
@@ -222,6 +198,7 @@ dr completion install zsh --yes
 ```
 
 The installer will:
+
 - Detect your shell automatically
 - Install completions to the correct location
 - Configure your shell profile
@@ -233,7 +210,8 @@ The installer will:
 
 If you prefer manual installation, generate the completion script:
 
-**Bash**
+#### Bash
+
 ```bash
 # Linux
 dr completion bash | sudo tee /etc/bash_completion.d/dr
@@ -242,7 +220,8 @@ dr completion bash | sudo tee /etc/bash_completion.d/dr
 dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
 ```
 
-**Zsh**
+#### Zsh
+
 ```bash
 # Oh-My-Zsh
 dr completion zsh > ~/.oh-my-zsh/custom/completions/_dr
@@ -251,12 +230,14 @@ dr completion zsh > ~/.oh-my-zsh/custom/completions/_dr
 dr completion zsh > ~/.zsh/completions/_dr
 ```
 
-**Fish**
+#### Fish
+
 ```bash
 dr completion fish > ~/.config/fish/completions/dr.fish
 ```
 
-**PowerShell**
+#### PowerShell
+
 ```powershell
 dr completion powershell | Out-String | Invoke-Expression
 # To persist, add to your PowerShell profile
@@ -270,133 +251,15 @@ dr completion uninstall --yes
 
 See the [Shell Completion Guide](docs/user-guide/shell-completions.md) for detailed instructions and troubleshooting.
 
-## Development
-
-### Setting up the development environment
-
-1. **Install prerequisites**
-
-```bash
-# Install Task (task runner)
-# macOS
-brew install go-task/tap/go-task
-
-# Linux
-sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
-
-# Windows
-choco install go-task
-```
-
-2. **Clone and build**
-
-```bash
-git clone https://github.com/datarobot-oss/cli.git
-cd cli
-
-# Install development tools
-task dev-init
-
-# Build the CLI
-task build
-
-# Run tests
-task test
-
-# Run linters
-task lint
-```
-
-3. **Available development tasks**
-
-```bash
-task --list           # Show all available tasks.
-task test             # Run tests.
-task test-coverage    # Run tests with coverage.
-task lint             # Run linters.
-task fmt              # Format code.
-task build            # Build binary.
-task clean            # Clean build artifacts.
-```
-
-### Project structure
-
-```
-.
-├── cmd/                    # Command implementations.
-│   ├── auth/              # Authentication commands.
-│   ├── completion/        # Shell completion.
-│   ├── dotenv/            # Environment management.
-│   ├── run/               # Task runner.
-│   ├── templates/         # Template commands.
-│   └── version/           # Version command.
-├── internal/              # Private application code.
-│   ├── config/           # Configuration management.
-│   ├── drapi/            # DataRobot API client.
-│   ├── envbuilder/       # Environment builder.
-│   ├── task/             # Task discovery and execution.
-│   └── version/          # Version information.
-├── tui/                   # Terminal UI components.
-├── docs/                  # Documentation.
-└── main.go               # Application entry point.
-```
-
-## Release
-
-### Creating a release
-
-This project uses [goreleaser](https://goreleaser.com/) for automated releases.
-
-1. **Ensure all changes are merged** to the main branch.
-
-2. **Determine the next version** following [Semantic Versioning](https://semver.org/):
-   - `MAJOR.MINOR.PATCH` (e.g., `v1.2.3`).
-   - Pre-release: `v1.2.3-rc.1`, `v1.2.3-beta.1`.
-
-3. **Create and push a tag**:
-
-```bash
-# Create a new version tag.
-git tag v0.1.0
-
-# Push the tag.
-git push --tags
-```
-
-4. **Automated release**: The GitHub Actions workflow automatically:
-   - Builds binaries for multiple platforms.
-   - Generates release notes.
-   - Creates a GitHub release.
-   - Uploads artifacts.
-
-### Release testing
-
-To test the release process without publishing:
-
-```bash
-# Dry run.
-goreleaser release --snapshot --clean
-```
-
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 
-- Code of conduct.
-- Development workflow.
-- Submitting pull requests.
-- Coding standards.
-- Testing requirements.
-
-### Quick contribution guide
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Make your changes.
-4. Run tests and linters (`task test && task lint`).
-5. Commit your changes (`git commit -m 'Add amazing feature'`).
-6. Push to the branch (`git push origin feature/amazing-feature`).
-7. Open a pull request.
+- Development environment setup
+- Coding standards and guidelines
+- Testing requirements
+- Submitting pull requests
+- Release process
 
 ## License
 
@@ -409,12 +272,13 @@ This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt
 - 📖 [Documentation](docs/)
 - 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
 - 💬 [Discussions](https://github.com/datarobot/cli/discussions)
-- 📧 Email: oss-community-management@datarobot.com
+- 📧 Email: <oss-community-management@datarobot.com>
 
 ## Acknowledgments
 
 Built with:
-- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework.
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
-- [Viper](https://github.com/spf13/viper)&mdash;configuration management.
-- [Task](https://taskfile.dev/)&mdash;task runner.
+
+- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework
+- [Viper](https://github.com/spf13/viper)&mdash;configuration management
+- [Task](https://taskfile.dev/)&mdash;task runner
