@@ -71,7 +71,7 @@ irm https://cli.datarobot.com/winstall | iex
 ```
 
 <details><summary><em>Alternative installation methods</em></summary>
-
+<br/>
 The following are alternative installation methods for the DataRobot CLI.
 You can choose to install a specific version or build and install from source.
 
@@ -93,6 +93,8 @@ $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 
 ### Build and install from source
 
+If you would like to build and install from source, you can do so by following the instructions below:
+
 #### Prerequisites
 
 - Go 1.25.3 or later (for building from source).
@@ -100,6 +102,7 @@ $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 - [Task](https://taskfile.dev/) (for development and task running).
 
 #### Build from source
+
 ```bash
 # Clone the repository
 git clone https://github.com/datarobot-oss/cli.git
@@ -116,22 +119,26 @@ task build
 
 ## Quick start
 
-### 1. Set up authentication
+Now that you have installed the DataRobot CLI, you can start using it to manage your DataRobot applications.
+The following sections will walk you through configuring the CLI, setting up a template, and running tasks.
 
-Configure your DataRobot credentials:
+### Set up authentication
+
+First, configure your DataRobot credentials by setting your DataRobot URL.
+Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for steps to locate your DataRobot URL, also known as your DataRobot API endpoint.
 
 ```bash
 # Set your DataRobot URL (interactive)
-dr auth set-url
+dr auth set-url # Or specify directly: dr auth set-url [YOUR_DATAROBOT_API_ENDPOINT]
+```
 
-# Or specify directly
-dr auth set-url https://app.datarobot.com
+Next, log in to DataRobot (opens browser for OAuth):
 
-# Log in to DataRobot (opens browser for OAuth)
+```bash
 dr auth login
 ```
 
-### 2. Set up a template
+### Set up a template
 
 Use the interactive setup wizard to clone and configure a template:
 
