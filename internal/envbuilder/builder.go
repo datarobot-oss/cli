@@ -74,10 +74,10 @@ func (up UserPrompt) String() string {
 
 		var helpLineResult strings.Builder
 
-		helpLineResult.WriteString(fmt.Sprintf("\n"))
+		helpLineResult.WriteString("\n")
 
-		for i, helpLine := range linesNormalized {
-				helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
+		for _, helpLine := range linesNormalized {
+			helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
 		}
 
 		result += helpLineResult.String()
