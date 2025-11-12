@@ -3,8 +3,9 @@
 ## Development Workflow
 
 - Use Taskfile tasks to complete developer tasks rather than direct go tasks
-- Ensure you lint and format code using `task lint`.
+- Ensure you lint and format code using `task lint`
 - Specifically run `task build` to build the system instead of `go build`
+- Output the summary of changes in Markdown format, using the template in .github/PULL_REQUEST_TEMPLATE.md, in a copyable text block
 
 ## Coding Standards
 
