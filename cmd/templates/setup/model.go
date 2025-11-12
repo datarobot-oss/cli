@@ -294,9 +294,8 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	m.fetchSessionID++
 
-	return tea.Batch(m.spinner.Tick, getTemplates(m.fetchSessionID))
+	return tea.Batch(m.spinner.Tick, getTemplates(1))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -364,8 +363,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, getTemplates(m.fetchSessionID)
 	case templatesLoadedMsg:
-		// Ignore stale responses from previous sessions
-		if msg.sessionID != m.fetchSessionID {
+		// Only check session ID if we've incremented it (i.e., fetchSessionID > 0)
+		// This allows the initial fetch (sessionID=1) to work when fetchSessionID is still 0
+		if m.fetchSessionID > 0 && msg.sessionID != m.fetchSessionID {
 			log.Debug("Ignoring stale templates response", "received", msg.sessionID, "current", m.fetchSessionID)
 
 			return m, nil
