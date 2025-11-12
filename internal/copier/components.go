@@ -18,7 +18,7 @@ type Details struct {
 	ReadMeContents string
 }
 
-//go:embed readme/*.html
+//go:embed readme/*.md
 var readmeFS embed.FS
 
 func init() {
@@ -35,21 +35,21 @@ func init() {
 // To Note: Not all of the README contents have been added
 var ComponentDetailsMap = map[string]Details{
 	"git@github.com:datarobot/af-component-agent.git": {
-		readMeFile: "af-component-agent.html",
+		readMeFile: "af-component-agent.md",
 	},
 	"git@github.com:datarobot/af-component-base.git": {
-		readMeFile: "af-component-base.html",
+		readMeFile: "af-component-base.md",
 	},
 	"git@github.com:datarobot/af-component-fastapi-backend.git": {
-		readMeFile: "af-component-fastapi-backend.html",
+		readMeFile: "af-component-fastapi-backend.md",
 	},
 	"git@github.com:datarobot/af-component-fastmcp-backend.git": {
-		readMeFile: "af-component-fastmcp-backend.html",
+		readMeFile: "af-component-fastmcp-backend.md",
 	},
 	"git@github.com:datarobot/af-component-llm.git": {
-		readMeFile: "af-component-llm.html",
+		readMeFile: "af-component-llm.md",
 	},
 	"git@github.com:datarobot/af-component-react.git": {
-		readMeFile: "af-component-react.html",
+		readMeFile: "af-component-react.md",
 	},
 }

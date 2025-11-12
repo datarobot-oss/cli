@@ -19,6 +19,6 @@ header:
 
   paths-ignore:
     - 'internal/task/Taskfile.tmpl.yaml'
-    - 'internal/copier/readme/*.html'
+    - 'internal/copier/readme/*.md'
 
   comment: on-failure
