@@ -48,13 +48,15 @@ type Model struct {
 	screen   screens
 	template drapi.Template
 
-	spinner          spinner.Model
-	help             help.Model
-	keys             keyMap
-	isLoading        bool
-	loadingMessage   string
-	width            int
+	spinner         spinner.Model
+	help            help.Model
+	keys            keyMap
+	isLoading       bool
+	loadingMessage  string
+	width           int
 	isAuthenticated bool // Track if we've already authenticated
+	fetchSessionID  int  // Track current fetch session to ignore stale responses
+	authSessionID   int  // Track current auth session to ignore stale auth callbacks
 
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
@@ -82,10 +84,13 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 type (
-	getHostMsg          struct{}
-	authKeyStartMsg     struct{}
-	authKeySuccessMsg   struct{}
-	templatesLoadedMsg  struct{ templatesList *drapi.TemplateList }
+	getHostMsg         struct{}
+	authKeyStartMsg    struct{}
+	authKeySuccessMsg  struct{}
+	templatesLoadedMsg struct {
+		templatesList *drapi.TemplateList
+		sessionID     int // Session ID to verify this response is still relevant
+	}
 	templateSelectedMsg struct{}
 	backToListMsg       struct{}
 	templateClonedMsg   struct{}
@@ -171,16 +176,23 @@ func handleExistingRepo(repoRoot string) tea.Msg {
 }
 
 // handleGitRepoWithoutDataRobotCLI handles the case where we're in a git repo but .datarobot/cli doesn't exist yet
-func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList) tea.Msg {
+func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList, sessionID int) tea.Msg {
 	template, found := matchTemplateByGitRemote(templatesList)
 	if !found {
-		return templatesLoadedMsg{templatesList}
+		return templatesLoadedMsg{
+			templatesList: templatesList,
+			sessionID:     sessionID,
+		}
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.Error("Failed to get current working directory", "error", err)
-		return templatesLoadedMsg{templatesList}
+
+		return templatesLoadedMsg{
+			templatesList: templatesList,
+			sessionID:     sessionID,
+		}
 	}
 
 	return templateInDirMsg{
@@ -189,7 +201,7 @@ func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList) tea.Msg
 	}
 }
 
-func getTemplates() tea.Cmd {
+func getTemplates(sessionID int) tea.Cmd {
 	return func() tea.Msg {
 		datarobotHost := config.GetBaseURL()
 		if datarobotHost == "" {
@@ -209,7 +221,7 @@ func getTemplates() tea.Cmd {
 		}
 
 		// Check if we're in a git repo that matches a template URL (for cases where .datarobot/cli doesn't exist yet)
-		return handleGitRepoWithoutDataRobotCLI(templatesList)
+		return handleGitRepoWithoutDataRobotCLI(templatesList, sessionID)
 	}
 }
 
@@ -251,12 +263,12 @@ func NewModel(fromStartCommand bool) Model {
 		screen:   welcomeScreen,
 		template: drapi.Template{},
 
-		spinner:          s,
-		help:             h,
-		keys:             keys,
-		isLoading:        true,
-		loadingMessage:   "Checking authentication and loading templates...",
-		width:            80,
+		spinner:         s,
+		help:            h,
+		keys:            keys,
+		isLoading:       true,
+		loadingMessage:  "Checking authentication and loading templates...",
+		width:           80,
 		isAuthenticated: false,
 
 		hostModel: NewHostModel(),
@@ -282,7 +294,9 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, getTemplates())
+	m.fetchSessionID++
+
+	return tea.Batch(m.spinner.Tick, getTemplates(m.fetchSessionID))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -308,28 +322,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.isLoading = false
 		m.loadingMessage = ""
 		m.hostModel.SuccessCmd = saveHost
+		// Increment both session IDs to invalidate any in-flight fetches or auth callbacks
+		m.fetchSessionID++
+		m.authSessionID++
+		// Reset authentication when returning to host selection
+		m.isAuthenticated = false
 
 		return m, m.hostModel.Init()
 	case authKeyStartMsg:
-		// Prevent double authentication
+		// If already authenticated and haven't changed hosts, just fetch templates
 		if m.isAuthenticated {
-			return m, getTemplates()
+			m.fetchSessionID++
+			m.isLoading = true
+			m.loadingMessage = "Loading templates..."
+
+			return m, getTemplates(m.fetchSessionID)
 		}
 
 		m.isLoading = true
 		m.loadingMessage = "Authenticating with DataRobot..."
 		m.screen = loginScreen
+		// Increment auth session when starting new authentication
+		m.authSessionID++
 		cmd := m.login.Init()
 
 		return m, cmd
 	case authKeySuccessMsg:
+		// Ignore stale authentication callbacks (e.g., after user pressed Esc and went back)
+		// We can detect this because we increment authSessionID when returning to host screen
+		if m.screen != loginScreen {
+			log.Debug("Ignoring stale authentication callback", "currentScreen", m.screen)
+
+			return m, nil
+		}
+
 		m.isAuthenticated = true
 		m.isLoading = true
 		m.loadingMessage = "Loading templates..."
 		m.screen = listScreen
+		m.fetchSessionID++
 
-		return m, getTemplates()
+		return m, getTemplates(m.fetchSessionID)
 	case templatesLoadedMsg:
+		// Ignore stale responses from previous sessions
+		if msg.sessionID != m.fetchSessionID {
+			log.Debug("Ignoring stale templates response", "received", msg.sessionID, "current", m.fetchSessionID)
+
+			return m, nil
+		}
+
 		m.isLoading = false
 		m.loadingMessage = ""
 		m.screen = listScreen

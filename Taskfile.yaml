@@ -158,3 +158,10 @@ tasks:
           -v $PWD:/github/workspace \
           ghcr.io/apache/skywalking-eyes/license-eye:4021a396bf07b2136f97c12708476418a8157d72 \
           -v info -c .licenserc.yaml header fix
+  local-release:
+    silent: true
+    desc: "Create a local release build"
+    cmds:
+      - task build
+      - cp ./dist/dr ~/.local/bin/dr
+      - exec zsh -c "echo '✅ Local release installed to ~/.local/bin/dr'"
