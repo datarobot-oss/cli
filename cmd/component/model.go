@@ -356,7 +356,12 @@ func (m Model) viewComponentDetailScreen() string {
 	sb.WriteString("Component file name: " + selectedComponent.FileName)
 	sb.WriteString("\n\n")
 
-	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, "dark")
+	style := "light"
+	if lipgloss.HasDarkBackground() {
+		style = "dark"
+	}
+
+	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, style)
 	sb.WriteString(readMe)
 	sb.WriteString("\n\n")
 	sb.WriteString(tui.BaseTextStyle.Render("Press any key to return."))
