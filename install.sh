@@ -166,7 +166,7 @@ compare_versions() {
 # Check if binary is already installed
 check_existing_installation() {
     if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
-        CURRENT_VERSION=$("$INSTALL_DIR/$BINARY_NAME" version 2>/dev/null | head -n1 || echo "unknown")
+        CURRENT_VERSION=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null | head -n1 || echo "unknown")
 
         # Extract just the version number (e.g., "v1.2.3" from "dr version v1.2.3")
         CURRENT_VERSION=$(echo "$CURRENT_VERSION" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
@@ -378,7 +378,7 @@ show_path_instructions() {
 verify_installation() {
     if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
         step "Verifying installation..."
-        INSTALLED_VERSION=$("$INSTALL_DIR/$BINARY_NAME" version 2>/dev/null | head -n1 || echo "installed")
+        INSTALLED_VERSION=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null | head -n1 || echo "installed")
         printf "   ${GREEN}✓${NC} %s\n" "$INSTALLED_VERSION"
     else
         error "Binary not found at $INSTALL_DIR/$BINARY_NAME"
@@ -408,7 +408,7 @@ prompt_completion_install() {
                 echo ""
                 info "Skipping completion installation"
                 step "You can install completions later with:"
-                printf "   ${BLUE}$BINARY_NAME completion install --yes${NC}\n"
+                printf "   ${BLUE}$BINARY_NAME self completion install --yes${NC}\n"
                 return 1
                 ;;
             *)
@@ -419,7 +419,7 @@ prompt_completion_install() {
         esac
     else
         # Non-interactive mode, skip completions
-        step "To install completions, run: $BINARY_NAME completion install --yes"
+        step "To install completions, run: $BINARY_NAME self completion install --yes"
         return 1
     fi
 }
@@ -430,13 +430,13 @@ install_completions() {
     export PATH="$INSTALL_DIR:$PATH"
 
     # Use the interactive completion installer
-    if "$INSTALL_DIR/$BINARY_NAME" completion install --yes 2>/dev/null; then
+    if "$INSTALL_DIR/$BINARY_NAME" self completion install --yes 2>/dev/null; then
         printf "   ${GREEN}✓${NC} Shell completions installed successfully\n"
         step "Restart your shell to activate completions"
         return 0
     else
         warn "Failed to install completions automatically"
-        step "Install manually with: $BINARY_NAME completion install --yes"
+        step "Install manually with: $BINARY_NAME self completion install --yes"
         return 1
     fi
 }
