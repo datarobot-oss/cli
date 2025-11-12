@@ -292,11 +292,6 @@ func startQuickstart(_ *Model) tea.Msg {
 func checkPrerequisites(_ *Model) tea.Msg {
 	// Return stepErrorMsg{err} if prerequisites are not met
 
-	// Are we in a DataRobot repository?
-	if !repo.IsInRepo() {
-		return stepErrorMsg{err: errors.New(errNotInRepo)}
-	}
-
 	// Do we have the required tools?
 	if err := tools.CheckPrerequisites(); err != nil {
 		return stepErrorMsg{err: err}
@@ -367,6 +362,11 @@ func executeQuickstart(m *Model) tea.Msg {
 }
 
 func findQuickstartScript() (string, error) {
+	// Are we in a DataRobot repository?
+	if !repo.IsInRepo() {
+		return "", errors.New(errNotInRepo)
+	}
+
 	// Look for any executable file named quickstart* in the configured path relative to CWD
 	executablePath := repo.QuickstartScriptPath
 
