@@ -129,14 +129,17 @@ Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/doc
 
 ```bash
 # Set your DataRobot URL (interactive)
-dr auth set-url # Or specify directly: dr auth set-url [YOUR_DATAROBOT_API_ENDPOINT]
+dr auth setURL # Or specify directly: dr auth setURL [YOUR_DATAROBOT_API_ENDPOINT]
 ```
 
-Next, log in to DataRobot (opens browser for OAuth):
+Once you have configured the URL, log in to DataRobot. This command will open your default web browser to the DataRobot login page.
 
 ```bash
 dr auth login
 ```
+
+Once you have logged in, the DataRobot web application prompts you to authorize the CLI.
+Click "Authorize" to complete the authorization process, and then close the browser window once it is complete.
 
 ### Set up a template
 
@@ -153,7 +156,7 @@ This guides you through the following:
 - Configuring environment variables interactively.
 - Setting up application-specific settings.
 
-### 3. Run tasks
+### Run tasks
 
 Execute tasks defined in your template Taskfile:
 
