@@ -74,13 +74,10 @@ func (up UserPrompt) String() string {
 
 		var helpLineResult strings.Builder
 
+		helpLineResult.WriteString(fmt.Sprintf("\n"))
+
 		for i, helpLine := range linesNormalized {
-			// For subsequent lines don't start with a newline since we want comment to be grouped together
-			if i == 0 {
-				helpLineResult.WriteString(fmt.Sprintf("\n# %v\n", helpLine))
-			} else {
 				helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
-			}
 		}
 
 		result += helpLineResult.String()
