@@ -10,6 +10,7 @@ package setup
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -79,9 +80,16 @@ func (suite *HostModelTestSuite) TestHostModel_SelectUSCloud() {
 
 	var capturedURL string
 
+	var mu sync.Mutex
+
 	m.SuccessCmd = func(url string) tea.Cmd {
 		return func() tea.Msg {
+			mu.Lock()
+
 			capturedURL = url
+
+			mu.Unlock()
+
 			return nil
 		}
 	}
@@ -98,7 +106,10 @@ func (suite *HostModelTestSuite) TestHostModel_SelectUSCloud() {
 
 	time.Sleep(100 * time.Millisecond) // Give time for the command to execute
 
+	mu.Lock()
 	suite.Equal("https://app.datarobot.com", capturedURL)
+	mu.Unlock()
+
 	suite.Quit(tm)
 }
 
@@ -107,9 +118,16 @@ func (suite *HostModelTestSuite) TestHostModel_SelectEUCloud() {
 
 	var capturedURL string
 
+	var mu sync.Mutex
+
 	m.SuccessCmd = func(url string) tea.Cmd {
 		return func() tea.Msg {
+			mu.Lock()
+
 			capturedURL = url
+
+			mu.Unlock()
+
 			return nil
 		}
 	}
@@ -127,7 +145,10 @@ func (suite *HostModelTestSuite) TestHostModel_SelectEUCloud() {
 
 	time.Sleep(100 * time.Millisecond)
 
+	mu.Lock()
 	suite.Equal("https://app.eu.datarobot.com", capturedURL)
+	mu.Unlock()
+
 	suite.Quit(tm)
 }
 
@@ -136,9 +157,16 @@ func (suite *HostModelTestSuite) TestHostModel_SelectJapanCloud() {
 
 	var capturedURL string
 
+	var mu sync.Mutex
+
 	m.SuccessCmd = func(url string) tea.Cmd {
 		return func() tea.Msg {
+			mu.Lock()
+
 			capturedURL = url
+
+			mu.Unlock()
+
 			return nil
 		}
 	}
@@ -157,7 +185,10 @@ func (suite *HostModelTestSuite) TestHostModel_SelectJapanCloud() {
 
 	time.Sleep(100 * time.Millisecond)
 
+	mu.Lock()
 	suite.Equal("https://app.jp.datarobot.com", capturedURL)
+	mu.Unlock()
+
 	suite.Quit(tm)
 }
 
@@ -190,9 +221,16 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLInput() {
 
 	var capturedURL string
 
+	var mu sync.Mutex
+
 	m.SuccessCmd = func(url string) tea.Cmd {
 		return func() tea.Msg {
+			mu.Lock()
+
 			capturedURL = url
+
+			mu.Unlock()
+
 			return nil
 		}
 	}
@@ -226,7 +264,10 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLInput() {
 
 	time.Sleep(100 * time.Millisecond)
 
+	mu.Lock()
 	suite.Equal(customURL, capturedURL)
+	mu.Unlock()
+
 	suite.Quit(tm)
 }
 
@@ -270,9 +311,16 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLEmptySubmit() {
 
 	var capturedURL string
 
+	var mu sync.Mutex
+
 	m.SuccessCmd = func(url string) tea.Cmd {
 		return func() tea.Msg {
+			mu.Lock()
+
 			capturedURL = url
+
+			mu.Unlock()
+
 			return nil
 		}
 	}
@@ -298,7 +346,9 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLEmptySubmit() {
 	time.Sleep(100 * time.Millisecond)
 
 	// Should not have captured any URL
+	mu.Lock()
 	suite.Empty(capturedURL)
+	mu.Unlock()
 
 	suite.Quit(tm)
 }
