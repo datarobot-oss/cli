@@ -54,7 +54,7 @@ type Model struct {
 	isLoading        bool
 	loadingMessage   string
 	width            int
-	hasAuthenticated bool // Track if we've already authenticated
+	isAuthenticated bool // Track if we've already authenticated
 
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
@@ -257,7 +257,7 @@ func NewModel(fromStartCommand bool) Model {
 		isLoading:        true,
 		loadingMessage:   "Checking authentication and loading templates...",
 		width:            80,
-		hasAuthenticated: false,
+		isAuthenticated: false,
 
 		hostModel: NewHostModel(),
 		login: LoginModel{
@@ -312,7 +312,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, m.hostModel.Init()
 	case authKeyStartMsg:
 		// Prevent double authentication
-		if m.hasAuthenticated {
+		if m.isAuthenticated {
 			return m, getTemplates()
 		}
 
@@ -323,7 +323,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, cmd
 	case authKeySuccessMsg:
-		m.hasAuthenticated = true
+		m.isAuthenticated = true
 		m.isLoading = true
 		m.loadingMessage = "Loading templates..."
 		m.screen = listScreen
@@ -405,7 +405,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case "esc":
 				m.login.server.Close()
 				// Reset authentication flag when user goes back to change URL
-				m.hasAuthenticated = false
+				m.isAuthenticated = false
 
 				return m, getHost
 			}
