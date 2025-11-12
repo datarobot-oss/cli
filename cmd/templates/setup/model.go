@@ -405,6 +405,15 @@ func (m Model) View() string {
 
 		if m.fromStartCommand {
 			sb.WriteString(tui.BaseTextStyle.Render("You can now start running your AI application!"))
+			sb.WriteString("\n\n")
+			sb.WriteString(tui.BaseTextStyle.Render("• Use "))
+			sb.WriteString(tui.InfoStyle.Render("dr task run"))
+			sb.WriteString(tui.BaseTextStyle.Render(" to see the key commands to deploy the app"))
+			sb.WriteString("\n")
+			sb.WriteString(tui.BaseTextStyle.Render("• Use "))
+			sb.WriteString(tui.InfoStyle.Render("dr task list"))
+			sb.WriteString(tui.BaseTextStyle.Render(" to see all the additional commands"))
+			sb.WriteString("\n")
 		} else {
 			sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
 			sb.WriteString("\n\n")
