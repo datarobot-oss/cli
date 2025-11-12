@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"gopkg.in/yaml.v3"
@@ -66,7 +67,20 @@ func (up UserPrompt) String() string {
 	result := ""
 
 	if up.Help != "" {
-		result += fmt.Sprintf("\n# %v\n", up.Help)
+		// Account for multiline strings - also normalize if there's carriage returns
+		normalizedText := strings.ReplaceAll(up.Help, "\r\n", "\n")
+
+		linesNormalized := strings.Split(normalizedText, "\n")
+
+		var helpLineResult strings.Builder
+
+		helpLineResult.WriteString("\n")
+
+		for _, helpLine := range linesNormalized {
+			helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
+		}
+
+		result += helpLineResult.String()
 	}
 
 	return result + up.StringWithoutHelp()
