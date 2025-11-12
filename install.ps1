@@ -355,7 +355,7 @@ function Test-Installation {
     if (Test-Path $BinaryPath) {
         Write-Step "Verifying installation..."
         try {
-            $version = & $BinaryPath version 2>$null | Select-Object -First 1
+            $version = & $BinaryPath --version 2>$null | Select-Object -First 1
             Write-Success $version
         } catch {
             Write-Success "Binary installed at: $BinaryPath"
@@ -393,7 +393,7 @@ function Install-Completions {
     try {
         # Note: PowerShell doesn't have the interactive install command yet
         # Fall back to the manual method
-        $completionScript = & $BinaryPath completion powershell 2>$null | Out-String
+        $completionScript = & $BinaryPath self completion powershell 2>$null | Out-String
 
         if (-not $completionScript) {
             Write-Warn "Failed to generate completion script"
@@ -414,7 +414,7 @@ function Install-Completions {
         }
 
         # Add completion to profile
-        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' completion powershell | Out-String | Invoke-Expression"
+        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' self completion powershell | Out-String | Invoke-Expression"
         Add-Content -Path $PROFILE -Value $completionLine
 
         Write-Success "Shell completions installed successfully"
