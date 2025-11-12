@@ -445,6 +445,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			switch keypress := msg.String(); keypress {
 			case "esc":
 				m.login.server.Close()
+				// Reset authentication flag when user goes back to change URL
+				m.hasAuthenticated = false
+
 				return m, getHost
 			}
 		}
@@ -486,7 +489,7 @@ func (m Model) View() string { //nolint: cyclop
 
 		title := tui.WelcomeStyle.
 			Width(contentWidth).
-			Align(lipgloss.Center).
+			Align(lipgloss.Left).
 			MarginBottom(1).
 			Render("🎉 Welcome to DataRobot CLI Setup Wizard!")
 
@@ -494,15 +497,21 @@ func (m Model) View() string { //nolint: cyclop
 			Width(contentWidth).
 			Render("This wizard helps you:")
 
-		steps := lipgloss.NewStyle().
-			Width(contentWidth).
-			MarginLeft(2).
-			Render(strings.Join([]string{
-				"1️⃣  Choose an AI application template",
-				"2️⃣  Clone it to your computer",
-				"3️⃣  Configure your environment",
-				"4️⃣  Get you ready to build!",
-			}, "\n"))
+		// Create styled frame for steps
+		stepStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Padding(1, 2).
+			Width(contentWidth)
+
+		stepsContent := strings.Join([]string{
+			"1️⃣  Choose an AI application template",
+			"2️⃣  Clone it to your computer",
+			"3️⃣  Configure your environment",
+			"4️⃣  Get you ready to build!",
+		}, "\n")
+
+		steps := stepStyle.Render(stepsContent)
 
 		info := tui.InfoStyle.
 			Width(contentWidth).
@@ -523,7 +532,7 @@ func (m Model) View() string { //nolint: cyclop
 
 			countdownMsg = tui.BaseTextStyle.
 				Width(contentWidth).
-				Align(lipgloss.Center).
+				Align(lipgloss.Left).
 				Faint(true).
 				Render(fmt.Sprintf("Starting in %d second%s... (or press Enter)", m.countdown, plural))
 		}
@@ -550,30 +559,76 @@ func (m Model) View() string { //nolint: cyclop
 		}
 
 	case hostScreen:
-		sb.WriteString(tui.BaseTextStyle.Render("🌐 DataRobot URL Configuration"))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("Choose your DataRobot environment:"))
-		sb.WriteString("\n\n")
-		sb.WriteString("┌────────────────────────────────────────────────────────┐\n")
-		sb.WriteString("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │\n")
-		sb.WriteString("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │\n")
-		sb.WriteString("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │\n")
-		sb.WriteString("│  [4] 🏢 Custom/On-Prem   Enter your custom URL         │\n")
-		sb.WriteString("└────────────────────────────────────────────────────────┘\n")
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("🔗 Don't know which one? Check your DataRobot login page URL"))
-		sb.WriteString("\n\n")
+		contentWidth := 60
 
-		sb.WriteString(m.host.View())
+		title := tui.BaseTextStyle.
+			Width(contentWidth).
+			Render("🌐 DataRobot URL Configuration")
+
+		subtitle := tui.BaseTextStyle.
+			Width(contentWidth).
+			MarginTop(1).
+			Render("Choose your DataRobot environment:")
+
+		// Style for URLs
+		urlStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Underline(true)
+
+		// Create styled frame for options
+		optionStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Padding(1, 2).
+			Width(contentWidth)
+
+		optionsContent := strings.Join([]string{
+			"[1] 🇺🇸 US Cloud        " + urlStyle.Render("https://app.datarobot.com"),
+			"[2] 🇪🇺 EU Cloud        " + urlStyle.Render("https://app.eu.datarobot.com"),
+			"[3] 🇯🇵 Japan Cloud     " + urlStyle.Render("https://app.jp.datarobot.com"),
+			"[4] 🏢 Custom/On-Prem   Enter your custom URL",
+		}, "\n")
+
+		options := optionStyle.Render(optionsContent)
+
+		hint := tui.BaseTextStyle.
+			Width(contentWidth).
+			Faint(true).
+			MarginTop(1).
+			Render("� Don't know which one? Check your DataRobot login page URL")
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Left,
+			title,
+			subtitle,
+			"",
+			options,
+			"",
+			hint,
+			"",
+			m.host.View(),
+		)
+
+		sb.WriteString(content)
 	case loginScreen:
-		sb.WriteString(tui.BaseTextStyle.Render("🔐 DataRobot Authentication"))
-		sb.WriteString("\n\n")
-		sb.WriteString(tui.BaseTextStyle.Render("We'll now authenticate you with DataRobot using your browser."))
-		sb.WriteString("\n")
-		sb.WriteString(m.login.View())
+		title := tui.BaseTextStyle.
+			Bold(true).
+			Render("🔐 Connect Your DataRobot Account")
 
-		sb.WriteString("\n")
-		sb.WriteString(tui.BaseTextStyle.Render("💡 Press Esc to change DataRobot URL"))
+		subtitle := tui.BaseTextStyle.
+			Render("Opening your browser to securely authenticate...")
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Left,
+			title,
+			"",
+			subtitle,
+			m.login.View(),
+			"",
+			tui.BaseTextStyle.Faint(true).Render("💡 Press Esc to change DataRobot URL"),
+		)
+
+		sb.WriteString(content)
 	case listScreen:
 		sb.WriteString(m.list.View())
 	case cloneScreen:

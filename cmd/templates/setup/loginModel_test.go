@@ -97,9 +97,9 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 
 	suite.WaitFor(tm, "Starting in")
 	suite.Send(tm, "enter")
-	suite.WaitFor(tm, "https://app.datarobot.com")
+	suite.WaitFor(tm, "US Cloud")
 	suite.Send(tm, "1", "enter")
-	suite.WaitFor(tm, "cliRedirect=true")
+	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -119,9 +119,9 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 
 	suite.WaitFor(tm, "Starting in")
 	suite.Send(tm, "enter")
-	suite.WaitFor(tm, "https://app.eu.datarobot.com")
+	suite.WaitFor(tm, "EU Cloud")
 	suite.Send(tm, "2", "enter")
-	suite.WaitFor(tm, "cliRedirect=true")
+	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -141,9 +141,9 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 
 	suite.WaitFor(tm, "Starting in")
 	suite.Send(tm, "enter")
-	suite.WaitFor(tm, "https://app.jp.datarobot.com")
+	suite.WaitFor(tm, "Japan Cloud")
 	suite.Send(tm, "3", "enter")
-	suite.WaitFor(tm, "cliRedirect=true")
+	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -170,7 +170,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	}
 
 	suite.Send(tm, "enter")
-	suite.WaitFor(tm, "cliRedirect=true")
+	suite.WaitFor(tm, "If your browser didn't open automatically")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -190,7 +190,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
 
 	suite.WaitFor(tm, "Starting in")
 	suite.Send(tm, "enter")
-	suite.WaitFor(tm, "https://app.jp.datarobot.com")
+	suite.WaitFor(tm, "Japan Cloud")
 	suite.Send(tm, "squak-squak", "enter", "ctrl+c")
 
 	suite.Quit(tm)
