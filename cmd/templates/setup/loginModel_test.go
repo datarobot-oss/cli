@@ -93,7 +93,7 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
-	tm := suite.NewTestModel(NewModel())
+	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "https://app.datarobot.com")
 	suite.Send(tm, "1", "enter")
@@ -113,7 +113,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
-	tm := suite.NewTestModel(NewModel())
+	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "https://app.eu.datarobot.com")
 	suite.Send(tm, "2", "enter")
@@ -133,7 +133,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
-	tm := suite.NewTestModel(NewModel())
+	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "3", "enter")
@@ -153,7 +153,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
-	tm := suite.NewTestModel(NewModel())
+	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "https://app.parakeet.datarobot.com", "enter")
@@ -173,7 +173,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Non_URL() {
-	tm := suite.NewTestModel(NewModel())
+	tm := suite.NewTestModel(NewModel(false))
 
 	suite.WaitFor(tm, "https://app.jp.datarobot.com")
 	suite.Send(tm, "squak-squak", "enter", "ctrl+c")

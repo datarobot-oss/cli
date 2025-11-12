@@ -26,7 +26,7 @@ var Cmd = &cobra.Command{
 
 🎯 This wizard will help you:
   1️⃣  Choose an AI application template
-  2️⃣  Clone it to your computer  
+  2️⃣  Clone it to your computer
   3️⃣  Configure your environment
   4️⃣  Get you ready to build!
 
@@ -41,6 +41,11 @@ var Cmd = &cobra.Command{
 
 // RunTea starts the template setup TUI
 func RunTea(ctx context.Context) error {
+	return RunTeaFromStart(ctx, false)
+}
+
+// RunTeaFromStart starts the template setup TUI, optionally from the start command
+func RunTeaFromStart(ctx context.Context, fromStartCommand bool) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -50,7 +55,7 @@ func RunTea(ctx context.Context) error {
 		defer f.Close()
 	}
 
-	m := NewModel()
+	m := NewModel(fromStartCommand)
 	p := tea.NewProgram(
 		tui.NewInterruptibleModel(m),
 		tea.WithAltScreen(),
