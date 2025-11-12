@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"gopkg.in/yaml.v3"
@@ -66,7 +67,23 @@ func (up UserPrompt) String() string {
 	result := ""
 
 	if up.Help != "" {
-		result += fmt.Sprintf("\n# %v\n", up.Help)
+		// Account for multiline strings - also normalize if there's carriage returns
+		normalizedText := strings.ReplaceAll(up.Help, "\r\n", "\n")
+
+		linesNormalized := strings.Split(normalizedText, "\n")
+
+		var helpLineResult strings.Builder
+
+		for i, helpLine := range linesNormalized {
+			// For subsequent lines don't start with a newline since we want comment to be grouped together
+			if i == 0 {
+				helpLineResult.WriteString(fmt.Sprintf("\n# %v\n", helpLine))
+			} else {
+				helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
+			}
+		}
+
+		result += helpLineResult.String()
 	}
 
 	return result + up.StringWithoutHelp()
