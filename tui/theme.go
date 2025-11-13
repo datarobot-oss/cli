@@ -8,7 +8,13 @@
 
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // DataRobot brand colors, utilizing the Design System palette
 const (
@@ -21,10 +27,37 @@ const (
 	DrBlack       = lipgloss.Color("#0B0B0B") // black-90
 )
 
+// Light mode color variants (darker for visibility on light backgrounds)
+const (
+	DrPurpleDark      = lipgloss.Color("#5500DD") // Darker purple
+	DrPurpleDarkLight = lipgloss.Color("#7755DD") // Darker purple-light
+	DrIndigoDark      = lipgloss.Color("#4400FF") // Darker indigo
+	DrGreenDark       = lipgloss.Color("#00AA00") // Darker green
+	DrYellowDark      = lipgloss.Color("#AA8800") // Darker yellow
+	DrGray            = lipgloss.Color("252")     // Light gray for dark backgrounds
+	DrGrayDark        = lipgloss.Color("240")     // Dark gray for light backgrounds
+)
+
+func SetAnsiForegroundColor(hexColor lipgloss.Color) string {
+	hexString := strings.TrimPrefix(string(hexColor), "#")
+
+	rVal, _ := strconv.ParseUint(hexString[0:2], 16, 8)
+	gVal, _ := strconv.ParseUint(hexString[2:4], 16, 8)
+	bVal, _ := strconv.ParseUint(hexString[4:6], 16, 8)
+
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm", rVal, gVal, bVal)
+}
+
+func ResetForegroundColor() string {
+	return "\033[39m"
+}
+
 // Common style definitions using DataRobot branding
 var (
 	BaseTextStyle = lipgloss.NewStyle().Foreground(DrPurple)
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
+	InfoStyle     = lipgloss.NewStyle().Foreground(DrPurpleLight).Bold(true)
+	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	// Specific UI styles
 	LogoStyle     = BaseTextStyle

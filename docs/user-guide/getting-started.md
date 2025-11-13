@@ -79,6 +79,33 @@ You should see output similar to:
 DataRobot CLI version 0.1.0 (commit: abc1234, built date: 2025-10-23, runtime: go1.25.3)
 ```
 
+## Updating the CLI
+
+To update to the latest version of the DataRobot CLI, use the built-in update command:
+
+```bash
+dr self update
+```
+
+This command will automatically:
+
+- Detect your installation method (Homebrew, manual installation, etc.)
+- Download the latest version
+- Install it using the appropriate method for your system
+- Preserve your existing configuration and credentials
+
+The update process supports:
+
+- **Homebrew (macOS)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
+- **Windows**&mdash;runs the latest PowerShell installation script
+- **macOS/Linux**&mdash;runs the latest shell installation script
+
+After updating, verify the new version:
+
+```bash
+dr self version
+```
+
 ## Initial Setup
 
 ### 1. Configure DataRobot URL
@@ -168,7 +195,31 @@ dr dotenv
 
 ## Running your application
 
-Once your template is set up:
+Once your template is set up, you have several options to run it:
+
+### Quick start (recommended)
+
+Use the `start` command for automated initialization:
+
+```bash
+dr start
+```
+
+This command will:
+
+- Check prerequisites and validate your environment.
+- Execute a template-specific quickstart script if available.
+- Fall back to the setup wizard if no script exists.
+
+For non-interactive mode (useful in scripts or CI/CD):
+
+```bash
+dr start --yes
+```
+
+### Running specific tasks
+
+For more control, execute individual tasks:
 
 ```bash
 # List available tasks

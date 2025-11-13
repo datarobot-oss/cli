@@ -9,11 +9,8 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -38,6 +35,12 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 // intended for use in automated workflows. Returns true if authentication
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool {
+	if viper.GetBool("skip_auth") {
+		log.Warn("Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail.")
+
+		return true
+	}
+
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
@@ -76,7 +79,12 @@ func EnsureAuthenticated(ctx context.Context) bool {
 }
 
 func LoginAction(ctx context.Context) error {
-	reader := bufio.NewReader(os.Stdin)
+	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
+	// when authentication is intentionally disabled, say if the user is offline, or in
+	// a CI/CD environment, or in a script.
+	if viper.GetBool("skip_auth") {
+		return errors.New("login has been disabled via --skip-auth flag")
+	}
 
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
@@ -85,24 +93,17 @@ func LoginAction(ctx context.Context) error {
 		datarobotHost = config.GetBaseURL()
 	}
 
+	// If they explicitly ran 'dr auth login', just authenticate them
 	if token := config.GetAPIKey(); token != "" {
-		fmt.Println("An API key is already present, do you want to overwrite? (y/N): ")
-
-		selectedOption, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
-
-		if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
-			// Set the DataRobot API key to be an empty string
-			viper.Set(config.DataRobotAPIKey, "")
-		} else {
-			fmt.Println("Exiting without overwriting the API key.")
-			return nil
-		}
+		log.Info("Re-authenticating with DataRobot...")
 	} else {
-		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
+		log.Warn("No valid API key found. Retrieving a new one")
 	}
+
+	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'")
+
+	// Clear existing token and get new one
+	viper.Set(config.DataRobotAPIKey, "")
 
 	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
@@ -122,8 +123,13 @@ func LoginAction(ctx context.Context) error {
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Login to DataRobot",
-	Long:  `Login to DataRobot to get and store an API key that can be used for other operations in the cli.`,
+	Short: "🔐 Login to DataRobot",
+	Long: `Login to DataRobot using OAuth authentication in your browser.
+
+This command will:
+  1. Open your default browser.
+  2. Redirect you to DataRobot login page.
+  3. Securely store your API key for future CLI operations.`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		err := LoginAction(cmd.Context())
 		if err != nil {

@@ -18,9 +18,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-func schemeHostOnly(longURL string) (string, error) {
-	// Takes a URL like: https://app.datarobot.com/api/v2 and just
-	// returns https://app.datarobot.com (no trailing slash)
+// SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
+// returns https://app.datarobot.com (no trailing slash)
+func SchemeHostOnly(longURL string) (string, error) {
 	parsedURL, err := url.Parse(longURL)
 	if err != nil {
 		return "", err
@@ -37,7 +37,7 @@ func schemeHostOnly(longURL string) (string, error) {
 
 func GetBaseURL() string {
 	if endpoint := viper.GetString(DataRobotURL); endpoint != "" {
-		if newURL, err := schemeHostOnly(endpoint); err == nil {
+		if newURL, err := SchemeHostOnly(endpoint); err == nil {
 			return newURL
 		}
 	}
@@ -55,7 +55,7 @@ func GetEndpointURL(endpoint string) (string, error) {
 }
 
 func SaveURLToConfig(newURL string) error {
-	newURL, err := schemeHostOnly(urlFromShortcut(newURL))
+	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {
 		return err
 	}
@@ -99,8 +99,8 @@ func urlFromShortcut(selectedOption string) string {
 	}
 }
 
-func verifyToken(datarobotHost, token string) (bool, error) {
-	// Verifies if the datarobot host + api key pair correspond to a valid pair.
+// VerifyToken verifies if the datarobot host + api key pair correspond to a valid pair.
+func VerifyToken(datarobotHost, token string) (bool, error) {
 	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
 	if err != nil {
 		return false, err
@@ -126,14 +126,14 @@ func GetAPIKey() string {
 	token := os.Getenv("DATAROBOT_API_TOKEN")
 
 	if token != "" {
-		if isValid, _ := verifyToken(datarobotHost, token); isValid {
+		if isValid, _ := VerifyToken(datarobotHost, token); isValid {
 			return token
 		}
 	}
 
 	// Returns the API key if there is one, otherwise returns an empty string
 	token = viper.GetString(DataRobotAPIKey)
-	if isValid, _ := verifyToken(datarobotHost, token); isValid {
+	if isValid, _ := VerifyToken(datarobotHost, token); isValid {
 		return token
 	}
 

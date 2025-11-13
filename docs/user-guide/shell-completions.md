@@ -21,7 +21,7 @@ Shell completions can be installed in three ways:
 
 2. **Interactive Command** (Recommended for managing completions)
    ```bash
-   dr completion install
+   dr self completion install
    ```
    Detects your shell and installs completions to the appropriate location.
 
@@ -34,13 +34,13 @@ The CLI provides commands to manage completions easily:
 
 ```bash
 # Install completions for your current shell
-dr completion install
+dr self completion install
 
 # Force reinstall (useful after updates)
-dr completion install --force
+dr self completion install --force
 
 # Uninstall completions
-dr completion uninstall
+dr self completion uninstall
 ```
 
 ### Manual Installation
@@ -53,7 +53,7 @@ If you prefer manual installation or the automatic methods don't work, follow th
 
 ```bash
 # Generate and install completion script
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Reload your shell
 source ~/.bashrc
@@ -65,7 +65,7 @@ source ~/.bashrc
 # echo "autoload -U compinit; compinit" >> ~/.zshrc
 
   # To load completions for each session, execute once:
-  $ dr completion zsh > "${fpath[1]}/_dr"
+  $ dr self completion zsh > "${fpath[1]}/_dr"
 ```
 
 #### macOS
@@ -81,7 +81,7 @@ Run `echo $fpath` to see all possibilities. For example, if you
 wish to put CLI completions into ZDOTDIR, then run:
 
 ```zsh
-dr completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
+dr self completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
 ```
 
 #### Temporary session
@@ -89,7 +89,7 @@ dr completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
 For the current session only:
 
 ```bash
-source <(dr completion bash)
+source <(dr self completion bash)
 ```
 
 ### Zsh
@@ -111,7 +111,7 @@ compinit
 mkdir -p ~/.zsh/completions
 
 # Generate completion script
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 
 # Add to fpath in ~/.zshrc (if not already there)
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
@@ -124,7 +124,7 @@ source ~/.zshrc
 
 ```bash
 # Generate and install completion script
-dr completion zsh > "${fpath[1]}/_dr"
+dr self completion zsh > "${fpath[1]}/_dr"
 
 # Clear completion cache
 rm -f ~/.zcompdump
@@ -138,14 +138,14 @@ source ~/.zshrc
 For the current session only:
 
 ```bash
-source <(dr completion zsh)
+source <(dr self completion zsh)
 ```
 
 ### Fish
 
 ```bash
 # Generate and install completion script
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 
 # Reload fish configuration
 source ~/.config/fish/config.fish
@@ -156,7 +156,7 @@ source ~/.config/fish/config.fish
 For the current session only:
 
 ```bash
-dr completion fish | source
+dr self completion fish | source
 ```
 
 ### PowerShell
@@ -167,7 +167,7 @@ Add to your PowerShell profile:
 
 ```powershell
 # Generate completion script
-dr completion powershell > dr.ps1
+dr self completion powershell > dr.ps1
 
 # Find your profile location
 echo $PROFILE
@@ -180,7 +180,7 @@ Or install directly:
 
 ```powershell
 # Add to profile
-dr completion powershell >> $PROFILE
+dr self completion powershell >> $PROFILE
 
 # Reload profile
 . $PROFILE
@@ -191,7 +191,7 @@ dr completion powershell >> $PROFILE
 For the current session only:
 
 ```powershell
-dr completion powershell | Out-String | Invoke-Expression
+dr self completion powershell | Out-String | Invoke-Expression
 ```
 
 ## Usage
@@ -438,7 +438,7 @@ dr completion fish > ~/.config/fish/completions/dr.fish
 dr completion powershell > $PROFILE
 ```
 
-## See Also
+## See also
 
 - [Getting started](getting-started.md)&mdash;initial setup guide.
 - [Command reference](../commands/)&mdash;complete command documentation.

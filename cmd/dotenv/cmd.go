@@ -9,17 +9,17 @@
 package dotenv
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -29,14 +29,23 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "dotenv",
 		GroupID: "core",
-		Short:   "Commands to modify .env file",
-		Long:    "Edit, generate or update .env file with Datarobot credentials",
+		Short:   "🔧 Environment configuration commands",
+		Long: `Environment configuration commands for managing your application settings.
+
+Manage your .env file and application configuration:
+  • Edit environment variables interactively
+  • Set up configuration with a guided wizard
+  • Update DataRobot credentials automatically
+
+🎯 Your .env file contains API keys, database connections, and other settings
+   your application needs to run properly.`,
 	}
 
 	cmd.AddCommand(
 		EditCmd,
 		SetupCmd,
 		UpdateCmd,
+		ValidateCmd,
 	)
 
 	return cmd
@@ -44,7 +53,7 @@ func Cmd() *cobra.Command {
 
 var EditCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "Edit .env file using built-in editor",
+	Short: "✏️  Edit .env file using built-in editor",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
@@ -60,78 +69,25 @@ var EditCmd = &cobra.Command{
 			return err
 		}
 
+		dotenvFile := filepath.Join(cwd, ".env")
+		dotenvFileLines, contents := readDotenvFile(dotenvFile)
+		// Use ParseVariablesOnly to avoid auto-populating values during manual editing
+		variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
 		// Default is editor screen but if we detect other Env Vars we'll potentially use wizard screen
 		screen := editorScreen
-
-		dotenvFile := filepath.Join(cwd, ".env")
-		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		// Use parseVariablesOnly to avoid auto-populating values during manual editing
-		variables := parseVariablesOnly(templateLines)
-		contents := strings.Join(templateLines, "")
-
 		if repo.IsInRepo() {
-			repoRoot, err := repo.FindRepoRoot()
-			if err != nil {
-				log.Fatalf("Error determining repo root: %v", err)
-			}
-
-			userPrompts, _, err := envbuilder.GatherUserPrompts(repoRoot)
-			if err != nil {
-				log.Fatalf("Error gathering user prompts: %v", err)
-			}
-
-			// Create a new empty string set
-			existingEnvVarsSet := make(map[string]struct{})
-			// Add elements to the set
-			for _, value := range variables {
-				existingEnvVarsSet[value.name] = struct{}{}
-			}
-
-			extraEnvVarsFound := false
-
-			for _, up := range userPrompts {
-				_, exists := existingEnvVarsSet[up.Env]
-				// If we have an Env Var we don't yet know about account for it
-				if !exists {
-					extraEnvVarsFound = true
-					// Add it to set
-					existingEnvVarsSet[up.Env] = struct{}{}
-					// Add it to variables
-					variables = append(variables, variable{name: up.Env, value: up.Default})
-				}
-			}
-
-			if extraEnvVarsFound {
-				fmt.Println("Environment Configuration")
-				fmt.Println("=========================")
-				fmt.Println("")
-				fmt.Println("Editing .env file with component-specific variables...")
-				fmt.Println("")
-				for _, fv := range userPrompts {
-					fmt.Println(fv.Env + " = " + fv.Default)
-				}
-				fmt.Println("")
-				fmt.Println("Configure required missing variables now? (y/N): ")
-
-				reader := bufio.NewReader(os.Stdin)
-				selectedOption, err := reader.ReadString('\n')
-				if err != nil {
-					return err
-				}
-
-				if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
-					screen = wizardScreen
-				}
+			if handleExtraEnvVars(variables) {
+				screen = wizardScreen
 			}
 		}
 
 		m := Model{
-			initialScreen:  screen,
-			DotenvFile:     dotenvFile,
-			DotenvTemplate: templateFileUsed,
-			variables:      variables,
-			contents:       contents,
-			SuccessCmd:     tea.Quit,
+			initialScreen: screen,
+			DotenvFile:    dotenvFile,
+			variables:     variables,
+			contents:      contents,
+			SuccessCmd:    tea.Quit,
 		}
 		p := tea.NewProgram(
 			tui.NewInterruptibleModel(m),
@@ -146,8 +102,20 @@ var EditCmd = &cobra.Command{
 
 var SetupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Edit .env file using setup wizard",
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	Short: "🧙 Environment configuration wizard",
+	Long: `Launch the interactive environment configuration wizard.
+
+This wizard will help you:
+  1️⃣  Review required environment variables
+  2️⃣  Configure API keys and credentials
+  3️⃣  Set up database connections (if needed)
+  4️⃣  Validate your configuration
+
+💡 Perfect for first-time setup or when adding new integrations.`,
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		return auth.EnsureAuthenticatedE(cmd.Context())
+	},
+	Run: func(cmd *cobra.Command, _ []string) {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
@@ -157,22 +125,20 @@ var SetupCmd = &cobra.Command{
 			defer f.Close()
 		}
 
-		cwd, err := os.Getwd()
+		repositoryRoot, err := ensureInRepo()
 		if err != nil {
-			return err
+			os.Exit(1)
 		}
-
-		dotenvFile := filepath.Join(cwd, ".env")
-		templateLines, templateFileUsed := readTemplate(dotenvFile)
-		variables, contents, _ := variablesFromTemplate(templateLines)
+		dotenvFile := filepath.Join(repositoryRoot, ".env")
+		dotenvFileLines, _ := readDotenvFile(dotenvFile)
+		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 		m := Model{
-			initialScreen:  wizardScreen,
-			DotenvFile:     dotenvFile,
-			DotenvTemplate: templateFileUsed,
-			variables:      variables,
-			contents:       contents,
-			SuccessCmd:     tea.Quit,
+			initialScreen: wizardScreen,
+			DotenvFile:    dotenvFile,
+			variables:     variables,
+			contents:      contents,
+			SuccessCmd:    tea.Quit,
 		}
 		p := tea.NewProgram(
 			tui.NewInterruptibleModel(m),
@@ -180,24 +146,98 @@ var SetupCmd = &cobra.Command{
 			tea.WithContext(cmd.Context()),
 		)
 		_, err = p.Run()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 
-		return err
+		// Update state after successful completion
+		_ = state.UpdateAfterDotenvSetup()
 	},
 }
 
 var UpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Automatically update Datarobot credentials in .env file",
-	Long:  "Automatically populate .env file with fresh Datarobot credentials",
+	Short: "🔄 Automatically update DataRobot credentials",
+	Long: `Automatically update your .env file with fresh DataRobot credentials.
+
+This command will:
+  • Refresh your DataRobot API credentials
+  • Update environment variables automatically
+  • Preserve your existing custom settings
+
+💡 Use this when your credentials expire or you need to refresh your connection.`,
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	Run: func(_ *cobra.Command, _ []string) {
-		dotenvFile := ".env"
+		dotenv, err := ensureInRepoWithDotenv()
+		if err != nil {
+			os.Exit(1)
+		}
 
-		_, _, _, err := writeUsingTemplateFile(dotenvFile)
+		_, _, err = updateDotenvFile(dotenv)
 		if err != nil {
 			log.Error(err)
+			os.Exit(1)
 		}
+	},
+}
+
+var ValidateCmd = &cobra.Command{
+	Use:   "validate",
+	Short: "Validate .env and environment variable configuration against required settings",
+	Run: func(_ *cobra.Command, _ []string) {
+		dotenv, err := ensureInRepoWithDotenv()
+		if err != nil {
+			os.Exit(1)
+		}
+
+		repoRoot := filepath.Dir(dotenv)
+
+		dotenvFileLines, _ := readDotenvFile(dotenv)
+
+		// Parse variables from .env file
+		parsedVars := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
+		// Validate using envbuilder
+		result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)
+
+		// Display results with styling
+		varStyle := lipgloss.NewStyle().Foreground(tui.DrPurple).Bold(true)
+		valueStyle := lipgloss.NewStyle().Foreground(tui.DrGreen)
+
+		// First, show all valid variables
+		fmt.Println("\nValidating required variables:")
+
+		for _, valResult := range result.Results {
+			if valResult.Valid {
+				fmt.Printf("  %s: %s\n",
+					varStyle.Render(valResult.Field),
+					valueStyle.Render(valResult.Value))
+			}
+		}
+
+		// Then, show errors if any
+		if result.HasErrors() {
+			fmt.Println("\nValidation errors:")
+
+			for _, valResult := range result.Results {
+				if !valResult.Valid {
+					fmt.Printf("\n%s: required variable %s is not set\n",
+						tui.ErrorStyle.Render("Error"), varStyle.Render(valResult.Field))
+
+					if valResult.Help != "" {
+						fmt.Printf("  Description: %s\n", valResult.Help)
+					}
+
+					fmt.Println("  Set this variable in your .env file or run `dr dotenv setup` to configure it.")
+				}
+			}
+
+			os.Exit(1)
+		}
+
+		fmt.Println("\nValidation passed: all required variables are set.")
 	},
 }

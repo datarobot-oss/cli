@@ -17,11 +17,19 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "auth",
 		GroupID: "core",
-		Short:   "DataRobot authentication commands",
-		Long:    `Authentication commands for ` + version.AppName + `.`,
+		Short:   "🔐 DataRobot authentication commands",
+		Long: `Authentication commands for ` + version.AppName + `.
+
+Manage your DataRobot credentials and connection settings:
+  • Configure your DataRobot environment URL
+  • Login securely using OAuth
+  • Logout and clear stored credentials
+
+🚀 Quick start: dr auth set-url && dr auth login`,
 	}
 
 	cmd.AddCommand(
+		checkCmd,
 		loginCmd,
 		logoutCmd,
 		setURLCmd,

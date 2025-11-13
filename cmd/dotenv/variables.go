@@ -9,112 +9,82 @@
 package dotenv
 
 import (
-	"regexp"
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/misc/regexp2"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/tui"
 )
 
-type variable struct {
-	name      string
-	value     string
-	secret    bool
-	changed   bool
-	commented bool
-}
-
-func newFromLine(line string) variable {
-	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
-	result := regexp2.NamedStringMatches(expr, line)
-	v := variable{}
-
-	v.name = result["name"]
-	v.value = result["value"]
-
-	if result["commented"] != "" {
-		v.commented = true
+func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
+	repoRoot, err := repo.FindRepoRoot()
+	if err != nil {
+		log.Fatalf("Error determining repo root: %v", err)
 	}
 
-	if knownVariables[v.name].secret {
-		v.secret = true
+	userPrompts, err := envbuilder.GatherUserPrompts(repoRoot, variables)
+	if err != nil {
+		log.Fatalf("Error gathering user prompts: %v", err)
 	}
 
-	return v
-}
-
-func (v *variable) String() string {
-	if v.commented {
-		return "# " + v.name + "=" + v.value + "\n"
+	// Create a new empty string set
+	existingEnvVarsSet := make(map[string]struct{})
+	// Add elements to the set
+	for _, value := range variables {
+		existingEnvVarsSet[value.Name] = struct{}{}
 	}
 
-	return v.name + "=" + v.value + "\n"
-}
+	extraEnvVarsFound := false
 
-func (v *variable) setValue() {
-	conf, found := knownVariables[v.name]
-
-	if !found {
-		return
-	}
-
-	oldValue := v.value
-
-	switch {
-	case conf.viperKey != "":
-		v.value = viper.GetString(conf.viperKey)
-	case conf.getValue != nil:
-		var err error
-
-		v.value, err = conf.getValue()
-		if err != nil && v.value != "" {
-			// Only log error if we actually got a non-empty value with an error
-			// Ignore "empty url" and similar errors when exiting setup
-			log.Error(err)
+	for _, up := range userPrompts {
+		_, exists := existingEnvVarsSet[up.Env]
+		// If we have an Env Var we don't yet know about account for it
+		if !exists {
+			extraEnvVarsFound = true
+			// Add it to set
+			existingEnvVarsSet[up.Env] = struct{}{}
+			// Add it to variables
+			variables = append(variables, envbuilder.Variable{Name: up.Env, Value: up.Default, Description: up.Help})
 		}
 	}
 
-	if v.value != oldValue {
-		v.changed = true
+	if extraEnvVarsFound {
+		fmt.Println("Environment Configuration")
+		fmt.Println("=========================")
+		fmt.Println("")
+		fmt.Println("Editing .env file with component-specific variables...")
+		fmt.Println("")
+
+		for _, up := range userPrompts {
+			if !up.HasEnvValue() {
+				continue
+			}
+
+			style := tui.ErrorStyle
+
+			if up.Valid() {
+				style = tui.BaseTextStyle
+			}
+
+			fmt.Println(style.Render(up.StringWithoutHelp()))
+		}
+
+		fmt.Println("")
+		fmt.Println("Configure required missing variables now? (y/N): ")
+
+		reader := bufio.NewReader(os.Stdin)
+
+		selectedOption, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatalf("Error reading user reply: %v", err)
+		}
+
+		return strings.ToLower(strings.TrimSpace(selectedOption)) == "y"
 	}
-}
 
-type variableConfig = struct {
-	viperKey string
-	getValue func() (string, error)
-	secret   bool
-}
-
-var knownVariables = map[string]variableConfig{
-	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func() (string, error) {
-			return config.GetEndpointURL("")
-		},
-	},
-	"DATAROBOT_ENDPOINT": {
-		getValue: func() (string, error) {
-			return config.GetEndpointURL("/api/v2")
-		},
-	},
-	"DATAROBOT_API_TOKEN": {
-		getValue: func() (string, error) {
-			return config.GetAPIKey(), nil
-		},
-		secret: true,
-	},
-	"USE_DATAROBOT_LLM_GATEWAY": {
-		getValue: func() (string, error) {
-			enabled, err := drapi.IsLLMGatewayEnabled()
-			if err != nil {
-				return "", err
-			}
-
-			if enabled {
-				return "true", nil
-			}
-			return "false", nil
-		},
-	},
+	return false
 }

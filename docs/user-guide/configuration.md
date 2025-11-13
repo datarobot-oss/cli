@@ -82,6 +82,23 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 export EDITOR=nano
 ```
 
+### Advanced flags
+
+The CLI supports advanced command-line flags for special use cases:
+
+```bash
+# Skip authentication checks (advanced users only)
+dr templates list --skip-auth
+
+# Enable verbose logging
+dr templates list --verbose
+
+# Enable debug logging
+dr templates list --debug
+```
+
+> **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks and should only be used when you understand the implications. Commands requiring API access will likely fail without valid credentials.
+
 
 ## Configuration priority
 
@@ -264,7 +281,52 @@ find ~/.datarobot -name "*.yaml"
 export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 ```
 
-## See Also
+## State tracking
+
+The CLI maintains state information about your interactions with repositories to provide a better user experience. State is tracked per-repository and stores metadata about command executions.
+
+### State file location
+
+The CLI stores state locally within each repository:
+
+- `.datarobot/state/info.yml` in the current working directory
+
+### Tracked information
+
+The state file tracks:
+
+- **CLI version**: Version of the CLI used for the last successful execution
+- **Last start**: Timestamp of the last successful `dr start` execution
+- **Last dotenv setup**: Timestamp of the last successful `dr dotenv setup` execution
+
+### State file format
+
+```yaml
+cli_version: 1.0.0
+last_start: 2025-11-13T00:02:07.615186Z
+last_dotenv_setup: 2025-11-13T00:15:30.123456Z
+```
+
+All timestamps are in ISO 8601 format (UTC).
+
+### How state is used
+
+- **`dr start`**: Updates state after successful execution
+- **`dr dotenv setup`**: Records when environment setup was completed
+- **`dr templates setup`**: Skips dotenv setup if it was already completed (based on state)
+
+### Managing state
+
+State files are automatically created and updated. To reset state for a repository:
+
+```bash
+# Remove repository state
+rm .datarobot/state/info.yml
+```
+
+State files are small and do not require manual management under normal circumstances. Each repository maintains its own state independently.
+
+## See also
 
 - [Getting started](getting-started.md)&mdash;initial setup.
 - [Authentication](authentication.md)&mdash;managing credentials.

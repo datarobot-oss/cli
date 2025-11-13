@@ -3,6 +3,12 @@
 # Be sure to get DR_API_TOKEN from args
 args=("$@")
 DR_API_TOKEN=${args[0]}
+if [[ -z "$DR_API_TOKEN" ]]; then
+  echo "❌ The variable 'DR_API_TOKEN' must be supplied as arg."
+  exit 1
+fi
+
+export TERM="dumb"
 
 # Used throughout testing
 testing_url="https://app.datarobot.com"
@@ -27,9 +33,9 @@ yq -i ".token = \"$DR_API_TOKEN\"" $DATAROBOT_CLI_CONFIG
 
 dr help
 dr help run
-dr version
+dr self version
 
-dr completion bash > completion_bash.sh
+dr self completion bash > completion_bash.sh
 # Check if we have the file with expected __start_dr() function
 function_check=$(cat completion_bash.sh | grep __start_dr\()
 if [[ -n "$function_check" ]]; then
@@ -47,6 +53,7 @@ fi
 echo "Testing completion install/uninstall..."
 expect ./smoke_test_scripts/expect_completion.exp
 
+echo "Testing dr run command..."
 dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
@@ -68,30 +75,14 @@ fi
 
 # Test `dr auth login` and we should have the value shown in output:
 # `https://app.datarobot.com/account/developer-tools?cliRedirect=true`
+echo "Testing dr auth login..."
 expect ./smoke_test_scripts/expect_auth_login.exp
-
-# Used to test `dr dotenv setup`
-export DATAROBOT_ENDPOINT=${testing_url}
-
-# Use expect to run commands (`dr dotenv setup`) as user and we expect creation of a .env file w/ "https://app.datarobot.com"
-# The expect script "hits" the `e` key, then `ctrl-s` and finally `enter` (via carriage return/newline)
-expect ./smoke_test_scripts/expect_dotenv_setup.exp
-# Check if we have the value correctly set
-endpoint_check=$(cat .env | grep DATAROBOT_ENDPOINT=${testing_url}/api/v2)
-if [[ -n "$endpoint_check" ]]; then
-  echo "✅ Assertion passed: We have expected DATAROBOT_ENDPOINT value (${testing_url}/api/v2) in created .env file."
-  echo "Value: $endpoint_check"
-else
-  echo "❌ Assertion failed: We don't have expected DATAROBOT_ENDPOINT value in created .env file."
-  # Print .env (if it exists) to aid in debugging if needed
-  cat .env
-  exit 1
-fi
 
 # Test templates - Confirm expect script has cloned TTMDocs and that .env has expected value
 if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
 else
+  echo "Testing dr templates setup..."
   expect ./smoke_test_scripts/expect_templates_setup.exp
   testing_session_secret_key="TESTING_SESSION_SECRET_KEY"
   DIRECTORY="./talk-to-my-docs-agents"
@@ -102,15 +93,38 @@ else
     exit 1
   fi
   cd $DIRECTORY
+
+  # Validate the SESSION_SECRET_KEY set during templates setup
   session_secret_key_check=$(cat .env | grep SESSION_SECRET_KEY=${testing_session_secret_key})
   if [[ -n "$session_secret_key_check" ]]; then
     echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
   else
     echo "❌ Assertion failed: We don't have expected SESSION_SECRET_KEY value in created .env file."
-    # Print .env (if it exists) to aid in debugging if needed
     cat .env
     exit 1
   fi
+
+  # Now test dr dotenv setup within the template directory
+  echo "Testing dr dotenv setup within template directory..."
+
+  # Run dotenv setup - it should prompt for existing variables including DATAROBOT_ENDPOINT
+  # The expect script will accept defaults for all variables
+  export DATAROBOT_ENDPOINT=${testing_url}
+  expect ../smoke_test_scripts/expect_dotenv_setup.exp "."
+
+  # Validate DATAROBOT_ENDPOINT exists in .env (it should already be there from template)
+  endpoint_check=$(cat .env | grep "DATAROBOT_ENDPOINT")
+  if [[ -n "$endpoint_check" ]]; then
+    echo "✅ Assertion passed: dr dotenv setup preserved DATAROBOT_ENDPOINT in template .env file."
+    echo "Value: $endpoint_check"
+  else
+    echo "❌ Assertion failed: DATAROBOT_ENDPOINT not found in .env file."
+    cat .env
+    cd ..
+    rm -rf $DIRECTORY
+    exit 1
+  fi
+
   # Now delete directory to clean up
   cd ..
   rm -rf $DIRECTORY

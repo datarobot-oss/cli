@@ -15,16 +15,16 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
-	"github.com/datarobot/cli/cmd/completion"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dotenv"
+	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
-	"github.com/datarobot/cli/cmd/version"
 	"github.com/datarobot/cli/internal/config"
 	internalVersion "github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -34,12 +34,23 @@ var configFilePath string
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
-	Short: "The " + internalVersion.AppName,
+	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
 	Long: `
-	The ` + internalVersion.AppName + ` is a command-line interface for interacting with
-	DataRobot's application templates and authentication. It allows users to
-	clone, configure, and deploy applications to their DataRobot production environment.
-	`,
+The DataRobot CLI helps you quickly set up, configure, and deploy AI applications 
+using pre-built templates. Get from idea to production in minutes, not hours.
+
+✨ ` + tui.BaseTextStyle.Render("What you can do:") + `
+  • Choose from ready-made AI application templates
+  • Set up your development environment quickly  
+  • Deploy to DataRobot with a single command
+  • Manage environment variables and configurations
+
+🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
+  dr templates setup   # Interactive setup wizard
+  dr run dev           # Start development server
+  dr --help            # Show all available commands
+
+💡 ` + tui.BaseTextStyle.Render("New to DataRobot CLI?") + ` Run 'dr templates setup' to get started!`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
@@ -64,24 +75,31 @@ func init() {
 	// Allow invoking commands in a case-insensitive manner
 	cobra.EnableCaseInsensitive = true
 
+	// Disable Cobra's default completion command since we have our own under 'self'
+	RootCmd.CompletionOptions.DisableDefaultCmd = true
+
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
 		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+	RootCmd.PersistentFlags().BoolP("version", "V", false, "display the version")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
+	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+	_ = viper.BindPFlag("skip_auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 
 	setLogLevel()
 
 	// Add command groups
 	RootCmd.AddGroup(
-		&cobra.Group{ID: "core", Title: "Core Commands:"},
-		&cobra.Group{ID: "advanced", Title: "Advanced Commands:"},
-		&cobra.Group{ID: "plugin", Title: "Plugin Commands:"},
+		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},
+		&cobra.Group{ID: "self", Title: tui.BaseTextStyle.Render("Self Commands:")},
+		&cobra.Group{ID: "advanced", Title: tui.BaseTextStyle.Render("Advanced Commands:")},
+		&cobra.Group{ID: "plugin", Title: tui.BaseTextStyle.Render("Plugin Commands:")},
 	)
 
 	// Add commands here to ensure that they are available to users.
@@ -89,14 +107,13 @@ func init() {
 	// otherwise the command will be added under 'Additional Commands'.
 	RootCmd.AddCommand(
 		auth.Cmd(),
-		completion.Cmd(),
 		component.Cmd(),
 		dotenv.Cmd(),
 		run.Cmd(),
+		self.Cmd(),
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
-		version.Cmd(),
 	)
 
 	// Override the default help command to add --all-commands flag
@@ -104,13 +121,17 @@ func init() {
 
 	RootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		showAllCommands, _ := cmd.Flags().GetBool("all-commands")
+		showVersion, _ := cmd.Flags().GetBool("version")
 
 		if showAllCommands {
 			output := allcommands.GenerateCommandTree(cmd.Root())
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
+		} else if showVersion {
+			fmt.Fprint(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
 		} else {
-			// Use default help behavior
+			// Use default help behavior but with customized template
+			RootCmd.SetHelpTemplate(CustomHelpTemplate)
 			defaultHelpFunc(cmd, args)
 		}
 	})
@@ -137,12 +158,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	err = viper.BindEnv("api_token", "DATAROBOT_API_TOKEN")
 	if err != nil {
 		return fmt.Errorf("failed to bind environment variables for api_token: %w", err)
-	}
-
-	// map USE_DATAROBOT_LLM_GATEWAY
-	err = viper.BindEnv("use_datarobot_llm_gateway", "USE_DATAROBOT_LLM_GATEWAY")
-	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for use_datarobot_llm_gateway: %w", err)
 	}
 
 	// map VISUAL and EDITOR to external_editor config key

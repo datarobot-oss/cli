@@ -23,6 +23,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// setupTestEnvironment creates a temporary environment for testing authentication.
+// It sets up a temporary config directory, a mock DataRobot API server, and
+// returns a cleanup function to restore the original state.
 func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 
@@ -145,6 +148,33 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid environment credentials")
+}
+
+func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	// Set skip_auth flag to true
+	viper.Set("skip_auth", true)
+
+	// Don't set any credentials
+	viper.Set(config.DataRobotAPIKey, "")
+
+	existingToken := os.Getenv("DATAROBOT_API_TOKEN")
+
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	defer os.Setenv("DATAROBOT_API_TOKEN", existingToken)
+
+	result := EnsureAuthenticated(context.Background())
+	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via config")
+
+	os.Setenv("DATAROBOT_CLI_SKIP_AUTH", "true")
+
+	defer os.Unsetenv("DATAROBOT_CLI_SKIP_AUTH")
+
+	result = EnsureAuthenticated(context.Background())
+	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via environment variable")
 }
 
 func TestEnsureAuthenticated_NoURL(t *testing.T) {

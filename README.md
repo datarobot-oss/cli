@@ -38,6 +38,7 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
+- 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 - 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
 ## Table of contents
@@ -104,15 +105,13 @@ If you would like to build and install from source, you can do so by following t
 #### Build from source
 
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
-cd cli
+curl https://cli.datarobot.com/install | sh -s -- v0.1.0
+```
 
-# Build the CLI
-task build
+#### Windows (Specific Version)
 
-# The binary is available at ./dist/dr
-./dist/dr version
+```powershell
+$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 ```
 
 </details>
@@ -202,11 +201,7 @@ See the links below for specific details:
   - [dotenv](docs/commands/dotenv.md)&mdash;environment file management.
   - [completion](docs/commands/completion.md)&mdash;shell completion setup.
 
-- **[Development guide](docs/development/)**&mdash;for contributors.
-  - [Building from source](docs/development/building.md)
-  - [Architecture](docs/development/architecture.md)
-  - [Testing](docs/development/testing.md)
-  - [Release process](#release)
+- **[Development guide](docs/development/)**&mdash;for contributors, see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 <!--
 
@@ -275,21 +270,11 @@ goreleaser release --snapshot --clean
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 
-- Code of conduct.
-- Development workflow.
-- Submitting pull requests.
-- Coding standards.
-- Testing requirements.
-
-### Quick contribution guide
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Make your changes.
-4. Run tests and linters (`task test && task lint`).
-5. Commit your changes (`git commit -m 'Add amazing feature'`).
-6. Push to the branch (`git push origin feature/amazing-feature`).
-7. Open a pull request.
+- Development environment setup
+- Coding standards and guidelines
+- Testing requirements
+- Submitting pull requests
+- Release process
 
 ## License
 
@@ -302,12 +287,13 @@ This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt
 - 📖 [Documentation](docs/)
 - 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
 - 💬 [Discussions](https://github.com/datarobot/cli/discussions)
-- 📧 Email: oss-community-management@datarobot.com
+- 📧 Email: <oss-community-management@datarobot.com>
 
 ## Acknowledgments
 
 Built with:
-- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework.
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
-- [Viper](https://github.com/spf13/viper)&mdash;configuration management.
-- [Task](https://taskfile.dev/)&mdash;task runner.
+
+- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework
+- [Viper](https://github.com/spf13/viper)&mdash;configuration management
+- [Task](https://taskfile.dev/)&mdash;task runner

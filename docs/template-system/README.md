@@ -48,7 +48,7 @@ dr templates setup
 # Manual setup
 dr templates clone my-template
 cd my-template
-dr dotenv --wizard
+dr dotenv setup
 dr run dev
 ```
 
@@ -247,7 +247,7 @@ Browse the [DataRobot Template Gallery](https://github.com/datarobot/templates) 
 - **fastapi-backend**&mdash;FastAPI REST API.
 - **full-stack-app**&mdash;complete web application.
 
-## See Also
+## See also
 
 - [Getting Started](../user-guide/getting-started.md)
 - [Working with Templates](../user-guide/templates.md)

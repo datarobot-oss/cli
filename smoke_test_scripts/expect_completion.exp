@@ -6,14 +6,14 @@ set timeout 10
 set env(TERM) dumb
 
 # Test completion install with --yes flag to avoid prompts
-spawn dr completion install --yes
+spawn dr self completion install --yes
 
 expect {
     -re "Completion (already )?installed" {
-        puts "\n✅ Completion install succeeded"
+        puts "\n Completion install succeeded"
     }
     timeout {
-        puts "\n❌ Timeout waiting for install confirmation"
+        puts "\n Timeout waiting for install confirmation"
         exit 1
     }
     eof
@@ -22,18 +22,18 @@ expect {
 sleep 1
 
 # Test completion uninstall with --yes flag
-spawn dr completion uninstall --yes
+spawn dr self completion uninstall --yes
 
 expect {
     -re "(Completion uninstalled|No completion found)" {
-        puts "\n✅ Completion uninstall succeeded"
+        puts "\n Completion uninstall succeeded"
     }
     timeout {
-        puts "\n❌ Timeout waiting for uninstall confirmation"
+        puts "\n Timeout waiting for uninstall confirmation"
         exit 1
     }
     eof
 }
 
 expect eof
-puts "\n✅ All completion tests passed"
+puts "\n All completion tests passed"

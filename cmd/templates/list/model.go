@@ -74,7 +74,7 @@ func (m *Model) SetTemplates(templates []drapi.Template) {
 	}
 
 	nl := list.New(items, itemDelegate{}, 0, 0)
-	nl.Title = "Application Templates"
+	nl.Title = "📚 Choose Your AI Application Template"
 	nl.Styles.Title = nl.Styles.Title.Background(tui.DrPurple)
 
 	m.list = nl

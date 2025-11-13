@@ -6,36 +6,28 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package self
 
 import (
 	"fmt"
 	"os"
 	"strings"
 
+	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-type Shell string
-
-const (
-	ShellBash       Shell = "bash"
-	ShellZsh        Shell = "zsh"
-	ShellFish       Shell = "fish"
-	ShellPowerShell Shell = "powershell"
-)
-
 func supportedShells() []string {
 	return []string{
-		string(ShellBash),
-		string(ShellZsh),
-		string(ShellFish),
-		string(ShellPowerShell),
+		string(internalShell.Bash),
+		string(internalShell.Zsh),
+		string(internalShell.Fish),
+		string(internalShell.PowerShell),
 	}
 }
 
-func Cmd() *cobra.Command {
+func CompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
 		Short: "Generate or manage shell completion scripts",
@@ -82,18 +74,18 @@ PowerShell:
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
 		ValidArgs:             supportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			shell := Shell(args[0])
+			shell := internalShell.Shell(args[0])
 
 			switch shell {
-			case ShellBash:
+			case internalShell.Bash:
 				return cmd.Root().GenBashCompletion(os.Stdout)
-			case ShellZsh:
+			case internalShell.Zsh:
 				// Cobra v1.1.1+ supports GenZshCompletion
 				return cmd.Root().GenZshCompletion(os.Stdout)
-			case ShellFish:
+			case internalShell.Fish:
 				// the `true` gives fish the “__fish_use_subcommand” behavior
 				return cmd.Root().GenFishCompletion(os.Stdout, true)
-			case ShellPowerShell:
+			case internalShell.PowerShell:
 				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
 			default:
 				return fmt.Errorf("unsupported shell %q", args[0])
@@ -103,8 +95,8 @@ PowerShell:
 
 	// Add subcommands
 	cmd.AddCommand(
-		installCmd(),
-		uninstallCmd(),
+		installCompletionCmd(),
+		uninstallCompletionCmd(),
 	)
 
 	return cmd

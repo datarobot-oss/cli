@@ -43,9 +43,10 @@ docs/
 ├── commands/                           # Command reference
 │   ├── README.md                      # Command overview ✓
 │   ├── auth.md                        # auth command ✓
+│   ├── start.md                       # start/quickstart command ✓
 │   ├── templates.md                   # templates command (TODO)
 │   ├── run.md                         # run command (TODO)
-│   ├── dotenv.md                      # dotenv command (TODO)
+│   ├── dotenv.md                      # dotenv command ✓
 │   ├── completion.md                  # completion command ✓
 │   └── version.md                     # version command (TODO)
 └── development/                        # Developer docs
@@ -65,9 +66,12 @@ docs/
 - Shell completions setup (all shells)
 - Configuration files guide
 - Template system structure
+- Template quickstart scripts
 - Interactive configuration deep-dive
 - Environment variables management
 - auth command reference
+- start/quickstart command reference
+- dotenv command reference
 - completion command reference
 - Building from source
 - Enhanced CONTRIBUTING.md
@@ -79,7 +83,6 @@ docs/
 - User guide: FAQ
 - Command reference: templates
 - Command reference: run
-- Command reference: dotenv
 - Command reference: version
 - Development: architecture details
 - Development: testing guide

@@ -17,11 +17,13 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/misc/open"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
 )
 
@@ -74,21 +76,42 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 			}
 		}()
 
-		var msg strings.Builder
-
-		msg.WriteString("\n\nPlease visit this link (if it didn't open automatically)\n")
-		msg.WriteString("to connect your DataRobot credentials to the CLI\n")
-		msg.WriteString("(If you're prompted to log in, you may need to re-enter this URL):\n")
-
 		authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
-		msg.WriteString(authURL)
-		msg.WriteString("\n\n")
+
+		// Style the URL
+		urlStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Underline(true).
+			Bold(true)
+
+		// Create styled frame for the auth URL
+		urlFrameStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
+			Padding(1, 2).
+			Width(70)
+
+		styledURL := urlStyle.Render(authURL)
+		urlBox := urlFrameStyle.Render(styledURL)
+
+		hint := tui.BaseTextStyle.
+			Faint(true).
+			Render("💡 If your browser didn't open automatically, click or copy the link above")
+
+		message := lipgloss.JoinVertical(
+			lipgloss.Left,
+			"",
+			urlBox,
+			"",
+			hint,
+			"",
+		)
 
 		open.Open(authURL)
 
 		return startedMsg{
 			server:  server,
-			message: msg.String(),
+			message: message,
 		}
 	}
 }

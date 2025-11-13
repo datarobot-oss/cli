@@ -6,6 +6,7 @@ This guide covers building, testing, and developing the DataRobot CLI.
 
 - [Building from Source](#building-from-source)
 - [Project Architecture](#project-architecture)
+- [Coding Standards](#coding-standards)
 - [Development Workflow](#development-workflow)
 - [Testing](#testing)
 - [Debugging](#debugging)
@@ -46,30 +47,33 @@ task --list
 task build              # Build the CLI binary
 task test               # Run all tests
 task test-coverage      # Run tests with coverage
-task lint               # Run linters
-task fmt                # Format code
+task lint               # Run linters (includes formatting)
 task clean              # Clean build artifacts
 task dev-init           # Setup development environment
 task install-tools      # Install development tools
+task run                # Run CLI without building
 ```
 
 ### Build options
 
+**Always use `task build` for building the CLI**. This ensures proper version information and build flags are applied:
+
 ```bash
-# Development build (with debug info)
-go build -o dist/dr main.go
+# Standard build (recommended)
+task build
 
-# Production build (optimized)
-go build -ldflags="-s -w" -o dist/dr main.go
-
-# Build with version info
-go build -ldflags="-X github.com/datarobot/cli/internal/version.Version=1.0.0" -o dist/dr main.go
-
-# Cross-compile for different platforms
-GOOS=linux GOARCH=amd64 go build -o dist/dr-linux-amd64 main.go
-GOOS=darwin GOARCH=arm64 go build -o dist/dr-darwin-arm64 main.go
-GOOS=windows GOARCH=amd64 go build -o dist/dr-windows-amd64.exe main.go
+# Run without building (for quick testing)
+task run -- templates list
 ```
+
+The `task build` command automatically includes:
+
+- Version information from git
+- Git commit hash
+- Build timestamp
+- Proper ldflags configuration
+
+For cross-platform builds and releases, we use GoReleaser (see [Release Process](#release-process)).
 
 ## Project architecture
 
@@ -84,8 +88,6 @@ cli/
 │   │   ├── login.go         # Login command
 │   │   ├── logout.go        # Logout command
 │   │   └── setURL.go        # Set URL command
-│   ├── completion/          # Shell completion
-│   │   └── cmd.go           # Completion generation
 │   ├── dotenv/              # Environment variable management
 │   │   ├── cmd.go           # Dotenv command
 │   │   ├── model.go         # TUI model (Bubble Tea)
@@ -100,8 +102,10 @@ cli/
 │   │   ├── list/            # List subcommand
 │   │   ├── setup/           # Setup wizard
 │   │   └── status.go        # Status command
-│   └── version/             # Version command
-│       └── cmd.go
+│   └── self/                # CLI utility commands
+│       ├── cmd.go           # Self command group
+│       ├── completion.go    # Completion generation
+│       └── version.go       # Version command
 ├── internal/                 # Private packages (not importable)
 │   ├── assets/              # Embedded assets
 │   │   └── templates/       # HTML templates
@@ -275,7 +279,123 @@ func (m Model) View() string {
 }
 ```
 
+## Coding Standards
+
+### Go Style Requirements
+
+**Critical**: All code must pass `golangci-lint` with zero errors. Follow these whitespace rules strictly:
+
+1. **Never cuddle declarations**: Always add a blank line before `var`, `const`, `type` declarations when they follow other statements
+2. **Separate statement types**: Add blank lines between different statement types (assign, if, for, return, etc.)
+3. **Blank line after block start**: Add blank line after opening braces of functions/blocks when they follow declarations
+4. **Blank line before multi-line statements**: Add blank line before if/for/switch statements
+
+**Example of correct spacing:**
+
+```go
+func example() {
+    x := 1
+
+    if x > 0 {
+        y := 2
+
+        fmt.Println(y)
+    }
+
+    var result string
+
+    result = "done"
+
+    return result
+}
+```
+
+**Common mistakes to avoid:**
+
+```go
+// ❌ BAD: Cuddled declaration
+func bad() {
+    x := 1
+    var y int  // Missing blank line before declaration
+}
+
+// ✅ GOOD: Properly spaced
+func good() {
+    x := 1
+
+    var y int
+}
+```
+
+### TUI Development Standards
+
+When building terminal user interfaces:
+
+1. **Always wrap TUI models with InterruptibleModel**&mdash;ensures global Ctrl-C handling:
+
+   ```go
+   import "github.com/datarobot/cli/tui"
+   
+   // Wrap your model
+   interruptible := tui.NewInterruptibleModel(yourModel)
+   program := tea.NewProgram(interruptible)
+   ```
+
+2. **Reuse existing TUI components**&mdash;check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
+
+3. **Use common lipgloss styles**&mdash;defined in `tui/theme.go` for visual consistency:
+
+   ```go
+   import "github.com/datarobot/cli/tui"
+   
+   // Use theme styles
+   title := tui.TitleStyle.Render("My Title")
+   error := tui.ErrorStyle.Render("Error message")
+   ```
+
+### Quality Tools
+
+All code must pass these tools without errors:
+
+- **`go mod tidy`**&mdash;dependency management
+- **`go fmt`**&mdash;basic formatting
+- **`go vet`**&mdash;suspicious constructs
+- **`golangci-lint`**&mdash;comprehensive linting (includes wsl, revive, staticcheck, etc.)
+- **`goreleaser check`**&mdash;release configuration validation
+
+**Before committing code, verify it follows wsl (whitespace) rules.**
+
+### Running Quality Checks
+
+```bash
+# Run all quality checks at once
+task lint
+
+# Individual checks
+go mod tidy
+go fmt ./...
+go vet ./...
+task install-tools  # Install golangci-lint
+./tmp/bin/golangci-lint run ./...
+./tmp/bin/goreleaser check
+```
+
 ## Development Workflow
+
+### Important: Use Taskfile, Not Direct Go Commands
+
+**Always use Taskfile tasks** for development operations rather than direct `go` commands. This ensures consistency, proper build flags, and correct environment setup.
+
+```bash
+# ✅ CORRECT: Use task commands
+task build
+task test
+task lint
+
+# ❌ INCORRECT: Don't use direct go commands
+go build
+go test
+```
 
 ### 1. Setup Development Environment
 
@@ -298,10 +418,7 @@ git checkout -b feature/my-feature
 # Edit code
 vim cmd/templates/new-feature.go
 
-# Format code
-task fmt
-
-# Run linters
+# Run linters (includes formatting)
 task lint
 ```
 
@@ -311,11 +428,15 @@ task lint
 # Run tests
 task test
 
-# Run specific test
+# Run specific test (direct go test is acceptable for specific tests)
 go test -run TestMyFeature ./cmd/templates
 
-# Test manually
-go run main.go templates list
+# Test manually using task run
+task run -- templates list
+
+# Or build and test the binary
+task build
+./dist/dr templates list
 ```
 
 ### 5. Commit and Push
@@ -399,25 +520,35 @@ func TestDotenvModel(t *testing.T) {
 ### Running Tests
 
 ```bash
-# All tests
+# All tests (recommended)
 task test
 
-# With coverage
+# With coverage (opens HTML report)
 task test-coverage
-go tool cover -html=coverage.out
 
-# Specific package
+# Specific package (direct go test is fine for targeted testing)
 go test ./internal/config
 
 # Verbose
 go test -v ./...
 
-# With race detection
+# With race detection (task test already includes this)
 go test -race ./...
 
 # Specific test
 go test -run TestLogin ./cmd/auth
 ```
+
+**Note**: `task test` automatically runs tests with race detection and coverage enabled.
+
+### Running Smoke Tests Using GitHub Actions
+
+We have smoke tests that are not currently run on Pull Requests however _can_ be using PR comments to trigger them.
+
+These are the appropriate comments to trigger respective tests:
+
+- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR
+- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR
 
 ## Debugging
 
@@ -440,8 +571,12 @@ dlv debug main.go -- templates list
 ### Debug Logging
 
 ```bash
-# Enable debug mode
-go run main.go --debug templates list
+# Enable debug mode (use task run)
+task run -- --debug templates list
+
+# Or with built binary
+task build
+./dist/dr --debug templates list
 ```
 
 ### Add Debug Statements
@@ -474,7 +609,7 @@ git push --tags
 # 4. Upload binaries
 ```
 
-## See Also
+## See also
 
 - [Contributing Guide](../../CONTRIBUTING.md)
 - [Architecture Details](architecture.md)
