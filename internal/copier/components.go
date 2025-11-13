@@ -16,6 +16,10 @@ import (
 type Details struct {
 	readMeFile     string
 	ReadMeContents string
+
+	Name    string
+	RepoURL string
+	Enabled bool
 }
 
 //go:embed readme/*.md
@@ -36,20 +40,39 @@ func init() {
 var ComponentDetailsMap = map[string]Details{
 	"git@github.com:datarobot/af-component-agent.git": {
 		readMeFile: "af-component-agent.md",
+
+		Name:    "agent",
+		RepoURL: "git@github.com:datarobot/af-component-agent.git",
+		Enabled: true,
 	},
 	"git@github.com:datarobot/af-component-base.git": {
 		readMeFile: "af-component-base.md",
+
+		Name:    "base",
+		RepoURL: "git@github.com:datarobot/af-component-base.git",
 	},
 	"git@github.com:datarobot/af-component-fastapi-backend.git": {
 		readMeFile: "af-component-fastapi-backend.md",
+
+		Name:    "fastapi-backend",
+		RepoURL: "git@github.com:datarobot/af-component-fastapi-backend.git",
 	},
 	"git@github.com:datarobot/af-component-fastmcp-backend.git": {
 		readMeFile: "af-component-fastmcp-backend.md",
+
+		Name:    "fastmcp-backend",
+		RepoURL: "git@github.com:datarobot/af-component-fastmcp-backend.git",
 	},
 	"git@github.com:datarobot/af-component-llm.git": {
 		readMeFile: "af-component-llm.md",
+
+		Name:    "llm",
+		RepoURL: "git@github.com:datarobot/af-component-llm.git",
 	},
 	"git@github.com:datarobot/af-component-react.git": {
 		readMeFile: "af-component-react.md",
+
+		Name:    "react",
+		RepoURL: "git@github.com:datarobot/af-component-react.git",
 	},
 }
