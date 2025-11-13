@@ -23,7 +23,7 @@ import (
 // Category name constants
 const (
 	CategoryQuickStart      = "🚀 Quick Start"
-	CategoryBuilding        = "🏗️  Building"
+	CategoryBuilding        = "🏗️ Building"
 	CategoryTestingQuality  = "🧪 Testing & Quality"
 	CategoryDeployment      = "🚀 Deployment"
 	CategoryOther           = "📦 Other"
