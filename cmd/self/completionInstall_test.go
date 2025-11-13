@@ -366,6 +366,8 @@ func TestInstallCmd(t *testing.T) {
 
 	if cmd == nil {
 		t.Fatal("installCmd() returned nil")
+
+		return
 	}
 
 	if cmd.Use != "install [shell]" {
@@ -391,6 +393,8 @@ func TestUninstallCmd(t *testing.T) {
 
 	if cmd == nil {
 		t.Fatal("uninstallCmd() returned nil")
+
+		return
 	}
 
 	if cmd.Use != "uninstall [shell]" {

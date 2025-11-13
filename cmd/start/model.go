@@ -337,9 +337,11 @@ func findQuickstart(m *Model) tea.Msg {
 	// If the user has set the '--yes' flag, skip confirmation and execute immediately.
 	quickstartScript, err := findQuickstartScript()
 	// if the error is due to not being in a repo, we can treat it as no script found
-	if err != nil && err.Error() != errNotInRepo {
-		return stepErrorMsg{err: err}
-	} else {
+	if err != nil {
+		if err.Error() != errNotInRepo {
+			return stepErrorMsg{err: err}
+		}
+
 		quickstartScript = "" // Ensure no script if not in repo
 	}
 
