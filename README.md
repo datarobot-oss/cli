@@ -45,16 +45,14 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Next steps](#next-steps)
+- [Contributing](#contributing)
+- [License](#license)
 <!--
 - [Commands](#commands)
 - [Shell completion](#shell-completion)
 - [Development](#development)
 - [Release](#release)
 -->
-- [Contributing](#contributing)
-- [License](#license)
-
----
 
 ## Installation
 
