@@ -18,7 +18,6 @@ import (
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
-	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -29,9 +28,9 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	}
 
 	// Do we have the required tools?
-	if err := tools.CheckPrerequisites(); err != nil {
-		return err
-	}
+	//if err := tools.CheckPrerequisites(); err != nil {
+	//	return err
+	//}
 
 	return nil
 }
