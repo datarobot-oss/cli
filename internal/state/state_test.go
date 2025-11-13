@@ -86,6 +86,49 @@ func TestGetStatePath(t *testing.T) {
 		expected := filepath.Join(tmpDir, "dr", "currentstate.yml")
 		assert.Equal(t, expected, statePath)
 	})
+
+	t.Run("returns platform-specific fallback path", func(t *testing.T) {
+		// Clear XDG_STATE_HOME and LOCALAPPDATA for this test
+		originalXDG := os.Getenv("XDG_STATE_HOME")
+		originalLocalAppData := os.Getenv("LOCALAPPDATA")
+
+		defer func() {
+			_ = os.Setenv("XDG_STATE_HOME", originalXDG)
+			_ = os.Setenv("LOCALAPPDATA", originalLocalAppData)
+		}()
+
+		_ = os.Unsetenv("XDG_STATE_HOME")
+		_ = os.Unsetenv("LOCALAPPDATA")
+
+		// Get state path (from a directory without .datarobot/state)
+		tmpDir := t.TempDir()
+		originalWd, err := os.Getwd()
+		require.NoError(t, err)
+
+		defer func() {
+			err := os.Chdir(originalWd)
+			require.NoError(t, err)
+		}()
+
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+
+		statePath, err := GetStatePath()
+		require.NoError(t, err)
+
+		// Verify path contains "dr" and "currentstate.yml"
+		assert.Contains(t, statePath, "dr")
+		assert.Contains(t, statePath, "currentstate.yml")
+
+		// Platform-specific checks
+		if os.PathSeparator == '\\' {
+			// Windows: should contain AppData\Local\DataRobot\dr
+			assert.Contains(t, statePath, filepath.Join("AppData", "Local", "DataRobot", "dr"))
+		} else {
+			// Unix/Linux/macOS: should contain .local/state/dr
+			assert.Contains(t, statePath, filepath.Join(".local", "state", "dr"))
+		}
+	})
 }
 
 func TestLoadSave(t *testing.T) {
@@ -130,6 +173,16 @@ func TestLoadSave(t *testing.T) {
 	t.Run("Load returns nil when file doesn't exist", func(t *testing.T) {
 		// Create temporary directory without state file
 		tmpDir := t.TempDir()
+
+		// Override XDG_STATE_HOME to point to a non-existent location
+		originalXDG := os.Getenv("XDG_STATE_HOME")
+		nonExistentPath := filepath.Join(tmpDir, "nonexistent")
+
+		defer func() {
+			_ = os.Setenv("XDG_STATE_HOME", originalXDG)
+		}()
+
+		_ = os.Setenv("XDG_STATE_HOME", nonExistentPath)
 
 		// Change to temp directory
 		originalWd, err := os.Getwd()

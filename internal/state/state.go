@@ -11,6 +11,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -34,8 +35,9 @@ type State struct {
 // GetStatePath determines the appropriate location for the state file.
 // It checks in order:
 // 1. .datarobot/state directory in the current working directory
-// 2. $XDG_STATE_HOME/dr directory
-// 3. $HOME/.local/state/dr directory (fallback if XDG_STATE_HOME is not set)
+// 2. $XDG_STATE_HOME/dr directory (Unix/Linux/macOS)
+// 3. %LOCALAPPDATA%\DataRobot\dr directory (Windows)
+// 4. $HOME/.local/state/dr directory (Unix/Linux/macOS fallback)
 func GetStatePath() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -48,7 +50,7 @@ func GetStatePath() (string, error) {
 		return filepath.Join(localPath, stateFileName), nil
 	}
 
-	// Check XDG_STATE_HOME
+	// Check XDG_STATE_HOME (Unix/Linux/macOS)
 	// TODO Rewrite this to retrieve state dir from Viper config
 	xdgStateHome := os.Getenv("XDG_STATE_HOME")
 	if xdgStateHome != "" {
@@ -57,13 +59,27 @@ func GetStatePath() (string, error) {
 		return statePath, nil
 	}
 
-	// Fallback to $HOME/.local/state
+	// Platform-specific fallback
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	statePath := filepath.Join(homeDir, defaultXDGDataDir, "dr", stateFileName)
+	var statePath string
+
+	if runtime.GOOS == "windows" {
+		// On Windows, use %LOCALAPPDATA%\DataRobot\dr
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData != "" {
+			statePath = filepath.Join(localAppData, "DataRobot", "dr", stateFileName)
+		} else {
+			// Fallback if LOCALAPPDATA is not set
+			statePath = filepath.Join(homeDir, "AppData", "Local", "DataRobot", "dr", stateFileName)
+		}
+	} else {
+		// Unix/Linux/macOS: use $HOME/.local/state/dr
+		statePath = filepath.Join(homeDir, defaultXDGDataDir, "dr", stateFileName)
+	}
 
 	return statePath, nil
 }
