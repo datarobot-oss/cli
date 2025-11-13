@@ -139,17 +139,27 @@ dr auth login
 ```
 
 Once you have logged in, the DataRobot web application prompts you to authorize the CLI.
-Click "Authorize" to complete the authorization process, and then close the browser window once it is complete.
+Click "Authorize" to complete the authorization process, then close the browser window once it is complete.
 
 ### Set up a template
 
-Use the interactive setup wizard to clone and configure a template:
+Next, load the interactive setup wizard to clone and configure a template:
 
 ```bash
 dr templates setup
 ```
 
-This guides you through the following:
+After a few moments, the setup wizard displays the application templates available:
+
+<img src="./images/templates-list.png" alt="Templates list" width="500px"/>
+
+> [!NOTE]
+> You can navigate through the list of templates using the arrow keys, or filter by pressing the `/` key and entering a search term. The setup wizard will only display templates that are available to you.
+
+Select a template by pressing the `Enter` key.
+At the subsequent prompt, specify the desired directory name for the template and press `Enter` to have the setup wizard clone the template repository to your local machine.
+
+The setup wizard guides you through the following steps:
 
 - Selecting a template from available options.
 - Cloning the template repository.
