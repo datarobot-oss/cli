@@ -289,20 +289,20 @@ The CLI maintains state information about your interactions with repositories to
 
 The CLI stores state locally within each repository:
 
-- `.datarobot/state/currentstate.yml` in the current working directory
+- `.datarobot/state/info.yml` in the current working directory
 
 ### Tracked information
 
 The state file tracks:
 
-- **Last successful run**: Timestamp of the last successful `dr start` execution
+- **Last start**: Timestamp of the last successful `dr start` execution
 - **CLI version**: Version of the CLI used for the last successful run
 - **Last dotenv setup**: Timestamp of the last successful `dr dotenv setup` execution
 
 ### State file format
 
 ```yaml
-last_successful_run: 2025-11-13T00:02:07.615186Z
+last_start: 2025-11-13T00:02:07.615186Z
 cli_version: 1.0.0
 last_dotenv_setup: 2025-11-13T00:15:30.123456Z
 ```
@@ -321,7 +321,7 @@ State files are automatically created and updated. To reset state for a reposito
 
 ```bash
 # Remove repository state
-rm .datarobot/state/currentstate.yml
+rm .datarobot/state/info.yml
 ```
 
 State files are small and do not require manual management under normal circumstances. Each repository maintains its own state independently.

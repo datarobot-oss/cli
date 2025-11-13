@@ -86,7 +86,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create initial state with dr start info
-		err = UpdateAfterSuccessfulRun("1.0.0")
+		err = UpdateAfterSuccessfulRun()
 		require.NoError(t, err)
 
 		// Update with dotenv setup
@@ -98,8 +98,8 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, state)
 
-		assert.Equal(t, "1.0.0", state.CLIVersion)
-		assert.False(t, state.LastSuccessfulRun.IsZero())
+		assert.NotEmpty(t, state.CLIVersion)
+		assert.False(t, state.LastStart.IsZero())
 		assert.NotNil(t, state.LastDotenvSetup)
 	})
 

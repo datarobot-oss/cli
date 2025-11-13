@@ -15,7 +15,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/state"
-	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -27,7 +26,7 @@ type Options struct {
 
 // updateStateAfterSuccess updates the state file after a successful dr start run.
 func updateStateAfterSuccess() error {
-	return state.UpdateAfterSuccessfulRun(version.Version)
+	return state.UpdateAfterSuccessfulRun()
 }
 
 func Cmd() *cobra.Command {

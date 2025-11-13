@@ -13,21 +13,22 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	stateFileName = "currentstate.yml"
+	stateFileName = "info.yml"
 	stateSubDir   = "state"
 	localStateDir = ".datarobot"
 )
 
 // State represents the current state of CLI interactions with a repository.
 type State struct {
-	// LastSuccessfulRun is an ISO8601-compliant timestamp of the last successful `dr start` run
-	LastSuccessfulRun time.Time `yaml:"last_successful_run"`
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
+	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
+	LastStart time.Time `yaml:"last_start"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
@@ -74,8 +75,17 @@ func Load() (*State, error) {
 	return &state, nil
 }
 
+// Update saves the state file and automatically sets the CLIVersion.
+// This should be the preferred method for saving state.
+func (s *State) Update() error {
+	s.CLIVersion = version.Version
+
+	return Save(s)
+}
+
 // Save writes the state file to the appropriate location.
 // Creates parent directories if they don't exist.
+// Note: Consider using Update() instead, which automatically sets CLIVersion.
 func Save(state *State) error {
 	statePath, err := GetStatePath()
 	if err != nil {
@@ -104,7 +114,7 @@ func Save(state *State) error {
 }
 
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
-func UpdateAfterSuccessfulRun(cliVersion string) error {
+func UpdateAfterSuccessfulRun() error {
 	// Load existing state to preserve other fields
 	existingState, err := Load()
 	if err != nil {
@@ -115,10 +125,9 @@ func UpdateAfterSuccessfulRun(cliVersion string) error {
 		existingState = &State{}
 	}
 
-	existingState.LastSuccessfulRun = time.Now().UTC()
-	existingState.CLIVersion = cliVersion
+	existingState.LastStart = time.Now().UTC()
 
-	return Save(existingState)
+	return existingState.Update()
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
@@ -136,7 +145,7 @@ func UpdateAfterDotenvSetup() error {
 	now := time.Now().UTC()
 	existingState.LastDotenvSetup = &now
 
-	return Save(existingState)
+	return existingState.Update()
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.

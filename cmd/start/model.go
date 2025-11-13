@@ -23,7 +23,6 @@ import (
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
-	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -151,7 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scriptCompleteMsg:
 		// Script execution completed successfully, update state and quit
-		_ = state.UpdateAfterSuccessfulRun(version.Version)
+		_ = state.UpdateAfterSuccessfulRun()
 
 		return m, tea.Quit
 	}
