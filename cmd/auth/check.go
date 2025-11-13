@@ -72,7 +72,7 @@ If you're in a project directory with a .env file, this will also check those cr
 
 		_, statErr := os.Stat(dotenvPath)
 		if statErr != nil {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️  No .env file found in repository"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No .env file found in repository"))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
@@ -112,7 +112,7 @@ If you're in a project directory with a .env file, this will also check those cr
 		}
 
 		if envToken == "" {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️  No DATAROBOT_API_TOKEN found in .env"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_API_TOKEN found in .env"))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
@@ -122,7 +122,7 @@ If you're in a project directory with a .env file, this will also check those cr
 		}
 
 		if envEndpoint == "" {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️  No DATAROBOT_ENDPOINT found in .env"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_ENDPOINT found in .env"))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))

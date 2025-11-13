@@ -306,7 +306,7 @@ func (m Model) View() string {
 		if m.repoURL == m.template.Repository.URL {
 			statusMsg = tui.InfoStyle.Render(fmt.Sprintf("💡 Directory '%s' exists and will be updated from origin", m.exists))
 		} else {
-			statusMsg = tui.ErrorStyle.Render(fmt.Sprintf("⚠️  Directory '%s' contains a different repository: '%s'", m.exists, m.repoURL))
+			statusMsg = tui.ErrorStyle.Render(fmt.Sprintf("⚠️ Directory '%s' contains a different repository: '%s'", m.exists, m.repoURL))
 		}
 
 		sb.WriteString(statusMsg)
