@@ -21,8 +21,7 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		CompletionCmd(),
-		// TODO: Add update command which installs latest version of CLI
-		// UpdateCmd(),
+		UpdateCmd(),
 		VersionCmd(),
 	)
 
