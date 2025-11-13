@@ -29,6 +29,13 @@ jobs:
           version: v2.6.0
           args: --timeout=5m
 
+      - name: GoReleaser Check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check
+
   test:
     runs-on: ubuntu-latest
     name: Run Tests
