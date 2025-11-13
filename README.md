@@ -44,11 +44,13 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 
 - [Installation](#installation)
 - [Quick start](#quick-start)
-- [Documentation](#documentation)
+- [Next steps](#next-steps)
+<!--
 - [Commands](#commands)
 - [Shell completion](#shell-completion)
 - [Development](#development)
 - [Release](#release)
+-->
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -159,33 +161,31 @@ After a few moments, the setup wizard displays the application templates availab
 Select a template by pressing the `Enter` key.
 At the subsequent prompt, specify the desired directory name for the template and press `Enter` to have the setup wizard clone the template repository to your local machine.
 
-The setup wizard guides you through the following steps:
-
-- Selecting a template from available options.
-- Cloning the template repository.
-- Configuring environment variables interactively.
-- Setting up application-specific settings.
+Follow the instructions when prompted to continue configuring the template.
+The prompts vary depending on which template you selected.
+When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
 ### Run tasks
 
-Execute tasks defined in your template Taskfile:
+Now that you've cloned and configured a template, you can start running tasks defined in the template Taskfile.
+First, navigate to the template directory:
 
 ```bash
-# List available tasks
-dr run --list
-
-# Run a specific task
-dr run dev
-
-# Run multiple tasks in parallel
-dr run lint test --parallel
+cd [TEMPLATE_NAME]
 ```
 
-## Documentation
+Then, list the available tasks:
 
-Comprehensive documentation is available in the [docs/](docs/) directory:
+```bash
+dr run --list
+```
 
-- **[User guide](docs/user-guide/)**&mdash;complete usage guide for all features.
+## Next steps
+
+From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+See the links below for specific details:
+
+- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide for all features.
   - [Getting started](docs/user-guide/getting-started.md)
   - [Authentication](docs/user-guide/authentication.md)
   - [Working with templates](docs/user-guide/templates.md)
@@ -210,6 +210,7 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
   - [Testing](docs/development/testing.md)
   - [Release process](#release)
 
+<!--
 ## Commands
 
 ### Main commands
@@ -429,6 +430,8 @@ To test the release process without publishing:
 # Dry run.
 goreleaser release --snapshot --clean
 ```
+
+-->
 
 ## Contributing
 
