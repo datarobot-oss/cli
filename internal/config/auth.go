@@ -99,8 +99,8 @@ func urlFromShortcut(selectedOption string) string {
 	}
 }
 
-func verifyToken(datarobotHost, token string) (bool, error) {
-	// Verifies if the datarobot host + api key pair correspond to a valid pair.
+// VerifyToken verifies if the datarobot host + api key pair correspond to a valid pair.
+func VerifyToken(datarobotHost, token string) (bool, error) {
 	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
 	if err != nil {
 		return false, err
@@ -126,14 +126,14 @@ func GetAPIKey() string {
 	token := os.Getenv("DATAROBOT_API_TOKEN")
 
 	if token != "" {
-		if isValid, _ := verifyToken(datarobotHost, token); isValid {
+		if isValid, _ := VerifyToken(datarobotHost, token); isValid {
 			return token
 		}
 	}
 
 	// Returns the API key if there is one, otherwise returns an empty string
 	token = viper.GetString(DataRobotAPIKey)
-	if isValid, _ := verifyToken(datarobotHost, token); isValid {
+	if isValid, _ := VerifyToken(datarobotHost, token); isValid {
 		return token
 	}
 

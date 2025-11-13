@@ -9,11 +9,8 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -82,8 +79,6 @@ func EnsureAuthenticated(ctx context.Context) bool {
 }
 
 func LoginAction(ctx context.Context) error {
-	reader := bufio.NewReader(os.Stdin)
-
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
@@ -98,24 +93,17 @@ func LoginAction(ctx context.Context) error {
 		datarobotHost = config.GetBaseURL()
 	}
 
+	// If they explicitly ran 'dr auth login', just authenticate them
 	if token := config.GetAPIKey(); token != "" {
-		fmt.Println("🔑 You're already logged in to DataRobot. Do you want to login with a different account? (y/N): ")
-
-		selectedOption, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
-
-		if strings.ToLower(strings.TrimSpace(selectedOption)) == "y" {
-			// Set the DataRobot API key to be an empty string
-			viper.Set(config.DataRobotAPIKey, "")
-		} else {
-			fmt.Println("✅ Keeping the current login. You're all set!")
-			return nil
-		}
+		log.Info("Re-authenticating with DataRobot...")
 	} else {
-		log.Warn("The stored API key is invalid or expired. Retrieving a new one")
+		log.Warn("No valid API key found. Retrieving a new one")
 	}
+
+	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'")
+
+	// Clear existing token and get new one
+	viper.Set(config.DataRobotAPIKey, "")
 
 	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {

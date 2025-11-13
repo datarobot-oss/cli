@@ -36,7 +36,7 @@ func Cmd() *cobra.Command {
 
 Common tasks include:
   🏃 dev              Start development server
-  🔨 build            Build production version  
+  🔨 build            Build production version
   🧪 test             Run all tests
   🚀 deploy           Deploy to DataRobot
   🔍 lint             Check code quality
@@ -98,9 +98,10 @@ Examples:
 							exitCode = status.ExitStatus()
 						}
 					}
+				} else {
+					// Only print error if it's not an exit error (task already showed its error)
+					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 				}
-
-				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 
 				os.Exit(exitCode)
 			}
