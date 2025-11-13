@@ -23,6 +23,10 @@ func UpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update DataRobot CLI",
+		Long: `Updates the DataRobot CLI to latest version. This will use homebrew
+to update if it detects the installed cask;  otherwise it will use an OS-appropriate
+with your default shell.
+`,
 		Run: func(_ *cobra.Command, _ []string) {
 			// Account for when dr-cli cask has been installed - via `brew install datarobot-oss/taps/dr-cli`
 			if runtime.GOOS == "darwin" { //nolint:nestif
