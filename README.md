@@ -46,13 +46,6 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - [Quick start](#quick-start)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
-- [License](#license)
-<!--
-- [Commands](#commands)
-- [Shell completion](#shell-completion)
-- [Development](#development)
-- [Release](#release)
--->
 
 ## Installation
 
@@ -208,69 +201,6 @@ See the links below for specific details:
   - [Testing](docs/development/testing.md)
   - [Release process](#release)
 
-<!--
-
-### Project structure
-
-```
-.
-├── cmd/                    # Command implementations.
-│   ├── auth/              # Authentication commands.
-│   ├── completion/        # Shell completion.
-│   ├── dotenv/            # Environment management.
-│   ├── run/               # Task runner.
-│   ├── templates/         # Template commands.
-│   └── version/           # Version command.
-├── internal/              # Private application code.
-│   ├── config/           # Configuration management.
-│   ├── drapi/            # DataRobot API client.
-│   ├── envbuilder/       # Environment builder.
-│   ├── task/             # Task discovery and execution.
-│   └── version/          # Version information.
-├── tui/                   # Terminal UI components.
-├── docs/                  # Documentation.
-└── main.go               # Application entry point.
-```
-
-## Release
-
-### Creating a release
-
-This project uses [goreleaser](https://goreleaser.com/) for automated releases.
-
-1. **Ensure all changes are merged** to the main branch.
-
-2. **Determine the next version** following [Semantic Versioning](https://semver.org/):
-   - `MAJOR.MINOR.PATCH` (e.g., `v1.2.3`).
-   - Pre-release: `v1.2.3-rc.1`, `v1.2.3-beta.1`.
-
-3. **Create and push a tag**:
-
-```bash
-# Create a new version tag.
-git tag v0.1.0
-
-# Push the tag.
-git push --tags
-```
-
-4. **Automated release**: The GitHub Actions workflow automatically:
-   - Builds binaries for multiple platforms.
-   - Generates release notes.
-   - Creates a GitHub release.
-   - Uploads artifacts.
-
-### Release testing
-
-To test the release process without publishing:
-
-```bash
-# Dry run.
-goreleaser release --snapshot --clean
-```
-
--->
-
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
@@ -280,22 +210,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 - Submitting pull requests.
 - Coding standards.
 - Testing requirements.
-
-### Quick contribution guide
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Make your changes.
-4. Run tests and linters (`task test && task lint`).
-5. Commit your changes (`git commit -m 'Add amazing feature'`).
-6. Push to the branch (`git push origin feature/amazing-feature`).
-7. Open a pull request.
-
-## License
-
-Copyright 2025 DataRobot, Inc. and its affiliates. All rights reserved.
-
-This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt) for details.
 
 ## Support
 
@@ -307,6 +221,7 @@ This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt
 ## Acknowledgments
 
 Built with:
+
 - [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework.
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
 - [Viper](https://github.com/spf13/viper)&mdash;configuration management.
