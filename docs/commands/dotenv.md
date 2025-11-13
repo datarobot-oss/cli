@@ -17,16 +17,24 @@ dr dotenv setup
 ```
 
 **Features:**
+
 - Interactive prompts for all required variables.
 - Context-aware questions based on template configuration.
 - Automatic discovery of configuration from `.datarobot/prompts.yaml` files.
 - Smart defaults from `.env.template`.
 - Secure handling of secret values.
 - DataRobot authentication integration.
+- Automatic state tracking of completion timestamp.
 
 **Prerequisites:**
+
 - Must be run inside a git repository.
 - Requires authentication with DataRobot.
+
+**State tracking:**
+
+Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed. The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that
+`dr dotenv setup` will always prompt for configuration if run manually, regardless of state.
 
 **Example:**
 

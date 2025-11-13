@@ -21,6 +21,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 )
@@ -148,7 +149,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case scriptCompleteMsg:
-		// Script execution completed, quit the program
+		// Script execution completed successfully, update state and quit
+		_ = state.UpdateAfterSuccessfulRun()
+
 		return m, tea.Quit
 	}
 
@@ -176,7 +179,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.executeNextStep()
 		case "n", "N", "q", "esc":
 			// Just hang on. Hang on, Dak.
+			// User chose to not execute script, so update state and quit
+			_ = state.UpdateAfterSuccessfulRun()
 			m.quitting = true
+
 			return m, tea.Quit
 		}
 		// Ignore other keys when waiting
@@ -218,6 +224,9 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	// If this step marks completion, we're done
 	if msg.done {
 		m.done = true
+		// Update state and quit
+		_ = state.UpdateAfterSuccessfulRun()
+
 		return m, tea.Quit
 	}
 

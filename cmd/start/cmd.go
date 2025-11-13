@@ -14,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -59,7 +60,9 @@ The following actions will be performed:
 			if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
 				if innerModel, ok := startModel.Model.(Model); ok {
 					if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
-						// No quickstart found, launch template setup
+						// No quickstart found, will launch template setup
+						_ = state.UpdateAfterSuccessfulRun()
+
 						return setup.RunTeaFromStart(cmd.Context(), true)
 					}
 				}

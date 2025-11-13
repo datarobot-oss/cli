@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
@@ -51,7 +52,9 @@ type Model struct {
 	clone  clone.Model
 	dotenv dotenv.Model
 
-	fromStartCommand bool // true if invoked from dr start
+	fromStartCommand     bool // true if invoked from dr start
+	skipDotenvSetup      bool // true if dotenv setup was already completed
+	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
 }
 
 type (
@@ -198,6 +201,9 @@ func NewModel(fromStartCommand bool) Model {
 		log.Error("Failed to read config file", "error", err)
 	}
 
+	// Check if dotenv setup was already completed
+	skipDotenv := state.HasCompletedDotenvSetup()
+
 	return Model{
 		screen:   welcomeScreen,
 		template: drapi.Template{},
@@ -219,6 +225,7 @@ func NewModel(fromStartCommand bool) Model {
 		},
 
 		fromStartCommand: fromStartCommand,
+		skipDotenvSetup:  skipDotenv,
 	}
 }
 
@@ -260,19 +267,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, m.clone.Init()
 	case templateClonedMsg:
+		// Skip dotenv if it was already completed
+		if m.skipDotenvSetup {
+			m.screen = exitScreen
+
+			return m, tea.Sequence(tea.ExitAltScreen, exit)
+		}
+
 		m.screen = dotenvScreen
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
+		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
 
 	case templateInDirMsg:
+		// Skip dotenv if it was already completed
+		if m.skipDotenvSetup {
+			m.screen = exitScreen
+
+			return m, tea.Sequence(tea.ExitAltScreen, exit)
+		}
+
 		m.screen = dotenvScreen
 		m.list.Template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
+		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
 	case dotenvUpdatedMsg:
 		m.screen = exitScreen
+
+		// Update state if dotenv setup was completed
+		if m.dotenvSetupCompleted {
+			_ = state.UpdateAfterDotenvSetup()
+		}
 
 		return m, tea.Sequence(tea.ExitAltScreen, exit)
 	case exitMsg:
