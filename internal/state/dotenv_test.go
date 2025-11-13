@@ -159,7 +159,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		assert.False(t, HasCompletedDotenvSetup())
 	})
 
-	t.Run("HasCompletedDotenvSetup returns false when force_wizard is true", func(t *testing.T) {
+	t.Run("HasCompletedDotenvSetup returns false when force_interactive is true", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 
@@ -191,15 +191,15 @@ func TestDotenvSetupTracking(t *testing.T) {
 		assert.True(t, HasCompletedDotenvSetup())
 
 		// Set force_wizard flag
-		viper.Set("force_wizard", true)
+		viper.Set("force_interactive", true)
 
-		defer viper.Set("force_wizard", false)
+		defer viper.Set("force_interactive", false)
 
 		// Now should return false even though state file exists
 		assert.False(t, HasCompletedDotenvSetup())
 
 		// Reset flag
-		viper.Set("force_wizard", false)
+		viper.Set("force_interactive", false)
 
 		// Should return true again
 		assert.True(t, HasCompletedDotenvSetup())
