@@ -141,7 +141,6 @@ If you're in a project directory with a .env file, this will also check those cr
 			os.Exit(1)
 		}
 
-		fmt.Printf("Using credentials: endpoint=%s, token=%s\n", envEndpoint, envToken)
 		tokenValid, _ := config.VerifyToken(envBaseURL, envToken)
 		if !tokenValid {
 			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in .env is invalid or expired"))
