@@ -281,6 +281,62 @@ find ~/.datarobot -name "*.yaml"
 export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 ```
 
+## State tracking
+
+The CLI maintains state information about your interactions with repositories to provide a better user experience. State is tracked separately from configuration and stores metadata about command executions.
+
+### State file location
+
+The CLI stores state in platform-specific locations with the following priority:
+
+1. **Local repository state** (highest priority):
+   - `.datarobot/state/currentstate.yml` in the current working directory
+
+2. **User-specific state**:
+   - Linux/macOS: `$XDG_STATE_HOME/dr/currentstate.yml` or `~/.local/state/dr/currentstate.yml`
+   - Windows: `%LOCALAPPDATA%\DataRobot\dr\currentstate.yml`
+
+### Tracked information
+
+The state file tracks:
+
+- **Last successful run**: Timestamp of the last successful `dr start` execution
+- **CLI version**: Version of the CLI used for the last successful run
+- **Last dotenv setup**: Timestamp of the last successful `dr dotenv setup` execution
+
+### State file format
+
+```yaml
+last_successful_run: 2025-11-13T00:02:07.615186Z
+cli_version: 1.0.0
+last_dotenv_setup: 2025-11-13T00:15:30.123456Z
+```
+
+All timestamps are in ISO 8601 format (UTC).
+
+### How state is used
+
+- **`dr start`**: Updates state after successful execution
+- **`dr dotenv setup`**: Records when environment setup was completed
+- **`dr templates setup`**: Skips dotenv setup if it was already completed (based on state)
+
+### Managing state
+
+State files are automatically created and updated. To reset state:
+
+```bash
+# Remove local repository state
+rm .datarobot/state/currentstate.yml
+
+# Remove user-level state (Linux/macOS)
+rm ~/.local/state/dr/currentstate.yml
+
+# Remove user-level state (Windows)
+del %LOCALAPPDATA%\DataRobot\dr\currentstate.yml
+```
+
+State files are small and do not require manual management under normal circumstances.
+
 ## See also
 
 - [Getting started](getting-started.md)&mdash;initial setup.

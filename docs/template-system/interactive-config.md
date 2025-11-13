@@ -55,10 +55,12 @@ Template Selection
     ↓
 Template Cloning
     ↓
-Environment Configuration
+Environment Configuration (skipped if previously completed)
     ↓
 Completion
 ```
+
+**State-aware behavior**: If `dr dotenv setup` has been successfully run in the past (tracked via state file), the Environment Configuration step is automatically skipped. This allows you to re-run the template setup without re-configuring your environment variables. See [Configuration - State tracking](../user-guide/configuration.md#state-tracking) for details.
 
 ### 2. Environment configuration
 
