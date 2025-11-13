@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -64,13 +63,6 @@ func RunE(_ *cobra.Command, args []string) error {
 
 		err := copier.ExecAdd(repoURL)
 		if err != nil {
-			if errors.Is(err, exec.ErrNotFound) {
-				log.Error("uv is not installed")
-				os.Exit(1)
-
-				return nil
-			}
-
 			log.Error(err)
 			os.Exit(1)
 
