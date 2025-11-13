@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,5 +157,51 @@ func TestDotenvSetupTracking(t *testing.T) {
 
 		// Should be false with no state file
 		assert.False(t, HasCompletedDotenvSetup())
+	})
+
+	t.Run("HasCompletedDotenvSetup returns false when ignore_state_file is true", func(t *testing.T) {
+		// Create temporary directory
+		tmpDir := t.TempDir()
+
+		tmpDir, err := filepath.EvalSymlinks(tmpDir)
+		require.NoError(t, err)
+
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+
+		err = os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		// Change to temp directory
+		originalWd, err := os.Getwd()
+		require.NoError(t, err)
+
+		defer func() {
+			err := os.Chdir(originalWd)
+			require.NoError(t, err)
+		}()
+
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+
+		// Update dotenv setup to create state file
+		err = UpdateAfterDotenvSetup()
+		require.NoError(t, err)
+
+		// Verify it returns true normally
+		assert.True(t, HasCompletedDotenvSetup())
+
+		// Set ignore_state_file flag
+		viper.Set("ignore_state_file", true)
+
+		defer viper.Set("ignore_state_file", false)
+
+		// Now should return false even though state file exists
+		assert.False(t, HasCompletedDotenvSetup())
+
+		// Reset flag
+		viper.Set("ignore_state_file", false)
+
+		// Should return true again
+		assert.True(t, HasCompletedDotenvSetup())
 	})
 }

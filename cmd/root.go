@@ -36,12 +36,12 @@ var RootCmd = &cobra.Command{
 	Use:   internalVersion.CliName,
 	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
 	Long: `
-The DataRobot CLI helps you quickly set up, configure, and deploy AI applications 
+The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
 
 ✨ ` + tui.BaseTextStyle.Render("What you can do:") + `
   • Choose from ready-made AI application templates
-  • Set up your development environment quickly  
+  • Set up your development environment quickly
   • Deploy to DataRobot with a single command
   • Manage environment variables and configurations
 
@@ -86,11 +86,14 @@ func init() {
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
+	RootCmd.PersistentFlags().Bool("ignore-state-file", false, "ignore state file when checking if setup has been completed")
+
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("skip_auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viper.BindPFlag("ignore_state_file", RootCmd.PersistentFlags().Lookup("ignore-state-file"))
 
 	setLogLevel()
 
