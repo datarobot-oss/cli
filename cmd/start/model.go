@@ -328,22 +328,25 @@ func checkPrerequisites(_ *Model) tea.Msg {
 // }
 
 func findQuickstart(m *Model) tea.Msg {
+	// If --yes flag is set, don't wait for confirmation
+	waitForConfirmation := !m.opts.AnswerYes
+
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location
 	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
 	// If we do not find it, invoke `dr templates setup` to help the user configure their template.
 	// If the user has set the '--yes' flag, skip confirmation and execute immediately.
 	quickstartScript, err := findQuickstartScript()
-	if err != nil {
+	// if the error is due to not being in a repo, we can treat it as no script found
+	if err != nil && err.Error() != errNotInRepo {
 		return stepErrorMsg{err: err}
+	} else {
+		quickstartScript = "" // Ensure no script if not in repo
 	}
-
-	// If --yes flag is set, don't wait for confirmation
-	waitForConfirmation := !m.opts.AnswerYes
 
 	// If we don't find a script, we'll proceed to run templates setup in the next step
 	if quickstartScript == "" {
 		return stepCompleteMsg{
-			message:              "No quickstart script found. Will proceed with template setup...\n",
+			message:              "Proceed to template setup...\n",
 			waiting:              waitForConfirmation,
 			quickstartScriptPath: "",
 		}
