@@ -10,13 +10,13 @@ These flags are available for all commands:
   -v, --verbose       Enable verbose output (info level logging)
       --debug         Enable debug output (debug level logging)
       --skip-auth     Skip authentication checks (for advanced users)
-      --force-wizard  Force the setup wizard to run even if already completed
+      --force-interactive  Force the setup wizard to run even if already completed
   -h, --help          Show help information
 ```
 
 > **⚠️ Warning:** The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
 
-> **Note:** The `--force-wizard` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
+> **Note:** The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
 
 ## Commands
 
