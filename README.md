@@ -164,7 +164,7 @@ First, navigate to the template directory:
 cd [TEMPLATE_NAME]
 ```
 
-Then, list the available tasks:
+From there, you can list the available tasks:
 
 ```bash
 dr run --list
