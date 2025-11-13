@@ -18,9 +18,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-func schemeHostOnly(longURL string) (string, error) {
-	// Takes a URL like: https://app.datarobot.com/api/v2 and just
-	// returns https://app.datarobot.com (no trailing slash)
+// SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
+// returns https://app.datarobot.com (no trailing slash)
+func SchemeHostOnly(longURL string) (string, error) {
 	parsedURL, err := url.Parse(longURL)
 	if err != nil {
 		return "", err
@@ -37,7 +37,7 @@ func schemeHostOnly(longURL string) (string, error) {
 
 func GetBaseURL() string {
 	if endpoint := viper.GetString(DataRobotURL); endpoint != "" {
-		if newURL, err := schemeHostOnly(endpoint); err == nil {
+		if newURL, err := SchemeHostOnly(endpoint); err == nil {
 			return newURL
 		}
 	}
@@ -55,7 +55,7 @@ func GetEndpointURL(endpoint string) (string, error) {
 }
 
 func SaveURLToConfig(newURL string) error {
-	newURL, err := schemeHostOnly(urlFromShortcut(newURL))
+	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {
 		return err
 	}

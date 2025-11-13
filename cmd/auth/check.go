@@ -121,9 +121,8 @@ If you're in a project directory with a .env file, this will also check those cr
 			os.Exit(1)
 		}
 
-		datarobotHost := config.GetBaseURL()
-		if datarobotHost == "" {
-			fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured"))
+		if envEndpoint == "" {
+			fmt.Println(tui.BaseTextStyle.Render("⚠️  No DATAROBOT_ENDPOINT found in .env"))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
@@ -132,12 +131,18 @@ If you're in a project directory with a .env file, this will also check those cr
 			os.Exit(1)
 		}
 
-		checkHost := datarobotHost
-		if envEndpoint != "" {
-			checkHost = envEndpoint
+		// Extract base URL from the endpoint for token verification
+		envBaseURL, err := config.SchemeHostOnly(envEndpoint)
+		if err != nil {
+			fmt.Println(tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in .env"))
+			fmt.Print(tui.BaseTextStyle.Render("Run "))
+			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
+			fmt.Println(tui.BaseTextStyle.Render(" to fix the configuration"))
+			os.Exit(1)
 		}
 
-		tokenValid, _ := config.VerifyToken(checkHost, envToken)
+		fmt.Printf("Using credentials: endpoint=%s, token=%s\n", envEndpoint, envToken)
+		tokenValid, _ := config.VerifyToken(envBaseURL, envToken)
 		if !tokenValid {
 			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in .env is invalid or expired"))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
