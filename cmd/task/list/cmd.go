@@ -20,6 +20,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Category name constants
+const (
+	CategoryQuickStart      = "🚀 Quick Start"
+	CategoryBuilding        = "🏗️  Building"
+	CategoryTestingQuality  = "🧪 Testing & Quality"
+	CategoryDeployment      = "🚀 Deployment"
+	CategoryOther           = "📦 Other"
+	CategoryNamespacePrefix = "❖ "
+)
+
 // Category represents a human-readable task category
 type Category struct {
 	Name     string
@@ -39,25 +49,25 @@ func getAdaptiveColor(darkColor, lightColor lipgloss.Color) lipgloss.Color {
 // getCategoryStyle returns the appropriate style for a category name with adaptive colors
 func getCategoryStyle(categoryName string) lipgloss.Style {
 	switch {
-	case strings.Contains(categoryName, "Quick Start"):
+	case strings.Contains(categoryName, CategoryQuickStart):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrGreen, lipgloss.Color("#00AA00"))).
+			Foreground(getAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).
 			Bold(true)
-	case strings.Contains(categoryName, "Building"):
+	case strings.Contains(categoryName, CategoryBuilding):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrPurple, lipgloss.Color("#5500DD"))).
+			Foreground(getAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
 			Bold(true)
-	case strings.Contains(categoryName, "Testing"):
+	case strings.Contains(categoryName, CategoryTestingQuality):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrYellow, lipgloss.Color("#AA8800"))).
+			Foreground(getAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).
 			Bold(true)
-	case strings.Contains(categoryName, "Deployment"):
+	case strings.Contains(categoryName, CategoryDeployment):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrIndigo, lipgloss.Color("#4400FF"))).
+			Foreground(getAdaptiveColor(tui.DrIndigo, tui.DrIndigoDark)).
 			Bold(true)
 	default:
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#7755DD"))).
+			Foreground(getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)).
 			Bold(true)
 	}
 }
@@ -67,19 +77,19 @@ func getTaskCategory(suffix string) *Category {
 	lowerSuffix := strings.ToLower(suffix)
 
 	if strings.Contains(lowerSuffix, "dev") || strings.Contains(lowerSuffix, "install") {
-		return &Category{Name: "🚀 Quick Start", Priority: 1}
+		return &Category{Name: CategoryQuickStart, Priority: 1}
 	}
 
 	if strings.Contains(lowerSuffix, "build") || strings.Contains(lowerSuffix, "docker") {
-		return &Category{Name: "🏗️  Building", Priority: 3}
+		return &Category{Name: CategoryBuilding, Priority: 3}
 	}
 
 	if strings.Contains(lowerSuffix, "test") || strings.Contains(lowerSuffix, "lint") || strings.Contains(lowerSuffix, "check") {
-		return &Category{Name: "🧪 Testing & Quality", Priority: 4}
+		return &Category{Name: CategoryTestingQuality, Priority: 4}
 	}
 
 	if strings.Contains(lowerSuffix, "deploy") || strings.Contains(lowerSuffix, "migrate") {
-		return &Category{Name: "� Deployment", Priority: 5}
+		return &Category{Name: CategoryDeployment, Priority: 5}
 	}
 
 	return nil
@@ -109,13 +119,13 @@ func categorizeTask(t task.Task, showAll bool) *Category {
 			return cat
 		}
 
-		return &Category{Name: "🚀 Quick Start", Priority: 1}
+		return &Category{Name: CategoryQuickStart, Priority: 1}
 	}
 
 	// Extract namespace and suffix
 	parts := strings.SplitN(name, ":", 2)
 	if len(parts) != 2 {
-		return &Category{Name: "📦 Other", Priority: 99}
+		return &Category{Name: CategoryOther, Priority: 99}
 	}
 
 	namespace := parts[0]
@@ -137,7 +147,7 @@ func categorizeTask(t task.Task, showAll bool) *Category {
 		displayName = strings.ToUpper(displayName[:1]) + displayName[1:]
 	}
 
-	categoryName := "📦 " + displayName
+	categoryName := CategoryNamespacePrefix + displayName
 
 	return &Category{Name: categoryName, Priority: 10}
 }
@@ -184,12 +194,12 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	}
 
 	// Adaptive colors for light/dark terminals
-	titleColor := getAdaptiveColor(tui.DrGreen, lipgloss.Color("#00AA00"))
-	taskColor := getAdaptiveColor(tui.DrPurple, lipgloss.Color("#5500DD"))
-	aliasColor := getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#7755DD"))
-	descColor := getAdaptiveColor(lipgloss.Color("252"), lipgloss.Color("240"))
-	borderColor := getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#9988DD"))
-	tipBorderColor := getAdaptiveColor(tui.DrYellow, lipgloss.Color("#AA8800"))
+	titleColor := getAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
+	taskColor := getAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
+	aliasColor := getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
+	descColor := getAdaptiveColor(tui.DrGray, tui.DrGrayDark)
+	borderColor := getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
+	tipBorderColor := getAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
