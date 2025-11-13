@@ -190,16 +190,17 @@ func TestDotenvSetupTracking(t *testing.T) {
 		// Verify it returns true normally
 		assert.True(t, HasCompletedDotenvSetup())
 
-		// Set force_wizard flag
+		// Set force_interactive flag
+		oldValue := viper.GetBool("force_interactive")
 		viper.Set("force_interactive", true)
 
-		defer viper.Set("force_interactive", false)
+		defer viper.Set("force_interactive", oldValue)
 
 		// Now should return false even though state file exists
 		assert.False(t, HasCompletedDotenvSetup())
 
 		// Reset flag
-		viper.Set("force_interactive", false)
+		viper.Set("force_interactive", oldValue)
 
 		// Should return true again
 		assert.True(t, HasCompletedDotenvSetup())
