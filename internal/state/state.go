@@ -30,6 +30,8 @@ type State struct {
 	LastSuccessfulRun time.Time `yaml:"last_successful_run"`
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
+	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
+	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
 
 // GetStatePath determines the appropriate location for the state file.
@@ -142,10 +144,46 @@ func Save(state *State) error {
 
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
 func UpdateAfterSuccessfulRun(cliVersion string) error {
-	state := &State{
-		LastSuccessfulRun: time.Now().UTC(),
-		CLIVersion:        cliVersion,
+	// Load existing state to preserve other fields
+	existingState, err := Load()
+	if err != nil {
+		return err
 	}
 
-	return Save(state)
+	if existingState == nil {
+		existingState = &State{}
+	}
+
+	existingState.LastSuccessfulRun = time.Now().UTC()
+	existingState.CLIVersion = cliVersion
+
+	return Save(existingState)
+}
+
+// UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
+func UpdateAfterDotenvSetup() error {
+	// Load existing state to preserve other fields
+	existingState, err := Load()
+	if err != nil {
+		return err
+	}
+
+	if existingState == nil {
+		existingState = &State{}
+	}
+
+	now := time.Now().UTC()
+	existingState.LastDotenvSetup = &now
+
+	return Save(existingState)
+}
+
+// HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
+func HasCompletedDotenvSetup() bool {
+	state, err := Load()
+	if err != nil || state == nil {
+		return false
+	}
+
+	return state.LastDotenvSetup != nil && state.LastDotenvSetup.Before(time.Now())
 }

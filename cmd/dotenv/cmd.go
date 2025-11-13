@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -36,7 +37,7 @@ Manage your .env file and application configuration:
   • Set up configuration with a guided wizard
   • Update DataRobot credentials automatically
 
-🎯 Your .env file contains API keys, database connections, and other settings 
+🎯 Your .env file contains API keys, database connections, and other settings
    your application needs to run properly.`,
 	}
 
@@ -149,6 +150,9 @@ This wizard will help you:
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+
+		// Update state after successful completion
+		_ = state.UpdateAfterDotenvSetup()
 	},
 }
 
