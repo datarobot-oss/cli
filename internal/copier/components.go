@@ -32,7 +32,9 @@ func init() {
 		if err == nil {
 			ComponentDetails[i].ReadMeContents = string(contents)
 		}
+	}
 
+	for _, details := range ComponentDetails {
 		ComponentDetailsByURL[details.RepoURL] = details
 		ComponentDetailsByShortName[details.ShortName] = details
 	}
