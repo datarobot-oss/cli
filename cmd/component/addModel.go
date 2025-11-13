@@ -11,8 +11,6 @@ package component
 import (
 	"fmt"
 	"io"
-	"maps"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -111,7 +109,7 @@ func (am AddModel) getSelectedRepoURLs() []string {
 
 func (am AddModel) loadComponents() tea.Cmd {
 	return func() tea.Msg {
-		details := slices.Collect(maps.Values(copier.ComponentDetailsMap))
+		details := copier.ComponentDetails
 
 		items := make([]list.Item, 0, len(details))
 
@@ -143,6 +141,8 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch am.screen {
+	case addLoadingScreen:
+		// Empty, updates handled in previous switch
 	case addComponentsScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:

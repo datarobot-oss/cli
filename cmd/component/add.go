@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -28,12 +29,15 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 		return errors.New("should be in repository root directory")
 	}
 
+	// Do we have the required tools?
+	if err := tools.CheckPrerequisites(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func RunE(_ *cobra.Command, args []string) error {
-	// TODO Use the tools package to check if uv is installed
-
 	if len(args) == 0 {
 		am := NewAddModel()
 		p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())

@@ -26,50 +26,53 @@ type Details struct {
 var readmeFS embed.FS
 
 func init() {
-	for key, details := range ComponentDetailsMap {
+	for i, details := range ComponentDetails {
 		contents, err := readmeFS.ReadFile("readme/" + details.readMeFile)
 		if err == nil {
-			details.ReadMeContents = string(contents)
-			ComponentDetailsMap[key] = details
+			ComponentDetails[i].ReadMeContents = string(contents)
 		}
+
+		ComponentDetailsByURL[details.RepoURL] = details
 	}
 }
 
 // Map the repo listed in an "answer file" to relevant info for component
 // To Note: Not all of the README contents have been added
-var ComponentDetailsMap = map[string]Details{
-	"git@github.com:datarobot/af-component-agent.git": {
+var ComponentDetailsByURL = map[string]Details{}
+
+var ComponentDetails = []Details{
+	{
 		readMeFile: "af-component-agent.md",
 
 		Name:    "agent",
 		RepoURL: "git@github.com:datarobot/af-component-agent.git",
 		Enabled: true,
 	},
-	"git@github.com:datarobot/af-component-base.git": {
+	{
 		readMeFile: "af-component-base.md",
 
 		Name:    "base",
 		RepoURL: "git@github.com:datarobot/af-component-base.git",
 	},
-	"git@github.com:datarobot/af-component-fastapi-backend.git": {
+	{
 		readMeFile: "af-component-fastapi-backend.md",
 
 		Name:    "fastapi-backend",
 		RepoURL: "git@github.com:datarobot/af-component-fastapi-backend.git",
 	},
-	"git@github.com:datarobot/af-component-fastmcp-backend.git": {
+	{
 		readMeFile: "af-component-fastmcp-backend.md",
 
 		Name:    "fastmcp-backend",
 		RepoURL: "git@github.com:datarobot/af-component-fastmcp-backend.git",
 	},
-	"git@github.com:datarobot/af-component-llm.git": {
+	{
 		readMeFile: "af-component-llm.md",
 
 		Name:    "llm",
 		RepoURL: "git@github.com:datarobot/af-component-llm.git",
 	},
-	"git@github.com:datarobot/af-component-react.git": {
+	{
 		readMeFile: "af-component-react.md",
 
 		Name:    "react",

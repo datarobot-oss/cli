@@ -358,7 +358,7 @@ func (m Model) viewComponentDetailScreen() string {
 	// TODO: [CFX-3996] What to display here
 	item := m.list.Items()[m.list.Index()].(ItemDelegate)
 	selectedComponent := item.component
-	selectedComponentDetails := copier.ComponentDetailsMap[selectedComponent.SrcPath]
+	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.SrcPath]
 
 	sb.WriteString("Component file name: " + selectedComponent.FileName)
 	sb.WriteString("\n\n")
