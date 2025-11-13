@@ -155,7 +155,7 @@ function Test-ExistingInstallation {
 
     if (Test-Path $BinaryPath) {
         try {
-            $currentVersionOutput = & $BinaryPath version 2>$null | Select-Object -First 1
+            $currentVersionOutput = & $BinaryPath --version 2>$null | Select-Object -First 1
 
             # Extract version number (e.g., "v1.2.3" from "dr version v1.2.3")
             if ($currentVersionOutput -match '(v?\d+\.\d+\.\d+)') {
