@@ -44,38 +44,38 @@ var ComponentDetails = []Details{
 	{
 		readMeFile: "af-component-agent.md",
 
-		Name:    "agent",
+		Name:    "Agent",
 		RepoURL: "git@github.com:datarobot/af-component-agent.git",
 		Enabled: true,
 	},
 	{
 		readMeFile: "af-component-base.md",
 
-		Name:    "base",
+		Name:    "Base",
 		RepoURL: "git@github.com:datarobot/af-component-base.git",
 	},
 	{
 		readMeFile: "af-component-fastapi-backend.md",
 
-		Name:    "fastapi-backend",
+		Name:    "FastAPI backend",
 		RepoURL: "git@github.com:datarobot/af-component-fastapi-backend.git",
 	},
 	{
 		readMeFile: "af-component-fastmcp-backend.md",
 
-		Name:    "fastmcp-backend",
+		Name:    "FastMCP backend",
 		RepoURL: "git@github.com:datarobot/af-component-fastmcp-backend.git",
 	},
 	{
 		readMeFile: "af-component-llm.md",
 
-		Name:    "llm",
+		Name:    "LLM",
 		RepoURL: "git@github.com:datarobot/af-component-llm.git",
 	},
 	{
 		readMeFile: "af-component-react.md",
 
-		Name:    "react",
+		Name:    "React",
 		RepoURL: "git@github.com:datarobot/af-component-react.git",
 	},
 }

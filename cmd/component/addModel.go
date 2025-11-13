@@ -49,7 +49,7 @@ type AddComponentDelegate struct {
 }
 
 func (i AddComponentDelegate) FilterValue() string {
-	return i.details.Name
+	return strings.ToLower(i.details.Name)
 }
 
 func (i AddComponentDelegate) Height() int                             { return 1 }
