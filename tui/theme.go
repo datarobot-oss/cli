@@ -27,6 +27,17 @@ const (
 	DrBlack       = lipgloss.Color("#0B0B0B") // black-90
 )
 
+// Light mode color variants (darker for visibility on light backgrounds)
+const (
+	DrPurpleDark      = lipgloss.Color("#5500DD") // Darker purple
+	DrPurpleDarkLight = lipgloss.Color("#7755DD") // Darker purple-light
+	DrIndigoDark      = lipgloss.Color("#4400FF") // Darker indigo
+	DrGreenDark       = lipgloss.Color("#00AA00") // Darker green
+	DrYellowDark      = lipgloss.Color("#AA8800") // Darker yellow
+	DrGray            = lipgloss.Color("252")     // Light gray for dark backgrounds
+	DrGrayDark        = lipgloss.Color("240")     // Dark gray for light backgrounds
+)
+
 func SetAnsiForegroundColor(hexColor lipgloss.Color) string {
 	hexString := strings.TrimPrefix(string(hexColor), "#")
 
