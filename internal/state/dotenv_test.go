@@ -26,7 +26,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
 
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "state")
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
 		err = os.MkdirAll(localStateDir, 0o755)
 		require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
 
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "state")
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
 		err = os.MkdirAll(localStateDir, 0o755)
 		require.NoError(t, err)
@@ -110,7 +110,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
 
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "state")
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
 		err = os.MkdirAll(localStateDir, 0o755)
 		require.NoError(t, err)

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	stateFileName = "info.yml"
-	stateSubDir   = "state"
+	stateFileName = "state.yaml"
+	cliSubDir     = "cli"
 	localStateDir = ".datarobot"
 )
 
@@ -34,15 +34,15 @@ type State struct {
 }
 
 // GetStatePath determines the appropriate location for the state file.
-// The state file is stored in .datarobot/state directory within the current repository.
+// The state file is stored in .datarobot/cli directory within the current repository.
 func GetStatePath() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 
-	// Use local .datarobot/state directory
-	localPath := filepath.Join(cwd, localStateDir, stateSubDir)
+	// Use local .datarobot/cli directory
+	localPath := filepath.Join(cwd, localStateDir, cliSubDir)
 	statePath := filepath.Join(localPath, stateFileName)
 
 	return statePath, nil

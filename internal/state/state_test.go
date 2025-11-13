@@ -19,7 +19,7 @@ import (
 )
 
 func TestGetStatePath(t *testing.T) {
-	t.Run("returns local .datarobot/state path", func(t *testing.T) {
+	t.Run("returns local .datarobot/cli path", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 
@@ -43,7 +43,7 @@ func TestGetStatePath(t *testing.T) {
 		statePath, err := GetStatePath()
 		require.NoError(t, err)
 
-		expected := filepath.Join(tmpDir, ".datarobot", "state", "info.yml")
+		expected := filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml")
 		assert.Equal(t, expected, statePath)
 	})
 }
@@ -52,7 +52,7 @@ func TestLoadSave(t *testing.T) {
 	t.Run("Save creates file and Load reads it back", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "state")
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 		err := os.MkdirAll(localStateDir, 0o755)
 		require.NoError(t, err)
 
@@ -113,7 +113,7 @@ func TestLoadSave(t *testing.T) {
 func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
-	localStateDir := filepath.Join(tmpDir, ".datarobot", "state")
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 	err := os.MkdirAll(localStateDir, 0o755)
 	require.NoError(t, err)
 
