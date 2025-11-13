@@ -10,7 +10,7 @@ dr self <command>
 
 ## Description
 
-The `self` command provides utility functions for managing the CLI tool itself, including version information and shell completion setup.
+The `self` command provides utility functions for managing the CLI tool itself, including updating to the latest version, checking version information, and setting up shell completion.
 
 ## Subcommands
 
@@ -36,6 +36,31 @@ dr self completion bash > /etc/bash_completion.d/dr
 # Generate completions for zsh
 dr self completion zsh > "${fpath[1]}/_dr"
 ```
+
+### `update`
+
+Update the DataRobot CLI to the latest version.
+
+```bash
+dr self update
+```
+
+This command automatically detects your installation method and uses the appropriate update mechanism:
+
+- **Homebrew (macOS)**&mdash;uses `brew update && upgrade dr-cli` if installed via Homebrew
+- **Windows**&mdash;runs the PowerShell installation script
+- **macOS/Linux**&mdash;runs the shell installation script
+
+The update process will download and install the latest version while preserving your configuration and credentials.
+
+**Examples:**
+
+```bash
+# Update to latest version
+dr self update
+```
+
+**Note:** This command requires an active internet connection and appropriate permissions to install software on your system.
 
 ### `version`
 
@@ -68,6 +93,15 @@ All `dr` global flags are available:
 - `-h, --help`&mdash;show help information
 
 ## Examples
+
+### Update CLI to latest version
+
+```bash
+$ dr self update
+Downloading latest version...
+Installing DataRobot CLI...
+✓ Successfully updated to version 1.1.0
+```
 
 ### Check CLI version
 
