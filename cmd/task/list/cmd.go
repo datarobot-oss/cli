@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -176,10 +176,12 @@ func groupTasksByCategory(tasks []task.Task, showAll bool) []*Category {
 		}
 	}
 
+
 	return categories
 }
 
-// printGroupedTasks prints tasks grouped by category
+
+// printCategorizedTasks prints tasks grouped by category in a styled table format
 func printCategorizedTasks(categories []*Category, showAll bool) error {
 	if len(categories) == 0 {
 		fmt.Println("No tasks found.")
@@ -187,41 +189,84 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 		return nil
 	}
 
-	fmt.Println("Available tasks:")
+	// Header style
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.DrPurple).
+		Padding(0, 1)
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 8, 6, ' ', 0)
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.DrGreen).
+		MarginBottom(1)
+
+	fmt.Println(titleStyle.Render("Available Tasks"))
+
+	// Define table styles
+	taskNameStyle := lipgloss.NewStyle().
+		Foreground(tui.DrPurple).
+		Padding(0, 1)
+
+	aliasStyle := lipgloss.NewStyle().
+		Foreground(tui.DrPurpleLight).
+		Italic(true)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Padding(0, 1)
 
 	for _, category := range categories {
 		// Print styled category header
-		style := getCategoryStyle(category.Name)
-		styledCategory := style.Render(category.Name)
+		categoryStyle := getCategoryStyle(category.Name)
 
-		_, _ = fmt.Fprintf(w, "\n%s\n", styledCategory)
+		fmt.Println()
+		fmt.Println(categoryStyle.Render(category.Name))
 
-		for _, t := range category.Tasks {
-			desc := strings.ReplaceAll(t.Desc, "\n", " ")
+		// Create table for this category
+		t := table.New().
+			Border(lipgloss.RoundedBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(tui.DrPurpleLight)).
+			StyleFunc(func(row, col int) lipgloss.Style {
+				if row == 0 {
+					return headerStyle
+				}
 
-			_, _ = fmt.Fprint(w, "  ")
-			_, _ = fmt.Fprint(w, t.Name)
+				if col == 0 {
+					return taskNameStyle
+				}
 
-			if len(t.Aliases) > 0 {
-				_, _ = fmt.Fprintf(w, " (%s)", strings.Join(t.Aliases, ", "))
+				return descStyle
+			}).
+			Headers("TASK", "DESCRIPTION")
+
+		// Add rows for each task
+		for _, tsk := range category.Tasks {
+			taskName := tsk.Name
+
+			if len(tsk.Aliases) > 0 {
+				taskName += " " + aliasStyle.Render("("+strings.Join(tsk.Aliases, ", ")+")")
 			}
 
-			_, _ = fmt.Fprintf(w, " \t%s", desc)
+			desc := strings.ReplaceAll(tsk.Desc, "\n", " ")
 
-			_, _ = fmt.Fprint(w, "\n")
+			t.Row(taskName, desc)
 		}
-	}
 
-	if err := w.Flush(); err != nil {
-		return err
+		fmt.Println(t.Render())
 	}
 
 	// Show tip if not showing all tasks
 	if !showAll {
-		tipStyle := lipgloss.NewStyle().Foreground(tui.DrPurpleLight).Italic(true)
-		fmt.Println("\n" + tipStyle.Render("💡 Tip: Run 'dr task list --all' to see all available tasks"))
+		tipStyle := lipgloss.NewStyle().
+			Foreground(tui.DrPurpleLight).
+			Italic(true).
+			MarginTop(1).
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tui.DrYellow)
+
+		fmt.Println()
+		fmt.Println(tipStyle.Render("💡 Tip: Run 'dr task list --all' to see all available tasks"))
 	}
 
 	return nil
