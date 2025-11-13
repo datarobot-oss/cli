@@ -61,11 +61,11 @@ type Model struct {
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
 	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
-	hostModel HostModel
-	login     LoginModel
-	list      list.Model
-	clone     clone.Model
-	dotenv    dotenv.Model
+	hostModel            HostModel
+	login                LoginModel
+	list                 list.Model
+	clone                clone.Model
+	dotenv               dotenv.Model
 }
 
 type keyMap struct {
