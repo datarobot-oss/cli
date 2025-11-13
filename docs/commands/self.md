@@ -47,7 +47,7 @@ dr self update
 
 This command automatically detects your installation method and uses the appropriate update mechanism:
 
-- **Homebrew (macOS)**&mdash;uses `brew upgrade --cask dr-cli` if installed via Homebrew
+- **Homebrew (macOS)**&mdash;uses `brew update && upgrade dr-cli` if installed via Homebrew
 - **Windows**&mdash;runs the PowerShell installation script
 - **macOS/Linux**&mdash;runs the shell installation script
 
