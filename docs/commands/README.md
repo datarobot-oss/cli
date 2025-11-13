@@ -26,7 +26,7 @@ These flags are available for all commands:
 | [`start`](start.md) | Run the application quickstart process. |
 | [`run`](run.md) | Execute application tasks. |
 | [`dotenv`](dotenv.md) | Manage environment variables. |
-| [`self`](self.md) | CLI utility commands (update, version, completion). |
+| [`self`](self.md) | CLI utility commands (version, completion). |
 
 ### Command tree
 
@@ -45,7 +45,6 @@ dr
 ├── run                Task execution
 ├── dotenv             Environment configuration
 └── self               CLI utility commands
-    ├── update         Update CLI to latest version
     ├── completion     Shell completion
     │   ├── bash       Generate bash completion
     │   ├── zsh        Generate zsh completion
@@ -133,16 +132,6 @@ dr self completion zsh > "${fpath[1]}/_dr"
 
 # Fish
 dr self completion fish > ~/.config/fish/completions/dr.fish
-```
-
-### CLI management
-
-```bash
-# Update to latest version
-dr self update
-
-# Check version
-dr self version
 ```
 
 ## Command details

@@ -12,7 +12,6 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
-- 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 - 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
 ## Table of Contents
@@ -145,7 +144,6 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
 | `dr templates` | Template operations (list, clone, setup, status). |
 | `dr run` | Execute application tasks. |
 | `dr dotenv` | Manage environment variables interactively. |
-| `dr self` | CLI utility commands (update, version, completion). |
 | `dr completion` | Generate shell completion scripts. |
 | `dr version` | Show version information. |
 
@@ -172,10 +170,6 @@ dr run --list                       # List available tasks.
 dr run dev                          # Run development server.
 dr run build deploy --parallel      # Run multiple tasks in parallel.
 dr run test --watch                 # Run tests in watch mode.
-
-# CLI management
-dr self update                      # Update CLI to latest version.
-dr self version                     # Show version information.
 
 # Get help
 dr --help
