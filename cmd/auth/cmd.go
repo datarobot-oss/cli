@@ -29,6 +29,7 @@ Manage your DataRobot credentials and connection settings:
 	}
 
 	cmd.AddCommand(
+		checkCmd,
 		loginCmd,
 		logoutCmd,
 		setURLCmd,
