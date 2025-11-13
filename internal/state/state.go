@@ -20,7 +20,6 @@ const (
 	stateFileName     = "currentstate.yml"
 	stateSubDir       = "state"
 	localStateDir     = ".datarobot"
-	xdgStateHomeEnv   = "XDG_STATE_HOME"
 	defaultXDGDataDir = ".local/state"
 )
 
@@ -50,7 +49,8 @@ func GetStatePath() (string, error) {
 	}
 
 	// Check XDG_STATE_HOME
-	xdgStateHome := os.Getenv(xdgStateHomeEnv)
+	// TODO Rewrite this to retrieve state dir from Viper config
+	xdgStateHome := os.Getenv("XDG_STATE_HOME")
 	if xdgStateHome != "" {
 		statePath := filepath.Join(xdgStateHome, "dr", stateFileName)
 
