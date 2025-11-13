@@ -176,10 +176,8 @@ func groupTasksByCategory(tasks []task.Task, showAll bool) []*Category {
 		}
 	}
 
-
 	return categories
 }
-
 
 // printCategorizedTasks prints tasks grouped by category in a styled table format
 func printCategorizedTasks(categories []*Category, showAll bool) error {
@@ -188,12 +186,6 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 
 		return nil
 	}
-
-	// Header style
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(tui.DrPurple).
-		Padding(0, 1)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -226,11 +218,9 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
 			BorderStyle(lipgloss.NewStyle().Foreground(tui.DrPurpleLight)).
-			StyleFunc(func(row, col int) lipgloss.Style {
-				if row == 0 {
-					return headerStyle
-				}
-
+			StyleFunc(func(_, col int) lipgloss.Style {
+				// Note: Headers() are styled automatically by the table
+				// We only need to style data rows based on column
 				if col == 0 {
 					return taskNameStyle
 				}
