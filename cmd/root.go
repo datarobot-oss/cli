@@ -86,14 +86,14 @@ func init() {
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
-	RootCmd.PersistentFlags().Bool("ignore-state-file", false, "ignore state file when checking if setup has been completed")
+	RootCmd.PersistentFlags().Bool("force-wizard", false, "force the setup wizard to run even if already completed")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("skip_auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
-	_ = viper.BindPFlag("ignore_state_file", RootCmd.PersistentFlags().Lookup("ignore-state-file"))
+	_ = viper.BindPFlag("force_wizard", RootCmd.PersistentFlags().Lookup("force-wizard"))
 
 	setLogLevel()
 

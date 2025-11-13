@@ -150,10 +150,10 @@ func UpdateAfterDotenvSetup() error {
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
-// If ignore_state_file flag is set, this always returns false to force re-execution.
+// If force_wizard flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup() bool {
-	// Check if we should ignore the state file
-	if viper.GetBool("ignore_state_file") {
+	// Check if we should force the wizard to run
+	if viper.GetBool("force_wizard") {
 		return false
 	}
 

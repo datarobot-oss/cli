@@ -81,8 +81,8 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 # Editor for text editing
 export EDITOR=nano
 
-# Ignore state file when checking setup completion
-export DATAROBOT_CLI_IGNORE_STATE_FILE=true
+# Force setup wizard to run even if already completed
+export DATAROBOT_CLI_FORCE_WIZARD=true
 ```
 
 ### Advanced flags
@@ -93,8 +93,8 @@ The CLI supports advanced command-line flags for special use cases:
 # Skip authentication checks (advanced users only)
 dr templates list --skip-auth
 
-# Ignore state file (force re-execution of setup steps)
-dr templates setup --ignore-state-file
+# Force setup wizard to run (ignore completion state)
+dr templates setup --force-wizard
 
 # Enable verbose logging
 dr templates list --verbose
@@ -330,14 +330,14 @@ State files are automatically created and updated. To reset state for a reposito
 rm .datarobot/state/info.yml
 ```
 
-You can also ignore the state file temporarily without deleting it by using the `--ignore-state-file` flag:
+You can also force the wizard to run without deleting the state file by using the `--force-wizard` flag:
 
 ```bash
-# Force re-execution of setup steps while preserving state
-dr templates setup --ignore-state-file
+# Force re-execution of setup wizard while preserving state
+dr templates setup --force-wizard
 
 # Or via environment variable
-export DATAROBOT_CLI_IGNORE_STATE_FILE=true
+export DATAROBOT_CLI_FORCE_WIZARD=true
 dr templates setup
 ```
 
