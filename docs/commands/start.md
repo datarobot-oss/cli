@@ -139,12 +139,7 @@ The `dr start` command automatically tracks successful executions by updating a 
 - Timestamp of the last successful run (ISO 8601 format)
 - CLI version used
 
-This state information is stored in:
-
-- `.datarobot/state/currentstate.yml` (if the directory exists in the current repository)
-- Or in a platform-specific user location (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking))
-
-State tracking is automatic and transparent. No manual intervention is required.
+This state information is stored in `.datarobot/state/currentstate.yml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
 
 ### When a quickstart script exists
 

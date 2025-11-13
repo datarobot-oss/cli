@@ -283,18 +283,13 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
 
 ## State tracking
 
-The CLI maintains state information about your interactions with repositories to provide a better user experience. State is tracked separately from configuration and stores metadata about command executions.
+The CLI maintains state information about your interactions with repositories to provide a better user experience. State is tracked per-repository and stores metadata about command executions.
 
 ### State file location
 
-The CLI stores state in platform-specific locations with the following priority:
+The CLI stores state locally within each repository:
 
-1. **Local repository state** (highest priority):
-   - `.datarobot/state/currentstate.yml` in the current working directory
-
-2. **User-specific state**:
-   - Linux/macOS: `$XDG_STATE_HOME/dr/currentstate.yml` or `~/.local/state/dr/currentstate.yml`
-   - Windows: `%LOCALAPPDATA%\DataRobot\dr\currentstate.yml`
+- `.datarobot/state/currentstate.yml` in the current working directory
 
 ### Tracked information
 
@@ -322,20 +317,14 @@ All timestamps are in ISO 8601 format (UTC).
 
 ### Managing state
 
-State files are automatically created and updated. To reset state:
+State files are automatically created and updated. To reset state for a repository:
 
 ```bash
-# Remove local repository state
+# Remove repository state
 rm .datarobot/state/currentstate.yml
-
-# Remove user-level state (Linux/macOS)
-rm ~/.local/state/dr/currentstate.yml
-
-# Remove user-level state (Windows)
-del %LOCALAPPDATA%\DataRobot\dr\currentstate.yml
 ```
 
-State files are small and do not require manual management under normal circumstances.
+State files are small and do not require manual management under normal circumstances. Each repository maintains its own state independently.
 
 ## See also
 

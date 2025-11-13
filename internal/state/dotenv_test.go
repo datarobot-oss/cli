@@ -142,16 +142,6 @@ func TestDotenvSetupTracking(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 
-		// Override XDG_STATE_HOME to point to a non-existent location
-		originalXDG := os.Getenv("XDG_STATE_HOME")
-		nonExistentPath := filepath.Join(tmpDir, "nonexistent")
-
-		defer func() {
-			_ = os.Setenv("XDG_STATE_HOME", originalXDG)
-		}()
-
-		_ = os.Setenv("XDG_STATE_HOME", nonExistentPath)
-
 		// Change to temp directory
 		originalWd, err := os.Getwd()
 		require.NoError(t, err)

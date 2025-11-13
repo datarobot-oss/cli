@@ -11,17 +11,15 @@ package state
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	stateFileName     = "currentstate.yml"
-	stateSubDir       = "state"
-	localStateDir     = ".datarobot"
-	defaultXDGDataDir = ".local/state"
+	stateFileName = "currentstate.yml"
+	stateSubDir   = "state"
+	localStateDir = ".datarobot"
 )
 
 // State represents the current state of CLI interactions with a repository.
@@ -35,53 +33,16 @@ type State struct {
 }
 
 // GetStatePath determines the appropriate location for the state file.
-// It checks in order:
-// 1. .datarobot/state directory in the current working directory
-// 2. $XDG_STATE_HOME/dr directory (Unix/Linux/macOS)
-// 3. %LOCALAPPDATA%\DataRobot\dr directory (Windows)
-// 4. $HOME/.local/state/dr directory (Unix/Linux/macOS fallback)
+// The state file is stored in .datarobot/state directory within the current repository.
 func GetStatePath() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 
-	// Check for local .datarobot/state directory
+	// Use local .datarobot/state directory
 	localPath := filepath.Join(cwd, localStateDir, stateSubDir)
-	if _, err := os.Stat(localPath); err == nil {
-		return filepath.Join(localPath, stateFileName), nil
-	}
-
-	// Check XDG_STATE_HOME (Unix/Linux/macOS)
-	// TODO Rewrite this to retrieve state dir from Viper config
-	xdgStateHome := os.Getenv("XDG_STATE_HOME")
-	if xdgStateHome != "" {
-		statePath := filepath.Join(xdgStateHome, "dr", stateFileName)
-
-		return statePath, nil
-	}
-
-	// Platform-specific fallback
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	var statePath string
-
-	if runtime.GOOS == "windows" {
-		// On Windows, use %LOCALAPPDATA%\DataRobot\dr
-		localAppData := os.Getenv("LOCALAPPDATA")
-		if localAppData != "" {
-			statePath = filepath.Join(localAppData, "DataRobot", "dr", stateFileName)
-		} else {
-			// Fallback if LOCALAPPDATA is not set
-			statePath = filepath.Join(homeDir, "AppData", "Local", "DataRobot", "dr", stateFileName)
-		}
-	} else {
-		// Unix/Linux/macOS: use $HOME/.local/state/dr
-		statePath = filepath.Join(homeDir, defaultXDGDataDir, "dr", stateFileName)
-	}
+	statePath := filepath.Join(localPath, stateFileName)
 
 	return statePath, nil
 }
