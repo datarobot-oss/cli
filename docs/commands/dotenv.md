@@ -36,6 +36,14 @@ dr dotenv setup
 Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed. The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that
 `dr dotenv setup` will always prompt for configuration if run manually, regardless of state.
 
+To force the setup wizard to run again (ignoring the state file), use the `--force-interactive` flag:
+
+```bash
+dr templates setup --force-interactive
+```
+
+This is useful for testing or when you need to reconfigure your environment from scratch.
+
 **Example:**
 
 ```bash

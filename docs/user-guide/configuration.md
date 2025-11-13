@@ -80,6 +80,9 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 
 # Editor for text editing
 export EDITOR=nano
+
+# Force setup wizard to run even if already completed
+export DATAROBOT_CLI_FORCE_INTERACTIVE=true
 ```
 
 ### Advanced flags
@@ -89,6 +92,9 @@ The CLI supports advanced command-line flags for special use cases:
 ```bash
 # Skip authentication checks (advanced users only)
 dr templates list --skip-auth
+
+# Force setup wizard to run (ignore completion state)
+dr templates setup --force-interactive
 
 # Enable verbose logging
 dr templates list --verbose
@@ -323,6 +329,23 @@ State files are automatically created and updated. To reset state for a reposito
 # Remove repository state
 rm .datarobot/state/info.yml
 ```
+
+You can also force the wizard to run without deleting the state file by using the `--force-interactive` flag:
+
+```bash
+# Force re-execution of setup wizard while preserving state
+dr templates setup --force-interactive
+
+# Or via environment variable
+export DATAROBOT_CLI_FORCE_INTERACTIVE=true
+dr templates setup
+```
+
+This flag makes commands behave as if setup has never been completed, while still updating the state file. This is useful for:
+
+- Testing setup flows
+- Forcing reconfiguration without losing state history
+- Development and debugging
 
 State files are small and do not require manual management under normal circumstances. Each repository maintains its own state independently.
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/version"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -149,7 +150,13 @@ func UpdateAfterDotenvSetup() error {
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
+// If force_interactive flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup() bool {
+	// Check if we should force the wizard to run
+	if viper.GetBool("force_interactive") {
+		return false
+	}
+
 	state, err := Load()
 	if err != nil || state == nil {
 		return false
