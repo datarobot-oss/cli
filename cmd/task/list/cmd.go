@@ -27,42 +27,38 @@ type Category struct {
 	Priority int // Lower numbers appear first
 }
 
-// categoryStyles defines the styling for different category types
-var (
-	quickStartStyle = lipgloss.NewStyle().
-			Foreground(tui.DrGreen).
-			Bold(true)
+// getAdaptiveColor returns a color that works on both light and dark backgrounds
+func getAdaptiveColor(darkColor, lightColor lipgloss.Color) lipgloss.Color {
+	if lipgloss.HasDarkBackground() {
+		return darkColor
+	}
 
-	buildingStyle = lipgloss.NewStyle().
-			Foreground(tui.DrPurple).
-			Bold(true)
+	return lightColor
+}
 
-	testingStyle = lipgloss.NewStyle().
-			Foreground(tui.DrYellow).
-			Bold(true)
-
-	deploymentStyle = lipgloss.NewStyle().
-			Foreground(tui.DrIndigo).
-			Bold(true)
-
-	otherStyle = lipgloss.NewStyle().
-			Foreground(tui.DrPurpleLight).
-			Bold(true)
-)
-
-// getCategoryStyle returns the appropriate style for a category name
+// getCategoryStyle returns the appropriate style for a category name with adaptive colors
 func getCategoryStyle(categoryName string) lipgloss.Style {
 	switch {
 	case strings.Contains(categoryName, "Quick Start"):
-		return quickStartStyle
+		return lipgloss.NewStyle().
+			Foreground(getAdaptiveColor(tui.DrGreen, lipgloss.Color("#00AA00"))).
+			Bold(true)
 	case strings.Contains(categoryName, "Building"):
-		return buildingStyle
+		return lipgloss.NewStyle().
+			Foreground(getAdaptiveColor(tui.DrPurple, lipgloss.Color("#5500DD"))).
+			Bold(true)
 	case strings.Contains(categoryName, "Testing"):
-		return testingStyle
+		return lipgloss.NewStyle().
+			Foreground(getAdaptiveColor(tui.DrYellow, lipgloss.Color("#AA8800"))).
+			Bold(true)
 	case strings.Contains(categoryName, "Deployment"):
-		return deploymentStyle
+		return lipgloss.NewStyle().
+			Foreground(getAdaptiveColor(tui.DrIndigo, lipgloss.Color("#4400FF"))).
+			Bold(true)
 	default:
-		return otherStyle
+		return lipgloss.NewStyle().
+			Foreground(getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#7755DD"))).
+			Bold(true)
 	}
 }
 
@@ -187,24 +183,32 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 		return nil
 	}
 
+	// Adaptive colors for light/dark terminals
+	titleColor := getAdaptiveColor(tui.DrGreen, lipgloss.Color("#00AA00"))
+	taskColor := getAdaptiveColor(tui.DrPurple, lipgloss.Color("#5500DD"))
+	aliasColor := getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#7755DD"))
+	descColor := getAdaptiveColor(lipgloss.Color("252"), lipgloss.Color("240"))
+	borderColor := getAdaptiveColor(tui.DrPurpleLight, lipgloss.Color("#9988DD"))
+	tipBorderColor := getAdaptiveColor(tui.DrYellow, lipgloss.Color("#AA8800"))
+
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(tui.DrGreen).
+		Foreground(titleColor).
 		MarginBottom(1)
 
 	fmt.Println(titleStyle.Render("Available Tasks"))
 
 	// Define table styles
 	taskNameStyle := lipgloss.NewStyle().
-		Foreground(tui.DrPurple).
+		Foreground(taskColor).
 		Padding(0, 1)
 
 	aliasStyle := lipgloss.NewStyle().
-		Foreground(tui.DrPurpleLight).
+		Foreground(aliasColor).
 		Italic(true)
 
 	descStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
+		Foreground(descColor).
 		Padding(0, 1)
 
 	for _, category := range categories {
@@ -217,7 +221,7 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 		// Create table for this category
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(tui.DrPurpleLight)).
+			BorderStyle(lipgloss.NewStyle().Foreground(borderColor)).
 			StyleFunc(func(_, col int) lipgloss.Style {
 				// Note: Headers() are styled automatically by the table
 				// We only need to style data rows based on column
@@ -248,12 +252,12 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	// Show tip if not showing all tasks
 	if !showAll {
 		tipStyle := lipgloss.NewStyle().
-			Foreground(tui.DrPurpleLight).
+			Foreground(aliasColor).
 			Italic(true).
 			MarginTop(1).
 			Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tui.DrYellow)
+			BorderForeground(tipBorderColor)
 
 		fmt.Println()
 		fmt.Println(tipStyle.Render("💡 Tip: Run 'dr task list --all' to see all available tasks"))
