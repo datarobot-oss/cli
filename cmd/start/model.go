@@ -21,7 +21,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -148,7 +150,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case scriptCompleteMsg:
-		// Script execution completed, quit the program
+		// Script execution completed successfully, update state and quit
+		_ = state.UpdateAfterSuccessfulRun(version.Version)
+
 		return m, tea.Quit
 	}
 
