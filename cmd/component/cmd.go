@@ -9,9 +9,6 @@
 package component
 
 import (
-	"github.com/datarobot/cli/cmd/component/add"
-	"github.com/datarobot/cli/cmd/component/list"
-	"github.com/datarobot/cli/cmd/component/update"
 	"github.com/spf13/cobra"
 )
 
@@ -20,12 +17,13 @@ func Cmd() *cobra.Command {
 		Use:     "component",
 		GroupID: "core",
 		Short:   "Manage components",
+		Aliases: []string{"c"},
 	}
 
 	cmd.AddCommand(
-		add.Cmd(),
-		list.Cmd(),
-		update.Cmd(),
+		AddCmd,
+		ListCmd,
+		UpdateCmd(),
 	)
 
 	return cmd

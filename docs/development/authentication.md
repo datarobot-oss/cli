@@ -70,6 +70,40 @@ The following commands use `PreRunE` to ensure authentication:
 - **`dr templates list`**&mdash;requires authentication to fetch templates from the API.
 - **`dr templates clone`**&mdash;requires authentication to fetch template details.
 
+## Skipping authentication
+
+For advanced use cases where authentication is handled externally or not required, you can bypass authentication checks using the `--skip-auth` global flag.
+
+### Using the skip-auth flag
+
+```bash
+# Skip authentication for any command
+dr templates list --skip-auth
+dr dotenv update --skip-auth
+
+# Skip authentication with environment variable
+DATAROBOT_CLI_SKIP_AUTH=true dr templates setup
+```
+
+### Behavior
+
+When `--skip-auth` is enabled:
+
+1. **Bypasses all authentication checks**&mdash;the `EnsureAuthenticated()` function returns `true` immediately without validating credentials.
+2. **Emits a warning**&mdash;logs a warning message: "Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail."
+3. **May cause API failures**&mdash;commands that make API calls will likely fail if no valid credentials are present.
+
+### When to use skip-auth
+
+The `--skip-auth` flag is intended for advanced scenarios such as:
+
+- **Testing**&mdash;testing command logic without requiring valid credentials.
+- **CI/CD pipelines**&mdash;when authentication is managed through environment variables (`DATAROBOT_API_TOKEN`).
+- **Offline development**&mdash;working in environments without internet access or access to DataRobot.
+- **Debugging**&mdash;isolating authentication issues from other command behavior.
+
+> **⚠️ Warning:** This flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.
+
 ## Manual login
 
 You can still manually run `dr auth login` to refresh credentials or change accounts. The `LoginAction()` function provides the interactive login experience with confirmation prompts for overwriting existing credentials.

@@ -95,7 +95,13 @@ function Get-LatestVersion {
     if ($RequestedVersion -eq "latest") {
         Write-Step "Fetching latest version..."
         try {
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest" -Method Get
+            # Prepare headers with authentication if GITHUB_TOKEN is available
+            $headers = @{}
+            if ($env:GITHUB_TOKEN) {
+                $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+            }
+
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest" -Method Get -Headers $headers
             $version = $response.tag_name
             Write-Host "   Version: " -NoNewline
             Write-Host $version -ForegroundColor White
@@ -149,7 +155,7 @@ function Test-ExistingInstallation {
 
     if (Test-Path $BinaryPath) {
         try {
-            $currentVersionOutput = & $BinaryPath version 2>$null | Select-Object -First 1
+            $currentVersionOutput = & $BinaryPath --version 2>$null | Select-Object -First 1
 
             # Extract version number (e.g., "v1.2.3" from "dr version v1.2.3")
             if ($currentVersionOutput -match '(v?\d+\.\d+\.\d+)') {
@@ -349,7 +355,7 @@ function Test-Installation {
     if (Test-Path $BinaryPath) {
         Write-Step "Verifying installation..."
         try {
-            $version = & $BinaryPath version 2>$null | Select-Object -First 1
+            $version = & $BinaryPath --version 2>$null | Select-Object -First 1
             Write-Success $version
         } catch {
             Write-Success "Binary installed at: $BinaryPath"
@@ -387,7 +393,7 @@ function Install-Completions {
     try {
         # Note: PowerShell doesn't have the interactive install command yet
         # Fall back to the manual method
-        $completionScript = & $BinaryPath completion powershell 2>$null | Out-String
+        $completionScript = & $BinaryPath self completion powershell 2>$null | Out-String
 
         if (-not $completionScript) {
             Write-Warn "Failed to generate completion script"
@@ -408,7 +414,7 @@ function Install-Completions {
         }
 
         # Add completion to profile
-        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' completion powershell | Out-String | Invoke-Expression"
+        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' self completion powershell | Out-String | Invoke-Expression"
         Add-Content -Path $PROFILE -Value $completionLine
 
         Write-Success "Shell completions installed successfully"

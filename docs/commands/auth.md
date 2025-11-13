@@ -124,10 +124,13 @@ Error: Invalid URL format
 These flags work with all `auth` commands:
 
 ```bash
-  -v, --verbose    Enable verbose output
-      --debug      Enable debug output
-  -h, --help       Show help for command
+  -v, --verbose      Enable verbose output
+      --debug        Enable debug output
+      --skip-auth    Skip authentication checks (for advanced users)
+  -h, --help         Show help for command
 ```
+
+> **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks. This is intended for advanced use cases where authentication is handled externally or not required. When this flag is used, commands that require authentication may fail with API errors.
 
 ## Examples
 
@@ -382,7 +385,7 @@ export DATAROBOT_VERIFY_SSL=false
 dr auth login
 ```
 
-## See Also
+## See also
 
 - [Getting Started](../user-guide/getting-started.md) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details

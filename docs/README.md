@@ -9,11 +9,11 @@ Install the latest version with a single command that auto-detects your operatin
 **macOS/Linux:**
 ######
 
-    curl https://cli.datarobot.com/install | sh
+    curl https://datarobot-oss.github.io/cli/install | sh
 
 **Windows (PowerShell):**
 ######
-    irm https://cli.datarobot.com/cli/winstall | iex
+    irm https://datarobot-oss.github.io/cli/winstall | iex
 
 For more installation options, see [Getting Started](user-guide/getting-started.md).
 
@@ -44,8 +44,7 @@ Detailed documentation for each command:
 - [templates](commands/templates.md)&mdash;template operations.
 - [run](commands/run.md)&mdash;task execution.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management.
-- [completion](commands/completion.md)&mdash;shell completion setup.
-- [version](commands/version.md)&mdash;version information.
+- [self](commands/self.md)&mdash;CLI utility commands (version, completion).
 
 ### 🔧 Development Guide
 

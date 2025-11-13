@@ -21,6 +21,12 @@ type Answers struct {
 	Repo     string `yaml:"_src_path"`
 }
 
+// TODO: Add more properties to account for what we need to determine as canonical values expected for components
+type Component struct {
+	FileName string
+	SrcPath  string `yaml:"_src_path"`
+}
+
 func AnswersFromPath(path string) ([]Answers, error) {
 	pattern := filepath.Join(path, ".datarobot/answers/*.y*ml")
 
@@ -47,4 +53,25 @@ func AnswersFromPath(path string) ([]Answers, error) {
 	}
 
 	return result, nil
+}
+
+func ComponentsFromAnswers(answers []Answers) ([]Component, error) {
+	components := make([]Component, 0)
+
+	for _, a := range answers {
+		data, err := os.ReadFile(a.FileName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read yaml file %s: %w", a.FileName, err)
+		}
+
+		component := Component{FileName: a.FileName}
+
+		if err = yaml.Unmarshal(data, &component); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal yaml file %s: %w", a.FileName, err)
+		}
+
+		components = append(components, component)
+	}
+
+	return components, nil
 }

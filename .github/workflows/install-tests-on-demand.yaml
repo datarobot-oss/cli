@@ -1,0 +1,103 @@
+name: On-Demand Installation Tests
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  notify-start:
+    if: github.event.label.name == 'run-install-tests'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Notify installation tests starting
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '📦 Installation tests triggered! Testing install scripts on Linux, macOS, and Windows...'
+            });
+
+  installation-tests:
+    needs: notify-start
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: Installation Test (${{ matrix.os }})
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install for Linux and macOS
+        if: matrix.os != 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL https://cli.datarobot.com/install | sh
+
+      - name: Install for Windows
+        if: matrix.os == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          irm https://cli.datarobot.com/winstall | iex
+
+      - name: Check DR runs without errors (Linux and macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          dr --help
+
+      - name: Check DR runs without errors (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help
+
+  notify-results:
+    needs: [installation-tests]
+    if: always() && needs.installation-tests.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR with results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const installStatus = '${{ needs.installation-tests.result }}';
+            const installEmoji = installStatus === 'success' ? '✅' : '❌';
+            const overallMessage = installStatus === 'success'
+              ? 'All installation tests passed!'
+              : 'Installation tests failed.';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${installEmoji} **${overallMessage}**\n\n` +
+                    `**Installation Tests:**\n` +
+                    `${installEmoji} Multi-platform (Ubuntu, macOS, Windows): ${installStatus}\n\n` +
+                    `[View run details](${context.payload.repository.html_url}/actions/runs/${context.runId})`
+            });
+
+      - name: Remove run-install-tests label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'run-install-tests'
+              });
+              console.log('Removed label: run-install-tests');
+            } catch (error) {
+              console.log('Label run-install-tests already removed or does not exist');
+            }

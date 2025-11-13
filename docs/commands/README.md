@@ -7,10 +7,13 @@ Complete reference documentation for all DataRobot CLI commands.
 These flags are available for all commands:
 
 ```bash
-  -v, --verbose    Enable verbose output (info level logging)
-      --debug      Enable debug output (debug level logging)
-  -h, --help       Show help information
+  -v, --verbose      Enable verbose output (info level logging)
+      --debug        Enable debug output (debug level logging)
+      --skip-auth    Skip authentication checks (for advanced users)
+  -h, --help         Show help information
 ```
+
+> **⚠️ Warning:** The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
 
 ## Commands
 
@@ -20,10 +23,10 @@ These flags are available for all commands:
 |---------|-------------|
 | [`auth`](auth.md) | Authenticate with DataRobot. |
 | [`templates`](templates.md) | Manage application templates. |
+| [`start`](start.md) | Run the application quickstart process. |
 | [`run`](run.md) | Execute application tasks. |
 | [`dotenv`](dotenv.md) | Manage environment variables. |
-| [`completion`](completion.md) | Generate shell completions. |
-| [`version`](version.md) | Show version information. |
+| [`self`](self.md) | CLI utility commands (update, version, completion). |
 
 ### Command tree
 
@@ -38,14 +41,17 @@ dr
 │   ├── clone          Clone a template
 │   ├── setup          Interactive setup wizard
 │   └── status         Show template status
+├── start              Run quickstart process (alias: quickstart)
 ├── run                Task execution
 ├── dotenv             Environment configuration
-├── completion         Shell completion
-│   ├── bash           Generate bash completion
-│   ├── zsh            Generate zsh completion
-│   ├── fish           Generate fish completion
-│   └── powershell     Generate PowerShell completion
-└── version            Version information
+└── self               CLI utility commands
+    ├── update         Update CLI to latest version
+    ├── completion     Shell completion
+    │   ├── bash       Generate bash completion
+    │   ├── zsh        Generate zsh completion
+    │   ├── fish       Generate fish completion
+    │   └── powershell Generate PowerShell completion
+    └── version        Version information
 ```
 
 ## Quick examples
@@ -77,14 +83,30 @@ dr templates setup
 dr templates status
 ```
 
+### Quickstart
+
+```bash
+# Run quickstart process (interactive)
+dr start
+
+# Run with auto-yes
+dr start --yes
+
+# Using the alias
+dr quickstart
+```
+
 ### Environment configuration
 
 ```bash
 # Interactive wizard
-dr dotenv --wizard
+dr dotenv setup
 
 # Editor mode
-dr dotenv
+dr dotenv edit
+
+# Validate configuration
+dr dotenv validate
 ```
 
 ### Running tasks
@@ -104,13 +126,23 @@ dr run lint test --parallel
 
 ```bash
 # Bash (Linux)
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Zsh
-dr completion zsh > "${fpath[1]}/_dr"
+dr self completion zsh > "${fpath[1]}/_dr"
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
+```
+
+### CLI management
+
+```bash
+# Update to latest version
+dr self update
+
+# Check version
+dr self version
 ```
 
 ## Command details
@@ -182,7 +214,9 @@ DATAROBOT_API_TOKEN            # API token (not recommended)
 | 0 | Success. |
 | 1 | General error. |
 | 2 | Command usage error. |
-| 130 | Interrupted (Ctrl+C). |## See also
+| 130 | Interrupted (Ctrl+C). |
+
+## See also
 
 - [Getting started guide](../user-guide/getting-started.md)
 - [User guide](../user-guide/)

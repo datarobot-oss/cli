@@ -55,10 +55,12 @@ Template Selection
     ↓
 Template Cloning
     ↓
-Environment Configuration
+Environment Configuration (skipped if previously completed)
     ↓
 Completion
 ```
+
+**State-aware behavior**: If `dr dotenv setup` has been successfully run in the past (tracked via state file), the Environment Configuration step is automatically skipped. This allows you to re-run the template setup without re-configuring your environment variables. See [Configuration - State tracking](../user-guide/configuration.md#state-tracking) for details.
 
 ### 2. Environment configuration
 
@@ -106,6 +108,60 @@ Enter your database connection string
 > postgresql://localhost:5432/mydb█
 
 Default: postgresql://localhost:5432/mydb
+```
+
+### Secret string prompts
+
+Secure text entry with input masking for sensitive values:
+
+```yaml
+prompts:
+  - key: "api_key"
+    env: "API_KEY"
+    type: "secret_string"
+    help: "Enter your API key"
+    optional: false
+```
+
+**User Experience:**
+```
+Enter your API key
+> ••••••••••••••••••█
+
+Input is masked for security
+```
+
+**Features:**
+- Input is masked with bullet characters (•).
+- Prevents shoulder-surfing and accidental exposure.
+- Stored as plain text in `.env` file (file should be in `.gitignore`).
+
+### Auto-generated secrets
+
+Secret strings can be automatically generated:
+
+```yaml
+prompts:
+  - key: "session_secret"
+    env: "SESSION_SECRET"
+    type: "secret_string"
+    generate: true
+    help: "Session encryption key (auto-generated)"
+    optional: false
+```
+
+**Behavior:**
+- If no value exists, a cryptographically secure random string is generated.
+- Generated secrets are 32 characters long.
+- Uses base64 URL-safe encoding.
+- Only generates when value is empty (preserves existing secrets).
+
+**User Experience:**
+```
+Session encryption key (auto-generated)
+> ••••••••••••••••••••••••••••••••█
+
+A random secret was generated. Press Enter to accept or type a custom value.
 ```
 
 ### Single Selection Prompts
@@ -283,10 +339,12 @@ Each `prompts.yaml`:
 prompts:
   - key: "unique_key"
     env: "ENV_VAR_NAME"      # Optional: Environment variable to set
+    type: "secret_string"     # Optional: "string" (default) or "secret_string"
     help: "Help text shown to user"
     default: "default value"  # Optional
     optional: false           # Optional: Can be skipped
     multiple: false           # Optional: Allow multiple selections
+    generate: false           # Optional: Auto-generate random value (secret_string only)
     section: "section_name"   # Optional: Only show if section enabled
     options:                  # Optional: List of choices
       - name: "Display Name"
@@ -395,19 +453,41 @@ Default: 8080
 
 ### Secret Values
 
-The CLI detects secret values (API keys, passwords) and masks them:
+The CLI provides secure handling for sensitive values using the `secret_string` type:
 
-```go
-// Variables with names containing:
-// - "PASSWORD", "SECRET", "KEY", "TOKEN"
-// are automatically marked as secrets
-
-if v.secret {
-    fmt.Fprintf(&sb, "***\n")  // Displayed as ***
-} else {
-    fmt.Fprintf(&sb, "%s\n", v.value)
-}
+```yaml
+prompts:
+  - key: "api_key"
+    env: "API_KEY"
+    type: "secret_string"
+    help: "Enter your API key"
 ```
+
+**Features:**
+- Input is masked with bullet characters (••••) during entry.
+- Prevents accidental exposure of sensitive data.
+- Can auto-generate cryptographically secure random values with `generate: true`.
+
+**Auto-detection:** Variables with names containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets in the editor view, displaying as `***` instead of the actual value.
+
+### Generated Secrets
+
+Secrets can be automatically generated:
+
+```yaml
+prompts:
+  - key: "session_secret"
+    env: "SESSION_SECRET"
+    type: "secret_string"
+    generate: true
+    help: "Session encryption key"
+```
+
+When `generate: true` is set:
+- A 32-character cryptographically secure random string is generated if no value exists.
+- Uses base64 URL-safe encoding.
+- Preserves existing values (only generates for empty fields).
+- User can still override with a custom value.
 
 ### Environment Variable Merging
 
@@ -569,12 +649,56 @@ key: "pool"
 
 ### 5. Validate Input
 
-Use optional: false for required fields:
+Use `optional: false` for required fields:
 
 ```yaml
 prompts:
   - key: "api_token"
-    env: "api_token"
+    env: "API_TOKEN"
+    type: "secret_string"
+    help: "Enter your DataRobot API key"
+    optional: false  # Required!
+```
+
+### 6. Use Secret Types for Sensitive Data
+
+Always use `secret_string` for passwords, API keys, and tokens:
+
+```yaml
+# ✓ Good
+prompts:
+  - key: "database_password"
+    env: "DATABASE_PASSWORD"
+    type: "secret_string"
+    help: "Database password"
+
+# ✗ Bad (exposes password during input)
+prompts:
+  - key: "database_password"
+    env: "DATABASE_PASSWORD"
+    help: "Database password"
+```
+
+### 7. Auto-generate Secrets When Possible
+
+Use `generate: true` for application secrets that don't need to be memorized:
+
+```yaml
+# ✓ Good for session keys, encryption keys
+prompts:
+  - key: "jwt_secret"
+    env: "JWT_SECRET"
+    type: "secret_string"
+    generate: true
+    help: "JWT signing key"
+
+# ✗ Don't auto-generate user credentials
+prompts:
+  - key: "admin_password"
+    env: "ADMIN_PASSWORD"
+    type: "secret_string"
+    help: "Administrator password"
+```
     help: "Enter your DataRobot API key"
     optional: false  # Required!
 ```
@@ -585,7 +709,7 @@ Test your prompt configuration:
 
 ```bash
 # Dry run without saving
-dr dotenv --wizard
+dr dotenv setup
 
 # Check discovered prompts
 dr templates status
@@ -594,7 +718,7 @@ dr templates status
 cat .env
 ```
 
-## See Also
+## See also
 
 - [Template Structure](structure.md) - How templates are organized
 - [Environment Variables](environment-variables.md) - Managing .env files

@@ -38,6 +38,7 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
+- 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 - 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
 ## Table of contents
@@ -97,15 +98,13 @@ If you would like to build and install from source, you can do so by following t
 #### Build from source
 
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
-cd cli
+curl https://cli.datarobot.com/install | sh -s -- v0.1.0
+```
 
-# Build the CLI
-task build
+#### Windows (Specific Version)
 
-# The binary is available at ./dist/dr
-./dist/dr version
+```powershell
+$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 ```
 
 </details>
@@ -195,11 +194,7 @@ See the links below for specific details:
   - [dotenv](docs/commands/dotenv.md)&mdash;environment file management.
   - [completion](docs/commands/completion.md)&mdash;shell completion setup.
 
-- **[Development guide](docs/development/)**&mdash;for contributors.
-  - [Building from source](docs/development/building.md)
-  - [Architecture](docs/development/architecture.md)
-  - [Testing](docs/development/testing.md)
-  - [Release process](#release)
+- **[Development guide](docs/development/)**&mdash;for contributors, see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Contributing
 
@@ -216,7 +211,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 - 📖 [Documentation](docs/)
 - 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
 - 💬 [Discussions](https://github.com/datarobot/cli/discussions)
-- 📧 Email: oss-community-management@datarobot.com
+- 📧 Email: <oss-community-management@datarobot.com>
 
 ## Acknowledgments
 

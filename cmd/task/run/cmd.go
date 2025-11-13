@@ -31,7 +31,23 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "run [task1, task2, ...] [flags]",
 		Aliases: []string{"r"},
-		Short:   "Run an application template task",
+		Short:   "🚀 Run application tasks",
+		Long: `Run tasks defined in your application template.
+
+Common tasks include:
+  🏃 dev              Start development server
+  🔨 build            Build production version
+  🧪 test             Run all tests
+  🚀 deploy           Deploy to DataRobot
+  🔍 lint             Check code quality
+
+Examples:
+  dr run dev                    # Start development server
+  dr run build deploy           # Build and deploy
+  dr run test --parallel        # Run tests in parallel
+  dr run --list                 # Show all available tasks
+
+💡 Tasks are defined in your project's Taskfile and vary by template.`,
 		Run: func(_ *cobra.Command, args []string) {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
@@ -49,7 +65,16 @@ func Cmd() *cobra.Command {
 			})
 
 			if !runner.Installed() {
-				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
+				_, _ = fmt.Fprintln(os.Stderr, "❌ Task runner not found")
+				_, _ = fmt.Fprintln(os.Stderr, "")
+				_, _ = fmt.Fprintln(os.Stderr, "The 'task' binary is required to run application tasks.")
+				_, _ = fmt.Fprintln(os.Stderr, "")
+				_, _ = fmt.Fprintln(os.Stderr, "🛠️  Install Task:")
+				_, _ = fmt.Fprintln(os.Stderr, "   • macOS: brew install go-task/tap/go-task")
+				_, _ = fmt.Fprintln(os.Stderr, "   • Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
+				_, _ = fmt.Fprintln(os.Stderr, "   • Windows: choco install go-task")
+				_, _ = fmt.Fprintln(os.Stderr, "")
+				_, _ = fmt.Fprintln(os.Stderr, "📚 More info: https://taskfile.dev/installation/")
 
 				os.Exit(1)
 
@@ -73,9 +98,10 @@ func Cmd() *cobra.Command {
 							exitCode = status.ExitStatus()
 						}
 					}
+				} else {
+					// Only print error if it's not an exit error (task already showed its error)
+					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 				}
-
-				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 
 				os.Exit(exitCode)
 			}

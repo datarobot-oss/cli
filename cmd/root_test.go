@@ -38,13 +38,13 @@ func TestCaseInsensitiveCommands(t *testing.T) {
 			shouldError: false,
 		},
 		{
-			name:        "VERSION uppercase",
-			args:        []string{"VERSION"},
+			name:        "SELF uppercase",
+			args:        []string{"SELF"},
 			shouldError: false,
 		},
 		{
-			name:        "version lowercase",
-			args:        []string{"version"},
+			name:        "self lowercase",
+			args:        []string{"self"},
 			shouldError: false,
 		},
 	}

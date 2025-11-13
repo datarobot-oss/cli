@@ -55,7 +55,7 @@ check_installation() {
     fi
 
     if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
-        INSTALLED_VERSION=$("$INSTALL_DIR/$BINARY_NAME" version 2>/dev/null | head -n1 || echo "unknown version")
+        INSTALLED_VERSION=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null | head -n1 || echo "unknown version")
         step "Found: $INSTALLED_VERSION"
         step "Location: $INSTALL_DIR/$BINARY_NAME"
     fi

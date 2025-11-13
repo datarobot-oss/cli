@@ -358,7 +358,7 @@ dr templates clone python-streamlit my-app
 cd my-app
 
 # Configure environment
-dr dotenv --wizard
+dr dotenv setup
 
 # Run tasks
 dr run dev
@@ -368,7 +368,7 @@ dr run dev
 
 ```bash
 # Update environment variables
-dr dotenv --wizard
+dr dotenv setup
 
 # Run with updated configuration
 dr run deploy

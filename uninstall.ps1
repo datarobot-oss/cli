@@ -62,7 +62,7 @@ function Test-Installation {
     }
 
     try {
-        $version = & $binaryPath version 2>$null | Select-Object -First 1
+        $version = & $binaryPath --version 2>$null | Select-Object -First 1
         Write-Step "Found: $version"
     } catch {
         Write-Step "Found: DataRobot CLI"
