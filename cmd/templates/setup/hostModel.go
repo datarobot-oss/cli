@@ -145,14 +145,14 @@ func (m HostModel) Init() tea.Cmd {
 
 func (m HostModel) handleCustomInput(msg tea.KeyMsg) (HostModel, tea.Cmd) {
 	switch msg.String() {
-	case "enter":
+	case tea.KeyEnter.String():
 		url := strings.TrimSpace(m.customInput.Value())
 		if url != "" && m.SuccessCmd != nil {
 			return m, m.SuccessCmd(url)
 		}
 
 		return m, nil
-	case "esc":
+	case tea.KeyEsc.String():
 		m.showCustom = false
 		m.customInput.SetValue("")
 		m.customInput.Blur()
