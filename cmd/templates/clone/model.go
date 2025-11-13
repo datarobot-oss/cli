@@ -43,22 +43,22 @@ func (k keyMap) FullHelp() [][]key.Binding {
 }
 
 type Model struct {
-	template   drapi.Template
-	input      textinput.Model
-	spinner    spinner.Model
-	help       help.Model
-	keys       keyMap
-	debounceID int
-	cloning    bool
-	exists     string
-	repoURL    string
-	cloneError bool
-	finished   bool
-	out        string
-	Dir        string
-	width      int
-	SuccessCmd tea.Cmd
-	BackCmd    tea.Cmd
+	template       drapi.Template
+	directoryInput textinput.Model
+	spinner        spinner.Model
+	help           help.Model
+	keys           keyMap
+	debounceID     int
+	cloning        bool
+	exists         string
+	repoURL        string
+	cloneError     bool
+	finished       bool
+	out            string
+	Dir            string
+	width          int
+	SuccessCmd     tea.Cmd
+	BackCmd        tea.Cmd
 }
 
 type (
@@ -117,7 +117,7 @@ func dirStatus(dir string) dirStatusMsg {
 
 func (m Model) pullRepository() tea.Cmd {
 	return func() tea.Msg {
-		dir := m.input.Value()
+		dir := m.directoryInput.Value()
 		status := dirStatus(dir) // Dir should be independently validated here
 
 		if !status.exists {
@@ -144,7 +144,7 @@ func (m Model) pullRepository() tea.Cmd {
 
 func (m Model) validateDir() tea.Cmd {
 	return func() tea.Msg {
-		dir := m.input.Value()
+		dir := m.directoryInput.Value()
 
 		if status := dirStatus(dir); status.exists {
 			return status
@@ -174,13 +174,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "enter":
-			if m.input.Value() == "" {
+			if m.directoryInput.Value() == "" {
 				return m, nil
 			}
 
-			m.input.Blur()
+			m.directoryInput.Blur()
 			m.cloning = true
-			m.Dir = cleanDirPath(m.input.Value())
+			m.Dir = cleanDirPath(m.directoryInput.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		case "esc":
@@ -191,7 +191,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	case backMsg:
 		return m, m.BackCmd
 	case focusInputMsg:
-		focusCmd := m.input.Focus()
+		focusCmd := m.directoryInput.Focus()
 		return m, focusCmd
 	case validateInputMsg:
 		if m.debounceID == msg.id {
@@ -226,13 +226,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		return m, focusInput
 	}
 
-	prevValue := m.input.Value()
+	prevValue := m.directoryInput.Value()
 
 	var cmd tea.Cmd
 
-	m.input, cmd = m.input.Update(msg)
+	m.directoryInput, cmd = m.directoryInput.Update(msg)
 
-	if prevValue != m.input.Value() {
+	if prevValue != m.directoryInput.Value() {
 		m.debounceID++
 		tick := tea.Tick(debounceDuration, func(_ time.Time) tea.Msg {
 			return validateInputMsg{m.debounceID}
@@ -259,7 +259,7 @@ func (m Model) View() string {
 		// Show cloning progress
 		message := lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
-			Render(fmt.Sprintf("Cloning into %s...", m.input.Value()))
+			Render(fmt.Sprintf("Cloning into %s...", m.directoryInput.Value()))
 
 		sb.WriteString(message)
 
@@ -294,7 +294,7 @@ func (m Model) View() string {
 		Padding(0, 1).
 		Width(60)
 
-	styledInput := inputStyle.Render(m.input.View())
+	styledInput := inputStyle.Render(m.directoryInput.View())
 	sb.WriteString(styledInput)
 	sb.WriteString("\n")
 
@@ -346,10 +346,10 @@ func (m Model) IsCloning() bool {
 }
 
 func (m *Model) SetTemplate(template drapi.Template) {
-	m.input = textinput.New()
-	m.input.SetValue(template.DefaultDir())
-	m.input.Placeholder = "e.g., ~/projects/my-ai-app"
-	m.input.CharLimit = 256
+	m.directoryInput = textinput.New()
+	m.directoryInput.SetValue(template.DefaultDir())
+	m.directoryInput.Placeholder = "e.g., ~/projects/my-ai-app"
+	m.directoryInput.CharLimit = 256
 	m.template = template
 
 	m.spinner = spinner.New()
