@@ -192,6 +192,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 
 		// Set force_interactive flag
 		oldValue := viper.GetBool("force_interactive")
+
 		viper.Set("force_interactive", true)
 
 		defer viper.Set("force_interactive", oldValue)
