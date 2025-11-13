@@ -16,40 +16,79 @@ import (
 type Details struct {
 	readMeFile     string
 	ReadMeContents string
+
+	Name      string
+	ShortName string
+	RepoURL   string
+	Enabled   bool
 }
 
 //go:embed readme/*.md
 var readmeFS embed.FS
 
 func init() {
-	for key, details := range ComponentDetailsMap {
+	for i, details := range ComponentDetails {
 		contents, err := readmeFS.ReadFile("readme/" + details.readMeFile)
 		if err == nil {
-			details.ReadMeContents = string(contents)
-			ComponentDetailsMap[key] = details
+			ComponentDetails[i].ReadMeContents = string(contents)
 		}
+	}
+
+	for _, details := range ComponentDetails {
+		ComponentDetailsByURL[details.RepoURL] = details
+		ComponentDetailsByShortName[details.ShortName] = details
 	}
 }
 
 // Map the repo listed in an "answer file" to relevant info for component
 // To Note: Not all of the README contents have been added
-var ComponentDetailsMap = map[string]Details{
-	"git@github.com:datarobot/af-component-agent.git": {
+var (
+	ComponentDetailsByURL       = map[string]Details{}
+	ComponentDetailsByShortName = map[string]Details{}
+)
+
+var ComponentDetails = []Details{
+	{
 		readMeFile: "af-component-agent.md",
+
+		Name:      "Agent",
+		ShortName: "agent",
+		RepoURL:   "git@github.com:datarobot/af-component-agent.git",
+		Enabled:   true,
 	},
-	"git@github.com:datarobot/af-component-base.git": {
+	{
 		readMeFile: "af-component-base.md",
+
+		Name:      "Base",
+		ShortName: "Base",
+		RepoURL:   "git@github.com:datarobot/af-component-base.git",
 	},
-	"git@github.com:datarobot/af-component-fastapi-backend.git": {
+	{
 		readMeFile: "af-component-fastapi-backend.md",
+
+		Name:      "FastAPI backend",
+		ShortName: "fastapi",
+		RepoURL:   "git@github.com:datarobot/af-component-fastapi-backend.git",
 	},
-	"git@github.com:datarobot/af-component-fastmcp-backend.git": {
+	{
 		readMeFile: "af-component-fastmcp-backend.md",
+
+		Name:      "FastMCP backend",
+		ShortName: "fastmcp",
+		RepoURL:   "git@github.com:datarobot/af-component-fastmcp-backend.git",
 	},
-	"git@github.com:datarobot/af-component-llm.git": {
+	{
 		readMeFile: "af-component-llm.md",
+
+		Name:      "LLM",
+		ShortName: "llm",
+		RepoURL:   "git@github.com:datarobot/af-component-llm.git",
 	},
-	"git@github.com:datarobot/af-component-react.git": {
+	{
 		readMeFile: "af-component-react.md",
+
+		Name:      "React",
+		ShortName: "react",
+		RepoURL:   "git@github.com:datarobot/af-component-react.git",
 	},
 }

@@ -12,50 +12,64 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
-func PreRunE(_ *cobra.Command, args []string) error {
+func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
 		return errors.New("should be in repository root directory")
+	}
+
+	// Do we have the required tools?
+	//if err := tools.CheckPrerequisites(); err != nil {
+	//	return err
+	//}
+
+	return nil
+}
+
+func RunE(_ *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		am := NewAddModel()
+		p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
+
+		finalModel, err := p.Run()
+		if err != nil {
+			return err
+		}
+
+		// Check if we need to launch template setup after quitting
+		if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
+			if innerModel, ok := startModel.Model.(AddModel); ok {
+				args = innerModel.RepoURLs
+			}
+		}
 	}
 
 	if len(args) == 0 || args[0] == "" {
 		return errors.New("component_url required")
 	}
 
-	return nil
-}
+	for _, repoURL := range args {
+		fmt.Printf("Adding component: %s\n", repoURL)
 
-func RunE(_ *cobra.Command, args []string) error {
-	repoURL := args[0]
-
-	fmt.Printf("Adding component %s\n", repoURL)
-
-	// TODO Use the tools package to check if uv is installed
-
-	err := copier.ExecAdd(repoURL)
-	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			log.Error("uv is not installed")
+		err := copier.ExecAdd(repoURL)
+		if err != nil {
+			log.Error(err)
 			os.Exit(1)
 
 			return nil
 		}
 
-		log.Error(err)
-		os.Exit(1)
-
-		return nil
+		fmt.Printf("Component %s added\n", repoURL)
 	}
-
-	fmt.Printf("Component %s added\n", repoURL)
 
 	compose.Run(nil, nil)
 
@@ -63,7 +77,7 @@ func RunE(_ *cobra.Command, args []string) error {
 }
 
 var AddCmd = &cobra.Command{
-	Use:     "add component_url",
+	Use:     "add [component_url]",
 	Short:   "Add component",
 	PreRunE: PreRunE,
 	RunE:    RunE,
