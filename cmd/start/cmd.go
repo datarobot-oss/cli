@@ -24,11 +24,6 @@ type Options struct {
 	AnswerYes bool
 }
 
-// updateStateAfterSuccess updates the state file after a successful dr start run.
-func updateStateAfterSuccess() error {
-	return state.UpdateAfterSuccessfulRun()
-}
-
 func Cmd() *cobra.Command {
 	var opts Options
 
@@ -66,8 +61,7 @@ The following actions will be performed:
 				if innerModel, ok := startModel.Model.(Model); ok {
 					if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
 						// No quickstart found, will launch template setup
-						// Update state before launching setup
-						_ = updateStateAfterSuccess()
+						_ = state.UpdateAfterSuccessfulRun()
 
 						return setup.RunTeaFromStart(cmd.Context(), true)
 					}
