@@ -30,7 +30,7 @@ This command is designed to work intelligently with your template's structure. T
 ## Flags
 
 ```text
-  -y, --yes     Assume "yes" as answer to all prompts and execute immediately
+  -y, --yes     Skip confirmation prompts and execute immediately
   -h, --help    Show help information
 ```
 
@@ -92,7 +92,9 @@ DataRobot Quickstart
   ✓ Locating quickstart script...
   → Executing quickstart script...
 
-Quickstart found at: .datarobot/cli/bin/quickstart.sh. Do you want to execute this script? (y/n):
+Quickstart found at: .datarobot/cli/bin/quickstart.sh. Will proceed with execution...
+
+Press 'y' or ENTER to confirm, 'n' to cancel
 ```
 
 If no quickstart script is found:
@@ -116,6 +118,12 @@ Skip all prompts and execute immediately:
 
 ```bash
 dr start --yes
+```
+
+or
+
+```bash
+dr start -y
 ```
 
 This is useful for:
@@ -146,18 +154,23 @@ The state file helps other commands (like `dr templates setup`) know that you've
 ### When a quickstart script exists
 
 1. Script is detected in `.datarobot/cli/bin/`
-2. User is prompted for confirmation (unless `--yes` is used)
-3. Script executes with full terminal control
+2. User is prompted for confirmation (unless `--yes` or `-y` is used)
+3. If user confirms (or `--yes` is specified), script executes with full terminal control
 4. Command completes when script finishes
 5. State file is updated with current timestamp and CLI version
+
+If the user declines to execute the script, the command exits gracefully and still updates the state file.
 
 ### When no quickstart script exists
 
 1. No script is found in `.datarobot/cli/bin/` (or not in a DataRobot repository)
 2. User is notified
-3. State file is updated with current timestamp and CLI version
-4. Interactive `dr templates setup` wizard launches automatically
+3. User is prompted for confirmation (unless `--yes` or `-y` is used)
+4. If user confirms (or `--yes` is specified), interactive `dr templates setup` wizard launches automatically
 5. User completes template configuration through the wizard
+6. State file is updated with current timestamp and CLI version
+
+If the user declines, the command exits gracefully and still updates the state file.
 
 ### Prerequisites checked
 
