@@ -134,12 +134,14 @@ dr quickstart
 
 ### State tracking
 
-The `dr start` command automatically tracks successful executions by updating a state file with:
+The `dr start` command automatically tracks when it runs successfully by updating a state file with:
 
-- Timestamp of the last successful run (ISO 8601 format)
+- Timestamp of when the command last started (ISO 8601 format)
 - CLI version used
 
 This state information is stored in `.datarobot/state/info.yml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
+
+The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
 
 ### When a quickstart script exists
 
@@ -147,14 +149,15 @@ This state information is stored in `.datarobot/state/info.yml` within the repos
 2. User is prompted for confirmation (unless `--yes` is used)
 3. Script executes with full terminal control
 4. Command completes when script finishes
-5. State is updated with timestamp and CLI version
+5. State file is updated with current timestamp and CLI version
 
 ### When no quickstart script exists
 
 1. No script is found in `.datarobot/cli/bin/` (or not in a DataRobot repository)
 2. User is notified
-3. Interactive `dr templates setup` wizard launches automatically
-4. User completes template configuration through the wizard
+3. State file is updated with current timestamp and CLI version
+4. Interactive `dr templates setup` wizard launches automatically
+5. User completes template configuration through the wizard
 
 ### Prerequisites checked
 
