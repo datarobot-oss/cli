@@ -23,8 +23,8 @@ func UpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update DataRobot CLI",
-		Long: `Updates the DataRobot CLI to latest version. This will use homebrew
-to update if it detects the installed cask;  otherwise it will use an OS-appropriate
+		Long: `Updates the DataRobot CLI to latest version. This will use Homebrew
+to update if it detects the installed cask;  otherwise it will use an OS-appropriate script
 with your default shell.
 `,
 		Run: func(_ *cobra.Command, _ []string) {
