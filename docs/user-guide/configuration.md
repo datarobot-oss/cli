@@ -80,6 +80,9 @@ export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
 
 # Editor for text editing
 export EDITOR=nano
+
+# Ignore state file when checking setup completion
+export DATAROBOT_CLI_IGNORE_STATE_FILE=true
 ```
 
 ### Advanced flags
@@ -89,6 +92,9 @@ The CLI supports advanced command-line flags for special use cases:
 ```bash
 # Skip authentication checks (advanced users only)
 dr templates list --skip-auth
+
+# Ignore state file (force re-execution of setup steps)
+dr templates setup --ignore-state-file
 
 # Enable verbose logging
 dr templates list --verbose
@@ -323,6 +329,23 @@ State files are automatically created and updated. To reset state for a reposito
 # Remove repository state
 rm .datarobot/state/info.yml
 ```
+
+You can also ignore the state file temporarily without deleting it by using the `--ignore-state-file` flag:
+
+```bash
+# Force re-execution of setup steps while preserving state
+dr templates setup --ignore-state-file
+
+# Or via environment variable
+export DATAROBOT_CLI_IGNORE_STATE_FILE=true
+dr templates setup
+```
+
+This flag makes commands behave as if setup has never been completed, while still updating the state file. This is useful for:
+
+- Testing setup flows
+- Forcing reconfiguration without losing state history
+- Development and debugging
 
 State files are small and do not require manual management under normal circumstances. Each repository maintains its own state independently.
 
