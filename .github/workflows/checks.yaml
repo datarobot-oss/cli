@@ -36,15 +36,9 @@ jobs:
           version: latest
           args: check
 
-      - name: Run go mod tidy
+      - name: Run all checks
         run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum || (echo "go.mod or go.sum needs tidying" && exit 1)
-
-      - name: Run gofumpt
-        uses: mvdan/gofumpt@v1
-        with:
-          version: latest
+          task lint
 
 
 
