@@ -121,7 +121,7 @@ Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/doc
 
 ```bash
 # Set your DataRobot URL (interactive)
-dr auth setURL # Or specify directly: dr auth setURL [YOUR_DATAROBOT_API_ENDPOINT]
+dr auth set-url # Or specify directly: dr auth set-url [YOUR_DATAROBOT_API_ENDPOINT]
 ```
 
 Once you have configured the URL, log in to DataRobot. This command will open your default web browser to the DataRobot login page.
