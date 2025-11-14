@@ -84,12 +84,14 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 			Underline(true).
 			Bold(true)
 
-		// Create styled frame for the auth URL
+		// Create styled frame for the auth URL - use dynamic width based on URL length
+		// Add padding for borders and internal padding (2 + 2 + 4 for border chars)
+		urlWidth := len(authURL) + 6
 		urlFrameStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
 			Padding(1, 2).
-			Width(70)
+			Width(urlWidth)
 
 		styledURL := urlStyle.Render(authURL)
 		urlBox := urlFrameStyle.Render(styledURL)
