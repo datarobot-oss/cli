@@ -87,14 +87,29 @@ func ReadConfigFile(filePath string) error {
 	}
 
 	if viper.GetBool("debug") {
-		DebugViperConfig()
+		output, err := DebugViperConfig()
+		if err != nil {
+			return fmt.Errorf("failed to generate debug config output: %w", err)
+		}
+
+		fmt.Print(output)
 	}
 
 	return nil
 }
 
-func DebugViperConfig() {
-	fmt.Printf("Configuration initialized. Using config file: %s\n", viper.ConfigFileUsed())
+func DebugViperConfig() (string, error) {
+	var sb strings.Builder
+
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		configFile = "none (using defaults and environment variables)"
+	}
+
+	sb.WriteString("Configuration initialized. Using config file: ")
+	sb.WriteString(configFile)
+	sb.WriteString("\n\n")
+
 	// Print out the viper configuration for debugging
 	// Alphabetically, and redacting sensitive information
 	// TODO There has to be a better way of marking sensitive data
@@ -108,11 +123,14 @@ func DebugViperConfig() {
 
 	for _, key := range keys {
 		value := viper.Get(key)
+
 		// TODO Come up with a better way of redacting sensitive information
-		if key == "token" {
-			fmt.Printf("  %s: %s\n", key, "****")
+		if key == "token" || key == "api_token" {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", key, "****"))
 		} else {
-			fmt.Printf("  %s: %v\n", key, value)
+			sb.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
 		}
 	}
+
+	return sb.String(), nil
 }

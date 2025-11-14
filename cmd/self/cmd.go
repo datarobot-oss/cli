@@ -9,6 +9,7 @@
 package self
 
 import (
+	"github.com/datarobot/cli/cmd/self/config"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		CompletionCmd(),
+		config.Cmd(),
 		UpdateCmd(),
 		VersionCmd(),
 	)

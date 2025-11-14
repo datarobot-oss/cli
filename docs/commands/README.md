@@ -48,12 +48,13 @@ dr
 ├── run                Task execution
 ├── dotenv             Environment configuration
 └── self               CLI utility commands
-    ├── update         Update CLI to latest version
     ├── completion     Shell completion
     │   ├── bash       Generate bash completion
     │   ├── zsh        Generate zsh completion
     │   ├── fish       Generate fish completion
     │   └── powershell Generate PowerShell completion
+    ├── config         Display configuration settings
+    ├── update         Update CLI to latest version
     └── version        Version information
 ```
 

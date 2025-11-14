@@ -37,6 +37,48 @@ dr self completion bash > /etc/bash_completion.d/dr
 dr self completion zsh > "${fpath[1]}/_dr"
 ```
 
+### `config`
+
+Display current configuration settings from config file and environment variables.
+
+```bash
+dr self config
+```
+
+This command shows all configuration values currently in use by the CLI, including settings from:
+
+- Configuration file (`~/.config/datarobot/drconfig.yaml` or custom path)
+- Environment variables (prefixed with `DATAROBOT_CLI_` or standard `DATAROBOT_` variables)
+- Command-line flags
+
+Sensitive values like API tokens are automatically redacted for security.
+
+**Examples:**
+
+```bash
+# Display current configuration
+dr self config
+```
+
+**Sample output:**
+
+```text
+Configuration initialized. Using config file: /Users/username/.config/datarobot/drconfig.yaml
+
+  debug: false
+  endpoint: https://app.datarobot.com/api/v2
+  external_editor: vim
+  token: ****
+  verbose: false
+```
+
+**Use cases:**
+
+- Verify which configuration file is being used
+- Check that environment variables are being recognized
+- Debug configuration issues
+- Confirm API endpoint and settings before deployment
+
 ### `update`
 
 Update the DataRobot CLI to the latest version.
@@ -108,6 +150,19 @@ Installing DataRobot CLI...
 ```bash
 $ dr self version
 DataRobot CLI version: 1.0.0
+```
+
+### View current configuration
+
+```bash
+$ dr self config
+Configuration initialized. Using config file: /Users/username/.config/datarobot/drconfig.yaml
+
+  debug: false
+  endpoint: https://app.datarobot.com/api/v2
+  external_editor: vim
+  token: ****
+  verbose: false
 ```
 
 ### Install shell completions
