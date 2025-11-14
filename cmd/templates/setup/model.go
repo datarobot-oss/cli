@@ -254,7 +254,7 @@ func NewModel(fromStartCommand bool) Model {
 			key.WithHelp("enter", "next"),
 		),
 		Quit: key.NewBinding(
-			key.WithKeys("q", "ctrl+c"),
+			key.WithKeys("q"),
 			key.WithHelp("q", "quit"),
 		),
 	}
