@@ -27,7 +27,6 @@ import (
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 )
@@ -206,12 +205,6 @@ func getTemplates(sessionID int) tea.Cmd {
 		datarobotHost := config.GetBaseURL()
 		if datarobotHost == "" {
 			return getHostMsg{}
-		}
-
-		// Check if we're already in a DataRobot repo by looking for .datarobot/cli folder
-		repoRoot, err := repo.FindRepoRoot()
-		if err == nil && repoRoot != "" {
-			return handleExistingRepo(repoRoot)
 		}
 
 		// Not in a DataRobot repo, show the template gallery
