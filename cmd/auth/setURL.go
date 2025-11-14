@@ -65,7 +65,7 @@ func SetURLAction() {
 
 var setURLCmd = &cobra.Command{
 	Use:   "set-url",
-	Short: "🌐 Configure your DataRobot environment URL",
+	Short: "🌐 Configure your DataRobot environment URL.",
 	Long: `Configure your DataRobot environment URL with an interactive selection.
 
 This command helps you choose the correct DataRobot environment:
