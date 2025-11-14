@@ -6,26 +6,19 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package config
 
 import (
-	"github.com/datarobot/cli/cmd/self/config"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "self",
-		GroupID: "self",
-		Short:   "Run DataRobot CLI utility commands",
+		Use:   "config",
+		Short: "Display current configuration settings",
+		Long:  "Display all configuration settings from config file and environment variables, with sensitive data redacted.",
+		RunE:  runConfig,
 	}
-
-	cmd.AddCommand(
-		CompletionCmd(),
-		config.Cmd(),
-		UpdateCmd(),
-		VersionCmd(),
-	)
 
 	return cmd
 }
