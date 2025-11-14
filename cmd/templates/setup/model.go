@@ -144,35 +144,38 @@ func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template
 	return drapi.Template{}, false
 }
 
-// handleExistingRepo handles the case where we're already in a DataRobot repo
-func handleExistingRepo(repoRoot string) tea.Msg {
-	log.Debug("Already in a DataRobot repo at: " + repoRoot)
+// TODO For CFX-4074 I commented this out because this simply breaks
+// the main use case!
+//
+// // handleExistingRepo handles the case where we're already in a DataRobot repo
+// func handleExistingRepo(repoRoot string) tea.Msg {
+// 	log.Debug("Already in a DataRobot repo at: " + repoRoot)
 
-	templatesList, err := drapi.GetPublicTemplatesSorted()
-	if err != nil {
-		log.Warn("Failed to get templates, proceeding with dotenv setup anyway", "error", err)
+// 	templatesList, err := drapi.GetPublicTemplatesSorted()
+// 	if err != nil {
+// 		log.Warn("Failed to get templates, proceeding with dotenv setup anyway", "error", err)
 
-		return templateInDirMsg{
-			dotenvFile: filepath.Join(repoRoot, ".env"),
-			template:   drapi.Template{},
-		}
-	}
+// 		return templateInDirMsg{
+// 			dotenvFile: filepath.Join(repoRoot, ".env"),
+// 			template:   drapi.Template{},
+// 		}
+// 	}
 
-	template, found := matchTemplateByGitRemote(templatesList)
-	if found {
-		return templateInDirMsg{
-			dotenvFile: filepath.Join(repoRoot, ".env"),
-			template:   template,
-		}
-	}
+// 	template, found := matchTemplateByGitRemote(templatesList)
+// 	if found {
+// 		return templateInDirMsg{
+// 			dotenvFile: filepath.Join(repoRoot, ".env"),
+// 			template:   template,
+// 		}
+// 	}
 
-	log.Debug("Could not match git remote to a template, proceeding with dotenv setup")
+// 	log.Debug("Could not match git remote to a template, proceeding with dotenv setup")
 
-	return templateInDirMsg{
-		dotenvFile: filepath.Join(repoRoot, ".env"),
-		template:   drapi.Template{},
-	}
-}
+// 	return templateInDirMsg{
+// 		dotenvFile: filepath.Join(repoRoot, ".env"),
+// 		template:   drapi.Template{},
+// 	}
+// }
 
 // handleGitRepoWithoutDataRobotCLI handles the case where we're in a git repo but .datarobot/cli doesn't exist yet
 func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList, sessionID int) tea.Msg {
@@ -416,6 +419,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if m.dotenvSetupCompleted {
 			_ = state.UpdateAfterDotenvSetup()
 		}
+
+		// Update state for templates setup completion
+		_ = state.UpdateAfterTemplatesSetup()
 
 		return m, tea.Sequence(tea.ExitAltScreen, exit)
 	case exitMsg:

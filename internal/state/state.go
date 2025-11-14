@@ -32,6 +32,8 @@ type State struct {
 	LastStart time.Time `yaml:"last_start"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
+	// LastTemplatesSetup is an ISO8601-compliant timestamp of the last successful `dr templates setup` run
+	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 }
 
 // GetStatePath determines the appropriate location for the state file.
@@ -145,6 +147,24 @@ func UpdateAfterDotenvSetup() error {
 
 	now := time.Now().UTC()
 	existingState.LastDotenvSetup = &now
+
+	return existingState.Update()
+}
+
+// UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
+func UpdateAfterTemplatesSetup() error {
+	// Load existing state to preserve other fields
+	existingState, err := Load()
+	if err != nil {
+		return err
+	}
+
+	if existingState == nil {
+		existingState = &State{}
+	}
+
+	now := time.Now().UTC()
+	existingState.LastTemplatesSetup = &now
 
 	return existingState.Update()
 }
