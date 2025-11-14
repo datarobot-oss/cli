@@ -14,6 +14,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -54,9 +55,11 @@ var (
 )
 
 type ItemDelegate struct {
-	current   bool
-	checked   bool
-	component copier.Component
+	current       bool
+	checked       bool
+	component     copier.Component
+	ShortHelpFunc func() []key.Binding
+	FullHelpFunc  func() [][]key.Binding
 }
 
 type Model struct {
@@ -72,6 +75,52 @@ func updateComponent(item ItemDelegate) tea.Cmd {
 	return tea.ExecProcess(copier.Update(item.component.FileName), func(_ error) tea.Msg {
 		return updateCompleteMsg{item}
 	})
+}
+
+type delegateKeyMap struct {
+	info key.Binding
+}
+
+// Additional short help entries.
+func (d delegateKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{
+		d.info,
+	}
+}
+
+// Additional full help entries.
+func (d delegateKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			d.info,
+		},
+	}
+}
+
+func newDelegateKeyMap() *delegateKeyMap {
+	return &delegateKeyMap{
+		info: key.NewBinding(
+			key.WithKeys("i"),
+			key.WithHelp("i", "choose"),
+		),
+	}
+}
+
+func newItemDelegate() ItemDelegate {
+	d := ItemDelegate{}
+
+	delegateKeys := newDelegateKeyMap()
+	help := []key.Binding{delegateKeys.info}
+
+	d.ShortHelpFunc = func() []key.Binding {
+		return help
+	}
+
+	d.FullHelpFunc = func() [][]key.Binding {
+		return [][]key.Binding{help}
+	}
+
+	return d
 }
 
 // TODO: Filter doesn't work
@@ -197,10 +246,16 @@ func (m Model) loadComponents() tea.Cmd {
 				checked = true
 			}
 
-			items = append(items, ItemDelegate{current: i == 0, checked: checked, component: c})
+			it := newItemDelegate()
+			it.current = i == 0
+			it.checked = checked
+			it.component = c
+			items = append(items, it)
 		}
 
-		l := list.New(items, ItemDelegate{}, 0, 15)
+		idel := newItemDelegate()
+		l := list.New(items, idel, 0, 15)
+		l.Title = "As a test - this is NOT SHOWING"
 
 		// Now that we've loaded components we can reset filename property since we no longer need it
 		if m.initiator == updateCmd {
