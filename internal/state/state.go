@@ -30,10 +30,10 @@ type State struct {
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
 	LastStart time.Time `yaml:"last_start"`
-	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
-	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 	// LastTemplatesSetup is an ISO8601-compliant timestamp of the last successful `dr templates setup` run
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
+	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
+	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
 
 // GetStatePath determines the appropriate location for the state file.
