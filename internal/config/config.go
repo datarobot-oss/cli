@@ -125,7 +125,7 @@ func DebugViperConfig() (string, error) {
 		value := viper.Get(key)
 
 		// TODO Come up with a better way of redacting sensitive information
-		if key == "token" || key == "api_token" {
+		if key == "token" {
 			sb.WriteString(fmt.Sprintf("  %s: %s\n", key, "****"))
 		} else {
 			sb.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
