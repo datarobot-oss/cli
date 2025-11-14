@@ -150,10 +150,10 @@ func UpdateAfterDotenvSetup() error {
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
-// If force_interactive flag is set, this always returns false to force re-execution.
+// If force-interactive flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup() bool {
 	// Check if we should force the wizard to run
-	if viper.GetBool("force_interactive") {
+	if viper.GetBool("force-interactive") {
 		return false
 	}
 
