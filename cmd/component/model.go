@@ -69,7 +69,9 @@ type Model struct {
 }
 
 func updateComponent(item ItemDelegate) tea.Cmd {
-	return tea.ExecProcess(copier.Update(item.component.FileName), func(_ error) tea.Msg {
+	quiet := false
+
+	return tea.ExecProcess(copier.Update(item.component.FileName, quiet), func(_ error) tea.Msg {
 		return updateCompleteMsg{item}
 	})
 }
