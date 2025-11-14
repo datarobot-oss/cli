@@ -124,7 +124,7 @@ func DebugViperConfig() (string, error) {
 	for _, key := range keys {
 		value := viper.Get(key)
 
-		// TODO Come up with a better way of redacting sensitive information
+		// Skip token because its sensitive
 		if key == "token" {
 			sb.WriteString(fmt.Sprintf("  %s: %s\n", key, "****"))
 		} else {
