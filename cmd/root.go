@@ -11,6 +11,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
@@ -92,8 +93,8 @@ func init() {
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
-	_ = viper.BindPFlag("skip_auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
-	_ = viper.BindPFlag("force_interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 
 	setLogLevel()
 
@@ -148,6 +149,7 @@ func initializeConfig(cmd *cobra.Command) error {
 	// that are prefixed with DATAROBOT_CLI_ to config keys
 	viper.SetEnvPrefix("DATAROBOT_CLI")
 	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
 	// Now map other environment variables to config keys
 	// such as those used by the DataRobot platform or other SDKs
@@ -158,15 +160,15 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
 	}
 
-	err = viper.BindEnv("api_token", "DATAROBOT_API_TOKEN")
+	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for api_token: %w", err)
+		return fmt.Errorf("failed to bind environment variables for token: %w", err)
 	}
 
-	// map VISUAL and EDITOR to external_editor config key
-	err = viper.BindEnv("external_editor", "VISUAL", "EDITOR")
+	// map VISUAL and EDITOR to external-editor config key
+	err = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for external_editor: %w", err)
+		return fmt.Errorf("failed to bind environment variables for external-editor: %w", err)
 	}
 
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,

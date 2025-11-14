@@ -427,6 +427,11 @@ func setupTestEnvironment(t *testing.T) (string, Variables) {
 		{Name: "DATAROBOT_API_TOKEN", Value: "token123"},
 	}
 
+	// Set as actual environment variables to ensure they're found regardless of viper state
+	t.Setenv("TEST_VAR", "test-value")
+	t.Setenv("DATAROBOT_ENDPOINT", "https://app.datarobot.com")
+	t.Setenv("DATAROBOT_API_TOKEN", "token123")
+
 	return tmpDir, variables
 }
 

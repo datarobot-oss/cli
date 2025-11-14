@@ -30,6 +30,8 @@ type State struct {
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
 	LastStart time.Time `yaml:"last_start"`
+	// LastTemplatesSetup is an ISO8601-compliant timestamp of the last successful `dr templates setup` run
+	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
@@ -149,11 +151,29 @@ func UpdateAfterDotenvSetup() error {
 	return existingState.Update()
 }
 
+// UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
+func UpdateAfterTemplatesSetup() error {
+	// Load existing state to preserve other fields
+	existingState, err := Load()
+	if err != nil {
+		return err
+	}
+
+	if existingState == nil {
+		existingState = &State{}
+	}
+
+	now := time.Now().UTC()
+	existingState.LastTemplatesSetup = &now
+
+	return existingState.Update()
+}
+
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
-// If force_interactive flag is set, this always returns false to force re-execution.
+// If force-interactive flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup() bool {
 	// Check if we should force the wizard to run
-	if viper.GetBool("force_interactive") {
+	if viper.GetBool("force-interactive") {
 		return false
 	}
 
