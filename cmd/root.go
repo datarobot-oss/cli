@@ -93,6 +93,8 @@ func init() {
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 
 	setLogLevel()
 
