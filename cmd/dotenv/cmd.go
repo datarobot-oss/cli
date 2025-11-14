@@ -152,7 +152,7 @@ This wizard will help you:
 		}
 
 		// Update state after successful completion
-		_ = state.UpdateAfterDotenvSetup()
+		_ = state.UpdateAfterDotenvSetup("")
 	},
 }
 

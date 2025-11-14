@@ -10,6 +10,7 @@ package state
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,12 +20,19 @@ import (
 )
 
 func TestGetStatePath(t *testing.T) {
-	t.Run("returns local .datarobot/cli path", func(t *testing.T) {
+	t.Run("returns local .datarobot/cli path in git repo", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 
 		// Resolve symlinks (important for macOS where /var -> /private/var)
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
+		require.NoError(t, err)
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tmpDir
+
+		err = cmd.Run()
 		require.NoError(t, err)
 
 		// Change to temp directory
@@ -40,11 +48,33 @@ func TestGetStatePath(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get state path
-		statePath, err := GetStatePath()
+		statePath, err := GetStatePath("")
 		require.NoError(t, err)
 
 		expected := filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml")
 		assert.Equal(t, expected, statePath)
+	})
+
+	t.Run("returns error when not in git repo", func(t *testing.T) {
+		// Create temporary directory without git
+		tmpDir := t.TempDir()
+
+		// Change to temp directory
+		originalWd, err := os.Getwd()
+		require.NoError(t, err)
+
+		defer func() {
+			err := os.Chdir(originalWd)
+			require.NoError(t, err)
+		}()
+
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+
+		// Get state path should fail
+		_, err = GetStatePath("")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "git repository")
 	})
 }
 
@@ -52,8 +82,17 @@ func TestLoadSave(t *testing.T) {
 	t.Run("Save creates file and Load reads it back", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tmpDir
+
+		err := cmd.Run()
+		require.NoError(t, err)
+
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
-		err := os.MkdirAll(localStateDir, 0o755)
+
+		err = os.MkdirAll(localStateDir, 0o755)
 		require.NoError(t, err)
 
 		// Change to temp directory
@@ -75,7 +114,7 @@ func TestLoadSave(t *testing.T) {
 			CLIVersion: "1.0.0",
 		}
 
-		err = Save(originalState)
+		err = Save(originalState, "")
 		require.NoError(t, err)
 
 		// Load state back
@@ -87,9 +126,16 @@ func TestLoadSave(t *testing.T) {
 		assert.Equal(t, now.Unix(), loadedState.LastStart.Unix())
 	})
 
-	t.Run("Load returns nil when file doesn't exist", func(t *testing.T) {
+	t.Run("Load returns nil when file doesn't exist in git repo", func(t *testing.T) {
 		// Create temporary directory without state file
 		tmpDir := t.TempDir()
+
+		// Initialize git repo
+		cmd := exec.Command("git", "init")
+		cmd.Dir = tmpDir
+
+		err := cmd.Run()
+		require.NoError(t, err)
 
 		// Change to temp directory
 		originalWd, err := os.Getwd()
@@ -108,13 +154,44 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, state)
 	})
+
+	t.Run("Load returns error when not in git repo", func(t *testing.T) {
+		// Create temporary directory without git
+		tmpDir := t.TempDir()
+
+		// Change to temp directory
+		originalWd, err := os.Getwd()
+		require.NoError(t, err)
+
+		defer func() {
+			err := os.Chdir(originalWd)
+			require.NoError(t, err)
+		}()
+
+		err = os.Chdir(tmpDir)
+		require.NoError(t, err)
+
+		// Try to load from non-git directory should fail
+		_, err = Load()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "git repository")
+	})
 }
 
 func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	// Create temporary directory
 	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+
+	err := cmd.Run()
+	require.NoError(t, err)
+
 	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
-	err := os.MkdirAll(localStateDir, 0o755)
+
+	err = os.MkdirAll(localStateDir, 0o755)
 	require.NoError(t, err)
 
 	// Change to temp directory

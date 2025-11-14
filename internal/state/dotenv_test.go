@@ -10,6 +10,7 @@ package state
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,6 +20,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// setupGitRepo initializes a git repository in the given directory
+func setupGitRepo(t *testing.T, dir string) {
+	t.Helper()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+
+	err := cmd.Run()
+	require.NoError(t, err)
+}
+
 func TestDotenvSetupTracking(t *testing.T) {
 	t.Run("UpdateAfterDotenvSetup creates and updates state", func(t *testing.T) {
 		// Create temporary directory
@@ -26,6 +38,9 @@ func TestDotenvSetupTracking(t *testing.T) {
 
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
+
+		// Initialize git repo
+		setupGitRepo(t, tmpDir)
 
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
@@ -47,7 +62,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		// Update dotenv setup state
 		beforeUpdate := time.Now().UTC()
 
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup("")
 		require.NoError(t, err)
 
 		afterUpdate := time.Now().UTC()
@@ -68,6 +83,9 @@ func TestDotenvSetupTracking(t *testing.T) {
 
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
+
+		// Initialize git repo
+		setupGitRepo(t, tmpDir)
 
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
@@ -91,7 +109,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update with dotenv setup
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup("")
 		require.NoError(t, err)
 
 		// Load and verify both fields are present
@@ -110,6 +128,9 @@ func TestDotenvSetupTracking(t *testing.T) {
 
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
+
+		// Initialize git repo
+		setupGitRepo(t, tmpDir)
 
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
@@ -132,7 +153,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		assert.False(t, HasCompletedDotenvSetup())
 
 		// Update dotenv setup
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup("")
 		require.NoError(t, err)
 
 		// Now should be true
@@ -166,6 +187,9 @@ func TestDotenvSetupTracking(t *testing.T) {
 		tmpDir, err := filepath.EvalSymlinks(tmpDir)
 		require.NoError(t, err)
 
+		// Initialize git repo
+		setupGitRepo(t, tmpDir)
+
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 
 		err = os.MkdirAll(localStateDir, 0o755)
@@ -184,7 +208,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update dotenv setup to create state file
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup("")
 		require.NoError(t, err)
 
 		// Verify it returns true normally

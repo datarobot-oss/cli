@@ -57,9 +57,10 @@ type Model struct {
 	fetchSessionID  int  // Track current fetch session to ignore stale responses
 	authSessionID   int  // Track current auth session to ignore stale auth callbacks
 
-	fromStartCommand     bool // true if invoked from dr start
-	skipDotenvSetup      bool // true if dotenv setup was already completed
-	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
+	fromStartCommand     bool   // true if invoked from dr start
+	skipDotenvSetup      bool   // true if dotenv setup was already completed
+	dotenvSetupCompleted bool   // tracks if dotenv was actually run (for state update)
+	targetDir            string // directory where state should be saved (cloned/current dir)
 	hostModel            HostModel
 	login                LoginModel
 	list                 list.Model
@@ -383,6 +384,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, m.list.Init()
 	case templateClonedMsg:
+		// Store the cloned directory for state file creation
+		m.targetDir = m.clone.Dir
+
 		// Skip dotenv if it was already completed
 		if m.skipDotenvSetup {
 			m.screen = exitScreen
@@ -399,6 +403,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, m.dotenv.Init()
 
 	case templateInDirMsg:
+		// Store the directory for state file creation
+		m.targetDir = filepath.Dir(msg.dotenvFile)
+
 		// Skip dotenv if it was already completed
 		if m.skipDotenvSetup {
 			m.screen = exitScreen
@@ -417,11 +424,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		// Update state if dotenv setup was completed
 		if m.dotenvSetupCompleted {
-			_ = state.UpdateAfterDotenvSetup()
+			_ = state.UpdateAfterDotenvSetup(m.targetDir)
 		}
 
 		// Update state for templates setup completion
-		_ = state.UpdateAfterTemplatesSetup()
+		_ = state.UpdateAfterTemplatesSetup(m.targetDir)
 
 		return m, tea.Sequence(tea.ExitAltScreen, exit)
 	case exitMsg:
