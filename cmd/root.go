@@ -149,8 +149,7 @@ func initializeConfig(cmd *cobra.Command) error {
 	// that are prefixed with DATAROBOT_CLI_ to config keys
 	viper.SetEnvPrefix("DATAROBOT_CLI")
 	viper.AutomaticEnv()
-	// set viper.SetEnvKeyReplacer()
-	viper.SetEnvKeyReplacer(strings.NewReplacer("_", "-"))
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
 	// Now map other environment variables to config keys
 	// such as those used by the DataRobot platform or other SDKs
