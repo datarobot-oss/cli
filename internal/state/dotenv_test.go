@@ -159,7 +159,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		assert.False(t, HasCompletedDotenvSetup())
 	})
 
-	t.Run("HasCompletedDotenvSetup returns false when force_interactive is true", func(t *testing.T) {
+	t.Run("HasCompletedDotenvSetup returns false when force-interactive is true", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 
@@ -190,18 +190,18 @@ func TestDotenvSetupTracking(t *testing.T) {
 		// Verify it returns true normally
 		assert.True(t, HasCompletedDotenvSetup())
 
-		// Set force_interactive flag
-		oldValue := viper.GetBool("force_interactive")
+		// Set force-interactive flag
+		oldValue := viper.GetBool("force-interactive")
 
-		viper.Set("force_interactive", true)
+		viper.Set("force-interactive", true)
 
-		defer viper.Set("force_interactive", oldValue)
+		defer viper.Set("force-interactive", oldValue)
 
 		// Now should return false even though state file exists
 		assert.False(t, HasCompletedDotenvSetup())
 
 		// Reset flag
-		viper.Set("force_interactive", oldValue)
+		viper.Set("force-interactive", oldValue)
 
 		// Should return true again
 		assert.True(t, HasCompletedDotenvSetup())
