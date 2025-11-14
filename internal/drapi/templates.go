@@ -144,7 +144,7 @@ func GetTemplates() (*TemplateList, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Response status code is " + resp.Status)
+		return nil, errors.New("Response status code is " + resp.Status + ".")
 	}
 
 	var templateList TemplateList
@@ -180,5 +180,5 @@ func GetTemplate(id string) (*Template, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("template with id %s not found", id)
+	return nil, fmt.Errorf("Template with id %s not found.", id)
 }

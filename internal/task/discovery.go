@@ -39,9 +39,9 @@ type taskfileTmplData struct {
 }
 
 var (
-	ErrNotInTemplate     = errors.New("not in a DataRobot template directory")
-	ErrNoTaskFilesFound  = errors.New("no Taskfiles found in child directories")
-	ErrTaskfileHasDotenv = errors.New("existing Taskfile already has dotenv directive")
+	ErrNotInTemplate     = errors.New("Not in a DataRobot template directory.")
+	ErrNoTaskFilesFound  = errors.New("No Taskfiles found in child directories.")
+	ErrTaskfileHasDotenv = errors.New("Existing Taskfile already has dotenv directive.")
 )
 
 // taskfileMetadata is used to parse just the dotenv directive from a Taskfile
@@ -78,7 +78,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 
 	includes, err := d.findComponents(root, maxDepth)
 	if err != nil {
-		return "", fmt.Errorf("failed to discover components: %w", err)
+		return "", fmt.Errorf("Failed to discover components: %w", err)
 	}
 
 	if len(includes) == 0 {
@@ -96,7 +96,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		Includes: includes,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create the root Taskfile: %w", err)
+		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
 	}
 
 	return rootTaskfilePath, nil
@@ -227,7 +227,7 @@ func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) erro
 
 	tmpl, err := tmplFS.ReadFile("Taskfile.tmpl.yaml")
 	if err != nil {
-		return fmt.Errorf("failed to read Taskfile template: %w", err)
+		return fmt.Errorf("Failed to read Taskfile template: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -235,11 +235,11 @@ func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) erro
 	t := template.Must(template.New("taskfile").Parse(string(tmpl)))
 
 	if err := t.Execute(&buf, data); err != nil {
-		return fmt.Errorf("failed to generate Taskfile template: %w", err)
+		return fmt.Errorf("Failed to generate Taskfile template: %w", err)
 	}
 
 	if _, err := f.Write(buf.Bytes()); err != nil {
-		return fmt.Errorf("failed to write Taskfile to %s: %w", filename, err)
+		return fmt.Errorf("Failed to write Taskfile to %s: %w", filename, err)
 	}
 
 	return nil

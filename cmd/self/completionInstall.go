@@ -140,7 +140,7 @@ func runCompletionInstall(rootCmd *cobra.Command, specifiedShell string, force, 
 
 	// Install
 	if err := installFunc(rootCmd); err != nil {
-		return fmt.Errorf("Failed to install completions: %w.", err)
+		return fmt.Errorf("Failed to install completions: %w", err)
 	}
 
 	fmt.Printf("%s Completion installed to: %s.\n", successStyle.Render("✓"), installPath)
@@ -190,7 +190,7 @@ func promptForConfirmation() (bool, error) {
 
 	_, err := fmt.Scanln(&response)
 	if err != nil && err.Error() != "unexpected newline" {
-		return false, fmt.Errorf("failed to read input: %w", err)
+		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 
 	response = strings.ToLower(strings.TrimSpace(response))
@@ -218,7 +218,7 @@ func getCompletionInstallFunc(rootCmd *cobra.Command, shellType internalShell.Sh
 	case internalShell.PowerShell:
 		return "", nil, errors.New("PowerShell completions installation not yet supported via this command. Use: dr completion powershell")
 	default:
-		return "", nil, fmt.Errorf("unsupported shell: %s", shellType)
+		return "", nil, fmt.Errorf("Unsupported shell: %s.", shellType)
 	}
 }
 
@@ -311,7 +311,7 @@ func installCompletionBash(_ *cobra.Command, _ bool) (string, func(*cobra.Comman
 			fmt.Println("After installing bash-completion, run this command again.")
 			fmt.Println()
 
-			return errors.New("bash-completion not available")
+			return errors.New("Bash-completion not available.")
 		}
 
 		// Create directory
@@ -438,7 +438,7 @@ func showActivationInstructions(shell internalShell.Shell) {
 func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Check if file exists
 	if !fileExists(zshrc) {
-		return errors.New("~/.zshrc not found, please create it first")
+		return errors.New("~/.zshrc not found, please create it first.")
 	}
 
 	// Read file
@@ -475,7 +475,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Check if file exists
 	if !fileExists(bashrc) {
-		return errors.New("~/.bashrc not found, please create it first")
+		return errors.New("~/.bashrc not found, please create it first.")
 	}
 
 	// Read file
@@ -661,9 +661,9 @@ func performCompletionUninstall(shell internalShell.Shell) error {
 	case internalShell.Fish:
 		removed = uninstallCompletionFish()
 	case internalShell.PowerShell:
-		return errors.New("PowerShell completions uninstallation not yet supported via this command")
+		return errors.New("PowerShell completions uninstallation not yet supported via this command.")
 	default:
-		return fmt.Errorf("unsupported shell: %s", shell)
+		return fmt.Errorf("Unsupported shell: %s.", shell)
 	}
 
 	if removed {
@@ -704,7 +704,7 @@ func promptForCompletionUninstallConfirmation() (bool, error) {
 
 	_, err := fmt.Scanln(&response)
 	if err != nil && err.Error() != "unexpected newline" {
-		return false, fmt.Errorf("failed to read input: %w", err)
+		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 
 	response = strings.ToLower(strings.TrimSpace(response))

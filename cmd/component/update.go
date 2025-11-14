@@ -27,7 +27,7 @@ import (
 
 func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("should be in repository root directory")
+		return errors.New("Should be in repository root directory.")
 	}
 
 	return nil
@@ -98,7 +98,7 @@ func UpdateCmd() *cobra.Command {
 
 func runUpdate(yamlFile string) error {
 	if !isYamlFile(yamlFile) {
-		return errors.New("The supplied file is not a yaml file.")
+		return errors.New("The supplied file is not a YAML file.")
 	}
 
 	answers, err := copier.AnswersFromPath(".")

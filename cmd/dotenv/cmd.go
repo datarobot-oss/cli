@@ -224,7 +224,7 @@ var ValidateCmd = &cobra.Command{
 
 			for _, valResult := range result.Results {
 				if !valResult.Valid {
-					fmt.Printf("\n%s: required variable %s is not set\n",
+					fmt.Printf("\n%s: Required variable %s is not set\n",
 						tui.ErrorStyle.Render("Error"), varStyle.Render(valResult.Field))
 
 					if valResult.Help != "" {

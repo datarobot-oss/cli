@@ -24,7 +24,7 @@ import (
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("should be in repository root directory")
+		return errors.New("Should be in repository root directory.")
 	}
 
 	// Do we have the required tools?
@@ -54,7 +54,7 @@ func RunE(_ *cobra.Command, args []string) error {
 	}
 
 	if len(args) == 0 || args[0] == "" {
-		return errors.New("component_url required")
+		return errors.New("Component URL required.")
 	}
 
 	for _, repoURL := range args {

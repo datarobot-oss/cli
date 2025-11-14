@@ -24,7 +24,7 @@ import (
 // fails, suitable for use in Cobra PreRunE hooks.
 func EnsureAuthenticatedE(ctx context.Context) error {
 	if !EnsureAuthenticated(ctx) {
-		return errors.New("authentication failed")
+		return errors.New("Authentication failed.")
 	}
 
 	return nil
@@ -83,7 +83,7 @@ func LoginAction(ctx context.Context) error {
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viper.GetBool("skip_auth") {
-		return errors.New("login has been disabled via --skip-auth flag")
+		return errors.New("Login has been disabled via --skip-auth flag.")
 	}
 
 	datarobotHost := config.GetBaseURL()
