@@ -311,7 +311,7 @@ func Cmd() *cobra.Command {
 
 			tasks, err := runner.ListTasks()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 
 				os.Exit(1)
 
@@ -321,7 +321,7 @@ func Cmd() *cobra.Command {
 			categories := groupTasksByCategory(tasks, showAll)
 
 			if err = printCategorizedTasks(categories, showAll); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 
 				os.Exit(1)
 

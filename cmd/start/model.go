@@ -259,7 +259,7 @@ func (m Model) View() string {
 
 	// Display error or status message
 	if m.err != nil {
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error()))
 		sb.WriteString("\n")
 		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
 		sb.WriteString("\n")

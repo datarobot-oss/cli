@@ -35,7 +35,7 @@ func generateRandomSecret(length int) (string, error) {
 func ensureInRepo() (string, error) {
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil || repoRoot == "" {
-		fmt.Println(tui.ErrorStyle.Render("Error:") + " Not inside a git repository")
+		fmt.Println(tui.ErrorStyle.Render("Error: ") + "Not inside a git repository")
 		fmt.Println()
 		fmt.Println("Run this command from within an application template git repository.")
 		fmt.Println("To create a new template, run " + tui.BaseTextStyle.Render("`dr templates setup`") + ".")

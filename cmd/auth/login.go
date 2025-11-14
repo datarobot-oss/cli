@@ -83,7 +83,7 @@ func LoginAction(ctx context.Context) error {
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viper.GetBool("skip_auth") {
-		return errors.New("Login has been disabled via --skip-auth flag.")
+		return errors.New("Login has been disabled via the '--skip-auth' flag.")
 	}
 
 	datarobotHost := config.GetBaseURL()

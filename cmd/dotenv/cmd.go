@@ -58,7 +58,7 @@ var EditCmd = &cobra.Command{
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
-				fmt.Println("fatal:", err)
+				fmt.Println("fatal: ", err)
 				os.Exit(1)
 			}
 			defer f.Close()
@@ -119,7 +119,7 @@ This wizard will help you:
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
-				fmt.Println("fatal:", err)
+				fmt.Println("fatal: ", err)
 				os.Exit(1)
 			}
 			defer f.Close()

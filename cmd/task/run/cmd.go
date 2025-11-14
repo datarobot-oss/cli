@@ -100,7 +100,7 @@ Examples:
 					}
 				} else {
 					// Only print error if it's not an exit error (task already showed its error)
-					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 				}
 
 				os.Exit(exitCode)

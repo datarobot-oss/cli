@@ -267,7 +267,7 @@ func installCompletionZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command
 		if !dirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
 			zshrc := filepath.Join(os.Getenv("HOME"), ".zshrc")
 			if err := ensureFpathInZshrc(zshrc, compDir); err != nil {
-				fmt.Printf("%s %s\n", warnStyle.Render("Warning:"), err)
+				fmt.Printf("%s %s\n", warnStyle.Render("Warning: "), err)
 			}
 		}
 

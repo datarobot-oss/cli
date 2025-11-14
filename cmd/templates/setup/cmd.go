@@ -49,7 +49,7 @@ func RunTeaFromStart(ctx context.Context, fromStartCommand bool) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
-			fmt.Println("fatal:", err)
+			fmt.Println("fatal: ", err)
 			os.Exit(1)
 		}
 		defer f.Close()

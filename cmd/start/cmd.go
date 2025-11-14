@@ -41,7 +41,7 @@ The following actions will be performed:
 			if viper.GetBool("debug") {
 				f, err := tea.LogToFile("tea-debug.log", "debug")
 				if err != nil {
-					fmt.Println("fatal:", err)
+					fmt.Println("fatal: ", err)
 					os.Exit(1)
 				}
 

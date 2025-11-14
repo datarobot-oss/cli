@@ -37,7 +37,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
-			fmt.Println("fatal:", err)
+			fmt.Println("fatal: ", err)
 			os.Exit(1)
 		}
 
@@ -59,7 +59,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if doNotPrompt && updateFileName != "" {
 		err := runUpdate(updateFileName)
 		if err != nil {
-			fmt.Println("Fatal:", err)
+			fmt.Println("Fatal: ", err)
 			os.Exit(1)
 		}
 
