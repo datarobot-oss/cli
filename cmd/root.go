@@ -158,9 +158,9 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
 	}
 
-	err = viper.BindEnv("api-token", "DATAROBOT_API_TOKEN")
+	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for api-token: %w", err)
+		return fmt.Errorf("failed to bind environment variables for token: %w", err)
 	}
 
 	// map VISUAL and EDITOR to external-editor config key
