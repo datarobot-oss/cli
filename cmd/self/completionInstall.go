@@ -38,7 +38,7 @@ func installCompletionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "install [shell]",
-		Short: "Install shell completions interactively",
+		Short: "Install shell completions interactively.",
 		Long: `Install shell completions automatically by detecting your shell and
 installing to the appropriate location.
 
@@ -50,21 +50,21 @@ This command will:
 - Clear completion cache (if needed)
 - Show instructions to activate completions
 
-By default, runs in preview mode. Use --yes to install directly.`,
-		Example: `  # Preview what would be installed (default behavior)
+By default, this command runs in preview mode. Use --yes to install directly.`,
+		Example: `  # Preview what would be installed (default behavior):
   ` + version.CliName + ` completion install
 
-  # Install completions for your current shell
+  # Install completions for your current shell:
   ` + version.CliName + ` completion install --yes
 
-  # Install completions for a specific shell
+  # Install completions for a specific shell:
   ` + version.CliName + ` completion install bash --yes
   ` + version.CliName + ` completion install zsh --yes
 
-  # Preview installation for a specific shell
+  # Preview installation for a specific shell:
   ` + version.CliName + ` completion install bash
 
-  # Force reinstall even if already installed
+  # Force reinstall, even if completions are already installed:
   ` + version.CliName + ` completion install --force --yes`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: supportedShells(),
@@ -88,9 +88,9 @@ By default, runs in preview mode. Use --yes to install directly.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force reinstall even if already installed")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm installation without prompting")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be installed without making changes")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force reinstall, even if completions are already installed.")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm installation without prompting.")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be installed without making changes.")
 
 	return cmd
 }
@@ -140,10 +140,10 @@ func runCompletionInstall(rootCmd *cobra.Command, specifiedShell string, force, 
 
 	// Install
 	if err := installFunc(rootCmd); err != nil {
-		return fmt.Errorf("failed to install completions: %w", err)
+		return fmt.Errorf("Failed to install completions: %w.", err)
 	}
 
-	fmt.Printf("%s Completion installed to: %s\n", successStyle.Render("✓"), installPath)
+	fmt.Printf("%s Completion installed to: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
 
 	// Show activation instructions
@@ -153,7 +153,7 @@ func runCompletionInstall(rootCmd *cobra.Command, specifiedShell string, force, 
 }
 
 func showCompletionAlreadyInstalled(installPath string) error {
-	fmt.Printf("%s Completion already installed at: %s\n", successStyle.Render("✓"), installPath)
+	fmt.Printf("%s Completion already installed at: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
 	fmt.Println(infoStyle.Render("To reinstall, use: " + version.CliName + " completion install --force --yes"))
 
@@ -512,8 +512,8 @@ func uninstallCompletionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "uninstall [shell]",
-		Short: "Uninstall shell completions",
-		Long: `Uninstall shell completions by detecting your shell and removing from the standard location.
+		Short: "Uninstall shell completions.",
+		Long: `Uninstall shell completions by detecting your shell and removing them from the standard location.
 
 This command will:
 - Detect your current shell (or use specified shell)

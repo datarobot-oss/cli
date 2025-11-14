@@ -138,7 +138,7 @@ func TestDirExists(t *testing.T) {
 func TestGetInstallFunc(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "dr",
-		Short: "DataRobot CLI",
+		Short: "DataRobot CLI.",
 	}
 
 	tests := []struct {
@@ -211,7 +211,7 @@ func TestGetInstallFunc(t *testing.T) {
 func TestInstallZsh(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "dr",
-		Short: "DataRobot CLI",
+		Short: "DataRobot CLI.",
 	}
 
 	path, fn := installCompletionZsh(rootCmd, false)
@@ -233,7 +233,7 @@ func TestInstallZsh(t *testing.T) {
 func TestInstallBash(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "dr",
-		Short: "DataRobot CLI",
+		Short: "DataRobot CLI.",
 	}
 
 	path, fn := installCompletionBash(rootCmd, false)
@@ -255,7 +255,7 @@ func TestInstallBash(t *testing.T) {
 func TestInstallFish(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "dr",
-		Short: "DataRobot CLI",
+		Short: "DataRobot CLI.",
 	}
 
 	path, fn := installCompletionFish(rootCmd, false)
