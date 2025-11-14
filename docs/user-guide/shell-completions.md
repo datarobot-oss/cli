@@ -1,36 +1,39 @@
-# Shell Completions
+# Shell completions
 
 The DataRobot CLI supports auto-completion for Bash, Zsh, Fish, and PowerShell. Shell completions provide:
 
 - Command and subcommand suggestions.
 - Flag and option completions.
-- Faster command entry with tab completion.
+- Faster command entry via tab completion.
 - Discovery of available commands.
 
 ## Installation
 
-### Automatic Installation
+### Automatic installation
 
-Shell completions can be installed in three ways:
+You can use three different methods to install shell completions:
 
-1. **Installation Script** (Recommended for first-time install)
+1. **Installation script**: Recommended for first-time installs.
+
+    The installer automatically detects your shell and configures completions.
+
    ```bash
    curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh
    ```
-   The installer automatically detects your shell and configures completions.
 
-2. **Interactive Command** (Recommended for managing completions)
+2. **Interactive command**: Recommended for managing completions.
+
+    This command detects your shell and installs completions to the appropriate location.
+
    ```bash
    dr self completion install
    ```
-   Detects your shell and installs completions to the appropriate location.
 
-3. **Manual Installation** (For advanced users)
-   Follow the shell-specific instructions below.
+3. **Manual installation**: Recommended for advanced users. Follow the shell-specific instructions below.
 
-### Interactive Commands
+### Interactive commands
 
-The CLI provides commands to manage completions easily:
+The CLI provides commands to easily manage completions.
 
 ```bash
 # Install completions for your current shell
@@ -43,16 +46,16 @@ dr self completion install --force
 dr self completion uninstall
 ```
 
-### Manual Installation
+### Manual installation
 
-If you prefer manual installation or the automatic methods don't work, follow the instructions below for your shell.
+If you prefer manual installation or the automatic methods do not work, follow the instructions below.
 
 ### Bash
 
 #### Linux
 
 ```bash
-# Generate and install completion script
+# Generate and install the completion script
 dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Reload your shell
@@ -61,14 +64,14 @@ source ~/.bashrc
 
 ```zsh
 # If shell completion is not already enabled in your environment you will need
-# to enable it.  You can execute the following once:
+# to enable it.  You can execute the following command once:
 # echo "autoload -U compinit; compinit" >> ~/.zshrc
 
-  # To load completions for each session, execute once:
+  # To load completions for each session, execute the following command once:
   $ dr self completion zsh > "${fpath[1]}/_dr"
 ```
 
-#### macOS
+#### MacOS
 
 The default shell in MacOS is `zsh`. Shell completions for `zsh`
 are typically stored in one of the following directories:
@@ -123,7 +126,7 @@ source ~/.zshrc
 #### Alternative (using system directory)
 
 ```bash
-# Generate and install completion script
+# Generate and install the completion script
 dr self completion zsh > "${fpath[1]}/_dr"
 
 # Clear completion cache
@@ -144,7 +147,7 @@ source <(dr self completion zsh)
 ### Fish
 
 ```bash
-# Generate and install completion script
+# Generate and install the completion script
 dr self completion fish > ~/.config/fish/completions/dr.fish
 
 # Reload fish configuration
@@ -163,20 +166,20 @@ dr self completion fish | source
 
 #### Persistent installation
 
-Add to your PowerShell profile:
+To add the CLI to your PowerShell profile:
 
 ```powershell
-# Generate completion script
+# Generate the completion script
 dr self completion powershell > dr.ps1
 
 # Find your profile location
 echo $PROFILE
 
-# Add this line to your profile
+# Add the following line to your profile
 . C:\path\to\dr.ps1
 ```
 
-Or install directly:
+Alternatively, you can install it directly:
 
 ```powershell
 # Add to profile
@@ -263,6 +266,7 @@ dr run --l<Tab>
 **Important**: Bash completions require the `bash-completion` package to be installed first.
 
 1. Install bash-completion if not already installed:
+
    ```bash
    # macOS (Homebrew)
    brew install bash-completion@2
@@ -275,6 +279,7 @@ dr run --l<Tab>
    ```
 
 2. Check that bash-completion is loaded:
+
    ```bash
    # macOS
    brew list bash-completion@2
@@ -283,19 +288,21 @@ dr run --l<Tab>
    dpkg -l | grep bash-completion
    ```
 
-2. Verify completion script location:
+3. Verify completion script location:
+
    ```bash
    ls -l /etc/bash_completion.d/dr
    # or on macOS
    ls -l $(brew --prefix)/etc/bash_completion.d/dr
    ```
 
-3. Check `.bashrc` sources completion:
+4. Check `.bashrc` sources completion:
+
    ```bash
    grep bash_completion ~/.bashrc
    ```
 
-4. Reload your shell:
+5. Reload your shell:
    ```bash
    source ~/.bashrc
    ```
@@ -308,6 +315,7 @@ dr run --l<Tab>
    ```
 
 2. Check completion file location:
+
    ```bash
    ls -l ~/.zsh/completions/_dr
    # or
@@ -327,12 +335,12 @@ dr run --l<Tab>
 
 #### Fish
 
-1. Check completion file exists:
+1. Check that the completion file exists:
    ```bash
    ls -l ~/.config/fish/completions/dr.fish
    ```
 
-2. Verify Fish recognizes it:
+2. Verify that Fish recognizes it:
    ```bash
    complete -C dr
    ```
@@ -395,7 +403,7 @@ compinit
 
 You can customize how completions work by modifying the generated script.
 
-For example, in Bash completion script, you can add custom completion logic:
+For example, in the Bash completion script, you can add custom completion logic:
 
 ```bash
 # Extract the generated script
@@ -440,6 +448,6 @@ dr completion powershell > $PROFILE
 
 ## See also
 
-- [Getting started](getting-started.md)&mdash;initial setup guide.
-- [Command reference](../commands/)&mdash;complete command documentation.
-- [Cobra documentation](https://github.com/spf13/cobra/blob/main/shell_completions.md)&mdash;underlying completion framework.
+- [Getting started setup guide](getting-started.md)
+- [Command reference](../commands/)
+- [Cobra documentation (underlying completion framework)](https://github.com/spf13/cobra/blob/main/shell_completions.md)
