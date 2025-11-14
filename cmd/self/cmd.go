@@ -21,6 +21,7 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		CompletionCmd(),
+		ConfigCmd(),
 		UpdateCmd(),
 		VersionCmd(),
 	)

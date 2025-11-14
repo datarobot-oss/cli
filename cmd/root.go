@@ -189,30 +189,6 @@ func initializeConfig(cmd *cobra.Command) error {
 		return err
 	}
 
-	// TODO Put this elsewhere
-
-	// fmt.Println("Configuration initialized. Using config file:", viper.ConfigFileUsed())
-	// // Print out the viper configuration for debugging
-	// // Alphabetically, and redacting sensitive information
-	// // TODO There has to be a better way of marking sensitive data
-	// // perhaps with leebenson/conform?
-	// keys := make([]string, 0, len(viper.AllSettings()))
-	// for key := range viper.AllSettings() {
-	// 	keys = append(keys, key)
-	// }
-
-	// sort.Strings(keys)
-
-	// for _, key := range keys {
-	// 	value := viper.Get(key)
-	// 	// TODO Skip token because its sensitive
-	// 	if key == "token" {
-	// 		fmt.Printf("  %s: %s\n", key, "****")
-	// 	} else {
-	// 		fmt.Printf("  %s: %v\n", key, value)
-	// 	}
-	// }
-
 	return nil
 }
 
