@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func UpdateCmd() *cobra.Command {
+func UpdateCmd() *cobra.Command { //nolint:cyclop
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update DataRobot CLI",
@@ -35,8 +35,18 @@ with your default shell.
 				if err == nil {
 					brewCheckCmd := exec.Command(brewPath, "list", "--cask", "dr-cli")
 
-					// If we have dr-cli cask installed then attempt upgrade (err indicates it wasn't found)
+					// If we have dr-cli cask installed then attempt upgrade (err above indicates dr-cli wasn't found)
 					if err := brewCheckCmd.Run(); err == nil {
+						// Update brew first
+						brewUpdateCmd := exec.Command(brewPath, "update")
+						brewUpdateCmd.Stdout = os.Stdout
+						brewUpdateCmd.Stderr = os.Stderr
+
+						if err := brewUpdateCmd.Run(); err != nil {
+							fmt.Fprintln(os.Stderr, "Error:", err)
+							os.Exit(1)
+						}
+
 						brewUpgradeCmd := exec.Command(brewPath, "upgrade", "--cask", "dr-cli")
 						brewUpgradeCmd.Stdout = os.Stdout
 						brewUpgradeCmd.Stderr = os.Stderr
