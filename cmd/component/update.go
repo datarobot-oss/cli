@@ -49,7 +49,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		updateFileName = args[0]
 	}
 
-	// User may provide CLI args --yes or -y or --interactive=false or -i=false in order to skip prompt
+	// User may provide CLI args '--yes' or '-y' or '--interactive=false' or '-i=false' in order to skip prompt
 	yes, _ := cmd.Flags().GetBool("yes")
 	interactive, _ := cmd.Flags().GetBool("interactive")
 
@@ -89,9 +89,9 @@ func UpdateCmd() *cobra.Command {
 		RunE:    UpdateRunE,
 	}
 
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm update without prompting.")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm the update without prompting.")
 	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to false to automatically confirm update without prompting.")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to 'false' to automatically confirm the update without prompting.")
 
 	return cmd
 }

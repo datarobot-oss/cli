@@ -270,7 +270,7 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 			BorderForeground(tipBorderColor)
 
 		fmt.Println()
-		fmt.Println(tipStyle.Render("💡 Tip: Run 'dr task list --all' to see all available tasks"))
+		fmt.Println(tipStyle.Render("💡 Tip: Run 'dr task list --all' to see all available tasks."))
 	}
 
 	return nil

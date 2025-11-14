@@ -105,14 +105,14 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 func ExitWithError(err error) {
 	if errors.Is(err, ErrNotInTemplate) {
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a .env file to be present."))
+		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.env' file to be present."))
 		os.Exit(1)
 
 		return
 	}
 
 	if errors.Is(err, ErrTaskfileHasDotenv) {
-		fmt.Fprintln(os.Stderr, tui.ErrorStyle.Render("Error: Cannot generate Taskfile because an existing Taskfile already has a dotenv directive."))
+		fmt.Fprintln(os.Stderr, tui.ErrorStyle.Render("Error: Cannot generate 'Taskfile' because an existing 'Taskfile' already has a dotenv directive."))
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render(err.Error()))
 		os.Exit(1)
 

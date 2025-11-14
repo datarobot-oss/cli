@@ -328,7 +328,7 @@ func checkPrerequisites(_ *Model) tea.Msg {
 // }
 
 func findQuickstart(m *Model) tea.Msg {
-	// If --yes flag is set, don't wait for confirmation
+	// If '--yes' flag is set, don't wait for confirmation
 	waitForConfirmation := !m.opts.AnswerYes
 
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location

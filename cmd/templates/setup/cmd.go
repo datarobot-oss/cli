@@ -30,8 +30,8 @@ var Cmd = &cobra.Command{
   3️⃣  Configure your environment
   4️⃣  Get you ready to build!
 
-⏱️  Takes about 3-5 minutes
-🎉  You'll have a working AI app at the end
+⏱️ Takes about 3-5 minutes
+🎉 You'll have a working AI app at the end
 
 💡 Perfect for first-time users or someone starting a new project.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {

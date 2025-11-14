@@ -56,7 +56,7 @@ func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 		fmt.Println("Environment Configuration")
 		fmt.Println("=========================")
 		fmt.Println("")
-		fmt.Println("Editing .env file with component-specific variables...")
+		fmt.Println("Editing '.env' file with component-specific variables...")
 		fmt.Println("")
 
 		for _, up := range userPrompts {

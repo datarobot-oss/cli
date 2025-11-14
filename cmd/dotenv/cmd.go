@@ -197,7 +197,7 @@ var ValidateCmd = &cobra.Command{
 
 		dotenvFileLines, _ := readDotenvFile(dotenv)
 
-		// Parse variables from .env file
+		// Parse variables from '.env' file
 		parsedVars := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
 		// Validate using envbuilder
