@@ -23,6 +23,17 @@ linters:
     - usestdlibvars
     - wsl_v5
   settings:
+    revive:
+      rules:
+        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#error-strings
+        - name: error-strings
+          severity: warning
+          disabled: true
+          exclude: [""]
+          arguments:
+            - "xerrors.New"
+    staticcheck:
+      checks: [ "all", "-ST1005"]
     govet:
       enable:
         - nilness
