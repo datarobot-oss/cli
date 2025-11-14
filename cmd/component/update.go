@@ -84,21 +84,21 @@ func UpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
-		Short:   "Update component",
+		Short:   "Update component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
 
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm update without prompting")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm update without prompting.")
 	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to false to automatically confirm update without prompting")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to false to automatically confirm update without prompting.")
 
 	return cmd
 }
 
 func runUpdate(yamlFile string) error {
 	if !isYamlFile(yamlFile) {
-		return errors.New("supplied file is not a yaml file")
+		return errors.New("The supplied file is not a yaml file.")
 	}
 
 	answers, err := copier.AnswersFromPath(".")
@@ -115,14 +115,14 @@ func runUpdate(yamlFile string) error {
 	// TODO: Account for consolidating on string representation
 	// This check fails if I pass `./.datarobot/answers/react-frontend_web.yml` - which has the prefix of `./`
 	if !slices.Contains(answerFileNames, yamlFile) {
-		return errors.New("supplied filename doesn't exist in answers")
+		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
 	execErr := copier.ExecUpdate(yamlFile)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
-			log.Error("uv is not installed")
+			log.Error("uv is not installed.")
 		}
 
 		return execErr

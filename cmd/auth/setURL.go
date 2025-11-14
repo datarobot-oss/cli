@@ -24,7 +24,7 @@ func SetURLAction() {
 	datarobotHost := config.GetBaseURL()
 
 	if len(datarobotHost) > 0 {
-		fmt.Printf("A DataRobot URL of %s is already present, do you want to overwrite? (y/N): ", datarobotHost)
+		fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite? (y/N): ", datarobotHost)
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
@@ -48,7 +48,7 @@ func SetURLAction() {
 	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL                 │")
 	fmt.Println("└────────────────────────────────────────────────────────┘")
 	fmt.Println("")
-	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL.")
+	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL in your browser.")
 	fmt.Println("")
 	fmt.Print("Enter your choice (1-4): ")
 
@@ -74,7 +74,7 @@ This command helps you choose the correct DataRobot environment:
   • Japan Cloud: https://app.jp.datarobot.com
   • Custom/On-Premise: Your organization's DataRobot URL
 
-💡 If you're unsure, check the URL you use to login to DataRobot in your browser.`,
+💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		SetURLAction()
 	},

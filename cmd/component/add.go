@@ -78,7 +78,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 var AddCmd = &cobra.Command{
 	Use:     "add [component_url]",
-	Short:   "Add component",
+	Short:   "Add component.",
 	PreRunE: PreRunE,
 	RunE:    RunE,
 }

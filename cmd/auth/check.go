@@ -54,7 +54,7 @@ var checkCmd = &cobra.Command{
 	Short: "Check if DataRobot credentials are valid.",
 	Long: `Verify that your DataRobot credentials are properly configured and valid.
 
-If you're in a project directory with a .env file, this will also check those credentials.`,
+If you're in a project directory with a '.env' file, this will also check those credentials.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		allValid := true
 
