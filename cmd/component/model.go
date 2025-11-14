@@ -74,8 +74,9 @@ func updateComponent(item ItemDelegate) tea.Cmd {
 	})
 }
 
+// TODO: Filter doesn't work
 func (i ItemDelegate) FilterValue() string {
-	return i.component.FileName
+	return strings.ToLower(i.component.FileName)
 }
 
 func (i ItemDelegate) Height() int                             { return 1 }
@@ -185,7 +186,7 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// If we've found zero components return error message that is handled by UI
 		if len(components) == 0 {
-			return errMsg{errors.New("No components were found.")} //nolint:revive,staticcheck
+			return errMsg{errors.New("No components were found.")}
 		}
 
 		items := make([]list.Item, 0, len(components))
@@ -247,6 +248,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 				} else {
 					m.list.CursorUp()
 				}
+
+				return m, nil
 			case "j", tea.KeyDown.String():
 				// If we're already at end of list go back to the beginning (accounting for pagination)
 				itemsLength := len(m.list.Items())
@@ -257,6 +260,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 				} else {
 					m.list.CursorDown()
 				}
+
+				return m, nil
 			case "i":
 				// TODO: [CFX-3996] What do we show here?
 				return m, m.showComponentInfo()
@@ -272,14 +277,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 					return m, cmd
 				}
-			case tea.KeyEscape.String(), "q":
-				return m, tea.Quit
 			default:
 				// If we have an error allow any keypress to exit screen/quit
 				if m.err != nil {
 					return m, tea.Quit
 				}
 			}
+
+			var cmd tea.Cmd
+
+			// Be sure to call list's Update method - to note, we're overriding the up/down keys
+			m.list, cmd = m.list.Update(msg)
+
+			return m, cmd
 		case errMsg:
 			m.err = msg.err
 			return m, nil
