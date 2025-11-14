@@ -37,6 +37,15 @@ with your default shell.
 
 					// If we have dr-cli cask installed then attempt upgrade (err indicates it wasn't found)
 					if err := brewCheckCmd.Run(); err == nil {
+						brewUpdateCmd := exec.Command(brewPath, "update", "datarobot-oss/tap")
+						brewUpdateCmd.Stdout = os.Stdout
+						brewUpdateCmd.Stderr = os.Stderr
+
+						if err := brewUpdateCmd.Run(); err != nil {
+							fmt.Fprintln(os.Stderr, "Error:", err)
+							os.Exit(1)
+						}
+
 						brewUpgradeCmd := exec.Command(brewPath, "upgrade", "--cask", "dr-cli")
 						brewUpgradeCmd.Stdout = os.Stdout
 						brewUpgradeCmd.Stderr = os.Stderr
