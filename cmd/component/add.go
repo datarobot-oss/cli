@@ -24,7 +24,7 @@ import (
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("Should be in repository root directory.")
+		return errors.New("You must be in the repository root directory.")
 	}
 
 	// Do we have the required tools?
@@ -54,11 +54,11 @@ func RunE(_ *cobra.Command, args []string) error {
 	}
 
 	if len(args) == 0 || args[0] == "" {
-		return errors.New("Component URL required.")
+		return errors.New("A component URL is required.")
 	}
 
 	for _, repoURL := range args {
-		fmt.Printf("Adding component: %s\n", repoURL)
+		fmt.Printf("Adding component: %s.\n", repoURL)
 
 		err := copier.ExecAdd(repoURL)
 		if err != nil {
@@ -68,7 +68,7 @@ func RunE(_ *cobra.Command, args []string) error {
 			return nil
 		}
 
-		fmt.Printf("Component %s added\n", repoURL)
+		fmt.Printf("Component %s added.\n", repoURL)
 	}
 
 	compose.Run(nil, nil)
@@ -78,7 +78,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 var AddCmd = &cobra.Command{
 	Use:     "add [component_url]",
-	Short:   "Add component.",
+	Short:   "Add a component.",
 	PreRunE: PreRunE,
 	RunE:    RunE,
 }

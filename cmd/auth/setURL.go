@@ -24,7 +24,7 @@ func SetURLAction() {
 	datarobotHost := config.GetBaseURL()
 
 	if len(datarobotHost) > 0 {
-		fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite? (y/N): ", datarobotHost)
+		fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite it? (y/N): ", datarobotHost)
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {

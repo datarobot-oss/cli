@@ -36,7 +36,7 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool {
 	if viper.GetBool("skip_auth") {
-		log.Warn("Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail.")
+		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
 
 		return true
 	}
@@ -48,7 +48,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 
 		datarobotHost = config.GetBaseURL()
 		if datarobotHost == "" {
-			log.Error("Failed to configure DataRobot URL")
+			log.Error("Failed to configure the DataRobot URL.")
 			return false
 		}
 	}
@@ -66,7 +66,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 
 	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error("Failed to retrieve API key", "error", err)
+		log.Error("Failed to retrieve API key.", "error", err)
 		return false
 	}
 
@@ -97,10 +97,10 @@ func LoginAction(ctx context.Context) error {
 	if token := config.GetAPIKey(); token != "" {
 		log.Info("Re-authenticating with DataRobot...")
 	} else {
-		log.Warn("No valid API key found. Retrieving a new one")
+		log.Warn("No valid API key found. Retrieving a new one...")
 	}
 
-	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'")
+	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'.")
 
 	// Clear existing token and get new one
 	viper.Set(config.DataRobotAPIKey, "")
@@ -123,8 +123,8 @@ func LoginAction(ctx context.Context) error {
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "🔐 Login to DataRobot using OAuth authentication.",
-	Long: `Login to DataRobot using OAuth authentication in your browser.
+	Short: "🔐 Log in to DataRobot using OAuth authentication.",
+	Long: `Log in to DataRobot using OAuth authentication in your browser.
 
 This command will:
   1. Open your default browser.

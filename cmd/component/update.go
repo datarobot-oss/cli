@@ -27,7 +27,7 @@ import (
 
 func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("Should be in repository root directory.")
+		return errors.New("You must be in the repository root directory.")
 	}
 
 	return nil
@@ -59,7 +59,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if doNotPrompt && updateFileName != "" {
 		err := runUpdate(updateFileName)
 		if err != nil {
-			fmt.Println("fatal:", err)
+			fmt.Println("Fatal:", err)
 			os.Exit(1)
 		}
 
@@ -84,7 +84,7 @@ func UpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
-		Short:   "Update component.",
+		Short:   "Update a component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
