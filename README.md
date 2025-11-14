@@ -1,3 +1,29 @@
+<p align="center">
+  <a href="https://github.com/datarobot-community/datarobot-agent-templates">
+    <img src="./.github/datarobot_logo.avif" width="600px" alt="DataRobot Logo"/>
+  </a>
+</p>
+<p align="center">
+    <span style="font-size: 1.5em; font-weight: bold; display: block;">DataRobot CLI</span>
+</p>
+
+<p align="center">
+  <a href="https://datarobot.com">Homepage</a>
+  ·
+  <a href="https://docs.datarobot.com/">Documentation</a>
+  ·
+  <a href="https://docs.datarobot.com/en/docs/get-started/troubleshooting/general-help.html">Support</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/datarobot-oss/cli/tags">
+    <img src="https://img.shields.io/github/v/tag/datarobot-oss/cli?label=version" alt="Latest Release">
+  </a>
+  <a href="LICENSE.txt">
+    <img src="https://img.shields.io/github/license/datarobot-oss/cli" alt="License">
+  </a>
+</p>
+
 # DataRobot CLI
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/datarobot/cli)](https://goreportcard.com/report/github.com/datarobot/cli)
@@ -15,37 +41,61 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 - 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 - 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
-## Table of Contents
+## Table of contents
 
 - [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [Commands](#commands)
-- [Shell Completion](#shell-completion)
+- [Quick start](#quick-start)
+- [Next steps](#next-steps)
 - [Contributing](#contributing)
-- [License](#license)
 
 ## Installation
 
-### Quick Install (Recommended)
-
 Install the latest version with a single command:
 
-#### macOS/Linux
+### macOS/Linux
 
 ```bash
 curl https://cli.datarobot.com/install | sh
 ```
 
-#### Windows (PowerShell)
+### Windows (PowerShell)
 
 ```powershell
 irm https://cli.datarobot.com/winstall | iex
 ```
 
-### Install Specific Version
+<details><summary><em>Alternative installation methods</em></summary>
+<br/>
+The following are alternative installation methods for the DataRobot CLI.
+You can choose to install a specific version or build and install from source.
 
-#### macOS/Linux (Specific Version)
+### Install specific version
+
+If you'd like to install a specific version, you can do so by passing the version number to the installer, as shown below:
+
+#### macOS/Linux
+
+```bash
+curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
+```
+
+#### Windows (PowerShell)
+
+```powershell
+$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
+```
+
+### Build and install from source
+
+If you would like to build and install from source, you can do so by following the instructions below:
+
+#### Prerequisites
+
+- Go 1.25.3 or later (for building from source).
+- Git.
+- [Task](https://taskfile.dev/) (for development and task running).
+
+#### Build from source
 
 ```bash
 curl https://cli.datarobot.com/install | sh -s -- v0.1.0
@@ -57,64 +107,75 @@ curl https://cli.datarobot.com/install | sh -s -- v0.1.0
 $env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
 ```
 
+</details>
 
 ## Quick start
 
-### 1. Set up authentication
+Now that you have installed the DataRobot CLI, you can start using it to manage your DataRobot applications.
+The following sections will walk you through configuring the CLI, setting up a template, and running tasks.
 
-Configure your DataRobot credentials:
+### Set up authentication
+
+First, configure your DataRobot credentials by setting your DataRobot URL.
+Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for steps to locate your DataRobot URL, also known as your DataRobot API endpoint.
 
 ```bash
 # Set your DataRobot URL (interactive)
-dr auth set-url
+dr auth set-url # Or specify directly: dr auth set-url [YOUR_DATAROBOT_API_ENDPOINT]
+```
 
-# Or specify directly
-dr auth set-url https://app.datarobot.com
+Once you have configured the URL, log in to DataRobot. This command will open your default web browser to the DataRobot login page.
 
-# Log in to DataRobot (opens browser for OAuth)
+```bash
 dr auth login
 ```
 
-### 2. Set up a template
+Once you have logged in, the DataRobot web application prompts you to authorize the CLI.
+Click "Authorize" to complete the authorization process, then close the browser window once it is complete.
 
-Use the interactive setup wizard to clone and configure a template:
+### Set up a template
+
+Next, load the interactive setup wizard to clone and configure a template:
 
 ```bash
 dr templates setup
 ```
 
-Follow the prompts to select a template, clone it, and configure environment variables.
+After a few moments, the setup wizard displays the application templates available:
 
-### 3. Start your application
+<img src="./images/templates-list.png" alt="Templates list" width="500px"/>
 
-Once configured, launch your application with the quickstart command:
+> [!NOTE]
+> You can navigate through the list of templates using the arrow keys, or filter by pressing the `/` key and entering a search term. The setup wizard will only display templates that are available to you.
+
+Select a template by pressing the `Enter` key.
+At the subsequent prompt, specify the desired directory name for the template and press `Enter` to have the setup wizard clone the template repository to your local machine.
+
+Follow the instructions when prompted to continue configuring the template.
+The prompts vary depending on which template you selected.
+When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
+
+### Run tasks
+
+Now that you've cloned and configured a template, you can start running tasks defined in the template Taskfile.
+First, navigate to the template directory:
 
 ```bash
-dr start
+cd [TEMPLATE_NAME]
 ```
 
-This will either execute your template's quickstart script or guide you through the setup process if one hasn't been completed yet.
-
-### 4. Run tasks
-
-Execute tasks defined in your template Taskfile:
+From there, you can list the available tasks:
 
 ```bash
-# List available tasks
 dr run --list
-
-# Run a specific task
-dr run dev
-
-# Run multiple tasks in parallel
-dr run lint test --parallel
 ```
 
-## Documentation
+## Next steps
 
-Comprehensive documentation is available in the [docs/](docs/) directory:
+From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+See the links below for specific details:
 
-- **[User guide](docs/user-guide/)**&mdash;complete usage guide for all features.
+- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide for all features.
   - [Getting started](docs/user-guide/getting-started.md)
   - [Authentication](docs/user-guide/authentication.md)
   - [Working with templates](docs/user-guide/templates.md)
@@ -135,143 +196,15 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
 
 - **[Development guide](docs/development/)**&mdash;for contributors, see [CONTRIBUTING.md](CONTRIBUTING.md)
 
-## Commands
-
-### Main commands
-
-| Command | Description |
-|---------|-------------|
-| `dr auth` | Authentication management (login, logout, set-url). |
-| `dr templates` | Template operations (list, clone, setup, status). |
-| `dr run` | Execute application tasks. |
-| `dr dotenv` | Manage environment variables interactively. |
-| `dr self` | CLI utility commands (update, version, completion). |
-| `dr completion` | Generate shell completion scripts. |
-| `dr version` | Show version information. |
-
-### Examples
-
-```bash
-# Authentication
-dr auth login
-dr auth logout
-dr auth set-url https://app.datarobot.com
-
-# Template management
-dr templates list                    # List available templates.
-dr templates clone TEMPLATE_NAME     # Clone a specific template.
-dr templates setup                   # Interactive template setup wizard.
-dr templates status                  # Show current template status.
-
-# Environment configuration
-dr dotenv                           # Interactive environment editor.
-dr dotenv --wizard                  # Configuration wizard mode.
-
-# Task execution
-dr run --list                       # List available tasks.
-dr run dev                          # Run development server.
-dr run build deploy --parallel      # Run multiple tasks in parallel.
-dr run test --watch                 # Run tests in watch mode.
-
-# CLI management
-dr self update                      # Update CLI to latest version.
-dr self version                     # Show version information.
-
-# Get help
-dr --help
-dr templates --help
-dr run --help
-```
-
-## Shell completion
-
-The CLI supports shell completions for Bash, Zsh, Fish, and PowerShell with automatic installation and configuration.
-
-### Quick setup (Recommended)
-
-The easiest way to install completions is using the interactive installer:
-
-```bash
-# Install completions for your current shell
-dr completion install --yes
-
-# Preview what would be installed (default behavior)
-dr completion install
-
-# Install for a specific shell
-dr completion install bash --yes
-dr completion install zsh --yes
-```
-
-The installer will:
-
-- Detect your shell automatically
-- Install completions to the correct location
-- Configure your shell profile
-- Clear completion caches
-
-**Note:** Installation scripts (`install.sh` and `install.ps1`) automatically prompt to install completions during initial setup.
-
-### Manual setup
-
-If you prefer manual installation, generate the completion script:
-
-#### Bash
-
-```bash
-# Linux
-dr completion bash | sudo tee /etc/bash_completion.d/dr
-
-# macOS (requires bash-completion from Homebrew)
-dr completion bash > $(brew --prefix)/etc/bash_completion.d/dr
-```
-
-#### Zsh
-
-```bash
-# Oh-My-Zsh
-dr completion zsh > ~/.oh-my-zsh/custom/completions/_dr
-
-# Standard Zsh
-dr completion zsh > ~/.zsh/completions/_dr
-```
-
-#### Fish
-
-```bash
-dr completion fish > ~/.config/fish/completions/dr.fish
-```
-
-#### PowerShell
-
-```powershell
-dr completion powershell | Out-String | Invoke-Expression
-# To persist, add to your PowerShell profile
-```
-
-### Uninstalling completions
-
-```bash
-dr completion uninstall --yes
-```
-
-See the [Shell Completion Guide](docs/user-guide/shell-completions.md) for detailed instructions and troubleshooting.
-
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 
-- Development environment setup
-- Coding standards and guidelines
-- Testing requirements
-- Submitting pull requests
-- Release process
-
-## License
-
-Copyright 2025 DataRobot, Inc. and its affiliates. All rights reserved.
-
-This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt) for details.
+- Code of conduct.
+- Development workflow.
+- Submitting pull requests.
+- Coding standards.
+- Testing requirements.
 
 ## Support
 
@@ -284,7 +217,7 @@ This is proprietary source code of DataRobot, Inc. See [LICENSE.txt](LICENSE.txt
 
 Built with:
 
-- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework
-- [Viper](https://github.com/spf13/viper)&mdash;configuration management
-- [Task](https://taskfile.dev/)&mdash;task runner
+- [Cobra](https://github.com/spf13/cobra)&mdash;CLI framework.
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
+- [Viper](https://github.com/spf13/viper)&mdash;configuration management.
+- [Task](https://taskfile.dev/)&mdash;task runner.
