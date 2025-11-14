@@ -185,7 +185,7 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// If we've found zero components return error message that is handled by UI
 		if len(components) == 0 {
-			return errMsg{errors.New("No components were found.")} //nolint:revive,staticcheck
+			return errMsg{errors.New("No components were found.")}
 		}
 
 		items := make([]list.Item, 0, len(components))
