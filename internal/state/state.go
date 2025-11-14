@@ -9,10 +9,12 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -37,15 +39,27 @@ type State struct {
 }
 
 // GetStatePath determines the appropriate location for the state file.
-// The state file is stored in .datarobot/cli directory within the current repository.
-func GetStatePath() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
+// The state file is stored in .datarobot/cli directory within a git repository.
+// If dir is provided, it will be used instead of the current working directory.
+// Returns an error if the target directory is not inside a git repository.
+func GetStatePath(dir string) (string, error) {
+	targetDir := dir
+	if targetDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+
+		targetDir = cwd
+	}
+
+	// Verify we're inside a git repository
+	if !repo.IsInGitRepo(targetDir) {
+		return "", errors.New("state file can only be created inside a git repository")
 	}
 
 	// Use local .datarobot/cli directory
-	localPath := filepath.Join(cwd, localStateDir, cliSubDir)
+	localPath := filepath.Join(targetDir, localStateDir, cliSubDir)
 	statePath := filepath.Join(localPath, stateFileName)
 
 	return statePath, nil
@@ -54,7 +68,7 @@ func GetStatePath() (string, error) {
 // Load reads the state file from the appropriate location.
 // Returns nil if the file doesn't exist (first run).
 func Load() (*State, error) {
-	statePath, err := GetStatePath()
+	statePath, err := GetStatePath("")
 	if err != nil {
 		return nil, err
 	}
@@ -80,17 +94,18 @@ func Load() (*State, error) {
 
 // Update saves the state file and automatically sets the CLIVersion.
 // This should be the preferred method for saving state.
-func (s *State) Update() error {
+// If dir is provided, the state will be saved to that directory instead of the current working directory.
+func (s *State) Update(dir string) error {
 	s.CLIVersion = version.Version
 
-	return Save(s)
+	return Save(s, dir)
 }
 
 // Save writes the state file to the appropriate location.
 // Creates parent directories if they don't exist.
 // Note: Consider using Update() instead, which automatically sets CLIVersion.
-func Save(state *State) error {
-	statePath, err := GetStatePath()
+func Save(state *State, dir string) error {
+	statePath, err := GetStatePath(dir)
 	if err != nil {
 		return err
 	}
@@ -130,11 +145,12 @@ func UpdateAfterSuccessfulRun() error {
 
 	existingState.LastStart = time.Now().UTC()
 
-	return existingState.Update()
+	return existingState.Update("")
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
-func UpdateAfterDotenvSetup() error {
+// If dir is provided, the state will be saved to that directory instead of the current working directory.
+func UpdateAfterDotenvSetup(dir string) error {
 	// Load existing state to preserve other fields
 	existingState, err := Load()
 	if err != nil {
@@ -148,11 +164,12 @@ func UpdateAfterDotenvSetup() error {
 	now := time.Now().UTC()
 	existingState.LastDotenvSetup = &now
 
-	return existingState.Update()
+	return existingState.Update(dir)
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup() error {
+// If dir is provided, the state will be saved to that directory instead of the current working directory.
+func UpdateAfterTemplatesSetup(dir string) error {
 	// Load existing state to preserve other fields
 	existingState, err := Load()
 	if err != nil {
@@ -166,7 +183,7 @@ func UpdateAfterTemplatesSetup() error {
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
 
-	return existingState.Update()
+	return existingState.Update(dir)
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
