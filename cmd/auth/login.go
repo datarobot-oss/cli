@@ -123,12 +123,12 @@ func LoginAction(ctx context.Context) error {
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "🔐 Login to DataRobot",
+	Short: "🔐 Login to DataRobot using OAuth authentication.",
 	Long: `Login to DataRobot using OAuth authentication in your browser.
 
 This command will:
   1. Open your default browser.
-  2. Redirect you to DataRobot login page.
+  2. Redirect you to the DataRobot login page.
   3. Securely store your API key for future CLI operations.`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		err := LoginAction(cmd.Context())

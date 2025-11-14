@@ -25,7 +25,7 @@ func LogoutAction() error {
 
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "Logout from DataRobot",
+	Short: "Logout from DataRobot.",
 	Long:  `Logout from DataRobot and clear the stored API key.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		err := LogoutAction()
