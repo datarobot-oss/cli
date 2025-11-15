@@ -118,7 +118,9 @@ func runUpdate(yamlFile string) error {
 		return errors.New("supplied filename doesn't exist in answers")
 	}
 
-	execErr := copier.ExecUpdate(yamlFile)
+	quiet := false
+
+	execErr := copier.ExecUpdate(yamlFile, quiet)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
