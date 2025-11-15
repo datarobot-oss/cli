@@ -39,7 +39,7 @@ func DetectShell() (string, error) {
 		return string(PowerShell), nil
 	}
 
-	return "", errors.New("could not detect shell. Please set SHELL environment variable")
+	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
 }
 
 func ResolveShell(specifiedShell string) (string, error) {

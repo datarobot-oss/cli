@@ -30,7 +30,7 @@ func supportedShells() []string {
 func CompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
-		Short: "Generate or manage shell completion scripts",
+		Short: "Generate or manage shell completion scripts.",
 		Long: `Generate shell completion script for supported shells. This will be output
 		to stdout so it can be redirected to the appropriate location.
 
@@ -49,7 +49,7 @@ Bash:
 Zsh:
 
   # If shell completion is not already enabled in your environment you will need
-  # to enable it.  You can execute the following once:
+  # to enable it. You can execute the following to do so:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
   # Linux or MacOS:
@@ -88,7 +88,7 @@ PowerShell:
 			case internalShell.PowerShell:
 				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
 			default:
-				return fmt.Errorf("unsupported shell %q", args[0])
+				return fmt.Errorf("Unsupported shell %q.", args[0])
 			}
 		},
 	}

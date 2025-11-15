@@ -36,19 +36,19 @@ func CreateConfigFileDirIfNotExists() error {
 	}
 
 	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("error checking config file: %w", err)
+		return fmt.Errorf("Error checking config file: %w", err)
 	}
 
 	// file was not found, let's create it
 
 	err = os.MkdirAll(defaultConfigFileDir, os.ModePerm)
 	if err != nil {
-		return fmt.Errorf("failed to create config file directory: %w", err)
+		return fmt.Errorf("Failed to create config file directory: %w", err)
 	}
 
 	_, err = os.Create(defaultConfigFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
+		return fmt.Errorf("Failed to create config file: %w", err)
 	}
 
 	return nil
@@ -62,7 +62,7 @@ func ReadConfigFile(filePath string) error {
 
 	if filePath != "" {
 		if !strings.HasSuffix(filePath, ".yaml") && !strings.HasSuffix(filePath, ".yml") {
-			return fmt.Errorf("config file must have .yaml or .yml extension: %s", filePath)
+			return fmt.Errorf("Config file must have .yaml or .yml extension: %s.", filePath)
 		}
 
 		dir := filepath.Dir(filePath)
@@ -89,7 +89,7 @@ func ReadConfigFile(filePath string) error {
 	if viper.GetBool("debug") {
 		output, err := DebugViperConfig()
 		if err != nil {
-			return fmt.Errorf("failed to generate debug config output: %w", err)
+			return fmt.Errorf("Failed to generate debug config output: %w", err)
 		}
 
 		fmt.Print(output)

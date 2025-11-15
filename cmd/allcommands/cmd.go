@@ -20,8 +20,8 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "all-commands",
-		Short: "Display all available commands and their flags in tree format",
-		Long:  "Display all available commands, subcommands, and their flags in a tree format",
+		Short: "Display all available commands and their flags, in tree format.",
+		Long:  "Display all available commands, subcommands, and their flags, in a tree format.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			output := GenerateCommandTree(cmd.Root())

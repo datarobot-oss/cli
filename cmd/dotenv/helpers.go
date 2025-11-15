@@ -25,7 +25,7 @@ func generateRandomSecret(length int) (string, error) {
 
 	_, err := rand.Read(bytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		return "", fmt.Errorf("Failed to generate random bytes: %w", err)
 	}
 
 	return base64.URLEncoding.EncodeToString(bytes)[:length], nil
@@ -35,12 +35,12 @@ func generateRandomSecret(length int) (string, error) {
 func ensureInRepo() (string, error) {
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil || repoRoot == "" {
-		fmt.Println(tui.ErrorStyle.Render("Error:") + " not inside a git repository")
+		fmt.Println(tui.ErrorStyle.Render("Error: ") + "Not inside a git repository.")
 		fmt.Println()
 		fmt.Println("Run this command from within an application template git repository.")
 		fmt.Println("To create a new template, run " + tui.BaseTextStyle.Render("`dr templates setup`") + ".")
 
-		return "", errors.New("not in git repository")
+		return "", errors.New("Not in git repository.")
 	}
 
 	return repoRoot, nil
@@ -57,11 +57,11 @@ func ensureInRepoWithDotenv() (string, error) {
 	dotenv := filepath.Join(repoRoot, ".env")
 
 	if _, err := os.Stat(dotenv); os.IsNotExist(err) {
-		fmt.Printf("%s: .env file does not exist at %s\n", tui.ErrorStyle.Render("Error"), dotenv)
+		fmt.Printf("%s: '.env' file does not exist at %s\n", tui.ErrorStyle.Render("Error"), dotenv)
 		fmt.Println()
 		fmt.Println("Run " + tui.BaseTextStyle.Render("`dr dotenv setup`") + " to create one.")
 
-		return "", errors.New(".env file does not exist")
+		return "", errors.New("'.env' file does not exist.")
 	}
 
 	return dotenv, nil

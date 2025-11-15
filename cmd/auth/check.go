@@ -26,24 +26,24 @@ func checkCLICredentials() bool {
 
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
-		fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured"))
+		fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
 		fmt.Print(tui.BaseTextStyle.Render("Run "))
 		fmt.Print(tui.InfoStyle.Render("dr auth set-url"))
-		fmt.Println(tui.BaseTextStyle.Render(" to configure your DataRobot URL"))
+		fmt.Println(tui.BaseTextStyle.Render(" to configure your DataRobot URL."))
 
 		allValid = false
 	}
 
 	cliToken := config.GetAPIKey()
 	if cliToken == "" {
-		fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config"))
+		fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
 		fmt.Print(tui.BaseTextStyle.Render("Run "))
 		fmt.Print(tui.InfoStyle.Render("dr auth login"))
-		fmt.Println(tui.BaseTextStyle.Render(" to authenticate"))
+		fmt.Println(tui.BaseTextStyle.Render(" to authenticate."))
 
 		allValid = false
 	} else {
-		fmt.Println(tui.BaseTextStyle.Render("✅ CLI authentication is valid"))
+		fmt.Println(tui.BaseTextStyle.Render("✅ CLI authentication is valid."))
 	}
 
 	return allValid
@@ -51,10 +51,10 @@ func checkCLICredentials() bool {
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Check if DataRobot credentials are valid",
+	Short: "Check if DataRobot credentials are valid.",
 	Long: `Verify that your DataRobot credentials are properly configured and valid.
 
-If you're in a project directory with a .env file, this will also check those credentials.`,
+If you're in a project directory with a '.env' file, this will also check those credentials.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		allValid := true
 
@@ -72,23 +72,23 @@ If you're in a project directory with a .env file, this will also check those cr
 
 		_, statErr := os.Stat(dotenvPath)
 		if statErr != nil {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️ No .env file found in repository"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No '.env' file found in repository."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-			fmt.Println(tui.BaseTextStyle.Render(" to create one"))
+			fmt.Println(tui.BaseTextStyle.Render(" to create one."))
 			os.Exit(1)
 		}
 
 		fileContents, readErr := os.ReadFile(dotenvPath)
 		if readErr != nil {
-			fmt.Println(tui.BaseTextStyle.Render("❌ Failed to read .env file"))
+			fmt.Println(tui.BaseTextStyle.Render("❌ Failed to read '.env' file."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-			fmt.Println(tui.BaseTextStyle.Render(" to create one"))
+			fmt.Println(tui.BaseTextStyle.Render(" to create one."))
 			os.Exit(1)
 		}
 
@@ -112,44 +112,44 @@ If you're in a project directory with a .env file, this will also check those cr
 		}
 
 		if envToken == "" {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_API_TOKEN found in .env"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_API_TOKEN found in '.env'."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-			fmt.Println(tui.BaseTextStyle.Render(" to configure the .env file"))
+			fmt.Println(tui.BaseTextStyle.Render(" to configure the '.env' file."))
 			os.Exit(1)
 		}
 
 		if envEndpoint == "" {
-			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_ENDPOINT found in .env"))
+			fmt.Println(tui.BaseTextStyle.Render("⚠️ No DATAROBOT_ENDPOINT found in '.env'."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr start"))
 			fmt.Print(tui.BaseTextStyle.Render(" or "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-			fmt.Println(tui.BaseTextStyle.Render(" to configure the .env file"))
+			fmt.Println(tui.BaseTextStyle.Render(" to configure the '.env' file."))
 			os.Exit(1)
 		}
 
 		// Extract base URL from the endpoint for token verification
 		envBaseURL, err := config.SchemeHostOnly(envEndpoint)
 		if err != nil {
-			fmt.Println(tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in .env"))
+			fmt.Println(tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in '.env'."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
-			fmt.Println(tui.BaseTextStyle.Render(" to fix the configuration"))
+			fmt.Println(tui.BaseTextStyle.Render(" to fix the configuration."))
 			os.Exit(1)
 		}
 
 		tokenValid, _ := config.VerifyToken(envBaseURL, envToken)
 		if !tokenValid {
-			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in .env is invalid or expired"))
+			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
-			fmt.Println(tui.BaseTextStyle.Render(" to refresh credentials"))
+			fmt.Println(tui.BaseTextStyle.Render(" to refresh credentials."))
 			os.Exit(1)
 		}
-		fmt.Println(tui.BaseTextStyle.Render("✅ .env credentials are valid"))
+		fmt.Println(tui.BaseTextStyle.Render("✅ '.env' credentials are valid."))
 
 		if !checkCLICredentials() {
 			allValid = false

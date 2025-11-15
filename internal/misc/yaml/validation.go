@@ -20,12 +20,12 @@ import (
 func IsValidYAML(filePath string) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return fmt.Errorf("Failed to read file: %w", err)
 	}
 
 	var content interface{}
 	if err := yaml.Unmarshal(data, &content); err != nil {
-		return fmt.Errorf("invalid YAML format: %w", err)
+		return fmt.Errorf("Invalid YAML format: %w", err)
 	}
 
 	return nil

@@ -167,7 +167,7 @@ cd [TEMPLATE_NAME]
 From there, you can list the available tasks:
 
 ```bash
-dr run --list
+dr run
 ```
 
 ## Next steps

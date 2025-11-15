@@ -22,8 +22,8 @@ func Cmd() *cobra.Command {
 
 Manage your DataRobot credentials and connection settings:
   • Configure your DataRobot environment URL
-  • Login securely using OAuth
-  • Logout and clear stored credentials
+  • Log in using OAuth authentication
+  • Log out and clear stored credentials
 
 🚀 Quick start: dr auth set-url && dr auth login`,
 	}

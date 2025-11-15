@@ -108,7 +108,7 @@ func TestCompletionGeneration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rootCmd := &cobra.Command{
 				Use:   "dr",
-				Short: "DataRobot CLI",
+				Short: "DataRobot CLI.",
 			}
 
 			var buf bytes.Buffer
@@ -143,7 +143,7 @@ func TestCompletionGeneration(t *testing.T) {
 func TestCompletionInvalidShell(t *testing.T) {
 	rootCmd := &cobra.Command{
 		Use:   "dr",
-		Short: "DataRobot CLI",
+		Short: "DataRobot CLI.",
 	}
 
 	cmd := CompletionCmd()

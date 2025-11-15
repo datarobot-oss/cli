@@ -43,7 +43,7 @@ with your default shell.
 						brewUpdateCmd.Stderr = os.Stderr
 
 						if err := brewUpdateCmd.Run(); err != nil {
-							fmt.Fprintln(os.Stderr, "Error:", err)
+							fmt.Fprintln(os.Stderr, "Error: ", err)
 							os.Exit(1)
 						}
 
@@ -52,7 +52,7 @@ with your default shell.
 						brewUpgradeCmd.Stderr = os.Stderr
 
 						if err := brewUpgradeCmd.Run(); err != nil {
-							fmt.Fprintln(os.Stderr, "Error:", err)
+							fmt.Fprintln(os.Stderr, "Error: ", err)
 							os.Exit(1)
 						}
 
@@ -64,7 +64,7 @@ with your default shell.
 			// Now, assuming we haven't upgraded via brew handle with OS specific command
 			shell, err := internalShell.DetectShell()
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "Error while determining shell:", err)
+				fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
 				os.Exit(1)
 
 				return

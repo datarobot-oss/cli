@@ -20,7 +20,7 @@ func Add(repoURL string) *exec.Cmd {
 
 func ExecAdd(repoURL string) error {
 	if repoURL == "" {
-		return errors.New("repository URL is missing")
+		return errors.New("Repository URL is missing.")
 	}
 
 	cmd := Add(repoURL)
@@ -37,7 +37,7 @@ func Update(yamlFile string) *exec.Cmd {
 
 func ExecUpdate(yamlFile string) error {
 	if yamlFile == "" {
-		return errors.New("path to yaml file is missing")
+		return errors.New("Path to YAML file is missing.")
 	}
 
 	cmd := Update(yamlFile)

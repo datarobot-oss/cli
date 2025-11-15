@@ -30,8 +30,8 @@ var Cmd = &cobra.Command{
   3️⃣  Configure your environment
   4️⃣  Get you ready to build!
 
-⏱️  Takes about 3-5 minutes
-🎉  You'll have a working AI app at the end
+⏱️ Takes about 3-5 minutes
+🎉 You'll have a working AI app at the end
 
 💡 Perfect for first-time users or someone starting a new project.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -49,7 +49,7 @@ func RunTeaFromStart(ctx context.Context, fromStartCommand bool) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
-			fmt.Println("fatal:", err)
+			fmt.Println("fatal: ", err)
 			os.Exit(1)
 		}
 		defer f.Close()

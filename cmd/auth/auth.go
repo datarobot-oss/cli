@@ -71,16 +71,16 @@ func waitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	select {
 	// Wait for the key from the handler
 	case apiKey := <-apiKeyChan:
-		fmt.Println("Successfully consumed API Key from API Request")
+		fmt.Println("Successfully consumed API key from API request")
 		// Now shut down the server after key is received
 		if err := server.Shutdown(ctx); err != nil {
-			return "", fmt.Errorf("error during shutdown: %v", err)
+			return "", fmt.Errorf("Error during shutdown: %v", err)
 		}
 
 		return apiKey, nil
 	case <-ctx.Done():
 		fmt.Println("\nCtrl-C received, exiting...")
-		return "", errors.New("interrupt request received")
+		return "", errors.New("Interrupt request received.")
 	}
 }
 

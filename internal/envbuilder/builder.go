@@ -130,7 +130,7 @@ func (up UserPrompt) ShouldAsk() bool {
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
-		return nil, fmt.Errorf("failed to discover task yaml files: %w", err)
+		return nil, fmt.Errorf("Failed to discover task yaml files: %w", err)
 	}
 
 	if len(yamlFiles) == 0 {
@@ -159,13 +159,13 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 func filePrompts(yamlFile string) ([]UserPrompt, error) {
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read task yaml file %s: %w", yamlFile, err)
+		return nil, fmt.Errorf("Failed to read task yaml file %s: %w", yamlFile, err)
 	}
 
 	var fileParsed ParsedYaml
 
 	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task yaml file %s: %w", yamlFile, err)
+		return nil, fmt.Errorf("Failed to unmarshal task yaml file %s: %w", yamlFile, err)
 	}
 
 	roots := rootSections(fileParsed)

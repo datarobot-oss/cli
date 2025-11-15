@@ -62,8 +62,8 @@ type stepErrorMsg struct {
 
 // err messages used in the start command.
 const (
-	errNotInRepo          = "not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository"
-	errScriptSearchFailed = "failed to search for quickstart script: %w"
+	errNotInRepo          = "Not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository"
+	errScriptSearchFailed = "Failed to search for quickstart script: %w"
 )
 
 var (
@@ -259,7 +259,7 @@ func (m Model) View() string {
 
 	// Display error or status message
 	if m.err != nil {
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error()))
 		sb.WriteString("\n")
 		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
 		sb.WriteString("\n")
@@ -328,7 +328,7 @@ func checkPrerequisites(_ *Model) tea.Msg {
 // }
 
 func findQuickstart(m *Model) tea.Msg {
-	// If --yes flag is set, don't wait for confirmation
+	// If '--yes' flag is set, don't wait for confirmation
 	waitForConfirmation := !m.opts.AnswerYes
 
 	// If we are in a DataRobot repository, look for a quickstart script in the standard location

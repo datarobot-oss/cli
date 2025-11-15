@@ -41,7 +41,7 @@ func (vf *Format) Set(s string) error {
 		return nil
 	}
 
-	return fmt.Errorf("invalid format %q (must be %q or %q)",
+	return fmt.Errorf("Invalid format %q (must be %q or %q).",
 		s, FormatJSON, FormatText)
 }
 
@@ -93,7 +93,7 @@ func getVersion(opts versionOptions) (string, error) {
 	if opts.format == FormatJSON {
 		b, err := json.Marshal(version.Info)
 		if err != nil {
-			return "", fmt.Errorf("failed to marshal version info to JSON: %w", err)
+			return "", fmt.Errorf("Failed to marshal version info to JSON: %w", err)
 		}
 
 		return string(b), nil
