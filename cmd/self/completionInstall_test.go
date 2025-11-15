@@ -175,7 +175,7 @@ func TestGetInstallFunc(t *testing.T) {
 			shell:       internalShell.Shell("invalid"),
 			force:       false,
 			expectError: true,
-			errorText:   "unsupported shell",
+			errorText:   "Unsupported shell",
 		},
 	}
 
@@ -584,7 +584,7 @@ func TestPerformUninstall(t *testing.T) {
 			name:        "invalid shell",
 			shell:       internalShell.Shell("invalid"),
 			expectError: true,
-			errorText:   "unsupported shell",
+			errorText:   "Unsupported shell",
 		},
 	}
 

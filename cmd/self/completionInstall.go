@@ -74,15 +74,15 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
 				shell = args[0]
 			}
 
-		// Determine if we're in dry-run mode
-		// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
-		effectiveDryRun := dryRun
-		if yes && !cmd.Flags().Changed("dry-run") {
-			effectiveDryRun = false
-		} else if !yes && !cmd.Flags().Changed("dry-run") {
-			// Default to dry-run if '--yes' is not specified
-			effectiveDryRun = true
-		}
+			// Determine if we're in dry-run mode
+			// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
+			effectiveDryRun := dryRun
+			if yes && !cmd.Flags().Changed("dry-run") {
+				effectiveDryRun = false
+			} else if !yes && !cmd.Flags().Changed("dry-run") {
+				// Default to dry-run if '--yes' is not specified
+				effectiveDryRun = true
+			}
 
 			return runCompletionInstall(cmd.Root(), shell, force, yes, effectiveDryRun)
 		},
@@ -539,15 +539,15 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 				shell = args[0]
 			}
 
-		// Determine if we're in dry-run mode
-		// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
-		effectiveDryRun := dryRun
-		if yes && !cmd.Flags().Changed("dry-run") {
-			effectiveDryRun = false
-		} else if !yes && !cmd.Flags().Changed("dry-run") {
-			// Default to dry-run if '--yes' is not specified
-			effectiveDryRun = true
-		}
+			// Determine if we're in dry-run mode
+			// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
+			effectiveDryRun := dryRun
+			if yes && !cmd.Flags().Changed("dry-run") {
+				effectiveDryRun = false
+			} else if !yes && !cmd.Flags().Changed("dry-run") {
+				// Default to dry-run if '--yes' is not specified
+				effectiveDryRun = true
+			}
 
 			return runCompletionUninstall(shell, yes, effectiveDryRun)
 		},
