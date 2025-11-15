@@ -23,33 +23,30 @@ jobs:
         with:
           go-version: '1.25.3'
 
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.6.0
+          args: --timeout=5m
+
+      - name: GoReleaser Check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check
+
       - name: Install Taskfile
         uses: arduino/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # cache go modules
-      - uses: actions/cache@v4
-        with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          # * Build cache (Mac)
-          # * Build cache (Windows)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/Library/Caches/go-build
-            %LocalAppData%\go-build
-            bin
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Run Golang Lint Command
+      - name: Run all checks
         run: |
           task lint
+
+
 
   test:
     runs-on: ubuntu-latest
