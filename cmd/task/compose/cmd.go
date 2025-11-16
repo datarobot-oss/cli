@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -19,9 +20,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var templatePath string
+
 func Run(_ *cobra.Command, _ []string) {
 	taskfileName := "Taskfile.yaml"
-	discovery := task.NewTaskDiscovery(taskfileName)
+	discovery := createDiscovery(taskfileName)
 
 	taskFilePath, err := discovery.Discover(".", 2)
 	if err != nil {
@@ -61,10 +64,60 @@ func Run(_ *cobra.Command, _ []string) {
 	fmt.Println("Added " + taskfileIgnore + " line to .gitignore")
 }
 
+func createDiscovery(taskfileName string) *task.Discovery {
+	// Check for .Taskfile.template in the root directory if no template specified
+	autoTemplatePath := ".Taskfile.template"
+
+	if templatePath == "" {
+		if _, err := os.Stat(autoTemplatePath); err == nil {
+			templatePath = autoTemplatePath
+			fmt.Printf("Using auto-discovered template: %s\n", autoTemplatePath)
+		}
+	}
+
+	// If template is specified or found, use compose mode
+	if templatePath != "" {
+		absPath, err := validateTemplatePath(templatePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		return task.NewComposeDiscovery(taskfileName, absPath)
+	}
+
+	return task.NewTaskDiscovery(taskfileName)
+}
+
+func validateTemplatePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving template path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("template file not found: %s", absPath)
+	}
+
+	return absPath, nil
+}
+
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "compose",
 		Short: "Compose Taskfile.yaml from multiple files in subdirectories",
-		Run:   Run,
+		Long: `Compose a root Taskfile.yaml by discovering Taskfiles in subdirectories.
+
+By default, generates a simple Taskfile with includes only. 
+
+If a .Taskfile.template file is found in the root directory, it will be used
+automatically to generate a more comprehensive Taskfile with aggregated tasks.
+
+You can also specify a custom template with the --template flag.`,
+		Run: Run,
 	}
+
+	cmd.Flags().StringVarP(&templatePath, "template", "t", "", "Path to custom Taskfile template")
+
+	return cmd
 }

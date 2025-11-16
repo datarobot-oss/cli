@@ -33,9 +33,26 @@ type componentInclude struct {
 	Dir      string
 }
 
+type devPort struct {
+	Name string
+	Port int
+}
+
 type taskfileTmplData struct {
-	Hash     string
-	Includes []componentInclude
+	Includes            []componentInclude
+	HasLint             bool
+	LintComponents      []string
+	HasInstall          bool
+	InstallComponents   []string
+	HasTest             bool
+	TestComponents      []string
+	HasDev              bool
+	DevComponents       []string
+	DevPorts            []devPort
+	HasDeploy           bool
+	DeployComponents    []string
+	HasDeployDev        bool
+	DeployDevComponents []string
 }
 
 var (
@@ -61,11 +78,19 @@ func depth(path string) int {
 
 type Discovery struct {
 	RootTaskfileName string
+	TemplatePath     string
 }
 
 func NewTaskDiscovery(rootTaskfileName string) *Discovery {
 	return &Discovery{
 		RootTaskfileName: rootTaskfileName,
+	}
+}
+
+func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discovery {
+	return &Discovery{
+		RootTaskfileName: rootTaskfileName,
+		TemplatePath:     templatePath,
 	}
 }
 
@@ -92,9 +117,12 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 
 	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
 
-	err = d.genRootTaskfile(rootTaskfilePath, taskfileTmplData{
-		Includes: includes,
-	})
+	composeData, err := d.buildComposeData(root, includes)
+	if err != nil {
+		return "", fmt.Errorf("failed to build compose data: %w", err)
+	}
+
+	err = d.genRootTaskfile(rootTaskfilePath, composeData)
 	if err != nil {
 		return "", fmt.Errorf("failed to create the root Taskfile: %w", err)
 	}
@@ -217,7 +245,7 @@ func (d *Discovery) taskfileHasDotenv(path string) (bool, error) {
 	return meta.Dotenv != nil, nil
 }
 
-func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) error {
+func (d *Discovery) genRootTaskfile(filename string, data interface{}) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -225,14 +253,25 @@ func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) erro
 
 	defer f.Close()
 
-	tmpl, err := tmplFS.ReadFile("Taskfile.tmpl.yaml")
-	if err != nil {
-		return fmt.Errorf("failed to read Taskfile template: %w", err)
+	var tmplContent []byte
+
+	// Check if custom template path is specified
+	if d.TemplatePath != "" {
+		tmplContent, err = os.ReadFile(d.TemplatePath)
+		if err != nil {
+			return fmt.Errorf("failed to read custom template: %w", err)
+		}
+	} else {
+		// Use embedded template
+		tmplContent, err = tmplFS.ReadFile("Taskfile.tmpl.yaml")
+		if err != nil {
+			return fmt.Errorf("failed to read Taskfile template: %w", err)
+		}
 	}
 
 	var buf bytes.Buffer
 
-	t := template.Must(template.New("taskfile").Parse(string(tmpl)))
+	t := template.Must(template.New("taskfile").Parse(string(tmplContent)))
 
 	if err := t.Execute(&buf, data); err != nil {
 		return fmt.Errorf("failed to generate Taskfile template: %w", err)
@@ -243,4 +282,58 @@ func (d *Discovery) genRootTaskfile(filename string, data taskfileTmplData) erro
 	}
 
 	return nil
+}
+
+func (d *Discovery) buildComposeData(root string, includes []componentInclude) (taskfileTmplData, error) {
+	data := taskfileTmplData{
+		Includes:            includes,
+		LintComponents:      []string{},
+		InstallComponents:   []string{},
+		TestComponents:      []string{},
+		DevComponents:       []string{},
+		DeployComponents:    []string{},
+		DeployDevComponents: []string{},
+		DevPorts:            []devPort{},
+	}
+
+	// Discover tasks in each component
+	for _, include := range includes {
+		componentPath := filepath.Join(root, include.Dir)
+		runner := NewTaskRunner(RunnerOpts{
+			Dir:      componentPath,
+			Taskfile: filepath.Base(include.Taskfile),
+		})
+
+		tasks, err := runner.ListTasks()
+		if err != nil {
+			log.Debugf("Failed to list tasks for %s: %v", include.Name, err)
+			continue
+		}
+
+		// Check for common tasks
+		for _, task := range tasks {
+			switch task.Name {
+			case "lint":
+				data.LintComponents = append(data.LintComponents, include.Name)
+				data.HasLint = true
+			case "install":
+				data.InstallComponents = append(data.InstallComponents, include.Name)
+				data.HasInstall = true
+			case "test":
+				data.TestComponents = append(data.TestComponents, include.Name)
+				data.HasTest = true
+			case "dev":
+				data.DevComponents = append(data.DevComponents, include.Name)
+				data.HasDev = true
+			case "deploy":
+				data.DeployComponents = append(data.DeployComponents, include.Name)
+				data.HasDeploy = true
+			case "deploy-dev":
+				data.DeployDevComponents = append(data.DeployDevComponents, include.Name)
+				data.HasDeployDev = true
+			}
+		}
+	}
+
+	return data, nil
 }
