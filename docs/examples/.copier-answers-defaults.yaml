@@ -1,0 +1,100 @@
+# .copier-answers-defaults.yaml
+#
+# This file provides default answers for copier templates, following
+# copier's data_file convention. Unlike copier's data_file, this supports
+# multiple repositories by mapping repo URLs to their defaults.
+#
+# Location priority order:
+#   1. Explicitly specified via --data-file flag
+#   2. .datarobot/.copier-answers-defaults.yaml (repository level, committed)
+#   3. ~/.config/datarobot/.copier-answers-defaults.yaml (user level, not committed)
+#
+# Usage:
+#   dr component add <repo_url>                    # Uses defaults from this file
+#   dr component add <repo_url> --data key=value   # Overrides specific defaults
+#   dr component update <answers_file>             # Uses defaults from this file
+#
+# Format:
+#   defaults:
+#     <repo_url>:
+#       <question_name>: <default_answer>
+
+defaults:
+  # Agent component defaults
+  git@github.com:datarobot-community/af-component-agent.git:
+    # Path to base component answers file
+    base_answers_file: .datarobot/answers/base.yml
+    
+    # Path to LLM component answers file
+    llm_answers_file: .datarobot/answers/llm-llm.yml
+    
+    # Path to FastMCP component answers file (if using MCP)
+    fastmcp_answers_file: .datarobot/answers/fastmcp-mcp_server.yml
+    
+    # Agent framework to use
+    agent_template_framework: langgraph
+    
+    # Whether to use low code interface
+    use_low_code_interface: false
+
+  # Base component defaults
+  git@github.com:datarobot-community/af-component-base.git:
+    # Project name (usually set per-project, not in defaults)
+    # project_name: my-project
+    
+    # Whether to include example files
+    include_examples: true
+
+  # React component defaults
+  git@github.com:datarobot-community/af-component-react.git:
+    # Base answers file
+    base_answers_file: .datarobot/answers/base.yml
+    
+    # React app name (usually varies per instance)
+    # react_app: frontend_web
+    
+    # Use TypeScript
+    use_typescript: true
+
+  # FastAPI component defaults
+  git@github.com:datarobot-community/af-component-fastapi-backend.git:
+    # Base answers file
+    base_answers_file: .datarobot/answers/base.yml
+    
+    # FastAPI app name (usually varies per instance)
+    # fastapi_app: api_server
+    
+    # Include OpenAPI documentation
+    include_openapi: true
+
+  # FastMCP component defaults
+  git@github.com:datarobot-community/af-component-fastmcp-backend.git:
+    # Base answers file
+    base_answers_file: .datarobot/answers/base.yml
+    
+    # FastMCP app name (usually varies per instance)
+    # fastmcp_app: mcp_server
+    
+    # Include example tools
+    include_example_tools: false
+
+  # LLM component defaults
+  git@github.com:datarobot-community/af-component-llm.git:
+    # Base answers file
+    base_answers_file: .datarobot/answers/base.yml
+    
+    # LLM name (usually varies per instance)
+    # llm_name: llm
+    
+    # LLM provider
+    llm_provider: openai
+    
+    # Model name
+    model_name: gpt-4
+
+# Notes:
+# - CLI --data arguments always take precedence over these defaults
+# - Questions not specified here will be prompted interactively
+# - Comment out questions that should always be prompted
+# - Use repository-level file for team standards
+# - Use user-level file for personal preferences
