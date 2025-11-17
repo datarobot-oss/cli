@@ -70,7 +70,7 @@ endpoint: https://app.datarobot.com
 token: api key here
 ```
 
-## Environment Variables
+## Environment variables
 
 Override configuration with environment variables:
 
@@ -131,7 +131,7 @@ This means if you set an environment variable, it will take precedence over what
 
 ## Security best practices
 
-### 1. Protect configuration files
+### Protect configuration files
 
 ```bash
 # Verify permissions (should be 600)
@@ -142,7 +142,7 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 chmod 700 ~/.config/datarobot/
 ```
 
-### 2. Don't commit credentials
+### Don't commit credentials
 
 Add to `.gitignore`:
 
@@ -156,7 +156,7 @@ config.yaml
 !.env.template
 ```
 
-### 3. Use environment-specific configs
+### Use environment-specific configs
 
 ```bash
 # Never use production credentials in development
@@ -168,7 +168,7 @@ config.yaml
 └── prod-config.yaml     # Production
 ```
 
-### 4. Avoid environment variables for secrets
+### Avoid environment variables for secrets
 
 ```bash
 # ❌ Don't do this (visible in process list)
