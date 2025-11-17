@@ -387,6 +387,6 @@ dr auth login
 
 ## See also
 
-- [Getting Started](../user-guide/getting-started.md) - Initial setup guide
+- [Quick start](../../README.md#quick-start) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details
 - [templates](templates.md) - Template management commands

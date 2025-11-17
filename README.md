@@ -45,10 +45,21 @@ The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot cust
 
 ## Table of contents
 
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Common issues](#common-issues)
+- [Getting help](#getting-help)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **DataRobot account**&mdash;access to a DataRobot instance (cloud or self-managed). If you don't have an account, sign up at [DataRobot](https://www.datarobot.com/) or contact your organization's DataRobot administrator. You'll need your DataRobot instance URL (e.g., `https://app.datarobot.com`). See [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for help locating your endpoint.
+- **Git**&mdash;for cloning templates (version 2.0+). Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed.
+- **Terminal**&mdash;command-line interface access (Terminal, iTerm2, PowerShell, Command Prompt, or Windows Terminal).
 
 ## Installation
 
@@ -134,6 +145,42 @@ task build
 
 </details>
 
+### Verify installation
+
+You can verify the installation by checking the version:
+
+```bash
+dr --version
+```
+
+Or use the version command:
+
+```bash
+dr self version
+```
+
+You should see output similar to:
+
+```text
+DataRobot CLI (version v0.2.9)
+```
+
+### Updating the CLI
+
+To update to the latest version, use the built-in update command:
+
+```bash
+dr self update
+```
+
+This command automatically detects your installation method, downloads the latest version, installs it using the appropriate method for your system, and preserves your existing configuration and credentials.
+
+After updating, verify the new version:
+
+```bash
+dr self version
+```
+
 ## Quick start
 
 Now that you have installed the DataRobot CLI, you can start using it to manage your DataRobot applications.
@@ -146,19 +193,50 @@ Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/doc
 
 ```bash
 # Set your DataRobot URL (interactive)
-dr auth set-url # Or specify directly: dr auth set-url [YOUR_DATAROBOT_API_ENDPOINT]
+dr auth set-url
 ```
 
-Once you have configured the URL, log in to DataRobot. This command will open your default web browser to the DataRobot login page.
+You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud instances:
+
+- Enter `1` for `https://app.datarobot.com`
+- Enter `2` for `https://app.eu.datarobot.com`
+- Enter `3` for `https://app.jp.datarobot.com`
+- Enter `4` for a custom URL
+
+Alternatively, set the URL directly:
+
+```bash
+dr auth set-url https://app.datarobot.com
+```
+
+Once you have configured the URL, log in to DataRobot using OAuth:
 
 ```bash
 dr auth login
 ```
 
-Once you have logged in, the DataRobot web application prompts you to authorize the CLI.
-Click "Authorize" to complete the authorization process, then close the browser window once it is complete.
+This will:
+
+1. Open your default web browser
+2. Redirect you to the DataRobot login page
+3. Request authorization
+4. Automatically save your credentials
+
+Your API key will be securely stored in `~/.config/datarobot/drconfig.yaml`.
+
+Verify that you're logged in:
+
+```bash
+dr templates list
+```
+
+This command displays a list of available templates from your DataRobot instance.
+
+> **What's next?** Now that you're authenticated, you can browse available templates with `dr templates list` or start the setup wizard with `dr templates setup`.
 
 ### Set up a template
+
+> **Note:** A **template** is a pre-configured application scaffold that you can customize. When you clone and configure a template, it becomes your **application**&mdash;a customized instance ready to run and deploy.
 
 Next, load the interactive setup wizard to clone and configure a template:
 
@@ -180,20 +258,137 @@ Follow the instructions when prompted to continue configuring the template.
 The prompts vary depending on which template you selected.
 When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
+> **What's next?** After the setup wizard completes, navigate to your new application directory with `cd [template-name]` and start your application with `dr start` or `dr run dev`.
+
+**Manual setup:** If you prefer manual control, you can list templates with `dr templates list`, clone a specific template with `dr templates clone TEMPLATE_NAME`, navigate to the directory, and configure environment variables with `dr dotenv setup`.
+
 ### Run tasks
 
 Now that you've cloned and configured a template, you can start running tasks defined in the template Taskfile.
-First, navigate to the template directory:
+
+**Quick start (recommended):**
+
+Use the `start` command for automated initialization:
 
 ```bash
-cd [TEMPLATE_NAME]
+dr start
 ```
 
-From there, you can list the available tasks:
+This command checks prerequisites, validates your environment, executes a template-specific quickstart script if available, and falls back to the setup wizard if no script exists.
+
+For non-interactive mode (useful in scripts or CI/CD):
 
 ```bash
-dr run
+dr start --yes
 ```
+
+**Running specific tasks:**
+
+For more control, execute individual tasks:
+
+```bash
+# List available tasks
+dr task list
+
+# Run the development server
+dr run dev
+
+# Or execute specific tasks
+dr run build
+dr run test
+```
+
+> **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
+
+## Common issues
+
+### "dr: command not found"
+
+**Why it happens:** The CLI binary isn't in your system's PATH, so your shell can't find it.
+
+**How to fix:**
+
+```bash
+# Check if dr is in PATH
+which dr
+
+# If not found, verify the binary location
+ls -l /usr/local/bin/dr
+
+# Add it to your PATH (for current session)
+export PATH="/usr/local/bin:$PATH"
+
+# For permanent fix, add to your shell config file:
+# Bash: echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
+# Zsh:  echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
+```
+
+**How to prevent:** Re-run the installation script or ensure the binary is installed to a directory in your PATH.
+
+### "Failed to read config file"
+
+**Why it happens:** The configuration file doesn't exist yet or is in an unexpected location. This typically occurs on first use before authentication.
+
+**How to fix:**
+
+```bash
+# Set your DataRobot URL (creates config file if missing)
+dr auth set-url https://app.datarobot.com
+
+# Authenticate (saves credentials to config file)
+dr auth login
+```
+
+**How to prevent:** Run `dr auth set-url` and `dr auth login` as part of your initial setup. The config file is automatically created at `~/.config/datarobot/drconfig.yaml`.
+
+### "Authentication failed"
+
+**Why it happens:** Your API token may have expired, been revoked, or the DataRobot URL may have changed. This can also occur if the config file is corrupted.
+
+**How to fix:**
+
+```bash
+# Clear existing credentials
+dr auth logout
+
+# Re-authenticate
+dr auth login
+
+# If issues persist, verify your DataRobot URL
+dr auth set-url https://app.datarobot.com  # or your instance URL
+dr auth login
+```
+
+**How to prevent:** Regularly update the CLI (`dr self update`) and re-authenticate if you change DataRobot instances or if your organization rotates API keys.
+
+## Getting help
+
+For additional help:
+
+```bash
+# General help
+dr --help
+
+# Command-specific help
+dr auth --help
+dr templates --help
+dr run --help
+
+# Enable verbose output for debugging
+dr --verbose templates list
+
+# Enable debug output for detailed information
+dr --debug templates list
+```
+
+## Configuration location
+
+Configuration files are stored in:
+
+- **Linux/macOS:** `~/.config/datarobot/drconfig.yaml`
+- **Windows:** `%USERPROFILE%\.config\datarobot\drconfig.yaml`
+
+See [Configuration Files](docs/user-guide/configuration.md) for more details.
 
 ## Next steps
 
@@ -203,6 +398,7 @@ See the links below for specific details:
 - **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
+- **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
 - **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
 ## Contributing

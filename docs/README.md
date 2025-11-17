@@ -30,7 +30,7 @@ curl https://cli.datarobot.com/install | sh
 irm https://cli.datarobot.com/winstall | iex
 ```
 
-For more installation options, see [Getting Started](user-guide/getting-started.md).
+For more installation options, see the [Installation](../README.md#installation) section in the main README.
 
 ## Documentation structure
 
@@ -38,7 +38,7 @@ For more installation options, see [Getting Started](user-guide/getting-started.
 
 End-user documentation for using the CLI:
 
-- [Getting started](user-guide/getting-started.md)&mdash;installation and initial setup guide covering prerequisites, installation methods, authentication, and your first template.
+- [Getting started](../README.md#quick-start)&mdash;installation and initial setup guide covering prerequisites, installation methods, authentication, and your first template.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure, location, and how to manage multiple environments.
 

@@ -232,6 +232,6 @@ DATAROBOT_API_TOKEN            # API token (not recommended)
 
 ## See also
 
-- [Getting started guide](../user-guide/getting-started.md)
+- [Quick start](../../README.md#quick-start)
 - [User guide](../user-guide/)
 - [Template system](../template-system/)

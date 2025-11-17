@@ -351,6 +351,6 @@ State files are small and do not require manual management under normal circumst
 
 ## See also
 
-- [Getting started](getting-started.md)&mdash;initial setup.
+- [Quick start](../../README.md#quick-start)&mdash;initial setup.
 - [Authentication](authentication.md)&mdash;managing credentials.
 - [auth command](../commands/auth.md)&mdash;authentication commands.

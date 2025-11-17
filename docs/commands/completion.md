@@ -406,5 +406,5 @@ dr templates list > ~/.dr-templates-cache
 ## See also
 
 - [Shell completion guide](../user-guide/shell-completions.md)&mdash;detailed setup instructions.
-- [Getting started](../user-guide/getting-started.md)&mdash;initial setup.
+- [Quick start](../../README.md#quick-start)&mdash;initial setup.
 - Command completion is powered by [Cobra](https://github.com/spf13/cobra).
