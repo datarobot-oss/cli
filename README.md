@@ -31,6 +31,8 @@
 
 The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot custom applications. It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities.
 
+> **What is the CLI?** The CLI is a command-line interface for managing DataRobot custom applications. It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities. If you're new to DataRobot, visit the [DataRobot documentation](https://docs.datarobot.com/) to learn more about the platform.
+
 ## Features
 
 - 🔐 **Authentication management**&mdash;seamless OAuth integration with DataRobot.
@@ -91,20 +93,43 @@ If you would like to build and install from source, you can do so by following t
 
 #### Prerequisites
 
-- Go 1.25.3 or later (for building from source).
-- Git.
-- [Task](https://taskfile.dev/) (for development and task running).
+- Go 1.25.3 or later (for building from source)
+- Git
+- [Task](https://taskfile.dev/) (for development and task running)
 
 #### Build from source
 
 ```bash
-curl https://cli.datarobot.com/install | sh -s -- v0.1.0
+# Clone the repository
+git clone https://github.com/datarobot-oss/cli.git
+cd cli
+
+# Install Task (if not already installed)
+go install github.com/go-task/task/v3/cmd/task@latest
+
+# Build the binary
+task build
+
+# The binary will be at ./dist/dr
+# Install it to your PATH (example for macOS/Linux)
+sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
 #### Windows (Specific Version)
 
 ```powershell
-$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
+# Clone the repository
+git clone https://github.com/datarobot-oss/cli.git
+cd cli
+
+# Install Task (if not already installed)
+go install github.com/go-task/task/v3/cmd/task@latest
+
+# Build the binary
+task build
+
+# The binary will be at .\dist\dr.exe
+# Add it to your PATH or move it to a directory in your PATH
 ```
 
 </details>
@@ -175,26 +200,10 @@ dr run
 From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
 See the links below for specific details:
 
-- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide for all features.
-  - [Getting started](docs/user-guide/getting-started.md)
-  - [Authentication](docs/user-guide/authentication.md)
-  - [Working with templates](docs/user-guide/templates.md)
-  - [Shell completions](docs/user-guide/shell-completions.md)
-  - [Configuration files](docs/user-guide/configuration.md)
-
-- **[Template system](docs/template-system/)**&mdash;understanding the template configuration system.
-  - [Template structure](docs/template-system/structure.md)
-  - [Interactive configuration](docs/template-system/interactive-config.md)
-  - [Environment variables](docs/template-system/environment-variables.md)
-
-- **[Command reference](docs/commands/)**&mdash;detailed command documentation.
-  - [auth](docs/commands/auth.md)&mdash;authentication commands.
-  - [templates](docs/commands/templates.md)&mdash;template management.
-  - [run](docs/commands/run.md)&mdash;task execution.
-  - [dotenv](docs/commands/dotenv.md)&mdash;environment file management.
-  - [completion](docs/commands/completion.md)&mdash;shell completion setup.
-
-- **[Development guide](docs/development/)**&mdash;for contributors, see [CONTRIBUTING.md](CONTRIBUTING.md)
+- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
+- **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
+- **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
+- **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
 ## Contributing
 

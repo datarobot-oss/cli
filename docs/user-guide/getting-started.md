@@ -7,10 +7,32 @@ This guide will help you install and start using the DataRobot CLI (`dr`) for ma
 Before you begin, ensure you have:
 
 - **DataRobot account**&mdash;access to a DataRobot instance (cloud or self-managed).
+  - If you don't have an account, sign up at [DataRobot](https://www.datarobot.com/) or contact your organization's DataRobot administrator.
+  - You'll need your DataRobot instance URL (e.g., `https://app.datarobot.com`). See [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for help locating your endpoint.
 - **Git**&mdash;for cloning templates (version 2.0+).
+  - Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed.
+  - Verify installation: `git --version`
 - **Terminal**&mdash;command-line interface access.
+  - **macOS/Linux:** Use Terminal, iTerm2, or your preferred terminal emulator.
+  - **Windows:** Use PowerShell, Command Prompt, or Windows Terminal.
 
 ## Installation
+
+Install the latest version with a single command that auto-detects your operating system:
+
+**macOS/Linux:**
+
+```bash
+curl https://cli.datarobot.com/install | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://cli.datarobot.com/winstall | iex
+```
+
+For alternative installation methods, see the next sections.
 
 ### Option 1: Download binary (recommended)
 
@@ -161,11 +183,19 @@ Check that you're logged in:
 dr templates list
 ```
 
-This should display a list of available templates from your DataRobot instance.
+This command displays a list of available templates from your DataRobot instance.
+
+> **What's next?** Now that you're authenticated, you can:
+>
+> - Browse available templates: `dr templates list`
+> - Start the setup wizard: `dr templates setup`
+> - See the [Command Reference](../commands/) for all available commands
 
 ## Your first template
 
 Now that you're set up, let's create your first application from a template.
+
+> **Note:** A **template** is a pre-configured application scaffold that you can customize. When you clone and configure a template, it becomes your **application**&mdash;a customized instance ready to run and deploy.
 
 ### Using the setup wizard (recommended)
 
@@ -184,6 +214,12 @@ This interactive wizard will:
 
 Follow the on-screen prompts to complete the setup.
 
+> **What's next?** After the setup wizard completes:
+>
+> - Navigate to your new application directory: `cd [template-name]`
+> - Start your application: `dr start` or `dr run dev`
+> - See [Running your application](#running-your-application) below for more options
+
 ### Manual setup
 
 If you prefer manual control:
@@ -199,8 +235,14 @@ dr templates clone TEMPLATE_NAME
 cd TEMPLATE_NAME
 
 # 4. Configure environment variables.
-dr dotenv
+dr dotenv setup
 ```
+
+> **What's next?** After configuring your template:
+>
+> - Start your application: `dr start` or `dr run dev`
+> - Explore available tasks: `dr task list`
+> - See [Running your application](#running-your-application) below
 
 ## Running your application
 
@@ -242,18 +284,30 @@ dr run build
 dr run test
 ```
 
+> **What's next?** Your application is now running! You can:
+>
+> - Explore the [Template System](../template-system/) documentation to understand how templates work
+> - Set up [shell completions](shell-completions.md) for faster command entry
+> - Review the [Command Reference](../commands/) for detailed command documentation
+> - Learn about [configuration files](configuration.md) for advanced setup
+
 ## Next steps
 
-- **[Authentication guide](authentication.md)**&mdash;learn about authentication options.
-- **[Working with templates](templates.md)**&mdash;detailed template management.
-- **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion.
-- **[Command reference](../commands/)**&mdash;complete command documentation.
+Continue learning about the DataRobot CLI:
+
+- **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion for faster workflow.
+- **[Configuration files](configuration.md)**&mdash;understand how configuration files work and manage multiple environments.
+- **[Template system](../template-system/)**&mdash;learn how templates are structured and how the interactive configuration works.
+- **[Command reference](../commands/)**&mdash;complete documentation for all CLI commands and options.
+- **[Auth command](../commands/auth.md)**&mdash;detailed authentication management guide.
 
 ## Common issues
 
 ### "dr: command not found"
 
-Ensure the binary is in your PATH:
+**Why it happens:** The CLI binary isn't in your system's PATH, so your shell can't find it.
+
+**How to fix:**
 
 ```bash
 # Check if dr is in PATH
@@ -264,25 +318,52 @@ ls -l /usr/local/bin/dr
 
 # You may need to add it to your PATH in ~/.bashrc or ~/.zshrc
 export PATH="/usr/local/bin:$PATH"
+
+# For the current session only:
+export PATH="/usr/local/bin:$PATH"
+
+# For permanent fix, add to your shell config file:
+# Bash: echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
+# Zsh:  echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
 ```
+
+**How to prevent:** Re-run the installation script or ensure the binary is installed to a directory in your PATH.
 
 ### "Failed to read config file"
 
-The config file might be missing. Run:
+**Why it happens:** The configuration file doesn't exist yet or is in an unexpected location. This typically occurs on first use before authentication.
+
+**How to fix:**
 
 ```bash
+# Set your DataRobot URL (creates config file if missing)
 dr auth set-url https://app.datarobot.com
+
+# Authenticate (saves credentials to config file)
 dr auth login
 ```
+
+**How to prevent:** Run `dr auth set-url` and `dr auth login` as part of your initial setup. The config file is automatically created at `~/.config/datarobot/drconfig.yaml`.
 
 ### "Authentication failed"
 
-Your credentials may have expired. Log in again:
+**Why it happens:** Your API token may have expired, been revoked, or the DataRobot URL may have changed. This can also occur if the config file is corrupted.
+
+**How to fix:**
 
 ```bash
+# Clear existing credentials
 dr auth logout
+
+# Re-authenticate
+dr auth login
+
+# If issues persist, verify your DataRobot URL
+dr auth set-url https://app.datarobot.com  # or your instance URL
 dr auth login
 ```
+
+**How to prevent:** Regularly update the CLI (`dr self update`) and re-authenticate if you change DataRobot instances or if your organization rotates API keys.
 
 ## Getting help
 
