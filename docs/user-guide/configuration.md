@@ -43,7 +43,7 @@ token: API_KEY_HERE
 > ```bash
 > # Development
 > ~/.config/datarobot/dev-config.yaml
-> 
+>
 > # Staging
 > ~/.config/datarobot/staging-config.yaml
 > 
@@ -421,16 +421,16 @@ dr templates list  # Uses prod config
 > [!TIP]
 > Always verify which config is active before running commands in production:
 >
-> ```bash
+>```bash
 > echo "Current config: $DATAROBOT_CLI_CONFIG"
 > cat $DATAROBOT_CLI_CONFIG
-> ```
+>```
 >
 > Example output:
 >
-> ```bash
+>```bash
 > Current config: ~/.config/datarobot/prod-config.yaml
-> ```
+>```
 
 ## State tracking
 

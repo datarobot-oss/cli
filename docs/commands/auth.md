@@ -48,7 +48,7 @@ dr auth login
 5. The CLI securely stores the API key in your configuration file.
 6. The browser and server close automatically.
 
->[!NOTE]
+> [!NOTE]
 > OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
 
 **Example:**
@@ -95,7 +95,7 @@ $ dr auth logout
 - Next API call will require re-authentication
 
 > **What's next?** After logging out, you can:
-> 
+>
 > - Log in again with `dr auth login` to re-authenticate
 > - Switch to a different DataRobot instance with `dr auth set-url` followed by `dr auth login`
 > - Verify authentication status with `dr templates list` (will prompt for login if not authenticated)
@@ -156,7 +156,7 @@ Error: Invalid URL format
 
 > [!NOTE]
 > The URL must be a valid HTTP or HTTPS URL. Common issues include:
-> 
+>
 > - Missing protocol (`https://`)
 > - Invalid characters or spaces
 > - Malformed domain names
