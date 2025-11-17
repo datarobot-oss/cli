@@ -20,12 +20,12 @@ Download the latest release for your operating system:
 
 ```bash
 # Intel Macs
-curl -LO https://github.com/datarobot/cli/releases/latest/download/dr-darwin-amd64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-darwin-amd64
 chmod +x dr-darwin-amd64
 sudo mv dr-darwin-amd64 /usr/local/bin/dr
 
 # Apple Silicon (M1/M2)
-curl -LO https://github.com/datarobot/cli/releases/latest/download/dr-darwin-arm64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-darwin-arm64
 chmod +x dr-darwin-arm64
 sudo mv dr-darwin-arm64 /usr/local/bin/dr
 ```
@@ -34,19 +34,19 @@ sudo mv dr-darwin-arm64 /usr/local/bin/dr
 
 ```bash
 # x86_64
-curl -LO https://github.com/datarobot/cli/releases/latest/download/dr-linux-amd64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-linux-amd64
 chmod +x dr-linux-amd64
 sudo mv dr-linux-amd64 /usr/local/bin/dr
 
 # ARM64
-curl -LO https://github.com/datarobot/cli/releases/latest/download/dr-linux-arm64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-linux-arm64
 chmod +x dr-linux-arm64
 sudo mv dr-linux-arm64 /usr/local/bin/dr
 ```
 
 #### Windows
 
-Download `dr-windows-amd64.exe` from the [releases page](https://github.com/datarobot/cli/releases/latest) and add it to your PATH.
+Download `dr-windows-amd64.exe` from the [releases page](https://github.com/datarobot-oss/cli/releases/latest) and add it to your PATH.
 
 ### Option 2: Build from source
 
@@ -70,13 +70,19 @@ sudo mv ./dist/dr /usr/local/bin/dr
 ### Verify installation
 
 ```bash
-dr version
+dr --version
+```
+
+Or use the version command:
+
+```bash
+dr self version
 ```
 
 You should see output similar to:
 
-```
-DataRobot CLI version 0.1.0 (commit: abc1234, built date: 2025-10-23, runtime: go1.25.3)
+```text
+DataRobot CLI (version v0.2.9)%  
 ```
 
 ## Updating the CLI
@@ -121,7 +127,8 @@ You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud 
 - Enter `1` for `https://app.datarobot.com`
 - Enter `2` for `https://app.eu.datarobot.com`
 - Enter `3` for `https://app.jp.datarobot.com`
-- Or enter your custom URL (e.g., `https://your-instance.datarobot.com`)
+- Enter `4` for a custom URL
+- Or enter your custom URL directly (e.g., `https://your-instance.datarobot.com`)
 
 Alternatively, set the URL directly:
 
@@ -138,12 +145,13 @@ dr auth login
 ```
 
 This will:
+
 1. Open your default web browser.
 2. Redirect you to the DataRobot login page.
 3. Request authorization.
 4. Automatically save your credentials.
 
-Your API key will be securely stored in `~/.datarobot/config.yaml`.
+Your API key will be securely stored in `~/.config/datarobot/drconfig.yaml`.
 
 ### 3. Verify authentication
 
@@ -168,6 +176,7 @@ dr templates setup
 ```
 
 This interactive wizard will:
+
 1. Display available templates.
 2. Help you select and clone a template.
 3. Guide you through environment configuration.
@@ -223,7 +232,7 @@ For more control, execute individual tasks:
 
 ```bash
 # List available tasks
-dr run --list
+dr task list
 
 # Run the development server
 dr run dev
@@ -297,7 +306,7 @@ dr --debug templates list
 
 Configuration files are stored in:
 
-- **Linux/macOS**&mdash;`~/.datarobot/config.yaml`.
-- **Windows**&mdash;`%USERPROFILE%\.datarobot\config.yaml`.
+- **Linux/macOS**&mdash;`~/.config/datarobot/drconfig.yaml`.
+- **Windows**&mdash;`%USERPROFILE%\.config\datarobot\drconfig.yaml`.
 
 See [Configuration Files](configuration.md) for more details.
