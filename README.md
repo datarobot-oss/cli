@@ -115,7 +115,7 @@ task build
 sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
-#### Windows (Specific Version)
+#### Windows (specific version)
 
 ```powershell
 # Clone the repository

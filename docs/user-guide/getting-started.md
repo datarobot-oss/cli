@@ -7,7 +7,7 @@ This guide will help you install and start using the DataRobot CLI (`dr`) for ma
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Updating the CLI](#updating-the-cli)
-- [Initial Setup](#initial-setup)
+- [Initial setup](#initial-setup)
 - [Your first template](#your-first-template)
 - [Running your application](#running-your-application)
 - [Next steps](#next-steps)
@@ -147,7 +147,7 @@ After updating, verify the new version:
 dr self version
 ```
 
-## Initial Setup
+## Initial setup
 
 ### 1. Configure DataRobot URL
 
@@ -202,7 +202,7 @@ This command displays a list of available templates from your DataRobot instance
 >
 > - Browse available templates: `dr templates list`
 > - Start the setup wizard: `dr templates setup`
-> - See the [Command Reference](../commands/) for all available commands
+> - See the [Command reference](../commands/) for all available commands
 
 ## Your first template
 
@@ -299,9 +299,9 @@ dr run test
 
 > **What's next?** Your application is now running! You can:
 >
-> - Explore the [Template System](../template-system/) documentation to understand how templates work
+> - Explore the [Template system](../template-system/) documentation to understand how templates work
 > - Set up [shell completions](shell-completions.md) for faster command entry
-> - Review the [Command Reference](../commands/) for detailed command documentation
+> - Review the [Command reference](../commands/) for detailed command documentation
 > - Learn about [configuration files](configuration.md) for advanced setup
 
 ## Next steps
