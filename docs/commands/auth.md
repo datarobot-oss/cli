@@ -72,6 +72,12 @@ $ dr auth logout
 - Keeps DataRobot URL configuration
 - Next API call will require re-authentication
 
+> **What's next?** After logging out, you can:
+> 
+> - Log in again with `dr auth login` to re-authenticate
+> - Switch to a different DataRobot instance with `dr auth set-url` followed by `dr auth login`
+> - Verify authentication status with `dr templates list` (will prompt for login if not authenticated)
+
 ### `set-url`
 
 Configure the DataRobot instance URL.
@@ -118,6 +124,14 @@ $ dr auth set-url https://my-company.datarobot.com
 $ dr auth set-url invalid-url
 Error: Invalid URL format
 ```
+
+> [!NOTE]
+> The URL must be a valid HTTP or HTTPS URL. Common issues include:
+> 
+> - Missing protocol (`https://`)
+> - Invalid characters or spaces
+> - Malformed domain names
+> - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
 
 ## Global Flags
 
@@ -350,7 +364,12 @@ The CLI automatically tries alternative ports (8081, 8082, etc.)
 
 ### Invalid Credentials
 
-**Problem:** "Authentication failed" error.
+**Problem:** "Authentication failed" error. This can occur when:
+
+- Your API token has expired
+- Your API token was revoked by an administrator
+- The DataRobot URL has changed
+- The config file is corrupted or contains invalid data
 
 **Solution:**
 ```bash
@@ -359,11 +378,33 @@ dr auth logout
 dr auth login
 ```
 
+**If the problem persists:**
+
+```bash
+# Verify your DataRobot URL is correct
+dr auth set-url https://app.datarobot.com  # or your instance URL
+
+# Check the config file for issues
+cat ~/.config/datarobot/drconfig.yaml
+
+# If config file is corrupted, you can manually edit it or delete it
+# (it will be recreated on next login)
+rm ~/.config/datarobot/drconfig.yaml
+dr auth set-url https://app.datarobot.com
+dr auth login
+```
+
 ### Connection Refused
 
-**Problem:** Cannot connect to DataRobot.
+**Problem:** Cannot connect to DataRobot. This typically means:
+
+- The DataRobot instance URL is incorrect
+- Network connectivity issues (firewall, VPN, proxy)
+- The DataRobot instance is down or unreachable
+- DNS resolution problems
 
 **Solution:**
+
 ```bash
 # Verify URL is correct
 cat ~/.config/datarobot/drconfig.yaml
@@ -373,11 +414,27 @@ dr auth set-url https://app.datarobot.com
 
 # Check network connectivity
 ping app.datarobot.com
+
+# Test HTTPS connectivity
+curl -I https://app.datarobot.com
+```
+
+**For corporate networks with proxies:**
+```bash
+# Set proxy environment variables if required
+export HTTP_PROXY=http://proxy.company.com:8080
+export HTTPS_PROXY=http://proxy.company.com:8080
+dr auth login
 ```
 
 ### SSL Certificate Issues
 
-**Problem:** SSL verification fails.
+**Problem:** SSL verification fails. This can occur with:
+
+- Self-signed certificates (common in enterprise/self-managed instances)
+- Expired certificates
+- Certificate chain issues
+- Corporate proxy intercepting SSL
 
 **Solution:**
 ```bash
@@ -386,8 +443,28 @@ export DATAROBOT_VERIFY_SSL=false
 dr auth login
 ```
 
+**For enterprise environments:**
+
+```bash
+# If your organization provides a CA certificate bundle
+export DATAROBOT_CA_CERT=/path/to/ca-bundle.crt
+dr auth login
+
+# Or configure in the config file
+# See [Configuration Files](../user-guide/configuration.md) for details
+```
+
+> [!WARNING]
+> Disabling SSL verification (`DATAROBOT_VERIFY_SSL=false`) makes your connection vulnerable to man-in-the-middle attacks. Only use this in development environments or when you understand the security implications.
+
 ## See also
 
-- [Getting Started](../user-guide/getting-started.md) - Initial setup guide
-- [Configuration](../user-guide/configuration.md) - Configuration file details
-- [templates](templates.md) - Template management commands
+- [Quick start](README.md#quick-start) - Initial setup guide
+- [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
+- [Templates](../template-system/) - Template management commands
+
+> **What's next?** After setting up authentication:
+> 
+> - Browse available templates: `dr templates list`
+> - Set up your first template: `dr templates setup`
+> - Learn about [configuration files](../user-guide/configuration.md) for advanced settings

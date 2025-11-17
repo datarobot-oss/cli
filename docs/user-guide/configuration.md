@@ -105,7 +105,6 @@ dr templates list --debug
 
 > **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks and should only be used when you understand the implications. Commands requiring API access will likely fail without valid credentials.
 
-
 ## Configuration priority
 
 Settings are loaded in order of precedence:
@@ -248,47 +247,161 @@ preferences:
 
 ### Configuration not loading
 
+**Problem:** The CLI cannot find or read the configuration file. Common causes:
+- Config file doesn't exist (first-time setup)
+- Incorrect file path
+- Permission issues
+- Environment variable overriding the default path
+- Config file in wrong location
+
+**Solution:**
 ```bash
 # Check if config file exists
 ls -la ~/.config/datarobot/drconfig.yaml
 
+# If file doesn't exist, create it by running:
+dr auth set-url https://app.datarobot.com
+dr auth login
+
 # Verify it's readable
 cat ~/.config/datarobot/drconfig.yaml
 
-# Check environment variables
+# Check environment variables that might override the path
 env | grep DATAROBOT
+
+# Verify the directory exists
+ls -la ~/.config/datarobot/
+```
+
+**If using a custom config path:**
+```bash
+# Verify the environment variable is set correctly
+echo $DATAROBOT_CLI_CONFIG
+
+# Test with explicit path
+dr templates list --config ~/.config/datarobot/drconfig.yaml
 ```
 
 ### Invalid configuration
 
+**Problem:** YAML syntax errors in the configuration file. Common causes:
+- Missing colons (`:`) after keys
+- Incorrect indentation (YAML is sensitive to spaces)
+- Invalid YAML characters
+- Unclosed quotes or brackets
+- Mixing tabs and spaces
+
+**Solution:**
 ```bash
-# The CLI will report syntax errors
+# The CLI will report syntax errors with line numbers
 $ dr templates list
 Error: Failed to parse config file: yaml: line 5: could not find expected ':'
 
 # Fix syntax and try again
 vim ~/.config/datarobot/drconfig.yaml
+# or
+nano ~/.config/datarobot/drconfig.yaml
+```
+
+**Example of correct YAML format:**
+```yaml
+# Correct format
+datarobot:
+  endpoint: https://app.datarobot.com
+  token: your-api-token-here
+
+# Common mistakes:
+# ❌ Missing colon: endpoint https://app.datarobot.com
+# ❌ Wrong indentation (must use spaces, not tabs)
+# ❌ Missing quotes for values with special characters
+```
+
+**Validate YAML syntax:**
+```bash
+# Use a YAML validator or check manually
+python3 -c "import yaml; yaml.safe_load(open('~/.config/datarobot/drconfig.yaml'))"
 ```
 
 ### Permission denied
 
+**Problem:** The CLI cannot read or write the configuration file due to file system permissions. This can occur when:
+
+- File permissions are too restrictive for the current user
+- Directory permissions prevent file access
+- File was created by a different user (e.g., with `sudo`)
+- SELinux or AppArmor restrictions (Linux)
+
+**Solution:**
 ```bash
-# Fix file permissions
+# Fix file permissions (owner read/write only)
 chmod 600 ~/.config/datarobot/drconfig.yaml
 
-# Fix directory permissions
+# Fix directory permissions (owner read/write/execute)
 chmod 700 ~/.config/datarobot/
+
+# Verify permissions
+ls -la ~/.config/datarobot/drconfig.yaml
+# Should show: -rw------- (600)
+```
+
+**If file was created with sudo:**
+
+```bash
+# Change ownership to your user
+sudo chown $USER:$USER ~/.config/datarobot/drconfig.yaml
+chmod 600 ~/.config/datarobot/drconfig.yaml
+```
+
+**For Windows:**
+
+```powershell
+# Check file permissions
+icacls %USERPROFILE%\.config\datarobot\drconfig.yaml
+
+# If needed, grant full control to your user
+icacls %USERPROFILE%\.config\datarobot\drconfig.yaml /grant %USERNAME%:F
 ```
 
 ### Multiple configs
+
+**Problem:** Managing multiple environments (dev, staging, production) with separate configurations.
+
+**Solution:**
 
 ```bash
 # List all config files
 find ~/.config/datarobot -name "*.yaml"
 
-# Switch between them
+# Switch between them using environment variable
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
+dr templates list
+
+# Or use inline for single commands
+DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml dr templates list
 ```
+
+**Create a helper script for easy switching:**
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+alias dr-dev='export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml'
+alias dr-prod='export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml'
+alias dr-staging='export DATAROBOT_CLI_CONFIG=~/.config/datarobot/staging-config.yaml'
+
+# Usage:
+dr-dev
+dr templates list  # Uses dev config
+
+dr-prod
+dr templates list  # Uses prod config
+```
+
+> **Tip:** Always verify which config is active before running commands in production:
+> 
+> ```bash
+> echo "Current config: $DATAROBOT_CLI_CONFIG"
+> cat $DATAROBOT_CLI_CONFIG
+> ```
 
 ## State tracking
 
@@ -354,6 +467,6 @@ State files are small and do not require manual management under normal circumst
 
 ## See also
 
-- [Getting started](getting-started.md)&mdash;initial setup.
-- [Authentication](authentication.md)&mdash;managing credentials.
-- [auth command](../commands/auth.md)&mdash;authentication commands.
+- [Quick start](README.md#quick-start)&mdash;initial setup and first-time configuration
+- [Authentication](authentication.md)&mdash;managing credentials and authentication flow
+- [auth command](../commands/auth.md)&mdash;authentication commands and troubleshooting
