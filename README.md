@@ -76,12 +76,12 @@ curl https://cli.datarobot.com/install | sh
 irm https://cli.datarobot.com/winstall | iex
 ```
 
-<details><summary><em>Alternative installation methods</em></summary>
+<details><summary><em>Click here for alternative installation methods</em></summary>
 <br/>
 The following are alternative installation methods for the DataRobot CLI.
 You can choose to install a specific version or build and install from source.
 
-### Install specific version
+### Install a specific version
 
 If you'd like to install a specific version, you can do so by passing the version number to the installer, as shown below:
 
@@ -107,7 +107,7 @@ If you would like to build and install from source, you can do so by following t
 - Git
 - [Task](https://taskfile.dev/) (for development and task running)
 
-#### Build from source
+#### Build and install from source
 
 ```bash
 # Clone the repository
@@ -125,7 +125,7 @@ task build
 sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
-#### Windows (specific version)
+#### Windows (install a specific version)
 
 ```powershell
 # Clone the repository
@@ -173,12 +173,6 @@ dr self update
 ```
 
 This command automatically detects your installation method, downloads the latest version, installs it using the appropriate method for your system, and preserves your existing configuration and credentials.
-
-After updating, verify the new version:
-
-```bash
-dr self version
-```
 
 ## Quick start
 
@@ -235,9 +229,9 @@ This command displays a list of available templates from your DataRobot instance
 
 ### Set up a template
 
-> **Note:** A **template** is a pre-configured application scaffold that you can customize. When you clone and configure a template, it becomes your **application**&mdash;a customized instance ready to run and deploy.
-
-Next, load the interactive setup wizard to clone and configure a template:
+Next, load the interactive setup wizard to clone and configure a template.
+A **template** is a pre-configured application scaffold that you can customize.
+When you clone and configure a template, it becomes your **application**&mdash;a customized instance ready to run and deploy.
 
 ```bash
 dr templates setup
@@ -253,13 +247,16 @@ After a few moments, the setup wizard displays the application templates availab
 Select a template by pressing the `Enter` key.
 At the subsequent prompt, specify the desired directory name for the template and press `Enter` to have the setup wizard clone the template repository to your local machine.
 
+<details><summary><em>Click here for manual setup instructions</em></summary>
+<br/>
+**Manual setup:** If you prefer manual control, you can list templates with `dr templates list`, clone a specific template with `dr templates clone TEMPLATE_NAME`, navigate to the directory, and configure environment variables with `dr dotenv setup`.
+</details>
+
 Follow the instructions when prompted to continue configuring the template.
 The prompts vary depending on which template you selected.
 When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
 > **What's next?** After the setup wizard completes, navigate to your new application directory with `cd [template-name]` and start your application with `dr start` or `dr run dev`.
-
-**Manual setup:** If you prefer manual control, you can list templates with `dr templates list`, clone a specific template with `dr templates clone TEMPLATE_NAME`, navigate to the directory, and configure environment variables with `dr dotenv setup`.
 
 ### Run tasks
 
@@ -267,23 +264,19 @@ Now that you've cloned and configured a template, you can start running tasks de
 
 **Quick start (recommended):**
 
-Use the `start` command for automated initialization:
+Use the `start` command for automated initialization.
+This command checks prerequisites, validates your environment, executes a template-specific quickstart script if available, and falls back to the setup wizard if no script exists.
 
 ```bash
 dr start
 ```
 
-This command checks prerequisites, validates your environment, executes a template-specific quickstart script if available, and falls back to the setup wizard if no script exists.
-
-For non-interactive mode (useful in scripts or CI/CD):
-
-```bash
-dr start --yes
-```
+> [!TIP]
+> You can use the `--yes` flag to skip all prompts and execute immediately. This is useful in scripts or CI/CD pipelines.
 
 **Running specific tasks:**
 
-For more control, execute individual tasks:
+For more control, execute individual tasks with the `run` command:
 
 ```bash
 # List available tasks
