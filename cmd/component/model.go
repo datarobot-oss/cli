@@ -61,7 +61,7 @@ type Model struct {
 	initialUpdateFileName string
 }
 
-func (m Model) toggleCurrent() tea.Cmd {
+func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	items := m.list.VisibleItems()
 	currentItem := items[m.list.Index()].(ListItem)
 
@@ -70,7 +70,7 @@ func (m Model) toggleCurrent() tea.Cmd {
 	// Use GlobalIndex() for what is the canonical, unfiltered list
 	cmd := m.list.SetItem(m.list.GlobalIndex(), currentItem)
 
-	return cmd
+	return m, cmd
 }
 
 func updateComponent(item ListItem) tea.Cmd {
@@ -213,7 +213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		case tea.KeyMsg:
 			switch msg.String() {
 			case tea.KeySpace.String():
-				return m, m.toggleCurrent()
+				return m.toggleCurrent()
 			case "k", tea.KeyUp.String():
 				// If we're at the top of list go to the bottom (accounting for pagination as well)
 				if m.list.Cursor() == 0 && m.list.Paginator.OnFirstPage() {
