@@ -42,14 +42,14 @@ docs/
 │   └── environment-variables.md       # .env management ✓
 ├── commands/                           # Command reference
 │   ├── README.md                      # Command overview ✓
-    ├── auth.md                        # auth command ✓
-    ├── start.md                       # start/quickstart command ✓
-    ├── templates.md                   # templates command (TODO)
-    ├── run.md                         # run command (TODO)
-    ├── task.md                        # task command ✓
-    ├── dotenv.md                      # dotenv command ✓
-    ├── completion.md                  # completion command ✓
-    └── version.md                     # version command (TODO)
+│   ├── auth.md                        # auth command ✓
+│   ├── start.md                       # start/quickstart command ✓
+│   ├── templates.md                   # templates command (TODO)
+│   ├── run.md                         # run command (TODO)
+│   ├── task.md                        # task command ✓
+│   ├── dotenv.md                      # dotenv command ✓
+│   ├── completion.md                  # completion command ✓
+│   └── version.md                     # version command (TODO)
 └── development/                        # Developer docs
     ├── building.md                    # Building from source ✓
     ├── architecture.md                # Architecture details (TODO)
