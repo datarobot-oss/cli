@@ -57,8 +57,10 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 Before you begin, ensure you have:
 
 - **DataRobot account**&mdash;access to a DataRobot instance (cloud or self-managed). If you don't have an account, sign up at [DataRobot](https://www.datarobot.com/) or contact your organization's DataRobot administrator. You'll need your DataRobot instance URL (e.g., `https://app.datarobot.com`). See [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for help locating your endpoint.
-- **Git**&mdash;for cloning templates (version 2.0+). Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed.
-- **Terminal**&mdash;command-line interface access (Terminal, iTerm2, PowerShell, Command Prompt, or Windows Terminal).
+- **Git**&mdash;for cloning templates (version 2.0+). Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed. Verify installation: `git --version`
+- **Terminal**&mdash;command-line interface access.
+  - **macOS/Linux:** Use Terminal, iTerm2, or your preferred terminal emulator.
+  - **Windows:** Use PowerShell, Command Prompt, or Windows Terminal.
 
 ## Installation
 
@@ -79,7 +81,43 @@ irm https://cli.datarobot.com/winstall | iex
 <details><summary><em>Click here for alternative installation methods</em></summary>
 <br/>
 The following are alternative installation methods for the DataRobot CLI.
-You can choose to install a specific version or build and install from source.
+You can choose to download a binary directly, install a specific version, or build and install from source.
+
+### Download binary (recommended)
+
+Download the latest release for your operating system:
+
+#### macOS
+
+```bash
+# Intel Macs
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-darwin-amd64
+chmod +x dr-darwin-amd64
+sudo mv dr-darwin-amd64 /usr/local/bin/dr
+
+# Apple Silicon (M1/M2)
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-darwin-arm64
+chmod +x dr-darwin-arm64
+sudo mv dr-darwin-arm64 /usr/local/bin/dr
+```
+
+#### Linux
+
+```bash
+# x86_64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-linux-amd64
+chmod +x dr-linux-amd64
+sudo mv dr-linux-amd64 /usr/local/bin/dr
+
+# ARM64
+curl -LO https://github.com/datarobot-oss/cli/releases/latest/download/dr-linux-arm64
+chmod +x dr-linux-arm64
+sudo mv dr-linux-arm64 /usr/local/bin/dr
+```
+
+#### Windows
+
+Download `dr-windows-amd64.exe` from the [releases page](https://github.com/datarobot-oss/cli/releases/latest) and add it to your PATH.
 
 ### Install a specific version
 
@@ -160,13 +198,30 @@ DataRobot CLI (version v0.2.9)
 
 ### Updating the CLI
 
-To update to the latest version, use the built-in update command:
+To update to the latest version of the DataRobot CLI, use the built-in update command:
 
 ```bash
 dr self update
 ```
 
-This command automatically detects your installation method, downloads the latest version, installs it using the appropriate method for your system, and preserves your existing configuration and credentials.
+This command will automatically:
+
+- Detect your installation method (Homebrew, manual installation, etc.)
+- Download the latest version
+- Install it using the appropriate method for your system
+- Preserve your existing configuration and credentials
+
+The update process supports:
+
+- **Homebrew (macOS)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
+- **Windows**&mdash;runs the latest PowerShell installation script
+- **macOS/Linux**&mdash;runs the latest shell installation script
+
+After updating, verify the new version:
+
+```bash
+dr self version
+```
 
 ## Quick start
 
@@ -221,7 +276,9 @@ This will:
 
 Your API key will be securely stored in `~/.config/datarobot/drconfig.yaml`.
 
-Verify that you're logged in:
+### Verify authentication
+
+Check that you're logged in:
 
 ```bash
 dr templates list
@@ -229,7 +286,11 @@ dr templates list
 
 This command displays a list of available templates from your DataRobot instance.
 
-> **What's next?** Now that you're authenticated, you can browse available templates with `dr templates list` or start the setup wizard with `dr templates setup`.
+> **What's next?** Now that you're authenticated, you can:
+>
+> - Browse available templates: `dr templates list`
+> - Start the setup wizard: `dr templates setup`
+> - See the [Command reference](docs/commands/) for all available commands
 
 ### Set up a template
 
@@ -253,7 +314,28 @@ At the subsequent prompt, specify the desired directory name for the template an
 
 <details><summary><em>Click here for manual setup instructions</em></summary>
 <br/>
-**Manual setup:** If you prefer manual control, you can list templates with `dr templates list`, clone a specific template with `dr templates clone TEMPLATE_NAME`, navigate to the directory, and configure environment variables with `dr dotenv setup`.
+**Manual setup:** If you prefer manual control:
+
+```bash
+# 1. List available templates.
+dr templates list
+
+# 2. Clone a specific template.
+dr templates clone TEMPLATE_NAME
+
+# 3. Navigate to the template directory.
+cd TEMPLATE_NAME
+
+# 4. Configure environment variables.
+dr dotenv setup
+```
+
+> **What's next?** After configuring your template:
+>
+> - Start your application: `dr start` or `dr run dev`
+> - Explore available tasks: `dr task list`
+> - See [Run tasks](#run-tasks) below
+>
 </details>
 
 Follow the instructions when prompted to continue configuring the template.
@@ -268,12 +350,17 @@ Now that you've cloned and configured a template, you can start running tasks de
 
 **Quick start (recommended):**
 
-Use the `start` command for automated initialization.
-This command checks prerequisites, validates your environment, executes a template-specific quickstart script if available, and falls back to the setup wizard if no script exists.
+Use the `start` command for automated initialization:
 
 ```bash
 dr start
 ```
+
+This command will:
+
+- Check prerequisites and validate your environment.
+- Execute a template-specific quickstart script if available.
+- Fall back to the setup wizard if no script exists.
 
 > [!TIP]
 > You can use the `--yes` flag to skip all prompts and execute immediately. This is useful in scripts or CI/CD pipelines.
