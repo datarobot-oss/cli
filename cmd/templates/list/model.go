@@ -20,7 +20,7 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var docStyle = lipgloss.NewStyle().Margin(3, 2)
 
 type Model struct {
 	list       list.Model
