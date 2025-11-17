@@ -134,6 +134,7 @@ func GetTemplates() (*TemplateList, error) {
 
 	bearer := "Bearer " + config.GetAPIKey()
 	req.Header.Add("Authorization", bearer)
+	req.Header.Add("X-DataRobot-Api-Consumer-Trace", "true")
 
 	client := &http.Client{}
 
