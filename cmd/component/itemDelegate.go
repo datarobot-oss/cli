@@ -27,7 +27,7 @@ func (d itemDelegate) Spacing() int                            { return 0 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 // TODO: We could try to move this abstraction (since we're using `.Title()`) to a shared, DRY internal package
-// A challenge to that may be that in this file we're setting the "i" key with a specific UI string ("Details/Info")
+// A challenge to that may be that in this file we're setting the "i" key with a specific UI string ("details/info")
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	// TO NOTE: This doesn't work as expected with filtering.
 	// It seems that there's a duplicated/"shadow" list of filtered items that aren't updated with our toggleComponent.
@@ -101,7 +101,7 @@ func newDelegateKeyMap() *delegateKeyMap {
 	return &delegateKeyMap{
 		info: key.NewBinding(
 			key.WithKeys("i"),
-			key.WithHelp("i", "Details/Info"),
+			key.WithHelp("i", "details/info"),
 		),
 	}
 }
