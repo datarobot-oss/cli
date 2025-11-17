@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
@@ -35,34 +37,93 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(_ *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		am := NewAddModel()
-		p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
-
-		finalModel, err := p.Run()
-		if err != nil {
-			return err
-		}
-
-		// Check if we need to launch template setup after quitting
-		if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
-			if innerModel, ok := startModel.Model.(AddModel); ok {
-				args = innerModel.RepoURLs
-			}
-		}
+func RunE(cmd *cobra.Command, args []string) error {
+	args, err := getArgsFromCLIOrPrompt(args)
+	if err != nil {
+		return err
 	}
 
 	if len(args) == 0 || args[0] == "" {
 		return errors.New("component_url required")
 	}
 
-	for _, repoURL := range args {
+	// Parse --data arguments
+	dataArgs, _ := cmd.Flags().GetStringArray("data")
+
+	cliData, err := parseAddDataArgs(dataArgs)
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+
+		return nil
+	}
+
+	// Get --data-file path if specified
+	dataFile, _ := cmd.Flags().GetString("data-file")
+
+	componentConfig := loadComponentDefaults(dataFile)
+
+	if err := addComponents(args, componentConfig, cliData); err != nil {
+		return err
+	}
+
+	compose.Run(nil, nil)
+
+	return nil
+}
+
+func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
+	if len(args) > 0 {
+		return args, nil
+	}
+
+	am := NewAddModel()
+	p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we need to launch template setup after quitting
+	if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		if innerModel, ok := startModel.Model.(AddModel); ok {
+			return innerModel.RepoURLs, nil
+		}
+	}
+
+	return args, nil
+}
+
+func loadComponentDefaults(dataFilePath string) *config.ComponentDefaults {
+	componentConfig, err := config.LoadComponentDefaults(dataFilePath)
+	if err != nil {
+		log.Warn("Failed to load component defaults", "error", err)
+
+		componentConfig = &config.ComponentDefaults{
+			Defaults: make(map[string]map[string]interface{}),
+		}
+	}
+
+	return componentConfig
+}
+
+func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults, cliData map[string]interface{}) error {
+	for _, repoURL := range repoURLs {
 		fmt.Printf("Adding component: %s\n", repoURL)
 
-		err := copier.ExecAdd(repoURL)
-		if err != nil {
-			log.Error(err)
+		// Merge defaults with CLI data (CLI data takes precedence)
+		mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
+
+		var execErr error
+		if len(mergedData) > 0 {
+			execErr = copier.ExecAddWithData(repoURL, mergedData)
+		} else {
+			execErr = copier.ExecAdd(repoURL)
+		}
+
+		if execErr != nil {
+			log.Error(execErr)
 			os.Exit(1)
 
 			return nil
@@ -71,9 +132,42 @@ func RunE(_ *cobra.Command, args []string) error {
 		fmt.Printf("Component %s added\n", repoURL)
 	}
 
-	compose.Run(nil, nil)
-
 	return nil
+}
+
+// parseAddDataArgs parses --data arguments in key=value format for add command
+func parseAddDataArgs(dataArgs []string) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	for _, arg := range dataArgs {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid --data format: %s (expected key=value)", arg)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		if key == "" {
+			return nil, fmt.Errorf("empty key in --data argument: %s", arg)
+		}
+
+		// Try to parse boolean values
+		if value == "true" {
+			result[key] = true
+			continue
+		}
+
+		if value == "false" {
+			result[key] = false
+			continue
+		}
+
+		// Otherwise store as string
+		result[key] = value
+	}
+
+	return result, nil
 }
 
 var AddCmd = &cobra.Command{
@@ -81,4 +175,9 @@ var AddCmd = &cobra.Command{
 	Short:   "Add component",
 	PreRunE: PreRunE,
 	RunE:    RunE,
+}
+
+func init() {
+	AddCmd.Flags().StringArrayP("data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
+	AddCmd.Flags().String("data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 }
