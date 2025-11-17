@@ -95,7 +95,7 @@ func (r *Runner) ListTasks() ([]Task, error) {
 	cmd.Stderr = r.opts.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to list tasks: %w", err)
+		return nil, fmt.Errorf("Failed to list tasks: %w", err)
 	}
 
 	var taskList struct {
@@ -103,7 +103,7 @@ func (r *Runner) ListTasks() ([]Task, error) {
 	}
 
 	if err := json.Unmarshal(out.Bytes(), &taskList); err != nil {
-		return nil, fmt.Errorf("failed to parse task list JSON: %w", err)
+		return nil, fmt.Errorf("Failed to parse task list JSON: %w", err)
 	}
 
 	return taskList.Tasks, nil

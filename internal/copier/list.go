@@ -40,13 +40,13 @@ func AnswersFromPath(path string) ([]Answers, error) {
 	for _, yamlFile := range yamlFiles {
 		data, err := os.ReadFile(yamlFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read yaml file %s: %w", yamlFile, err)
+			return nil, fmt.Errorf("Failed to read yaml file %s: %w", yamlFile, err)
 		}
 
 		fileParsed := Answers{FileName: yamlFile}
 
 		if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal yaml file %s: %w", yamlFile, err)
+			return nil, fmt.Errorf("Failed to unmarshal yaml file %s: %w", yamlFile, err)
 		}
 
 		result = append(result, fileParsed)
@@ -61,13 +61,13 @@ func ComponentsFromAnswers(answers []Answers) ([]Component, error) {
 	for _, a := range answers {
 		data, err := os.ReadFile(a.FileName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read yaml file %s: %w", a.FileName, err)
+			return nil, fmt.Errorf("Failed to read yaml file %s: %w", a.FileName, err)
 		}
 
 		component := Component{FileName: a.FileName}
 
 		if err = yaml.Unmarshal(data, &component); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal yaml file %s: %w", a.FileName, err)
+			return nil, fmt.Errorf("Failed to unmarshal yaml file %s: %w", a.FileName, err)
 		}
 
 		components = append(components, component)

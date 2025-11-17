@@ -157,18 +157,18 @@ func initializeConfig(cmd *cobra.Command) error {
 	// then Viper will fallback to these
 	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for endpoint: %w", err)
+		return fmt.Errorf("Failed to bind environment variables for endpoint: %w", err)
 	}
 
 	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for token: %w", err)
+		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
 	}
 
 	// map VISUAL and EDITOR to external-editor config key
 	err = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 	if err != nil {
-		return fmt.Errorf("failed to bind environment variables for external-editor: %w", err)
+		return fmt.Errorf("Failed to bind environment variables for external-editor: %w", err)
 	}
 
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
@@ -182,7 +182,7 @@ func initializeConfig(cmd *cobra.Command) error {
 	// Now read the config file
 	err = config.ReadConfigFile(configFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+		return fmt.Errorf("Failed to read config file: %w", err)
 	}
 
 	// Bind Cobra flags to Viper

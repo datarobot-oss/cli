@@ -327,7 +327,7 @@ func (m Model) viewListScreen() string {
 
 	// Display error message
 	if m.err != nil {
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error:"), m.err.Error()))
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error()))
 		sb.WriteString("\n")
 		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
 		sb.WriteString("\n")
@@ -340,7 +340,7 @@ func (m Model) viewListScreen() string {
 
 	// Display status message
 	if m.infoMessage != "" {
-		sb.WriteString(fmt.Sprintf("%s %s\n", tui.InfoStyle.Render("Info:"), m.infoMessage))
+		sb.WriteString(fmt.Sprintf("%s %s\n", tui.InfoStyle.Render("Info: "), m.infoMessage))
 		sb.WriteString("\n")
 	}
 

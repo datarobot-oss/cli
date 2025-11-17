@@ -47,7 +47,7 @@ func (r EnvironmentValidationError) Error() string {
 
 	var builder strings.Builder
 
-	builder.WriteString("validation errors:\n")
+	builder.WriteString("Validation errors:\n")
 
 	for _, result := range r.Results {
 		if !result.Valid {
@@ -88,7 +88,7 @@ func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValida
 		result.Results = append(result.Results, ValidationResult{
 			Field:   "prompts",
 			Valid:   false,
-			Message: "failed to gather user prompts: " + err.Error(),
+			Message: "Failed to gather user prompts: " + err.Error(),
 		})
 
 		return result
@@ -212,7 +212,7 @@ func validatePrompts(result *EnvironmentValidationError, userPrompts []UserPromp
 				Field:   prompt.Env,
 				Value:   "",
 				Valid:   false,
-				Message: "required variable is not set",
+				Message: "Required variable is not set.",
 				Help:    prompt.Help,
 			})
 		} else {
@@ -220,7 +220,7 @@ func validatePrompts(result *EnvironmentValidationError, userPrompts []UserPromp
 				Field:   prompt.Env,
 				Value:   prompt.Value,
 				Valid:   true,
-				Message: "variable is set",
+				Message: "Variable is set.",
 				Help:    prompt.Help,
 			})
 		}

@@ -25,7 +25,7 @@ import (
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("should be in repository root directory")
+		return errors.New("You must be in the repository root directory.")
 	}
 
 	// Do we have the required tools?
@@ -43,7 +43,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(args) == 0 || args[0] == "" {
-		return errors.New("component_url required")
+		return errors.New("A component URL is required.")
 	}
 
 	// Parse --data arguments
@@ -109,7 +109,7 @@ func loadComponentDefaults(dataFilePath string) *config.ComponentDefaults {
 
 func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults, cliData map[string]interface{}) error {
 	for _, repoURL := range repoURLs {
-		fmt.Printf("Adding component: %s\n", repoURL)
+		fmt.Printf("Adding component: %s.\n", repoURL)
 
 		// Merge defaults with CLI data (CLI data takes precedence)
 		mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
@@ -128,7 +128,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 			return nil
 		}
 
-		fmt.Printf("Component %s added\n", repoURL)
+		fmt.Printf("Component %s added.\n", repoURL)
 	}
 
 	return nil
@@ -136,7 +136,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 
 var AddCmd = &cobra.Command{
 	Use:     "add [component_url]",
-	Short:   "Add component",
+	Short:   "Add a component.",
 	PreRunE: PreRunE,
 	RunE:    RunE,
 }

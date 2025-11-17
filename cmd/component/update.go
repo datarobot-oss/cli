@@ -29,7 +29,7 @@ import (
 
 func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
-		return errors.New("should be in repository root directory")
+		return errors.New("You must be in the repository root directory.")
 	}
 
 	return nil
@@ -37,7 +37,7 @@ func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 
 func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if err := setupDebugLogging(); err != nil {
-		fmt.Println("fatal:", err)
+		fmt.Println("Fatal:", err)
 		os.Exit(1)
 	}
 
@@ -46,7 +46,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		updateFileName = args[0]
 	}
 
-	// User may provide CLI args --yes or -y or --interactive=false or -i=false in order to skip prompt
+	// User may provide CLI args '--yes' or '-y' or '--interactive=false' or '-i=false' in order to skip prompt
 	yes, _ := cmd.Flags().GetBool("yes")
 	interactive, _ := cmd.Flags().GetBool("interactive")
 
@@ -57,7 +57,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 
 	cliData, err := parseDataArgs(dataArgs)
 	if err != nil {
-		fmt.Println("fatal:", err)
+		fmt.Println("Fatal:", err)
 		os.Exit(1)
 	}
 
@@ -115,14 +115,14 @@ func UpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
-		Short:   "Update component",
+		Short:   "Update a component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
 
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm update without prompting")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm the update without prompting.")
 	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to false to automatically confirm update without prompting")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to 'false' to automatically confirm the update without prompting.")
 	cmd.Flags().StringArrayVar(&dataArgs, "data", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
 	cmd.Flags().StringVar(&dataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 
@@ -131,7 +131,7 @@ func UpdateCmd() *cobra.Command {
 
 func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, dataFilePath string) error {
 	if !isYamlFile(yamlFile) {
-		return errors.New("supplied file is not a yaml file")
+		return errors.New("The supplied file is not a YAML file.")
 	}
 
 	answers, err := copier.AnswersFromPath(".")
@@ -148,7 +148,7 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 	// TODO: Account for consolidating on string representation
 	// This check fails if I pass `./.datarobot/answers/react-frontend_web.yml` - which has the prefix of `./`
 	if !slices.Contains(answerFileNames, yamlFile) {
-		return errors.New("supplied filename doesn't exist in answers")
+		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
 	// Get the repo URL from the answers file to look up defaults
@@ -181,7 +181,7 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
-			log.Error("uv is not installed")
+			log.Error("uv is not installed.")
 		}
 
 		return execErr

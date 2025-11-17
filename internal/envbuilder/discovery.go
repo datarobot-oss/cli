@@ -31,7 +31,7 @@ func depth(path string) int {
 func Discover(root string, maxDepth int) ([]string, error) {
 	includes, err := findComponents(filepath.Join(root, ".datarobot"), maxDepth)
 	if err != nil {
-		return []string{""}, fmt.Errorf("failed to discover components: %w", err)
+		return []string{""}, fmt.Errorf("Failed to discover components: %w", err)
 	}
 
 	if len(includes) == 0 {
