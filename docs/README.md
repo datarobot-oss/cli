@@ -7,13 +7,16 @@ Welcome to the DataRobot CLI documentation. This directory contains comprehensiv
 Install the latest version with a single command that auto-detects your operating system:
 
 **macOS/Linux:**
-######
 
-    curl https://datarobot-oss.github.io/cli/install | sh
+```bash
+curl https://cli.datarobot.com/install | sh
+```
 
 **Windows (PowerShell):**
-######
-    irm https://datarobot-oss.github.io/cli/winstall | iex
+
+```powershell
+irm https://cli.datarobot.com/winstall | iex
+```
 
 For more installation options, see [Getting Started](user-guide/getting-started.md).
 
@@ -22,9 +25,8 @@ For more installation options, see [Getting Started](user-guide/getting-started.
 ### 📚 User Guide
 
 End-user documentation for using the CLI:
+
 - [Getting started](user-guide/getting-started.md)&mdash;installation and initial setup.
-- [Authentication](user-guide/authentication.md)&mdash;setting up DataRobot credentials.
-- [Working with templates](user-guide/templates.md)&mdash;clone and manage application templates.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure.
 
@@ -41,19 +43,23 @@ Understanding the interactive template configuration:
 Detailed documentation for each command:
 
 - [auth](commands/auth.md)&mdash;authentication management.
-- [templates](commands/templates.md)&mdash;template operations.
+- [start](commands/start.md)&mdash;quickstart process.
 - [run](commands/run.md)&mdash;task execution.
+- [task](commands/task.md)&mdash;Taskfile composition and management.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management.
 - [self](commands/self.md)&mdash;CLI utility commands (version, completion).
+
+For template operations, see the [Template System](template-system/) documentation and use `dr templates --help` for command details.
 
 ### 🔧 Development Guide
 
 For contributors and developers:
 
+- [Development setup](development/setup.md)&mdash;setting up your development environment.
 - [Building from source](development/building.md)&mdash;compile and build the CLI.
-- [Architecture](development/architecture.md)&mdash;project structure and design.
-- [Testing](development/testing.md)&mdash;running and writing tests.
-- [Release process](development/release.md)&mdash;how releases are created.
+- [Project structure](development/structure.md)&mdash;code organization and design.
+- [Authentication](development/authentication.md)&mdash;authentication implementation details.
+- [Release process](development/releasing.md)&mdash;how releases are created.
 
 ## Quick links
 
@@ -66,13 +72,10 @@ For contributors and developers:
 
 If you can't find what you're looking for:
 
-1. Check the [FAQ](user-guide/faq.md).
-2. Search [existing issues](https://github.com/datarobot/cli/issues).
-3. Open a [new issue](https://github.com/datarobot/cli/issues/new).
-4. Email: oss-community-management@datarobot.com.
+1. Search [existing issues](https://github.com/datarobot-oss/cli/issues).
+2. Open a [new issue](https://github.com/datarobot-oss/cli/issues/new).
+3. Email: [oss-community-management@datarobot.com](mailto:oss-community-management@datarobot.com).
 
 ## Contributing to documentation
 
 Found an error or want to improve the docs? Please see our [Contributing Guidelines](../CONTRIBUTING.md) for information on submitting documentation improvements.
-
-All documentation is written in Markdown and follows the [Markdown Style Guide](development/markdown-style-guide.md).
