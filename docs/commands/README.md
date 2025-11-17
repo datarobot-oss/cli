@@ -28,6 +28,7 @@ These flags are available for all commands:
 | [`templates`](templates.md) | Manage application templates. |
 | [`start`](start.md) | Run the application quickstart process. |
 | [`run`](run.md) | Execute application tasks. |
+| [`task`](task.md) | Manage Taskfile composition and task execution. |
 | [`dotenv`](dotenv.md) | Manage environment variables. |
 | [`self`](self.md) | CLI utility commands (update, version, completion). |
 
@@ -46,6 +47,10 @@ dr
 │   └── status         Show template status
 ├── start              Run quickstart process (alias: quickstart)
 ├── run                Task execution
+├── task               Taskfile composition and execution
+│   ├── compose        Compose unified Taskfile
+│   ├── list           List available tasks
+│   └── run            Execute tasks
 ├── dotenv             Environment configuration
 └── self               CLI utility commands
     ├── completion     Shell completion
@@ -169,6 +174,11 @@ For detailed documentation on each command, see:
   - List available tasks.
   - Parallel execution support.
   - Watch mode for development.
+
+- **[task](task.md)**&mdash;Taskfile composition and management.
+  - `compose`&mdash;generate unified Taskfile from components.
+  - `list`&mdash;list all available tasks.
+  - `run`&mdash;execute tasks.
 
 - **[dotenv](dotenv.md)**&mdash;environment management.
   - Interactive configuration wizard.
