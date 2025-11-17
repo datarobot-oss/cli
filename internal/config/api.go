@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/datarobot/cli/internal/version"
@@ -77,29 +79,45 @@ func RedactedReqInfo(req *http.Request) string {
 }
 
 func SaveURLToConfig(newURL string) error {
-	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
-	if err != nil {
-		return err
-	}
-
 	if err := CreateConfigFileDirIfNotExists(); err != nil {
 		return err
 	}
 
-	// Saves the URL to the config file with the path prefix
-	// Or as an empty string, if that's needed
-	if newURL == "" {
-		viper.Set(DataRobotURL, "")
-		viper.Set(DataRobotAPIKey, "")
+	// Create a new viper instance to avoid affecting global state
+	v := viper.New()
+	v.SetConfigType("yaml")
 
-		_ = viper.WriteConfig()
+	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), ".config", "datarobot")
+	defaultConfigFilePath := filepath.Join(defaultConfigFileDir, "drconfig.yaml")
 
-		return nil
+	v.SetConfigFile(defaultConfigFilePath)
+
+	// Read existing config to preserve all fields
+	if err := v.ReadInConfig(); err != nil {
+		// Ignore error if config file not found, as we'll create it
+		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
+			return err
+		}
 	}
 
-	viper.Set(DataRobotURL, newURL+"/api/v2")
+	// Saves the URL to the config file with the path prefix
+	// Or as an empty string, if that's needed
+	expandedURL := urlFromShortcut(newURL)
+	if expandedURL == "" {
+		v.Set(DataRobotURL, "")
+		v.Set(DataRobotAPIKey, "")
+	} else {
+		processedURL, err := SchemeHostOnly(expandedURL)
+		if err != nil {
+			return err
+		}
 
-	_ = viper.WriteConfig()
+		v.Set(DataRobotURL, processedURL+"/api/v2")
+	}
+
+	if err := v.WriteConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
