@@ -29,7 +29,6 @@ docs/
 ├── README.md                           # This file
 ├── user-guide/                         # End-user documentation
 │   ├── README.md
-│   ├── getting-started.md             # Installation and setup (see main README)
 │   ├── authentication.md              # Managing credentials (TODO)
 │   ├── templates.md                   # Template management (TODO)
 │   ├── shell-completions.md           # Shell completion setup ✓
@@ -61,9 +60,8 @@ docs/
 
 ### ✅ Complete
 
-- Main README with comprehensive overview
+- Main README with comprehensive overview and quick start guide
 - docs/ structure and organization
-- Getting Started guide
 - Shell completions setup (all shells)
 - Configuration files guide
 - Template system structure
