@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -50,7 +49,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 	// Parse --data arguments
 	dataArgs, _ := cmd.Flags().GetStringArray("data")
 
-	cliData, err := parseAddDataArgs(dataArgs)
+	cliData, err := parseDataArgs(dataArgs)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -133,41 +132,6 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 	}
 
 	return nil
-}
-
-// parseAddDataArgs parses --data arguments in key=value format for add command
-func parseAddDataArgs(dataArgs []string) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-
-	for _, arg := range dataArgs {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid --data format: %s (expected key=value)", arg)
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		if key == "" {
-			return nil, fmt.Errorf("empty key in --data argument: %s", arg)
-		}
-
-		// Try to parse boolean values
-		if value == "true" {
-			result[key] = true
-			continue
-		}
-
-		if value == "false" {
-			result[key] = false
-			continue
-		}
-
-		// Otherwise store as string
-		result[key] = value
-	}
-
-	return result, nil
 }
 
 var AddCmd = &cobra.Command{

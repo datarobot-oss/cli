@@ -189,41 +189,6 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 	return nil
 }
 
-// parseDataArgs parses --data arguments in key=value format
-func parseDataArgs(dataArgs []string) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-
-	for _, arg := range dataArgs {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid --data format: %s (expected key=value)", arg)
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		if key == "" {
-			return nil, fmt.Errorf("empty key in --data argument: %s", arg)
-		}
-
-		// Try to parse boolean values
-		if value == "true" {
-			result[key] = true
-			continue
-		}
-
-		if value == "false" {
-			result[key] = false
-			continue
-		}
-
-		// Otherwise store as string
-		result[key] = value
-	}
-
-	return result, nil
-}
-
 // getRepoURLFromAnswersFile reads the _src_path from a copier answers file
 func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
 	data, err := os.ReadFile(yamlFile)
