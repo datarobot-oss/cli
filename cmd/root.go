@@ -132,7 +132,7 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprint(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
+			fmt.Fprintln(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)
