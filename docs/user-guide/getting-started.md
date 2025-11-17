@@ -119,7 +119,7 @@ dr self version
 You should see output similar to:
 
 ```text
-DataRobot CLI (version v0.2.9)%  
+DataRobot CLI (version v0.2.9)
 ```
 
 ## Updating the CLI
@@ -164,7 +164,7 @@ You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud 
 - Enter `1` for `https://app.datarobot.com`
 - Enter `2` for `https://app.eu.datarobot.com`
 - Enter `3` for `https://app.jp.datarobot.com`
-- Enter `4` for a custom URL
+- Enter `4` to provide a custom URL
 
 Alternatively, set the URL directly:
 
@@ -331,7 +331,6 @@ which dr
 ls -l /usr/local/bin/dr
 
 # You may need to add it to your PATH in ~/.bashrc or ~/.zshrc
-export PATH="/usr/local/bin:$PATH"
 
 # For the current session only:
 export PATH="/usr/local/bin:$PATH"

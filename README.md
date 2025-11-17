@@ -204,7 +204,7 @@ You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud 
 - Enter `1` for `https://app.datarobot.com`
 - Enter `2` for `https://app.eu.datarobot.com`
 - Enter `3` for `https://app.jp.datarobot.com`
-- Enter `4` for a custom URL
+- Enter `4` to provide a custom/self-managed instance URL
 
 Alternatively, set the URL directly:
 
