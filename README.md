@@ -47,10 +47,10 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-- [Common issues](#common-issues)
-- [Getting help](#getting-help)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
+- [Support](#support)
+- [Acknowledgments](#acknowledgments)
 
 ## Prerequisites
 
@@ -189,6 +189,16 @@ Refer to [DataRobot's API keys and tools page](https://docs.datarobot.com/en/doc
 dr auth set-url
 ```
 
+<details><summary><em>Click here for more information about configuration files</em></summary>
+<br/>
+Configuration files are stored in:
+
+- **Linux/macOS:** `~/.config/datarobot/drconfig.yaml`
+- **Windows:** `%USERPROFILE%\.config\datarobot\drconfig.yaml`
+
+See [Configuration Files](docs/user-guide/configuration.md) for more details.
+</details>
+
 You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud instances:
 
 - Enter `1` for `https://app.datarobot.com`
@@ -292,6 +302,17 @@ dr run test
 
 > **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
 
+## Next steps
+
+From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+See the links below for specific details:
+
+- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
+- **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
+- **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
+- **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
+- **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
+
 ## Common issues
 
 ### "dr: command not found"
@@ -372,26 +393,6 @@ dr --verbose templates list
 # Enable debug output for detailed information
 dr --debug templates list
 ```
-
-## Configuration location
-
-Configuration files are stored in:
-
-- **Linux/macOS:** `~/.config/datarobot/drconfig.yaml`
-- **Windows:** `%USERPROFILE%\.config\datarobot\drconfig.yaml`
-
-See [Configuration Files](docs/user-guide/configuration.md) for more details.
-
-## Next steps
-
-From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
-See the links below for specific details:
-
-- **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
-- **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
-- **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
-- **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
-- **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
 ## Contributing
 
