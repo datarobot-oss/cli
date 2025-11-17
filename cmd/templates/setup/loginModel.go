@@ -125,7 +125,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		// Now shut down the server after key is received
 		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("error during shutdown: %v", err)}
+			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
 		}
 
 		return lm.SuccessCmd()
