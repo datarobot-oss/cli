@@ -588,7 +588,7 @@ log.Error("Operation failed", "error", err)
 
 ## Release process
 
-See [Release documentation](../../README.md#release) for a detailed overview of the release process.
+See [Release documentation](../../README.md#release) for a detailed overview of the release process. 
 
 ### Quick release
 
