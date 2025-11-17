@@ -341,7 +341,7 @@ datarobot:
 
 ```bash
 # Use a YAML validator or check manually
-python3 -c "import yaml; yaml.safe_load(open('~/.config/datarobot/drconfig.yaml'))"
+python3 -c "import yaml, os; yaml.safe_load(open(os.path.expanduser('~/.config/datarobot/drconfig.yaml')))"
 ```
 
 ### Permission denied
