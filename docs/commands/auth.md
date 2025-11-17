@@ -375,6 +375,7 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 ### Don't share credentials
 
 Never commit or share:
+
 - `~/.config/datarobot/drconfig.yaml`
 - API keys
 - OAuth tokens

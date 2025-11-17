@@ -303,6 +303,7 @@ dr templates list --config ~/.config/datarobot/drconfig.yaml
 ### Invalid configuration
 
 **Problem:** YAML syntax errors in the configuration file. Common causes:
+
 - Missing colons (`:`) after keys
 - Incorrect indentation (YAML is sensitive to spaces)
 - Invalid YAML characters
