@@ -46,6 +46,7 @@ docs/
 │   ├── start.md                       # start/quickstart command ✓
 │   ├── templates.md                   # templates command (TODO)
 │   ├── run.md                         # run command (TODO)
+│   ├── task.md                        # task command ✓
 │   ├── dotenv.md                      # dotenv command ✓
 │   ├── completion.md                  # completion command ✓
 │   └── version.md                     # version command (TODO)
@@ -71,6 +72,7 @@ docs/
 - Environment variables management
 - auth command reference
 - start/quickstart command reference
+- task command reference
 - dotenv command reference
 - completion command reference
 - Building from source

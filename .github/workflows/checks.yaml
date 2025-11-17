@@ -205,7 +205,7 @@ jobs:
 
   auto-label:
     needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true'
+    if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     name: Auto Label Go Changes
     permissions:

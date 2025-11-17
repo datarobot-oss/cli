@@ -19,6 +19,7 @@ my-datarobot-template/
 │       └── bin/             # Quickstart scripts
 │           └── quickstart.sh
 ├── .env.template            # Environment variable template
+├── .taskfile-data.yaml      # Taskfile configuration (optional)
 ├── .gitignore
 ├── README.md
 ├── Taskfile.gen.yaml        # Generated task definitions
@@ -264,6 +265,12 @@ If you're not in a DataRobot template directory (no `.env` file), you'll see:
 You don't seem to be in a DataRobot Template directory.
 This command requires a .env file to be present.
 ```
+
+### Taskfile configuration data
+
+Template authors can optionally provide a `.taskfile-data.yaml` file to configure the generated Taskfile. This file allows specifying port numbers for development servers and other configuration data.
+
+See [dr task compose documentation](../commands/task.md#taskfile-data-configuration) for complete details on the file format and usage.
 
 ## Multi-level configuration
 
@@ -620,7 +627,25 @@ tasks:
       - echo "Starting {{.APP_NAME}}"
 ```
 
-### 6. Test template
+### 6. Configure Taskfile data (optional)
+
+Create `.taskfile-data.yaml` to provide additional configuration for the generated root Taskfile:
+
+```yaml
+# .taskfile-data.yaml
+# Optional configuration for dr task compose
+
+# Ports to display when running dev task
+ports:
+  - name: Backend
+    port: 8080
+  - name: Frontend
+    port: 5173
+```
+
+This allows developers using your template to see which ports services run on when they execute `task dev`.
+
+### 7. Test template
 
 ```bash
 # Test setup locally
@@ -646,4 +671,5 @@ git push origin main
 - [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
 - [Environment variables](environment-variables.md)&mdash;managing .env files.
 - [dr run](../commands/run.md)&mdash;task execution.
+- [dr task compose](../commands/task.md)&mdash;Taskfile composition and configuration.
 - [Command reference: templates](../commands/templates.md)&mdash;template commands.

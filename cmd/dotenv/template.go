@@ -9,6 +9,7 @@
 package dotenv
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -235,8 +236,21 @@ func writeContents(cleanContents, dotenvFile string) error {
 
 	cleanContents = header + cleanContents
 
-	_, err = f.WriteString(cleanContents)
+	// Use buffered writer for efficiency
+	writer := bufio.NewWriter(f)
+
+	_, err = writer.WriteString(cleanContents)
 	if err != nil {
+		return err
+	}
+
+	// Flush buffer to file
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+
+	// Sync to ensure data is written to physical storage
+	if err := f.Sync(); err != nil {
 		return err
 	}
 
