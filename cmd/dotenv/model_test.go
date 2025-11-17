@@ -184,18 +184,24 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	suite.WaitFor(tm, "> LLM Gateway")
 	suite.Send(tm, "enter")
 
+	// Wait for the file write to complete and return to list screen
+	suite.WaitFor(tm, "Variables found in")
+
 	// Exit list screen
 	suite.Send(tm, "enter")
 
 	fm := suite.FinalModel(tm)
 
 	suite.Equal(filepath.Join(suite.tempDir, ".env"), fm.DotenvFile)
-	// TODO: find out why this check is flaky
-	// suite.FileExists(fm.DotenvFile, "Expected environment file to be created at default path")
 
-	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
+	actualContents, err := os.ReadFile(fm.DotenvFile)
+	suite.Require().NoError(err, "Expected to read .env file")
+
+	actualContentsStr := string(actualContents)
+
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
 
 	os.Remove(fm.DotenvFile)
 }
@@ -232,21 +238,26 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	suite.WaitFor(tm, "> LLM Gateway")
 	suite.Send(tm, "enter")
 
+	// Wait for the file write to complete and return to list screen
+	suite.WaitFor(tm, "Variables found in")
+
 	// Exit list screen
 	suite.Send(tm, "enter")
 
 	fm := suite.FinalModel(tm)
 
 	suite.Equal(filepath.Join(suite.tempDir, ".env"), fm.DotenvFile)
-	// TODO: find out why this check is flaky
-	// suite.FileExists(fm.DotenvFile, "Expected environment file to be created at default path")
 
-	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
-	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
-	suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
-	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
+	actualContents, err := os.ReadFile(fm.DotenvFile)
+	suite.Require().NoError(err, "Expected to read .env file")
+
+	actualContentsStr := string(actualContents)
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
+	suite.Contains(actualContentsStr, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
 
 	os.Remove(fm.DotenvFile)
 }
@@ -293,23 +304,28 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	suite.WaitFor(tm, "> LLM Gateway")
 	suite.Send(tm, "enter")
 
+	// Wait for the file write to complete and return to list screen
+	suite.WaitFor(tm, "Variables found in")
+
 	// Exit list screen
 	suite.Send(tm, "enter")
 
 	fm := suite.FinalModel(tm)
 
 	suite.Equal(filepath.Join(suite.tempDir, ".env"), fm.DotenvFile)
-	// TODO: find out why this check is flaky
-	// suite.FileExists(fm.DotenvFile, "Expected environment file to be created at default path")
 
-	suite.Contains(fm.contents, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(fm.contents, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(fm.contents, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
-	suite.Contains(fm.contents, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
-	suite.Contains(fm.contents, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
-	suite.Contains(fm.contents, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
-	suite.Contains(fm.contents, "BOX_CLIENT_ID=box_parakeet_id\n", "Expected env file to contain the entered Box client ID")
-	suite.Contains(fm.contents, "BOX_CLIENT_SECRET=box_parakeet_secret\n", "Expected env file to contain the entered Box client secret")
+	actualContents, err := os.ReadFile(fm.DotenvFile)
+	suite.Require().NoError(err, "Expected to read .env file")
+
+	actualContentsStr := string(actualContents)
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
+	suite.Contains(actualContentsStr, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
+	suite.Contains(actualContentsStr, "BOX_CLIENT_ID=box_parakeet_id\n", "Expected env file to contain the entered Box client ID")
+	suite.Contains(actualContentsStr, "BOX_CLIENT_SECRET=box_parakeet_secret\n", "Expected env file to contain the entered Box client secret")
 
 	os.Remove(fm.DotenvFile)
 }
