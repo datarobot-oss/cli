@@ -92,7 +92,7 @@ task --list
 - The version information from git is included
 - The git commit hash is embedded
 - The build timestamp is recorded
-- The roper `ldflags` configuration is applied
+- The proper `ldflags` configuration is applied
 
 ```bash
 # Standard build (recommended)
