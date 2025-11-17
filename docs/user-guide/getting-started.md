@@ -104,6 +104,8 @@ sudo mv ./dist/dr /usr/local/bin/dr
 
 ### Verify installation
 
+You can verify the installation by checking the version:
+
 ```bash
 dr --version
 ```
@@ -149,7 +151,7 @@ dr self version
 
 ## Initial setup
 
-### 1. Configure DataRobot URL
+### Configure your DataRobot instance URL
 
 Set your DataRobot instance URL:
 
@@ -163,7 +165,6 @@ You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud 
 - Enter `2` for `https://app.eu.datarobot.com`
 - Enter `3` for `https://app.jp.datarobot.com`
 - Enter `4` for a custom URL
-- Or enter your custom URL directly (e.g., `https://your-instance.datarobot.com`)
 
 Alternatively, set the URL directly:
 
@@ -171,7 +172,7 @@ Alternatively, set the URL directly:
 dr auth set-url https://app.datarobot.com
 ```
 
-### 2. Authenticate
+### Authenticate with DataRobot
 
 Log in to DataRobot using OAuth:
 
@@ -188,7 +189,7 @@ This will:
 
 Your API key will be securely stored in `~/.config/datarobot/drconfig.yaml`.
 
-### 3. Verify authentication
+### Verify authentication
 
 Check that you're logged in:
 
