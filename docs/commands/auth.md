@@ -48,7 +48,7 @@ dr auth login
 5. The CLI securely stores the API key in your configuration file.
 6. The browser and server close automatically.
 
->[!NOTE]
+> [!NOTE]
 > OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
 
 **Example:**

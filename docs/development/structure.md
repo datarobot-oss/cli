@@ -194,8 +194,7 @@ func runInteractive() error {
 
 Configuration is managed through Viper and stored in:
 
-- `~/.config/datarobot/drconfig.yaml`&mdash;global configuration
-- `~/.config/datarobot/credentials.json`&mdash;authentication tokens
+- `~/.config/datarobot/drconfig.yaml`&mdash;global configuration and authentication tokens
 
 Access configuration through the `internal/config` package:
 
