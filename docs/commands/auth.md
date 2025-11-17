@@ -3,7 +3,7 @@
 The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start guide](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
 

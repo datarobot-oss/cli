@@ -3,7 +3,7 @@
 The DataRobot CLI stores your authentication credentials and preferences in configuration files. This guide explains how configuration files work, where they're stored, and how to manage them.
 
 > [!NOTE]
-> **New to the CLI?** If you're setting up the CLI for the first time, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../README.md#quick-start) for initial setup.
+> **New to the CLI?** If you're setting up the CLI for the first time, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../../README.md#quick-start) for initial setup.
 
 ## Configuration location
 
@@ -46,7 +46,7 @@ token: API_KEY_HERE
 >
 > # Staging
 > ~/.config/datarobot/staging-config.yaml
-> 
+>
 > # Production
 > ~/.config/datarobot/prod-config.yaml
 > ```
