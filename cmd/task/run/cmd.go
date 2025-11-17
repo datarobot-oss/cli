@@ -47,7 +47,7 @@ Examples:
   dr run test --parallel        # Run tests in parallel
   dr run --list                 # Show all available tasks
 
-💡 Tasks are defined in your project's Taskfile and vary by template.`,
+💡 Tasks are defined in your project's 'Taskfile' and vary by template.`,
 		Run: func(_ *cobra.Command, args []string) {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
@@ -69,7 +69,7 @@ Examples:
 				_, _ = fmt.Fprintln(os.Stderr, "")
 				_, _ = fmt.Fprintln(os.Stderr, "The 'task' binary is required to run application tasks.")
 				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "🛠️  Install Task:")
+				_, _ = fmt.Fprintln(os.Stderr, "🛠️ Install Task:")
 				_, _ = fmt.Fprintln(os.Stderr, "   • macOS: brew install go-task/tap/go-task")
 				_, _ = fmt.Fprintln(os.Stderr, "   • Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
 				_, _ = fmt.Fprintln(os.Stderr, "   • Windows: choco install go-task")
@@ -92,7 +92,7 @@ Examples:
 				exitCode := 1
 
 				if exitErr, ok := err.(*exec.ExitError); ok {
-					// Only propagate if --exit-code was requested
+					// Only propagate if '--exit-code' was requested
 					if opts.taskOpts.ExitCode {
 						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
 							exitCode = status.ExitStatus()
@@ -100,7 +100,7 @@ Examples:
 					}
 				} else {
 					// Only print error if it's not an exit error (task already showed its error)
-					_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 				}
 
 				os.Exit(exitCode)

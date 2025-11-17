@@ -41,7 +41,7 @@ func getStateDir() (string, error) {
 	if stateDir == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("failed to get user home directory: %w", err)
+			return "", fmt.Errorf("Failed to get user home directory: %w", err)
 		}
 
 		stateDir = filepath.Join(homeDir, ".local", "state")
@@ -49,7 +49,7 @@ func getStateDir() (string, error) {
 
 	drStateDir := filepath.Join(stateDir, "dr", "backups")
 	if err := os.MkdirAll(drStateDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create state directory: %w", err)
+		return "", fmt.Errorf("Failed to create state directory: %w", err)
 	}
 
 	return drStateDir, nil
@@ -126,12 +126,12 @@ func backup(dotenvFile string) error {
 	// Read the original file
 	content, err := os.ReadFile(dotenvFile)
 	if err != nil {
-		return fmt.Errorf("failed to read file for backup: %w", err)
+		return fmt.Errorf("Failed to read file for backup: %w", err)
 	}
 
 	// Write to backup location
 	if err := os.WriteFile(backupPath, content, 0o644); err != nil {
-		return fmt.Errorf("failed to write backup file: %w", err)
+		return fmt.Errorf("Failed to write backup file: %w", err)
 	}
 
 	absPath, _ := filepath.Abs(dotenvFile)

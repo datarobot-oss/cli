@@ -24,7 +24,7 @@ import (
 // fails, suitable for use in Cobra PreRunE hooks.
 func EnsureAuthenticatedE(ctx context.Context) error {
 	if !EnsureAuthenticated(ctx) {
-		return errors.New("authentication failed")
+		return errors.New("Authentication failed.")
 	}
 
 	return nil
@@ -36,7 +36,7 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool {
 	if viper.GetBool("skip_auth") {
-		log.Warn("Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail.")
+		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
 
 		return true
 	}
@@ -48,7 +48,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 
 		datarobotHost = config.GetBaseURL()
 		if datarobotHost == "" {
-			log.Error("Failed to configure DataRobot URL")
+			log.Error("Failed to configure the DataRobot URL.")
 			return false
 		}
 	}
@@ -66,7 +66,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 
 	key, err := apiKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error("Failed to retrieve API key", "error", err)
+		log.Error("Failed to retrieve API key.", "error", err)
 		return false
 	}
 
@@ -83,7 +83,7 @@ func LoginAction(ctx context.Context) error {
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viper.GetBool("skip_auth") {
-		return errors.New("login has been disabled via --skip-auth flag")
+		return errors.New("Login has been disabled via the '--skip-auth' flag.")
 	}
 
 	datarobotHost := config.GetBaseURL()
@@ -97,10 +97,10 @@ func LoginAction(ctx context.Context) error {
 	if token := config.GetAPIKey(); token != "" {
 		log.Info("Re-authenticating with DataRobot...")
 	} else {
-		log.Warn("No valid API key found. Retrieving a new one")
+		log.Warn("No valid API key found. Retrieving a new one...")
 	}
 
-	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'")
+	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'.")
 
 	// Clear existing token and get new one
 	viper.Set(config.DataRobotAPIKey, "")
@@ -123,12 +123,12 @@ func LoginAction(ctx context.Context) error {
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "🔐 Login to DataRobot",
-	Long: `Login to DataRobot using OAuth authentication in your browser.
+	Short: "🔐 Log in to DataRobot using OAuth authentication.",
+	Long: `Log in to DataRobot using OAuth authentication in your browser.
 
 This command will:
   1. Open your default browser.
-  2. Redirect you to DataRobot login page.
+  2. Redirect you to the DataRobot login page.
   3. Securely store your API key for future CLI operations.`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		err := LoginAction(cmd.Context())

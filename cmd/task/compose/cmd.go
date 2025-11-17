@@ -36,7 +36,7 @@ func Run(_ *cobra.Command, _ []string) {
 
 	contentBytes, err := os.ReadFile(".gitignore")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Error(fmt.Errorf("failed to read from .gitignore file: %w", err))
+		log.Error(fmt.Errorf("Failed to read from '.gitignore' file: %w", err))
 		return
 	}
 
@@ -49,7 +49,7 @@ func Run(_ *cobra.Command, _ []string) {
 
 	f, err := os.Create(".gitignore")
 	if err != nil {
-		log.Error(fmt.Errorf("failed to create .gitignore file: %w", err))
+		log.Error(fmt.Errorf("Failed to create '.gitignore' file: %w", err))
 		return
 	}
 
@@ -57,11 +57,11 @@ func Run(_ *cobra.Command, _ []string) {
 
 	_, err = f.WriteString(taskfileIgnore + "\n\n" + contents)
 	if err != nil {
-		log.Error(fmt.Errorf("failed to write to .gitignore file: %w", err))
+		log.Error(fmt.Errorf("Failed to write to '.gitignore' file: %w", err))
 		return
 	}
 
-	fmt.Println("Added " + taskfileIgnore + " line to .gitignore")
+	fmt.Println("Added " + taskfileIgnore + " line to '.gitignore'.")
 }
 
 func createDiscovery(taskfileName string) *task.Discovery {
@@ -105,7 +105,7 @@ func validateTemplatePath(path string) (string, error) {
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "compose",
-		Short: "Compose Taskfile.yaml from multiple files in subdirectories",
+		Short: "Compose 'Taskfile.yaml' from multiple files in subdirectories",
 		Long: `Compose a root Taskfile.yaml by discovering Taskfiles in subdirectories.
 
 By default, generates a simple Taskfile with includes only.

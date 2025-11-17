@@ -41,7 +41,7 @@ func Run(args []string) error {
 	dirStyled := lipgloss.NewStyle().Bold(true).Render(dir)
 
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		return fmt.Errorf("directory %s already exists", dirStyled)
+		return fmt.Errorf("Directory %s already exists.", dirStyled)
 	}
 
 	fmt.Printf("\nCloning into %s directory...\n", dirStyled)
@@ -65,7 +65,7 @@ func Run(args []string) error {
 
 func validateArgs(args []string) (string, string, error) {
 	if len(args) == 0 {
-		return "", "", errors.New("template ID required")
+		return "", "", errors.New("Template ID required.")
 	}
 
 	templateID := args[0]

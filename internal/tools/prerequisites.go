@@ -33,7 +33,7 @@ func CheckPrerequisite(name string) error {
 	for _, tool := range RequiredTools {
 		if tool.Name == name {
 			if !isInstalled(tool.Command) {
-				return fmt.Errorf("%s is not installed", name)
+				return fmt.Errorf("%s is not installed.", name)
 			}
 		}
 	}
@@ -52,7 +52,7 @@ func CheckPrerequisites() error {
 	}
 
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required tools: %s", strings.Join(missing, ", "))
+		return fmt.Errorf("Missing required tools: %s.", strings.Join(missing, ", "))
 	}
 
 	return nil
@@ -69,14 +69,14 @@ func CheckTool(name string) error {
 	for _, tool := range RequiredTools {
 		if tool.Name == name {
 			if !isInstalled(tool.Command) {
-				return fmt.Errorf("%s is not installed", name)
+				return fmt.Errorf("%s is not installed.", name)
 			}
 
 			return nil
 		}
 	}
 
-	return fmt.Errorf("unknown tool: %s", name)
+	return fmt.Errorf("Unknown tool: %s.", name)
 }
 
 // GetMissingTools returns a list of missing prerequisite tools

@@ -22,7 +22,7 @@ func ListRunE(_ *cobra.Command, _ []string) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
-			fmt.Println("fatal:", err)
+			fmt.Println("fatal: ", err)
 			os.Exit(1)
 		}
 
@@ -41,6 +41,6 @@ func ListRunE(_ *cobra.Command, _ []string) error {
 
 var ListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List components",
+	Short: "List components.",
 	RunE:  ListRunE,
 }

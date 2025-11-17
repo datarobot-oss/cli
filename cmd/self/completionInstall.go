@@ -38,33 +38,33 @@ func installCompletionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "install [shell]",
-		Short: "Install shell completions interactively",
+		Short: "Install shell completions interactively.",
 		Long: `Install shell completions automatically by detecting your shell and
 installing to the appropriate location.
 
 This command will:
 - Detect your current shell (or use specified shell)
 - Show what will be installed and where
-- Ask for confirmation (unless --yes is specified)
+- Ask for confirmation (unless '--yes' is specified)
 - Install completions to the standard location
 - Clear completion cache (if needed)
 - Show instructions to activate completions
 
-By default, runs in preview mode. Use --yes to install directly.`,
-		Example: `  # Preview what would be installed (default behavior)
+By default, this command runs in preview mode. Use '--yes' to install directly.`,
+		Example: `  # Preview what would be installed (default behavior):
   ` + version.CliName + ` completion install
 
-  # Install completions for your current shell
+  # Install completions for your current shell:
   ` + version.CliName + ` completion install --yes
 
-  # Install completions for a specific shell
+  # Install completions for a specific shell:
   ` + version.CliName + ` completion install bash --yes
   ` + version.CliName + ` completion install zsh --yes
 
-  # Preview installation for a specific shell
+  # Preview installation for a specific shell:
   ` + version.CliName + ` completion install bash
 
-  # Force reinstall even if already installed
+  # Force reinstall, even if completions are already installed:
   ` + version.CliName + ` completion install --force --yes`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: supportedShells(),
@@ -75,12 +75,12 @@ By default, runs in preview mode. Use --yes to install directly.`,
 			}
 
 			// Determine if we're in dry-run mode
-			// If --yes is specified, disable dry-run (unless --dry-run=true was explicitly set)
+			// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
 			effectiveDryRun := dryRun
 			if yes && !cmd.Flags().Changed("dry-run") {
 				effectiveDryRun = false
 			} else if !yes && !cmd.Flags().Changed("dry-run") {
-				// Default to dry-run if --yes is not specified
+				// Default to dry-run if '--yes' is not specified
 				effectiveDryRun = true
 			}
 
@@ -88,9 +88,9 @@ By default, runs in preview mode. Use --yes to install directly.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force reinstall even if already installed")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm installation without prompting")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be installed without making changes")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force reinstall, even if completions are already installed.")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm installation without prompting.")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview mode: show what would be installed without making changes.")
 
 	return cmd
 }
@@ -140,10 +140,10 @@ func runCompletionInstall(rootCmd *cobra.Command, specifiedShell string, force, 
 
 	// Install
 	if err := installFunc(rootCmd); err != nil {
-		return fmt.Errorf("failed to install completions: %w", err)
+		return fmt.Errorf("Failed to install completions: %w", err)
 	}
 
-	fmt.Printf("%s Completion installed to: %s\n", successStyle.Render("✓"), installPath)
+	fmt.Printf("%s Completion installed to: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
 
 	// Show activation instructions
@@ -153,7 +153,7 @@ func runCompletionInstall(rootCmd *cobra.Command, specifiedShell string, force, 
 }
 
 func showCompletionAlreadyInstalled(installPath string) error {
-	fmt.Printf("%s Completion already installed at: %s\n", successStyle.Render("✓"), installPath)
+	fmt.Printf("%s Completion already installed at: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
 	fmt.Println(infoStyle.Render("To reinstall, use: " + version.CliName + " completion install --force --yes"))
 
@@ -190,13 +190,13 @@ func promptForConfirmation() (bool, error) {
 
 	_, err := fmt.Scanln(&response)
 	if err != nil && err.Error() != "unexpected newline" {
-		return false, fmt.Errorf("failed to read input: %w", err)
+		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 
 	response = strings.ToLower(strings.TrimSpace(response))
 	if response != "y" && response != "yes" {
 		fmt.Println()
-		fmt.Println(infoStyle.Render("Installation cancelled"))
+		fmt.Println(infoStyle.Render("Installation cancelled."))
 
 		return false, nil
 	}
@@ -218,7 +218,7 @@ func getCompletionInstallFunc(rootCmd *cobra.Command, shellType internalShell.Sh
 	case internalShell.PowerShell:
 		return "", nil, errors.New("PowerShell completions installation not yet supported via this command. Use: dr completion powershell")
 	default:
-		return "", nil, fmt.Errorf("unsupported shell: %s", shellType)
+		return "", nil, fmt.Errorf("Unsupported shell: %s.", shellType)
 	}
 }
 
@@ -267,7 +267,7 @@ func installCompletionZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command
 		if !dirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
 			zshrc := filepath.Join(os.Getenv("HOME"), ".zshrc")
 			if err := ensureFpathInZshrc(zshrc, compDir); err != nil {
-				fmt.Printf("%s %s\n", warnStyle.Render("Warning:"), err)
+				fmt.Printf("%s %s\n", warnStyle.Render("Warning: "), err)
 			}
 		}
 
@@ -285,7 +285,7 @@ func installCompletionBash(_ *cobra.Command, _ bool) (string, func(*cobra.Comman
 		// Check if bash-completion is available
 		if !isBashCompletionAvailable() {
 			fmt.Println()
-			fmt.Printf("%s Bash completion framework not detected\n", warnStyle.Render("⚠"))
+			fmt.Printf("%s Bash completion framework not detected.\n", warnStyle.Render("⚠"))
 			fmt.Println()
 			fmt.Println("Bash completions require the bash-completion package.")
 			fmt.Println()
@@ -311,7 +311,7 @@ func installCompletionBash(_ *cobra.Command, _ bool) (string, func(*cobra.Comman
 			fmt.Println("After installing bash-completion, run this command again.")
 			fmt.Println()
 
-			return errors.New("bash-completion not available")
+			return errors.New("Bash-completion not available.")
 		}
 
 		// Create directory
@@ -438,7 +438,7 @@ func showActivationInstructions(shell internalShell.Shell) {
 func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Check if file exists
 	if !fileExists(zshrc) {
-		return errors.New("~/.zshrc not found, please create it first")
+		return errors.New("~/.zshrc not found, please create it first.")
 	}
 
 	// Read file
@@ -475,7 +475,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Check if file exists
 	if !fileExists(bashrc) {
-		return errors.New("~/.bashrc not found, please create it first")
+		return errors.New("~/.bashrc not found, please create it first.")
 	}
 
 	// Read file
@@ -512,16 +512,16 @@ func uninstallCompletionCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "uninstall [shell]",
-		Short: "Uninstall shell completions",
-		Long: `Uninstall shell completions by detecting your shell and removing from the standard location.
+		Short: "Uninstall shell completions.",
+		Long: `Uninstall shell completions by detecting your shell and removing them from the standard location.
 
 This command will:
 - Detect your current shell (or use specified shell)
 - Show what will be removed
-- Ask for confirmation (unless --yes is specified)
+- Ask for confirmation (unless '--yes' is specified)
 - Remove completion files
 
-By default, runs in preview mode. Use --yes to uninstall directly.`,
+By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 		Example: `  # Preview what would be removed (default behavior)
   ` + version.CliName + ` completion uninstall
 
@@ -540,12 +540,12 @@ By default, runs in preview mode. Use --yes to uninstall directly.`,
 			}
 
 			// Determine if we're in dry-run mode
-			// If --yes is specified, disable dry-run (unless --dry-run=true was explicitly set)
+			// If '--yes' is specified, disable dry-run (unless '--dry-run=true' was explicitly set)
 			effectiveDryRun := dryRun
 			if yes && !cmd.Flags().Changed("dry-run") {
 				effectiveDryRun = false
 			} else if !yes && !cmd.Flags().Changed("dry-run") {
-				// Default to dry-run if --yes is not specified
+				// Default to dry-run if '--yes' is not specified
 				effectiveDryRun = true
 			}
 
@@ -569,7 +569,7 @@ func runCompletionUninstall(specifiedShell string, yes, dryRun bool) error {
 
 	existingPaths := findExistingCompletions(internalShell.Shell(shell))
 	if len(existingPaths) == 0 {
-		fmt.Printf("%s No completion found\n", infoStyle.Render("ℹ"))
+		fmt.Printf("%s No completion found.\n", infoStyle.Render("ℹ"))
 
 		return nil
 	}
@@ -661,15 +661,15 @@ func performCompletionUninstall(shell internalShell.Shell) error {
 	case internalShell.Fish:
 		removed = uninstallCompletionFish()
 	case internalShell.PowerShell:
-		return errors.New("PowerShell completions uninstallation not yet supported via this command")
+		return errors.New("PowerShell completions uninstallation not yet supported via this command.")
 	default:
-		return fmt.Errorf("unsupported shell: %s", shell)
+		return fmt.Errorf("Unsupported shell: %s.", shell)
 	}
 
 	if removed {
-		fmt.Printf("%s Completion uninstalled\n", successStyle.Render("✓"))
+		fmt.Printf("%s Completion uninstalled.\n", successStyle.Render("✓"))
 		fmt.Println()
-		fmt.Println("Restart your shell to apply changes")
+		fmt.Println("Restart your shell to apply changes.")
 	}
 
 	return nil
@@ -704,13 +704,13 @@ func promptForCompletionUninstallConfirmation() (bool, error) {
 
 	_, err := fmt.Scanln(&response)
 	if err != nil && err.Error() != "unexpected newline" {
-		return false, fmt.Errorf("failed to read input: %w", err)
+		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 
 	response = strings.ToLower(strings.TrimSpace(response))
 	if response != "y" && response != "yes" {
 		fmt.Println()
-		fmt.Println(infoStyle.Render("Uninstallation cancelled"))
+		fmt.Println(infoStyle.Render("Uninstallation cancelled."))
 
 		return false, nil
 	}

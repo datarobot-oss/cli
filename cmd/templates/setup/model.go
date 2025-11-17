@@ -521,7 +521,7 @@ func (m Model) View() string { //nolint: cyclop
 			Width(contentWidth).
 			MarginTop(1).
 			Render(strings.Join([]string{
-				"⏱️  Takes about 3-5 minutes",
+				"⏱️ Takes about 3-5 minutes",
 				"🎯 You'll have a working AI app at the end",
 			}, "\n"))
 

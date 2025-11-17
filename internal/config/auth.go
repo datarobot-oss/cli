@@ -27,7 +27,7 @@ func SchemeHostOnly(longURL string) (string, error) {
 	}
 
 	if parsedURL.Host == "" {
-		return "", errors.New("invalid url")
+		return "", errors.New("Invalid URL.")
 	}
 
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
@@ -48,7 +48,7 @@ func GetBaseURL() string {
 func GetEndpointURL(endpoint string) (string, error) {
 	baseURL := GetBaseURL()
 	if baseURL == "" {
-		return "", errors.New("empty url")
+		return "", errors.New("Empty URL.")
 	}
 
 	return url.JoinPath(baseURL, endpoint)
