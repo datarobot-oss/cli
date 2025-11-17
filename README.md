@@ -304,7 +304,8 @@ dr run test
 
 ## Next steps
 
-From here, refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+From here, refer to the repository of the template you selected to start customizing it.
+Refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
 See the links below for specific details:
 
 - **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
