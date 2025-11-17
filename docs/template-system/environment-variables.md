@@ -1,4 +1,4 @@
-# Environment Variables
+# Environment variables
 
 Managing environment variables and `.env` files in DataRobot templates.
 

@@ -76,14 +76,14 @@ Initialize response map
 For each required prompt:
     ├── Display prompt with help text
     ├── Show options (if applicable)
-    ├── Capture user Input
-    ├── Validate Input
-    ├── Update Required Sections (conditional)
-    └── Move to Next Prompt
+    ├── Capture user input
+    ├── Validate input
+    ├── Update required sections (conditional)
+    └── Move to next prompt
     ↓
-Generate .env File
+Generate .env file
     ↓
-Save Configuration
+Save configuration
 ```
 
 ## Prompt types
@@ -102,7 +102,8 @@ prompts:
     optional: false
 ```
 
-**User Experience:**
+User experience:
+
 ```
 Enter your database connection string
 > postgresql://localhost:5432/mydb█
@@ -123,7 +124,8 @@ prompts:
     optional: false
 ```
 
-**User Experience:**
+User experience:
+
 ```
 Enter your API key
 > ••••••••••••••••••█
@@ -131,8 +133,9 @@ Enter your API key
 Input is masked for security
 ```
 
-**Features:**
-- Input is masked with bullet characters (•).
+Features:
+
+- Input is masked with bullets (•).
 - Prevents shoulder-surfing and accidental exposure.
 - Stored as plain text in `.env` file (file should be in `.gitignore`).
 
@@ -150,13 +153,15 @@ prompts:
     optional: false
 ```
 
-**Behavior:**
+Behavior:
+
 - If no value exists, a cryptographically secure random string is generated.
 - Generated secrets are 32 characters long.
 - Uses base64 URL-safe encoding.
 - Only generates when value is empty (preserves existing secrets).
 
-**User Experience:**
+User experience:
+
 ```
 Session encryption key (auto-generated)
 > ••••••••••••••••••••••••••••••••█
@@ -164,7 +169,7 @@ Session encryption key (auto-generated)
 A random secret was generated. Press Enter to accept or type a custom value.
 ```
 
-### Single Selection Prompts
+### Single selection prompts
 
 Choose one option from a list:
 
@@ -184,7 +189,8 @@ prompts:
         value: "prod"
 ```
 
-**User Experience:**
+User experience:
+
 ```
 Select your deployment environment
 
@@ -193,7 +199,7 @@ Select your deployment environment
     Production
 ```
 
-### Multiple Selection Prompts
+### Multiple selection prompts
 
 Choose multiple options (checkboxes):
 
@@ -213,16 +219,17 @@ prompts:
         value: "caching"
 ```
 
-**User Experience:**
+User experience:
+
 ```
-Select features to enable (space to toggle, enter to confirm)
+Select features to enable (Use Space to toggle and Enter to confirm)
 
   > [x] Analytics
     [ ] Monitoring
     [x] Caching
 ```
 
-### Optional Prompts
+### Optional prompts
 
 Prompts that can be skipped:
 
@@ -241,11 +248,11 @@ prompts:
         value: "memcached://localhost:11211"
 ```
 
-## Conditional Prompts
+## Conditional prompts
 
 Prompts can be shown or hidden based on previous selections using the `requires` and `section` fields.
 
-### Section-Based Conditions
+### Section-based conditions
 
 ```yaml
 prompts:
@@ -274,15 +281,15 @@ prompts:
     help: "Enter database connection string"
 ```
 
-### How It Works
+### How it works
 
-1. **Initial State**: All sections start as disabled
-2. **User Selection**: When user selects an option with `requires: "section_name"`
-3. **Section Activation**: That section becomes enabled
-4. **Prompt Display**: Prompts with matching `section: "section_name"` are shown
-5. **Cascade**: Newly shown prompts can activate additional sections
+1. Initial state: All sections start as disabled
+2. User selection: When you select an option with `requires: "section_name"`
+3. Section activation: That section becomes enabled
+4. Prompt display: Prompts with matching `section: "section_name"` are shown
+5. Cascade: Newly shown prompts can activate additional sections
 
-### Example Flow
+### Example flow
 
 ```
 Q: Do you want to use a database?
@@ -299,11 +306,11 @@ Q: Enter database connection string
    > postgresql://localhost:5432/db
 ```
 
-## Prompt Discovery
+## Prompt discovery
 
 The CLI automatically discovers prompts from `.datarobot` directories in your template.
 
-### Discovery Process
+### Discovery process
 
 ```go
 // From internal/envbuilder/discovery.go
@@ -316,7 +323,7 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
 }
 ```
 
-### Prompt File Structure
+### Prompt file structure
 
 Create `.datarobot/prompts.yaml` in any directory:
 
@@ -352,9 +359,9 @@ prompts:
         requires: "other_section"  # Optional: Enable section if selected
 ```
 
-## UI Components
+## UI components
 
-### Prompt Model
+### Prompt model
 
 Each prompt is rendered by a `promptModel` that handles:
 
@@ -374,7 +381,7 @@ type promptModel struct {
 }
 ```
 
-### List Rendering
+### List rendering
 
 Custom item delegate for beautiful list rendering:
 
@@ -391,7 +398,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 ```
 
-### State Management
+### State management
 
 The main model manages screen transitions:
 
@@ -407,31 +414,31 @@ type Model struct {
 }
 ```
 
-## Keyboard Controls
+## Keyboard controls
 
-### List Navigation
+### List navigation
 
 - `↑/↓` or `j/k` - Navigate list items
 - `Space` - Toggle checkbox (multiple selection)
 - `Enter` - Confirm selection
 - `Esc` - Go back to previous screen
 
-### Text Input
+### Text input
 
 - Type normally to enter text
 - `Enter` - Confirm input
 - `Esc` - Go back to previous screen
 
-### Editor Mode
+### Editor mode
 
 - `w` - Start wizard mode
 - `e` - Open text editor
 - `Enter` - Finish and save
 - `Esc` - Save and exit editor
 
-## Advanced Features
+## Advanced features
 
-### Default Values
+### Default values
 
 Prompts can have default values:
 
@@ -451,7 +458,7 @@ Application port
 Default: 8080
 ```
 
-### Secret Values
+### Secret values
 
 The CLI provides secure handling for sensitive values using the `secret_string` type:
 
@@ -463,16 +470,17 @@ prompts:
     help: "Enter your API key"
 ```
 
-**Features:**
+Features:
+
 - Input is masked with bullet characters (••••) during entry.
 - Prevents accidental exposure of sensitive data.
-- Can auto-generate cryptographically secure random values with `generate: true`.
+- Cryptographic auto-generation secures random values with `generate: true`.
 
-**Auto-detection:** Variables with names containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets in the editor view, displaying as `***` instead of the actual value.
+Auto-detection: Variables with names containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets in the editor view, displaying as `***` instead of the actual value.
 
-### Generated Secrets
+### Generated secrets
 
-Secrets can be automatically generated:
+You can automatically generate secrets.
 
 ```yaml
 prompts:
@@ -484,27 +492,29 @@ prompts:
 ```
 
 When `generate: true` is set:
+
 - A 32-character cryptographically secure random string is generated if no value exists.
 - Uses base64 URL-safe encoding.
 - Preserves existing values (only generates for empty fields).
 - User can still override with a custom value.
 
-### Environment Variable Merging
+### Merge environment variables
 
 The wizard intelligently merges:
 
-1. **Existing values** from .env file
-2. **Environment variables** from current shell
-3. **User responses** from wizard
-4. **Template defaults** from .env.template
+1. Existing values from an `.env` file
+2. Environment variables from the current shell
+3. User responses from the wizard
+4. Template defaults from `.env.template`
 
 Priority (highest to lowest):
+
 1. User wizard responses
 2. Current environment variables
 3. Existing .env values
 4. Template defaults
 
-## Error Handling
+## Error handling
 
 ### Validation
 
@@ -523,7 +533,7 @@ func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
 }
 ```
 
-### User Feedback
+### User feedback
 
 ```go
 // Visual feedback for errors
@@ -535,11 +545,11 @@ if err != nil {
 sb.WriteString(successStyle.Render("✓ Configuration saved"))
 ```
 
-## Integration Example
+## Integration example
 
 To add the interactive wizard to your template:
 
-### 1. Create Prompts File
+### 1. Create a prompts file
 
 `.datarobot/prompts.yaml`:
 
@@ -578,12 +588,12 @@ prompts:
     default: "postgresql://localhost:5432/myapp"
 ```
 
-### 2. Create Environment Template
+### 2. Create an environment template
 
 `.env.template`:
 
 ```bash
-# Application Settings
+# Application settings
 APP_NAME=
 
 # Features
@@ -596,17 +606,17 @@ ENABLED_FEATURES=
 # DATABASE_URL=
 ```
 
-### 3. Run Setup
+### 3. Run setup
 
 ```bash
 dr templates setup
 ```
 
-The wizard will automatically discover and use your prompts!
+The wizard automatically discovers and uses your prompts.
 
-## Best Practices
+## Best practices
 
-### 1. Clear Help Text
+### 1. Clear help text
 
 ```yaml
 # ✓ Good
@@ -616,14 +626,14 @@ help: "Enter your PostgreSQL connection string (e.g., postgresql://user:pass@hos
 help: "Database URL"
 ```
 
-### 2. Sensible Defaults
+### 2. Sensible defaults
 
 ```yaml
 # Provide reasonable defaults
 default: "postgresql://localhost:5432/myapp"
 ```
 
-### 3. Organize with Sections
+### 3. Organize with sections
 
 ```yaml
 # Group related prompts
@@ -637,7 +647,7 @@ default: "postgresql://localhost:5432/myapp"
   help: "Monitoring service URL"
 ```
 
-### 4. Use Descriptive Keys
+### 4. Use descriptive keys
 
 ```yaml
 # ✓ Good
@@ -647,7 +657,7 @@ key: "database_connection_pool_size"
 key: "pool"
 ```
 
-### 5. Validate Input
+### 5. Validate input
 
 Use `optional: false` for required fields:
 
@@ -660,9 +670,9 @@ prompts:
     optional: false  # Required!
 ```
 
-### 6. Use Secret Types for Sensitive Data
+### 6. Use secret types for sensitive data
 
-Always use `secret_string` for passwords, API keys, and tokens:
+Always use `secret_string` for passwords, API keys, and tokens.
 
 ```yaml
 # ✓ Good
@@ -679,9 +689,9 @@ prompts:
     help: "Database password"
 ```
 
-### 7. Auto-generate Secrets When Possible
+### 7. Auto-generate secrets when possible
 
-Use `generate: true` for application secrets that don't need to be memorized:
+Use `generate: true` for application secrets that don't need to be memorized.
 
 ```yaml
 # ✓ Good for session keys, encryption keys
@@ -698,7 +708,7 @@ prompts:
     env: "ADMIN_PASSWORD"
     type: "secret_string"
     help: "Administrator password"
-```
+
     help: "Enter your DataRobot API key"
     optional: false  # Required!
 ```
@@ -720,6 +730,6 @@ cat .env
 
 ## See also
 
-- [Template Structure](structure.md) - How templates are organized
-- [Environment Variables](environment-variables.md) - Managing .env files
-- [Command Reference: dotenv](../commands/dotenv.md) - dotenv command documentation
+- [Template structure](structure.md): How templates are organized
+- [Environment variables](environment-variables.md): Manage .env files
+- [Command reference: dotenv](../commands/dotenv.md): dotenv command documentation
