@@ -59,16 +59,23 @@ func ExecAddWithData(repoURL string, data map[string]interface{}) error {
 	return cmd.Run()
 }
 
-func Update(yamlFile string) *exec.Cmd {
-	return exec.Command("uvx", "copier", "update", "-a", yamlFile, "-A")
+func Update(yamlFile string, quiet bool) *exec.Cmd {
+	commandParts := []string{
+		"copier", "update", "--answers-file", yamlFile, "--skip-answered",
+	}
+	if quiet {
+		commandParts = append(commandParts, "--quiet")
+	}
+
+	return exec.Command("uvx", commandParts...)
 }
 
-func ExecUpdate(yamlFile string) error {
+func ExecUpdate(yamlFile string, quiet bool) error {
 	if yamlFile == "" {
 		return errors.New("path to yaml file is missing")
 	}
 
-	cmd := Update(yamlFile)
+	cmd := Update(yamlFile, quiet)
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout

@@ -174,7 +174,8 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 	if len(mergedData) > 0 {
 		execErr = copier.ExecUpdateWithData(yamlFile, mergedData)
 	} else {
-		execErr = copier.ExecUpdate(yamlFile)
+		quiet := false
+		execErr = copier.ExecUpdate(yamlFile, quiet)
 	}
 
 	if execErr != nil {
