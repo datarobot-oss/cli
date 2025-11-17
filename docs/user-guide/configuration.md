@@ -1,43 +1,55 @@
 # Configuration Files
 
-Understanding DataRobot CLI configuration files and settings.
+The DataRobot CLI stores your authentication credentials and preferences in configuration files. This guide explains how configuration files work, where they're stored, and how to manage them.
+
+> [!NOTE]
+> **New to the CLI?** If you're setting up the CLI for the first time, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../README.md#quick-start) for initial setup.
 
 ## Configuration location
 
-The CLI stores configuration in a platform-specific location:
+The CLI automatically stores configuration files in a standard location based on your operating system:
 
-| Platform | Location |
-|----------|----------|
-| Linux | `~/.config/datarobot/drconfig.yaml` |
-| macOS | `~/.config/datarobot/drconfig.yaml` |
-| Windows | `%USERPROFILE%\.config\datarobot\drconfig.yaml` |
+| Platform | Location                                        |
+|----------|-------------------------------------------------|
+| Linux    | `~/.config/datarobot/drconfig.yaml`             |
+| macOS    | `~/.config/datarobot/drconfig.yaml`             |
+| Windows  | `%USERPROFILE%\.config\datarobot\drconfig.yaml` |
 
 ## Configuration structure
 
 ### Main configuration file
 
-`~/.config/datarobot/drconfig.yaml`:
+The main configuration file (`drconfig.yaml`) stores your DataRobot connection settings and authentication token. Here's what it looks like:
 
 ```yaml
 # DataRobot Connection
-endpoint: https://app.datarobot.com
-token: api key here
+endpoint: DATA_ROBOT_ENDPOINT_URL # e.g. https://app.datarobot.com
+token: API_KEY_HERE
 ```
+
+**Configuration fields:**
+
+- `endpoint`: Your DataRobot instance URL (e.g., `https://app.datarobot.com`)
+- `token`: Your API authentication token (automatically stored after `dr auth login`)
+
+> [!NOTE]
+> You typically don't need to edit this file manually. The CLI manages it automatically when you use `dr auth set-url` and `dr auth login`.
 
 ### Environment-specific configs
 
-You can maintain multiple configurations:
-
-```bash
-# Development
-~/.config/datarobot/dev-config.yaml
-
-# Staging
-~/.config/datarobot/staging-config.yaml
-
-# Production
-~/.config/datarobot/prod-config.yaml
-```
+> [!TIP]
+> If you work with multiple DataRobot environments (development, staging, production), you can maintain separate configuration files for each. For example:
+>
+> ```bash
+> # Development
+> ~/.config/datarobot/dev-config.yaml
+> 
+> # Staging
+> ~/.config/datarobot/staging-config.yaml
+> 
+> # Production
+> ~/.config/datarobot/prod-config.yaml
+> ```
 
 Switch between them:
 
@@ -103,16 +115,19 @@ dr templates list --verbose
 dr templates list --debug
 ```
 
-> **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks and should only be used when you understand the implications. Commands requiring API access will likely fail without valid credentials.
+> [!WARNING]
+> The `--skip-auth` flag bypasses all authentication checks and should only be used when you understand the implications. Commands requiring API access will likely fail without valid credentials.
 
 ## Configuration priority
 
-Settings are loaded in order of precedence:
+When the CLI needs configuration settings, it looks for them in this order (highest to lowest priority):
 
-1. flags (command-line arguments, i.e. `--config <path>`)
-2. environment variables (i.e. `DATAROBOT_CLI_CONFIG_PATH=...`)
-3. config files (i.e. `~/.config/datarobot/drconfig.yaml`)
-4. defaults (built-in defaults)
+1. **Command-line flags** (e.g., `--config <path>`) - Overrides everything
+2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`) - Overrides config files
+3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`) - Default location
+4. **Built-in defaults** - Fallback values
+
+This means if you set an environment variable, it will take precedence over what's in your config file. This is useful for temporarily overriding settings without editing files.
 
 ## Security best practices
 
@@ -248,6 +263,7 @@ preferences:
 ### Configuration not loading
 
 **Problem:** The CLI cannot find or read the configuration file. Common causes:
+
 - Config file doesn't exist (first-time setup)
 - Incorrect file path
 - Permission issues
@@ -255,6 +271,7 @@ preferences:
 - Config file in wrong location
 
 **Solution:**
+
 ```bash
 # Check if config file exists
 ls -la ~/.config/datarobot/drconfig.yaml
@@ -274,6 +291,7 @@ ls -la ~/.config/datarobot/
 ```
 
 **If using a custom config path:**
+
 ```bash
 # Verify the environment variable is set correctly
 echo $DATAROBOT_CLI_CONFIG
@@ -292,6 +310,7 @@ dr templates list --config ~/.config/datarobot/drconfig.yaml
 - Mixing tabs and spaces
 
 **Solution:**
+
 ```bash
 # The CLI will report syntax errors with line numbers
 $ dr templates list
@@ -304,6 +323,7 @@ nano ~/.config/datarobot/drconfig.yaml
 ```
 
 **Example of correct YAML format:**
+
 ```yaml
 # Correct format
 datarobot:
@@ -317,6 +337,7 @@ datarobot:
 ```
 
 **Validate YAML syntax:**
+
 ```bash
 # Use a YAML validator or check manually
 python3 -c "import yaml; yaml.safe_load(open('~/.config/datarobot/drconfig.yaml'))"
@@ -332,6 +353,7 @@ python3 -c "import yaml; yaml.safe_load(open('~/.config/datarobot/drconfig.yaml'
 - SELinux or AppArmor restrictions (Linux)
 
 **Solution:**
+
 ```bash
 # Fix file permissions (owner read/write only)
 chmod 600 ~/.config/datarobot/drconfig.yaml
@@ -396,11 +418,18 @@ dr-prod
 dr templates list  # Uses prod config
 ```
 
-> **Tip:** Always verify which config is active before running commands in production:
-> 
+> [!TIP]
+> Always verify which config is active before running commands in production:
+>
 > ```bash
 > echo "Current config: $DATAROBOT_CLI_CONFIG"
 > cat $DATAROBOT_CLI_CONFIG
+> ```
+>
+> Example output:
+>
+> ```bash
+> Current config: ~/.config/datarobot/prod-config.yaml
 > ```
 
 ## State tracking
@@ -467,6 +496,12 @@ State files are small and do not require manual management under normal circumst
 
 ## See also
 
-- [Quick start](README.md#quick-start)&mdash;initial setup and first-time configuration
+- [Quick start](../../README.md#quick-start)&mdash;initial setup and first-time configuration
 - [Authentication](authentication.md)&mdash;managing credentials and authentication flow
 - [auth command](../commands/auth.md)&mdash;authentication commands and troubleshooting
+
+> **What's next?** After understanding configuration:
+>
+> - Set up authentication: `dr auth login` (see [auth command](../commands/auth.md))
+> - Browse templates: `dr templates list`
+> - Set up your first template: `dr templates setup`

@@ -1,6 +1,23 @@
 # `dr auth` - Authentication Management
 
-Manage authentication with DataRobot.
+The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start guide](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Quick start
+
+For most users, authentication is a two-step process:
+
+```bash
+# 1. Set your DataRobot instance URL
+dr auth set-url https://app.datarobot.com
+
+# 2. Log in (opens browser for OAuth)
+dr auth login
+```
+
+That's it! Your credentials are automatically saved and you're ready to use the CLI.
 
 ## Synopsis
 
@@ -16,18 +33,23 @@ The `auth` command provides authentication management for the DataRobot CLI. It 
 
 ### `login`
 
-Authenticate with DataRobot using OAuth.
+Authenticate with DataRobot using OAuth (Open Authorization). This is the recommended way to authenticate as it's secure and doesn't require you to manually copy API keys.
 
 ```bash
 dr auth login
 ```
 
-**Behavior:**
-1. Starts a local web server (typically on port 8080)
-2. Opens your default browser to DataRobot's OAuth page
-3. Prompts you to authorize the CLI
-4. Receives and stores the API key
-5. Closes the browser and server automatically
+**What happens:**
+
+1. The CLI starts a temporary local web server (typically on port 8080).
+2. Your default web browser opens to DataRobot's authorization page.
+3. You log in to DataRobot (if not already logged in) and authorize the CLI.
+4. DataRobot sends an API key back to the CLI.
+5. The CLI securely stores the API key in your configuration file.
+6. The browser and server close automatically.
+
+>[!NOTE]
+> OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
 
 **Example:**
 ```bash
@@ -91,7 +113,7 @@ dr auth set-url [url]
 
 **Interactive Mode:**
 
-If no URL is provided, enters interactive mode:
+If you run `dr auth set-url` without providing a URL, the CLI enters interactive mode and guides you through selecting your DataRobot instance:
 
 ```bash
 $ dr auth set-url
@@ -103,6 +125,13 @@ Otherwise, please enter the URL you use
 
 > _
 ```
+
+**Quick selection:**
+
+- Enter `1` for US cloud (`https://app.datarobot.com`)
+- Enter `2` for EU cloud (`https://app.eu.datarobot.com`)
+- Enter `3` for Japan cloud (`https://app.jp.datarobot.com`)
+- Enter `4` or type your custom URL for self-managed instances
 
 **Direct Mode:**
 
@@ -148,16 +177,35 @@ These flags work with all `auth` commands:
 
 ## Examples
 
-### Initial Setup
+### First-time setup
+
+This is the most common scenario for new users:
 
 ```bash
-# Set URL and login (recommended workflow)
+# Step 1: Set your DataRobot instance URL
 $ dr auth set-url https://app.datarobot.com
 ✓ DataRobot URL set to: https://app.datarobot.com
 
+# Step 2: Log in (browser will open automatically)
 $ dr auth login
 Opening browser for authentication...
+Waiting for authentication...
 ✓ Successfully authenticated!
+```
+
+After this, you're ready to use the CLI. Your credentials are saved automatically.
+
+### Using interactive mode
+
+If you're not sure which URL to use, let the CLI guide you:
+
+```bash
+# Start interactive mode
+$ dr auth set-url
+
+# Follow the prompts to select your instance
+# Then log in
+$ dr auth login
 ```
 
 ### Using Cloud Instance Shortcuts
@@ -224,9 +272,11 @@ $ dr auth login --debug
 ...
 ```
 
-## Authentication Flow
+## How authentication works
 
-```
+The authentication process uses OAuth, a secure standard for authorization. Here's what happens behind the scenes:
+
+```text
 ┌──────────┐
 │   User   │
 └────┬─────┘
@@ -257,6 +307,22 @@ $ dr auth login --debug
 │   drconfig.yaml) │
 └─────────────────┘
 ```
+
+**Step-by-step:**
+
+1. You run `dr auth login`
+2. CLI starts a local server to receive the authorization response
+3. Your browser opens to DataRobot's login page
+4. You log in and authorize the CLI
+5. DataRobot sends an API key to the local server
+6. CLI saves the key securely to your config file
+7. Browser and server close automatically
+
+This process is secure because:
+
+- You authenticate directly with DataRobot (not the CLI)
+- The API key is transmitted securely
+- No passwords are stored locally
 
 ## Configuration File
 
@@ -348,6 +414,7 @@ export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
 **Problem:** Browser fails to open automatically.
 
 **Solution:**
+
 ```bash
 # Copy the URL from the output and open manually
 $ dr auth login
@@ -372,6 +439,7 @@ The CLI automatically tries alternative ports (8081, 8082, etc.)
 - The config file is corrupted or contains invalid data
 
 **Solution:**
+
 ```bash
 # Clear credentials and try again
 dr auth logout
@@ -420,6 +488,7 @@ curl -I https://app.datarobot.com
 ```
 
 **For corporate networks with proxies:**
+
 ```bash
 # Set proxy environment variables if required
 export HTTP_PROXY=http://proxy.company.com:8080
@@ -437,6 +506,7 @@ dr auth login
 - Corporate proxy intercepting SSL
 
 **Solution:**
+
 ```bash
 # For self-signed certificates (not recommended for production)
 export DATAROBOT_VERIFY_SSL=false
@@ -459,12 +529,12 @@ dr auth login
 
 ## See also
 
-- [Quick start](README.md#quick-start) - Initial setup guide
+- [Quick start](../../README.md#quick-start) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
 - [Templates](../template-system/) - Template management commands
 
 > **What's next?** After setting up authentication:
-> 
+>
 > - Browse available templates: `dr templates list`
 > - Set up your first template: `dr templates setup`
 > - Learn about [configuration files](../user-guide/configuration.md) for advanced settings
