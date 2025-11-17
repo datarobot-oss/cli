@@ -1,8 +1,8 @@
-# Project Structure
+# Project structure
 
-This document describes the organization of the DataRobot CLI codebase.
+This page describes the organization of the DataRobot CLI codebase.
 
-## Directory Overview
+## Directory overview
 
 ```text
 cli/
@@ -44,23 +44,23 @@ cli/
 └── goreleaser.yaml          # Release configuration
 ```
 
-## Key Directories
+## Key directories
 
 ### cmd/
 
 Contains all CLI command implementations using the Cobra framework. Each subdirectory represents a command or command group.
 
-**Structure:**
+#### Structure
 
-- `root.go`&mdash;root command setup and global flags
+- `root.go` is the root command setup and global flags
 - Each command has its own subdirectory with `cmd.go` as the entry point
-- Commands that have subcommands organize them in the same directory
+- Commands that have subcommands are in the same directory
 
-**Example:**
+#### Example
 
-- `cmd/auth/cmd.go`&mdash;auth command group
-- `cmd/auth/login.go`&mdash;login subcommand
-- `cmd/auth/logout.go`&mdash;logout subcommand
+- `cmd/auth/cmd.go`: The auth command group
+- `cmd/auth/login.go`: The login subcommand
+- `cmd/auth/logout.go`: The logout subcommand
 
 ### internal/
 
@@ -68,10 +68,10 @@ Private application code that cannot be imported by other projects. This follows
 
 #### config/
 
-Configuration management including:
+The configuration management directory, including:
 
 - Reading/writing configuration files
-- Authentication state
+- Authentication states
 - User preferences
 
 #### drapi/
@@ -84,7 +84,7 @@ DataRobot API client implementation for:
 
 #### envbuilder/
 
-Environment configuration builder that:
+An environment configuration builder that:
 
 - Discovers environment variables from templates
 - Validates configuration
@@ -113,12 +113,12 @@ Terminal UI components built with Bubble Tea:
 
 Documentation organized by audience:
 
-- `commands/`&mdash;detailed command reference
-- `development/`&mdash;development guides for contributors
-- `template-system/`&mdash;template configuration system
-- `user-guide/`&mdash;end-user documentation
+- `commands/`: Detailed command reference
+- `development/`: Development guides for contributors
+- `template-system/`: Template configuration system
+- `user-guide/`: End-user documentation
 
-## Code Organization Patterns
+## Code organization patterns
 
 ### Command Structure
 
@@ -150,9 +150,9 @@ func init() {
 }
 ```
 
-### TUI Models
+### TUI models
 
-TUI components use the Bubble Tea framework and are wrapped with `InterruptibleModel` for consistent Ctrl-C handling:
+TUI components use the Bubble Tea framework and are wrapped with `InterruptibleModel` for consistent `Ctrl-C` handling:
 
 ```go
 // cmd/example/model.go
@@ -194,8 +194,8 @@ func runInteractive() error {
 
 Configuration is managed through Viper and stored in:
 
-- `~/.config/datarobot/config.yaml`&mdash;global configuration
-- `~/.config/datarobot/credentials.json`&mdash;authentication tokens
+- `~/.config/datarobot/config.yaml`: Global configuration
+- `~/.config/datarobot/credentials.json`: Authentication tokens
 
 Access configuration through the `internal/config` package:
 
@@ -211,24 +211,24 @@ config.SetAPIKey("new-key")
 config.SaveConfig()
 ```
 
-## Testing Structure
+## Testing structure
 
 Tests are colocated with the code they test:
 
 - Unit tests: `*_test.go` files in the same package
 - Test helpers in same directory when needed
-- Smoke tests in `smoke_test_scripts/` directory
+- Smoke tests in the `smoke_test_scripts/` directory
 
-## Build Artifacts
+## Build artifacts
 
 Generated files and artifacts:
 
-- `dist/`&mdash;build output (created by Task/GoReleaser)
-- `tmp/`&mdash;temporary build files
-- `coverage.txt`&mdash;test coverage report
+- `dist/`: Build outputs (created by Task/GoReleaser)
+- `tmp/`: Temporary build files
+- `coverage.txt`: Test coverage reports
 
 ## Next Steps
 
-- [Setup Guide](setup.md)&mdash;setting up your development environment
-- [Building Guide](building.md)&mdash;detailed build information and architecture
-- [Contributing](../../CONTRIBUTING.md)&mdash;contribution guidelines
+- [Setup guide](setup.md): setting up your development environment
+- [Build guide](building.md): Detailed build information and architecture
+- [Contributions](../../CONTRIBUTING.md): Contribution guidelines
