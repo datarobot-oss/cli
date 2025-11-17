@@ -38,6 +38,15 @@ const (
 	DrGrayDark        = lipgloss.Color("240")     // Dark gray for light backgrounds
 )
 
+// GetAdaptiveColor returns a color that works on both light and dark backgrounds
+func GetAdaptiveColor(darkColor, lightColor lipgloss.Color) lipgloss.Color {
+	if lipgloss.HasDarkBackground() {
+		return darkColor
+	}
+
+	return lightColor
+}
+
 func SetAnsiForegroundColor(hexColor lipgloss.Color) string {
 	hexString := strings.TrimPrefix(string(hexColor), "#")
 
@@ -54,9 +63,9 @@ func ResetForegroundColor() string {
 
 // Common style definitions using DataRobot branding
 var (
-	BaseTextStyle = lipgloss.NewStyle().Foreground(DrPurple)
+	BaseTextStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurple, DrPurpleDark))
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
-	InfoStyle     = lipgloss.NewStyle().Foreground(DrPurpleLight).Bold(true)
+	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	// Specific UI styles
