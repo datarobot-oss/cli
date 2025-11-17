@@ -152,12 +152,6 @@ You can verify the installation by checking the version:
 dr --version
 ```
 
-Or use the version command:
-
-```bash
-dr self version
-```
-
 You should see output similar to:
 
 ```text
