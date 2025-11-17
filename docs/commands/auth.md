@@ -38,7 +38,7 @@ Waiting for authentication...
 ```
 
 **Stored Credentials:**
-- Location: `~/.datarobot/config.yaml` (Linux/macOS) or `%USERPROFILE%\.datarobot\config.yaml` (Windows)
+- Location: `~/.config/datarobot/drconfig.yaml` (Linux/macOS) or `%USERPROFILE%\.config\datarobot\drconfig.yaml` (Windows)
 - Format: Encrypted API key
 
 **Troubleshooting:**
@@ -204,7 +204,7 @@ $ dr auth login --verbose
 
 # Use debug flag for even more details
 $ dr auth login --debug
-[DEBUG] Config file: /Users/username/.datarobot/config.yaml
+[DEBUG] Config file: /Users/username/.config/datarobot/drconfig.yaml
 [DEBUG] Current URL: https://app.datarobot.com
 [DEBUG] Starting server on: 127.0.0.1:8080
 ...
@@ -238,8 +238,9 @@ $ dr auth login --debug
      v
 ┌─────────────────┐
 │  Config File    │
-│  (~/.datarobot/ │
-│   config.yaml)  │
+│  (~/.config/    │
+│   datarobot/     │
+│   drconfig.yaml) │
 └─────────────────┘
 ```
 
@@ -248,8 +249,8 @@ $ dr auth login --debug
 After authentication, credentials are stored in:
 
 **Location:**
-- Linux/macOS: `~/.datarobot/config.yaml`
-- Windows: `%USERPROFILE%\.datarobot\config.yaml`
+- Linux/macOS: `~/.config/datarobot/drconfig.yaml`
+- Windows: `%USERPROFILE%\.config\datarobot\drconfig.yaml`
 
 **Format:**
 ```yaml
@@ -273,17 +274,17 @@ preferences:
 
 ```bash
 # Verify permissions
-ls -la ~/.datarobot/config.yaml
+ls -la ~/.config/datarobot/drconfig.yaml
 # Should show: -rw------- (600)
 
 # Fix if needed
-chmod 600 ~/.datarobot/config.yaml
+chmod 600 ~/.config/datarobot/drconfig.yaml
 ```
 
 ### 2. Don't Share Credentials
 
 Never commit or share:
-- `~/.datarobot/config.yaml`
+- `~/.config/datarobot/drconfig.yaml`
 - API keys
 - OAuth tokens
 
@@ -291,12 +292,12 @@ Never commit or share:
 
 ```bash
 # Development
-export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 
 # Production
-export DATAROBOT_CLI_CONFIG=~/.datarobot/prod-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml
 dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 ```
@@ -323,7 +324,7 @@ export DATAROBOT_ENDPOINT=https://app.datarobot.com
 export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
-export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
 ```
 
 ## Common Issues
@@ -365,7 +366,7 @@ dr auth login
 **Solution:**
 ```bash
 # Verify URL is correct
-cat ~/.datarobot/config.yaml
+cat ~/.config/datarobot/drconfig.yaml
 
 # Try setting URL again
 dr auth set-url https://app.datarobot.com

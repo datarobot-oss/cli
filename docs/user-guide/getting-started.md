@@ -143,7 +143,7 @@ This will:
 3. Request authorization.
 4. Automatically save your credentials.
 
-Your API key will be securely stored in `~/.datarobot/config.yaml`.
+Your API key will be securely stored in `~/.config/datarobot/drconfig.yaml`.
 
 ### 3. Verify authentication
 
@@ -297,7 +297,7 @@ dr --debug templates list
 
 Configuration files are stored in:
 
-- **Linux/macOS**&mdash;`~/.datarobot/config.yaml`.
-- **Windows**&mdash;`%USERPROFILE%\.datarobot\config.yaml`.
+- **Linux/macOS**&mdash;`~/.config/datarobot/drconfig.yaml`.
+- **Windows**&mdash;`%USERPROFILE%\.config\datarobot\drconfig.yaml`.
 
 See [Configuration Files](configuration.md) for more details.

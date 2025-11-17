@@ -8,15 +8,15 @@ The CLI stores configuration in a platform-specific location:
 
 | Platform | Location |
 |----------|----------|
-| Linux | `~/.datarobot/config.yaml` |
-| macOS | `~/.datarobot/config.yaml` |
-| Windows | `%USERPROFILE%\.datarobot\config.yaml` |
+| Linux | `~/.config/datarobot/drconfig.yaml` |
+| macOS | `~/.config/datarobot/drconfig.yaml` |
+| Windows | `%USERPROFILE%\.config\datarobot\drconfig.yaml` |
 
 ## Configuration structure
 
 ### Main configuration file
 
-`~/.datarobot/config.yaml`:
+`~/.config/datarobot/drconfig.yaml`:
 
 ```yaml
 # DataRobot Connection
@@ -30,19 +30,19 @@ You can maintain multiple configurations:
 
 ```bash
 # Development
-~/.datarobot/dev-config.yaml
+~/.config/datarobot/dev-config.yaml
 
 # Staging
-~/.datarobot/staging-config.yaml
+~/.config/datarobot/staging-config.yaml
 
 # Production
-~/.datarobot/prod-config.yaml
+~/.config/datarobot/prod-config.yaml
 ```
 
 Switch between them:
 
 ```bash
-export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 dr templates list
 ```
 
@@ -76,7 +76,7 @@ export DATAROBOT_API_TOKEN=your_api_token
 
 ```bash
 # Custom config file path
-export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
 
 # Editor for text editing
 export EDITOR=nano
@@ -112,7 +112,7 @@ Settings are loaded in order of precedence:
 
 1. flags (command-line arguments, i.e. `--config <path>`)
 2. environment variables (i.e. `DATAROBOT_CLI_CONFIG_PATH=...`)
-3. config files (i.e. `~/.datarobot/config.yaml`)
+3. config files (i.e. `~/.config/datarobot/drconfig.yaml`)
 4. defaults (built-in defaults)
 
 ## Security best practices
@@ -121,11 +121,11 @@ Settings are loaded in order of precedence:
 
 ```bash
 # Verify permissions (should be 600)
-ls -la ~/.datarobot/config.yaml
+ls -la ~/.config/datarobot/drconfig.yaml
 
 # Fix permissions if needed
-chmod 600 ~/.datarobot/config.yaml
-chmod 700 ~/.datarobot/
+chmod 600 ~/.config/datarobot/drconfig.yaml
+chmod 700 ~/.config/datarobot/
 ```
 
 ### 2. Don't commit credentials
@@ -134,7 +134,9 @@ Add to `.gitignore`:
 
 ```gitignore
 # DataRobot credentials
+.config/datarobot/
 .datarobot/
+drconfig.yaml
 config.yaml
 *.yaml
 !.env.template
@@ -145,7 +147,8 @@ config.yaml
 ```bash
 # Never use production credentials in development
 # Keep separate config files
-~/.datarobot/
+~/.config/datarobot/
+├── drconfig.yaml        # Default config
 ├── dev-config.yaml      # Development
 ├── staging-config.yaml  # Staging
 └── prod-config.yaml     # Production
@@ -194,7 +197,7 @@ dr --debug templates list
 
 ### Development environment
 
-`~/.datarobot/dev-config.yaml`:
+`~/.config/datarobot/dev-config.yaml`:
 
 ```yaml
 endpoint: https://dev.datarobot.com
@@ -204,13 +207,13 @@ token: api token for dev
 Usage:
 
 ```bash
-export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 dr templates list
 ```
 
 ### Production environment
 
-`~/.datarobot/prod-config.yaml`:
+`~/.config/datarobot/prod-config.yaml`:
 
 ```yaml
 endpoint: https://app.datarobot.com
@@ -220,13 +223,13 @@ token: api key for prod
 Usage:
 
 ```bash
-export DATAROBOT_CLI_CONFIG=~/.datarobot/prod-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml
 dr run deploy
 ```
 
 ### Enterprise with proxy
 
-`~/.datarobot/enterprise-config.yaml`:
+`~/.config/datarobot/enterprise-config.yaml`:
 
 ```yaml
 datarobot:
@@ -247,10 +250,10 @@ preferences:
 
 ```bash
 # Check if config file exists
-ls -la ~/.datarobot/config.yaml
+ls -la ~/.config/datarobot/drconfig.yaml
 
 # Verify it's readable
-cat ~/.datarobot/config.yaml
+cat ~/.config/datarobot/drconfig.yaml
 
 # Check environment variables
 env | grep DATAROBOT
@@ -264,27 +267,27 @@ $ dr templates list
 Error: Failed to parse config file: yaml: line 5: could not find expected ':'
 
 # Fix syntax and try again
-vim ~/.datarobot/config.yaml
+vim ~/.config/datarobot/drconfig.yaml
 ```
 
 ### Permission denied
 
 ```bash
 # Fix file permissions
-chmod 600 ~/.datarobot/config.yaml
+chmod 600 ~/.config/datarobot/drconfig.yaml
 
 # Fix directory permissions
-chmod 700 ~/.datarobot/
+chmod 700 ~/.config/datarobot/
 ```
 
 ### Multiple configs
 
 ```bash
 # List all config files
-find ~/.datarobot -name "*.yaml"
+find ~/.config/datarobot -name "*.yaml"
 
 # Switch between them
-export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 ```
 
 ## State tracking
