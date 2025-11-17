@@ -108,7 +108,7 @@ func Cmd() *cobra.Command {
 		Short: "Compose Taskfile.yaml from multiple files in subdirectories",
 		Long: `Compose a root Taskfile.yaml by discovering Taskfiles in subdirectories.
 
-By default, generates a simple Taskfile with includes only. 
+By default, generates a simple Taskfile with includes only.
 
 If a .Taskfile.template file is found in the root directory, it will be used
 automatically to generate a more comprehensive Taskfile with aggregated tasks.

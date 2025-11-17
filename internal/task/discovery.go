@@ -61,6 +61,12 @@ var (
 	ErrTaskfileHasDotenv = errors.New("existing Taskfile already has dotenv directive")
 )
 
+// taskfileData is the structure of the .taskfile-data.yaml configuration file
+// that allows template authors to provide additional data for template rendering
+type taskfileData struct {
+	Ports []devPort `yaml:"ports"`
+}
+
 // taskfileMetadata is used to parse just the dotenv directive from a Taskfile
 type taskfileMetadata struct {
 	Dotenv interface{} `yaml:"dotenv"`
@@ -293,47 +299,95 @@ func (d *Discovery) buildComposeData(root string, includes []componentInclude) (
 		DevComponents:       []string{},
 		DeployComponents:    []string{},
 		DeployDevComponents: []string{},
-		DevPorts:            []devPort{},
+		DevPorts:            d.loadDevPorts(root),
 	}
 
 	// Discover tasks in each component
 	for _, include := range includes {
-		componentPath := filepath.Join(root, include.Dir)
-		runner := NewTaskRunner(RunnerOpts{
-			Dir:      componentPath,
-			Taskfile: filepath.Base(include.Taskfile),
-		})
-
-		tasks, err := runner.ListTasks()
-		if err != nil {
-			log.Debugf("Failed to list tasks for %s: %v", include.Name, err)
-			continue
-		}
-
-		// Check for common tasks
-		for _, task := range tasks {
-			switch task.Name {
-			case "lint":
-				data.LintComponents = append(data.LintComponents, include.Name)
-				data.HasLint = true
-			case "install":
-				data.InstallComponents = append(data.InstallComponents, include.Name)
-				data.HasInstall = true
-			case "test":
-				data.TestComponents = append(data.TestComponents, include.Name)
-				data.HasTest = true
-			case "dev":
-				data.DevComponents = append(data.DevComponents, include.Name)
-				data.HasDev = true
-			case "deploy":
-				data.DeployComponents = append(data.DeployComponents, include.Name)
-				data.HasDeploy = true
-			case "deploy-dev":
-				data.DeployDevComponents = append(data.DeployDevComponents, include.Name)
-				data.HasDeployDev = true
-			}
-		}
+		d.aggregateComponentTasks(&data, root, include)
 	}
 
 	return data, nil
+}
+
+// aggregateComponentTasks discovers and aggregates tasks from a single component
+func (d *Discovery) aggregateComponentTasks(data *taskfileTmplData, root string, include componentInclude) {
+	componentPath := filepath.Join(root, include.Dir)
+	runner := NewTaskRunner(RunnerOpts{
+		Dir:      componentPath,
+		Taskfile: filepath.Base(include.Taskfile),
+	})
+
+	tasks, err := runner.ListTasks()
+	if err != nil {
+		log.Debugf("Failed to list tasks for %s: %v", include.Name, err)
+		return
+	}
+
+	// Check for common tasks (by name or alias)
+	for _, task := range tasks {
+		d.checkAndAddTask(data, task, include.Name)
+	}
+}
+
+// checkAndAddTask checks if a task matches known task types and adds it to the appropriate list
+func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, componentName string) {
+	// Map task names/aliases to their component lists and flags
+	taskTypeMap := map[string]struct {
+		components *[]string
+		hasFlag    *bool
+	}{
+		"lint":       {&data.LintComponents, &data.HasLint},
+		"install":    {&data.InstallComponents, &data.HasInstall},
+		"test":       {&data.TestComponents, &data.HasTest},
+		"dev":        {&data.DevComponents, &data.HasDev},
+		"deploy":     {&data.DeployComponents, &data.HasDeploy},
+		"up":         {&data.DeployComponents, &data.HasDeploy},
+		"deploy-dev": {&data.DeployDevComponents, &data.HasDeployDev},
+		"up-dev":     {&data.DeployDevComponents, &data.HasDeployDev},
+	}
+
+	// Check task name
+	if target, ok := taskTypeMap[task.Name]; ok {
+		addComponentOnce(target.components, target.hasFlag, componentName)
+	}
+
+	// Check aliases
+	for _, alias := range task.Aliases {
+		if target, ok := taskTypeMap[alias]; ok {
+			addComponentOnce(target.components, target.hasFlag, componentName)
+		}
+	}
+}
+
+// addComponentOnce adds a component to the list if it's not already present
+func addComponentOnce(components *[]string, hasFlag *bool, componentName string) {
+	for _, c := range *components {
+		if c == componentName {
+			return
+		}
+	}
+
+	*components = append(*components, componentName)
+	*hasFlag = true
+}
+
+// loadDevPorts reads port configuration from .taskfile-data.yaml if it exists
+func (d *Discovery) loadDevPorts(root string) []devPort {
+	dataFile := filepath.Join(root, ".taskfile-data.yaml")
+
+	data, err := os.ReadFile(dataFile)
+	if err != nil {
+		// File doesn't exist or can't be read - that's okay, it's optional
+		return []devPort{}
+	}
+
+	var config taskfileData
+
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		log.Debugf("Failed to parse %s: %v", dataFile, err)
+		return []devPort{}
+	}
+
+	return config.Ports
 }

@@ -70,6 +70,7 @@ Expected directory structure:
 my-template/
 ├── .env                          # Required: template marker
 ├── .Taskfile.template           # Optional: custom template
+├── .taskfile-data.yaml          # Optional: template configuration
 ├── Taskfile.yaml                # Generated: unified taskfile
 ├── backend/
 │   ├── Taskfile.yaml            # Component tasks
@@ -511,13 +512,17 @@ git add .Taskfile.template
 git commit -m "Add custom Taskfile template"
 ```
 
+#### Configure development ports
+
+Optionally create a `.taskfile-data.yaml` file to display service URLs in the dev task. See [Taskfile data configuration](#taskfile-data-configuration) for complete documentation.
+
 #### Document custom variables
 
 If your template uses custom variables, document them:
 
 ```yaml
 # .Taskfile.template
-# 
+#
 # Custom variables:
 # - PROJECT_NAME: Set in .env
 # - DEPLOY_TARGET: Set in .env
@@ -534,6 +539,172 @@ After modifying a template, regenerate and test:
 dr task compose --template .Taskfile.template
 task --list
 task dev
+```
+
+### Taskfile data configuration
+
+Template authors can provide additional configuration for Taskfile generation by creating a `.taskfile-data.yaml` file in the template root directory.
+
+#### File location
+
+```
+my-template/
+├── .env
+├── .taskfile-data.yaml          # Configuration file
+├── Taskfile.yaml                # Generated
+└── components/
+```
+
+#### Configuration format
+
+```yaml
+# .taskfile-data.yaml
+# Optional configuration for dr task compose
+
+# Development server ports
+# Displayed when running the dev task
+ports:
+  - name: Backend API
+    port: 8080
+  - name: Frontend
+    port: 5173
+  - name: Worker Service
+    port: 8842
+  - name: MCP Server
+    port: 9000
+```
+
+#### Port configuration
+
+**Purpose:**
+
+The `ports` array allows template authors to specify which ports their services use. When developers run `task dev`, they see URLs for each service.
+
+**Example output:**
+
+When developers run `task dev` with port configuration:
+
+```
+task mcp_server:dev &
+sleep 3
+task web:dev &
+sleep 3
+task writer_agent:dev &
+sleep 3
+task frontend_web:dev &
+sleep 8
+✅ All servers started!
+🔗 Backend API: http://localhost:8080
+🔗 Frontend: http://localhost:5173
+🔗 Worker Service: http://localhost:8842
+🔗 MCP Server: http://localhost:9000
+```
+
+**DataRobot Notebook integration:**
+
+The generated dev task automatically detects DataRobot Notebook environments and adjusts URLs:
+
+```
+🔗 Backend API: https://app.datarobot.com/notebook-sessions/abc123/ports/8080
+🔗 Frontend: https://app.datarobot.com/notebook-sessions/abc123/ports/5173
+```
+
+This happens automatically when the `NOTEBOOK_ID` environment variable is present.
+
+**Benefits:**
+
+- **Improved onboarding**&mdash;new developers immediately know where services are running.
+- **Self-documenting**&mdash;ports are visible in generated Taskfile and command output.
+- **Notebook support**&mdash;URLs work correctly in DataRobot Notebooks.
+- **Reduced confusion**&mdash;no need to check logs or documentation for port numbers.
+
+**Best practices:**
+
+1. **List all services**&mdash;include every service that starts in dev mode.
+2. **Use descriptive names**&mdash;"Backend API" is clearer than "Backend".
+3. **Match actual ports**&mdash;ensure ports match what's in component Taskfiles.
+4. **Update when changing**&mdash;keep configuration in sync with service changes.
+
+#### When to use this file
+
+**Use `.taskfile-data.yaml` when:**
+
+- Your template has multiple services with different ports.
+- Services use non-standard ports that aren't obvious.
+- You want to improve developer experience.
+- Your template targets DataRobot Notebooks.
+
+**You can skip it when:**
+
+- Your template has a single service.
+- Ports are obvious or standard (e.g., 3000 for Node.js).
+- You use custom Taskfile templates with hardcoded values.
+- Port information is already well-documented elsewhere.
+
+#### File is optional
+
+The `.taskfile-data.yaml` file is completely optional. If not present:
+
+- The dev task still works correctly.
+- Services start normally.
+- Port URLs simply aren't displayed.
+
+This allows template authors to add port configuration incrementally without breaking existing templates.
+
+#### Future extensibility
+
+The `.taskfile-data.yaml` file uses an extensible format. Future CLI versions may support additional configuration options such as:
+
+- Custom environment variables for templates.
+- Service metadata (descriptions, dependencies).
+- Deployment configuration.
+- Build optimization hints.
+
+Template authors can future-proof their templates by using this configuration file even if only specifying ports initially.
+
+#### Example templates
+
+**Minimal example:**
+
+```yaml
+# .taskfile-data.yaml
+ports:
+  - name: App
+    port: 8000
+```
+
+**Full-stack application:**
+
+```yaml
+# .taskfile-data.yaml
+ports:
+  - name: Backend API
+    port: 8080
+  - name: Frontend
+    port: 5173
+  - name: Database Admin
+    port: 8081
+  - name: Redis Commander
+    port: 8082
+```
+
+**Microservices architecture:**
+
+```yaml
+# .taskfile-data.yaml
+ports:
+  - name: API Gateway
+    port: 8080
+  - name: Auth Service
+    port: 8081
+  - name: User Service
+    port: 8082
+  - name: Order Service
+    port: 8083
+  - name: Frontend
+    port: 3000
+  - name: Admin Dashboard
+    port: 3001
 ```
 
 ### Workflow integration
