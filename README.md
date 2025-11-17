@@ -30,8 +30,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.txt)
 
 The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot custom applications. It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities.
-
-> **What is the CLI?** The CLI is a command-line interface for managing DataRobot custom applications. It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities. If you're new to DataRobot, visit the [DataRobot documentation](https://docs.datarobot.com/) to learn more about the platform.
+If you're new to DataRobot, visit the [DataRobot documentation](https://docs.datarobot.com/) to learn more about the platform.
 
 ## Features
 
