@@ -1,4 +1,4 @@
-# Interactive Configuration System
+# Interactive configuration system
 
 The DataRobot CLI features a powerful interactive configuration system that guides users through setting up application templates with smart prompts, validation, and conditional logic.
 
@@ -6,11 +6,11 @@ The DataRobot CLI features a powerful interactive configuration system that guid
 
 The interactive configuration system is built using [Bubble Tea](https://github.com/charmbracelet/bubbletea), a Go framework for building terminal user interfaces. It provides:
 
-- **Guided Setup**: Step-by-step wizard for configuration
-- **Smart Prompts**: Context-aware questions with validation
-- **Conditional Logic**: Show/hide prompts based on previous answers
-- **Multiple Input Types**: Text fields, checkboxes, and selection lists
-- **Visual Feedback**: Beautiful terminal UI with progress indicators
+- Guided setup: A step-by-step wizard for configuration
+- Smart prompts: Context-aware questions with validation
+- Conditional logic: Show/hide prompts based on previous answers
+- Multiple input types: Text fields, checkboxes, and selection lists
+- Visual feedback: Beautiful terminal UI with progress indicators
 
 ## Architecture
 
@@ -20,23 +20,23 @@ The configuration system consists of three main layers:
 
 ```
 ┌─────────────────────────────────────────┐
-│         User Interface Layer            │
-│  (Bubble Tea Models & Views)           │
+│         User interface layer            │
+│  (Bubble Tea models and views)          │
 ├─────────────────────────────────────────┤
-│         Business Logic Layer            │
-│  (Prompt Processing & Validation)      │
+│         Business logic layer            │
+│  (Prompt processing and validation)     │
 ├─────────────────────────────────────────┤
-│         Data Layer                      │
-│  (Environment Discovery & Storage)     │
+│             Data layer                  │
+│  (Environment discovery and storage)    │
 └─────────────────────────────────────────┘
 ```
 
-### Key Files
+### Key files
 
-- `cmd/dotenv/model.go` - Main dotenv editor model
-- `cmd/dotenv/promptModel.go` - Individual prompt handling
-- `internal/envbuilder/discovery.go` - Prompt discovery from templates
-- `cmd/templates/setup/model.go` - Template setup wizard orchestration
+- `cmd/dotenv/model.go`: The main dotenv editor model
+- `cmd/dotenv/promptModel.go`: Individual prompt handling
+- `internal/envbuilder/discovery.go`: Prompt discovery from templates
+- `cmd/templates/setup/model.go`: Template setup wizard orchestration
 
 ## Configuration flow
 
@@ -45,38 +45,38 @@ The configuration system consists of three main layers:
 When you run `dr templates setup`, the wizard flow is:
 
 ```
-Welcome Screen
+Welcome screen
     ↓
-DataRobot URL Configuration (if needed)
+DataRobot URL configuration (if needed)
     ↓
 Authentication (if needed)
     ↓
-Template Selection
+Template selection
     ↓
-Template Cloning
+Template cloning
     ↓
-Environment Configuration (skipped if previously completed)
+Environment configuration (skipped if previously completed)
     ↓
 Completion
 ```
 
-**State-aware behavior**: If `dr dotenv setup` has been successfully run in the past (tracked via state file), the Environment Configuration step is automatically skipped. This allows you to re-run the template setup without re-configuring your environment variables. See [Configuration - State tracking](../user-guide/configuration.md#state-tracking) for details.
+**State-aware behavior**: If `dr dotenv setup` has been successfully run in the past (tracked via state file), the Environment configuration step is automatically skipped. This allows you to re-run the template setup without re-configuring your environment variables. See [Configuration - State tracking](../user-guide/configuration.md#state-tracking) for details.
 
 ### 2. Environment configuration
 
 The environment configuration phase (dotenv wizard):
 
 ```
-Load .env Template
+Load .env template
     ↓
-Discover User Prompts (from .datarobot files)
+Discover user prompts (from .datarobot files)
     ↓
-Initialize Response Map
+Initialize response map
     ↓
-For Each Required Prompt:
-    ├── Display Prompt with Help Text
-    ├── Show Options (if applicable)
-    ├── Capture User Input
+For each required prompt:
+    ├── Display prompt with help text
+    ├── Show options (if applicable)
+    ├── Capture user Input
     ├── Validate Input
     ├── Update Required Sections (conditional)
     └── Move to Next Prompt
