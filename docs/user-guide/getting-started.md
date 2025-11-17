@@ -2,6 +2,19 @@
 
 This guide will help you install and start using the DataRobot CLI (`dr`) for managing custom applications.
 
+## Table of contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Updating the CLI](#updating-the-cli)
+- [Initial Setup](#initial-setup)
+- [Your first template](#your-first-template)
+- [Running your application](#running-your-application)
+- [Next steps](#next-steps)
+- [Common issues](#common-issues)
+- [Getting help](#getting-help)
+- [Configuration location](#configuration-location)
+
 ## Prerequisites
 
 Before you begin, ensure you have:
