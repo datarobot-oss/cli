@@ -344,7 +344,7 @@ func findQuickstart(m *Model) tea.Msg {
 	// If we don't find a script, we'll proceed to run templates setup in the next step
 	if quickstartScript == "" {
 		return stepCompleteMsg{
-			message:              "Proceed to template setup...\n",
+			message:              "Proceed to template setup? (y/N)\n",
 			waiting:              waitForConfirmation,
 			quickstartScriptPath: "",
 		}
