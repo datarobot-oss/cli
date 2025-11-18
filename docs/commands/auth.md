@@ -130,7 +130,7 @@ Choose your DataRobot environment:
 │  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │
 │  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │
 │  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │
-│      🏢 Custom   Enter your custom URL                 │
+│      🏢 Custom          Enter your custom URL          │
 └────────────────────────────────────────────────────────┘
 
 🔗 Don't know which one? Check your DataRobot login page URL.
