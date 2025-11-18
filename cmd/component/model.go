@@ -213,7 +213,7 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// If we've found zero components return error message that is handled by UI
 		if len(components) == 0 {
-			return errMsg{errors.New("no components were found")}
+			return errMsg{errors.New("No components were found.")}
 		}
 
 		items := make([]list.Item, 0, len(components))
@@ -370,16 +370,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			}
 		case tea.KeyMsg:
 			switch msg.String() {
-			case "q", "esc":
+			case "q", tea.KeyEscape.String():
 				m.screen = listScreen
 				m.ready = false
 
 				return m, nil
-			case "pgup":
+			case tea.KeyPgUp.String():
 				m.viewport.PageUp()
 
 				return m, nil
-			case "pgdown":
+			case tea.KeyPgDown.String():
 				m.viewport.PageDown()
 
 				return m, nil
@@ -510,7 +510,18 @@ func (m Model) viewComponentDetailScreen() string {
 
 	// Create status bar with three parts: left (label), center (filename), right (percentage)
 	fileName := m.getCurrentComponentFileName()
-	leftText := "Component file: " + fileName
+
+	// Style the label and filename differently
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
+		Background(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#4A1BA8"})
+
+	fileNameStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
+		Background(lipgloss.AdaptiveColor{Light: "#8B7BE8", Dark: "#9F8FFF"}).
+		Bold(true)
+
+	leftText := labelStyle.Render(" Component file: ") + fileNameStyle.Render(" "+fileName+" ")
 
 	// Calculate scroll percentage - fix the calculation to be more accurate
 	scrollPercent := 0
@@ -551,11 +562,10 @@ func (m Model) viewComponentDetailScreen() string {
 		Inherit(statusBarStyle).
 		Padding(0, 1)
 
-	leftRendered := statusKeyStyle.Render(leftText)
 	rightRendered := statusKeyStyle.Render(rightText)
 
 	// Calculate available space for spacing
-	leftWidth := lipgloss.Width(leftRendered)
+	leftWidth := lipgloss.Width(leftText)
 	rightWidth := lipgloss.Width(rightRendered)
 	spacerWidth := width - leftWidth - rightWidth
 
@@ -566,7 +576,7 @@ func (m Model) viewComponentDetailScreen() string {
 	spacer := centerStyle.Width(spacerWidth).Render("")
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top,
-		leftRendered,
+		leftText,
 		spacer,
 		rightRendered,
 	)
