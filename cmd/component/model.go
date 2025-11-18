@@ -509,7 +509,8 @@ func (m Model) viewComponentDetailScreen() string {
 	sb.WriteString("\n")
 
 	// Create status bar with three parts: left (label), center (filename), right (percentage)
-	centerText := m.getCurrentComponentFileName()
+	fileName := m.getCurrentComponentFileName()
+	leftText := "Component file: " + fileName
 
 	// Calculate scroll percentage - fix the calculation to be more accurate
 	scrollPercent := 0
@@ -550,7 +551,7 @@ func (m Model) viewComponentDetailScreen() string {
 		Inherit(statusBarStyle).
 		Padding(0, 1)
 
-	leftRendered := statusKeyStyle.Render(centerText)
+	leftRendered := statusKeyStyle.Render(leftText)
 	rightRendered := statusKeyStyle.Render(rightText)
 
 	// Calculate available space for spacing
