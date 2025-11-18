@@ -511,15 +511,15 @@ func (m Model) viewComponentDetailScreen() string {
 	// Create status bar with three parts: left (label), center (filename), right (percentage)
 	fileName := m.getCurrentComponentFileName()
 
-	// Style the label and filename differently
+	// Style the label and filename differently - filename with reduced opacity
 	labelStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
 		Background(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#4A1BA8"})
 
 	fileNameStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
-		Background(lipgloss.AdaptiveColor{Light: "#8B7BE8", Dark: "#9F8FFF"}).
-		Bold(true)
+		Background(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#4A1BA8"}).
+		Faint(true)
 
 	leftText := labelStyle.Render(" Component file: ") + fileNameStyle.Render(" "+fileName+" ")
 
