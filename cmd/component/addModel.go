@@ -238,7 +238,7 @@ func (am AddModel) addComponentsScreenView() string {
 	sb.WriteString(tui.BaseTextStyle.Render("Press space to toggle component."))
 
 	sb.WriteString("\t")
-	sb.WriteString(style.Render("Press enter to run update."))
+	sb.WriteString(style.Render("Press enter to add component."))
 
 	sb.WriteString("\t")
 	sb.WriteString(tui.BaseTextStyle.Render("Press esc to exit."))
