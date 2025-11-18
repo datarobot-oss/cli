@@ -10,6 +10,7 @@ package auth
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -71,8 +72,10 @@ func SetURLAction(checkHost bool) {
 
 	err = config.SaveURLToConfig(url)
 	if err != nil {
-		fmt.Printf("An error occurred (%s) - please try again.\n", err)
-		SetURLAction(false)
+		if errors.Is(err, config.ErrInvalidURL) {
+			fmt.Println("\nAn error occurred (your URL is invalid) - please try again.")
+			SetURLAction(false)
+		}
 	}
 }
 
