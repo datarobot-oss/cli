@@ -4,7 +4,7 @@ This directory contains comprehensive user documentation for the DataRobot CLI.
 
 ## Available guides
 
-- **[Getting started](getting-started.md)**&mdash;installation and initial setup.
+- **[Quick start](../../README.md#quick-start)**&mdash;installation and initial setup.
 - **[Authentication](authentication.md)**&mdash;managing DataRobot credentials.
 - **[Working with templates](templates.md)**&mdash;template management and usage.
 - **[Shell completions](shell-completions.md)**&mdash;command auto-completion setup.

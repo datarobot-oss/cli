@@ -249,7 +249,7 @@ Browse the [DataRobot Template Gallery](https://github.com/datarobot/templates) 
 
 ## See also
 
-- [Getting Started](../user-guide/getting-started.md)
+- [Quick start](../../README.md#quick-start)
 - [Working with Templates](../user-guide/templates.md)
 - [Command Reference: templates](../commands/templates.md)
 - [Command Reference: dotenv](../commands/dotenv.md)
