@@ -15,7 +15,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/tui"
 )
 
 type (
@@ -25,6 +27,8 @@ type (
 	}
 )
 
+var listStyle = lipgloss.NewStyle().Margin(2, 2)
+
 const (
 	addLoadingScreen = addScreens(iota)
 	addComponentsScreen
@@ -33,6 +37,8 @@ const (
 type AddModel struct {
 	screen   addScreens
 	list     list.Model
+	width    int
+	height   int
 	RepoURLs []string
 }
 
@@ -121,7 +127,9 @@ func (am AddModel) loadComponents() tea.Cmd {
 			items = append(items, AddComponentDelegate{current: i == 0, details: d})
 		}
 
-		l := list.New(items, AddComponentDelegate{}, 0, 15)
+		l := list.New(items, AddComponentDelegate{}, 80, 25)
+		l.Title = "📚 Available Components"
+		l.Styles.Title = l.Styles.Title.Background(tui.DrPurple)
 
 		return addComponentsLoadedMsg{l}
 	}
@@ -131,8 +139,20 @@ func (am AddModel) Init() tea.Cmd {
 	return tea.Batch(am.loadComponents(), tea.WindowSize())
 }
 
-func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		am.width = msg.Width
+		am.height = msg.Height
+
+		if am.screen == addComponentsScreen {
+			am.list.SetSize(
+				am.width-listStyle.GetHorizontalFrameSize(),
+				am.height-listStyle.GetVerticalFrameSize(),
+			)
+		}
+
+		return am, nil
 	case addComponentsLoadedMsg:
 		am.list = msg.list
 		am.screen = addComponentsScreen
@@ -194,7 +214,7 @@ func (am AddModel) addLoadingScreenView() string {
 func (am AddModel) addComponentsScreenView() string {
 	var sb strings.Builder
 
-	sb.WriteString(am.list.View())
+	sb.WriteString(listStyle.Render(am.list.View()))
 
 	return sb.String()
 }
