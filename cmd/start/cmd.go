@@ -69,7 +69,7 @@ The following actions will be performed:
 				// Need to run template setup
 				// After it completes, we'll be in the cloned directory,
 				// so we can just run start again
-				err := setup.RunTeaFromStart(cmd.Context(), true)
+				err := setup.RunTea(cmd.Context(), true)
 				if err != nil {
 					return err
 				}
