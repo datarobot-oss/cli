@@ -11,7 +11,6 @@ package component
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -30,10 +29,10 @@ type (
 		list list.Model
 	}
 	componentInfoRequestMsg struct {
-		item ItemDelegate
+		item ListItem
 	}
 	updateCompleteMsg struct {
-		item ItemDelegate
+		item ListItem
 	}
 )
 
@@ -53,12 +52,6 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
 )
 
-type ItemDelegate struct {
-	current   bool
-	checked   bool
-	component copier.Component
-}
-
 type Model struct {
 	err                   error
 	infoMessage           string
@@ -68,7 +61,19 @@ type Model struct {
 	initialUpdateFileName string
 }
 
-func updateComponent(item ItemDelegate) tea.Cmd {
+func (m Model) toggleCurrent() (Model, tea.Cmd) {
+	items := m.list.VisibleItems()
+	currentItem := items[m.list.Index()].(ListItem)
+
+	currentItem.checked = !currentItem.checked
+
+	// Use GlobalIndex() for what is the canonical, unfiltered list
+	cmd := m.list.SetItem(m.list.GlobalIndex(), currentItem)
+
+	return m, cmd
+}
+
+func updateComponent(item ListItem) tea.Cmd {
 	quiet := false
 
 	return tea.ExecProcess(copier.Update(item.component.FileName, quiet), func(_ error) tea.Msg {
@@ -76,56 +81,10 @@ func updateComponent(item ItemDelegate) tea.Cmd {
 	})
 }
 
-// TODO: Filter doesn't work
-func (i ItemDelegate) FilterValue() string {
-	return strings.ToLower(i.component.FileName)
-}
-
-func (i ItemDelegate) Height() int                             { return 1 }
-func (i ItemDelegate) Spacing() int                            { return 0 }
-func (i ItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (i ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(ItemDelegate)
-	if !ok {
-		return
-	}
-
-	checkbox := ""
-
-	if i.checked {
-		checkbox = "[x] "
-	} else {
-		checkbox = "[ ] "
-	}
-
-	str := fmt.Sprintf("%s%s", checkbox, i.component.FileName)
-
-	fn := itemStyle.Render
-	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
-		}
-	}
-
-	fmt.Fprint(w, fn(str))
-}
-
-func (m Model) toggleCurrent() (Model, tea.Cmd) {
-	items := m.list.Items()
-	currentItem := items[m.list.Index()].(ItemDelegate)
-
-	currentItem.checked = !currentItem.checked
-	items[m.list.Index()] = currentItem
-
-	cmd := m.list.SetItems(items)
-
-	return m, cmd
-}
-
-func (m Model) unselectComponent(itemToUnselect ItemDelegate) (Model, tea.Cmd) {
-	for i, item := range m.list.Items() {
-		if item.(ItemDelegate).component == itemToUnselect.component {
-			newItem := item.(ItemDelegate)
+func (m Model) unselectComponent(itemToUnselect ListItem) (Model, tea.Cmd) {
+	for i, item := range m.list.VisibleItems() {
+		if item.(ListItem).component == itemToUnselect.component {
+			newItem := item.(ListItem)
 			newItem.checked = false
 
 			return m, m.list.SetItem(i, newItem)
@@ -135,13 +94,13 @@ func (m Model) unselectComponent(itemToUnselect ItemDelegate) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) getSelectedComponents() []ItemDelegate {
-	items := m.list.Items()
+func (m Model) getSelectedComponents() []ListItem {
+	items := m.list.VisibleItems()
 
-	values := make([]ItemDelegate, 0, len(items))
+	values := make([]ListItem, 0, len(items))
 
 	for i := range items {
-		if itm := items[i].(ItemDelegate); itm.checked {
+		if itm := items[i].(ListItem); itm.checked {
 			values = append(values, itm)
 		}
 	}
@@ -199,10 +158,15 @@ func (m Model) loadComponents() tea.Cmd {
 				checked = true
 			}
 
-			items = append(items, ItemDelegate{current: i == 0, checked: checked, component: c})
+			items = append(items, ListItem{current: i == 0, checked: checked, component: c})
 		}
 
-		l := list.New(items, ItemDelegate{}, 0, 15)
+		delegateKeys := newDelegateKeyMap()
+		delegate := newItemDelegate(delegateKeys)
+		l := list.New(items, delegate, 0, 15)
+
+		// TODO: The actual filtering works but there's bugs/unresolved issues w/ our custom Render() as well as toggleComponent()
+		l.SetFilteringEnabled(false)
 
 		// Now that we've loaded components we can reset filename property since we no longer need it
 		if m.initiator == updateCmd {
@@ -215,8 +179,8 @@ func (m Model) loadComponents() tea.Cmd {
 
 func (m Model) showComponentInfo() tea.Cmd {
 	return func() tea.Msg {
-		item := m.list.Items()[m.list.Index()]
-		return componentInfoRequestMsg{item.(ItemDelegate)}
+		item := m.list.VisibleItems()[m.list.Index()]
+		return componentInfoRequestMsg{item.(ListItem)}
 	}
 }
 
@@ -236,6 +200,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 	switch m.screen {
 	case listScreen:
+		// IMPT: Since we're using a custom item & respective delegate
+		// we need to account for filtering here and allow list to handle updating
+		if m.list.FilterState() == list.Filtering {
+			newListModel, cmd := m.list.Update(msg)
+			m.list = newListModel
+
+			return m, cmd
+		}
+
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
@@ -368,7 +341,7 @@ func (m Model) viewComponentDetailScreen() string {
 	sb.WriteString(tui.WelcomeStyle.Render("Component Details"))
 	sb.WriteString("\n\n")
 	// TODO: [CFX-3996] What to display here
-	item := m.list.Items()[m.list.Index()].(ItemDelegate)
+	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 	selectedComponent := item.component
 	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.SrcPath]
 
