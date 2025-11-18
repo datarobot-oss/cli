@@ -1,6 +1,23 @@
 # `dr auth` - Authentication Management
 
-Manage authentication with DataRobot.
+The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Quick start
+
+For most users, authentication is a two-step process:
+
+```bash
+# 1. Set your DataRobot instance URL
+dr auth set-url [YOUR_DATA_ROBOT_INSTANCE_URL] # e.g. https://app.datarobot.com
+
+# 2. Log in (opens browser for OAuth)
+dr auth login
+```
+
+Your credentials are automatically saved and you're ready to use the CLI.
 
 ## Synopsis
 
@@ -16,20 +33,25 @@ The `auth` command provides authentication management for the DataRobot CLI. It 
 
 ### `login`
 
-Authenticate with DataRobot using OAuth.
+Authenticate with DataRobot using OAuth (Open Authorization). This is the recommended way to authenticate as it's secure and doesn't require you to manually copy API keys.
 
 ```bash
 dr auth login
 ```
 
-**Behavior:**
-1. Starts a local web server (typically on port 8080)
-2. Opens your default browser to DataRobot's OAuth page
-3. Prompts you to authorize the CLI
-4. Receives and stores the API key
-5. Closes the browser and server automatically
+**What happens:**
+
+1. The CLI starts a temporary local web server (typically on port 8080).
+2. Your default web browser opens to DataRobot's authorization page.
+3. You log in to DataRobot (if not already logged in) and authorize the CLI.
+4. DataRobot sends an API key back to the CLI.
+5. The CLI securely stores the API key in your configuration file.
+
+> [!NOTE]
+> OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
 
 **Example:**
+
 ```bash
 $ dr auth login
 Opening browser for authentication...
@@ -38,13 +60,15 @@ Waiting for authentication...
 ```
 
 **Stored Credentials:**
-- Location: `~/.datarobot/config.yaml` (Linux/macOS) or `%USERPROFILE%\.datarobot\config.yaml` (Windows)
+
+- Location: `~/.config/datarobot/drconfig.yaml` (Linux/macOS) or `%USERPROFILE%\.config\datarobot\drconfig.yaml` (Windows)
 - Format: Encrypted API key
 
 **Troubleshooting:**
+
+If your browser doesn't open automatically, the CLI will display a URL to visit manually. For example:
+
 ```bash
-# If browser doesn't open automatically
-# The CLI will display a URL to visit manually:
 $ dr auth login
 Failed to open browser automatically.
 Please visit: https://app.datarobot.com/oauth/authorize?client_id=...
@@ -62,15 +86,23 @@ dr auth logout
 ```
 
 **Example:**
+
 ```bash
 $ dr auth logout
 ✓ Successfully logged out
 ```
 
 **Effect:**
+
 - Removes API key from config file
 - Keeps DataRobot URL configuration
 - Next API call will require re-authentication
+
+> **What's next?** After logging out, you can:
+>
+> - Log in again with `dr auth login` to re-authenticate
+> - Switch to a different DataRobot instance with `dr auth set-url` followed by `dr auth login`
+> - Verify authentication status with `dr templates list` (will prompt for login if not authenticated)
 
 ### `set-url`
 
@@ -81,24 +113,39 @@ dr auth set-url [url]
 ```
 
 **Arguments:**
-- `url` (optional) - DataRobot instance URL
 
-**Interactive Mode:**
+- `url` (optional) - DataRobot instance URL. For example: `https://app.datarobot.com`
 
-If no URL is provided, enters interactive mode:
+**Interactive mode:**
+
+If you run `dr auth set-url` without providing a URL, the CLI enters interactive mode and guides you through selecting your DataRobot instance:
 
 ```bash
 $ dr auth set-url
-Please specify your DataRobot URL, or enter the numbers 1 - 3 if you are using that multi tenant cloud offering
-Please enter 1 if you're using https://app.datarobot.com
-Please enter 2 if you're using https://app.eu.datarobot.com
-Please enter 3 if you're using https://app.jp.datarobot.com
-Otherwise, please enter the URL you use
+🌐 DataRobot URL Configuration
 
-> _
+Choose your DataRobot environment:
+
+┌────────────────────────────────────────────────────────┐
+│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │
+│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │
+│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │
+│      🏢 Custom   Enter your custom URL                 │
+└────────────────────────────────────────────────────────┘
+
+🔗 Don't know which one? Check your DataRobot login page URL.
+
+Enter your choice: 
 ```
 
-**Direct Mode:**
+**Quick selection:**
+
+- Enter `1` for US cloud (`https://app.datarobot.com`)
+- Enter `2` for EU cloud (`https://app.eu.datarobot.com`)
+- Enter `3` for Japan cloud (`https://app.jp.datarobot.com`)
+- Type your custom URL for self-managed instances
+
+**Direct mode:**
 
 Specify URL directly:
 
@@ -114,12 +161,21 @@ $ dr auth set-url https://my-company.datarobot.com
 ```
 
 **Validation:**
+
 ```bash
 $ dr auth set-url invalid-url
 Error: Invalid URL format
 ```
 
-## Global Flags
+> [!NOTE]
+> The URL must be a valid HTTP or HTTPS URL. Common issues include:
+>
+> - Missing protocol (`https://`)
+> - Invalid characters or spaces
+> - Malformed domain names
+> - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
+
+## Global flags
 
 These flags work with all `auth` commands:
 
@@ -130,23 +186,43 @@ These flags work with all `auth` commands:
   -h, --help         Show help for command
 ```
 
-> **⚠️ Warning:** The `--skip-auth` flag bypasses all authentication checks. This is intended for advanced use cases where authentication is handled externally or not required. When this flag is used, commands that require authentication may fail with API errors.
+> [!WARNING]
+> The `--skip-auth` flag bypasses all authentication checks. This is intended for advanced use cases where authentication is handled externally or not required. When this flag is used, commands that require authentication may fail with API errors.
 
 ## Examples
 
-### Initial Setup
+### First-time setup
+
+This is the most common scenario for new users:
 
 ```bash
-# Set URL and login (recommended workflow)
-$ dr auth set-url https://app.datarobot.com
+# Step 1: Set your DataRobot instance URL
+$ dr auth set-url https://app.datarobot.com # Or your own instance URL, if different.
 ✓ DataRobot URL set to: https://app.datarobot.com
 
+# Step 2: Log in (browser will open automatically)
 $ dr auth login
 Opening browser for authentication...
+Waiting for authentication...
 ✓ Successfully authenticated!
 ```
 
-### Using Cloud Instance Shortcuts
+After this, you're ready to use the CLI. Your credentials are saved automatically.
+
+### Using interactive mode
+
+If you're not sure which URL to use, let the CLI guide you:
+
+```bash
+# Start interactive mode
+$ dr auth set-url
+
+# Follow the prompts to select your instance
+# Then log in
+$ dr auth login
+```
+
+### Using cloud instance shortcuts
 
 ```bash
 # US Cloud
@@ -162,7 +238,7 @@ $ dr auth set-url 3
 $ dr auth login
 ```
 
-### Self-Managed Instance
+### Self-managed instance
 
 ```bash
 $ dr auth set-url https://datarobot.mycompany.com
@@ -181,7 +257,7 @@ Opening browser for authentication...
 ✓ Successfully authenticated!
 ```
 
-### Switching Instances
+### Switching instances
 
 ```bash
 # Switch to different DataRobot instance
@@ -189,7 +265,7 @@ $ dr auth set-url https://staging.datarobot.com
 $ dr auth login
 ```
 
-### Debug Authentication Issues
+### Debug authentication issues
 
 ```bash
 # Use verbose flag for details
@@ -204,15 +280,17 @@ $ dr auth login --verbose
 
 # Use debug flag for even more details
 $ dr auth login --debug
-[DEBUG] Config file: /Users/username/.datarobot/config.yaml
+[DEBUG] Config file: /Users/username/.config/datarobot/drconfig.yaml
 [DEBUG] Current URL: https://app.datarobot.com
 [DEBUG] Starting server on: 127.0.0.1:8080
 ...
 ```
 
-## Authentication Flow
+## How authentication works
 
-```
+The authentication process uses OAuth, a secure standard for authorization. Here's what happens behind the scenes:
+
+```text
 ┌──────────┐
 │   User   │
 └────┬─────┘
@@ -238,20 +316,39 @@ $ dr auth login --debug
      v
 ┌─────────────────┐
 │  Config File    │
-│  (~/.datarobot/ │
-│   config.yaml)  │
+│  (~/.config/    │
+│   datarobot/     │
+│   drconfig.yaml) │
 └─────────────────┘
 ```
 
-## Configuration File
+**Step-by-step:**
+
+1. You run `dr auth login`
+2. CLI starts a local server to receive the authorization response
+3. Your browser opens to DataRobot's login page
+4. You log in and authorize the CLI
+5. DataRobot sends an API key to the local server
+6. CLI saves the key securely to your config file
+7. Browser and server close automatically
+
+This process is secure because:
+
+- You authenticate directly with DataRobot (not the CLI)
+- The API key is transmitted securely
+- No passwords are stored locally
+
+## Configuration file
 
 After authentication, credentials are stored in:
 
 **Location:**
-- Linux/macOS: `~/.datarobot/config.yaml`
-- Windows: `%USERPROFILE%\.datarobot\config.yaml`
+
+- Linux/macOS: `~/.config/datarobot/drconfig.yaml`
+- Windows: `%USERPROFILE%\.config\datarobot\drconfig.yaml`
 
 **Format:**
+
 ```yaml
 datarobot:
   endpoint: https://app.datarobot.com
@@ -264,44 +361,46 @@ preferences:
 ```
 
 **Permissions:**
+
 - File is created with restricted permissions (0600)
 - Only the user who created it can read/write
 
-## Security Best Practices
+## Security best practices
 
-### 1. Protect Your Config File
+### Protect your config file
 
 ```bash
 # Verify permissions
-ls -la ~/.datarobot/config.yaml
+ls -la ~/.config/datarobot/drconfig.yaml
 # Should show: -rw------- (600)
 
 # Fix if needed
-chmod 600 ~/.datarobot/config.yaml
+chmod 600 ~/.config/datarobot/drconfig.yaml
 ```
 
-### 2. Don't Share Credentials
+### Don't share credentials
 
 Never commit or share:
-- `~/.datarobot/config.yaml`
+
+- `~/.config/datarobot/drconfig.yaml`
 - API keys
 - OAuth tokens
 
-### 3. Use Per-Environment Authentication
+### Use per-environment authentication
 
 ```bash
 # Development
-export DATAROBOT_CLI_CONFIG=~/.datarobot/dev-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 
 # Production
-export DATAROBOT_CLI_CONFIG=~/.datarobot/prod-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml
 dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 ```
 
-### 4. Regular Re-authentication
+### Regular re-authentication
 
 ```bash
 # Logout when finished
@@ -311,7 +410,7 @@ dr auth logout
 dr auth login
 ```
 
-## Environment Variables
+## Environment variables
 
 Override configuration with environment variables:
 
@@ -323,16 +422,17 @@ export DATAROBOT_ENDPOINT=https://app.datarobot.com
 export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
-export DATAROBOT_CLI_CONFIG=~/.datarobot/custom-config.yaml
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
 ```
 
-## Common Issues
+## Common issues
 
-### Browser Doesn't Open
+### Browser doesn't open
 
 **Problem:** Browser fails to open automatically.
 
 **Solution:**
+
 ```bash
 # Copy the URL from the output and open manually
 $ dr auth login
@@ -340,53 +440,119 @@ Failed to open browser automatically.
 Please visit: https://app.datarobot.com/oauth/authorize?...
 ```
 
-### Port Already in Use
+### Port already in use
 
 **Problem:** Port 8080 is already in use.
 
 **Solution:**
 The CLI automatically tries alternative ports (8081, 8082, etc.)
 
-### Invalid Credentials
+### Invalid credentials
 
-**Problem:** "Authentication failed" error.
+**Problem:** "Authentication failed" error. This can occur when:
+
+- Your API token has expired
+- Your API token was revoked by an administrator
+- The DataRobot URL has changed
+- The config file is corrupted or contains invalid data
 
 **Solution:**
+
 ```bash
 # Clear credentials and try again
 dr auth logout
 dr auth login
 ```
 
-### Connection Refused
+**If the problem persists:**
 
-**Problem:** Cannot connect to DataRobot.
+```bash
+# Verify your DataRobot URL is correct
+dr auth set-url https://app.datarobot.com  # or your instance URL
+
+# Check the config file for issues
+cat ~/.config/datarobot/drconfig.yaml
+
+# If config file is corrupted, you can manually edit it or delete it
+# (it will be recreated on next login)
+rm ~/.config/datarobot/drconfig.yaml
+dr auth set-url https://app.datarobot.com
+dr auth login
+```
+
+### Connection refused
+
+**Problem:** Cannot connect to DataRobot. This typically means:
+
+- The DataRobot instance URL is incorrect
+- Network connectivity issues (firewall, VPN, proxy)
+- The DataRobot instance is down or unreachable
+- DNS resolution problems
 
 **Solution:**
+
 ```bash
 # Verify URL is correct
-cat ~/.datarobot/config.yaml
+cat ~/.config/datarobot/drconfig.yaml
 
 # Try setting URL again
 dr auth set-url https://app.datarobot.com
 
 # Check network connectivity
 ping app.datarobot.com
+
+# Test HTTPS connectivity
+curl -I https://app.datarobot.com
 ```
 
-### SSL Certificate Issues
+**For corporate networks with proxies:**
 
-**Problem:** SSL verification fails.
+```bash
+# Set proxy environment variables if required
+export HTTP_PROXY=http://proxy.company.com:8080
+export HTTPS_PROXY=http://proxy.company.com:8080
+dr auth login
+```
+
+### SSL certificate issues
+
+**Problem:** SSL verification fails. This can occur with:
+
+- Self-signed certificates (common in enterprise/self-managed instances)
+- Expired certificates
+- Certificate chain issues
+- Corporate proxy intercepting SSL
 
 **Solution:**
+
 ```bash
 # For self-signed certificates (not recommended for production)
 export DATAROBOT_VERIFY_SSL=false
 dr auth login
 ```
 
+**For enterprise environments:**
+
+```bash
+# If your organization provides a CA certificate bundle
+export DATAROBOT_CA_CERT=/path/to/ca-bundle.crt
+dr auth login
+
+# Or configure in the config file
+# See [Configuration Files](../user-guide/configuration.md) for details
+```
+
+> [!WARNING]
+> Disabling SSL verification (`DATAROBOT_VERIFY_SSL=false`) makes your connection vulnerable to man-in-the-middle attacks. Only use this in development environments or when you understand the security implications.
+
 ## See also
 
 - [Quick start](../../README.md#quick-start) - Initial setup guide
-- [Configuration](../user-guide/configuration.md) - Configuration file details
-- [templates](templates.md) - Template management commands
+- [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
+- [Templates](../template-system/) - Template management commands
+
+> **What's next?** After setting up authentication:
+>
+> - Browse available templates: `dr templates list`
+> - Set up your first template: `dr templates setup`
+> - Learn about [configuration files](../user-guide/configuration.md) for advanced settings
