@@ -573,6 +573,14 @@ func (m Model) View() string { //nolint: cyclop
 		if m.fromStartCommand {
 			sb.WriteString(tui.BaseTextStyle.Render("You can now start running your AI application!"))
 			sb.WriteString("\n\n")
+
+			if m.clone.Dir != "" {
+				sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+				sb.WriteString("\n\n")
+				sb.WriteString(tui.InfoStyle.Render("cd " + m.clone.Dir))
+				sb.WriteString("\n\n")
+			}
+
 			sb.WriteString(tui.BaseTextStyle.Render("• Use "))
 			sb.WriteString(tui.InfoStyle.Render("dr task run"))
 			sb.WriteString(tui.BaseTextStyle.Render(" to see the key commands to deploy the app"))
@@ -584,7 +592,7 @@ func (m Model) View() string { //nolint: cyclop
 		} else {
 			sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
 			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render("cd " + m.clone.Dir))
+			sb.WriteString(tui.InfoStyle.Render("cd " + m.clone.Dir))
 			sb.WriteString("\n\n")
 			sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
 			sb.WriteString(tui.InfoStyle.Render("dr start"))
