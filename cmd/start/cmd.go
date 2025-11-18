@@ -65,10 +65,23 @@ The following actions will be performed:
 				return nil
 			}
 
-			if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
-				// No quickstart found, will launch template setup
-				// Templates setup handles its own state updates
-				return setup.RunTeaFromStart(cmd.Context(), true)
+			if innerModel.needTemplateSetup && innerModel.done && !innerModel.quitting {
+				// Need to run template setup
+				// After it completes, we'll be in the cloned directory,
+				// so we can just run start again
+				err := setup.RunTeaFromStart(cmd.Context(), true)
+				if err != nil {
+					return err
+				}
+
+				// Now run start again - we're in the cloned repo directory
+				// Create a new start model and run it
+				m2 := NewStartModel(opts)
+				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2), tea.WithAltScreen())
+
+				_, err = p2.Run()
+
+				return err
 			}
 
 			return nil
