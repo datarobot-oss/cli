@@ -73,7 +73,7 @@ func SetURLAction(checkHost bool) {
 	err = config.SaveURLToConfig(url)
 	if err != nil {
 		if errors.Is(err, config.ErrInvalidURL) {
-			fmt.Println("\nAn error occurred (your URL is invalid) - please try again.")
+			fmt.Println("\nInvalid URL provided. Verify your URL and try again.")
 			SetURLAction(false)
 		}
 	}
