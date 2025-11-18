@@ -46,7 +46,6 @@ dr auth login
 3. You log in to DataRobot (if not already logged in) and authorize the CLI.
 4. DataRobot sends an API key back to the CLI.
 5. The CLI securely stores the API key in your configuration file.
-6. The browser and server close automatically.
 
 > [!NOTE]
 > OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
@@ -123,13 +122,20 @@ If you run `dr auth set-url` without providing a URL, the CLI enters interactive
 
 ```bash
 $ dr auth set-url
-Please specify your DataRobot URL, or enter the numbers 1 - 3 if you are using that multi tenant cloud offering
-Please enter 1 if you're using https://app.datarobot.com
-Please enter 2 if you're using https://app.eu.datarobot.com
-Please enter 3 if you're using https://app.jp.datarobot.com
-Otherwise, please enter the URL you use
+🌐 DataRobot URL Configuration
 
-> _
+Choose your DataRobot environment:
+
+┌────────────────────────────────────────────────────────┐
+│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │
+│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │
+│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │
+│      🏢 Custom   Enter your custom URL                 │
+└────────────────────────────────────────────────────────┘
+
+🔗 Don't know which one? Check your DataRobot login page URL.
+
+Enter your choice: 
 ```
 
 **Quick selection:**
@@ -137,7 +143,7 @@ Otherwise, please enter the URL you use
 - Enter `1` for US cloud (`https://app.datarobot.com`)
 - Enter `2` for EU cloud (`https://app.eu.datarobot.com`)
 - Enter `3` for Japan cloud (`https://app.jp.datarobot.com`)
-- Enter `4` or type your custom URL for self-managed instances
+- Type your custom URL for self-managed instances
 
 **Direct mode:**
 
