@@ -175,7 +175,9 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 		execErr = copier.ExecUpdateWithData(yamlFile, mergedData)
 	} else {
 		quiet := false
-		execErr = copier.ExecUpdate(yamlFile, quiet)
+		debug := viper.GetBool("debug")
+
+		execErr = copier.ExecUpdate(yamlFile, quiet, debug)
 	}
 
 	if execErr != nil {
