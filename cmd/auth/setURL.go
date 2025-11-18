@@ -77,6 +77,8 @@ func SetURLAction(checkHost bool) {
 			SetURLAction(false)
 		}
 	}
+
+	fmt.Println("Environment URL configured successfully!")
 }
 
 var setURLCmd = &cobra.Command{
