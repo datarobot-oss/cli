@@ -2,29 +2,6 @@
 
 Welcome to the DataRobot CLI user documentation. This guide will help you install, configure, and use the CLI to manage DataRobot custom applications and templates.
 
-## Getting Started
-
-**New to the CLI?** Start with [Quick start](../../README.md#quick-start) for installation and initial setup.
-
-## Documentation Topics
-
-### Essential Guides
-
-- **[Getting started](getting-started.md)** ⭐ *Start here*&mdash;installation and initial setup
-- **[Configuration files](configuration.md)**&mdash;understanding config file structure
-
-### Feature Guides
-
-- **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell
-- **[Authentication](../commands/auth.md)**&mdash;managing DataRobot credentials and login
-- **[Working with templates](../template-system/)**&mdash;clone, configure, and manage application templates
-
-### Additional Resources
-
-- **[Command Reference](../commands/)**&mdash;detailed documentation for all CLI commands
-- **[Template System](../template-system/)**&mdash;understanding template structure and interactive configuration
-- **[FAQ](faq.md)**&mdash;frequently asked questions *(Coming soon)*
-
 ## What is the DataRobot CLI?
 
 The DataRobot CLI (`dr`) is a command-line tool for:
@@ -36,8 +13,35 @@ The DataRobot CLI (`dr`) is a command-line tool for:
 
 For a complete overview and feature list, see the [main README](../../README.md).
 
+## Getting Started
+
+**New to the CLI?** Follow this learning path:
+
+1. **[Installation and Quick Start](../../README.md#quick-start)** ⭐ *Start here*&mdash;install the CLI, authenticate, and set up your first template
+2. **[Authentication](../commands/auth.md)**&mdash;manage DataRobot credentials and login
+3. **[Working with Templates](../template-system/)**&mdash;clone, configure, and manage application templates
+4. **[Configuration Files](configuration.md)**&mdash;understand config file structure and management
+
+## Documentation Topics
+
+### Essential Guides
+
+- **[Quick Start](../../README.md#quick-start)** ⭐ *Start here*&mdash;installation and initial setup
+- **[Authentication](../commands/auth.md)**&mdash;managing DataRobot credentials and login
+- **[Configuration files](configuration.md)**&mdash;understanding config file structure and location
+
+### Feature Guides
+
+- **[Working with Templates](../template-system/)**&mdash;clone, configure, and manage application templates
+- **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell
+
+### Additional Resources
+
+- **[Command Reference](../commands/)**&mdash;detailed documentation for all CLI commands
+- **[Template System Documentation](../template-system/)**&mdash;deep dive into template structure, interactive configuration, and environment variables
+
 ## Need Help?
 
 - Can't find what you're looking for? Check the [main documentation index](../README.md)
 - Have questions? See [Getting help](../README.md#getting-help) in the main docs
-- Found an issue? [Open an issue](https://github.com/datarobot/cli/issues) on GitHub
+- Found an issue? [Open an issue](https://github.com/datarobot-oss/cli/issues) on GitHub
