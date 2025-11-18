@@ -253,7 +253,7 @@ You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud 
 - Enter `1` for `https://app.datarobot.com`
 - Enter `2` for `https://app.eu.datarobot.com`
 - Enter `3` for `https://app.jp.datarobot.com`
-- Enter `4` to provide a custom/self-managed instance URL
+- Enter a valid URL if you have a custom/self-managed instance
 
 Alternatively, set the URL directly:
 
@@ -314,6 +314,7 @@ At the subsequent prompt, specify the desired directory name for the template an
 
 <details><summary><em>Click here for manual setup instructions</em></summary>
 <br/>
+
 **Manual setup:** If you prefer manual control:
 
 ```bash
