@@ -44,7 +44,9 @@ func EnsureAuthenticated(ctx context.Context) bool {
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
-		SetURLAction()
+
+		checkHost := true
+		SetURLAction(checkHost)
 
 		datarobotHost = config.GetBaseURL()
 		if datarobotHost == "" {
@@ -88,7 +90,8 @@ func LoginAction(ctx context.Context) error {
 
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
-		SetURLAction()
+		checkHost := true
+		SetURLAction(checkHost)
 
 		datarobotHost = config.GetBaseURL()
 	}

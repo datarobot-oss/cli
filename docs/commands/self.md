@@ -193,4 +193,4 @@ $ dr self version --format json
 
 - [Shell completions guide](../user-guide/shell-completions.md)&mdash;detailed completion setup
 - [Completion command](completion.md)&mdash;completion command reference
-- [Getting started](../user-guide/getting-started.md)&mdash;initial CLI setup
+- [Quick start](../../README.md#quick-start)&mdash;initial CLI setup

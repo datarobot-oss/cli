@@ -1,16 +1,16 @@
-# Development Setup
+# Development setup
 
-This guide covers setting up your development environment for building and developing the DataRobot CLI.
+This page outlines how to set up your development environment to build and develop with the DataRobot CLI.
 
 ## Prerequisites
 
-- **Go 1.25.3+**&mdash;[Download](https://golang.org/dl/)
-- **Git**&mdash;version control
-- **Task**&mdash;task runner ([install](https://taskfile.dev/installation/))
+- [Go 1.25.3](https://golang.org/dl/)
+- Git for version control
+- [Task](https://taskfile.dev/installation/) (A task runner)
 
 ## Installation
 
-### Installing Task
+### Install task
 
 Task is required for running development tasks.
 
@@ -32,7 +32,7 @@ sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/b
 choco install go-task
 ```
 
-## Setting Up the Development Environment
+## Set up the development environment
 
 ### Clone the repository
 
@@ -63,36 +63,36 @@ The binary will be available at `./dist/dr`.
 ./dist/dr version
 ```
 
-## Available Development Tasks
+## Available development tasks
 
-View all available tasks:
+To view all available tasks:
 
 ```bash
 task --list
 ```
 
-### Common Tasks
+### Common tasks
 
 | Task | Description |
 |------|-------------|
-| `task build` | Build the CLI binary |
-| `task test` | Run all tests |
-| `task test-coverage` | Run tests with coverage report |
-| `task lint` | Run linters and code formatters |
-| `task fmt` | Format code |
-| `task clean` | Clean build artifacts |
-| `task dev-init` | Setup development environment |
-| `task install-tools` | Install development tools |
-| `task run` | Run CLI without building (e.g., `task run -- templates list`) |
+| `task build` | Build the CLI binary. |
+| `task test` | Run all tests. |
+| `task test-coverage` | Run tests with a coverage report. |
+| `task lint` | Run linters and code formatters. |
+| `task fmt` | Format code. |
+| `task clean` | Cleanly build artifacts. |
+| `task dev-init` | Set up a development environment. |
+| `task install-tools` | Install development tools. |
+| `task run` | Run the CLI without building (e.g., `task run -- templates list`). |
 
-## Building
+## Build the CLI
 
-**Always use `task build` for building the CLI.** This ensures:
+**Always use `task build` for building the CLI.** This ensures that:
 
-- Version information from git is included
-- Git commit hash is embedded
-- Build timestamp is recorded
-- Proper ldflags configuration is applied
+- The version information from git is included
+- The git commit hash is embedded
+- The build timestamp is recorded
+- The proper `ldflags` configuration is applied
 
 ```bash
 # Standard build (recommended)
@@ -102,7 +102,7 @@ task build
 task run -- templates list
 ```
 
-## Running Tests
+## Running tests
 
 ```bash
 # Run all tests
@@ -115,7 +115,14 @@ task test-coverage
 go test ./cmd/auth/...
 ```
 
-## Linting and Formatting
+## Linting and formatting
+
+For linting and formatting, this project uses the following tools:
+
+- `golangci-lint` for comprehensive linting
+- `go fmt` for basic formatting
+- `go vet` for suspicious constructs
+- `goreleaser check` for release configuration validation
 
 ```bash
 # Run all linters (includes formatting)
@@ -125,15 +132,8 @@ task lint
 task fmt
 ```
 
-The project uses:
+## Next steps
 
-- `golangci-lint` for comprehensive linting
-- `go fmt` for basic formatting
-- `go vet` for suspicious constructs
-- `goreleaser check` for release configuration validation
-
-## Next Steps
-
-- [Project Structure](structure.md)&mdash;understand the codebase organization
-- [Building Guide](building.md)&mdash;detailed build information and architecture
-- [Release Process](releasing.md)&mdash;creating releases and publishing
+- [Project structure](structure.md): Understand the codebase organization.
+- [Build guide](building.md): Detailed build information and architecture.
+- [Release process](releasing.md): Create and publish releases.

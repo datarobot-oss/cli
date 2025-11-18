@@ -1,67 +1,69 @@
-# Release Process
+# Release process
 
-This document describes how to create and publish releases of the DataRobot CLI.
+This page describes how to create and publish releases of the DataRobot CLI.
 
 ## Overview
 
-The project uses [GoReleaser](https://goreleaser.com/) for automated releases. Releases are triggered by creating and pushing Git tags, which automatically builds binaries for multiple platforms and publishes them to GitHub.
+This project uses [GoReleaser](https://goreleaser.com/) for automated releases. Trigger releases by creating and pushing Git tags, which automatically build binaries for multiple platforms and publish them to GitHub.
 
 ## Prerequisites
 
-- Write access to the repository
-- All changes merged to the `main` branch
-- Familiarity with [Semantic Versioning](https://semver.org/)
+- Write access to the repository.
+- All changes are merged to the `main` branch.
+- Familiarity with [semantic versioning](https://semver.org/).
 
 ## Versioning
 
-We follow [Semantic Versioning](https://semver.org/) (SemVer):
+Versioning follows [semantic versioning](https://semver.org/) conventions (SemVer).
 
 - **MAJOR.MINOR.PATCH** (e.g., `v1.2.3`)
 - **Pre-releases**: `v1.2.3-rc.1`, `v1.2.3-beta.1`, `v1.2.3-alpha.1`
 
-### Version Guidelines
+### Version guidelines
 
-**MAJOR** version when making incompatible API changes:
+Use **MAJOR** version when making incompatible API changes, including:
 
-- Breaking changes to command-line interface
+- Breaking changes to the command-line interface
 - Removing commands or flags
 - Changing default behavior that breaks existing workflows
 
-**MINOR** version when adding functionality in a backward-compatible manner:
+Use **MINOR** version when adding functionality in a backward-compatible manner, including:
 
 - New commands or subcommands
 - New flags or options
 - New features
 
-**PATCH** version when making backward-compatible bug fixes:
+Use **PATCH** version when making backward-compatible bug fixes, including:
 
 - Bug fixes
 - Documentation updates
 - Performance improvements
 
-## Creating a Release
+## Create a release
 
-### Step 1: Ensure Main Branch is Ready
+### 1. Ensure the main branch is ready
 
 ```bash
-# Switch to main branch
+# Switch to the main branch
 git checkout main
 
-# Pull latest changes
+# Pull the latest changes
 git pull origin main
 
-# Verify all tests pass
+# Verify that all tests pass
 task test
 
-# Verify linting passes
+# Verify that linting passes
 task lint
 ```
 
-### Step 2: Determine Next Version
+### 2. Determine the next version
 
-Review recent changes and decide on the next version number based on SemVer guidelines above.
+Review any recent changes and decide on the next version number based on the [semantic versioning](#versioning) guidelines.
 
-### Step 3: Create and Push Tag
+### 3. Create and push a tag
+
+When creating a tag, note that it must start with `v` (e.g., `v1.0.0`, not `1.0.0`).
 
 ```bash
 # Create a new version tag
@@ -71,12 +73,10 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-**Note:** The tag must start with `v` (e.g., `v1.0.0`, not `1.0.0`).
+### 4. Monitor the release process
 
-### Step 4: Monitor Release Process
-
-1. Go to the [Actions tab](https://github.com/datarobot-oss/cli/actions) in GitHub
-2. Watch the release workflow run
+1. Go to the [Actions tab](https://github.com/datarobot-oss/cli/actions) in GitHub.
+2. Watch the release workflow run.
 3. The workflow will:
    - Build binaries for multiple platforms (macOS, Linux, Windows)
    - Run tests
@@ -84,29 +84,29 @@ git push origin v0.2.0
    - Create a GitHub release
    - Upload artifacts
 
-### Step 5: Verify Release
+### 5. Verify the release
 
 Once the workflow completes:
 
-1. Go to [Releases](https://github.com/datarobot-oss/cli/releases)
+1. Go to [Releases](https://github.com/datarobot-oss/cli/releases).
 2. Verify the new release appears with:
-   - Correct version number
+   - The correct version number
    - Generated release notes
    - Binary artifacts for all platforms
-   - Checksums file
+   - A checksums file
 
-### Step 6: Update Release Notes (Optional)
+### 6. Update release notes
 
-Edit the release notes on GitHub to:
+Optional. Edit the release notes on GitHub to:
 
 - Add highlights of major changes
-- Include upgrade instructions if needed
+- Include any necessary upgrade instructions
 - Add breaking change warnings
 - Include acknowledgments
 
-## Pre-release Versions
+## Pre-release versions
 
-For testing releases before making them generally available:
+To test releases before making them generally available, use the following commands.
 
 ```bash
 # Create a pre-release tag
@@ -118,51 +118,49 @@ git push origin v0.2.0-rc.1
 
 Pre-release versions are marked as "Pre-release" on GitHub and can be used for testing.
 
-## Testing the Release Process
+## Test the release process
 
-To test the release process without publishing:
+To test the release process without publishing, use the commands below. They create build artifacts locally without creating a GitHub release.
 
 ```bash
 # Dry run (builds but doesn't publish)
 goreleaser release --snapshot --clean
 
-# Check output in dist/ directory
+# Check output in the dist/ directory
 ls -la dist/
 ```
 
-This creates build artifacts locally without creating a GitHub release.
-
 ## Rollback
 
-If a release has issues:
+If a release has issues, the following actions are available.
 
 ### Delete the tag locally and remotely
 
 ```bash
-# Delete local tag
+# Delete a local tag
 git tag -d v0.2.0
 
-# Delete remote tag
+# Delete a remote tag
 git push origin :refs/tags/v0.2.0
 ```
 
 ### Delete the GitHub release
 
-- Go to Releases page
-- Click on the problematic release
-- Click "Delete this release"
+- Go to the **Releases** page.
+- Click on the problematic release.
+- Click **Delete this release**.
 
 ### Fix the issues and create a new patch release
 
-## Release Configuration
+## Release configuration
 
 The release process is configured in `goreleaser.yaml`. Key configurations:
 
-- **Builds**: Defines target platforms and architectures
-- **Archives**: Creates distribution archives
-- **Checksums**: Generates checksum files
-- **Release notes**: Automatic generation from commits
-- **Artifacts**: Files to include in the release
+- **Builds**: Defines target platforms and architectures.
+- **Archives**: Creates distribution archives.
+- **Checksums**: Generates checksum files.
+- **Release notes**: Automatic generation from commits.
+- **Artifacts**: Files to include in the release.
 
 To validate the configuration:
 
@@ -170,7 +168,7 @@ To validate the configuration:
 goreleaser check
 ```
 
-## Automated Release Workflow
+## Automated release workflow
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
 
@@ -181,42 +179,42 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
 5. Creates GitHub release
 6. Uploads all artifacts
 
-## Best Practices
+## Best practices
 
-1. **Always test before releasing:**
+1. Always test before releasing.
    - Run full test suite: `task test`
    - Run linters: `task lint`
    - Build locally: `task build`
 
-2. **Use meaningful commit messages:**
-   - They're used to generate release notes
-   - Follow conventional commit format when possible
+2. Use meaningful commit messages.
+   - Commit messages are used to generate release notes
+   - Follow the conventional commit format when possible
 
-3. **Update CHANGELOG.md:**
+3. Update `CHANGELOG.md`.
    - Document significant changes
    - Include migration notes for breaking changes
 
-4. **Communicate breaking changes:**
+4. Communicate breaking changes.
    - Update documentation
-   - Add prominent notes in release description
+   - Add prominent notes in the release description
    - Consider a major version bump
 
-5. **Test installation:**
-   - Test the install script after release
-   - Verify binaries work on target platforms
+5. Test the installation.
+   - Test the install script after the release
+   - Verify that binaries work on target platforms
 
 ## Troubleshooting
 
 ### Release workflow fails
 
-- Check the Actions tab for error messages
-- Verify `goreleaser.yaml` is valid: `goreleaser check`
-- Ensure all required secrets are configured
+- Check the **Actions** tab for error messages.
+- Verify that`goreleaser.yaml` is valid: `goreleaser check`.
+- Ensure all required secrets are configured.
 
 ### Tag already exists
 
 ```bash
-# Delete and recreate if needed
+# Delete and recreate the tag if needed
 git tag -d v0.2.0
 git push origin :refs/tags/v0.2.0
 git tag v0.2.0
@@ -225,12 +223,12 @@ git push origin v0.2.0
 
 ### Missing artifacts
 
-- Verify build configuration in `goreleaser.yaml`
-- Check build logs in GitHub Actions
-- Test locally with `goreleaser release --snapshot --clean`
+- Verify the build configuration in `goreleaser.yaml`.
+- Check the build logs in GitHub Actions.
+- Test locally with `goreleaser release --snapshot --clean`.
 
-## Next Steps
+## Next steps
 
-- [Setup Guide](setup.md)&mdash;development environment setup
-- [Building Guide](building.md)&mdash;detailed build information
-- [Contributing](../../CONTRIBUTING.md)&mdash;contribution guidelines
+- [Setup Guide](setup.md): Outlines development environment setup.
+- [Building Guide](building.md): Provides detailed build information.
+- [Contributing](../../CONTRIBUTING.md): Contribution guidelines.

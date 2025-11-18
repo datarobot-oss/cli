@@ -37,37 +37,28 @@ type Category struct {
 	Priority int // Lower numbers appear first
 }
 
-// getAdaptiveColor returns a color that works on both light and dark backgrounds
-func getAdaptiveColor(darkColor, lightColor lipgloss.Color) lipgloss.Color {
-	if lipgloss.HasDarkBackground() {
-		return darkColor
-	}
-
-	return lightColor
-}
-
 // getCategoryStyle returns the appropriate style for a category name with adaptive colors
 func getCategoryStyle(categoryName string) lipgloss.Style {
 	switch {
 	case strings.Contains(categoryName, CategoryQuickStart):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).
+			Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).
 			Bold(true)
 	case strings.Contains(categoryName, CategoryBuilding):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
+			Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
 			Bold(true)
 	case strings.Contains(categoryName, CategoryTestingQuality):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).
+			Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).
 			Bold(true)
 	case strings.Contains(categoryName, CategoryDeployment):
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrIndigo, tui.DrIndigoDark)).
+			Foreground(tui.GetAdaptiveColor(tui.DrIndigo, tui.DrIndigoDark)).
 			Bold(true)
 	default:
 		return lipgloss.NewStyle().
-			Foreground(getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)).
+			Foreground(tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)).
 			Bold(true)
 	}
 }
@@ -194,12 +185,12 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	}
 
 	// Adaptive colors for light/dark terminals
-	titleColor := getAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
-	taskColor := getAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
-	aliasColor := getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
-	descColor := getAdaptiveColor(tui.DrGray, tui.DrGrayDark)
-	borderColor := getAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
-	tipBorderColor := getAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
+	titleColor := tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
+	taskColor := tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
+	aliasColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
+	descColor := tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark)
+	borderColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
+	tipBorderColor := tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
