@@ -1,15 +1,11 @@
 # Environment variables
 
-Managing environment variables and `.env` files in DataRobot templates.
-
-## Overview
-
-DataRobot templates use `.env` files to store configuration variables needed by your application. The CLI provides tools to:
+This page outlines how to manage environment variables and `.env` files in DataRobot templates. DataRobot templates use `.env` files to store configuration variables needed by your application. The CLI provides tools to:
 
 - Create `.env` files from templates
-- Edit variables interactively
+- Interactively edit variables
 - Validate configuration
-- Manage secrets securely
+- Securely manage secrets
 
 ## File structure
 
@@ -18,47 +14,48 @@ DataRobot templates use `.env` files to store configuration variables needed by 
 The template provided by the repository (committed to Git):
 
 ```bash
-# Required Configuration
+# Required configuration
 APP_NAME=
 DATAROBOT_ENDPOINT=
 DATAROBOT_API_TOKEN=
 
-# Optional Configuration
+# Optional configuration
 # DEBUG=false
 # LOG_LEVEL=info
 # PORT=8080
 
-# Database Configuration
+# Database configuration
 # DATABASE_URL=
 # DATABASE_POOL_SIZE=10
 
-# Cache Configuration
+# Cache configuration
 # CACHE_ENABLED=false
 # CACHE_URL=
 ```
 
-**Characteristics:**
-- Committed to version control.
-- Contains empty required variables.
-- Comments indicate optional variables.
-- Includes documentation comments.
+#### Characteristics
+
+- Committed to version control
+- Contains empty required variables
+- Comments indicate optional variables
+- Includes documentation comments
 
 ### .env
 
 The actual configuration file (never committed):
 
 ```bash
-# Required Configuration
+# Required configuration
 APP_NAME=my-awesome-app
 DATAROBOT_ENDPOINT=https://app.datarobot.com
 DATAROBOT_API_TOKEN=***
 
-# Optional Configuration
+# Optional configuration
 DEBUG=true
 LOG_LEVEL=debug
 PORT=8000
 
-# Database Configuration
+# Database configuration
 DATABASE_URL=postgresql://localhost:5432/mydb
 DATABASE_POOL_SIZE=5
 ```
@@ -69,11 +66,11 @@ DATABASE_POOL_SIZE=5
 - **Never committed** (in `.gitignore`).
 - User-specific configuration.
 
-## Creating environment files
+## Create environment files
 
-### Using the wizard
+### Use the wizard
 
-The interactive wizard guides you through configuration:
+The interactive wizard guides you through configuration.
 
 ```bash
 # In a template directory
@@ -87,45 +84,48 @@ or
 dr templates setup
 ```
 
-**Wizard flow:**
+#### Wizard workflow
+
 1. Loads `.env.template`.
 2. Discovers configuration prompts.
 3. Shows interactive questions.
 4. Validates inputs.
-5. Generates `.env` file.
+5. Generates an `.env` file.
 
 ### Manual creation
 
-Copy and edit manually:
+To copy and edit a template manually:
 
 ```bash
-# Copy template
+# Copy the template
 cp .env.template .env
 
-# Edit with your preferred editor
+# Edit the template with your preferred editor
 vim .env
 
-# Or use the CLI editor
+# Alternatively, use the CLI editor
 dr dotenv
 ```
 
-## Managing Variables
+## Manage variables
 
-### Interactive Editor
+### Interactive editor
 
-Launch the built-in editor:
+Launch the built-in editor to manage variables:
 
 ```bash
 dr dotenv
 ```
 
-**Features:**
+#### Features
+
 - List all variables
 - Mask secrets (passwords, API keys)
 - Start wizard mode
-- Edit directly
+- Directly edit variables
 
-**Commands:**
+#### Commands
+
 ```
 Variables found in .env:
 
@@ -139,23 +139,24 @@ Press e to edit the file directly.
 Press enter to finish and exit.
 ```
 
-### Wizard Mode
+### Wizard mode
 
-Interactive configuration with prompts:
+You can also interactively configure a template with prompts.
 
 ```bash
 dr dotenv setup
 ```
 
-**Advantages:**
+#### Advantages
+
 - Guided setup
-- Validation built-in
+- Built-in validation
 - Conditional prompts
 - Help text for each variable
 
-### Direct Editing
+### Direct editing
 
-Edit the file directly:
+To edit the file directly:
 
 ```bash
 dr dotenv edit
@@ -165,11 +166,11 @@ dr dotenv edit
 vim .env
 ```
 
-## Variable Types
+## Variable types
 
-### Required Variables
+### Required variables
 
-Must be set before running the application:
+The following variables must be set before running the application:
 
 ```bash
 # .env.template shows these without comments
@@ -178,7 +179,7 @@ DATAROBOT_ENDPOINT=
 DATAROBOT_API_TOKEN=
 ```
 
-The wizard enforces that these are filled:
+The wizard enforces that an application name must be provided.
 
 ```
 Enter your application name
@@ -186,9 +187,9 @@ Enter your application name
 (Cannot proceed without entering a value)
 ```
 
-### Optional Variables
+### Optional variables
 
-Can be left empty (shown as comments):
+The following variables are optional and can be left empty (shown as comments):
 
 ```bash
 # .env.template shows these with # prefix
@@ -196,7 +197,7 @@ Can be left empty (shown as comments):
 # LOG_LEVEL=info
 ```
 
-The wizard allows skipping:
+The wizard allows you to skip binding these variables:
 
 ```
 Enable debug mode? (optional)
@@ -205,11 +206,11 @@ Enable debug mode? (optional)
     No
 ```
 
-### Secret Variables
+### Secret variables
 
 Sensitive values that should be masked during input and display.
 
-**Defining secret variables:**
+To define secret variables:
 
 ```yaml
 # In .datarobot/prompts.yaml
@@ -219,22 +220,25 @@ prompts:
     type: "secret_string"
     help: "Enter your API key"
 ```
+#### Auto-detection
 
-**Auto-detection:** Variables with names containing `PASSWORD`, `SECRET`, `KEY`, or `TOKEN` are automatically treated as secrets.
+Variables with names containing `PASSWORD`, `SECRET`, `KEY`, or `TOKEN` are automatically treated as secrets.
 
-**Display behavior:**
-- Wizard input is masked with bullet characters (••••).
-- Editor view shows as `***`.
-- Actual file contains plain text value.
+#### Display behavior
 
-**Security best practices:**
+- The wizard input's secrets are masked with bullet characters (••••).
+- The editor view displays secrets as `***`.
+- The actual file contains secrets as plain text values.
+
+#### Security best practices
+
 - Always add `.env` to `.gitignore`.
 - Use `secret_string` type for all sensitive values.
 - Never commit `.env` files to version control.
 
-### Auto-generated Secrets
+### Auto-generated secrets
 
-Cryptographically secure random values for application secrets:
+You can cryptographically secure random values for application secrets:
 
 ```yaml
 prompts:
@@ -245,15 +249,16 @@ prompts:
     help: "Session encryption key (auto-generated)"
 ```
 
-**Features:**
+#### Features
+
 - Generates 32-character random string if no value exists.
 - Uses base64 URL-safe encoding.
 - Preserves existing values (only generates when empty).
-- User can override with custom value.
+- User can override secrets with a custom value.
 
-### Conditional Variables
+### Conditional variables
 
-Only shown/required based on other selections:
+These variables are only shown or required based on your other selections:
 
 ```yaml
 # In .datarobot/prompts.yaml
@@ -270,13 +275,13 @@ prompts:
     help: "Database connection string"
 ```
 
-If "Enable database" = No, then `DATABASE_URL` is not shown.
+If `Enable database = No`, then `DATABASE_URL` is not shown.
 
-## Environment Variable Discovery
+## Environment variable discovery
 
 The CLI discovers variables from multiple sources:
 
-### 1. Template File (.env.template)
+### 1. Template file (.env.template)
 
 ```bash
 # Variables defined in template
@@ -284,7 +289,7 @@ APP_NAME=
 PORT=8080
 ```
 
-### 2. Prompt Definitions (.datarobot/prompts.yaml)
+### 2. Prompt definitions (.datarobot/prompts.yaml)
 
 ```yaml
 prompts:
@@ -293,32 +298,32 @@ prompts:
     help: "Application name"
 ```
 
-### 3. Existing .env File
+### 3. Existing .env file
 
 ```bash
 # Previously configured values
 APP_NAME=my-app
 ```
 
-### 4. Current Environment
+### 4. Current environment
 
 ```bash
 # Shell environment variables
 export PORT=3000
 ```
 
-### Merge Priority
+### Merge priority
 
-The CLI merges these in order (highest priority first):
+The CLI merges in the following order of priority (highest priority first):
 
-1. User input from wizard
-2. Current shell environment
-3. Existing `.env` values
-4. Template defaults
+1. User input from wizard.
+2. Current shell environment.
+3. Existing `.env` values.
+4. Template defaults.
 
-## Common Patterns
+## Common patterns
 
-### Database Configuration
+### Database configuration
 
 ```bash
 # PostgreSQL
@@ -350,7 +355,7 @@ JWT_SECRET=***
 JWT_EXPIRATION=3600
 ```
 
-### Feature Flags
+### Feature flags
 
 ```bash
 # Enable/disable features
@@ -378,11 +383,11 @@ LOG_OUTPUT=stdout  # stdout, file
 LOG_FILE=/var/log/app.log
 ```
 
-## Security Best Practices
+## Security best practices
 
-### 1. Never Commit .env Files
+### Never commit .env files
 
-Ensure `.gitignore` includes:
+Ensure that `.gitignore` includes:
 
 ```gitignore
 # Environment variables
@@ -395,7 +400,7 @@ Ensure `.gitignore` includes:
 !.env.example
 ```
 
-### 2. Use Strong Secrets
+### Use strong secrets
 
 ```bash
 # ✓ Good - strong random secret
@@ -412,10 +417,10 @@ Generate secure secrets:
 openssl rand -hex 32
 ```
 
-### 3. Restrict File Permissions
+### Restrict file permissions
 
 ```bash
-# Only owner can read/write
+# Only the owner can read/write
 chmod 600 .env
 
 # Verify
@@ -423,7 +428,7 @@ ls -la .env
 # Should show: -rw------- (600)
 ```
 
-### 4. Use Different Configs Per Environment
+### Use different configs per environment
 
 ```bash
 # Development
@@ -436,14 +441,14 @@ ls -la .env
 .env.production
 ```
 
-Load based on environment:
+Load based on the environment:
 
 ```bash
 export ENV=production
 dr run deploy
 ```
 
-### 5. Avoid Hardcoding in Code
+### Avoid hardcoding in code
 
 ```python
 # ✗ Bad
@@ -456,23 +461,25 @@ api_token = os.getenv("DATAROBOT_API_TOKEN")
 
 ## Validation
 
-### Using dr dotenv validate
+### Validate with dr dotenv
 
-Validate your environment configuration against template requirements:
+To validate your environment configuration against template requirements:
 
 ```bash
 dr dotenv validate
 ```
 
-**Validates:**
+This command validates the following:
+
 - All required variables defined in `.datarobot/prompts.yaml`.
 - Core DataRobot variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`).
 - Conditional requirements based on selected options.
 - Both `.env` file and environment variables.
 
-**Example output:**
+#### Example output
 
 Successful validation:
+
 ```
 Validating required variables:
   APP_NAME: my-app
@@ -484,6 +491,7 @@ Validation passed: all required variables are set.
 ```
 
 Validation errors:
+
 ```
 Validating required variables:
   APP_NAME: my-app
@@ -500,15 +508,16 @@ Error: required variable DATABASE_URL is not set
   Set this variable in your .env file or run `dr dotenv setup` to configure it.
 ```
 
-**Use cases:**
+#### Use cases
+
 - Pre-flight checks before running tasks.
 - CI/CD pipeline validation.
 - Debugging missing configuration.
 - Troubleshooting application startup issues.
 
-### Required Variables Check
+### Required variables check
 
-Commands like `dr run` automatically validate required variables:
+Commands like `dr run` automatically validate required variables.
 
 ```bash
 $ dr run dev
@@ -519,7 +528,7 @@ Error: Missing required environment variables:
 Please run: dr dotenv setup
 ```
 
-### Format Validation
+### Format validation
 
 For variables with specific formats:
 
@@ -537,9 +546,9 @@ EMAIL=user@example.com  # ✓ Valid
 EMAIL=invalid           # ✗ Invalid
 ```
 
-## Advanced Features
+## Advanced features
 
-### Variable Substitution
+### Variable substitution
 
 Reference other variables:
 
@@ -553,7 +562,7 @@ API_ENDPOINT=${BASE_URL}/api/v2
 # Full URL becomes: https://app.datarobot.com/api/v2
 ```
 
-### Multi-line Values
+### Multi-line values
 
 For long values:
 
@@ -583,7 +592,7 @@ DATABASE_URL=postgresql://localhost:5432/mydb
 
 ## Troubleshooting
 
-### Variables Not Loading
+### Variables not loading
 
 ```bash
 # Check .env exists
@@ -596,7 +605,7 @@ cat .env
 # Each line should be: KEY=value
 ```
 
-### Secrets Exposed
+### Secrets exposed
 
 ```bash
 # Check .gitignore includes .env
@@ -611,7 +620,7 @@ git rm --cached .env
 git commit -m "Remove .env from tracking"
 ```
 
-### Permission Errors
+### Permission errors
 
 ```bash
 # Fix permissions
@@ -621,7 +630,7 @@ chmod 600 .env
 ls -la .env
 ```
 
-### Variables Not Expanding
+### Variables not expanding
 
 ```bash
 # Ensure proper syntax for variable substitution
@@ -632,7 +641,7 @@ API_URL=${BASE_URL}/api
 API_URL=$BASE_URL/api  # Missing braces
 ```
 
-### Configuration Not Working
+### Configuration not working
 
 Use `dr dotenv validate` to diagnose issues:
 
@@ -686,6 +695,6 @@ dr dotenv validate
 
 ## See also
 
-- [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
-- [Template structure](structure.md)&mdash;template organization.
-- [dotenv command](../commands/dotenv.md)&mdash;dotenv command reference.
+- [Interactive configuration](interactive-config.md): Configuration wizard details.
+- [Template structure](structure.md): Template organization.
+- [dotenv command](../commands/dotenv.md): dotenv command reference.
