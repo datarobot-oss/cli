@@ -18,12 +18,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func SetURLAction() {
-	reader := bufio.NewReader(os.Stdin)
+func printSetURLPrompt() {
+	fmt.Println("🌐 DataRobot URL Configuration")
+	fmt.Println("")
+	fmt.Println("Choose your DataRobot environment:")
+	fmt.Println("")
+	fmt.Println("┌────────────────────────────────────────────────────────┐")
+	fmt.Println("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │")
+	fmt.Println("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │")
+	fmt.Println("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │")
+	fmt.Println("│      🏢 Custom          Enter your custom URL          │")
+	fmt.Println("└────────────────────────────────────────────────────────┘")
+	fmt.Println("")
+	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL in your browser.")
+	fmt.Println("")
+	fmt.Print("Enter your choice: ")
+}
 
+func checkDatarobotHost() {
 	datarobotHost := config.GetBaseURL()
 
 	if len(datarobotHost) > 0 {
+		reader := bufio.NewReader(os.Stdin)
+
 		fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite it? (y/N): ", datarobotHost)
 
 		selectedOption, err := reader.ReadString('\n')
@@ -36,21 +53,16 @@ func SetURLAction() {
 			return
 		}
 	}
+}
 
-	fmt.Println("🌐 DataRobot URL Configuration")
-	fmt.Println("")
-	fmt.Println("Choose your DataRobot environment:")
-	fmt.Println("")
-	fmt.Println("┌────────────────────────────────────────────────────────┐")
-	fmt.Println("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │")
-	fmt.Println("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │")
-	fmt.Println("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │")
-	fmt.Println("│  [4] 🏢 Custom   Enter your custom URL                 │")
-	fmt.Println("└────────────────────────────────────────────────────────┘")
-	fmt.Println("")
-	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL in your browser.")
-	fmt.Println("")
-	fmt.Print("Enter your choice (1-4): ")
+func SetURLAction(checkHost bool) {
+	reader := bufio.NewReader(os.Stdin)
+
+	if checkHost {
+		checkDatarobotHost()
+	}
+
+	printSetURLPrompt()
 
 	url, err := reader.ReadString('\n')
 	if err != nil {
@@ -59,7 +71,8 @@ func SetURLAction() {
 
 	err = config.SaveURLToConfig(url)
 	if err != nil {
-		return
+		fmt.Printf("An error occurred (%s) - please try again.\n", err)
+		SetURLAction(false)
 	}
 }
 
@@ -76,7 +89,8 @@ This command helps you choose the correct DataRobot environment:
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
 	Run: func(_ *cobra.Command, _ []string) {
-		SetURLAction()
+		checkHost := true
+		SetURLAction(checkHost)
 	},
 	PostRunE: func(cmd *cobra.Command, _ []string) error {
 		return EnsureAuthenticatedE(cmd.Context())
