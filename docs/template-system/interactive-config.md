@@ -709,8 +709,6 @@ prompts:
     type: "secret_string"
     help: "Administrator password"
 
-    help: "Enter your DataRobot API key"
-    optional: false  # Required!
 ```
 
 ## Testing Prompts
