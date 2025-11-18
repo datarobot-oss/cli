@@ -78,3 +78,51 @@ func IsInRepoRoot() bool {
 
 	return err == nil && repoRoot == cwd
 }
+
+// FindGitRoot walks up the directory tree from the given directory looking for
+// a .git folder to determine if we're inside any git repository.
+// It stops searching when it reaches the user's home directory or filesystem root.
+// Returns the path to the git repository root if found, or an empty string if not found.
+func FindGitRoot(dir string) (string, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	currentDir := absDir
+
+	for {
+		// Check if .git exists in current directory
+		gitPath := filepath.Join(currentDir, ".git")
+		if info, err := os.Stat(gitPath); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+			return currentDir, nil
+		}
+
+		// Check if we've reached the home directory
+		if currentDir == homeDir {
+			return "", nil
+		}
+
+		// Move up one directory
+		parentDir := filepath.Dir(currentDir)
+
+		// Check if we've reached the root of the filesystem
+		if parentDir == currentDir {
+			return "", nil
+		}
+
+		currentDir = parentDir
+	}
+}
+
+// IsInGitRepo checks if the given directory is inside a git repository
+// by looking for a .git folder in the directory or parent directories.
+func IsInGitRepo(dir string) bool {
+	gitRoot, err := FindGitRoot(dir)
+	return err == nil && gitRoot != ""
+}

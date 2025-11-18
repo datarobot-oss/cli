@@ -153,3 +153,71 @@ func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenNotInRepo() {
 	// Should return false
 	suite.False(repo.IsInRepo())
 }
+
+func (suite *DetectTestSuite) TestFindGitRootFindsGitDirectory() {
+	// Create .git directory
+	gitPath := filepath.Join(suite.tempDir, ".git")
+	err := os.MkdirAll(gitPath, 0o755)
+	suite.Require().NoError(err)
+
+	// Should find the git root
+	gitRoot, err := repo.FindGitRoot(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Use EvalSymlinks to resolve any symlinks
+	expectedPath, err := filepath.EvalSymlinks(suite.tempDir)
+	suite.Require().NoError(err)
+
+	actualPath, err := filepath.EvalSymlinks(gitRoot)
+	suite.Require().NoError(err)
+
+	suite.Equal(expectedPath, actualPath)
+}
+
+func (suite *DetectTestSuite) TestFindGitRootFromNestedDirectory() {
+	// Create .git directory
+	gitPath := filepath.Join(suite.tempDir, ".git")
+	err := os.MkdirAll(gitPath, 0o755)
+	suite.Require().NoError(err)
+
+	// Create nested directory
+	nestedPath := filepath.Join(suite.tempDir, "src", "components", "deep")
+	err = os.MkdirAll(nestedPath, 0o755)
+	suite.Require().NoError(err)
+
+	// Should find the git root by walking up
+	gitRoot, err := repo.FindGitRoot(nestedPath)
+	suite.Require().NoError(err)
+
+	// Use EvalSymlinks to resolve any symlinks
+	expectedPath, err := filepath.EvalSymlinks(suite.tempDir)
+	suite.Require().NoError(err)
+
+	actualPath, err := filepath.EvalSymlinks(gitRoot)
+	suite.Require().NoError(err)
+
+	suite.Equal(expectedPath, actualPath)
+}
+
+func (suite *DetectTestSuite) TestFindGitRootNotInGitRepo() {
+	// Don't create .git directory
+	gitRoot, err := repo.FindGitRoot(suite.tempDir)
+	suite.Require().NoError(err)
+	suite.Empty(gitRoot)
+}
+
+func (suite *DetectTestSuite) TestIsInGitRepoReturnsTrueWhenInRepo() {
+	// Create .git directory
+	gitPath := filepath.Join(suite.tempDir, ".git")
+	err := os.MkdirAll(gitPath, 0o755)
+	suite.Require().NoError(err)
+
+	// Should return true
+	suite.True(repo.IsInGitRepo(suite.tempDir))
+}
+
+func (suite *DetectTestSuite) TestIsInGitRepoReturnsFalseWhenNotInRepo() {
+	// Don't create .git directory
+	// Should return false
+	suite.False(repo.IsInGitRepo(suite.tempDir))
+}
