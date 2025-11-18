@@ -23,7 +23,7 @@ import (
 var templatePath string
 
 func Run(_ *cobra.Command, _ []string) {
-	taskfileName := "Taskfile.yaml"
+	taskfileName := detectExistingTaskfile()
 	discovery := createDiscovery(taskfileName)
 
 	taskFilePath, err := discovery.Discover(".", 2)
@@ -43,7 +43,8 @@ func Run(_ *cobra.Command, _ []string) {
 	contents := string(contentBytes)
 	taskfileIgnore := "/" + taskfileName
 
-	if strings.Contains(contents, "\n"+taskfileIgnore+"\n") || strings.HasPrefix(contents, taskfileIgnore+"\n") {
+	// Check if either Taskfile format is already in .gitignore
+	if isIgnored(contents, "/Taskfile.yaml") || isIgnored(contents, "/Taskfile.yml") {
 		return
 	}
 
@@ -100,6 +101,34 @@ func validateTemplatePath(path string) (string, error) {
 	}
 
 	return absPath, nil
+}
+
+// detectExistingTaskfile checks for existing Taskfile.yaml or Taskfile.yml
+// and returns the name of the existing one, or defaults to Taskfile.yaml
+func detectExistingTaskfile() string {
+	// Check for Taskfile.yaml first (more common)
+	if _, err := os.Stat("Taskfile.yaml"); err == nil {
+		return "Taskfile.yaml"
+	}
+
+	// Check for Taskfile.yml
+	if _, err := os.Stat("Taskfile.yml"); err == nil {
+		return "Taskfile.yml"
+	}
+
+	// Default to Taskfile.yaml if neither exists
+	return "Taskfile.yaml"
+}
+
+// isIgnored checks if a pattern is already in .gitignore content
+func isIgnored(content, pattern string) bool {
+	// Normalize content to have trailing newline for consistent checking
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	// Check if pattern exists as a complete line
+	return strings.Contains(content, "\n"+pattern+"\n") || strings.HasPrefix(content, pattern+"\n")
 }
 
 func Cmd() *cobra.Command {

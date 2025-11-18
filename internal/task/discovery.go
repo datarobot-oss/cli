@@ -40,6 +40,8 @@ type devPort struct {
 
 type taskfileTmplData struct {
 	Includes            []componentInclude
+	HasStart            bool
+	StartComponents     []string
 	HasLint             bool
 	LintComponents      []string
 	HasInstall          bool
@@ -293,6 +295,7 @@ func (d *Discovery) genRootTaskfile(filename string, data interface{}) error {
 func (d *Discovery) buildComposeData(root string, includes []componentInclude) (taskfileTmplData, error) {
 	data := taskfileTmplData{
 		Includes:            includes,
+		StartComponents:     []string{},
 		LintComponents:      []string{},
 		InstallComponents:   []string{},
 		TestComponents:      []string{},
@@ -337,6 +340,7 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 		components *[]string
 		hasFlag    *bool
 	}{
+		"start":      {&data.StartComponents, &data.HasStart},
 		"lint":       {&data.LintComponents, &data.HasLint},
 		"install":    {&data.InstallComponents, &data.HasInstall},
 		"test":       {&data.TestComponents, &data.HasTest},
@@ -360,8 +364,15 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 	}
 }
 
-// addComponentOnce adds a component to the list if it's not already present
+// addComponentOnce adds a component to the list if it's not already present.
+// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate)
 func addComponentOnce(components *[]string, hasFlag *bool, componentName string) {
+	if components == nil {
+		// Just set the flag without adding to components
+		*hasFlag = true
+		return
+	}
+
 	for _, c := range *components {
 		if c == componentName {
 			return
