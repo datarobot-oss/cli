@@ -13,7 +13,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
@@ -53,6 +56,50 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
 )
 
+type detailKeyMap struct {
+	Up       key.Binding
+	Down     key.Binding
+	PageUp   key.Binding
+	PageDown key.Binding
+	Back     key.Binding
+}
+
+func (k detailKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.PageUp, k.PageDown, k.Back}
+}
+
+func (k detailKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.PageUp, k.PageDown},
+		{k.Back},
+	}
+}
+
+func newDetailKeys() detailKeyMap {
+	return detailKeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "down"),
+		),
+		PageUp: key.NewBinding(
+			key.WithKeys("pgup"),
+			key.WithHelp("pgup", "page up"),
+		),
+		PageDown: key.NewBinding(
+			key.WithKeys("pgdown"),
+			key.WithHelp("pgdn", "page down"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys("q", "esc"),
+			key.WithHelp("q/esc", "back"),
+		),
+	}
+}
+
 type Model struct {
 	err                   error
 	infoMessage           string
@@ -60,6 +107,10 @@ type Model struct {
 	initiator             initiators
 	list                  list.Model // This list holds the components
 	initialUpdateFileName string
+	viewport              viewport.Model
+	help                  help.Model
+	keys                  detailKeyMap
+	ready                 bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -112,17 +163,29 @@ func (m Model) getSelectedComponents() []ListItem {
 }
 
 func NewComponentModel(initiator initiators, initialScreen screens) Model {
+	h := help.New()
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
+
 	return Model{
 		screen:    initialScreen,
 		initiator: initiator,
+		help:      h,
+		keys:      newDetailKeys(),
 	}
 }
 
 func NewUpdateComponentModel(updateFileName string) Model {
+	h := help.New()
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
+
 	return Model{
 		screen: listScreen,
 		// Only value here we're actually setting from the function args
 		initialUpdateFileName: updateFileName,
+		help:                  h,
+		keys:                  newDetailKeys(),
 	}
 }
 
@@ -150,7 +213,7 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// If we've found zero components return error message that is handled by UI
 		if len(components) == 0 {
-			return errMsg{errors.New("No components were found.")}
+			return errMsg{errors.New("no components were found")}
 		}
 
 		items := make([]list.Item, 0, len(components))
@@ -197,6 +260,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 	case componentInfoRequestMsg:
 		m.screen = componentDetailScreen
+		m.ready = false
+
+		return m, tea.WindowSize()
 	case updateCompleteMsg:
 		return m.unselectComponent(msg.item)
 	}
@@ -213,6 +279,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 
 		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			// Only update list size if it's been initialized
+			if len(m.list.Items()) > 0 {
+				newListModel, cmd := m.list.Update(msg)
+				m.list = newListModel
+
+				return m, cmd
+			}
+
+			return m, nil
 		case tea.KeyMsg:
 			switch msg.String() {
 			case tea.KeySpace.String():
@@ -274,12 +350,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 	case componentDetailScreen:
 		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			headerHeight := 4
+			footerHeight := 4 // help line + status bar + spacing
+			verticalMarginHeight := headerHeight + footerHeight
+
+			if !m.ready {
+				m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+				m.viewport.YPosition = headerHeight
+				m.help.Width = msg.Width
+				m.ready = true
+
+				// Set the content for the viewport
+				m.viewport.SetContent(m.getComponentDetailContent())
+			} else {
+				m.viewport.Width = msg.Width
+				m.viewport.Height = msg.Height - verticalMarginHeight
+				m.help.Width = msg.Width
+			}
 		case tea.KeyMsg:
 			switch msg.String() {
-			default:
+			case "q", "esc":
 				m.screen = listScreen
+				m.ready = false
+
+				return m, nil
+			case "pgup":
+				m.viewport.PageUp()
+
+				return m, nil
+			case "pgdown":
+				m.viewport.PageDown()
+
+				return m, nil
+			default:
+				// Pass other keys to viewport for scrolling
+				var cmd tea.Cmd
+
+				m.viewport, cmd = m.viewport.Update(msg)
+
+				return m, cmd
 			}
 		}
+
+		// Update viewport for mouse wheel scrolling
+		var cmd tea.Cmd
+
+		m.viewport, cmd = m.viewport.Update(msg)
+
+		return m, cmd
 	}
 
 	return m, nil
@@ -341,18 +460,22 @@ func (m Model) viewListScreen() string {
 	return sb.String()
 }
 
-func (m Model) viewComponentDetailScreen() string {
+func (m Model) getCurrentComponentFileName() string {
+	if len(m.list.VisibleItems()) == 0 {
+		return ""
+	}
+
+	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
+
+	return item.component.FileName
+}
+
+func (m Model) getComponentDetailContent() string {
 	var sb strings.Builder
 
-	sb.WriteString(tui.WelcomeStyle.Render("Component Details"))
-	sb.WriteString("\n\n")
-	// TODO: [CFX-3996] What to display here
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 	selectedComponent := item.component
 	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.SrcPath]
-
-	sb.WriteString("Component file name: " + selectedComponent.FileName)
-	sb.WriteString("\n\n")
 
 	style := "light"
 	if lipgloss.HasDarkBackground() {
@@ -361,9 +484,93 @@ func (m Model) viewComponentDetailScreen() string {
 
 	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, style)
 	sb.WriteString(readMe)
+
+	return sb.String()
+}
+
+func (m Model) viewComponentDetailScreen() string {
+	if !m.ready {
+		return "\n  Initializing..."
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString(tui.WelcomeStyle.Render("Component Details"))
 	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press any key to return."))
+	sb.WriteString(m.viewport.View())
 	sb.WriteString("\n\n")
+
+	// Help text with subtle styling
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#999999"}).
+		Padding(0, 1)
+
+	sb.WriteString(helpStyle.Render(m.help.View(m.keys)))
+	sb.WriteString("\n")
+
+	// Create status bar with three parts: left (label), center (filename), right (percentage)
+	centerText := m.getCurrentComponentFileName()
+
+	// Calculate scroll percentage - fix the calculation to be more accurate
+	scrollPercent := 0
+
+	if m.viewport.TotalLineCount() > m.viewport.Height {
+		maxScroll := m.viewport.TotalLineCount() - m.viewport.Height
+		if maxScroll > 0 {
+			scrollPercent = int(float64(m.viewport.YOffset) / float64(maxScroll) * 100)
+		}
+
+		if m.viewport.AtBottom() {
+			scrollPercent = 100
+		}
+	} else {
+		scrollPercent = 100 // If content fits in viewport, we're at 100%
+	}
+
+	rightText := fmt.Sprintf("%d%%", scrollPercent)
+
+	// Build status bar using the tui styles
+	width := m.viewport.Width
+	if width <= 0 {
+		width = 80 // fallback width
+	}
+
+	statusBarStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#FFFDF5"}).
+		Background(lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#6124DF"}).
+		MarginTop(1)
+
+	statusKeyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
+		Background(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#4A1BA8"}).
+		Padding(0, 1).
+		Bold(true)
+
+	centerStyle := lipgloss.NewStyle().
+		Inherit(statusBarStyle).
+		Padding(0, 1)
+
+	leftRendered := statusKeyStyle.Render(centerText)
+	rightRendered := statusKeyStyle.Render(rightText)
+
+	// Calculate available space for spacing
+	leftWidth := lipgloss.Width(leftRendered)
+	rightWidth := lipgloss.Width(rightRendered)
+	spacerWidth := width - leftWidth - rightWidth
+
+	if spacerWidth < 0 {
+		spacerWidth = 0
+	}
+
+	spacer := centerStyle.Width(spacerWidth).Render("")
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Top,
+		leftRendered,
+		spacer,
+		rightRendered,
+	)
+
+	sb.WriteString(statusBarStyle.Width(width).Render(bar))
 
 	return sb.String()
 }
