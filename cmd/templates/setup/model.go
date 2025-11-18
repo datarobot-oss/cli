@@ -27,6 +27,7 @@ import (
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 )
@@ -90,10 +91,13 @@ type (
 		templatesList *drapi.TemplateList
 		sessionID     int // Session ID to verify this response is still relevant
 	}
-	templateSelectedMsg struct{}
-	backToListMsg       struct{}
-	templateClonedMsg   struct{}
-	templateInDirMsg    struct {
+	templateSelectedMsg  struct{}
+	backToListMsg        struct{}
+	templateClonedMsg    struct{}
+	alreadyConfiguredMsg struct {
+		template drapi.Template
+	}
+	templateInDirMsg struct {
 		dotenvFile string
 		template   drapi.Template
 	}
@@ -144,61 +148,45 @@ func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template
 	return drapi.Template{}, false
 }
 
-// TODO For CFX-4074 I commented this out because this simply breaks
-// the main use case!
-//
-// // handleExistingRepo handles the case where we're already in a DataRobot repo
-// func handleExistingRepo(repoRoot string) tea.Msg {
-// 	log.Debug("Already in a DataRobot repo at: " + repoRoot)
+// handleExistingRepo handles the case where we're already in a DataRobot repo
+// It checks if .env exists - if not, we need to run dotenv setup
+func handleExistingRepo(repoRoot string) tea.Msg {
+	log.Debug("Already in a DataRobot repo at: " + repoRoot)
 
-// 	templatesList, err := drapi.GetPublicTemplatesSorted()
-// 	if err != nil {
-// 		log.Warn("Failed to get templates, proceeding with dotenv setup anyway", "error", err)
+	envPath := filepath.Join(repoRoot, ".env")
 
-// 		return templateInDirMsg{
-// 			dotenvFile: filepath.Join(repoRoot, ".env"),
-// 			template:   drapi.Template{},
-// 		}
-// 	}
-
-// 	template, found := matchTemplateByGitRemote(templatesList)
-// 	if found {
-// 		return templateInDirMsg{
-// 			dotenvFile: filepath.Join(repoRoot, ".env"),
-// 			template:   template,
-// 		}
-// 	}
-
-// 	log.Debug("Could not match git remote to a template, proceeding with dotenv setup")
-
-// 	return templateInDirMsg{
-// 		dotenvFile: filepath.Join(repoRoot, ".env"),
-// 		template:   drapi.Template{},
-// 	}
-// }
-
-// handleGitRepoWithoutDataRobotCLI handles the case where we're in a git repo but .datarobot/cli doesn't exist yet
-func handleGitRepoWithoutDataRobotCLI(templatesList *drapi.TemplateList, sessionID int) tea.Msg {
-	template, found := matchTemplateByGitRemote(templatesList)
-	if !found {
-		return templatesLoadedMsg{
-			templatesList: templatesList,
-			sessionID:     sessionID,
-		}
-	}
-
-	cwd, err := os.Getwd()
+	// Try to fetch templates to match against git remote
+	templatesList, err := drapi.GetPublicTemplatesSorted()
 	if err != nil {
-		log.Error("Failed to get current working directory", "error", err)
-
-		return templatesLoadedMsg{
-			templatesList: templatesList,
-			sessionID:     sessionID,
-		}
+		log.Warn("Failed to get templates", "error", err)
 	}
+
+	// Try to match the current repo to a template
+	var template drapi.Template
+
+	if err == nil {
+		template, _ = matchTemplateByGitRemote(templatesList)
+	}
+
+	// Check if .env file exists AND dotenv setup has been completed
+	envExists := false
+	if _, err := os.Stat(envPath); err == nil {
+		envExists = true
+	}
+
+	dotenvCompleted := state.HasCompletedDotenvSetup()
+
+	// If .env exists AND dotenv setup was completed, skip setup
+	if envExists && dotenvCompleted {
+		log.Debug(".env file exists and dotenv setup completed, skipping setup")
+		// .env exists, no setup needed - return exitMsg with template info
+		return alreadyConfiguredMsg{template: template}
+	}
+
+	log.Debug(".env file missing or dotenv setup not completed, need to run dotenv setup")
 
 	return templateInDirMsg{
-		dotenvFile: filepath.Join(cwd, ".env"),
+		dotenvFile: envPath,
 		template:   template,
 	}
 }
@@ -210,14 +198,23 @@ func getTemplates(sessionID int) tea.Cmd {
 			return getHostMsg{}
 		}
 
-		// Not in a DataRobot repo, show the template gallery
+		// Check if we're already in a DataRobot repo
+		repoRoot, err := repo.FindRepoRoot()
+		if err == nil && repoRoot != "" {
+			// We're in an existing DataRobot repo - handle that case
+			return handleExistingRepo(repoRoot)
+		}
+
+		// Not in a DataRobot repo, fetch templates and show gallery
 		templatesList, err := drapi.GetPublicTemplatesSorted()
 		if err != nil {
 			return authKeyStartMsg{}
 		}
 
-		// Check if we're in a git repo that matches a template URL (for cases where .datarobot/cli doesn't exist yet)
-		return handleGitRepoWithoutDataRobotCLI(templatesList, sessionID)
+		return templatesLoadedMsg{
+			templatesList: templatesList,
+			sessionID:     sessionID,
+		}
 	}
 }
 
@@ -399,21 +396,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, m.dotenv.Init()
 
 	case templateInDirMsg:
-		// Skip dotenv if it was already completed
-		if m.skipDotenvSetup {
-			m.screen = exitScreen
-
-			return m, exit
-		}
-
 		m.screen = dotenvScreen
 		m.list.Template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
+	case alreadyConfiguredMsg:
+		// Repo is already configured, just show exit screen with template info
+		m.screen = exitScreen
+		m.template = msg.template
+
+		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	case dotenvUpdatedMsg:
 		m.screen = exitScreen
+
+		// If we cloned to a directory, change to it before updating state
+		if m.clone.Dir != "" {
+			if err := os.Chdir(m.clone.Dir); err != nil {
+				log.Warn("Failed to change to cloned directory", "dir", m.clone.Dir, "error", err)
+			}
+		}
 
 		// Update state if dotenv setup was completed
 		if m.dotenvSetupCompleted {
@@ -425,6 +428,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		return m, exit
 	case exitMsg:
+		m.screen = exitScreen
+
 		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	}
 
@@ -567,12 +572,26 @@ func (m Model) View() string { //nolint: cyclop
 	case dotenvScreen:
 		sb.WriteString(m.dotenv.View())
 	case exitScreen:
-		sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s cloned and initialized.", m.template.Name)))
+		// Show template name if we have it
+		if m.template.Name != "" {
+			sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s ready to use.", m.template.Name)))
+		} else {
+			sb.WriteString(tui.SubTitleStyle.Render("🎉 Template ready to use."))
+		}
+
 		sb.WriteString("\n")
 
 		if m.fromStartCommand {
 			sb.WriteString(tui.BaseTextStyle.Render("You can now start running your AI application!"))
 			sb.WriteString("\n\n")
+
+			if m.clone.Dir != "" {
+				sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+				sb.WriteString("\n\n")
+				sb.WriteString(tui.InfoStyle.Render("cd " + m.clone.Dir))
+				sb.WriteString("\n\n")
+			}
+
 			sb.WriteString(tui.BaseTextStyle.Render("• Use "))
 			sb.WriteString(tui.InfoStyle.Render("dr task run"))
 			sb.WriteString(tui.BaseTextStyle.Render(" to see the key commands to deploy the app"))
@@ -582,13 +601,24 @@ func (m Model) View() string { //nolint: cyclop
 			sb.WriteString(tui.BaseTextStyle.Render(" to see all the additional commands"))
 			sb.WriteString("\n")
 		} else {
-			sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render("cd " + m.clone.Dir))
-			sb.WriteString("\n\n")
-			sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
-			sb.WriteString(tui.InfoStyle.Render("dr start"))
-			sb.WriteString("\n")
+			if m.clone.Dir != "" {
+				sb.WriteString(tui.BaseTextStyle.Render("To navigate to the project directory, use the following command:"))
+				sb.WriteString("\n\n")
+				sb.WriteString(tui.InfoStyle.Render("cd " + m.clone.Dir))
+				sb.WriteString("\n\n")
+				sb.WriteString(tui.BaseTextStyle.Render("afterward get started with: "))
+				sb.WriteString(tui.InfoStyle.Render("dr start"))
+				sb.WriteString("\n")
+			} else {
+				sb.WriteString(tui.BaseTextStyle.Render("• Use "))
+				sb.WriteString(tui.InfoStyle.Render("dr task run"))
+				sb.WriteString(tui.BaseTextStyle.Render(" to see the key commands"))
+				sb.WriteString("\n")
+				sb.WriteString(tui.BaseTextStyle.Render("• Use "))
+				sb.WriteString(tui.InfoStyle.Render("dr task list"))
+				sb.WriteString(tui.BaseTextStyle.Render(" to see all available commands"))
+				sb.WriteString("\n")
+			}
 		}
 	}
 

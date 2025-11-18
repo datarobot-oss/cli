@@ -130,6 +130,30 @@ This wizard will help you:
 			os.Exit(1)
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
+
+		// Check if we should skip when .env exists and is already configured
+		ifNeeded, _ := cmd.Flags().GetBool("if-needed")
+		if ifNeeded {
+			if _, err := os.Stat(dotenvFile); err == nil {
+				// File exists, check if it has content beyond comments/whitespace
+				dotenvFileLines, _ := readDotenvFile(dotenvFile)
+				variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
+				hasContent := false
+				for _, v := range variables {
+					if v.Value != "" {
+						hasContent = true
+						break
+					}
+				}
+
+				if hasContent {
+					fmt.Println("Configuration already exists, skipping setup.")
+					return
+				}
+			}
+		}
+
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
@@ -154,6 +178,10 @@ This wizard will help you:
 		// Update state after successful completion
 		_ = state.UpdateAfterDotenvSetup()
 	},
+}
+
+func init() {
+	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or is empty")
 }
 
 var UpdateCmd = &cobra.Command{
