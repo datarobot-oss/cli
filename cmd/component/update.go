@@ -115,7 +115,7 @@ func UpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
-		Short:   "Update a component.",
+		Short:   "Update installed component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}

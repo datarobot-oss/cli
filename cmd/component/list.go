@@ -41,6 +41,6 @@ func ListRunE(_ *cobra.Command, _ []string) error {
 
 var ListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List components.",
+	Short: "List installed components.",
 	RunE:  ListRunE,
 }
