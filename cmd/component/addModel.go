@@ -27,7 +27,7 @@ type (
 	}
 )
 
-var listStyle = lipgloss.NewStyle().Margin(2, 2)
+var listStyle = lipgloss.NewStyle().Margin(2, 2, 1)
 
 const (
 	addLoadingScreen = addScreens(iota)
@@ -118,13 +118,13 @@ func (am AddModel) loadComponents() tea.Cmd {
 		details := copier.ComponentDetails
 
 		items := make([]list.Item, 0, len(details))
+		first := true
 
-		for i, d := range details {
-			if !d.Enabled {
-				continue
+		for _, detail := range details {
+			if detail.Enabled {
+				items = append(items, AddComponentDelegate{current: first, details: detail})
+				first = false
 			}
-
-			items = append(items, AddComponentDelegate{current: i == 0, details: d})
 		}
 
 		l := list.New(items, AddComponentDelegate{}, 80, 25)
@@ -148,7 +148,7 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if am.screen == addComponentsScreen {
 			am.list.SetSize(
 				am.width-listStyle.GetHorizontalFrameSize(),
-				am.height-listStyle.GetVerticalFrameSize(),
+				am.height-listStyle.GetVerticalFrameSize()-1,
 			)
 		}
 
@@ -211,10 +211,37 @@ func (am AddModel) addLoadingScreenView() string {
 	return sb.String()
 }
 
+func (am AddModel) anySelectedComponents() bool {
+	items := am.list.VisibleItems()
+
+	for i := range items {
+		if itm := items[i].(AddComponentDelegate); itm.checked {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (am AddModel) addComponentsScreenView() string {
 	var sb strings.Builder
 
 	sb.WriteString(listStyle.Render(am.list.View()))
+
+	// If we don't have any components selected then grey out the message
+	style := tui.DimStyle
+	if am.anySelectedComponents() {
+		style = tui.BaseTextStyle
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(tui.BaseTextStyle.Render("Press space to toggle component."))
+
+	sb.WriteString("\t")
+	sb.WriteString(style.Render("Press enter to run update."))
+
+	sb.WriteString("\t")
+	sb.WriteString(tui.BaseTextStyle.Render("Press esc to exit."))
 
 	return sb.String()
 }
