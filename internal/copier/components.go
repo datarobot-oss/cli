@@ -53,7 +53,7 @@ var ComponentDetails = []Details{
 
 		Name:      "Agent",
 		ShortName: "agent",
-		RepoURL:   "git@github.com:datarobot/af-component-agent.git",
+		RepoURL:   "git@github.com:datarobot-community/af-component-agent.git",
 		Enabled:   true,
 	},
 	{

@@ -330,6 +330,9 @@ func (m Model) viewListScreen() string {
 		style = tui.BaseTextStyle
 	}
 
+	sb.WriteString(tui.BaseTextStyle.Render("Press space to toggle component."))
+
+	sb.WriteString("\t")
 	sb.WriteString(style.Render("Press enter to run update."))
 
 	sb.WriteString("\t")

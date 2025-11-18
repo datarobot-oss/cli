@@ -70,7 +70,9 @@ func ComponentsFromAnswers(answers []Answers) ([]Component, error) {
 			return nil, fmt.Errorf("Failed to unmarshal yaml file %s: %w", a.FileName, err)
 		}
 
-		components = append(components, component)
+		if ComponentDetailsByURL[component.SrcPath].Enabled {
+			components = append(components, component)
+		}
 	}
 
 	return components, nil
