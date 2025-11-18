@@ -63,7 +63,7 @@ The following actions will be performed:
 						// No quickstart found, will launch template setup
 						_ = state.UpdateAfterSuccessfulRun()
 
-						return setup.RunTeaFromStart(cmd.Context(), true)
+						return setup.RunTea(cmd.Context(), true)
 					}
 				}
 			}

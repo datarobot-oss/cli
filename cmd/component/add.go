@@ -36,20 +36,12 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 }
 
 func RunE(_ *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		am := NewAddModel()
-		p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
+	if len(args) == 0 || args[0] == "" {
+		var err error
 
-		finalModel, err := p.Run()
+		args, err = AddRunTea()
 		if err != nil {
 			return err
-		}
-
-		// Check if we need to launch template setup after quitting
-		if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
-			if innerModel, ok := startModel.Model.(AddModel); ok {
-				args = innerModel.RepoURLs
-			}
 		}
 	}
 
@@ -74,6 +66,27 @@ func RunE(_ *cobra.Command, args []string) error {
 	compose.Run(nil, nil)
 
 	return nil
+}
+
+func AddRunTea() ([]string, error) {
+	am := NewAddModel()
+	p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get list of components that user selected
+	if addModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		if innerModel, ok := addModel.Model.(AddModel); ok {
+			if len(innerModel.RepoURLs) > 0 {
+				return innerModel.RepoURLs, nil
+			}
+		}
+	}
+
+	return nil, nil
 }
 
 var AddCmd = &cobra.Command{
