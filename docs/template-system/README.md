@@ -1,40 +1,36 @@
-# Template System Documentation
-
-This section covers the DataRobot template system in detail.
-
-## What are templates?
+# Template system documentation
 
 DataRobot templates are pre-configured application scaffolds that help you quickly build and deploy custom applications to DataRobot. Each template includes:
 
-- Application source code.
-- Configuration prompts.
-- Environment setup.
-- Task definitions.
-- Documentation.
+- Application source code
+- Configuration prompts
+- Environment setup tools
+- Task definitions
+- Documentation
 
 ## Documentation
 
 ### Core concepts
 
-- **[Template structure](structure.md)**&mdash;how templates are organized.
-  - Repository layout.
-  - Metadata files.
-  - Multi-component templates.
-  - Best practices.
+- [Template structure](structure.md): How templates are organized.
+  - Repository layout
+  - Metadata files
+  - Multi-component templates
+  - Best practices
 
-- **[Interactive configuration](interactive-config.md)**&mdash;the configuration wizard.
-  - Prompt system architecture.
-  - Input types (text, selection, multi-select).
-  - Conditional prompts.
-  - Validation and error handling.
+- [Interactive configuration](interactive-config.md): The configuration wizard.
+  - Prompt system architecture
+  - Input types (text, selection, multi-select)
+  - Conditional prompts
+  - Validation and error handling
 
-- **[Environment variables](environment-variables.md)**&mdash;managing .env files.
-  - .env.template format.
-  - Variable types (required, optional, secret).
-  - Security best practices.
-  - Advanced features.
+- [Environment variables](environment-variables.md): Managing .env files.
+  - .env.template format
+  - Variable types (required, optional, secret)
+  - Security best practices
+  - Advanced features
 
-## Quick start
+## Quickstart
 
 ### Using a template
 
@@ -52,7 +48,7 @@ dr dotenv setup
 dr run dev
 ```
 
-### Creating a template
+### Create a template
 
 ```bash
 # 1. Create structure
@@ -92,7 +88,7 @@ dr templates setup
 
 ### Single-page applications
 
-Simple applications with one component:
+Create simple applications with one component.
 
 ```
 my-spa-template/
@@ -105,7 +101,7 @@ my-spa-template/
 
 ### Full-stack applications
 
-Applications with multiple components:
+Create applications with multiple components.
 
 ```
 my-fullstack-template/
@@ -124,7 +120,7 @@ my-fullstack-template/
 
 ### Microservices
 
-Multiple independent services:
+Use multiple independent services:
 
 ```
 my-microservices-template/
@@ -190,15 +186,15 @@ prompts:
 
 ## Best practices
 
-### 1. Clear documentation
+### Clear documentation
 
-Include README with:
-- Quick start guide.
-- Available tasks.
-- Configuration options.
-- Deployment instructions.
+Includes a README file with:
+- A quickstart guide
+- Available tasks
+- Configuration options
+- Deployment instructions
 
-### 2. Sensible defaults
+### Sensible defaults
 
 Provide defaults in `.env.template`:
 
@@ -209,7 +205,7 @@ DEBUG=true
 LOG_LEVEL=info
 ```
 
-### 3. Helpful prompts
+### Helpful prompts
 
 Use descriptive help text:
 
@@ -219,9 +215,9 @@ prompts:
     help: "PostgreSQL connection string (format: postgresql://user:pass@host:5432/dbname)"
 ```
 
-### 4. Organized structure
+### Organized structure
 
-Keep related files together:
+Keep related files together.
 
 ```
 src/
@@ -231,7 +227,9 @@ src/
 └── utils/        # Utilities
 ```
 
-### 5. Security first
+### Security first
+
+Follow the security guidelines below.
 
 - Never commit `.env` files.
 - Use strong secrets.
@@ -240,16 +238,16 @@ src/
 
 ## Examples
 
-Browse the [DataRobot Template Gallery](https://github.com/datarobot/templates) for example templates:
+Browse the [DataRobot template gallery](https://github.com/datarobot/templates) to view example templates:
 
-- **python-streamlit**&mdash;Streamlit dashboard.
-- **react-frontend**&mdash;React web application.
-- **fastapi-backend**&mdash;FastAPI REST API.
-- **full-stack-app**&mdash;complete web application.
+- **python-streamlit**: Streamlit dashboard
+- **react-frontend**: React web application
+- **fastapi-backend**: FastAPI REST API
+- **full-stack-app**: complete web application
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)
-- [Working with Templates](../user-guide/templates.md)
+- [Get Started](../user-guide/getting-started.md)
+- [Work with Templates](../user-guide/templates.md)
 - [Command Reference: templates](../commands/templates.md)
 - [Command Reference: dotenv](../commands/dotenv.md)
