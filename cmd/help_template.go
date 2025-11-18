@@ -32,10 +32,10 @@ var CustomHelpTemplate = `🚀 ` + tui.BaseTextStyle.Render(internalVersion.AppN
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
 
 {{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  ` + tui.SetAnsiForegroundColor(tui.DrPurpleLight) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+  ` + tui.SetAnsiForegroundColor(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
 ` + tui.BaseTextStyle.Render("Additional Commands:") + `{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  ` + tui.SetAnsiForegroundColor(tui.DrPurpleLight) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+  ` + tui.SetAnsiForegroundColor(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 ` + tui.BaseTextStyle.Render("Flags:") + `
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
