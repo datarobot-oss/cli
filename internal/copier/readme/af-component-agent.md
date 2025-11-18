@@ -28,7 +28,7 @@ uvx copier update -a .datarobot/answers/agent-{{ agent_app }}.yml -A
 
 ## Developer Guide
 
-Please see the [development documentation](/docs/development.md) for more information on how to develop the agent component template.
+Please see the [development documentation](https://github.com/datarobot-community/af-component-agent/blob/main/docs/development.md) for more information on how to develop the agent component template.
 
 ## Get help
 
