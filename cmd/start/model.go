@@ -224,8 +224,6 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	// If this step marks completion, we're done
 	if msg.done {
 		m.done = true
-		// Update state and quit
-		_ = state.UpdateAfterSuccessfulRun()
 
 		return m, tea.Quit
 	}

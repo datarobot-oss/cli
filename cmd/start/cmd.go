@@ -14,7 +14,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
-	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,8 +34,7 @@ func Cmd() *cobra.Command {
 		Long: `Run the application quickstart process for the current template.
 The following actions will be performed:
 - Checking for prerequisite tooling
-- Validating the environment (TODO)
-- Executing the quickstart script associated with the template, if available.`,
+- Executing the start script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if viper.GetBool("debug") {
 				f, err := tea.LogToFile("tea-debug.log", "debug")
@@ -57,15 +55,20 @@ The following actions will be performed:
 			}
 
 			// Check if we need to launch template setup after quitting
-			if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
-				if innerModel, ok := startModel.Model.(Model); ok {
-					if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
-						// No quickstart found, will launch template setup
-						_ = state.UpdateAfterSuccessfulRun()
+			startModel, ok := finalModel.(tui.InterruptibleModel)
+			if !ok {
+				return nil
+			}
 
-						return setup.RunTea(cmd.Context(), true)
-					}
-				}
+			innerModel, ok := startModel.Model.(Model)
+			if !ok {
+				return nil
+			}
+
+			if innerModel.quickstartScriptPath == "" && innerModel.done && !innerModel.quitting {
+				// No quickstart found, will launch template setup
+				// Templates setup handles its own state updates
+				return setup.RunTeaFromStart(cmd.Context(), true)
 			}
 
 			return nil
