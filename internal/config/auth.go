@@ -18,6 +18,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var ErrInvalidURL = errors.New("Invalid URL.")
+
 // SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
 // returns https://app.datarobot.com (no trailing slash)
 func SchemeHostOnly(longURL string) (string, error) {
@@ -27,7 +29,7 @@ func SchemeHostOnly(longURL string) (string, error) {
 	}
 
 	if parsedURL.Host == "" {
-		return "", errors.New("Invalid URL.")
+		return "", ErrInvalidURL
 	}
 
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
