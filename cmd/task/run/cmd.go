@@ -69,12 +69,14 @@ Examples:
 				_, _ = fmt.Fprintln(os.Stderr, "")
 				_, _ = fmt.Fprintln(os.Stderr, "The 'task' binary is required to run application tasks.")
 				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "🛠️ Install Task:")
-				_, _ = fmt.Fprintln(os.Stderr, "   • macOS: brew install go-task/tap/go-task")
-				_, _ = fmt.Fprintln(os.Stderr, "   • Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
-				_, _ = fmt.Fprintln(os.Stderr, "   • Windows: choco install go-task")
+				_, _ = fmt.Fprintln(os.Stderr, "💡 Quick Install (choose your system):")
+				_, _ = fmt.Fprintln(os.Stderr, "   🍎 macOS: brew install go-task/tap/go-task")
+				_, _ = fmt.Fprintln(os.Stderr, "   🐧 Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
+				_, _ = fmt.Fprintln(os.Stderr, "   🪟 Windows: choco install go-task")
 				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "📚 More info: https://taskfile.dev/installation/")
+				_, _ = fmt.Fprintln(os.Stderr, "📚 Need help? Visit: https://taskfile.dev/installation/")
+				_, _ = fmt.Fprintln(os.Stderr, "")
+				_, _ = fmt.Fprintln(os.Stderr, "After installing, try running your command again!")
 
 				os.Exit(1)
 
@@ -111,13 +113,13 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "Directory to look for tasks.")
-	cmd.Flags().BoolVarP(&opts.taskOpts.Parallel, "parallel", "p", false, "Run tasks in parallel.")
-	cmd.Flags().IntVarP(&opts.taskOpts.Concurrency, "concurrency", "C", 2, "Number of concurrent tasks to run.")
-	cmd.Flags().BoolVarP(&opts.taskOpts.WatchTask, "watch", "w", false, "Enables watch of the given task.")
-	cmd.Flags().BoolVarP(&opts.taskOpts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
-	cmd.Flags().BoolVarP(&opts.taskOpts.ExitCode, "exit-code", "x", false, "Pass-through the exit code of the task command.")
-	cmd.Flags().BoolVarP(&opts.taskOpts.Silent, "silent", "s", false, "Disables echoing.")
+	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "📁 Specify project directory (default: current directory)")
+	cmd.Flags().BoolVarP(&opts.taskOpts.Parallel, "parallel", "p", false, "⚡ Run multiple tasks simultaneously for faster execution")
+	cmd.Flags().IntVarP(&opts.taskOpts.Concurrency, "concurrency", "C", 2, "🔢 Number of concurrent tasks to run in parallel")
+	cmd.Flags().BoolVarP(&opts.taskOpts.WatchTask, "watch", "w", false, "👀 Watch files and re-run task on changes")
+	cmd.Flags().BoolVarP(&opts.taskOpts.AnswerYes, "yes", "y", false, "🚀 Skip confirmation prompts (useful for automation)")
+	cmd.Flags().BoolVarP(&opts.taskOpts.ExitCode, "exit-code", "x", false, "🔄 Pass through the exact exit code from task")
+	cmd.Flags().BoolVarP(&opts.taskOpts.Silent, "silent", "s", false, "🔇 Suppress task output and progress messages")
 
 	// Register directory completion for the dir flag
 	_ = cmd.RegisterFlagCompletionFunc("dir", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {

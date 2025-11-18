@@ -16,14 +16,19 @@ tasks:
     cmds:
       - task --list --sort none
     silent: true
+{{- if .HasStart }}
 
   start:
     desc: "💻 Prepare local development environment"
     cmds:
       - dr dotenv setup
       - task: install
-
+      {{- range .StartComponents }}
+      - task: {{ . }}:start
+      {{- end }}
+  {{- end }}
   {{- if .HasLint }}
+
   lint:
     desc: "🧹 Run linters"
     cmds:
@@ -33,6 +38,7 @@ tasks:
   {{- end }}
 
   {{- if .HasInstall }}
+
   install:
     desc: "🛠️ Install all dependencies"
     cmds:
@@ -40,8 +46,8 @@ tasks:
       - task: {{ . }}:install
       {{- end }}
   {{- end }}
-
   {{- if .HasTest }}
+
   test:
     desc: "🧪 Run tests across all components"
     cmds:
@@ -49,7 +55,6 @@ tasks:
       - task: {{ . }}:test
       {{- end }}
   {{- end }}
-
   {{- if .HasDev }}
   dev:
     desc: "🚀 Run all services together"

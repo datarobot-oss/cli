@@ -47,11 +47,11 @@ using pre-built templates. Get from idea to production in minutes, not hours.
   • Manage environment variables and configurations
 
 🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
-  dr templates setup   # Interactive setup wizard
-  dr run dev           # Start development server
+  dr start             # Create your first AI app (start here!)
+  dr templates setup   # Setup a template for your AI app
   dr --help            # Show all available commands
 
-💡 ` + tui.BaseTextStyle.Render("New to DataRobot CLI?") + ` Run 'dr templates setup' to get started!`,
+💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
@@ -132,7 +132,7 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprint(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
+			fmt.Fprintln(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)

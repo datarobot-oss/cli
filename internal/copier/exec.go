@@ -31,7 +31,7 @@ func ExecAdd(repoURL string) error {
 	return cmd.Run()
 }
 
-func Update(yamlFile string, quiet bool) *exec.Cmd {
+func Update(yamlFile string, quiet bool, debug bool) *exec.Cmd {
 	commandParts := []string{
 		"copier", "update", "--answers-file", yamlFile, "--skip-answered",
 	}
@@ -39,15 +39,22 @@ func Update(yamlFile string, quiet bool) *exec.Cmd {
 		commandParts = append(commandParts, "--quiet")
 	}
 
-	return exec.Command("uvx", commandParts...)
+	cmd := exec.Command("uvx", commandParts...)
+
+	// Suppress all Python warnings unless debug mode is enabled
+	if !debug {
+		cmd.Env = append(os.Environ(), "PYTHONWARNINGS=ignore")
+	}
+
+	return cmd
 }
 
-func ExecUpdate(yamlFile string, quiet bool) error {
+func ExecUpdate(yamlFile string, quiet bool, debug bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	cmd := Update(yamlFile, quiet)
+	cmd := Update(yamlFile, quiet, debug)
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout

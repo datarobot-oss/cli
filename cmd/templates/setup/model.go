@@ -387,7 +387,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if m.skipDotenvSetup {
 			m.screen = exitScreen
 
-			return m, tea.Sequence(tea.ExitAltScreen, exit)
+			return m, exit
 		}
 
 		m.isLoading = false
@@ -403,7 +403,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if m.skipDotenvSetup {
 			m.screen = exitScreen
 
-			return m, tea.Sequence(tea.ExitAltScreen, exit)
+			return m, exit
 		}
 
 		m.screen = dotenvScreen
@@ -423,9 +423,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		// Update state for templates setup completion
 		_ = state.UpdateAfterTemplatesSetup()
 
-		return m, tea.Sequence(tea.ExitAltScreen, exit)
+		return m, exit
 	case exitMsg:
-		return m, tea.Quit
+		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	}
 
 	var cmd tea.Cmd
