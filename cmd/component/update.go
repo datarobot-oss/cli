@@ -120,7 +120,9 @@ func runUpdate(yamlFile string) error {
 
 	quiet := false
 
-	execErr := copier.ExecUpdate(yamlFile, quiet)
+	debug := viper.GetBool("debug")
+
+	execErr := copier.ExecUpdate(yamlFile, quiet, debug)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

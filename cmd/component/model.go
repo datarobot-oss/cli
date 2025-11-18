@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/tui"
+	"github.com/spf13/viper"
 )
 
 type (
@@ -76,7 +77,9 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 func updateComponent(item ListItem) tea.Cmd {
 	quiet := false
 
-	return tea.ExecProcess(copier.Update(item.component.FileName, quiet), func(_ error) tea.Msg {
+	debug := viper.GetBool("debug")
+
+	return tea.ExecProcess(copier.Update(item.component.FileName, quiet, debug), func(_ error) tea.Msg {
 		return updateCompleteMsg{item}
 	})
 }
