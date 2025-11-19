@@ -1,4 +1,4 @@
-# `dr auth` - Authentication Management
+# `dr auth` - Authentication management
 
 The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
 

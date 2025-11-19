@@ -1,4 +1,4 @@
-# Configuration Files
+# Configuration files
 
 The DataRobot CLI stores your authentication credentials and preferences in configuration files. This guide explains how configuration files work, where they're stored, and how to manage them.
 

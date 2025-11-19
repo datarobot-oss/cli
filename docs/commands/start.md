@@ -1,4 +1,4 @@
-# `dr start` - Application Quickstart
+# `dr start` - Application quickstart
 
 Run the application quickstart process for the current template.
 
@@ -52,7 +52,7 @@ This command is designed to work intelligently with your template's structure. T
 
 All [global flags](README.md#global-flags) are also available.
 
-## Quickstart Scripts
+## Quickstart scripts
 
 ### Location
 

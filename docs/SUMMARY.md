@@ -1,28 +1,28 @@
-# Documentation Summary
+# Documentation summary
 
 This document provides an overview of all available documentation for the DataRobot CLI.
 
-## Quick Links
+## Quick links
 
-### For Users
+### For users
 
 - **[Quick start](../README.md#quick-start)** - Start here! Installation and initial setup
 - **[Shell Completions](user-guide/shell-completions.md)** - Set up command auto-completion
 - **[Configuration](user-guide/configuration.md)** - Understanding config files
 
-### For Template Users
+### For template users
 
 - **[Template Structure](template-system/structure.md)** - How templates work
 - **[Interactive Configuration](template-system/interactive-config.md)** - The configuration wizard explained
 - **[Environment Variables](template-system/environment-variables.md)** - Managing .env files
 
-### For Developers
+### For developers
 
 - **[Building from Source](development/building.md)** - Compile and build the CLI
 - **[Contributing Guide](../CONTRIBUTING.md)** - How to contribute
 - **[Code of Conduct](../CODE_OF_CONDUCT.md)** - Community guidelines
 
-## Documentation Structure
+## Documentation structure
 
 ```
 docs/
@@ -56,7 +56,7 @@ docs/
     └── release.md                     # Release process (TODO)
 ```
 
-## Documentation Coverage
+## Documentation coverage
 
 ### ✅ Complete
 
@@ -88,7 +88,7 @@ docs/
 - Development: testing guide
 - Development: release process
 
-## Key Features Documented
+## Key features documented
 
 ### 1. Shell Completions ✅
 
@@ -136,7 +136,7 @@ Complete guide to:
 
 Location: `docs/template-system/environment-variables.md`
 
-## How to Contribute to Docs
+## How to contribute to docs
 
 1. **Fork the repository**
 2. **Edit or create markdown files** in `docs/`
@@ -150,7 +150,7 @@ Location: `docs/template-system/environment-variables.md`
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
 
-## Documentation Principles
+## Documentation principles
 
 ### 1. User-Focused
 
@@ -176,7 +176,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
 - Search-friendly
 - Cross-referenced
 
-## Getting Help
+## Getting help
 
 Can't find what you're looking for?
 
@@ -186,14 +186,14 @@ Can't find what you're looking for?
 4. **Report issues**: Missing or unclear docs? [Open an issue](https://github.com/datarobot/cli/issues)
 5. **Email us**: oss-community-management@datarobot.com
 
-## Documentation Tools
+## Documentation tools
 
 We use:
 - **Markdown** - All docs are in GitHub-flavored Markdown
 - **MkDocs** (future) - May add static site generation
 - **GitHub Pages** (future) - May host docs online
 
-## Version Information
+## Version information
 
 Documentation version: Synchronized with CLI version
 

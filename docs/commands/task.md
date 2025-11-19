@@ -1,4 +1,4 @@
-# dr task
+# `dr task`
 
 Manage Taskfile composition and task execution for DataRobot templates.
 

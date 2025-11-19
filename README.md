@@ -245,7 +245,7 @@ Configuration files are stored in:
 - **Linux/macOS:** `~/.config/datarobot/drconfig.yaml`
 - **Windows:** `%USERPROFILE%\.config\datarobot\drconfig.yaml`
 
-See [Configuration Files](docs/user-guide/configuration.md) for more details.
+See [Configuration files](docs/user-guide/configuration.md) for more details.
 </details>
 
 You'll be prompted to enter your DataRobot URL. You can use shortcuts for cloud instances:

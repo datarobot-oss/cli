@@ -1,4 +1,4 @@
-# `dr self` - CLI Utility Commands
+# `dr self` - CLI utility commands
 
 Commands for managing and configuring the DataRobot CLI itself.
 

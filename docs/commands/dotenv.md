@@ -1,4 +1,4 @@
-# `dr dotenv` - Environment Variable Management
+# `dr dotenv` - Environment variable management
 
 Manage environment variables and `.env` files in DataRobot templates.
 

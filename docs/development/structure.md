@@ -120,7 +120,7 @@ Documentation organized by audience:
 
 ## Code organization patterns
 
-### Command Structure
+### Command structure
 
 Each command follows this pattern:
 
@@ -226,7 +226,7 @@ Generated files and artifacts:
 - `tmp/`: Temporary build files
 - `coverage.txt`: Test coverage reports
 
-## Next Steps
+## Next steps
 
 - [Setup guide](setup.md): setting up your development environment
 - [Build guide](building.md): Detailed build information and architecture
