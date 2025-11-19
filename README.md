@@ -348,7 +348,7 @@ The prompts vary depending on which template you selected.
 When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
 > [!NOTE]
-> The CLI automatically tracks setup completion in a state file located at `.datarobot/state/info.yml` within your template directory. This allows the CLI to skip redundant setup steps on subsequent runs. For more details, see [State tracking](docs/user-guide/configuration.md#state-tracking).
+> The CLI automatically tracks setup completion in a state file located at `.datarobot/cli/state.yaml` within your template directory. This allows the CLI to skip redundant setup steps on subsequent runs. For more details, see [State tracking](docs/user-guide/configuration.md#state-tracking).
 
 > [!TIP]
 > **What's next?** After the setup wizard completes, navigate to your new application directory with `cd [template-name]` and start your application with `dr start` or `dr run dev`.

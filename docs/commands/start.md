@@ -161,7 +161,7 @@ The `dr start` command automatically tracks when it runs successfully by updatin
 - Timestamp of when the command last started (ISO 8601 format)
 - CLI version used
 
-This state information is stored in `.datarobot/state/info.yml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
+This state information is stored in `.datarobot/cli/state.yaml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
 
 The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
 

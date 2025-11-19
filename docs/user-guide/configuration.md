@@ -442,7 +442,7 @@ The CLI maintains state information about your interactions with repositories to
 
 The CLI stores state locally within each repository:
 
-- `.datarobot/state/info.yml` in the current working directory
+- `.datarobot/cli/state.yaml` in the current working directory
 
 ### Tracked information
 
@@ -474,7 +474,7 @@ State files are automatically created and updated. To reset state for a reposito
 
 ```bash
 # Remove repository state
-rm .datarobot/state/info.yml
+rm .datarobot/cli/state.yaml
 ```
 
 You can also force the wizard to run without deleting the state file by using the `--force-interactive` flag:
