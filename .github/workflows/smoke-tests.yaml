@@ -48,21 +48,26 @@ jobs:
   smoke-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        sys:
+          - { os: ubuntu-latest, shell: bash }
+          - { os: macos-latest, shell: "zsh {0}" }
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+    runs-on: ${{ matrix.sys.os }}
     name: Run Smoke Tests (${{ matrix.os }})
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Ubuntu - Install dependencies w/ apt-get
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.sys.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
 
       - name: MacOS - Install dependencies w/ homebrew
-        if: matrix.os == 'macos-latest'
+        if: matrix.sys.os == 'macos-latest'
         run: |
           brew install expect bash-completion
 
