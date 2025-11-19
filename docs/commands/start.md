@@ -50,7 +50,7 @@ This command is designed to work intelligently with your template's structure. T
 
 ### Global options
 
-All [global options](README.md#global-flags) are also available.
+All [global options](README.md#global-options) are also available.
 
 ## Quickstart scripts
 
