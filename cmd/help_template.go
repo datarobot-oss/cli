@@ -66,10 +66,10 @@ var CustomHelpTemplate = getHelpHeader() + `
 {{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
 
 ` + getSectionHeader("Available Commands:") + `{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}{{$hasCommands := false}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}{{$hasCommands = true}}{{end}}{{end}}{{if $hasCommands}}
 
 ` + getSectionHeader("{{.Title}}") + `{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
 ` + getSectionHeader("Additional Commands:") + `{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
   ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
