@@ -2,9 +2,6 @@
 
 The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
 
-> [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
-
 ## Quick start
 
 For most users, authentication is a two-step process:
@@ -19,6 +16,9 @@ dr auth login
 
 Your credentials are automatically saved and you're ready to use the CLI.
 
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
 ## Synopsis
 
 ```bash
@@ -29,7 +29,7 @@ dr auth <command> [flags]
 
 The `auth` command provides authentication management for the DataRobot CLI. It handles login, logout, and URL configuration for connecting to your DataRobot instance.
 
-## Commands
+## Subcommands
 
 ### `login`
 
@@ -175,9 +175,9 @@ Error: Invalid URL format
 > - Malformed domain names
 > - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
 
-## Global flags
+## Global options
 
-These flags work with all `auth` commands:
+These options work with all `auth` commands:
 
 ```bash
   -v, --verbose      Enable verbose output

@@ -146,9 +146,9 @@ dr self version
 dr self version --format json
 ```
 
-## Global flags
+## Global options
 
-All `dr` global flags are available:
+All `dr` global options are available:
 
 - `-v, --verbose`&mdash;enable verbose output
 - `--debug`&mdash;enable debug output

@@ -41,16 +41,16 @@ This command is designed to work intelligently with your template's structure. T
 - `dr start`
 - `dr quickstart`
 
-## Flags
+## Options
 
-```text
+```bash
   -y, --yes     Skip confirmation prompts and execute immediately
   -h, --help    Show help information
 ```
 
-### Global flags
+### Global options
 
-All [global flags](README.md#global-flags) are also available.
+All [global options](README.md#global-flags) are also available.
 
 ## Quickstart scripts
 

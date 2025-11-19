@@ -26,7 +26,7 @@ dr dotenv <command> [flags]
 
 The `dr dotenv` command provides tools for creating, editing, validating, and updating environment configuration files. It includes an interactive wizard for guided setup and a text editor for direct file manipulation.
 
-## Commands
+## Subcommands
 
 ### dr dotenv setup
 
