@@ -1,8 +1,28 @@
-# dotenv command
+# `dr dotenv` - Environment Variable Management
 
 Manage environment variables and `.env` files in DataRobot templates.
 
-## Overview
+## Quick start
+
+For most users, setting up environment variables is a single command:
+
+```bash
+# Interactive wizard guides you through all configuration
+dr dotenv setup
+```
+
+The wizard automatically discovers your template's requirements and prompts you for all necessary values. Your credentials are saved securely and you're ready to use the CLI.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Synopsis
+
+```bash
+dr dotenv <command> [flags]
+```
+
+## Description
 
 The `dr dotenv` command provides tools for creating, editing, validating, and updating environment configuration files. It includes an interactive wizard for guided setup and a text editor for direct file manipulation.
 
@@ -52,6 +72,7 @@ dr dotenv setup
 ```
 
 The wizard guides you through:
+
 1. DataRobot credentials (auto-populated if authenticated).
 2. Application-specific configuration.
 3. Optional features and integrations.
@@ -67,18 +88,21 @@ dr dotenv edit
 ```
 
 **Behavior:**
+
 - If `.env` exists, opens it in the editor.
 - If no extra variables are detected, opens text editor mode.
 - If template prompts are found, offers wizard mode.
 - Can switch between editor and wizard modes.
 
 **Editor mode controls:**
+
 - `e`&mdash;edit in text editor.
 - `w`&mdash;switch to wizard mode.
 - `Enter`&mdash;save and exit.
 - `Esc`&mdash;save and exit.
 
 **Wizard mode controls:**
+
 - Navigate prompts with arrow keys.
 - Enter values or select options.
 - `Esc`&mdash;return to previous screen.
@@ -99,12 +123,14 @@ dr dotenv update
 ```
 
 **Features:**
+
 - Updates `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN`.
 - Preserves all other environment variables.
 - Automatically authenticates if needed.
 - Uses current authentication session.
 
 **Prerequisites:**
+
 - Must be run inside a git repository.
 - Must have a `.env` or `.env.template` file.
 - Requires authentication with DataRobot.
@@ -117,6 +143,7 @@ dr dotenv update
 ```
 
 **Use cases:**
+
 - Refresh expired API tokens.
 - Switch DataRobot environments.
 - Update credentials after re-authentication.
@@ -130,6 +157,7 @@ dr dotenv validate
 ```
 
 **Features:**
+
 - Validates against template requirements defined in `.datarobot/prompts.yaml`.
 - Checks both `.env` file and environment variables.
 - Verifies core DataRobot variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`).
@@ -137,6 +165,7 @@ dr dotenv validate
 - Respects conditional requirements based on selected options.
 
 **Prerequisites:**
+
 - Must be run inside a git repository.
 - Must have a `.env` file.
 
@@ -150,7 +179,8 @@ dr dotenv validate
 **Output:**
 
 Successful validation:
-```
+
+```text
 Validating required variables:
   APP_NAME: my-app
   DATAROBOT_ENDPOINT: https://app.datarobot.com
@@ -161,7 +191,8 @@ Validation passed: all required variables are set.
 ```
 
 Validation errors:
-```
+
+```text
 Validating required variables:
   APP_NAME: my-app
   DATAROBOT_ENDPOINT: https://app.datarobot.com
@@ -178,6 +209,7 @@ Error: required variable DATABASE_URL is not set
 ```
 
 **Use cases:**
+
 - Verify configuration before running tasks.
 - Debug missing environment variables.
 - CI/CD pipeline checks.
@@ -189,7 +221,7 @@ Error: required variable DATABASE_URL is not set
 
 Template file committed to version control:
 
-```bash
+```env
 # Required Configuration
 APP_NAME=
 DATAROBOT_ENDPOINT=
@@ -204,7 +236,7 @@ DATAROBOT_API_TOKEN=
 
 Generated configuration file (never committed):
 
-```bash
+```env
 # Required Configuration
 APP_NAME=my-awesome-app
 DATAROBOT_ENDPOINT=https://app.datarobot.com
@@ -222,6 +254,7 @@ PORT=8000
 The wizard supports multiple input types defined in `.datarobot/prompts.yaml`:
 
 **Text input:**
+
 ```yaml
 prompts:
   - key: "app_name"
@@ -230,6 +263,7 @@ prompts:
 ```
 
 **Secret string:**
+
 ```yaml
 prompts:
   - key: "api_key"
@@ -240,6 +274,7 @@ prompts:
 ```
 
 **Single selection:**
+
 ```yaml
 prompts:
   - key: "environment"
@@ -253,6 +288,7 @@ prompts:
 ```
 
 **Multiple selection:**
+
 ```yaml
 prompts:
   - key: "features"
@@ -343,6 +379,7 @@ The CLI automatically discovers configuration from:
 4. **Environment variables**&mdash;system environment (override `.env`).
 
 Priority order (highest to lowest):
+
 1. System environment variables.
 2. User input from wizard.
 3. Existing `.env` file values.
@@ -377,7 +414,7 @@ This generates a cryptographically secure random string when no value exists.
 
 ### Not in repository
 
-```
+```text
 Error: not inside a git repository
 
 Run this command from within an application template git repository.
@@ -388,7 +425,7 @@ To create a new template, run `dr templates setup`.
 
 ### Missing .env file
 
-```
+```text
 Error: .env file does not exist at /path/to/.env
 
 Run `dr dotenv setup` to create one.
@@ -398,7 +435,7 @@ Run `dr dotenv setup` to create one.
 
 ### Authentication required
 
-```
+```text
 Error: not authenticated
 
 Run `dr auth login` to authenticate.
@@ -408,7 +445,7 @@ Run `dr auth login` to authenticate.
 
 ### Validation failures
 
-```
+```text
 Validation errors:
 
 Error: required variable DATABASE_URL is not set

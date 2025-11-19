@@ -1,23 +1,32 @@
-# dr start
+# `dr start` - Application Quickstart
 
 Run the application quickstart process for the current template.
 
-## Synopsis
+## Quick start
 
-The `start` command (also available as `quickstart`) provides an automated way to initialize and launch your DataRobot application. It performs several checks and either executes a template-specific quickstart script or seamlessly launches the interactive template setup wizard.
+For most users, getting started is a single command:
+
+```bash
+# Run the quickstart process (interactive)
+dr start
+```
+
+The command automatically detects your template's configuration and either runs a custom quickstart script or launches the interactive setup wizard.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Synopsis
 
 ```bash
 dr start [flags]
 ```
 
-## Aliases
-
-- `dr start`
-- `dr quickstart`
-
 ## Description
 
-The `start` command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
+The `start` command (also available as `quickstart`) provides an automated way to initialize and launch your DataRobot application. It performs several checks and either executes a template-specific quickstart script or seamlessly launches the interactive template setup wizard.
+
+The command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
 
 1. **Prerequisite checks**&mdash;verifies that required tools are installed.
 2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/` (if in a DataRobot repository).
@@ -26,6 +35,11 @@ The `start` command streamlines the process of getting your DataRobot applicatio
    - Launches the interactive `dr templates setup` wizard if no script is found or not in a repository.
 
 This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If you're not in a DataRobot repository or no script exists, the command gracefully falls back to the standard setup wizard.
+
+## Aliases
+
+- `dr start`
+- `dr quickstart`
 
 ## Flags
 
@@ -44,7 +58,7 @@ All [global flags](README.md#global-flags) are also available.
 
 Quickstart scripts must be placed in:
 
-```
+```text
 .datarobot/cli/bin/
 ```
 

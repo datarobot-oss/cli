@@ -2,6 +2,26 @@
 
 Commands for managing and configuring the DataRobot CLI itself.
 
+## Quick start
+
+For most users, common CLI management tasks are straightforward:
+
+```bash
+# Check CLI version
+dr self version
+
+# Update to latest version
+dr self update
+
+# View current configuration
+dr self config
+```
+
+These commands help you manage the CLI tool itself, including updates, version information, and configuration.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
 ## Synopsis
 
 ```bash
