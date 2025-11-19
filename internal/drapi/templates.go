@@ -134,6 +134,9 @@ func GetTemplates() (*TemplateList, error) {
 
 	bearer := "Bearer " + config.GetAPIKey()
 	req.Header.Add("Authorization", bearer)
+	req.Header.Add("User-Agent", config.GetUserAgentHeader())
+
+	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
 	client := &http.Client{}
 
