@@ -4,23 +4,23 @@ This document provides an overview of all available documentation for the DataRo
 
 ## Quick links
 
-### For users
+### For setup
 
-- **[Quick start](../README.md#quick-start)** - Start here! Installation and initial setup
-- **[Shell Completions](user-guide/shell-completions.md)** - Set up command auto-completion
-- **[Configuration](user-guide/configuration.md)** - Understanding config files
+- [Get started](user-guide/getting-started.md): Start here with installation and initial setup
+- [Shell completions](user-guide/shell-completions.md): Set up command auto-completion
+- [Configuration](user-guide/configuration.md): Understand config files
 
-### For template users
+### For templates
 
-- **[Template Structure](template-system/structure.md)** - How templates work
-- **[Interactive Configuration](template-system/interactive-config.md)** - The configuration wizard explained
-- **[Environment Variables](template-system/environment-variables.md)** - Managing .env files
+- [Template structure](template-system/structure.md): Understand how templates work
+- [Interactive configuration](template-system/interactive-config.md): An overview of the configuration wizard
+- [Environment variables](template-system/environment-variables.md): Manage `.env` files
 
 ### For developers
 
-- **[Building from Source](development/building.md)** - Compile and build the CLI
-- **[Contributing Guide](../CONTRIBUTING.md)** - How to contribute
-- **[Code of Conduct](../CODE_OF_CONDUCT.md)** - Community guidelines
+- [Building from source](development/building.md): Compile and build the CLI
+- [Contributing guide](../CONTRIBUTING.md): Learn how to make contributions
+- [Code of conduct](../CODE_OF_CONDUCT.md): Review community guidelines
 
 ## Documentation structure
 
@@ -29,6 +29,7 @@ docs/
 ├── README.md                           # This file
 ├── user-guide/                         # End-user documentation
 │   ├── README.md
+│   ├── getting-started.md             # Installation and setup
 │   ├── authentication.md              # Managing credentials (TODO)
 │   ├── templates.md                   # Template management (TODO)
 │   ├── shell-completions.md           # Shell completion setup ✓
@@ -60,8 +61,9 @@ docs/
 
 ### ✅ Complete
 
-- Main README with comprehensive overview and quick start guide
+- Main README with comprehensive overview
 - docs/ structure and organization
+- Getting Started guide
 - Shell completions setup (all shells)
 - Configuration files guide
 - Template system structure
@@ -76,7 +78,7 @@ docs/
 - Building from source
 - Enhanced CONTRIBUTING.md
 
-### 📝 To Be Added (Future)
+### 📝 To be added (Future)
 
 - User guide: authentication details
 - User guide: working with templates
@@ -90,9 +92,10 @@ docs/
 
 ## Key features documented
 
-### 1. Shell Completions ✅
+### 1. Shell completions
 
 Comprehensive documentation for setting up auto-completion in:
+
 - Bash (Linux and macOS)
 - Zsh
 - Fish
@@ -100,9 +103,10 @@ Comprehensive documentation for setting up auto-completion in:
 
 Location: `docs/user-guide/shell-completions.md`
 
-### 2. Template System ✅
+### 2. Template system
 
-Detailed explanation of:
+A detailed explanation of:
+
 - Template repository structure
 - `.datarobot/prompts.yaml` format
 - Interactive configuration wizard
@@ -110,12 +114,14 @@ Detailed explanation of:
 - Multi-level configuration
 
 Locations:
+
 - `docs/template-system/structure.md`
 - `docs/template-system/interactive-config.md`
 
-### 3. Interactive Configuration ✅
+### 3. Interactive configuration
 
 In-depth coverage of:
+
 - Bubble Tea architecture
 - Prompt types (text, selection, multi-select)
 - Conditional logic with sections
@@ -125,9 +131,10 @@ In-depth coverage of:
 
 Location: `docs/template-system/interactive-config.md`
 
-### 4. Environment Management ✅
+### 4. Environment management
 
-Complete guide to:
+A complete guide to:
+
 - `.env` vs `.env.template`
 - Variable types (required, optional, secret)
 - Interactive wizard
@@ -138,60 +145,61 @@ Location: `docs/template-system/environment-variables.md`
 
 ## How to contribute to docs
 
-1. **Fork the repository**
-2. **Edit or create markdown files** in `docs/`
-3. **Follow the style guide**:
+1. Fork the repository
+2. Edit or create markdown files in `docs/`
+3. Follow the style guide:
    - Use clear, concise language
    - Include code examples
    - Add relevant cross-references
    - Use proper markdown formatting
-4. **Test links** to ensure they work
-5. **Submit a pull request**
+4. Test links to ensure they work
+5. Submit a pull request
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
 
 ## Documentation principles
 
-### 1. User-Focused
+### User-focused
 
 - Written from the user's perspective
 - Task-oriented (how to accomplish something)
 - Real-world examples
 
-### 2. Progressive Disclosure
+### Progressive disclosure
 
 - Quick start for beginners
 - Deep-dive for advanced users
 - Reference for specific details
 
-### 3. Maintainable
+### Maintainable
 
 - Keep in sync with code
 - Update with each release
 - Clear, consistent structure
 
-### 4. Discoverable
+### Discoverable
 
 - Good navigation
 - Search-friendly
 - Cross-referenced
 
-## Getting help
+## Get help
 
 Can't find what you're looking for?
 
-1. **Search the docs**: Use your browser's search or GitHub's search
-2. **Check examples**: Browse code examples in `docs/`
-3. **Ask questions**: Open a [Discussion](https://github.com/datarobot/cli/discussions)
-4. **Report issues**: Missing or unclear docs? [Open an issue](https://github.com/datarobot/cli/issues)
-5. **Email us**: oss-community-management@datarobot.com
+1. Search the docs: Use your browser's search or GitHub's search
+2. Check examples: Browse code examples in `docs/`
+3. Ask questions: Open a [Discussion](https://github.com/datarobot/cli/discussions)
+4. Report issues: Missing or unclear docs? [Open an issue](https://github.com/datarobot/cli/issues)
+5. Email us: oss-community-management@datarobot.com
 
 ## Documentation tools
 
-We use:
-- **Markdown** - All docs are in GitHub-flavored Markdown
-- **MkDocs** (future) - May add static site generation
-- **GitHub Pages** (future) - May host docs online
+DataRobot uses:
+
+- Markdown: All docs are in GitHub-flavored Markdown
+- MkDocs (future): May add static site generation
+- GitHub Pages (future): May host docs online
 
 ## Version information
 
