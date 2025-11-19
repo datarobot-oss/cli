@@ -281,6 +281,7 @@ func (pm promptModel) View() string {
 
 	if len(pm.prompt.Options) > 0 {
 		sb.WriteString(pm.list.View())
+		sb.WriteString(tui.DimStyle.Render("\n  space to toggle"))
 	} else {
 		sb.WriteString(pm.input.View())
 	}
