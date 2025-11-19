@@ -27,9 +27,9 @@ func getHelpHeader() string {
 	separatorStyle := lipgloss.NewStyle().
 		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark))
 
-	title := titleStyle.Render("🚀 " + internalVersion.GetAppNameVersionText())
+	title := titleStyle.Render(internalVersion.GetAppNameVersionText())
 	separator := separatorStyle.Render("────────────────────────────────────────────")
-	slogan := sloganStyle.Render("    ⚡ Build AI Applications Faster")
+	slogan := sloganStyle.Render("    🚀 Build AI Applications Faster")
 
 	return lipgloss.JoinVertical(lipgloss.Left, title, separator, slogan, "")
 }
