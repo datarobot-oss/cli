@@ -55,7 +55,7 @@ jobs:
       run:
         shell: ${{ matrix.sys.shell }}
     runs-on: ${{ matrix.sys.os }}
-    name: Run Smoke Tests (${{ matrix.os }})
+    name: Run Smoke Tests (${{ matrix.sys.os }})
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
