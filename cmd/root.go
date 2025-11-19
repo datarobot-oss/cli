@@ -34,8 +34,9 @@ var configFilePath string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   internalVersion.CliName,
-	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
+	Use:     internalVersion.CliName,
+	Version: internalVersion.Version,
+	Short:   "Build AI Applications Faster",
 	Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
@@ -78,6 +79,9 @@ func init() {
 
 	// Disable Cobra's default completion command since we have our own under 'self'
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
+
+	// Set custom version template to match our unified format
+	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n")
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
@@ -132,7 +136,7 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprintln(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
+			fmt.Fprintln(cmd.OutOrStdout(), internalVersion.GetAppNameVersionText())
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)
