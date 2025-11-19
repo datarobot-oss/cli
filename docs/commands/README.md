@@ -1,17 +1,22 @@
-# Command Reference
+# Command reference
 
 Complete reference documentation for all DataRobot CLI commands.
+
+This document provides a comprehensive overview of all available commands, their flags, and usage examples. For getting started with the CLI, see the [Quick start guide](../../README.md#quick-start).
 
 ## Global flags
 
 These flags are available for all commands:
 
 ```bash
-  -v, --verbose       Enable verbose output (info level logging)
-      --debug         Enable debug output (debug level logging)
-      --skip-auth     Skip authentication checks (for advanced users)
-      --force-interactive  Force the setup wizard to run even if already completed
-  -h, --help          Show help information
+  -V, --version          Display version information
+  -v, --verbose          Enable verbose output (info level logging)
+      --debug            Enable debug output (debug level logging)
+      --config string    Path to config file (default: $HOME/.datarobot/drconfig.yaml)
+      --skip-auth        Skip authentication checks (for advanced users)
+      --force-interactive Force the setup wizard to run even if already completed
+      --all-commands     Display all available commands and their flags in tree format
+  -h, --help             Show help information
 ```
 
 > [!WARNING]
@@ -24,29 +29,33 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command | Description |
-|---------|-------------|
-| [`auth`](auth.md) | Authenticate with DataRobot. |
-| [`templates`](templates.md) | Manage application templates. |
-| [`start`](start.md) | Run the application quickstart process. |
-| [`run`](run.md) | Execute application tasks. |
-| [`task`](task.md) | Manage Taskfile composition and task execution. |
-| [`dotenv`](dotenv.md) | Manage environment variables. |
-| [`self`](self.md) | CLI utility commands (update, version, completion). |
+| Command               | Description                                         |
+|-----------------------|-----------------------------------------------------|
+| [`auth`](auth.md)     | Authenticate with DataRobot.                        |
+| `component`           | Manage template components.                         |
+| `templates`           | Manage application templates.                       |
+| [`start`](start.md)   | Run the application quickstart process.             |
+| [`run`](run.md)       | Execute application tasks.                          |
+| [`task`](task.md)     | Manage Taskfile composition and task execution.     |
+| [`dotenv`](dotenv.md) | Manage environment variables.                       |
+| [`self`](self.md)     | CLI utility commands (update, version, completion). |
 
 ### Command tree
 
-```
+```text
 dr
 ├── auth                Authentication management
+│   ├── check          Check if credentials are valid
 │   ├── login          Log in to DataRobot
 │   ├── logout         Log out from DataRobot
 │   └── set-url        Set DataRobot URL
+├── component          Component management
+│   ├── add            Add a component to your template
+│   ├── list           List installed components
+│   └── update         Update a component
 ├── templates          Template management
 │   ├── list           List available templates
-│   ├── clone          Clone a template
-│   ├── setup          Interactive setup wizard
-│   └── status         Show template status
+│   └── setup          Interactive setup wizard
 ├── start              Run quickstart process (alias: quickstart)
 ├── run                Task execution
 ├── task               Taskfile composition and execution
@@ -84,14 +93,21 @@ dr auth logout
 # List templates
 dr templates list
 
-# Clone template
-dr templates clone python-streamlit
-
 # Interactive setup
 dr templates setup
+```
 
-# Check status
-dr templates status
+### Components
+
+```bash
+# List installed components
+dr component list
+
+# Add a component
+dr component add <component-url>
+
+# Update a component
+dr component update
 ```
 
 ### Quickstart
@@ -161,15 +177,20 @@ dr self version
 For detailed documentation on each command, see:
 
 - **[auth](auth.md)**&mdash;authentication management.
+  - `check`&mdash;verify credentials are valid.
   - `login`&mdash;OAuth authentication.
   - `logout`&mdash;remove credentials.
   - `set-url`&mdash;configure DataRobot URL.
 
-- **[templates](templates.md)**&mdash;template operations.
+- **component**&mdash;component management (alias: `c`).
+  - `add`&mdash;add a component to your template.
+  - `list`&mdash;list installed components.
+  - `update`&mdash;update a component.
+  - Note: Components are reusable pieces that can be added to templates to extend functionality.
+
+- **templates**&mdash;template operations.
   - `list`&mdash;list available templates.
-  - `clone`&mdash;clone a template repository.
   - `setup`&mdash;interactive wizard for full setup.
-  - `status`&mdash;show current template status.
 
 - **[run](run.md)**&mdash;task execution.
   - Execute template tasks.
@@ -187,14 +208,11 @@ For detailed documentation on each command, see:
   - Direct file editing.
   - Variable validation.
 
-- **[completion](completion.md)**&mdash;shell completions.
-  - Bash, Zsh, Fish, PowerShell support.
-  - Auto-complete commands and flags.
-
-- **[version](version.md)**&mdash;version information.
-  - Show CLI version.
-  - Build information.
-  - Runtime details.
+- **[self](self.md)**&mdash;CLI utility commands.
+  - `completion`&mdash;shell completions (Bash, Zsh, Fish, PowerShell).
+  - `config`&mdash;display configuration settings.
+  - `update`&mdash;update CLI to latest version.
+  - `version`&mdash;show CLI version and build information.
 
 ## Getting help
 
@@ -210,7 +228,8 @@ dr run --help
 
 # Subcommand help
 dr auth login --help
-dr templates clone --help
+dr templates setup --help
+dr component add --help
 ```
 
 ## Environment variables
@@ -221,16 +240,19 @@ Global environment variables that affect all commands:
 # Configuration
 DATAROBOT_ENDPOINT             # DataRobot URL
 DATAROBOT_API_TOKEN            # API token (not recommended)
+DATAROBOT_CLI_CONFIG           # Path to config file
+VISUAL                         # External editor for file editing
+EDITOR                         # External editor for file editing (fallback)
 ```
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success. |
-| 1 | General error. |
-| 2 | Command usage error. |
-| 130 | Interrupted (Ctrl+C). |
+| Code | Meaning               |
+|------|-----------------------|
+| 0    | Success.              |
+| 1    | General error.        |
+| 2    | Command usage error.  |
+| 130  | Interrupted (Ctrl+C). |
 
 ## See also
 
