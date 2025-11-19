@@ -50,7 +50,7 @@ jobs:
       matrix:
         sys:
           - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: zsh }
+          - { os: macos-latest, shell: "zsh {0}" }
     defaults:
       run:
         shell: ${{ matrix.sys.shell }}
