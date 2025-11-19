@@ -39,6 +39,7 @@ For more installation options, see the [Installation](../README.md#installation)
 End-user documentation for using the CLI:
 
 - [Getting started](../README.md#quick-start)&mdash;installation and initial setup guide covering prerequisites, installation methods, authentication, and your first template.
+- [Quick reference](user-guide/quick-reference.md)&mdash;one-page command reference for the most common commands.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure, location, and how to manage multiple environments.
 

@@ -347,6 +347,9 @@ Follow the instructions when prompted to continue configuring the template.
 The prompts vary depending on which template you selected.
 When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
+> [!NOTE]
+> The CLI automatically tracks setup completion in a state file located at `.datarobot/state/info.yml` within your template directory. This allows the CLI to skip redundant setup steps on subsequent runs. For more details, see [State tracking](docs/user-guide/configuration.md#state-tracking).
+
 > [!TIP]
 > **What's next?** After the setup wizard completes, navigate to your new application directory with `cd [template-name]` and start your application with `dr start` or `dr run dev`.
 
@@ -397,6 +400,7 @@ Refer to the [Docs](/docs/) section of this repository for more details on using
 See the links below for specific details:
 
 - **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
+- **[Quick reference](docs/user-guide/quick-reference.md)**&mdash;one-page command reference for the most common commands.
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
 - **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
