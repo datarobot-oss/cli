@@ -6,13 +6,6 @@ This component enables you to build intelligent agent workflows that can handle 
 
 ## Getting Started
 
-To use this template, first install the base component [af-component-base](https://github.com/datarobot/af-component-base) if it hasn't already been installed. Run the following command to copy the template:
-
-```bash
-uvx copier copy https://github.com/datarobot/af-component-base .
-# uvx copier copy git@github.com:datarobot/af-component-base.git .
-```
-
 To add the agent component to your project, run the following command to copy the template:
 
 ```bash
