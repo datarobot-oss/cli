@@ -51,3 +51,7 @@ func init() {
 func GetAppNameFullVersionText() string {
 	return AppName + " version: " + FullVersion
 }
+
+func GetAppNameVersionText() string {
+	return AppName + " version: " + Version
+}

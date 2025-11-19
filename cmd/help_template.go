@@ -15,7 +15,7 @@ import (
 
 // Templates taken from (and combined and slightly altered): https://github.com/spf13/cobra/blob/main/command.go
 
-var CustomHelpTemplate = `🚀 ` + tui.BaseTextStyle.Render(internalVersion.AppName) + ` - Build AI Applications Faster (version ` + tui.InfoStyle.Render(internalVersion.Version) + `)
+var CustomHelpTemplate = tui.InfoStyle.Render(internalVersion.GetAppNameVersionText()) + `
 {{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
 
 {{end}}{{if or .Runnable .HasSubCommands}}` + tui.BaseTextStyle.Render("Usage:") + `{{if .Runnable}}
