@@ -99,5 +99,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return version.GetAppNameFullVersionText(), nil
+	return version.GetAppNameVersionText(), nil
 }
