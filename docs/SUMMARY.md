@@ -18,7 +18,7 @@ This document provides an overview of all available documentation for the DataRo
 
 ### For developers
 
-- [Building from a source](development/building.md): Compile and build the CLI
+- [Building from source](development/building.md): Compile and build the CLI
 - [Contributing guide](../CONTRIBUTING.md): Learn how to make contributions
 - [Code of conduct](../CODE_OF_CONDUCT.md): Review community guidelines
 
