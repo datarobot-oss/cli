@@ -16,9 +16,12 @@ dr self completion zsh > "${fpath[1]}/_dr"
 
 # Fish
 dr self completion fish > ~/.config/fish/completions/dr.fish
+
+# PowerShell
+dr self completion powershell | Out-File -Append $PROFILE; . $PROFILE
 ```
 
-After installation, reload your shell to activate completions.
+After installation, reload your shell to activate completions (PowerShell reloads automatically).
 
 > [!NOTE]
 > **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
