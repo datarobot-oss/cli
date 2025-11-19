@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
+	"github.com/gitsight/go-vcsurl"
 	"github.com/spf13/cobra"
 )
 
@@ -50,6 +51,16 @@ func RunE(_ *cobra.Command, args []string) error {
 	}
 
 	for _, repoURL := range args {
+		if component, ok := copier.ComponentDetailsByShortName[repoURL]; ok {
+			repoURL = component.RepoURL
+		}
+
+		_, repoErr := vcsurl.Parse(repoURL)
+		if repoErr != nil {
+			log.Errorf("Skipping component \"%s\": invalid url (%s)", repoURL, repoErr)
+			continue
+		}
+
 		fmt.Printf("Adding component: %s.\n", repoURL)
 
 		err := copier.ExecAdd(repoURL)
