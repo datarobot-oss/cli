@@ -400,7 +400,7 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		waitForConfirmation := !m.opts.AnswerYes
 
 		return stepCompleteMsg{
-			message:              "Proceed to template setup? (y/N)\n",
+			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),
 			waiting:              waitForConfirmation,
 			quickstartScriptPath: quickstartScript,
 		}
