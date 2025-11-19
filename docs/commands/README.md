@@ -14,9 +14,11 @@ These flags are available for all commands:
   -h, --help          Show help information
 ```
 
-> **⚠️ Warning:** The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
+> [!WARNING]
+> ⚠️ The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
 
-> **Note:** The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
+> [!NOTE]
+> The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
 
 ## Commands
 

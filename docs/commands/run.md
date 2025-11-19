@@ -1,10 +1,25 @@
-# dr run
+# `dr run` - Task Execution
 
 Execute tasks defined in application templates.
 
-## Synopsis
+## Quick start
 
-The `dr run` command executes tasks defined in Taskfiles within DataRobot application templates. It automatically discovers component Taskfiles and aggregates them into a unified task execution environment.
+For most users, running tasks is straightforward:
+
+```bash
+# List available tasks
+dr run --list
+
+# Run a task (e.g., start development server)
+dr run dev
+```
+
+The command automatically discovers tasks from your template's Taskfiles and executes them with your environment configuration.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Synopsis
 
 ```bash
 dr run [TASK_NAME...] [flags]
@@ -12,7 +27,9 @@ dr run [TASK_NAME...] [flags]
 
 ## Description
 
-The `run` command provides a convenient way to execute common application tasks such as starting development servers, running tests, building containers, and deploying applications. It works by discovering Taskfiles in your template directory and generating a consolidated task runner configuration.
+The `dr run` command executes tasks defined in Taskfiles within DataRobot application templates. It automatically discovers component Taskfiles and aggregates them into a unified task execution environment.
+
+The command provides a convenient way to execute common application tasks such as starting development servers, running tests, building containers, and deploying applications. It works by discovering Taskfiles in your template directory and generating a consolidated task runner configuration.
 
 **Key features:**
 
@@ -62,7 +79,8 @@ dr run --list
 ```
 
 Output:
-```
+
+```text
 Available tasks:
 * dev        Start development server
 * test       Run tests  
@@ -139,7 +157,7 @@ The `dr run` command discovers tasks in this order:
 
 ### Directory structure
 
-```
+```text
 my-template/
 ├── .env                          # Required: template marker
 ├── Taskfile.gen.yaml            # Generated: consolidated tasks
@@ -182,7 +200,7 @@ dr run frontend:dev
 
 If you run `dr run` outside a DataRobot template:
 
-```
+```text
 You don't seem to be in a DataRobot Template directory.
 This command requires a .env file to be present.
 ```
@@ -193,7 +211,7 @@ This command requires a .env file to be present.
 
 If a component Taskfile has its own `dotenv` directive:
 
-```
+```text
 Error: Cannot generate Taskfile because an existing Taskfile already has a dotenv directive.
 existing Taskfile already has dotenv directive: backend/Taskfile.yaml
 ```
@@ -204,7 +222,7 @@ existing Taskfile already has dotenv directive: backend/Taskfile.yaml
 
 If the `task` binary isn't installed:
 
-```
+```text
 "task" binary not found in PATH. Please install Task from https://taskfile.dev/installation/
 ```
 
@@ -214,7 +232,7 @@ If the `task` binary isn't installed:
 
 If no Taskfiles exist in component directories:
 
-```
+```text
 file does not exist
 Error: failed to list tasks: exit status 1
 ```
@@ -399,10 +417,12 @@ dr run build --silent
 **Problem:** `dr run --list` shows no tasks.
 
 **Causes:**
+
 - No Taskfiles in component directories.
 - Taskfiles at wrong depth (deeper than 2 levels).
 
 **Solution:**
+
 ```bash
 # Check for Taskfiles
 find . -name "Taskfile.y*ml" -maxdepth 3
@@ -417,10 +437,12 @@ find . -name "Taskfile.y*ml" -maxdepth 3
 **Problem:** Tasks can't access environment variables.
 
 **Causes:**
+
 - Missing `.env` file.
 - Variables not exported.
 
 **Solution:**
+
 ```bash
 # Verify .env exists
 ls -la .env
@@ -435,6 +457,7 @@ env | grep DATAROBOT
 **Problem:** Task runs but fails with errors.
 
 **Solution:**
+
 ```bash
 # Enable verbose output
 dr run task-name --verbose
@@ -451,6 +474,7 @@ cat component/Taskfile.yaml
 **Problem:** Tasks fail with permission errors.
 
 **Solution:**
+
 ```bash
 # Make scripts executable
 chmod +x scripts/*.sh

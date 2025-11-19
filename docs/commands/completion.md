@@ -2,6 +2,27 @@
 
 Generate shell completion scripts for command auto-completion.
 
+## Quick start
+
+For most users, setting up shell completion is a single command:
+
+```bash
+# Generate and install completion for your shell
+# Bash (Linux)
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
+
+# Zsh
+dr self completion zsh > "${fpath[1]}/_dr"
+
+# Fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
+```
+
+After installation, reload your shell to activate completions.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
 ## Synopsis
 
 ```bash
@@ -24,6 +45,7 @@ The `self completion` command generates shell completion scripts that enable aut
 ### Bash
 
 **Linux:**
+
 ```bash
 # Install system-wide
 dr self completion bash | sudo tee /etc/bash_completion.d/dr
@@ -33,6 +55,7 @@ source ~/.bashrc
 ```
 
 **macOS:**
+
 ```bash
 # Install via Homebrew's bash-completion
 brew install bash-completion@2
@@ -43,6 +66,7 @@ source ~/.bash_profile
 ```
 
 **Temporary (current session only):**
+
 ```bash
 source <(dr self completion bash)
 ```
@@ -76,6 +100,7 @@ source ~/.zshrc
 ```
 
 **Temporary (current session only):**
+
 ```bash
 source <(dr self completion zsh)
 ```
@@ -91,6 +116,7 @@ source ~/.config/fish/config.fish
 ```
 
 **Temporary (current session only):**
+
 ```bash
 dr self completion fish | source
 ```
@@ -111,6 +137,7 @@ Add-Content $PROFILE ". C:\path\to\dr.ps1"
 ```
 
 **Temporary (current session only):**
+
 ```powershell
 dr self completion powershell | Out-String | Invoke-Expression
 ```
@@ -213,6 +240,7 @@ build  dev  deploy  lint  test
 **Bash:**
 
 1. Verify bash-completion is installed:
+
    ```bash
    # macOS
    brew list bash-completion@2
@@ -222,16 +250,19 @@ build  dev  deploy  lint  test
    ```
 
 2. Check if completion script exists:
+
    ```bash
    ls -l /etc/bash_completion.d/dr
    ```
 
 3. Ensure .bashrc sources completions:
+
    ```bash
    grep bash_completion ~/.bashrc
    ```
 
 4. Reload shell:
+
    ```bash
    source ~/.bashrc
    ```
@@ -239,22 +270,26 @@ build  dev  deploy  lint  test
 **Zsh:**
 
 1. Verify compinit is called:
+
    ```bash
    grep compinit ~/.zshrc
    ```
 
 2. Check fpath includes completion directory:
+
    ```bash
    echo $fpath
    ```
 
 3. Clear completion cache:
+
    ```bash
    rm -f ~/.zcompdump*
    compinit
    ```
 
 4. Reload shell:
+
    ```bash
    exec zsh
    ```
@@ -262,16 +297,19 @@ build  dev  deploy  lint  test
 **Fish:**
 
 1. Check completion file:
+
    ```bash
    ls -l ~/.config/fish/completions/dr.fish
    ```
 
 2. Verify Fish recognizes it:
+
    ```bash
    complete -C dr
    ```
 
 3. Reload Fish:
+
    ```bash
    source ~/.config/fish/config.fish
    ```
@@ -279,21 +317,25 @@ build  dev  deploy  lint  test
 **PowerShell:**
 
 1. Check execution policy:
+
    ```powershell
    Get-ExecutionPolicy
    ```
 
    If restricted:
+
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
 
 2. Verify profile loads completion:
+
    ```powershell
    cat $PROFILE
    ```
 
 3. Reload profile:
+
    ```powershell
    . $PROFILE
    ```
