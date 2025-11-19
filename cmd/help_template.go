@@ -9,41 +9,78 @@
 package cmd
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 )
 
+func getHelpHeader() string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDark))
+
+	sloganStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).
+		Italic(true)
+
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark))
+
+	title := titleStyle.Render("🚀 " + internalVersion.GetAppNameVersionText())
+	separator := separatorStyle.Render("────────────────────────────────────────────")
+	slogan := sloganStyle.Render("    ⚡ Build AI Applications Faster")
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, separator, slogan, "")
+}
+
+func getSectionHeader(title string) string {
+	style := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark))
+
+	return style.Render(title)
+}
+
+func getCommandColor() string {
+	return "\033[1m" + tui.SetAnsiForegroundColor(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark))
+}
+
+func resetCommandStyle() string {
+	return tui.ResetForegroundColor() + "\033[0m"
+}
+
 // Templates taken from (and combined and slightly altered): https://github.com/spf13/cobra/blob/main/command.go
 
-var CustomHelpTemplate = tui.InfoStyle.Render(internalVersion.GetAppNameVersionText()) + `
-{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
+var CustomHelpTemplate = getHelpHeader() + `
+{{with .Long}}{{. | trimTrailingWhitespaces}}
 
-{{end}}{{if or .Runnable .HasSubCommands}}` + tui.BaseTextStyle.Render("Usage:") + `{{if .Runnable}}
+{{end}}{{if or .Runnable .HasSubCommands}}` + getSectionHeader("Usage:") + `{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
 
-` + tui.BaseTextStyle.Render("Aliases:") + `
+` + getSectionHeader("Aliases:") + `
   {{.NameAndAliases}}{{end}}{{if .HasExample}}
 
-` + tui.BaseTextStyle.Render("Examples:") + `
+` + getSectionHeader("Examples:") + `
 {{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
 
-` + tui.BaseTextStyle.Render("Available Commands:") + `{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+` + getSectionHeader("Available Commands:") + `{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
 
-{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  ` + tui.SetAnsiForegroundColor(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+` + getSectionHeader("{{.Title}}") + `{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
-` + tui.BaseTextStyle.Render("Additional Commands:") + `{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  ` + tui.SetAnsiForegroundColor(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)) + `{{rpad .Name .NamePadding }}` + tui.ResetForegroundColor() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+` + getSectionHeader("Additional Commands:") + `{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  ` + getCommandColor() + `{{rpad .Name .NamePadding }}` + resetCommandStyle() + ` {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
-` + tui.BaseTextStyle.Render("Flags:") + `
+` + getSectionHeader("Flags:") + `
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
-` + tui.BaseTextStyle.Render("Global Flags:") + `
+` + getSectionHeader("Global Flags:") + `
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
-` + tui.BaseTextStyle.Render("Additional help topics:") + `{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+` + getSectionHeader("Additional help topics:") + `{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{end}}

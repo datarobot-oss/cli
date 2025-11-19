@@ -36,7 +36,7 @@ var configFilePath string
 var RootCmd = &cobra.Command{
 	Use:     internalVersion.CliName,
 	Version: internalVersion.Version,
-	Short:   "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
+	Short:   "Build AI Applications Faster",
 	Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
