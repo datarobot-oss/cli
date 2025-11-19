@@ -29,7 +29,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/datarobot/cli)](https://goreportcard.com/report/github.com/datarobot/cli)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.txt)
 
-The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot custom applications. It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities.
+The DataRobot CLI (`dr`) is a command-line interface for managing DataRobot custom applications.
+It provides an interactive experience for cloning, configuring, and deploying DataRobot application templates with built-in authentication, environment configuration, and task execution capabilities.
+
 If you're new to DataRobot, visit the [DataRobot documentation](https://docs.datarobot.com/) to learn more about the platform.
 
 ## Features
@@ -40,7 +42,6 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
 - 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
-- 🎨 **Beautiful TUI**&mdash;terminal UI built with Bubble Tea for an enhanced user experience.
 
 ## Table of contents
 
@@ -56,9 +57,10 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 
 Before you begin, ensure you have:
 
-- **DataRobot account**&mdash;access to a DataRobot instance (cloud or self-managed). If you don't have an account, sign up at [DataRobot](https://www.datarobot.com/) or contact your organization's DataRobot administrator. You'll need your DataRobot instance URL (e.g., `https://app.datarobot.com`). See [DataRobot's API keys and tools page](https://docs.datarobot.com/en/docs/platform/acct-settings/api-key-mgmt.html) for help locating your endpoint.
-- **Git**&mdash;for cloning templates (version 2.0+). Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed. Verify installation: `git --version`
-- **Terminal**&mdash;command-line interface access.
+- **DataRobot account**&mdash;Access to a DataRobot instance (cloud or self-managed). If you don't have an account, sign up at [DataRobot](https://www.datarobot.com/) or contact your organization's DataRobot administrator.
+- **Git**&mdash;For cloning templates (version 2.0+). Install Git from [git-scm.com](https://git-scm.com/downloads) if not already installed. Verify installation: `git --version`
+- **Task**&mdash;For running tasks. Install Task from [taskfile.dev](https://taskfile.dev/installation/) if not already installed. Verify installation: `task --version`
+- **Terminal**&mdash;Command-line interface access.
   - **macOS/Linux:** Use Terminal, iTerm2, or your preferred terminal emulator.
   - **Windows:** Use PowerShell, Command Prompt, or Windows Terminal.
 
@@ -286,6 +288,7 @@ dr templates list
 
 This command displays a list of available templates from your DataRobot instance.
 
+> [!TIP]
 > **What's next?** Now that you're authenticated, you can:
 >
 > - Browse available templates: `dr templates list`
@@ -331,6 +334,7 @@ cd TEMPLATE_NAME
 dr dotenv setup
 ```
 
+> [!TIP]
 > **What's next?** After configuring your template:
 >
 > - Start your application: `dr start` or `dr run dev`
@@ -343,6 +347,7 @@ Follow the instructions when prompted to continue configuring the template.
 The prompts vary depending on which template you selected.
 When all steps are finished, press `Enter` to exit the wizard and proceed to the next section.
 
+> [!TIP]
 > **What's next?** After the setup wizard completes, navigate to your new application directory with `cd [template-name]` and start your application with `dr start` or `dr run dev`.
 
 ### Run tasks
@@ -382,6 +387,7 @@ dr run build
 dr run test
 ```
 
+> [!TIP]
 > **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
 
 ## Next steps

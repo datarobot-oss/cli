@@ -3,7 +3,7 @@
 The DataRobot CLI stores your authentication credentials and preferences in configuration files. This guide explains how configuration files work, where they're stored, and how to manage them.
 
 > [!NOTE]
-> **New to the CLI?** If you're setting up the CLI for the first time, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../../README.md#quick-start) for initial setup.
+> **First time?** If you're new to the CLI, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../../README.md#quick-start) for initial setup.
 
 ## Configuration location
 
@@ -144,7 +144,8 @@ chmod 700 ~/.config/datarobot/
 
 ### Don't commit credentials
 
-Add to `.gitignore`:
+> [!WARNING]
+> Never commit configuration files containing credentials. To ensure this, add them to `.gitignore`:
 
 ```gitignore
 # DataRobot credentials
@@ -498,9 +499,9 @@ State files are small and do not require manual management under normal circumst
 ## See also
 
 - [Quick start](../../README.md#quick-start)&mdash;initial setup and first-time configuration
-- [Authentication](authentication.md)&mdash;managing credentials and authentication flow
 - [auth command](../commands/auth.md)&mdash;authentication commands and troubleshooting
 
+> [!TIP]
 > **What's next?** After understanding configuration:
 >
 > - Set up authentication: `dr auth login` (see [auth command](../commands/auth.md))

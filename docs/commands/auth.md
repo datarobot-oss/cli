@@ -98,6 +98,7 @@ $ dr auth logout
 - Keeps DataRobot URL configuration
 - Next API call will require re-authentication
 
+> [!TIP]
 > **What's next?** After logging out, you can:
 >
 > - Log in again with `dr auth login` to re-authenticate
@@ -380,11 +381,12 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 
 ### Don't share credentials
 
-Never commit or share:
-
-- `~/.config/datarobot/drconfig.yaml`
-- API keys
-- OAuth tokens
+> [!WARNING]
+> Never commit or share:
+>
+> - `~/.config/datarobot/drconfig.yaml`
+> - API keys
+> - OAuth tokens
 
 ### Use per-environment authentication
 
@@ -539,7 +541,7 @@ export DATAROBOT_CA_CERT=/path/to/ca-bundle.crt
 dr auth login
 
 # Or configure in the config file
-# See [Configuration Files](../user-guide/configuration.md) for details
+# See [Configuration files](../user-guide/configuration.md) for details
 ```
 
 > [!WARNING]
@@ -551,6 +553,7 @@ dr auth login
 - [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
 - [Templates](../template-system/) - Template management commands
 
+> [!TIP]
 > **What's next?** After setting up authentication:
 >
 > - Browse available templates: `dr templates list`

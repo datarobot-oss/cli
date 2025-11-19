@@ -241,7 +241,7 @@ If a quickstart script fails, the error is displayed and the command exits. Chec
 
 ## See also
 
-- [`dr templates setup`](templates.md#setup)&mdash;interactive template setup wizard.
+- [Template system](../template-system/README.md)&mdash;understanding templates and the setup wizard.
 - [`dr run`](run.md)&mdash;execute specific application tasks.
 - [`dr dotenv`](dotenv.md)&mdash;manage environment configuration.
 - [Template Structure](../template-system/structure.md)&mdash;understanding template organization.

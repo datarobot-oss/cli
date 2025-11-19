@@ -122,7 +122,8 @@ The update process will download and install the latest version while preserving
 dr self update
 ```
 
-**Note:** This command requires an active internet connection and appropriate permissions to install software on your system.
+> [!NOTE]
+> This command requires an active internet connection and appropriate permissions to install software on your system.
 
 ### `version`
 

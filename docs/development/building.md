@@ -607,6 +607,5 @@ git push --tags
 ## See also
 
 - [Contributing Guide](../../CONTRIBUTING.md)
-- [Architecture Details](architecture.md)
-- [Testing Guide](testing.md)
-- [Release Process](release.md)
+- [Project structure](structure.md)&mdash;code organization and design
+- [Release process](releasing.md)&mdash;how releases are created and published
