@@ -63,4 +63,12 @@ send -- "\r\n"
 expect "Environment Variables Menu"
 send -- "\r\n"
 
+# Component selection screen - press space to select first component, then enter
+expect "Available Components"
+sleep 1
+send -- " "
+
+sleep 1
+send -- "\r\n"
+
 expect eof

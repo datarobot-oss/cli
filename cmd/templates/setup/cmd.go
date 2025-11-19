@@ -14,7 +14,6 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -58,19 +57,20 @@ func RunTea(ctx context.Context, fromStartCommand bool) error {
 		tea.WithContext(ctx),
 	)
 
-	finalModel, err := p.Run()
-	if err != nil {
-		return err
-	}
+	_, err := p.Run()
+	// TODO: Re-enable after further testing of component configure
+	// if err != nil {
+	// 	return err
+	// }
 
-	// Check if we need to launch template setup after quitting
-	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := setupModel.Model.(Model); ok {
-			if innerModel.dotenvSetupCompleted {
-				return component.RunE(component.AddCmd, nil)
-			}
-		}
-	}
+	// // Check if we need to launch template setup after quitting
+	// if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
+	// 	if innerModel, ok := setupModel.Model.(Model); ok {
+	// 		if innerModel.dotenvSetupCompleted {
+	// 			return component.RunE(component.AddCmd, nil)
+	// 		}
+	// 	}
+	// }
 
 	return err
 }

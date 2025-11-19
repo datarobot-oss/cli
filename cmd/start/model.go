@@ -9,7 +9,6 @@
 package start
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,6 +43,7 @@ type Model struct {
 	stepCompleteMessage  string // Optional message from the completed step
 	quickstartScriptPath string // Path to the quickstart script to execute
 	waitingToExecute     bool   // Whether to wait for user input before proceeding
+	needTemplateSetup    bool   // Whether we need to run template setup after quitting
 }
 
 type stepCompleteMsg struct {
@@ -52,6 +52,7 @@ type stepCompleteMsg struct {
 	done                 bool   // Whether the quickstart process is complete
 	quickstartScriptPath string // Path to quickstart script found (if any)
 	executeScript        bool   // Whether to execute the script immediately
+	needTemplateSetup    bool   // Whether we need to run template setup
 }
 
 type scriptCompleteMsg struct{}
@@ -62,8 +63,8 @@ type stepErrorMsg struct {
 
 // err messages used in the start command.
 const (
-	errNotInRepo          = "Not inside a DataRobot repository. Run `dr templates setup` to create one or navigate to an existing repository"
 	errScriptSearchFailed = "Failed to search for quickstart script: %w"
+	preExecutionDelay     = 200 * time.Millisecond // Brief delay before executing scripts to avoid glitchy screen resets
 )
 
 var (
@@ -78,8 +79,8 @@ func NewStartModel(opts Options) Model {
 			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			// TODO Implement validateEnvironment
 			// {description: "Validating environment...", fn: validateEnvironment},
-			{description: "Locating quickstart script...", fn: findQuickstart},
-			{description: "Executing quickstart script...", fn: executeQuickstart},
+			{description: "Checking repository setup...", fn: checkRepository},
+			{description: "Finding and executing start command...", fn: findAndExecuteStart},
 		},
 		opts:                 opts,
 		current:              0,
@@ -89,6 +90,7 @@ func NewStartModel(opts Options) Model {
 		stepCompleteMessage:  "",
 		quickstartScriptPath: "",
 		waitingToExecute:     false,
+		needTemplateSetup:    false,
 	}
 }
 
@@ -127,6 +129,23 @@ func (m Model) currentStep() step {
 }
 
 func (m Model) execQuickstartScript() tea.Cmd {
+	// Special case: if the path is "task-start", run 'task start' directly
+	if m.quickstartScriptPath == "task-start" {
+		// Run 'task start' - use the task binary directly
+		taskPath, err := exec.LookPath("task")
+		if err != nil {
+			// Fallback to just "task" and let the system find it
+			taskPath = "task"
+		}
+
+		cmd := exec.Command(taskPath, "start")
+
+		return tea.ExecProcess(cmd, func(_ error) tea.Msg {
+			return scriptCompleteMsg{}
+		})
+	}
+
+	// Regular quickstart script execution
 	cmd := exec.Command(m.quickstartScriptPath)
 
 	return tea.ExecProcess(cmd, func(_ error) tea.Msg {
@@ -210,6 +229,11 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 		m.quickstartScriptPath = msg.quickstartScriptPath
 	}
 
+	// Store whether we need template setup
+	if msg.needTemplateSetup {
+		m.needTemplateSetup = true
+	}
+
 	// If this step requires executing a script, do it now
 	if msg.executeScript && m.quickstartScriptPath != "" {
 		return m, m.execQuickstartScript()
@@ -224,8 +248,6 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	// If this step marks completion, we're done
 	if msg.done {
 		m.done = true
-		// Update state and quit
-		_ = state.UpdateAfterSuccessfulRun()
 
 		return m, tea.Quit
 	}
@@ -323,60 +345,100 @@ func checkPrerequisites(_ *Model) tea.Msg {
 // 	return stepCompleteMsg{}
 // }
 
-func findQuickstart(m *Model) tea.Msg {
-	// If '--yes' flag is set, don't wait for confirmation
-	waitForConfirmation := !m.opts.AnswerYes
-
-	// If we are in a DataRobot repository, look for a quickstart script in the standard location
-	// of .datarobot/cli/bin. If we find it, store its path and execute it after user confirmation.
-	// If we do not find it, invoke `dr templates setup` to help the user configure their template.
-	// If the user has set the '--yes' flag, skip confirmation and execute immediately.
-	quickstartScript, err := findQuickstartScript()
-	// if the error is due to not being in a repo, we can treat it as no script found
-	if err != nil {
-		if err.Error() != errNotInRepo {
-			return stepErrorMsg{err: err}
+func checkRepository(m *Model) tea.Msg {
+	// Check if we're in a DataRobot repository
+	// If not, we need to run templates setup
+	if !repo.IsInRepo() {
+		// Not in a repo, signal that we need to run templates setup and quit
+		return stepCompleteMsg{
+			message:           "Not in a DataRobot repository. Launching template setup...\n",
+			done:              true,
+			needTemplateSetup: true,
 		}
-
-		quickstartScript = "" // Ensure no script if not in repo
 	}
 
-	// If we don't find a script, we'll proceed to run templates setup in the next step
-	if quickstartScript == "" {
+	// We're in a repo, continue to next step
+	return stepCompleteMsg{}
+}
+
+func findAndExecuteStart(m *Model) tea.Msg {
+	// Try to find and execute either 'dr task run start' or a quickstart script
+	// Prefer 'dr task run start' if available
+
+	// First, check if 'task start' exists
+	hasTask, err := hasTaskStart()
+	if err != nil {
+		// Explicitly ignore the error - just continue to check for quickstart script
+		// This could happen if task isn't installed or other transient issues
+		_ = err
+	}
+
+	if hasTask {
+		// Add a brief delay before executing to avoid glitchy screen resets
+		time.Sleep(preExecutionDelay)
+
+		// Run 'task start' as an external command
+		return stepCompleteMsg{
+			message:              "Running 'task start'...\n",
+			quickstartScriptPath: "task-start", // Special marker for task start
+			executeScript:        true,
+		}
+	}
+
+	// If no 'task start', look for quickstart script
+	quickstartScript, err := findQuickstartScript()
+	if err != nil {
+		return stepErrorMsg{err: err}
+	}
+
+	if quickstartScript != "" {
+		// Add a brief delay before executing to avoid glitchy screen resets
+		time.Sleep(preExecutionDelay)
+
+		// Found a quickstart script
+		// If '--yes' flag is set, don't wait for confirmation
+		waitForConfirmation := !m.opts.AnswerYes
+
 		return stepCompleteMsg{
 			message:              "Proceed to template setup? (y/N)\n",
 			waiting:              waitForConfirmation,
-			quickstartScriptPath: "",
+			quickstartScriptPath: quickstartScript,
 		}
 	}
 
+	// No start command found
 	return stepCompleteMsg{
-		message:              fmt.Sprintf("Quickstart found at: %s. Will proceed with execution...\n", quickstartScript),
-		waiting:              waitForConfirmation,
-		quickstartScriptPath: quickstartScript,
+		message: "No start command or quickstart script found.\n",
+		done:    true,
 	}
 }
 
-func executeQuickstart(m *Model) tea.Msg {
-	// Execute the quickstart script that was found and stored in the model
-	// If no script path is set, then we should invoke `dr templates setup` after user confirmation
-	if m.quickstartScriptPath == "" {
-		// We need to quit this program first, then launch setup
-		// Store that we need to launch setup and signal completion
-		return stepCompleteMsg{message: "Launching template setup...\n", done: true}
+func hasTaskStart() (bool, error) {
+	// Check if 'task start' is available by running 'task --list'
+	// and checking if 'start' is in the output
+	taskPath, err := exec.LookPath("task")
+	if err != nil {
+		return false, err
 	}
 
-	// Signal that we should execute the script
-	// The actual execution happens in handleStepComplete to ensure proper tea.ExecProcess handling
-	return stepCompleteMsg{executeScript: true}
+	cmd := exec.Command(taskPath, "--list")
+
+	output, err := cmd.Output()
+	if err != nil {
+		// If the command fails, it could be because we're not in a template directory
+		// or task isn't configured - this is not an error, just means no task available
+		return false, nil
+	}
+
+	// Check if "start" appears in the output
+	// Look for either "* start" (list format) or "start:" (detailed format)
+	outputStr := string(output)
+	hasStart := strings.Contains(outputStr, "* start") || strings.Contains(outputStr, "start:")
+
+	return hasStart, nil
 }
 
 func findQuickstartScript() (string, error) {
-	// Are we in a DataRobot repository?
-	if !repo.IsInRepo() {
-		return "", errors.New(errNotInRepo)
-	}
-
 	// Look for any executable file named quickstart* in the configured path relative to CWD
 	executablePath := repo.QuickstartScriptPath
 

@@ -21,7 +21,7 @@ tasks:
   start:
     desc: "💻 Prepare local development environment"
     cmds:
-      - dr dotenv setup
+      - dr dotenv setup --if-needed
       - task: install
       {{- range .StartComponents }}
       - task: {{ . }}:start

@@ -13,9 +13,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/tui"
@@ -53,6 +55,50 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
 )
 
+type detailKeyMap struct {
+	Up       key.Binding
+	Down     key.Binding
+	PageUp   key.Binding
+	PageDown key.Binding
+	Back     key.Binding
+}
+
+func (k detailKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.PageUp, k.PageDown, k.Back}
+}
+
+func (k detailKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.PageUp, k.PageDown},
+		{k.Back},
+	}
+}
+
+func newDetailKeys() detailKeyMap {
+	return detailKeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "down"),
+		),
+		PageUp: key.NewBinding(
+			key.WithKeys("pgup"),
+			key.WithHelp("pgup", "page up"),
+		),
+		PageDown: key.NewBinding(
+			key.WithKeys("pgdown"),
+			key.WithHelp("pgdn", "page down"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys("q", "esc"),
+			key.WithHelp("q/esc", "back"),
+		),
+	}
+}
+
 type Model struct {
 	err                   error
 	infoMessage           string
@@ -60,6 +106,10 @@ type Model struct {
 	initiator             initiators
 	list                  list.Model // This list holds the components
 	initialUpdateFileName string
+	viewport              viewport.Model
+	help                  help.Model
+	keys                  detailKeyMap
+	ready                 bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -112,17 +162,29 @@ func (m Model) getSelectedComponents() []ListItem {
 }
 
 func NewComponentModel(initiator initiators, initialScreen screens) Model {
+	h := help.New()
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
+
 	return Model{
 		screen:    initialScreen,
 		initiator: initiator,
+		help:      h,
+		keys:      newDetailKeys(),
 	}
 }
 
 func NewUpdateComponentModel(updateFileName string) Model {
+	h := help.New()
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
+
 	return Model{
 		screen: listScreen,
 		// Only value here we're actually setting from the function args
 		initialUpdateFileName: updateFileName,
+		help:                  h,
+		keys:                  newDetailKeys(),
 	}
 }
 
@@ -197,6 +259,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 	case componentInfoRequestMsg:
 		m.screen = componentDetailScreen
+		m.ready = false
+
+		return m, tea.WindowSize()
 	case updateCompleteMsg:
 		return m.unselectComponent(msg.item)
 	}
@@ -213,6 +278,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 
 		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			// Only update list size if it's been initialized
+			if len(m.list.Items()) > 0 {
+				newListModel, cmd := m.list.Update(msg)
+				m.list = newListModel
+
+				return m, cmd
+			}
+
+			return m, nil
 		case tea.KeyMsg:
 			switch msg.String() {
 			case tea.KeySpace.String():
@@ -274,12 +349,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		}
 	case componentDetailScreen:
 		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			headerHeight := 4
+			footerHeight := 4 // help line + status bar + spacing
+			verticalMarginHeight := headerHeight + footerHeight
+
+			if !m.ready {
+				m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+				m.viewport.YPosition = headerHeight
+				m.help.Width = msg.Width
+				m.ready = true
+
+				// Set the content for the viewport
+				m.viewport.SetContent(m.getComponentDetailContent())
+			} else {
+				m.viewport.Width = msg.Width
+				m.viewport.Height = msg.Height - verticalMarginHeight
+				m.help.Width = msg.Width
+			}
 		case tea.KeyMsg:
 			switch msg.String() {
-			default:
+			case "q", tea.KeyEscape.String():
 				m.screen = listScreen
+				m.ready = false
+
+				return m, nil
+			case tea.KeyPgUp.String():
+				m.viewport.PageUp()
+
+				return m, nil
+			case tea.KeyPgDown.String():
+				m.viewport.PageDown()
+
+				return m, nil
+			default:
+				// Pass other keys to viewport for scrolling
+				var cmd tea.Cmd
+
+				m.viewport, cmd = m.viewport.Update(msg)
+
+				return m, cmd
 			}
 		}
+
+		// Update viewport for mouse wheel scrolling
+		var cmd tea.Cmd
+
+		m.viewport, cmd = m.viewport.Update(msg)
+
+		return m, cmd
 	}
 
 	return m, nil
@@ -337,33 +455,6 @@ func (m Model) viewListScreen() string {
 
 	sb.WriteString("\t")
 	sb.WriteString(tui.BaseTextStyle.Render("Press esc to exit."))
-
-	return sb.String()
-}
-
-func (m Model) viewComponentDetailScreen() string {
-	var sb strings.Builder
-
-	sb.WriteString(tui.WelcomeStyle.Render("Component Details"))
-	sb.WriteString("\n\n")
-	// TODO: [CFX-3996] What to display here
-	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
-	selectedComponent := item.component
-	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.SrcPath]
-
-	sb.WriteString("Component file name: " + selectedComponent.FileName)
-	sb.WriteString("\n\n")
-
-	style := "light"
-	if lipgloss.HasDarkBackground() {
-		style = "dark"
-	}
-
-	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, style)
-	sb.WriteString(readMe)
-	sb.WriteString("\n\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press any key to return."))
-	sb.WriteString("\n\n")
 
 	return sb.String()
 }
