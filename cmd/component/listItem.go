@@ -9,6 +9,7 @@
 package component
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/datarobot/cli/internal/copier"
@@ -20,7 +21,12 @@ type ListItem struct {
 	component copier.Answers
 }
 
-func (i ListItem) Title() string { return i.component.FileName }
+func (i ListItem) Title() string {
+	return fmt.Sprintf("%s (%s)",
+		i.component.ComponentDetails.Name,
+		i.component.FileName,
+	)
+}
 
 // TODO: Decide if we return something for description - don't think needed - it's really just us adhering to interface
 func (i ListItem) Description() string { return "" }
