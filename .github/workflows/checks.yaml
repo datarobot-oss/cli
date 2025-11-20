@@ -170,6 +170,7 @@ jobs:
 
   build:
     needs: detect-changes
+    name: Build Binaries
     if: needs.detect-changes.outputs.go_code == 'true'
     uses: ./.github/workflows/.build-matrix.yaml
     with:

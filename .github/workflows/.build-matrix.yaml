@@ -30,7 +30,7 @@ jobs:
       matrix:
         os: ${{ fromJSON(inputs.os-matrix) }}
     runs-on: ${{ matrix.os }}
-    name: Build Binary (${{ matrix.os }})
+    name: (${{ matrix.os }})
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
