@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -82,6 +83,10 @@ func UpdateCmd() *cobra.Command {
 }
 
 func runUpdate(yamlFile string) error {
+	// Clean path like this `./.datarobot/answers/cli/../react-frontend_web.yml`
+	// to .datarobot/answers/react-frontend_web.yml
+	yamlFile = filepath.Clean(yamlFile)
+
 	if !isYamlFile(yamlFile) {
 		return errors.New("The supplied file is not a YAML file.")
 	}
@@ -91,15 +96,11 @@ func runUpdate(yamlFile string) error {
 		return err
 	}
 
-	answerFileNames := make([]string, 0, len(answers))
+	answersContainFile := slices.ContainsFunc(answers, func(answer copier.Answers) bool {
+		return answer.FileName == yamlFile
+	})
 
-	for _, answer := range answers {
-		answerFileNames = append(answerFileNames, answer.FileName)
-	}
-
-	// TODO: Account for consolidating on string representation
-	// This check fails if I pass `./.datarobot/answers/react-frontend_web.yml` - which has the prefix of `./`
-	if !slices.Contains(answerFileNames, yamlFile) {
+	if !answersContainFile {
 		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
