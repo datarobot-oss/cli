@@ -711,7 +711,7 @@ prompts:
 
 ```
 
-## Testing Prompts
+## Testing prompts
 
 Test your prompt configuration:
 

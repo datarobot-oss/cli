@@ -1,4 +1,4 @@
-# `dr self` - CLI Utility Commands
+# `dr self` - CLI utility commands
 
 Commands for managing and configuring the DataRobot CLI itself.
 
@@ -122,7 +122,8 @@ The update process will download and install the latest version while preserving
 dr self update
 ```
 
-**Note:** This command requires an active internet connection and appropriate permissions to install software on your system.
+> [!NOTE]
+> This command requires an active internet connection and appropriate permissions to install software on your system.
 
 ### `version`
 
@@ -146,9 +147,9 @@ dr self version
 dr self version --format json
 ```
 
-## Global flags
+## Global options
 
-All `dr` global flags are available:
+All `dr` global options are available:
 
 - `-v, --verbose`&mdash;enable verbose output
 - `--debug`&mdash;enable debug output

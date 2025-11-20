@@ -1,6 +1,26 @@
-# dr task
+# `dr task`
 
 Manage Taskfile composition and task execution for DataRobot templates.
+
+## Quick start
+
+For most users, working with Taskfiles is straightforward:
+
+```bash
+# Compose a unified Taskfile from components
+dr task compose
+
+# List available tasks
+dr task list
+
+# Execute tasks
+dr task run dev
+```
+
+The command automatically discovers Taskfiles in your template components and aggregates them into a unified configuration.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 

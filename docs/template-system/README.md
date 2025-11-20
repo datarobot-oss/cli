@@ -229,12 +229,13 @@ src/
 
 ### Security first
 
-Follow the security guidelines below.
-
-- Never commit `.env` files.
-- Use strong secrets.
-- Restrict file permissions.
-- Mask sensitive values.
+> [!WARNING]
+> Follow these security guidelines:
+>
+> - Never commit `.env` files.
+> - Use strong secrets.
+> - Restrict file permissions.
+> - Mask sensitive values.
 
 ## Examples
 
@@ -247,7 +248,6 @@ Browse the [DataRobot template gallery](https://github.com/datarobot/templates) 
 
 ## See also
 
-- [Get Started](../user-guide/getting-started.md)
-- [Work with Templates](../user-guide/templates.md)
-- [Command Reference: templates](../commands/templates.md)
-- [Command Reference: dotenv](../commands/dotenv.md)
+- [Quick start](../../README.md#quick-start)&mdash;installation and initial setup
+- [User guide](../user-guide/README.md)&mdash;complete usage guide
+- [Command reference: dotenv](../commands/dotenv.md)&mdash;environment variable management

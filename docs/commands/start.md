@@ -1,4 +1,4 @@
-# `dr start` - Application Quickstart
+# `dr start` - Application quickstart
 
 Run the application quickstart process for the current template.
 
@@ -41,18 +41,18 @@ This command is designed to work intelligently with your template's structure. T
 - `dr start`
 - `dr quickstart`
 
-## Flags
+## Options
 
-```text
+```bash
   -y, --yes     Skip confirmation prompts and execute immediately
   -h, --help    Show help information
 ```
 
-### Global flags
+### Global options
 
-All [global flags](README.md#global-flags) are also available.
+All [global options](README.md#global-options) are also available.
 
-## Quickstart Scripts
+## Quickstart scripts
 
 ### Location
 
@@ -161,7 +161,7 @@ The `dr start` command automatically tracks when it runs successfully by updatin
 - Timestamp of when the command last started (ISO 8601 format)
 - CLI version used
 
-This state information is stored in `.datarobot/state/info.yml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
+This state information is stored in `.datarobot/cli/state.yaml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
 
 The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
 
@@ -241,7 +241,7 @@ If a quickstart script fails, the error is displayed and the command exits. Chec
 
 ## See also
 
-- [`dr templates setup`](templates.md#setup)&mdash;interactive template setup wizard.
+- [Template system](../template-system/README.md)&mdash;understanding templates and the setup wizard.
 - [`dr run`](run.md)&mdash;execute specific application tasks.
 - [`dr dotenv`](dotenv.md)&mdash;manage environment configuration.
 - [Template Structure](../template-system/structure.md)&mdash;understanding template organization.

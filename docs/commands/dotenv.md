@@ -1,4 +1,4 @@
-# `dr dotenv` - Environment Variable Management
+# `dr dotenv` - Environment variable management
 
 Manage environment variables and `.env` files in DataRobot templates.
 
@@ -26,7 +26,7 @@ dr dotenv <command> [flags]
 
 The `dr dotenv` command provides tools for creating, editing, validating, and updating environment configuration files. It includes an interactive wizard for guided setup and a text editor for direct file manipulation.
 
-## Commands
+## Subcommands
 
 ### dr dotenv setup
 
@@ -53,8 +53,9 @@ dr dotenv setup
 
 **State tracking:**
 
-Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed. The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that
-`dr dotenv setup` will always prompt for configuration if run manually, regardless of state.
+Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed.
+
+The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that manually running `dr dotenv setup` always prompts for configuration, regardless of state.
 
 To force the setup wizard to run again (ignoring the state file), use the `--force-interactive` flag:
 
@@ -393,7 +394,9 @@ Priority order (highest to lowest):
 - Secret values are masked in the UI.
 - Variables containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets.
 - The `secret_string` prompt type enables secure input with masking.
-- `.env` files should never be committed (add to `.gitignore`).
+
+> [!WARNING]
+> `.env` files should never be committed. To ensure this, add it to `.gitignore`.
 
 ### Auto-generation
 

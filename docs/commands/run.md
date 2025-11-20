@@ -1,4 +1,4 @@
-# `dr run` - Task Execution
+# `dr run` - Task execution
 
 Execute tasks defined in application templates.
 
