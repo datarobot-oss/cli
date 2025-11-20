@@ -122,7 +122,10 @@ jobs:
 
       - name: Run Smoke Tests for Binary
         run: |
-          task smoke-test-windows
+          task smoke-test-windows DR_API_TOKEN="$DR_API_TOKEN"
+        env:
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   installs-smoke-test:
     strategy:
