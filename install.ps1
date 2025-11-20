@@ -302,7 +302,7 @@ function Show-PathInstructions {
     Write-Host "Run this command to add it (requires reopening terminal):"
     Write-Host ""
     Write-Host '  $path = [Environment]::GetEnvironmentVariable("Path", "User")' -ForegroundColor Blue
-    Write-Host "  `$newPath = `"`$path;$INSTALL_DIR`"" -ForegroundColor Blue
+    Write-Host ('  $newPath = "$path;' + $INSTALL_DIR + '"') -ForegroundColor Blue
     Write-Host '  [Environment]::SetEnvironmentVariable("Path", $newPath, "User")' -ForegroundColor Blue
     Write-Host ""
     Write-Host "Or use the full path: " -NoNewline

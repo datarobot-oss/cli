@@ -164,11 +164,10 @@ func TestGetInstallFunc(t *testing.T) {
 			force: false,
 		},
 		{
-			name:        "powershell not supported",
+			name:        "powershell install",
 			shell:       internalShell.PowerShell,
 			force:       false,
-			expectError: true,
-			errorText:   "PowerShell",
+			expectError: false,
 		},
 		{
 			name:        "invalid shell",
@@ -444,9 +443,10 @@ func TestGetUninstallPaths(t *testing.T) {
 			checkPath:     ".config/fish",
 		},
 		{
-			name:          "powershell empty",
+			name:          "powershell paths",
 			shell:         internalShell.PowerShell,
-			expectedCount: 0,
+			expectedCount: 1,
+			checkPath:     "PowerShell",
 		},
 	}
 
@@ -575,10 +575,9 @@ func TestPerformUninstall(t *testing.T) {
 			shell: internalShell.Fish,
 		},
 		{
-			name:        "powershell not supported",
+			name:        "powershell uninstall",
 			shell:       internalShell.PowerShell,
-			expectError: true,
-			errorText:   "PowerShell",
+			expectError: false,
 		},
 		{
 			name:        "invalid shell",
