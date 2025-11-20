@@ -139,12 +139,12 @@ tasks:
   smoke-test:
     desc: "Run smoke tests"
     cmds:
-      - ./smoke_test_scripts/run_smoke_test.sh {{.DR_API_TOKEN}}
+      - ./smoke_test_scripts/run_smoke_test.sh {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$DR_API_TOKEN{{end}}
 
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
     cmds:
-      - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{.DR_API_TOKEN}}
+      - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
 
   copyright:
     silent: true
