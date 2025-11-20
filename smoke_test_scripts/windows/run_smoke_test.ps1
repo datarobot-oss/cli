@@ -1,5 +1,8 @@
 # DataRobot smoke test script for Windows
 
+# Get DR_API_TOKEN from args
+$DR_API_TOKEN = $args[0]
+
 $ErrorActionPreference = "Stop"
 
 function Write-ErrorMsg {
@@ -42,13 +45,11 @@ function Test-URLAccessible {
     try {
         $response = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
         return $true
-    } catch {
+    }
+    catch {
         return $false
     }
 }
-
-# Get DR_API_TOKEN from args
-$DR_API_TOKEN = $args[0]
 
 try {
     Write-Host 'Running smoke tests for Windows...'
@@ -116,11 +117,13 @@ try {
         if ($completion_content -match "Register-ArgumentCompleter") {
             Write-SuccessMsg "Assertion passed: We have expected $completion_file file with Register-ArgumentCompleter."
             Remove-Item $completion_file -Force
-        } else {
+        }
+        else {
             Write-ErrorMsg "Assertion failed: We don't have expected $completion_file file with expected function."
             Get-Content $completion_file
         }
-    } else {
+    }
+    else {
         Write-ErrorMsg "Completion file was not created."
     }
     Write-End
@@ -144,7 +147,8 @@ try {
     if ($config_content -match "endpoint: `"${testing_url}/api/v2`"") {
         Write-SuccessMsg "Assertion passed: We have expected 'endpoint' auth URL value in config."
         Write-Host "Value: endpoint: `"${testing_url}/api/v2`""
-    } else {
+    }
+    else {
         Write-ErrorMsg "Assertion failed: We don't have expected 'endpoint' auth URL value."
         Write-Host "${env:DATAROBOT_CLI_CONFIG} contents:"
         Get-Content $env:DATAROBOT_CLI_CONFIG
@@ -161,7 +165,8 @@ try {
     # Test templates (if URL is accessible)
     if (-not $url_accessible) {
         Write-InfoMsg "URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
-    } else {
+    }
+    else {
         Write-Delimiter "Testing dr templates setup"
         $testing_session_secret_key = "TESTING_SESSION_SECRET_KEY"
         $template_directory = ".\talk-to-my-docs-agents"
@@ -175,8 +180,8 @@ try {
     }
 
     Write-SuccessMsg "Smoke tests for Windows completed successfully."
-
-} catch {
+}
+catch {
     Write-Host "❌ " -NoNewline -ForegroundColor Red
     Write-Host "Smoke tests for Windows failed: $_"
     exit 1
