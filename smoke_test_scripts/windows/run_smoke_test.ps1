@@ -47,10 +47,10 @@ function Test-URLAccessible {
     }
 }
 
-# Main smoke test flow
-function Smoke-Test {
-    param([string]$DR_API_TOKEN)
+# Get DR_API_TOKEN from args
+$DR_API_TOKEN = $args[0]
 
+try {
     Write-Host 'Running smoke tests for Windows...'
 
     # Validate DR_API_TOKEN is provided
@@ -175,14 +175,7 @@ function Smoke-Test {
     }
 
     Write-SuccessMsg "Smoke tests for Windows completed successfully."
-}
 
-# Run tests
-# Get DR_API_TOKEN from args
-$DR_API_TOKEN = $args[0]
-
-try {
-    Smoke-Test -DR_API_TOKEN $DR_API_TOKEN
 } catch {
     Write-Host "❌ " -NoNewline -ForegroundColor Red
     Write-Host "Smoke tests for Windows failed: $_"

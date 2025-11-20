@@ -144,7 +144,7 @@ tasks:
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
     cmds:
-      - powershell.exe -File ./smoke_test_scripts/windows/run_smoke_test.ps1
+      - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{.DR_API_TOKEN}}
 
   copyright:
     silent: true
