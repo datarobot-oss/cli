@@ -78,7 +78,7 @@ var (
 
 func UpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "update answers_file",
+		Use:     "update [answers_file]",
 		Short:   "Update installed component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
@@ -99,7 +99,7 @@ func runUpdate(yamlFile string) error {
 		return errors.New("The supplied file is not a YAML file.")
 	}
 
-	answers, err := copier.AnswersFromPath(".")
+	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err
 	}

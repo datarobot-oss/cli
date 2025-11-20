@@ -170,24 +170,19 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) loadComponents() tea.Cmd {
 	return func() tea.Msg {
-		answers, err := copier.AnswersFromPath(".")
-		if err != nil {
-			return errMsg{err}
-		}
-
-		components, err := copier.ComponentsFromAnswers(answers)
+		answers, err := copier.AnswersFromPath(".", false)
 		if err != nil {
 			return errMsg{err}
 		}
 
 		// If we've found zero components return error message that is handled by UI
-		if len(components) == 0 {
+		if len(answers) == 0 {
 			return errMsg{errors.New("No components were found.")}
 		}
 
-		items := make([]list.Item, 0, len(components))
+		items := make([]list.Item, 0, len(answers))
 
-		for i, c := range components {
+		for i, c := range answers {
 			items = append(items, ListItem{current: i == 0, component: c})
 		}
 

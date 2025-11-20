@@ -17,7 +17,7 @@ import (
 type ListItem struct {
 	current   bool
 	checked   bool
-	component copier.Component
+	component copier.Answers
 }
 
 func (i ListItem) Title() string { return i.component.FileName }

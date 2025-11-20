@@ -18,7 +18,7 @@ import (
 )
 
 func ListRunE(_ *cobra.Command, _ []string) error {
-	answers, err := copier.AnswersFromPath(".")
+	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err
 	}
