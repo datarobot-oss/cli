@@ -35,6 +35,7 @@ type (
 	}
 	updateCompleteMsg struct {
 		item ListItem
+		err  error
 	}
 )
 
@@ -102,6 +103,7 @@ type Model struct {
 	help        help.Model
 	keys        detailKeyMap
 	ready       bool
+	exitMessage string
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -120,14 +122,40 @@ func updateComponent(item ListItem) tea.Cmd {
 	debug := viper.GetBool("debug")
 	command := copier.Update(item.component.FileName, recopy, quiet, debug)
 
-	return tea.ExecProcess(command, func(_ error) tea.Msg {
-		return updateCompleteMsg{item}
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		return updateCompleteMsg{item, err}
 	})
 }
 
-func (m Model) unselectComponent(itemToUnselect ListItem) (Model, tea.Cmd) {
+func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea.Cmd) {
+	details := itemToUnselect.component.ComponentDetails
+
+	if err != nil {
+		m.exitMessage += fmt.Sprintf(
+			"Update of \"%s\" component finished with error: %s.",
+			details.Name, err,
+		)
+	} else {
+		m.exitMessage += fmt.Sprintf(
+			"Update of \"%s\" component finished successfully.",
+			details.Name,
+		)
+	}
+
+	count := 0
+
+	for _, item := range m.list.VisibleItems() {
+		if item.(ListItem).checked {
+			count += 1
+		}
+	}
+
+	if count <= 1 {
+		return m, tea.Quit
+	}
+
 	for i, item := range m.list.VisibleItems() {
-		if item.(ListItem).component == itemToUnselect.component {
+		if item.(ListItem).component.FileName == itemToUnselect.component.FileName {
 			newItem := item.(ListItem)
 			newItem.checked = false
 
@@ -216,7 +244,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 		return m, tea.WindowSize()
 	case updateCompleteMsg:
-		return m.unselectComponent(msg.item)
+		return m.unselectComponent(msg.item, msg.err)
 	}
 
 	switch m.screen {

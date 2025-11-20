@@ -64,8 +64,15 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	m := NewUpdateComponentModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		return err
+	}
+
+	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		if innerModel, ok := setupModel.Model.(Model); ok {
+			fmt.Println(innerModel.exitMessage)
+		}
 	}
 
 	return nil
