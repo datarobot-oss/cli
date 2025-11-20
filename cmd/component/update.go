@@ -71,6 +71,11 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+var (
+	recopy bool
+	quiet  bool
+)
+
 func UpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
@@ -78,6 +83,9 @@ func UpdateCmd() *cobra.Command {
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
+
+	cmd.Flags().BoolVarP(&recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
+	cmd.Flags().BoolVarP(&recopy, "quiet", "q", false, "Suppress status output.")
 
 	return cmd
 }
@@ -104,11 +112,9 @@ func runUpdate(yamlFile string) error {
 		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
-	quiet := false
 	debug := viper.GetBool("debug")
-	recopy := false // TODO: fix this
 
-	execErr := copier.ExecUpdate(yamlFile, quiet, debug, recopy)
+	execErr := copier.ExecUpdate(yamlFile, recopy, quiet, debug)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

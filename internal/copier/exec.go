@@ -34,7 +34,7 @@ func ExecAdd(repoURL string) error {
 	return cmdRun(Add(repoURL))
 }
 
-func Update(yamlFile string, quiet, debug, recopy bool) *exec.Cmd {
+func Update(yamlFile string, recopy, quiet, debug bool) *exec.Cmd {
 	copierCommand := "update"
 
 	if recopy {
@@ -58,10 +58,10 @@ func Update(yamlFile string, quiet, debug, recopy bool) *exec.Cmd {
 	return cmd
 }
 
-func ExecUpdate(yamlFile string, quiet, debug, recopy bool) error {
+func ExecUpdate(yamlFile string, recopy, quiet, debug bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	return cmdRun(Update(yamlFile, quiet, debug, recopy))
+	return cmdRun(Update(yamlFile, recopy, quiet, debug))
 }
