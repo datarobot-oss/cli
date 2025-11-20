@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 function Write-ErrorMsg {
     param([string]$Message)
-    Write-Host "❌ " -NoNewline -ForegroundColor Red
+    Write-Host "[ERROR] " -NoNewline -ForegroundColor Red
     Write-Host $Message
     Write-Host ""
     exit 1
@@ -15,13 +15,13 @@ function Write-ErrorMsg {
 
 function Write-SuccessMsg {
     param([string]$Message)
-    Write-Host "✅ " -NoNewline -ForegroundColor Green
+    Write-Host "[OK] " -NoNewline -ForegroundColor Green
     Write-Host $Message
 }
 
 function Write-InfoMsg {
     param([string]$Message)
-    Write-Host "ℹ️  " -NoNewline -ForegroundColor Cyan
+    Write-Host "[INFO] " -NoNewline -ForegroundColor Cyan
     Write-Host $Message
 }
 
