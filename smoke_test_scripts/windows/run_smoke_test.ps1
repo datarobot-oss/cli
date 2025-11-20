@@ -67,12 +67,12 @@ Write-InfoMsg "Checking URL accessibility: $testing_url"
 $url_accessible = Test-URLAccessible -Url $testing_url
 
 # Setup config directory and file
-$testing_dr_cli_config_dir = Join-Path (Get-Location) ".config" "datarobot"
+$testing_dr_cli_config_dir = Join-Path (Join-Path (Get-Location) ".config") "datarobot"
 $null = New-Item -ItemType Directory -Force -Path $testing_dr_cli_config_dir
 $env:DATAROBOT_CLI_CONFIG = Join-Path $testing_dr_cli_config_dir "drconfig.yaml"
 
 # Copy example config
-$example_config = Join-Path (Get-Location) "smoke_test_scripts" "assets" "example_config.yaml"
+$example_config = Join-Path (Join-Path (Join-Path (Get-Location) "smoke_test_scripts") "assets") "example_config.yaml"
 Copy-Item -Path $example_config -Destination $env:DATAROBOT_CLI_CONFIG -Force
 
 # Set API token in config file
