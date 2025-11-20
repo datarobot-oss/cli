@@ -104,7 +104,8 @@ The `--skip-auth` flag is intended for advanced scenarios such as:
 - **Offline development**: When working in environments without internet access or access to DataRobot.
 - **Debugging**: Isolate authentication issues from other command behavior.
 
-> **⚠️ Warning:** This flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.
+> [!WARNING]
+> The `--skip-auth` flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.
 
 ## Manual login
 

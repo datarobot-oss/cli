@@ -1,4 +1,4 @@
-# `dr self completion` - Shell Completion
+# `dr self completion` - Shell completion
 
 Generate shell completion scripts for command auto-completion.
 

@@ -1,9 +1,6 @@
-# `dr auth` - Authentication Management
+# `dr auth` - Authentication management
 
 The `dr auth` command manages your authentication with DataRobot. Before you can use the CLI to work with templates and applications, you need to authenticate with your DataRobot instance.
-
-> [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
 
@@ -19,6 +16,9 @@ dr auth login
 
 Your credentials are automatically saved and you're ready to use the CLI.
 
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
 ## Synopsis
 
 ```bash
@@ -29,7 +29,7 @@ dr auth <command> [flags]
 
 The `auth` command provides authentication management for the DataRobot CLI. It handles login, logout, and URL configuration for connecting to your DataRobot instance.
 
-## Commands
+## Subcommands
 
 ### `login`
 
@@ -98,6 +98,7 @@ $ dr auth logout
 - Keeps DataRobot URL configuration
 - Next API call will require re-authentication
 
+> [!TIP]
 > **What's next?** After logging out, you can:
 >
 > - Log in again with `dr auth login` to re-authenticate
@@ -175,9 +176,9 @@ Error: Invalid URL format
 > - Malformed domain names
 > - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
 
-## Global flags
+## Global options
 
-These flags work with all `auth` commands:
+These options work with all `auth` commands:
 
 ```bash
   -v, --verbose      Enable verbose output
@@ -380,11 +381,12 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 
 ### Don't share credentials
 
-Never commit or share:
-
-- `~/.config/datarobot/drconfig.yaml`
-- API keys
-- OAuth tokens
+> [!WARNING]
+> Never commit or share:
+>
+> - `~/.config/datarobot/drconfig.yaml`
+> - API keys
+> - OAuth tokens
 
 ### Use per-environment authentication
 
@@ -539,7 +541,7 @@ export DATAROBOT_CA_CERT=/path/to/ca-bundle.crt
 dr auth login
 
 # Or configure in the config file
-# See [Configuration Files](../user-guide/configuration.md) for details
+# See [Configuration files](../user-guide/configuration.md) for details
 ```
 
 > [!WARNING]
@@ -551,6 +553,7 @@ dr auth login
 - [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
 - [Templates](../template-system/) - Template management commands
 
+> [!TIP]
 > **What's next?** After setting up authentication:
 >
 > - Browse available templates: `dr templates list`

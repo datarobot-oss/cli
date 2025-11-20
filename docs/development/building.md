@@ -4,7 +4,7 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 
 ## Table of contents
 
-- [Build from a source](#building-from-source)
+- [Build from source](#build-from-source)
 - [Project architecture](#project-architecture)
 - [Coding standards](#coding-standards)
 - [Development workflow](#development-workflow)
@@ -607,6 +607,5 @@ git push --tags
 ## See also
 
 - [Contributing Guide](../../CONTRIBUTING.md)
-- [Architecture Details](architecture.md)
-- [Testing Guide](testing.md)
-- [Release Process](release.md)
+- [Project structure](structure.md)&mdash;code organization and design
+- [Release process](releasing.md)&mdash;how releases are created and published

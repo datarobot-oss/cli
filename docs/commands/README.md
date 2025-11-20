@@ -20,7 +20,7 @@ These flags are available for all commands:
 ```
 
 > [!WARNING]
-> ⚠️ The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
+> The `--skip-auth` flag is intended for advanced use cases only. Using this flag will bypass all authentication checks, which may cause API calls to fail. Use with caution.
 
 > [!NOTE]
 > The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.

@@ -6,7 +6,7 @@ This document provides an overview of all available documentation for the DataRo
 
 ### For setup
 
-- [Get started](user-guide/getting-started.md): Start here with installation and initial setup
+- [Get started](../../README.md#quick-start): Start here with installation and initial setup
 - [Shell completions](user-guide/shell-completions.md): Set up command auto-completion
 - [Configuration](user-guide/configuration.md): Understand config files
 

@@ -122,7 +122,10 @@ DATAROBOT_ENDPOINT=
 
 ### .env (Generated)
 
-Created by the CLI during setup, the `.env` file contains actual values. Note that `.env` should be in `.gitignore` and never committed.
+Created by the CLI during setup, the `.env` file contains actual values.
+
+> [!WARNING]
+> Add the `.env` file to `.gitignore` to ensure it is never committed.
 
 ```bash
 # Required configuration
@@ -189,7 +192,8 @@ If `dr start` does not find a quickstart, it automatically launches the interact
 
 The CLI automatically generates `Taskfile.gen.yaml` to aggregate component tasks. This file includes a `dotenv` directive to load environment variables from `.env`.
 
-**Important:** Component taskfiles cannot have their own `dotenv` directives. The CLI detects conflicts and prevents generation if a component taskfile already has a `dotenv` declaration.
+> [!WARNING]
+> Component taskfiles cannot have their own `dotenv` directives. The CLI detects conflicts and prevents generation if a component taskfile already has a `dotenv` declaration.
 
 The generated structure is shown below.
 
@@ -394,7 +398,8 @@ dr run test
 dr run build
 ```
 
-**Note:** All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv setup` to create your `.env` file.
+> [!NOTE]
+> All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv setup` to create your `.env` file.
 
 ### 5. Deployment
 
@@ -470,7 +475,8 @@ full-stack-template/
 
 ### Version control
 
-**Note:** Always exclude `.env` and `Taskfile.gen.yaml` from version control. The CLI generates `Taskfile.gen.yaml` automatically.
+> [!WARNING]
+> Always exclude `.env` and `Taskfile.gen.yaml` from version control by adding them to `.gitignore`. The CLI generates `Taskfile.gen.yaml` automatically.
 
 ```bash
 # .gitignore should include:
@@ -668,4 +674,4 @@ git push origin main
 - [Environment variables](environment-variables.md): Manage .env files.
 - [dr run](../commands/run.md): Task execution.
 - [dr task compose](../commands/task.md): Taskfile composition and configuration.
-- [Command reference: templates](../commands/templates.md): Template commands.
+- [Template system](README.md): Template system overview and documentation.

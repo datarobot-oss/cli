@@ -13,7 +13,7 @@ The DataRobot CLI (`dr`) is a command-line tool for:
 
 For a complete overview and feature list, see the [main README](../../README.md).
 
-## Getting Started
+## Getting started
 
 **New to the CLI?** Follow this learning path:
 
@@ -22,25 +22,26 @@ For a complete overview and feature list, see the [main README](../../README.md)
 3. **[Working with templates](../template-system/)**&mdash;clone, configure, and manage application templates
 4. **[Configuration files](configuration.md)**&mdash;understand config file structure and management
 
-## Documentation Topics
+## Documentation topics
 
-### Essential Guides
+### Essential guides
 
 - **[Quick start](../../README.md#quick-start)** ⭐ *Start here*&mdash;installation and initial setup
+- **[Quick reference](quick-reference.md)** ⚡ *Quick lookup*&mdash;one-page command reference for common tasks
 - **[Authentication](../commands/auth.md)**&mdash;managing DataRobot credentials and login
 - **[Configuration files](configuration.md)**&mdash;understanding config file structure and location
 
-### Feature Guides
+### Feature guides
 
 - **[Working with templates](../template-system/)**&mdash;clone, configure, and manage application templates
 - **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell
 
-### Additional Resources
+### Additional resources
 
 - **[Command reference](../commands/)**&mdash;detailed documentation for all CLI commands
 - **[Template system documentation](../template-system/)**&mdash;deep dive into template structure, interactive configuration, and environment variables
 
-## Need Help?
+## Need help?
 
 - Can't find what you're looking for? Check the [main documentation index](../README.md)
 - Have questions? See [Getting help](../README.md#getting-help) in the main docs
