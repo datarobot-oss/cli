@@ -27,7 +27,6 @@ import (
 type (
 	errMsg              struct{ err error }
 	screens             int
-	initiators          int
 	componentsLoadedMsg struct {
 		list list.Model
 	}
@@ -42,11 +41,6 @@ type (
 const (
 	listScreen = screens(iota)
 	componentDetailScreen
-)
-
-const (
-	listCmd = initiators(iota)
-	updateCmd
 )
 
 var (
@@ -100,16 +94,14 @@ func newDetailKeys() detailKeyMap {
 }
 
 type Model struct {
-	err                   error
-	infoMessage           string
-	screen                screens
-	initiator             initiators
-	list                  list.Model // This list holds the components
-	initialUpdateFileName string
-	viewport              viewport.Model
-	help                  help.Model
-	keys                  detailKeyMap
-	ready                 bool
+	err         error
+	infoMessage string
+	screen      screens
+	list        list.Model // This list holds the components
+	viewport    viewport.Model
+	help        help.Model
+	keys        detailKeyMap
+	ready       bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -162,41 +154,20 @@ func (m Model) getSelectedComponents() []ListItem {
 	return values
 }
 
-func NewComponentModel(initiator initiators, initialScreen screens) Model {
-	h := help.New()
-	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
-	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
-
-	return Model{
-		screen:    initialScreen,
-		initiator: initiator,
-		help:      h,
-		keys:      newDetailKeys(),
-	}
-}
-
-func NewUpdateComponentModel(updateFileName string) Model {
+func NewUpdateComponentModel() Model {
 	h := help.New()
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
 	return Model{
 		screen: listScreen,
-		// Only value here we're actually setting from the function args
-		initialUpdateFileName: updateFileName,
-		help:                  h,
-		keys:                  newDetailKeys(),
+		help:   h,
+		keys:   newDetailKeys(),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	switch m.initiator {
-	case listCmd, updateCmd:
-		return tea.Batch(m.loadComponents(), tea.WindowSize())
-	default:
-		// TODO: Log here that we didn't handle a certain initiator?
-		return tea.WindowSize()
-	}
+	return tea.Batch(m.loadComponents(), tea.WindowSize())
 }
 
 func (m Model) loadComponents() tea.Cmd {
@@ -219,12 +190,7 @@ func (m Model) loadComponents() tea.Cmd {
 		items := make([]list.Item, 0, len(components))
 
 		for i, c := range components {
-			checked := false
-			if m.initialUpdateFileName != "" && c.FileName == m.initialUpdateFileName {
-				checked = true
-			}
-
-			items = append(items, ListItem{current: i == 0, checked: checked, component: c})
+			items = append(items, ListItem{current: i == 0, component: c})
 		}
 
 		delegateKeys := newDelegateKeyMap()
@@ -233,11 +199,6 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// TODO: The actual filtering works but there's bugs/unresolved issues w/ our custom Render() as well as toggleComponent()
 		l.SetFilteringEnabled(false)
-
-		// Now that we've loaded components we can reset filename property since we no longer need it
-		if m.initiator == updateCmd {
-			m.initialUpdateFileName = ""
-		}
 
 		return componentsLoadedMsg{l}
 	}
@@ -255,9 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	case componentsLoadedMsg:
 		m.list = msg.list
 
-		if m.initiator == updateCmd && m.initialUpdateFileName == "" {
-			m.infoMessage = "Please use an 'answer file' value with 'dr component update <answer_file>'."
-		}
+		return m, nil
 	case componentInfoRequestMsg:
 		m.screen = componentDetailScreen
 		m.ready = false

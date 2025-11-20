@@ -49,11 +49,8 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		updateFileName = args[0]
 	}
 
-	// User may provide CLI args '--yes' or '-y' in order to skip prompt
-	yes, _ := cmd.Flags().GetBool("yes")
-
-	// If we are skipping prompt and file name has been provided
-	if yes && updateFileName != "" {
+	// If file name has been provided
+	if updateFileName != "" {
 		err := runUpdate(updateFileName)
 		if err != nil {
 			fmt.Println("Fatal: ", err)
@@ -63,8 +60,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Currently if we using interactive mode we'll always go the list screen and pre-check a file if passed in args
-	m := NewUpdateComponentModel(updateFileName)
+	m := NewUpdateComponentModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
@@ -81,8 +77,6 @@ func UpdateCmd() *cobra.Command {
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
-
-	cmd.Flags().BoolP("yes", "y", false, "Automatically confirm the update without prompting.")
 
 	return cmd
 }

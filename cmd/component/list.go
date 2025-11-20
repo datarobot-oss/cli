@@ -11,30 +11,27 @@ package component
 import (
 	"fmt"
 	"os"
+	"text/tabwriter"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/datarobot/cli/tui"
+	"github.com/datarobot/cli/internal/copier"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func ListRunE(_ *cobra.Command, _ []string) error {
-	if viper.GetBool("debug") {
-		f, err := tea.LogToFile("tea-debug.log", "debug")
-		if err != nil {
-			fmt.Println("fatal: ", err)
-			os.Exit(1)
-		}
-
-		defer f.Close()
-	}
-
-	m := NewComponentModel(listCmd, listScreen)
-	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
+	answers, err := copier.AnswersFromPath(".")
+	if err != nil {
 		return err
 	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintf(w, "Answers file\tRepository\n")
+
+	for _, answer := range answers {
+		fmt.Fprintf(w, "%s\t%s\n", answer.FileName, answer.Repo)
+	}
+
+	w.Flush()
 
 	return nil
 }
