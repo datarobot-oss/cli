@@ -6,7 +6,7 @@ function Write-ErrorMsg {
     param([string]$Message)
     Write-Host "❌ " -NoNewline -ForegroundColor Red
     Write-Host $Message
-    exit 1
+    throw $Message
 }
 
 function Write-SuccessMsg {
@@ -178,10 +178,13 @@ function Smoke-Test {
 }
 
 # Run tests
+# Get DR_API_TOKEN from args
+$DR_API_TOKEN = $args[0]
+
 try {
-    # Get DR_API_TOKEN from args
-    $DR_API_TOKEN = $args[0]
     Smoke-Test -DR_API_TOKEN $DR_API_TOKEN
 } catch {
-    Write-ErrorMsg "Smoke tests for Windows failed: $_"
+    Write-Host "❌ " -NoNewline -ForegroundColor Red
+    Write-Host "Smoke tests for Windows failed: $_"
+    exit 1
 }
