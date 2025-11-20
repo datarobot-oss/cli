@@ -10,7 +10,41 @@ on:
       - main
 
 jobs:
+
+  detect-changes:
+    runs-on: ubuntu-latest
+    name: Detect Changes
+    outputs:
+      completion: ${{ steps.changes.outputs.completion }}
+      dotenv: ${{ steps.changes.outputs.dotenv }}
+      templates: ${{ steps.changes.outputs.templates }}
+      auth: ${{ steps.changes.outputs.auth }}
+      go_code: ${{ steps.changes.outputs.go_code }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            completion:
+              - 'cmd/completion/**'
+            dotenv:
+              - 'cmd/dotenv/**'
+            templates:
+              - 'cmd/templates/**'
+            auth:
+              - 'cmd/auth/**'
+            go_code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+
   lint:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Lint Code
 
@@ -46,9 +80,9 @@ jobs:
         run: |
           task lint
 
-
-
   test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Run Tests
 
@@ -102,6 +136,8 @@ jobs:
           config: .licenserc.yaml
 
   generate:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Ensure Code Generated
 
@@ -133,43 +169,14 @@ jobs:
           task gen-check
 
   build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     uses: ./.github/workflows/.build-matrix.yaml
     with:
       go-version: '1.25.3'
       upload-artifact: true
       artifact-name-prefix: 'dr'
     secrets: inherit
-
-  detect-changes:
-    runs-on: ubuntu-latest
-    name: Detect Changes
-    outputs:
-      completion: ${{ steps.changes.outputs.completion }}
-      dotenv: ${{ steps.changes.outputs.dotenv }}
-      templates: ${{ steps.changes.outputs.templates }}
-      auth: ${{ steps.changes.outputs.auth }}
-      go_code: ${{ steps.changes.outputs.go_code }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Detect file changes
-        uses: dorny/paths-filter@v3
-        id: changes
-        with:
-          filters: |
-            completion:
-              - 'cmd/completion/**'
-            dotenv:
-              - 'cmd/dotenv/**'
-            templates:
-              - 'cmd/templates/**'
-            auth:
-              - 'cmd/auth/**'
-            go_code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
 
   auto-label:
     needs: detect-changes
