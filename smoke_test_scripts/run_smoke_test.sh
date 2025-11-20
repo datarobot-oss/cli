@@ -33,7 +33,15 @@ yq -i ".token = \"$DR_API_TOKEN\"" $DATAROBOT_CLI_CONFIG
 
 dr help
 dr help run
-dr self version
+
+# Check that JSON output of version command has expected `version` key
+has_version_key=$(dr self version --format=json | yq eval 'has("version")')
+if [[ "$has_version_key" == "true" ]]; then
+    echo "✅ Version command returned expected 'version' key in json output."
+else
+    echo "❌ Version command did not return expected 'version' key in json output."
+    exit 1
+fi
 
 dr self completion bash > completion_bash.sh
 # Check if we have the file with expected __start_dr() function
