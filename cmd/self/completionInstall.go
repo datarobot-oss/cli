@@ -216,7 +216,8 @@ func getCompletionInstallFunc(rootCmd *cobra.Command, shellType internalShell.Sh
 		path, fn := installCompletionFish(rootCmd, force)
 		return path, fn, nil
 	case internalShell.PowerShell:
-		return "", nil, errors.New("PowerShell completions installation not yet supported via this command. Use: dr completion powershell")
+		path, fn := installCompletionPowerShell(rootCmd, force)
+		return path, fn, nil
 	default:
 		return "", nil, fmt.Errorf("Unsupported shell: %s.", shellType)
 	}
@@ -401,6 +402,76 @@ func installCompletionFish(_ *cobra.Command, _ bool) (string, func(*cobra.Comman
 	return installPath, installFunc
 }
 
+func installCompletionPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
+	// Get PowerShell profile path
+	var profilePath string
+
+	if runtime.GOOS == "windows" {
+		// On Windows, use $PROFILE (Documents\PowerShell or Documents\WindowsPowerShell)
+		documentsPath := os.Getenv("USERPROFILE")
+		if documentsPath == "" {
+			documentsPath = os.Getenv("HOME")
+		}
+
+		documentsPath = filepath.Join(documentsPath, "Documents")
+
+		// Try PowerShell Core first (PowerShell 7+)
+		psCorePath := filepath.Join(documentsPath, "PowerShell")
+		if dirExists(psCorePath) {
+			profilePath = filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1")
+		} else {
+			// Fall back to Windows PowerShell 5.x
+			profilePath = filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
+		}
+	} else {
+		// On Unix-like systems with PowerShell Core
+		homeDir := os.Getenv("HOME")
+		profilePath = filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1")
+	}
+
+	installFunc := func(rootCmd *cobra.Command) error {
+		// Ensure the directory exists
+		profileDir := filepath.Dir(profilePath)
+		if err := os.MkdirAll(profileDir, 0o755); err != nil {
+			return fmt.Errorf("Failed to create PowerShell profile directory: %w", err)
+		}
+
+		// Create or append to profile
+		completionScript := fmt.Sprintf("\n# %s completion\n", version.CliName)
+		completionScript += fmt.Sprintf("if (Get-Command %s -ErrorAction SilentlyContinue) {\n", version.CliName)
+		completionScript += fmt.Sprintf("    %s completion powershell | Out-String | Invoke-Expression\n", version.CliName)
+		completionScript += "}\n"
+
+		// Check if profile exists and if completion is already set up
+		if fileExists(profilePath) {
+			content, err := os.ReadFile(profilePath)
+			if err != nil {
+				return fmt.Errorf("Failed to read PowerShell profile: %w", err)
+			}
+
+			// Check if completion is already configured
+			if strings.Contains(string(content), version.CliName+" completion powershell") {
+				return nil // Already installed
+			}
+		}
+
+		// Append to profile
+		f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("Failed to open PowerShell profile: %w", err)
+		}
+		defer f.Close()
+
+		if _, err = f.WriteString(completionScript); err != nil {
+			return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
+		}
+
+		return nil
+	}
+
+	return profilePath, installFunc
+}
+
 func showActivationInstructions(shell internalShell.Shell) {
 	fmt.Println(successStyle.Render("To activate completions:"))
 	fmt.Println()
@@ -425,8 +496,11 @@ func showActivationInstructions(shell internalShell.Shell) {
 		fmt.Println("  2. Or restart fish:")
 		fmt.Println(infoStyle.Render("     exec fish"))
 	case internalShell.PowerShell:
-		fmt.Println("  1. Source the completion script in your PowerShell profile")
-		fmt.Println(infoStyle.Render("     See: dr completion powershell --help"))
+		fmt.Println("  1. Restart PowerShell to load the updated profile:")
+		fmt.Println(infoStyle.Render("     # Close and reopen PowerShell"))
+		fmt.Println()
+		fmt.Println("  2. Or reload your profile in the current session:")
+		fmt.Println(infoStyle.Render("     . $PROFILE"))
 	}
 
 	fmt.Println()
@@ -661,7 +735,7 @@ func performCompletionUninstall(shell internalShell.Shell) error {
 	case internalShell.Fish:
 		removed = uninstallCompletionFish()
 	case internalShell.PowerShell:
-		return errors.New("PowerShell completions uninstallation not yet supported via this command.")
+		removed = uninstallCompletionPowerShell()
 	default:
 		return fmt.Errorf("Unsupported shell: %s.", shell)
 	}
@@ -691,7 +765,26 @@ func getCompletionUninstallPaths(shell internalShell.Shell) []string {
 			filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions", version.CliName+".fish"),
 		}
 	case internalShell.PowerShell:
-		return []string{}
+		var paths []string
+
+		if runtime.GOOS == "windows" {
+			documentsPath := os.Getenv("USERPROFILE")
+			if documentsPath == "" {
+				documentsPath = os.Getenv("HOME")
+			}
+
+			documentsPath = filepath.Join(documentsPath, "Documents")
+
+			// PowerShell Core
+			paths = append(paths, filepath.Join(documentsPath, "PowerShell", "Microsoft.PowerShell_profile.ps1"))
+			// Windows PowerShell
+			paths = append(paths, filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"))
+		} else {
+			homeDir := os.Getenv("HOME")
+			paths = append(paths, filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"))
+		}
+
+		return paths
 	default:
 		return []string{}
 	}
@@ -774,6 +867,81 @@ func uninstallCompletionFish() bool {
 	}
 
 	return false
+}
+
+func uninstallCompletionPowerShell() bool {
+	var removed bool
+
+	paths := getCompletionUninstallPaths(internalShell.PowerShell)
+
+	for _, profilePath := range paths {
+		if removePowerShellCompletionFromProfile(profilePath) {
+			removed = true
+		}
+	}
+
+	return removed
+}
+
+func removePowerShellCompletionFromProfile(profilePath string) bool {
+	if !fileExists(profilePath) {
+		return false
+	}
+
+	content, err := os.ReadFile(profilePath)
+	if err != nil {
+		return false
+	}
+
+	// Check if completion is configured
+	if !strings.Contains(string(content), version.CliName+" completion powershell") {
+		return false
+	}
+
+	// Remove completion section
+	newContent := removeCompletionSection(string(content))
+
+	// Write back
+	if err := os.WriteFile(profilePath, []byte(newContent), 0o644); err != nil {
+		fmt.Printf("%s Failed to update: %s\n", warnStyle.Render("⚠"), profilePath)
+
+		return false
+	}
+
+	fmt.Printf("%s Removed completion from: %s\n", successStyle.Render("✓"), profilePath)
+
+	return true
+}
+
+func removeCompletionSection(content string) string {
+	lines := strings.Split(content, "\n")
+	newLines := make([]string, 0, len(lines))
+
+	skipNext := 0
+	for _, line := range lines {
+		if skipNext > 0 {
+			skipNext--
+
+			continue
+		}
+
+		// Look for the completion comment
+		if strings.Contains(line, "# "+version.CliName+" completion") {
+			// Skip this line and the next 3 lines (the if block)
+			skipNext = 3
+
+			// Also skip preceding blank line if present
+			if len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) == "" {
+				newLines = newLines[:len(newLines)-1]
+			}
+
+			continue
+		}
+
+		newLines = append(newLines, line)
+	}
+
+	return strings.Join(newLines, "\n")
 }
 
 // TODO: DRY this up
