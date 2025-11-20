@@ -25,6 +25,98 @@ type taskRunOptions struct {
 	taskOpts task.RunOpts
 }
 
+func showTaskNotFoundError() {
+	_, _ = fmt.Fprintln(os.Stderr, "❌ Task runner not found")
+	_, _ = fmt.Fprintln(os.Stderr, "")
+	_, _ = fmt.Fprintln(os.Stderr, "The 'task' binary is required to run application tasks.")
+	_, _ = fmt.Fprintln(os.Stderr, "")
+	_, _ = fmt.Fprintln(os.Stderr, "💡 Quick Install (choose your system):")
+	_, _ = fmt.Fprintln(os.Stderr, "   🍎 macOS: brew install go-task/tap/go-task")
+	_, _ = fmt.Fprintln(os.Stderr, "   🐧 Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
+	_, _ = fmt.Fprintln(os.Stderr, "   🪟 Windows: choco install go-task")
+	_, _ = fmt.Fprintln(os.Stderr, "")
+	_, _ = fmt.Fprintln(os.Stderr, "📚 Need help? Visit: https://taskfile.dev/installation/")
+	_, _ = fmt.Fprintln(os.Stderr, "")
+	_, _ = fmt.Fprintln(os.Stderr, "After installing, try running your command again!")
+}
+
+func showStyledTaskList(runner *task.Runner) {
+	tasks, err := runner.ListTasks()
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
+
+		os.Exit(1)
+
+		return
+	}
+
+	categories := task.GroupTasksByCategory(tasks, false)
+
+	if err = task.PrintCategorizedTasks(categories, false); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
+
+		os.Exit(1)
+
+		return
+	}
+}
+
+func runCmd(opts *taskRunOptions, args []string) {
+	binaryName := "task"
+	discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+
+	rootTaskfile, err := discovery.Discover(opts.Dir, 2)
+	if err != nil {
+		task.ExitWithError(err)
+		return
+	}
+
+	runner := task.NewTaskRunner(task.RunnerOpts{
+		BinaryName: binaryName,
+		Taskfile:   rootTaskfile,
+		Dir:        opts.Dir,
+	})
+
+	if !runner.Installed() {
+		showTaskNotFoundError()
+
+		os.Exit(1)
+
+		return
+	}
+
+	// If no tasks are provided, show the styled task list
+	if len(args) == 0 {
+		showStyledTaskList(runner)
+		return
+	}
+
+	taskNames := args
+
+	if !opts.taskOpts.Silent {
+		log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
+	}
+
+	err = runner.Run(taskNames, opts.taskOpts)
+	if err != nil { //nolint: nestif
+		exitCode := 1
+
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Only propagate if '--exit-code' was requested
+			if opts.taskOpts.ExitCode {
+				if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
+					exitCode = status.ExitStatus()
+				}
+			}
+		} else {
+			// Only print error if it's not an exit error (task already showed its error)
+			_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
+		}
+
+		os.Exit(exitCode)
+	}
+}
+
 func Cmd() *cobra.Command {
 	var opts taskRunOptions
 
@@ -49,64 +141,7 @@ Examples:
 
 💡 Tasks are defined in your project's 'Taskfile' and vary by template.`,
 		Run: func(_ *cobra.Command, args []string) {
-			binaryName := "task"
-			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
-
-			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
-			if err != nil {
-				task.ExitWithError(err)
-				return
-			}
-
-			runner := task.NewTaskRunner(task.RunnerOpts{
-				BinaryName: binaryName,
-				Taskfile:   rootTaskfile,
-				Dir:        opts.Dir,
-			})
-
-			if !runner.Installed() {
-				_, _ = fmt.Fprintln(os.Stderr, "❌ Task runner not found")
-				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "The 'task' binary is required to run application tasks.")
-				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "💡 Quick Install (choose your system):")
-				_, _ = fmt.Fprintln(os.Stderr, "   🍎 macOS: brew install go-task/tap/go-task")
-				_, _ = fmt.Fprintln(os.Stderr, "   🐧 Linux: sh -c \"$(curl --location https://taskfile.dev/install.sh)\"")
-				_, _ = fmt.Fprintln(os.Stderr, "   🪟 Windows: choco install go-task")
-				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "📚 Need help? Visit: https://taskfile.dev/installation/")
-				_, _ = fmt.Fprintln(os.Stderr, "")
-				_, _ = fmt.Fprintln(os.Stderr, "After installing, try running your command again!")
-
-				os.Exit(1)
-
-				return
-			}
-
-			taskNames := args
-
-			if !opts.taskOpts.Silent {
-				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
-			}
-
-			err = runner.Run(taskNames, opts.taskOpts)
-			if err != nil { //nolint: nestif
-				exitCode := 1
-
-				if exitErr, ok := err.(*exec.ExitError); ok {
-					// Only propagate if '--exit-code' was requested
-					if opts.taskOpts.ExitCode {
-						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
-							exitCode = status.ExitStatus()
-						}
-					}
-				} else {
-					// Only print error if it's not an exit error (task already showed its error)
-					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
-				}
-
-				os.Exit(exitCode)
-			}
+			runCmd(&opts, args)
 		},
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return completeTaskNames(&opts)
