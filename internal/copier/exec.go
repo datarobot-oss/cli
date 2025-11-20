@@ -14,6 +14,14 @@ import (
 	"os/exec"
 )
 
+func cmdRun(cmd *exec.Cmd) error {
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	return cmd.Run()
+}
+
 func Add(repoURL string) *exec.Cmd {
 	return exec.Command("uvx", "copier", "copy", repoURL, ".")
 }
@@ -23,17 +31,18 @@ func ExecAdd(repoURL string) error {
 		return errors.New("Repository URL is missing.")
 	}
 
-	cmd := Add(repoURL)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-
-	return cmd.Run()
+	return cmdRun(Add(repoURL))
 }
 
-func Update(yamlFile string, quiet bool, debug bool) *exec.Cmd {
+func Update(yamlFile string, quiet, debug, recopy bool) *exec.Cmd {
+	copierCommand := "update"
+
+	if recopy {
+		copierCommand = "recopy"
+	}
+
 	commandParts := []string{
-		"copier", "update", "--answers-file", yamlFile, "--skip-answered",
+		"copier", copierCommand, "--answers-file", yamlFile, "--skip-answered",
 	}
 	if quiet {
 		commandParts = append(commandParts, "--quiet")
@@ -49,15 +58,10 @@ func Update(yamlFile string, quiet bool, debug bool) *exec.Cmd {
 	return cmd
 }
 
-func ExecUpdate(yamlFile string, quiet bool, debug bool) error {
+func ExecUpdate(yamlFile string, quiet, debug, recopy bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	cmd := Update(yamlFile, quiet, debug)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-
-	return cmd.Run()
+	return cmdRun(Update(yamlFile, quiet, debug, recopy))
 }

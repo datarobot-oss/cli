@@ -49,14 +49,11 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		updateFileName = args[0]
 	}
 
-	// User may provide CLI args '--yes' or '-y' or '--interactive=false' or '-i=false' in order to skip prompt
+	// User may provide CLI args '--yes' or '-y' in order to skip prompt
 	yes, _ := cmd.Flags().GetBool("yes")
-	interactive, _ := cmd.Flags().GetBool("interactive")
-
-	doNotPrompt := yes || !interactive
 
 	// If we are skipping prompt and file name has been provided
-	if doNotPrompt && updateFileName != "" {
+	if yes && updateFileName != "" {
 		err := runUpdate(updateFileName)
 		if err != nil {
 			fmt.Println("Fatal: ", err)
@@ -78,10 +75,6 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 }
 
 func UpdateCmd() *cobra.Command {
-	var yes bool
-
-	var interactive bool
-
 	cmd := &cobra.Command{
 		Use:     "update answers_file",
 		Short:   "Update installed component.",
@@ -89,9 +82,7 @@ func UpdateCmd() *cobra.Command {
 		RunE:    UpdateRunE,
 	}
 
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm the update without prompting.")
-	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to 'false' to automatically confirm the update without prompting.")
+	cmd.Flags().BoolP("yes", "y", false, "Automatically confirm the update without prompting.")
 
 	return cmd
 }
@@ -119,10 +110,10 @@ func runUpdate(yamlFile string) error {
 	}
 
 	quiet := false
-
 	debug := viper.GetBool("debug")
+	recopy := false // TODO: fix this
 
-	execErr := copier.ExecUpdate(yamlFile, quiet, debug)
+	execErr := copier.ExecUpdate(yamlFile, quiet, debug, recopy)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
