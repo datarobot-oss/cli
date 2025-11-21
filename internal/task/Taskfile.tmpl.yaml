@@ -21,11 +21,13 @@ tasks:
   start:
     desc: "💻 Prepare local development environment"
     cmds:
+      - dr self update
       - dr dotenv setup --if-needed
-      - task: install
+      - task install
       {{- range .StartComponents }}
-      - task: {{ . }}:start
+      - task {{ . }}:start
       {{- end }}
+      - echo '✅ You are all set. Run `task dev` to start developing, or run `task deploy-dev` to deploy to DataRobot.'
   {{- end }}
   {{- if .HasLint }}
 

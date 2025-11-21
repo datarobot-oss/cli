@@ -34,7 +34,7 @@ func ExecAdd(repoURL string) error {
 	return cmdRun(Add(repoURL))
 }
 
-func Update(yamlFile string, recopy, quiet, debug bool) *exec.Cmd {
+func Update(yamlFile string, recopy, quiet, debug bool, overwrite bool) *exec.Cmd {
 	copierCommand := "update"
 
 	if recopy {
@@ -48,6 +48,10 @@ func Update(yamlFile string, recopy, quiet, debug bool) *exec.Cmd {
 		commandParts = append(commandParts, "--quiet")
 	}
 
+	if recopy && overwrite {
+		commandParts = append(commandParts, "--overwrite")
+	}
+
 	cmd := exec.Command("uvx", commandParts...)
 
 	// Suppress all Python warnings unless debug mode is enabled
@@ -58,10 +62,10 @@ func Update(yamlFile string, recopy, quiet, debug bool) *exec.Cmd {
 	return cmd
 }
 
-func ExecUpdate(yamlFile string, recopy, quiet, debug bool) error {
+func ExecUpdate(yamlFile string, recopy, quiet, debug bool, overwrite bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	return cmdRun(Update(yamlFile, recopy, quiet, debug))
+	return cmdRun(Update(yamlFile, recopy, quiet, debug, overwrite))
 }
