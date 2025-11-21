@@ -101,7 +101,7 @@ jobs:
     secrets: inherit
 
   notify-results:
-    needs: [notify-approval-needed, linux-smoke-tests, windows-smoke-tests]
+    needs: [security-scan, notify-approval-needed, linux-smoke-tests, windows-smoke-tests]
     if: always()
     runs-on: ubuntu-latest
     permissions:
