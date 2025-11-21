@@ -8,6 +8,10 @@ on:
   pull_request:
     branches:
       - main
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
 
 jobs:
 
@@ -23,6 +27,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Detect file changes
         uses: dorny/paths-filter@v3
@@ -181,22 +187,30 @@ jobs:
 
   auto-label:
     needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request_target' && needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
-    name: Auto Label Go Changes
+    name: Auto Label PR
     permissions:
       pull-requests: write
     steps:
-      - name: Add label for Go code changes
+      - name: Add labels
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const labels = ['go'];
+
+            // Check if PR is from a fork
+            const isFork = context.payload.pull_request.head.repo.full_name !== context.payload.pull_request.base.repo.full_name;
+            if (isFork) {
+              labels.push('forked-pr');
+            }
+
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              labels: ['go']
+              labels: labels
             })
 
   completion-tests:
