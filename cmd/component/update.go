@@ -79,8 +79,9 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 }
 
 var (
-	recopy bool
-	quiet  bool
+	recopy    bool
+	quiet     bool
+	overwrite bool
 )
 
 func UpdateCmd() *cobra.Command {
@@ -92,7 +93,8 @@ func UpdateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
-	cmd.Flags().BoolVarP(&recopy, "quiet", "q", false, "Suppress status output.")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress status output.")
+	cmd.Flags().BoolVarP(&overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
 
 	return cmd
 }
@@ -121,7 +123,7 @@ func runUpdate(yamlFile string) error {
 
 	debug := viper.GetBool("debug")
 
-	execErr := copier.ExecUpdate(yamlFile, recopy, quiet, debug)
+	execErr := copier.ExecUpdate(yamlFile, recopy, quiet, debug, overwrite)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

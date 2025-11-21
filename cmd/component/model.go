@@ -120,7 +120,7 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 
 func updateComponent(item ListItem) tea.Cmd {
 	debug := viper.GetBool("debug")
-	command := copier.Update(item.component.FileName, recopy, quiet, debug)
+	command := copier.Update(item.component.FileName, recopy, quiet, debug, overwrite)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}

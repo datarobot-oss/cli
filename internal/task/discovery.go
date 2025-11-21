@@ -104,7 +104,7 @@ func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discover
 
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	// Check if .env file exists in the root directory
-	envPath := filepath.Join(root, ".env")
+	envPath := filepath.Join(root, ".datarobot")
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		return "", ErrNotInTemplate
 	}
@@ -141,7 +141,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 func ExitWithError(err error) {
 	if errors.Is(err, ErrNotInTemplate) {
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.env' file to be present."))
+		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
 		os.Exit(1)
 
 		return
