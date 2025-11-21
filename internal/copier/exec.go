@@ -35,15 +35,16 @@ func ExecAdd(repoURL string) error {
 }
 
 func Update(yamlFile string, recopy, quiet, debug bool) *exec.Cmd {
-	copierCommand := "update"
+	commandParts := []string{"copier"}
 
 	if recopy {
-		copierCommand = "recopy"
+		commandParts = append(commandParts, "recopy", "--overwrite")
+	} else {
+		commandParts = append(commandParts, "update")
 	}
 
-	commandParts := []string{
-		"copier", copierCommand, "--answers-file", yamlFile, "--skip-answered",
-	}
+	commandParts = append(commandParts, "--answers-file", yamlFile, "--skip-answered")
+
 	if quiet {
 		commandParts = append(commandParts, "--quiet")
 	}
