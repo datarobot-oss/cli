@@ -14,17 +14,50 @@ import (
 
 func TestPromptString(t *testing.T) {
 	t.Run("Returns Env when present", func(t *testing.T) {
-		prompt := UserPrompt{
-			Env:    "MY_VAR",
-			Key:    "my-key",
-			Value:  "my-value",
-			Active: true,
+		tests := []struct {
+			prompt   UserPrompt
+			expected string
+		}{
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value`, Active: true},
+				expected: `MY_VAR="my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my value`, Active: true},
+				expected: `MY_VAR="my value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my"value`, Active: true},
+				expected: `MY_VAR="my\"value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `"my-value`, Active: true},
+				expected: `MY_VAR="\"my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value"`, Active: true},
+				expected: `MY_VAR="my-value\""`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my' value`, Active: true},
+				expected: `MY_VAR="my' value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `'my-value`, Active: true},
+				expected: `MY_VAR="'my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value'`, Active: true},
+				expected: `MY_VAR="my-value'"`,
+			},
 		}
 
-		str := prompt.String()
+		for _, test := range tests {
+			result := test.prompt.String()
 
-		if str != "MY_VAR=my-value" {
-			t.Errorf("Expected 'MY_VAR=my-value', got '%s'", str)
+			if result != test.expected {
+				t.Errorf("Expected '%s', got '%s'", test.expected, result)
+			}
 		}
 	})
 
@@ -35,9 +68,10 @@ func TestPromptString(t *testing.T) {
 		}
 
 		str := prompt.String()
+		expected := `# my-key="my-value"`
 
-		if str != "# my-key=my-value" {
-			t.Errorf("Expected '# my-key=my-value', got '%s'", str)
+		if str != expected {
+			t.Errorf("Expected '%s', got '%s'", expected, str)
 		}
 	})
 
@@ -51,9 +85,10 @@ func TestPromptString(t *testing.T) {
 		}
 
 		str := prompt.String()
+		expected := "\n# Lorem Ipsum.\nMY_VAR=\"my-value\""
 
-		if str != "\n# Lorem Ipsum.\nMY_VAR=my-value" {
-			t.Errorf("Expected '\n# Lorem Ipsum.\nMY_VAR=my-value', got '%s'", str)
+		if str != expected {
+			t.Errorf("Expected '%s', got '%s'", expected, str)
 		}
 	})
 
@@ -67,9 +102,10 @@ func TestPromptString(t *testing.T) {
 		}
 
 		str := prompt.String()
+		expected := "\n# Lorem Ipsum.\n# More info here.\nMY_VAR=\"my-value\""
 
-		if str != "\n# Lorem Ipsum.\n# More info here.\nMY_VAR=my-value" {
-			t.Errorf("Expected '\n# Lorem Ipsum.\n# More info here.\nMY_VAR=my-value', got '%s'", str)
+		if str != expected {
+			t.Errorf("Expected '%s', got '%s'", expected, str)
 		}
 	})
 }

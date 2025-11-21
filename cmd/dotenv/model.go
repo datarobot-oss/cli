@@ -371,17 +371,7 @@ func (m Model) viewListScreen() string {
 	fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
 
 	for _, v := range m.variables {
-		if v.Commented {
-			fmt.Fprintf(&content, "# ")
-		}
-
-		fmt.Fprintf(&content, "%s=", v.Name)
-
-		if v.Secret {
-			fmt.Fprintf(&content, "***\n")
-		} else {
-			fmt.Fprintf(&content, "%s\n", v.Value)
-		}
+		content.WriteString(v.StringSecret())
 	}
 
 	sb.WriteString(tui.BoxStyle.Render(content.String()))
