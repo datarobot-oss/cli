@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -145,11 +146,38 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 	return nil
 }
 
-var AddCmd = &cobra.Command{
-	Use:     "add [component_url]",
-	Short:   "Add a component.",
-	PreRunE: PreRunE,
-	RunE:    RunE,
+func AddRunTea() ([]string, error) {
+	am := NewAddModel()
+	p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get list of components that user selected
+	if addModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		if innerModel, ok := addModel.Model.(AddModel); ok {
+			if len(innerModel.RepoURLs) > 0 {
+				return innerModel.RepoURLs, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func AddCmd() *cobra.Command {
+	names := strings.Join(copier.EnabledShortNames, ", ")
+
+	cmd := &cobra.Command{
+		Use:     fmt.Sprintf("add [%s or component_url]", names),
+		Short:   "Add a component.",
+		PreRunE: PreRunE,
+		RunE:    RunE,
+	}
+
+	return cmd
 }
 
 func init() {

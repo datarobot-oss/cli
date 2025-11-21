@@ -53,7 +53,7 @@ func (m Model) getComponentDetailContent() string {
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 	selectedComponent := item.component
-	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.SrcPath]
+	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.Repo]
 
 	style := "light"
 	if lipgloss.HasDarkBackground() {
