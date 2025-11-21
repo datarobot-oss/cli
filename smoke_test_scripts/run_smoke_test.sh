@@ -31,8 +31,15 @@ cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > "$DATAROBOT_CLI_CON
 # Set API token in our ephemeral config file
 yq -i ".token = \"$DR_API_TOKEN\"" "$DATAROBOT_CLI_CONFIG"
 
-dr help
-dr help run
+# Check we have expected help output (checking for header content)
+header_copy="Build AI Applications Faster"
+has_header=$(dr help | grep "${header_copy}")
+if [[ -n "$has_header" ]]; then
+    echo "✅ Help command returned expected content."
+else
+    echo "❌ Help command did not return expected content - missing header copy: ${header_copy}"
+    exit 1
+fi
 
 # Check that JSON output of version command has expected `version` key
 has_version_key=$(dr self version --format=json | yq eval 'has("version")')
@@ -61,8 +68,21 @@ fi
 echo "Testing completion install/uninstall..."
 expect ./smoke_test_scripts/expect_completion.exp
 
+# Check we have expected usage message output
+if [ -f ".env" ]; then
+    usage_message="No Taskfiles found in child directories."
+else
+    usage_message="You don't seem to be in a DataRobot Template directory."
+fi
 echo "Testing dr run command..."
-dr run
+# Use 2>&1 to stderr to stdout
+has_message=$(dr run 2>&1 | grep "${usage_message}")
+if [[ -n "$has_message" ]]; then
+    echo "✅ Run command returned expected content."
+else
+    echo "❌ Run command did not return expected content - missing informative message: ${usage_message}"
+    exit 1
+fi
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
 # The expect script "hits" the `y` key for "yes", then `https://app.datarobot.com`
