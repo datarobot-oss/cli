@@ -187,7 +187,10 @@ jobs:
 
   auto-label:
     needs: detect-changes
-    if: github.event_name == 'pull_request_target' && needs.detect-changes.outputs.go_code == 'true'
+    if: |
+      needs.detect-changes.outputs.go_code == 'true' &&
+      (github.event_name == 'pull_request_target' ||
+       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     name: Auto Label PR
     permissions:
