@@ -15,8 +15,6 @@ on:
     secrets:
       DR_API_TOKEN:
         required: true
-      GITHUB_TOKEN:
-        required: true
 
 jobs:
   windows-smoke-test:
