@@ -106,10 +106,11 @@ func runInteractiveUpdate() error {
 }
 
 var (
-	dataArgs []string
-	dataFile string
-	recopy   bool
-	quiet    bool
+	dataArgs  []string
+	dataFile  string
+	recopy    bool
+	quiet     bool
+	overwrite bool
 )
 
 func UpdateCmd() *cobra.Command {
@@ -124,6 +125,7 @@ func UpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 	cmd.Flags().BoolVarP(&recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress status output.")
+	cmd.Flags().BoolVarP(&overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
 
 	return cmd
 }
@@ -173,10 +175,9 @@ func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, data
 	if len(mergedData) > 0 {
 		execErr = copier.ExecUpdateWithData(yamlFile, mergedData)
 	} else {
-		quiet := false
 		debug := viper.GetBool("debug")
 
-		execErr = copier.ExecUpdate(yamlFile, recopy, quiet, debug)
+		execErr = copier.ExecUpdate(yamlFile, recopy, quiet, debug, overwrite)
 	}
 
 	if execErr != nil {
