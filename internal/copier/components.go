@@ -37,6 +37,11 @@ func init() {
 	for _, details := range ComponentDetails {
 		ComponentDetailsByURL[details.RepoURL] = details
 		ComponentDetailsByShortName[details.ShortName] = details
+
+		if details.Enabled {
+			EnabledComponents = append(EnabledComponents, details)
+			EnabledShortNames = append(EnabledShortNames, details.ShortName)
+		}
 	}
 }
 
@@ -45,6 +50,8 @@ func init() {
 var (
 	ComponentDetailsByURL       = map[string]Details{}
 	ComponentDetailsByShortName = map[string]Details{}
+	EnabledComponents           = make([]Details, 0, len(ComponentDetails))
+	EnabledShortNames           = make([]string, 0, len(ComponentDetails))
 )
 
 var ComponentDetails = []Details{
@@ -60,7 +67,7 @@ var ComponentDetails = []Details{
 		readMeFile: "af-component-base.md",
 
 		Name:      "Base",
-		ShortName: "Base",
+		ShortName: "base",
 		RepoURL:   "git@github.com:datarobot/af-component-base.git",
 	},
 	{

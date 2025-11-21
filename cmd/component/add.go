@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -100,9 +101,15 @@ func AddRunTea() ([]string, error) {
 	return nil, nil
 }
 
-var AddCmd = &cobra.Command{
-	Use:     "add [component_url]",
-	Short:   "Add a component.",
-	PreRunE: PreRunE,
-	RunE:    RunE,
+func AddCmd() *cobra.Command {
+	names := strings.Join(copier.EnabledShortNames, ", ")
+
+	cmd := &cobra.Command{
+		Use:     fmt.Sprintf("add [%s or component_url]", names),
+		Short:   "Add a component.",
+		PreRunE: PreRunE,
+		RunE:    RunE,
+	}
+
+	return cmd
 }

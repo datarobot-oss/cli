@@ -21,7 +21,7 @@ func Cmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		AddCmd,
+		AddCmd(),
 		ListCmd,
 		UpdateCmd(),
 	)

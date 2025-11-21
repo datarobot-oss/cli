@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -49,14 +50,8 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		updateFileName = args[0]
 	}
 
-	// User may provide CLI args '--yes' or '-y' or '--interactive=false' or '-i=false' in order to skip prompt
-	yes, _ := cmd.Flags().GetBool("yes")
-	interactive, _ := cmd.Flags().GetBool("interactive")
-
-	doNotPrompt := yes || !interactive
-
-	// If we are skipping prompt and file name has been provided
-	if doNotPrompt && updateFileName != "" {
+	// If file name has been provided
+	if updateFileName != "" {
 		err := runUpdate(updateFileName)
 		if err != nil {
 			fmt.Println("Fatal: ", err)
@@ -66,63 +61,67 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Currently if we using interactive mode we'll always go the list screen and pre-check a file if passed in args
-	m := NewUpdateComponentModel(updateFileName)
+	m := NewUpdateComponentModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		return err
+	}
+
+	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		if innerModel, ok := setupModel.Model.(Model); ok {
+			fmt.Println(innerModel.exitMessage)
+		}
 	}
 
 	return nil
 }
 
+var (
+	recopy bool
+	quiet  bool
+)
+
 func UpdateCmd() *cobra.Command {
-	var yes bool
-
-	var interactive bool
-
 	cmd := &cobra.Command{
-		Use:     "update answers_file",
+		Use:     "update [answers_file]",
 		Short:   "Update installed component.",
 		PreRunE: UpdatePreRunE,
 		RunE:    UpdateRunE,
 	}
 
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Automatically confirm the update without prompting.")
-	// TODO: Do we want to alter this to be interactive by default? Maybe once things are more ironed out.
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Set to 'false' to automatically confirm the update without prompting.")
+	cmd.Flags().BoolVarP(&recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
+	cmd.Flags().BoolVarP(&recopy, "quiet", "q", false, "Suppress status output.")
 
 	return cmd
 }
 
 func runUpdate(yamlFile string) error {
+	// Clean path like this `./.datarobot/answers/cli/../react-frontend_web.yml`
+	// to .datarobot/answers/react-frontend_web.yml
+	yamlFile = filepath.Clean(yamlFile)
+
 	if !isYamlFile(yamlFile) {
 		return errors.New("The supplied file is not a YAML file.")
 	}
 
-	answers, err := copier.AnswersFromPath(".")
+	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err
 	}
 
-	answerFileNames := make([]string, 0, len(answers))
+	answersContainFile := slices.ContainsFunc(answers, func(answer copier.Answers) bool {
+		return answer.FileName == yamlFile
+	})
 
-	for _, answer := range answers {
-		answerFileNames = append(answerFileNames, answer.FileName)
-	}
-
-	// TODO: Account for consolidating on string representation
-	// This check fails if I pass `./.datarobot/answers/react-frontend_web.yml` - which has the prefix of `./`
-	if !slices.Contains(answerFileNames, yamlFile) {
+	if !answersContainFile {
 		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
-	quiet := false
-
 	debug := viper.GetBool("debug")
 
-	execErr := copier.ExecUpdate(yamlFile, quiet, debug)
+	execErr := copier.ExecUpdate(yamlFile, recopy, quiet, debug)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

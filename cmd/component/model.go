@@ -27,7 +27,6 @@ import (
 type (
 	errMsg              struct{ err error }
 	screens             int
-	initiators          int
 	componentsLoadedMsg struct {
 		list list.Model
 	}
@@ -36,17 +35,13 @@ type (
 	}
 	updateCompleteMsg struct {
 		item ListItem
+		err  error
 	}
 )
 
 const (
 	listScreen = screens(iota)
 	componentDetailScreen
-)
-
-const (
-	listCmd = initiators(iota)
-	updateCmd
 )
 
 var (
@@ -100,16 +95,15 @@ func newDetailKeys() detailKeyMap {
 }
 
 type Model struct {
-	err                   error
-	infoMessage           string
-	screen                screens
-	initiator             initiators
-	list                  list.Model // This list holds the components
-	initialUpdateFileName string
-	viewport              viewport.Model
-	help                  help.Model
-	keys                  detailKeyMap
-	ready                 bool
+	err         error
+	infoMessage string
+	screen      screens
+	list        list.Model // This list holds the components
+	viewport    viewport.Model
+	help        help.Model
+	keys        detailKeyMap
+	ready       bool
+	exitMessage string
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -125,18 +119,43 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 }
 
 func updateComponent(item ListItem) tea.Cmd {
-	quiet := false
-
 	debug := viper.GetBool("debug")
+	command := copier.Update(item.component.FileName, recopy, quiet, debug)
 
-	return tea.ExecProcess(copier.Update(item.component.FileName, quiet, debug), func(_ error) tea.Msg {
-		return updateCompleteMsg{item}
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		return updateCompleteMsg{item, err}
 	})
 }
 
-func (m Model) unselectComponent(itemToUnselect ListItem) (Model, tea.Cmd) {
+func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea.Cmd) {
+	details := itemToUnselect.component.ComponentDetails
+
+	if err != nil {
+		m.exitMessage += fmt.Sprintf(
+			"Update of \"%s\" component finished with error: %s.",
+			details.Name, err,
+		)
+	} else {
+		m.exitMessage += fmt.Sprintf(
+			"Update of \"%s\" component finished successfully.",
+			details.Name,
+		)
+	}
+
+	count := 0
+
+	for _, item := range m.list.VisibleItems() {
+		if item.(ListItem).checked {
+			count += 1
+		}
+	}
+
+	if count <= 1 {
+		return m, tea.Quit
+	}
+
 	for i, item := range m.list.VisibleItems() {
-		if item.(ListItem).component == itemToUnselect.component {
+		if item.(ListItem).component.FileName == itemToUnselect.component.FileName {
 			newItem := item.(ListItem)
 			newItem.checked = false
 
@@ -161,69 +180,38 @@ func (m Model) getSelectedComponents() []ListItem {
 	return values
 }
 
-func NewComponentModel(initiator initiators, initialScreen screens) Model {
-	h := help.New()
-	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
-	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
-
-	return Model{
-		screen:    initialScreen,
-		initiator: initiator,
-		help:      h,
-		keys:      newDetailKeys(),
-	}
-}
-
-func NewUpdateComponentModel(updateFileName string) Model {
+func NewUpdateComponentModel() Model {
 	h := help.New()
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
 	return Model{
 		screen: listScreen,
-		// Only value here we're actually setting from the function args
-		initialUpdateFileName: updateFileName,
-		help:                  h,
-		keys:                  newDetailKeys(),
+		help:   h,
+		keys:   newDetailKeys(),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	switch m.initiator {
-	case listCmd, updateCmd:
-		return tea.Batch(m.loadComponents(), tea.WindowSize())
-	default:
-		// TODO: Log here that we didn't handle a certain initiator?
-		return tea.WindowSize()
-	}
+	return tea.Batch(m.loadComponents(), tea.WindowSize())
 }
 
 func (m Model) loadComponents() tea.Cmd {
 	return func() tea.Msg {
-		answers, err := copier.AnswersFromPath(".")
-		if err != nil {
-			return errMsg{err}
-		}
-
-		components, err := copier.ComponentsFromAnswers(answers)
+		answers, err := copier.AnswersFromPath(".", false)
 		if err != nil {
 			return errMsg{err}
 		}
 
 		// If we've found zero components return error message that is handled by UI
-		if len(components) == 0 {
+		if len(answers) == 0 {
 			return errMsg{errors.New("No components were found.")}
 		}
 
-		items := make([]list.Item, 0, len(components))
+		items := make([]list.Item, 0, len(answers))
 
-		for i, c := range components {
-			checked := false
-			if m.initialUpdateFileName != "" && c.FileName == m.initialUpdateFileName {
-				checked = true
-			}
-
-			items = append(items, ListItem{current: i == 0, checked: checked, component: c})
+		for i, c := range answers {
+			items = append(items, ListItem{current: i == 0, component: c})
 		}
 
 		delegateKeys := newDelegateKeyMap()
@@ -232,11 +220,6 @@ func (m Model) loadComponents() tea.Cmd {
 
 		// TODO: The actual filtering works but there's bugs/unresolved issues w/ our custom Render() as well as toggleComponent()
 		l.SetFilteringEnabled(false)
-
-		// Now that we've loaded components we can reset filename property since we no longer need it
-		if m.initiator == updateCmd {
-			m.initialUpdateFileName = ""
-		}
 
 		return componentsLoadedMsg{l}
 	}
@@ -254,16 +237,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	case componentsLoadedMsg:
 		m.list = msg.list
 
-		if m.initiator == updateCmd && m.initialUpdateFileName == "" {
-			m.infoMessage = "Please use an 'answer file' value with 'dr component update <answer_file>'."
-		}
+		return m, nil
 	case componentInfoRequestMsg:
 		m.screen = componentDetailScreen
 		m.ready = false
 
 		return m, tea.WindowSize()
 	case updateCompleteMsg:
-		return m.unselectComponent(msg.item)
+		return m.unselectComponent(msg.item, msg.err)
 	}
 
 	switch m.screen {

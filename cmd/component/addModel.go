@@ -115,16 +115,14 @@ func (am AddModel) getSelectedRepoURLs() []string {
 
 func (am AddModel) loadComponents() tea.Cmd {
 	return func() tea.Msg {
-		details := copier.ComponentDetails
+		details := copier.EnabledComponents
 
 		items := make([]list.Item, 0, len(details))
 		first := true
 
 		for _, detail := range details {
-			if detail.Enabled {
-				items = append(items, AddComponentDelegate{current: first, details: detail})
-				first = false
-			}
+			items = append(items, AddComponentDelegate{current: first, details: detail})
+			first = false
 		}
 
 		l := list.New(items, AddComponentDelegate{}, 80, 25)
