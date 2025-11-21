@@ -49,12 +49,6 @@ jobs:
         run: |
           gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
 
-      - name: Upload gosec results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: 'gosec-results.sarif'
 
   build-windows:
     needs: security-scan
