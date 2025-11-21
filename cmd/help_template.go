@@ -83,5 +83,5 @@ var CustomHelpTemplate = getHelpHeader() + `
 ` + getSectionHeader("Additional help topics:") + `{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
-Use "{{.CommandPath}} [command] --help" for more informatison about a command.{{end}}{{end}}
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{end}}
 `
