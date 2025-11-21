@@ -14,18 +14,50 @@ import (
 
 func TestPromptString(t *testing.T) {
 	t.Run("Returns Env when present", func(t *testing.T) {
-		prompt := UserPrompt{
-			Env:    "MY_VAR",
-			Key:    "my-key",
-			Value:  "my-value",
-			Active: true,
+		tests := []struct {
+			prompt   UserPrompt
+			expected string
+		}{
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value`, Active: true},
+				expected: `MY_VAR="my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my value`, Active: true},
+				expected: `MY_VAR="my value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my"value`, Active: true},
+				expected: `MY_VAR="my\"value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `"my-value`, Active: true},
+				expected: `MY_VAR="\"my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value"`, Active: true},
+				expected: `MY_VAR="my-value\""`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my' value`, Active: true},
+				expected: `MY_VAR="my' value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `'my-value`, Active: true},
+				expected: `MY_VAR="'my-value"`,
+			},
+			{
+				prompt:   UserPrompt{Env: "MY_VAR", Key: "my-key", Value: `my-value'`, Active: true},
+				expected: `MY_VAR="my-value'"`,
+			},
 		}
 
-		str := prompt.String()
-		expected := `MY_VAR="my-value"`
+		for _, test := range tests {
+			result := test.prompt.String()
 
-		if str != expected {
-			t.Errorf("Expected '%s', got '%s'", expected, str)
+			if result != test.expected {
+				t.Errorf("Expected '%s', got '%s'", test.expected, result)
+			}
 		}
 	})
 
