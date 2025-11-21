@@ -14,153 +14,89 @@ on:
 
 jobs:
   build-windows:
-    runs-on: ubuntu-latest
-    name: Build Windows Binary
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.3'
-
-      - name: Build Windows Binary with GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          args: release --snapshot --clean --skip homebrew --skip archive
-
-      - name: Upload Windows Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: dr-windows
-          path: dist/windows_windows_amd64_v1/dr.exe
-          retention-days: 1
+    uses: ./.github/workflows/.build-windows.yaml
+    with:
+      go-version: '1.25.3'
+      artifact-name: 'dr-windows'
+    secrets: inherit
 
   smoke-test:
-    strategy:
-      matrix:
-        sys:
-          - { os: ubuntu-latest, shell: bash }
-          - { os: macos-latest, shell: "zsh {0}" }
-    defaults:
-      run:
-        shell: ${{ matrix.sys.shell }}
-    runs-on: ${{ matrix.sys.os }}
-    name: Run Smoke Tests (${{ matrix.sys.os }})
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Ubuntu - Install dependencies w/ apt-get
-        if: matrix.sys.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y expect bash-completion
-
-      - name: MacOS - Install dependencies w/ homebrew
-        if: matrix.sys.os == 'macos-latest'
-        run: |
-          brew install expect bash-completion
-
-      - name: Install yq
-        uses: dcarbone/install-yq-action@v1.3.1
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.3'
-
-      - name: Build the DR CLI Binary
-        run: task build
-
-      - name: Move the Binary
-        run: sudo mv ./dist/dr /usr/local/bin/dr
-
-      - name: Run Smoke Tests for Binary
-        env:
-          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-        run: |
-          task smoke-test DR_API_TOKEN="$DR_API_TOKEN"
+    uses: ./.github/workflows/.smoke-tests-matrix.yaml
+    with:
+      go-version: '1.25.3'
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows-smoke-test:
     needs: build-windows
-    runs-on: windows-latest
-    name: Run Smoke Tests (windows-latest)
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Download Windows Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: dr-windows
-          path: C:\temp\dr-bin
-
-      - name: Move Binary to PATH
-        shell: powershell
-        run: |
-          $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
-          New-Item -ItemType Directory -Force -Path "$INSTALL_DIR"
-          Move-Item -Path "C:\temp\dr-bin\dr.exe" -Destination "$INSTALL_DIR\dr.exe" -Force
-          echo "$INSTALL_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run Smoke Tests for Binary
-        run: |
-          task smoke-test-windows DR_API_TOKEN="$DR_API_TOKEN"
-        env:
-          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: ./.github/workflows/.windows-smoke-test.yaml
+    with:
+      artifact-name: 'dr-windows'
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   installs-smoke-test:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    name: Installation Test (${{ matrix.os }})
+    uses: ./.github/workflows/.installation-tests-matrix.yaml
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-failure:
+    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test]
+    if: failure()
+    runs-on: ubuntu-latest
+    name: Notify Slack on Failure
     steps:
-      - name: Install for Ubuntu and MacOS
-        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
+      - name: Notify Slack
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ DR CLI Daily Smoke Tests Failed",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "❌ DR CLI Daily Smoke Tests Failed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n<${{ github.event.repository.html_url }}|${{ github.repository }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Trigger:*\n${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n<${{ github.event.repository.html_url }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}|View Workflow Run>"
+                  }
+                }
+              ]
+            }
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          curl -fsSL https://cli.datarobot.com/install | sh
-
-      - name: Install for windows
-        if: ${{ matrix.os == 'windows-latest' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          irm https://cli.datarobot.com/winstall | iex
-
-      - name: Check DR runs without errors (Ubuntu and MacOS)
-        if: ${{ matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' }}
-        shell: bash
-        run: |
-          dr --help
-
-      - name: Check DR runs without errors (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: powershell
-        run: |
-          C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

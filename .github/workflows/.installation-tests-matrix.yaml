@@ -1,0 +1,47 @@
+name: Installation Tests Matrix
+
+on:
+  workflow_call:
+    inputs:
+      os-matrix:
+        description: 'OS matrix for installation tests'
+        required: false
+        type: string
+        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  installation-tests:
+    strategy:
+      matrix:
+        os: ${{ fromJSON(inputs.os-matrix) }}
+    runs-on: ${{ matrix.os }}
+    name: Installation Test (${{ matrix.os }})
+    steps:
+      - name: Install for Linux and macOS
+        if: matrix.os != 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL https://cli.datarobot.com/install | sh
+
+      - name: Install for Windows
+        if: matrix.os == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          irm https://cli.datarobot.com/winstall | iex
+
+      - name: Check DR runs without errors (Linux and macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          dr --help
+
+      - name: Check DR runs without errors (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          C:\Users\runneradmin\AppData\Local\Programs\dr\dr.exe --help

@@ -1,0 +1,79 @@
+name: Build Matrix
+
+on:
+  workflow_call:
+    inputs:
+      os-matrix:
+        description: 'OS matrix for builds'
+        required: false
+        type: string
+        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+      go-version:
+        description: 'Go version to use'
+        required: false
+        type: string
+        default: '1.25.3'
+      upload-artifact:
+        description: 'Whether to upload artifacts'
+        required: false
+        type: boolean
+        default: false
+      artifact-name-prefix:
+        description: 'Prefix for artifact names'
+        required: false
+        type: string
+        default: 'dr'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: ${{ fromJSON(inputs.os-matrix) }}
+    runs-on: ${{ matrix.os }}
+    name: (${{ matrix.os }})
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Build the DR CLI Binary
+        run: task build
+
+      - name: Check if binary runs without errors
+        shell: bash
+        run: |
+          ./dist/dr --help
+
+      - name: Upload Binary Artifact (Ubuntu)
+        if: inputs.upload-artifact && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name-prefix }}-ubuntu
+          path: dist/dr
+          retention-days: 1
+
+      - name: Upload Binary Artifact (macOS)
+        if: inputs.upload-artifact && matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name-prefix }}-macos
+          path: dist/dr
+          retention-days: 1
+
+      - name: Upload Binary Artifact (Windows)
+        if: inputs.upload-artifact && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name-prefix }}-windows
+          path: dist/dr.exe
+          retention-days: 1
