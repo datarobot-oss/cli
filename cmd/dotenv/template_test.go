@@ -47,16 +47,16 @@ func (suite *TemplateTestSuite) TestCreateDotenvWithoutTemplate() {
 
 	suite.FileExists(suite.dotfile, "Expected dotenv file to be created")
 
-	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", contents)
-	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", contents)
+	suite.Regexp(`(?m:^DATAROBOT_ENDPOINT=""$)`, contents)
+	suite.Regexp(`(?m:^DATAROBOT_API_TOKEN=""$)`, contents)
 
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
 	content := string(dotfileContents)
 
 	// Verify header format with timestamp
 	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", content)
-	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", content)
+	suite.Regexp(`(?m:^DATAROBOT_ENDPOINT=""$)`, content)
+	suite.Regexp(`(?m:^DATAROBOT_API_TOKEN=""$)`, content)
 
 	os.Remove(suite.dotfile)
 }
@@ -75,16 +75,16 @@ func (suite *TemplateTestSuite) TestCreateDotenvFromScratch() {
 		},
 		variables,
 	)
-	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", contents)
-	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", contents)
+	suite.Regexp(`(?m:^DATAROBOT_ENDPOINT=""$)`, contents)
+	suite.Regexp(`(?m:^DATAROBOT_API_TOKEN=""$)`, contents)
 
 	dotfileContents, _ := os.ReadFile(suite.dotfile)
 	content := string(dotfileContents)
 
 	// Verify header format with timestamp
 	suite.Regexp(`# Edited using .dr dotenv. on \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, content)
-	suite.Regexp("(?m:^DATAROBOT_ENDPOINT=$)", content)
-	suite.Regexp("(?m:^DATAROBOT_API_TOKEN=$)", content)
+	suite.Regexp(`(?m:^DATAROBOT_ENDPOINT=""$)`, content)
+	suite.Regexp(`(?m:^DATAROBOT_API_TOKEN=""$)`, content)
 
 	os.Remove(suite.dotfile)
 }
@@ -105,7 +105,7 @@ func (suite *TemplateTestSuite) TestReadDotfile() {
 }
 
 func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
-	_ = os.WriteFile(suite.dotfile, []byte("DATAROBOT_ENDPOINT=\n"), 0o644)
+	_ = os.WriteFile(suite.dotfile, []byte("DATAROBOT_ENDPOINT=\"\"\n"), 0o644)
 
 	suite.FileExists(suite.dotfile, "Expected dotenv template file to be created")
 
