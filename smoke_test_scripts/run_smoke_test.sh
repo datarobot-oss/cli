@@ -14,7 +14,7 @@ export TERM="dumb"
 testing_url="https://app.datarobot.com"
 
 # Determine if we can access URL
-wget -q --spider $testing_url
+wget -q --spider "$testing_url"
 if [ $? -eq 0 ]; then
     url_accessible=1
 else
@@ -23,13 +23,13 @@ fi
 
 # Using `DATAROBOT_CLI_CONFIG` to be sure we can save/update config file in GitHub Action runners
 testing_dr_cli_config_dir="$(pwd)/.config/datarobot/"
-mkdir -p $testing_dr_cli_config_dir
+mkdir -p "$testing_dr_cli_config_dir"
 export DATAROBOT_CLI_CONFIG="${testing_dr_cli_config_dir}drconfig.yaml"
-touch $DATAROBOT_CLI_CONFIG
-cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > $DATAROBOT_CLI_CONFIG
+touch "$DATAROBOT_CLI_CONFIG"
+cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > "$DATAROBOT_CLI_CONFIG"
 
 # Set API token in our ephemeral config file
-yq -i ".token = \"$DR_API_TOKEN\"" $DATAROBOT_CLI_CONFIG
+yq -i ".token = \"$DR_API_TOKEN\"" "$DATAROBOT_CLI_CONFIG"
 
 dr help
 dr help run
@@ -66,10 +66,10 @@ dr run
 
 # Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
 # The expect script "hits" the `y` key for "yes", then `https://app.datarobot.com`
-expect ./smoke_test_scripts/expect_auth_setURL.exp $DATAROBOT_CLI_CONFIG
+expect ./smoke_test_scripts/expect_auth_setURL.exp "$DATAROBOT_CLI_CONFIG"
 
 # Check if we have the auth URL correctly set
-auth_endpoint_check=$(cat $DATAROBOT_CLI_CONFIG | grep endpoint | grep ${testing_url}/api/v2)
+auth_endpoint_check=$(cat "$DATAROBOT_CLI_CONFIG" | grep endpoint | grep "${testing_url}/api/v2")
 if [[ -n "$auth_endpoint_check" ]]; then
   echo "✅ Assertion passed: We have expected expected 'endpoint' auth URL value in config."
   echo "Value: $auth_endpoint_check"
@@ -77,7 +77,7 @@ else
   echo "❌ Assertion failed: We don't have expected 'endpoint' auth URL value."
   # Print ~/.config/datarobot/drconfig.yaml (if it exists) to aid in debugging if needed
   echo "${DATAROBOT_CLI_CONFIG} contents:"
-  cat $DATAROBOT_CLI_CONFIG
+  cat "$DATAROBOT_CLI_CONFIG"
   exit 1
 fi
 
@@ -100,10 +100,10 @@ else
     echo "❌ Directory ($DIRECTORY) does not exist."
     exit 1
   fi
-  cd $DIRECTORY
+  cd "$DIRECTORY"
 
   # Validate the SESSION_SECRET_KEY set during templates setup
-  session_secret_key_check=$(cat .env | grep SESSION_SECRET_KEY=${testing_session_secret_key})
+  session_secret_key_check=$(cat .env | grep "SESSION_SECRET_KEY=\"${testing_session_secret_key}\"")
   if [[ -n "$session_secret_key_check" ]]; then
     echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
   else
@@ -117,7 +117,7 @@ else
 
   # Run dotenv setup - it should prompt for existing variables including DATAROBOT_ENDPOINT
   # The expect script will accept defaults for all variables
-  export DATAROBOT_ENDPOINT=${testing_url}
+  export DATAROBOT_ENDPOINT="${testing_url}"
   expect ../smoke_test_scripts/expect_dotenv_setup.exp "."
 
   # Validate DATAROBOT_ENDPOINT exists in .env (it should already be there from template)
@@ -129,11 +129,11 @@ else
     echo "❌ Assertion failed: DATAROBOT_ENDPOINT not found in .env file."
     cat .env
     cd ..
-    rm -rf $DIRECTORY
+    rm -rf "$DIRECTORY"
     exit 1
   fi
 
   # Now delete directory to clean up
   cd ..
-  rm -rf $DIRECTORY
+  rm -rf "$DIRECTORY"
 fi

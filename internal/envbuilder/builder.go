@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -88,15 +89,16 @@ func (up UserPrompt) String() string {
 
 func (up UserPrompt) StringWithoutHelp() string {
 	result := ""
+	quotedValue := strconv.Quote(up.Value)
 
 	if up.Env != "" {
 		if up.Commented || !up.Active {
 			result += "# "
 		}
 
-		result += fmt.Sprintf("%s=%v", up.Env, up.Value)
+		result += fmt.Sprintf("%s=%v", up.Env, quotedValue)
 	} else {
-		result += fmt.Sprintf("# %s=%v", up.Key, up.Value)
+		result += fmt.Sprintf("# %s=%v", up.Key, quotedValue)
 	}
 
 	return result

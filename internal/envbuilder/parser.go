@@ -10,6 +10,7 @@ package envbuilder
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -29,11 +30,28 @@ type Variable struct {
 type Variables []Variable
 
 func (v *Variable) String() string {
+	quotedValue := strconv.Quote(v.Value)
+
 	if v.Commented {
-		return "# " + v.Name + "=" + v.Value + "\n"
+		return "# " + v.Name + "=" + quotedValue + "\n"
 	}
 
-	return v.Name + "=" + v.Value + "\n"
+	return v.Name + "=" + quotedValue + "\n"
+}
+
+func (v *Variable) StringSecret() string {
+	if v.Secret {
+		secretLength := len(v.Value)
+		if secretLength > 20 {
+			secretLength = 20
+		}
+
+		secret := strings.Repeat("*", secretLength)
+
+		return "# " + v.Name + "=" + secret + "\n"
+	}
+
+	return v.String()
 }
 
 // ParseVariablesOnly parses variables from template lines without attempting to auto-populate them.
@@ -57,9 +75,14 @@ func NewFromLine(line string) Variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := regexp2.NamedStringMatches(expr, line)
 
+	unquotedValue, err := strconv.Unquote(result["value"])
+	if err != nil {
+		unquotedValue = result["value"]
+	}
+
 	return Variable{
 		Name:      result["name"],
-		Value:     result["value"],
+		Value:     unquotedValue,
 		Secret:    knownVariables[result["name"]].secret,
 		Commented: result["commented"] != "",
 	}
