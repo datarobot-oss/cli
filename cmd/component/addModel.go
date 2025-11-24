@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,8 @@ type (
 
 var listStyle = lipgloss.NewStyle().Margin(2, 2, 1)
 
+var errMsgID = 1
+
 const (
 	addLoadingScreen = addScreens(iota)
 	addComponentsScreen
@@ -39,6 +42,7 @@ type AddModel struct {
 	list     list.Model
 	width    int
 	height   int
+	errorMsg string
 	RepoURLs []string
 }
 
@@ -94,6 +98,11 @@ func (am AddModel) toggleCurrent() (AddModel, tea.Cmd) {
 	currentItem.checked = !currentItem.checked
 	items[am.list.Index()] = currentItem
 
+	// If we've checked an item and error message exists, reset it
+	if currentItem.checked && am.errorMsg != "" {
+		am.errorMsg = ""
+	}
+
 	cmd := am.list.SetItems(items)
 
 	return am, cmd
@@ -139,6 +148,11 @@ func (am AddModel) Init() tea.Cmd {
 
 func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	switch msg := msg.(type) {
+	case tui.ClearStatusMsg:
+		if msg.MsgID == errMsgID {
+			am.errorMsg = ""
+			return am, nil
+		}
 	case tea.WindowSizeMsg:
 		am.width = msg.Width
 		am.height = msg.Height
@@ -169,8 +183,14 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return am.toggleCurrent()
 			case tea.KeyEnter.String():
 				repoURLs := am.getSelectedRepoURLs()
-				if len(repoURLs) > 0 {
+				if len(repoURLs) == 0 {
+					am.errorMsg = "At least one component must be selected. Please select one or more components to continue."
+					return am, tui.ClearStatusAfter(3*time.Second, errMsgID)
+				} else if len(repoURLs) > 0 {
+					// Reset error message (it may already be an empty string but can't hurt)
+					am.errorMsg = ""
 					am.RepoURLs = repoURLs
+
 					return am, tea.Quit
 				}
 			case tea.KeyEscape.String(), "q":
@@ -232,13 +252,18 @@ func (am AddModel) addComponentsScreenView() string {
 		style = tui.BaseTextStyle
 	}
 
+	// Display error message
+	if am.errorMsg != "" {
+		sb.WriteString("\n")
+		sb.WriteString(tui.ErrorStyle.Render("Error: ") + am.errorMsg)
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press space to toggle component."))
+	sb.WriteString(tui.BaseTextStyle.PaddingRight(6).Render("Press space to toggle component."))
 
-	sb.WriteString("\t")
-	sb.WriteString(style.Render("Press enter to add component."))
+	sb.WriteString(style.PaddingRight(6).Render("Press enter to add component."))
 
-	sb.WriteString("\t")
 	sb.WriteString(tui.BaseTextStyle.Render("Press esc to exit."))
 
 	return sb.String()
