@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -184,7 +185,7 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				repoURLs := am.getSelectedRepoURLs()
 				if len(repoURLs) == 0 {
 					am.errorMsg = "At least one component must be selected. Please select one or more components to continue."
-					return am, tui.ClearStatusAfter(3, errMsgID)
+					return am, tui.ClearStatusAfter(3*time.Second, errMsgID)
 				} else if len(repoURLs) > 0 {
 					// Reset error message (it may already be an empty string but can't hurt)
 					am.errorMsg = ""

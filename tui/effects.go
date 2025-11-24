@@ -18,9 +18,9 @@ type ClearStatusMsg struct {
 	MsgID int
 }
 
-func ClearStatusAfter(d time.Duration, msgID int) tea.Cmd {
+func ClearStatusAfter(duration time.Duration, msgID int) tea.Cmd {
 	return func() tea.Msg {
-		<-time.After(d * time.Second)
+		<-time.After(duration)
 		return ClearStatusMsg{msgID}
 	}
 }
