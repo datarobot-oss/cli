@@ -30,6 +30,7 @@ const (
 	keyOpenExternal = "o"
 	keyExit         = "esc"
 	keySave         = "ctrl+s"
+	keyBack         = "ctrl+p"
 
 	// Editor fallback if env vars are not set
 	defaultEditor = "vi"
@@ -164,16 +165,20 @@ func (m Model) loadPrompts() tea.Cmd {
 }
 
 func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	m.currentPrompt, cmd = newPromptModel(m.prompts[m.currentPromptIndex], promptFinishedCmd)
+
+	return m, cmd
+}
+
+func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 	// Update required sections
 	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
-	var prompt envbuilder.UserPrompt
-
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
-		prompt = m.prompts[m.currentPromptIndex]
-
-		if prompt.ShouldAsk() {
+		if m.prompts[m.currentPromptIndex].ShouldAsk() {
 			break
 		}
 
@@ -188,11 +193,27 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 		return m, m.saveEditedFile()
 	}
 
-	var cmd tea.Cmd
+	return m.updateCurrentPrompt()
+}
 
-	m.currentPrompt, cmd = newPromptModel(prompt, promptFinishedCmd)
+func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
+	currentPromptIndex := m.currentPromptIndex
 
-	return m, cmd
+	// Get back to previous prompt that is required
+	for {
+		currentPromptIndex--
+		if currentPromptIndex < 0 {
+			return m, nil
+		}
+
+		if m.prompts[currentPromptIndex].ShouldAsk() {
+			break
+		}
+	}
+
+	m.currentPromptIndex = currentPromptIndex
+
+	return m.updateCurrentPrompt()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -246,7 +267,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, nil
 		}
 
-		return m.updateCurrentPrompt()
+		return m.moveToNextPrompt()
 	case openEditorMsg:
 		m.screen = editorScreen
 
@@ -312,6 +333,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case keyExit:
 				m.screen = listScreen
 				return m, nil
+			case keyBack:
+				return m.moveToPreviousPrompt()
 			}
 		case promptFinishedMsg:
 			if m.currentPromptIndex < len(m.prompts) {
@@ -321,7 +344,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				m.currentPromptIndex++
 
-				return m.updateCurrentPrompt()
+				return m.moveToNextPrompt()
 			}
 
 			m.screen = listScreen
