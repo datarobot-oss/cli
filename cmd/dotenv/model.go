@@ -382,6 +382,7 @@ func (m Model) viewListScreen() string {
 	editor := viper.GetString("external-editor")
 
 	var sb strings.Builder
+
 	var content strings.Builder
 
 	sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
