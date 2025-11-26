@@ -181,7 +181,10 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
 	}
 
-	// map VISUAL and EDITOR to external-editor config key
+	// map VISUAL and EDITOR to external-editor config key,
+	// but set a default value
+	viper.SetDefault("external-editor", "vi")
+
 	err = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 	if err != nil {
 		return fmt.Errorf("Failed to bind environment variables for external-editor: %w", err)
