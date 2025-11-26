@@ -363,7 +363,6 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// The function under test is Model.externalEditorCmd()
 	// and is dependent ONLY on the global viper config.
-
 	m := Model{
 		DotenvFile: "/path/to/dotenv/file",
 	}
@@ -372,7 +371,7 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	suite.T().Setenv("VISUAL", "nano")
 	suite.T().Setenv("EDITOR", "vim")
 	// Bind the env vars to viper
-	viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd := m.externalEditorCmd()
 	suite.Contains(cmd.Path, "nano", "Expected VISUAL to take precedence")
@@ -381,7 +380,7 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// Test EDITOR fallback
 	suite.T().Setenv("VISUAL", "")
 	// Bind the env vars to viper
-	viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vim", "Expected EDITOR as fallback")
@@ -389,14 +388,15 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// Test when neither is set
 	suite.T().Setenv("EDITOR", "")
 	// Bind the env vars to viper
-	viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "", "Expected empty editor when none is set")
 
 	// Test default value
 	viper.SetDefault("external-editor", "vi")
-	viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	// Bind the env vars to viper; this should not override the default
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
