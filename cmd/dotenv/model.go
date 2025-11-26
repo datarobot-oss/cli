@@ -101,6 +101,9 @@ func (m Model) openInExternalEditor() tea.Cmd {
 
 func (m Model) externalEditorCmd() *exec.Cmd {
 	// Determine the editor to use
+	// TODO we may want to refactor this in the future to
+	// use a separate viper instance for better testability
+	// rather than the global one.
 	editor := viper.GetString("external-editor")
 
 	return exec.Command(editor, m.DotenvFile)
