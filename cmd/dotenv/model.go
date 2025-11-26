@@ -31,9 +31,6 @@ const (
 	keyExit         = "esc"
 	keySave         = "ctrl+s"
 	keyBack         = "ctrl+p"
-
-	// Editor fallback if env vars are not set
-	defaultEditor = "vi"
 )
 
 type screens int
@@ -105,9 +102,6 @@ func (m Model) openInExternalEditor() tea.Cmd {
 func (m Model) externalEditorCmd() *exec.Cmd {
 	// Determine the editor to use
 	editor := viper.GetString("external-editor")
-	if editor == "" {
-		editor = defaultEditor // fallback to vi
-	}
 
 	return exec.Command(editor, m.DotenvFile)
 }
@@ -385,8 +379,9 @@ func (m Model) View() string {
 }
 
 func (m Model) viewListScreen() string {
-	var sb strings.Builder
+	editor := viper.GetString("external-editor")
 
+	var sb strings.Builder
 	var content strings.Builder
 
 	sb.WriteString(tui.WelcomeStyle.Render("Environment Variables Menu"))
@@ -407,7 +402,7 @@ func (m Model) viewListScreen() string {
 
 	sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
 	sb.WriteString("\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
+	sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Press o to open the file in your EDITOR (%s).", editor)))
 	sb.WriteString("\n")
 	sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
 
