@@ -43,8 +43,8 @@ func Run(_ *cobra.Command, _ []string) {
 	contents := string(contentBytes)
 	taskfileIgnore := "/" + taskfileName
 
-	// Check if either Taskfile format is already in .gitignore
-	if isIgnored(contents, "/Taskfile.yaml") || isIgnored(contents, "/Taskfile.yml") {
+	// Check if Taskfile.yaml or Taskfile.yml is already in .gitignore
+	if isIgnored(contents, taskfileIgnore) {
 		return
 	}
 

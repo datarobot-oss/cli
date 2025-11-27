@@ -46,6 +46,8 @@ type taskfileTmplData struct {
 	LintComponents      []string
 	HasInstall          bool
 	InstallComponents   []string
+	HasUninstall        bool
+	UninstallComponents []string
 	HasTest             bool
 	TestComponents      []string
 	HasDev              bool
@@ -298,6 +300,7 @@ func (d *Discovery) buildComposeData(root string, includes []componentInclude) (
 		StartComponents:     []string{},
 		LintComponents:      []string{},
 		InstallComponents:   []string{},
+		UninstallComponents: []string{},
 		TestComponents:      []string{},
 		DevComponents:       []string{},
 		DeployComponents:    []string{},
@@ -343,6 +346,7 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 		"start":      {&data.StartComponents, &data.HasStart},
 		"lint":       {&data.LintComponents, &data.HasLint},
 		"install":    {&data.InstallComponents, &data.HasInstall},
+		"uninstall":  {&data.UninstallComponents, &data.HasUninstall},
 		"test":       {&data.TestComponents, &data.HasTest},
 		"dev":        {&data.DevComponents, &data.HasDev},
 		"deploy":     {&data.DeployComponents, &data.HasDeploy},

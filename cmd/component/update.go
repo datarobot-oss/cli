@@ -19,6 +19,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/task/compose"
+	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
@@ -58,6 +60,9 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 			os.Exit(1)
 		}
 
+		compose.Cmd().Run(nil, nil)
+		run.Cmd().Run(nil, []string{"reinstall"})
+
 		return nil
 	}
 
@@ -72,6 +77,10 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
 		if innerModel, ok := setupModel.Model.(Model); ok {
 			fmt.Println(innerModel.exitMessage)
+			if innerModel.componentUpdated {
+				compose.Cmd().Run(nil, nil)
+				run.Cmd().Run(nil, []string{"reinstall"})
+			}
 		}
 	}
 

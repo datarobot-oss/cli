@@ -75,7 +75,7 @@ func RunE(_ *cobra.Command, args []string) error {
 		fmt.Printf("Component %s added.\n", repoURL)
 	}
 
-	compose.Run(nil, nil)
+	compose.Cmd().Run(nil, nil)
 
 	return nil
 }

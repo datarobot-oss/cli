@@ -104,6 +104,8 @@ type Model struct {
 	keys        detailKeyMap
 	ready       bool
 	exitMessage string
+
+	componentUpdated bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -140,6 +142,7 @@ func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea
 			"Update of \"%s\" component finished successfully.",
 			details.Name,
 		)
+		m.componentUpdated = true
 	}
 
 	count := 0
