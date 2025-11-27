@@ -74,13 +74,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() error {
-	return RootCmd.Execute()
-}
-
 // ExecuteContext executes the root command with the given context.
+// It adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
 func ExecuteContext(ctx context.Context) error {
 	return RootCmd.ExecuteContext(ctx)
 }
