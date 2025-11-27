@@ -36,7 +36,7 @@ func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func UpdateRunE(cmd *cobra.Command, args []string) error {
+func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -77,6 +77,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
 		if innerModel, ok := setupModel.Model.(Model); ok {
 			fmt.Println(innerModel.exitMessage)
+
 			if innerModel.componentUpdated {
 				compose.Cmd().Run(nil, nil)
 				run.Cmd().Run(nil, []string{"reinstall"})
