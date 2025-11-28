@@ -16,7 +16,7 @@ tasks:
     cmds:
       - task --list --sort none
     silent: true
-{{- if .HasStart }}
+  {{- if .HasStart }}
 
   start:
     desc: "💻 Prepare local development environment"
@@ -38,7 +38,6 @@ tasks:
       - task: {{ . }}:lint
       {{- end }}
   {{- end }}
-
   {{- if .HasInstall }}
 
   install:
@@ -47,6 +46,25 @@ tasks:
       {{- range .InstallComponents }}
       - task: {{ . }}:install
       {{- end }}
+  {{- end }}
+  {{- if .HasUninstall }}
+
+  uninstall:
+    desc: "🛠️ Uninstall all dependencies"
+    cmds:
+      {{- range .UninstallComponents }}
+      - task: {{ . }}:uninstall
+      {{- end }}
+
+  reinstall:
+    desc: "🛠️ Reinstall all dependencies"
+    cmds:
+      - task: uninstall
+      - task: install
+  {{- else }}
+
+  reinstall:
+    desc: "🛠️ Reinstall all dependencies (placeholder task)"
   {{- end }}
   {{- if .HasTest }}
 
