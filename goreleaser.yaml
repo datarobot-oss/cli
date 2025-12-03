@@ -111,10 +111,3 @@ notarize:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
       notarize:
-        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
-        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
-        key: "{{.Env.MACOS_NOTARY_KEY}}"
-        # Whether to wait for the notarization to finish.
-        # Not recommended, as it could take a really long time.
-        wait: true
-        timeout: 20m
