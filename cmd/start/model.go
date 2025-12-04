@@ -9,6 +9,7 @@
 package start
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -163,9 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepErrorMsg:
 		m.err = msg.err
-		m.quitting = true
-		// Don't quit immediately - wait for user to see the error and press a key
-		return m, nil
+		return m, tea.Quit
 
 	case scriptCompleteMsg:
 		// Script execution completed successfully, update state and quit
@@ -278,9 +277,6 @@ func (m Model) View() string {
 	// Display error or status message
 	if m.err != nil {
 		sb.WriteString(fmt.Sprintf("%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error()))
-		sb.WriteString("\n")
-		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
-		sb.WriteString("\n")
 
 		return sb.String()
 	}
@@ -320,15 +316,17 @@ func checkPrerequisites(_ *Model) tea.Msg {
 	// Return stepErrorMsg{err} if prerequisites are not met
 
 	// Do we have the required tools?
-	if err := tools.CheckPrerequisites(); err != nil {
-		return stepErrorMsg{err: err}
+	missing := tools.MissingPrerequisites()
+
+	if missing != "" {
+		return stepErrorMsg{err: errors.New(missing)}
 	}
 
 	// TODO Is template configuration correct?
 	// TODO Do we need to validate the directory structure?
 
 	// Are we working hard?
-	time.Sleep(500 * time.Millisecond) // Simulate work
+	// time.Sleep(500 * time.Millisecond) // Simulate work
 
 	return stepCompleteMsg{}
 }

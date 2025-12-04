@@ -16,10 +16,14 @@ import (
 	"runtime"
 
 	internalShell "github.com/datarobot/cli/internal/shell"
+	"github.com/datarobot/cli/internal/tools"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 func UpdateCmd() *cobra.Command { //nolint:cyclop
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update DataRobot CLI",
@@ -27,7 +31,23 @@ func UpdateCmd() *cobra.Command { //nolint:cyclop
 to update if it detects the installed cask;  otherwise it will use an OS-appropriate script
 with your default shell.
 `,
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(_ *cobra.Command, _ []string) error {
+			requirement, err := tools.GetSelfRequirement()
+			if err != nil {
+				return err
+			}
+
+			if tools.SufficientSelfVersion(requirement.MinimumVersion) && !force {
+				if requirement.MinimumVersion != "" {
+					fmt.Fprintf(os.Stderr, "Required version: %s. ", requirement.MinimumVersion)
+				}
+
+				fmt.Fprintf(os.Stderr, "Installed version: %s.\n", version.Version)
+				fmt.Fprintln(os.Stderr, "Skipping update. To force update to latest version, add -f flag.")
+
+				return nil
+			}
+
 			// Account for when dr-cli cask has been installed - via `brew install datarobot-oss/taps/dr-cli`
 			if runtime.GOOS == "darwin" { //nolint:nestif
 				// Try to find brew and check if datarobot-oss is installed
@@ -44,7 +64,7 @@ with your default shell.
 
 						if err := brewUpdateCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							os.Exit(1)
+							return err
 						}
 
 						brewUpgradeCmd := exec.Command(brewPath, "upgrade", "--cask", "dr-cli")
@@ -53,10 +73,10 @@ with your default shell.
 
 						if err := brewUpgradeCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							os.Exit(1)
+							return err
 						}
 
-						return
+						return nil
 					}
 				}
 			}
@@ -65,9 +85,7 @@ with your default shell.
 			shell, err := internalShell.DetectShell()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
-				os.Exit(1)
-
-				return
+				return err
 			}
 
 			var command string
@@ -88,9 +106,14 @@ with your default shell.
 
 			if err := execCmd.Run(); err != nil {
 				log.Fatalf("Command execution failed: %v", err)
+				return err
 			}
+
+			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update to latest version")
 
 	return cmd
 }
