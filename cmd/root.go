@@ -49,7 +49,6 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
   dr start             # Create your first AI app (start here!)
-  dr templates setup   # Setup a template for your AI app
   dr --help            # Show all available commands
 
 💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
