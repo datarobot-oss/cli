@@ -190,7 +190,23 @@ If the user declines, the command exits gracefully and still updates the state f
 
 Before proceeding, the command verifies:
 
-- ✅ Required tools are installed (Git, etc.)
+- ✅ Required tools are installed (python, uv, task, pulumi, etc.)
+
+Required tools and versions can be configured by creating `.datarobot/cli/versions.yaml` file with content like this:
+
+```yaml
+---
+dr:
+  name: DataRobot CLI
+  minimum-version: 0.2.0
+  command: dr self version
+  url: https://github.com/datarobot-oss/cli
+uv:
+  name: uv Python package manager
+  minimum-version: 1.7.0
+  command: uv self version
+  url: https://docs.astral.sh/uv/getting-started/installation/
+```
 
 When searching for a quickstart script, the command checks:
 

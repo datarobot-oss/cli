@@ -52,6 +52,7 @@ func (vf *Format) Type() string {
 
 type versionOptions struct {
 	format Format
+	short  bool
 }
 
 func VersionCmd() *cobra.Command {
@@ -82,6 +83,8 @@ func VersionCmd() *cobra.Command {
 		fmt.Sprintf("Output format (options: %s, %s)", FormatJSON, FormatText),
 	)
 
+	cmd.Flags().BoolVarP(&options.short, "short", "s", false, "Short format")
+
 	_ = cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{string(FormatJSON), string(FormatText)}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -90,6 +93,10 @@ func VersionCmd() *cobra.Command {
 }
 
 func getVersion(opts versionOptions) (string, error) {
+	if opts.short {
+		return version.Version, nil
+	}
+
 	if opts.format == FormatJSON {
 		b, err := json.Marshal(version.Info)
 		if err != nil {

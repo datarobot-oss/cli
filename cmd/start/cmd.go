@@ -47,7 +47,7 @@ The following actions will be performed:
 			}
 
 			m := NewStartModel(opts)
-			p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
+			p := tea.NewProgram(tui.NewInterruptibleModel(m))
 
 			finalModel, err := p.Run()
 			if err != nil {
@@ -77,7 +77,7 @@ The following actions will be performed:
 				// Now run start again - we're in the cloned repo directory
 				// Create a new start model and run it
 				m2 := NewStartModel(opts)
-				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2), tea.WithAltScreen())
+				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2))
 
 				_, err = p2.Run()
 
