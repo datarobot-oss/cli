@@ -60,7 +60,7 @@ var ComponentDetails = []Details{
 
 		Name:      "Agent",
 		ShortName: "agent",
-		RepoURL:   "git@github.com:datarobot-community/af-component-agent.git",
+		RepoURL:   "https://github.com/datarobot-community/af-component-agent.git",
 		Enabled:   true,
 	},
 	{
@@ -68,34 +68,34 @@ var ComponentDetails = []Details{
 
 		Name:      "Base",
 		ShortName: "base",
-		RepoURL:   "git@github.com:datarobot/af-component-base.git",
+		RepoURL:   "https://github.com/datarobot/af-component-base.git",
 	},
 	{
 		readMeFile: "af-component-fastapi-backend.md",
 
 		Name:      "FastAPI backend",
 		ShortName: "fastapi",
-		RepoURL:   "git@github.com:datarobot/af-component-fastapi-backend.git",
+		RepoURL:   "https://github.com/datarobot/af-component-fastapi-backend.git",
 	},
 	{
 		readMeFile: "af-component-fastmcp-backend.md",
 
 		Name:      "FastMCP backend",
 		ShortName: "fastmcp",
-		RepoURL:   "git@github.com:datarobot/af-component-fastmcp-backend.git",
+		RepoURL:   "https://github.com/datarobot/af-component-fastmcp-backend.git",
 	},
 	{
 		readMeFile: "af-component-llm.md",
 
 		Name:      "LLM",
 		ShortName: "llm",
-		RepoURL:   "git@github.com:datarobot/af-component-llm.git",
+		RepoURL:   "https://github.com/datarobot/af-component-llm.git",
 	},
 	{
 		readMeFile: "af-component-react.md",
 
 		Name:      "React",
 		ShortName: "react",
-		RepoURL:   "git@github.com:datarobot/af-component-react.git",
+		RepoURL:   "https://github.com/datarobot/af-component-react.git",
 	},
 }

@@ -10,7 +10,6 @@ To add the agent component to your project, run the following command to copy th
 
 ```bash
 uvx copier copy https://github.com/datarobot-community/af-component-agent .
-# uvx copier copy git@github.com:datarobot-community/af-component-agent.git .
 ```
 
 To update an existing agent template, run the following command to update the template files:
