@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20250818131617-61d774aefe53
 	github.com/gitsight/go-vcsurl v1.0.1
+	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0

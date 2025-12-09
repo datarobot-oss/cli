@@ -15,6 +15,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -54,16 +55,23 @@ func (v *Variable) StringSecret() string {
 	return v.String()
 }
 
-// ParseVariablesOnly parses variables from template lines without attempting to auto-populate them.
+// ParseVariablesOnly parses variables from lines without attempting to auto-populate them.
 // This is used when parsing .env files to extract variable names and values.
 // Commented lines (starting with #) are marked as such.
-func ParseVariablesOnly(templateLines []string) []Variable {
+func ParseVariablesOnly(dotenvLines []string) []Variable {
+	contents := strings.Join(dotenvLines, "\n")
+	unquotedValues, _ := godotenv.Unmarshal(contents)
+
 	variables := make([]Variable, 0)
 
-	for _, templateLine := range templateLines {
+	for _, templateLine := range dotenvLines {
 		v := NewFromLine(templateLine)
 
 		if v.Name != "" {
+			if unquotedValue, ok := unquotedValues[v.Name]; ok {
+				v.Value = unquotedValue
+			}
+
 			variables = append(variables, v)
 		}
 	}
@@ -75,14 +83,9 @@ func NewFromLine(line string) Variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := regexp2.NamedStringMatches(expr, line)
 
-	unquotedValue, err := strconv.Unquote(result["value"])
-	if err != nil {
-		unquotedValue = result["value"]
-	}
-
 	return Variable{
 		Name:      result["name"],
-		Value:     unquotedValue,
+		Value:     result["value"],
 		Secret:    knownVariables[result["name"]].secret,
 		Commented: result["commented"] != "",
 	}
