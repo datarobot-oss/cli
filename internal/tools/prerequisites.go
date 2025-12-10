@@ -74,11 +74,11 @@ func MissingPrerequisites() string {
 	result := make([]string, 0)
 
 	if len(missing) > 0 {
-		result = append(result, fmt.Sprintf("Missing required tools:\n%s.", strings.Join(missing, "\n")))
+		result = append(result, fmt.Sprintf("Missing required tools:\n\n%s", strings.Join(missing, "\n")))
 	}
 
 	if len(wrongVersion) > 0 {
-		result = append(result, fmt.Sprintf("Wrong versions of tools:\n%s.", strings.Join(wrongVersion, "\n")))
+		result = append(result, fmt.Sprintf("Wrong versions of tools:\n\n%s", strings.Join(wrongVersion, "\n")))
 	}
 
 	return strings.Join(result, "\n")
@@ -116,7 +116,8 @@ func isVersionInstalled(tool Prerequisite) (string, bool) {
 
 	if tool.Key == "dr" {
 		if !SufficientSelfVersion(tool.MinimumVersion) {
-			return fmt.Sprintf("%s (minimal: v%s, installed: %s)", tool.Name, tool.MinimumVersion, version.Version), false
+			return fmt.Sprintf("%s (minimal: v%s, installed: %s)\n%s\n",
+				tool.Name, tool.MinimumVersion, version.Version, tool.URL), false
 		}
 
 		return "", true
@@ -126,11 +127,13 @@ func isVersionInstalled(tool Prerequisite) (string, bool) {
 
 	versionOutput, err := exec.Command(command, args...).Output()
 	if err != nil {
-		return fmt.Sprintf("%s (minimal: %s, installed: unknown)", tool.Name, tool.MinimumVersion), false
+		return fmt.Sprintf("%s (minimal: v%s, installed: unknown)\n%s\n",
+			tool.Name, tool.MinimumVersion, tool.URL), false
 	}
 
 	if versionInstalled, ok := sufficientVersion(string(versionOutput), tool.MinimumVersion); !ok {
-		return fmt.Sprintf("%s (minimal: %s, installed: %s)", tool.Name, tool.MinimumVersion, versionInstalled), false
+		return fmt.Sprintf("%s (minimal: v%s, installed: %s)\n%s\n",
+			tool.Name, tool.MinimumVersion, versionInstalled, tool.URL), false
 	}
 
 	return "", true
@@ -159,9 +162,9 @@ func sufficientVersion(versionOutput, minimalStr string) (string, bool) {
 
 	if installed["major"] < minimal["major"] {
 		return installedStr, false
-	} else if installed["minor"] < minimal["minor"] {
+	} else if installed["major"] == minimal["major"] && installed["minor"] < minimal["minor"] {
 		return installedStr, false
-	} else if installed["patch"] < minimal["patch"] {
+	} else if installed["major"] == minimal["major"] && installed["minor"] == minimal["minor"] && installed["patch"] < minimal["patch"] {
 		return installedStr, false
 	}
 
