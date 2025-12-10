@@ -59,19 +59,13 @@ func (v *Variable) StringSecret() string {
 // This is used when parsing .env files to extract variable names and values.
 // Commented lines (starting with #) are marked as such.
 func ParseVariablesOnly(dotenvLines []string) []Variable {
-	contents := strings.Join(dotenvLines, "\n")
-	unquotedValues, _ := godotenv.Unmarshal(contents)
-
+	unquotedValues, _ := godotenv.Unmarshal(strings.Join(dotenvLines, "\n"))
 	variables := make([]Variable, 0)
 
 	for _, templateLine := range dotenvLines {
-		v := NewFromLine(templateLine)
+		v := NewFromLine(templateLine, unquotedValues)
 
 		if v.Name != "" {
-			if unquotedValue, ok := unquotedValues[v.Name]; ok {
-				v.Value = unquotedValue
-			}
-
 			variables = append(variables, v)
 		}
 	}
@@ -79,9 +73,15 @@ func ParseVariablesOnly(dotenvLines []string) []Variable {
 	return variables
 }
 
-func NewFromLine(line string) Variable {
+func NewFromLine(line string, unquotedValues map[string]string) Variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := regexp2.NamedStringMatches(expr, line)
+
+	if unquotedValue, ok := unquotedValues[result["name"]]; ok {
+		result["value"] = unquotedValue
+	} else if unquotedResultValue, err := strconv.Unquote(result["value"]); err == nil {
+		result["value"] = unquotedResultValue
+	}
 
 	return Variable{
 		Name:      result["name"],
@@ -92,12 +92,13 @@ func NewFromLine(line string) Variable {
 }
 
 func VariablesFromLines(lines []string) ([]Variable, string) {
+	unquotedValues, _ := godotenv.Unmarshal(strings.Join(lines, "\n"))
 	variables := make([]Variable, 0)
 
 	var contents strings.Builder
 
 	for _, line := range lines {
-		v := NewFromLine(line)
+		v := NewFromLine(line, unquotedValues)
 
 		if v.Name != "" && v.Commented {
 			variables = append(variables, v)
