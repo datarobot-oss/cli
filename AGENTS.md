@@ -34,6 +34,7 @@ All code must pass `golangci-lint` with zero errors. Follow these whitespace rul
 4. **Blank line before multi-line statements** - Add blank line before if/for/switch statements
 
 Example of correct spacing:
+
 ```go
 func example() {
     x := 1
