@@ -35,11 +35,19 @@ func checkCLICredentials() bool {
 	}
 
 	cliToken := config.GetAPIKey()
+
 	if cliToken == "" {
 		fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
 		fmt.Print(tui.BaseTextStyle.Render("Run "))
 		fmt.Print(tui.InfoStyle.Render("dr auth login"))
 		fmt.Println(tui.BaseTextStyle.Render(" to authenticate."))
+		fmt.Println(tui.BaseTextStyle.Render("\n  If this error persists, your DATAROBOT_API_TOKEN environment variable"))
+		fmt.Println(tui.BaseTextStyle.Render("  contains an expired or invalid token. Unset it:"))
+		fmt.Print(tui.BaseTextStyle.Render("  "))
+		fmt.Print(tui.InfoStyle.Render("unset DATAROBOT_API_TOKEN"))
+		fmt.Print(tui.BaseTextStyle.Render(" (or "))
+		fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+		fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
 
 		allValid = false
 	} else {

@@ -29,6 +29,10 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(DrPurple).
 			Padding(1, 2)
+	NoteBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).
+			Padding(0, 1)
 	StatusBarStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(DrPurpleLight).
