@@ -74,11 +74,11 @@ func MissingPrerequisites() string {
 	result := make([]string, 0)
 
 	if len(missing) > 0 {
-		result = append(result, fmt.Sprintf("Missing required tools:\n\n%s", strings.Join(missing, "\n")))
+		result = append(result, "Missing required tools:\n\n"+strings.Join(missing, "\n"))
 	}
 
 	if len(wrongVersion) > 0 {
-		result = append(result, fmt.Sprintf("Wrong versions of tools:\n\n%s", strings.Join(wrongVersion, "\n")))
+		result = append(result, "Wrong versions of tools:\n\n"+strings.Join(wrongVersion, "\n"))
 	}
 
 	return strings.Join(result, "\n")
