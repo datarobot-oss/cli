@@ -609,14 +609,14 @@ task mcp_server:dev &
 sleep 3
 task web:dev &
 sleep 3
-task writer_agent:dev &
+task agent:dev &
 sleep 3
 task frontend_web:dev &
 sleep 8
 ✅ All servers started!
 🔗 Backend API: http://localhost:8080
 🔗 Frontend: http://localhost:5173
-🔗 Worker Service: http://localhost:8842
+🔗 Agent Service: http://localhost:8842
 🔗 MCP Server: http://localhost:9000
 ```
 
