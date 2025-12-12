@@ -51,8 +51,8 @@ type (
 		PromptIndex int
 		LineIndex   int
 	}
-	PromptsIndexMap   map[string]PromptIndex
-	MissingPromptsMap map[string]void
+	PromptIndices  map[string]PromptIndex
+	MissingPrompts map[string]void
 
 	Chunk struct {
 		Prompt      UserPrompt
@@ -67,9 +67,9 @@ type (
 func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks {
 	result := make(DotenvChunks, 0)
 
-	allPrompts := make(PromptsIndexMap, len(prompts))
-	// Prompts that are currently missing in dotenv file
-	missingPrompts := make(MissingPromptsMap, len(prompts))
+	allPrompts := make(PromptIndices, len(prompts))
+	// Need to add prompts that are currently missing in dotenv file separately
+	missingPrompts := make(MissingPrompts, len(prompts))
 
 	for pi, prompt := range prompts {
 		// Start PromptIndex from 1 to distinguish user and prompt chunks when sorting
@@ -202,9 +202,7 @@ func (ch DotenvChunks) String() string {
 			result.WriteString(prompt.String())
 			result.WriteString("\n")
 		} else {
-			// result.WriteString("chunk.Lines")
 			result.WriteString(chunk.Lines)
-			// result.WriteString("chunk.Lines")
 		}
 	}
 
