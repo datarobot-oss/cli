@@ -65,43 +65,47 @@ type ParsedYaml map[string][]UserPrompt
 //	# The path to the VertexAI application credentials JSON file.
 //	VERTEXAI_APPLICATION_CREDENTIALS=whatever-user-entered
 func (up UserPrompt) String() string {
-	result := ""
+	helpLines := up.HelpLines()
 
-	if up.Help != "" {
-		// Account for multiline strings - also normalize if there's carriage returns
-		normalizedText := strings.ReplaceAll(up.Help, "\r\n", "\n")
-
-		linesNormalized := strings.Split(normalizedText, "\n")
-
-		var helpLineResult strings.Builder
-
-		helpLineResult.WriteString("\n")
-
-		for _, helpLine := range linesNormalized {
-			helpLineResult.WriteString(fmt.Sprintf("# %v\n", helpLine))
-		}
-
-		result += helpLineResult.String()
+	if len(helpLines) == 0 {
+		return up.StringWithoutHelp()
 	}
 
-	return result + up.StringWithoutHelp()
+	return "\n" + strings.Join(up.HelpLines(), "") + up.StringWithoutHelp()
+}
+
+func (up UserPrompt) HelpLines() []string {
+	if up.Help == "" {
+		return nil
+	}
+
+	// Account for multiline strings - also normalize if there's carriage returns
+	helpNormalized := strings.ReplaceAll(up.Help, "\r\n", "\n")
+	helpLines := strings.Split(helpNormalized, "\n")
+
+	for i, helpLine := range helpLines {
+		helpLines[i] = fmt.Sprintf("# %v\n", helpLine)
+	}
+
+	return helpLines
 }
 
 func (up UserPrompt) StringWithoutHelp() string {
-	result := ""
+	var result strings.Builder
+
 	quotedValue := strconv.Quote(up.Value)
 
 	if up.Env != "" {
 		if up.Commented || !up.Active {
-			result += "# "
+			result.WriteString("# ")
 		}
 
-		result += fmt.Sprintf("%s=%v", up.Env, quotedValue)
+		result.WriteString(fmt.Sprintf("%s=%v", up.Env, quotedValue))
 	} else {
-		result += fmt.Sprintf("# %s=%v", up.Key, quotedValue)
+		result.WriteString(fmt.Sprintf("# %s=%v", up.Key, quotedValue))
 	}
 
-	return result
+	return result.String()
 }
 
 func (up UserPrompt) VarName() string {
