@@ -57,7 +57,7 @@ func example() {
 
 - Always wrap new TUI models with `InterruptibleModel` from the `tui` package for global Ctrl-C handling
 - Reuse existing TUI components from `tui` package or Bubbles library (https://github.com/charmbracelet/bubbles)
-- Use styles from `tui/theme.go` for consistency
+- Use styles from `tui/styles.go` for consistency
 
 ## Quality Tools
 

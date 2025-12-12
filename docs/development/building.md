@@ -340,7 +340,7 @@ Consider the following when building terminal user interfaces.
 
 2. **Reuse existing TUI components**. Check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
 
-3. **Use common lipgloss styles**. The styles are defined in `tui/theme.go` for visual consistency:
+3. **Use common lipgloss styles**. The styles are defined in [tui/styles.go](../../tui/styles.go) for visual consistency:
 
    ```go
    import "github.com/datarobot/cli/tui"
