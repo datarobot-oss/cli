@@ -64,7 +64,7 @@ type (
 	DotenvChunks []Chunk
 )
 
-func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks {
+func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //nolint: cyclop
 	result := make(DotenvChunks, 0)
 
 	allPrompts := make(PromptIndices, len(prompts))
@@ -121,7 +121,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks {
 
 		// Remove prompt help lines from current chunk
 		for _, helpLine := range prompt.HelpLines() {
-			chunkString = strings.Replace(chunkString, helpLine, "", -1)
+			chunkString = strings.ReplaceAll(chunkString, helpLine, "")
 		}
 
 		// Save what's left as user-provided chunk
@@ -160,11 +160,10 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks {
 	// Add prompt chunks that were missing in dotenv file
 	for missingPromptKey := range missingPrompts {
 		missingPrompt := allPrompts[missingPromptKey]
-		missingPromptChunk := Chunk{
+		result = append(result, Chunk{
 			Prompt:      missingPrompt.Prompt,
 			PromptIndex: missingPrompt.PromptIndex,
-		}
-		result = append(result, missingPromptChunk)
+		})
 	}
 
 	return result
