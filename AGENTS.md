@@ -21,6 +21,7 @@ Use Taskfile tasks rather than raw Go commands:
 - Run tests: `task test`
 - Tests use `testify/assert` for assertions
 - Test files follow `*_test.go` naming convention
+- If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
 
 ## Code Style Requirements
 
