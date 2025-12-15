@@ -139,14 +139,6 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 			delete(missingPrompts, prompt.Env)
 		}
 
-		// Put missing and present prompts near each other
-		for missingPromptKey := range missingPrompts {
-			missingPrompts[missingPromptKey] = MissingPromptLineIndex{
-				// Prompts with same LineIndex will be sorted by PromptIndex
-				LineIndex: linesStart,
-			}
-		}
-
 		// Advance by number of lines in user chunk
 		linesStart += strings.Count(chunkString, "\n")
 
@@ -156,6 +148,13 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 			PromptIndex: promptIndex.PromptIndex,
 			LineIndex:   linesStart,
 		})
+
+		for missingPromptKey := range missingPrompts {
+			missingPrompts[missingPromptKey] = MissingPromptLineIndex{
+				// Put missing and present prompts near each other
+				LineIndex: linesStart,
+			}
+		}
 
 		// Start new chunk at next line
 		linesStart = l + 1
@@ -169,10 +168,9 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 
 	// Add prompt chunks that were missing in dotenv file
 	for missingPromptKey := range missingPrompts {
-		missingPrompt := allPrompts[missingPromptKey]
 		result = append(result, Chunk{
-			Prompt:      missingPrompt.Prompt,
-			PromptIndex: missingPrompt.PromptIndex,
+			Prompt:      allPrompts[missingPromptKey].Prompt,
+			PromptIndex: allPrompts[missingPromptKey].PromptIndex,
 			LineIndex:   missingPrompts[missingPromptKey].LineIndex,
 		})
 	}

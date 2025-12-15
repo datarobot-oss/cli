@@ -232,7 +232,7 @@ func writeContents(cleanContents, dotenvFile string) error {
 	defer f.Close()
 
 	timestamp := time.Now().Format(time.RFC3339)
-	header := headerPrefixEdited + " on " + timestamp + "\n\n"
+	header := headerPrefixEdited + " on " + timestamp + "\n"
 
 	cleanContents = header + cleanContents
 
