@@ -18,7 +18,8 @@ the review may happen while you are asleep / otherwise not able to respond quick
 **Labels:** Apply labels to trigger workflows:
 - `run-smoke-tests` or `go` - Run smoke tests on demand (only works for non-forked PRs)
 
-**For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment requesting maintainer review if you need smoke tests to run.
+> [!IMPORTANT]
+> **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment requesting maintainer review if you need smoke tests to run.
 
 See [workflows README](.github/workflows/README.md) for details.
 
