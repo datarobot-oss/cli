@@ -222,3 +222,66 @@ func TestDotenvFromPromptsMerged(t *testing.T) {
 		}
 	}
 }
+
+func TestMergedDotenvChunksSort(t *testing.T) {
+	t.SkipNow()
+
+	prompts := []UserPrompt{
+		{
+			Active: true,
+			Value:  "env value updated",
+			Env:    "ENV",
+			Key:    "",
+			Help:   "ENV help",
+		},
+		{
+			Active: true,
+			Value:  "key value updated",
+			Env:    "",
+			Key:    "key",
+			Help:   "key help",
+		},
+	}
+
+	contents := strings.Join([]string{
+		`extra1=value1`,
+		`extra2=value2`,
+		``,
+	}, "\n")
+
+	result := mergedDotenvChunks(prompts, contents)
+
+	if result[0].PromptIndex != 0 {
+		t.Errorf("result[0] should be user chunk")
+	}
+
+	if result[1].PromptIndex != 0 {
+		t.Errorf("result[1] should be user chunk")
+	}
+
+	if result[2].PromptIndex == 0 {
+		t.Errorf("result[2] should be prompt chunk")
+	}
+
+	if result[3].PromptIndex == 0 {
+		t.Errorf("result[3] should be prompt chunk")
+	}
+
+	result.Sort()
+
+	if result[0].PromptIndex != 0 {
+		t.Errorf("sorted result[0] should be user chunk")
+	}
+
+	if result[1].PromptIndex != 0 {
+		t.Errorf("sorted result[1] should be user chunk")
+	}
+
+	if result[2].PromptIndex == 0 {
+		t.Errorf("sorted result[2] should be prompt chunk")
+	}
+
+	if result[3].PromptIndex == 0 {
+		t.Errorf("sorted result[3] should be prompt chunk")
+	}
+}
