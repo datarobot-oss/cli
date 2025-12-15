@@ -71,7 +71,7 @@ func (up UserPrompt) String() string {
 		return up.StringWithoutHelp()
 	}
 
-	return strings.Join(up.HelpLines(), "") + up.StringWithoutHelp()
+	return strings.Join(helpLines, "") + up.StringWithoutHelp()
 }
 
 func (up UserPrompt) HelpLines() []string {
@@ -84,7 +84,7 @@ func (up UserPrompt) HelpLines() []string {
 	helpLines := strings.Split(helpNormalized, "\n")
 
 	helpLinesResult := make([]string, len(helpLines)+1)
-	helpLinesResult[0] = "\n"
+	helpLinesResult[0] = "#\n"
 
 	for i, helpLine := range helpLines {
 		helpLinesResult[i+1] = fmt.Sprintf("# %v\n", helpLine)
