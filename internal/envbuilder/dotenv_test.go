@@ -206,6 +206,26 @@ func TestDotenvFromPromptsMerged(t *testing.T) {
 				`extra3=value3`,
 				``,
 			}, "\n"),
+		}, {
+			prompts: prompts,
+			contents: strings.Join([]string{
+				`extra1=value1`,
+				`extra2=value2`,
+				`extra3=value3`,
+				``,
+			}, "\n"),
+			expected: strings.Join([]string{
+				`extra1=value1`,
+				`extra2=value2`,
+				`extra3=value3`,
+				``,
+				`# ENV help`,
+				`ENV="env value updated"`,
+				``,
+				`# key help`,
+				`# key="key value updated"`,
+				``,
+			}, "\n"),
 		},
 	}
 
@@ -224,8 +244,6 @@ func TestDotenvFromPromptsMerged(t *testing.T) {
 }
 
 func TestMergedDotenvChunksSort(t *testing.T) {
-	t.SkipNow()
-
 	prompts := []UserPrompt{
 		{
 			Active: true,

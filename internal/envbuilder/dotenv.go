@@ -87,6 +87,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 	unquotedValues, _ := godotenv.Unmarshal(contents)
 	lines := slices.Collect(strings.Lines(contents))
 	linesStart := 0
+	noPromptsYet := true
 
 	for l := 0; l < len(lines); l++ {
 		line := lines[l]
@@ -111,12 +112,23 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 			// Start new chunk at next line
 			linesStart = l + 1
 
+			// put prompts at the end of file if only user variables are present in dotenv file
+			if noPromptsYet {
+				for missingPromptKey := range missingPrompts {
+					missingPrompts[missingPromptKey] = MissingPromptLineIndex{
+						LineIndex: linesStart,
+					}
+				}
+			}
+
 			// Proceed to next line
 			continue
 		}
 
 		// Prompt managed by cli
 		prompt := promptIndex.Prompt
+
+		noPromptsYet = false
 
 		// prompt chunks does not capture current line, it will be newly generated
 		chunkString := strings.Join(lines[linesStart:l], "")
