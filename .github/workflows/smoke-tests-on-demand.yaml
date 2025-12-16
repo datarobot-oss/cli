@@ -5,10 +5,58 @@ on:
     types: [labeled]
 
 jobs:
-  notify-start:
+  check-fork:
     if: |
       github.event.label.name == 'run-smoke-tests' ||
       github.event.label.name == 'go'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    outputs:
+      is_fork: ${{ steps.check.outputs.is_fork }}
+    steps:
+      - name: Check if PR is from fork
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const isFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            console.log(`Is fork: ${isFork}`);
+            core.setOutput('is_fork', isFork.toString());
+            return isFork;
+
+      - name: Notify fork PR cannot use this workflow
+        if: steps.check.outputs.is_fork == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '⚠️ **Smoke tests cannot be triggered on forked PRs using this label.**\n\n' +
+                    'For security reasons, only maintainers can run smoke tests on forked PRs.\n\n' +
+                    '**If you are a maintainer:** Apply the `approved-for-smoke-tests` label after reviewing the code.\n\n' +
+                    '**If you are an external contributor:** Please comment on this PR requesting a maintainer review, and a maintainer will trigger the tests after security review.\n\n' +
+                    'See the [workflows documentation](.github/workflows/README.md) for more details.'
+            });
+
+            // Remove the label since it won't work for forks
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'run-smoke-tests'
+              });
+            } catch (error) {
+              console.log('Label already removed or does not exist');
+            }
+
+  notify-start:
+    needs: check-fork
+    if: needs.check-fork.outputs.is_fork == 'false'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -25,9 +73,8 @@ jobs:
             });
 
   build-windows:
-    if: |
-      github.event.label.name == 'run-smoke-tests' ||
-      github.event.label.name == 'go'
+    needs: check-fork
+    if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.build-windows.yaml
     with:
       go-version: '1.25.5'
@@ -35,7 +82,8 @@ jobs:
     secrets: inherit
 
   linux-smoke-tests:
-    needs: notify-start
+    needs: [check-fork, notify-start]
+    if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
       go-version: '1.25.5'
@@ -44,7 +92,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows-smoke-tests:
-    needs: [build-windows, notify-start]
+    needs: [check-fork, build-windows, notify-start]
+    if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.windows-smoke-test.yaml
     with:
       artifact-name: 'dr-windows'
@@ -53,8 +102,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify-results:
-    needs: [linux-smoke-tests, windows-smoke-tests]
-    if: always()
+    needs: [check-fork, linux-smoke-tests, windows-smoke-tests]
+    if: always() && needs.check-fork.outputs.is_fork == 'false'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

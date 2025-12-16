@@ -9,11 +9,18 @@ the review may happen while you are asleep / otherwise not able to respond quick
 
 ## CHANGES
 
-<!--
-Available slash commands (comment on PR to trigger):
-- /trigger-smoke-test or /trigger-test-smoke - Run smoke tests on this PR
-- /trigger-install-test or /trigger-test-install - Run installation tests on this PR
--->
+## PR Automation
+
+**Comment-Commands:** Trigger CI by commenting on the PR:
+- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests
+- `/trigger-install-test` or `/trigger-test-install` - Run installation tests
+
+**Labels:** Apply labels to trigger workflows:
+- `run-smoke-tests` or `go` - Run smoke tests on demand (only works for non-forked PRs)
+
+> [!IMPORTANT]
+> **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment requesting maintainer review if you need smoke tests to run.
+
 
 <!-- Recommended Additional Sections:
 ## SCREENSHOTS

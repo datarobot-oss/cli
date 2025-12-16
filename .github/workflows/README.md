@@ -179,6 +179,51 @@ To enable Slack notifications, add `SLACK_WEBHOOK_URL` as a repository secret:
 2. Create a new webhook for your desired channel
 3. Add the webhook URL as `SLACK_WEBHOOK_URL` in GitHub repository secrets (Settings → Secrets and variables → Actions → New repository secret)
 
+## PR Automation: Comment-Commands and Labels
+
+This repository supports automation for PRs using comment-commands (slash commands) and labels.
+
+### Comment-Commands (Slash Commands)
+
+Trigger workflows by commenting on a PR:
+
+- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR
+- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR
+
+These commands work on regular PRs from the main repository.
+
+### Labels for Regular PRs
+
+Apply labels to PRs to trigger workflows:
+
+- `run-smoke-tests` or `go` - Triggers `smoke-tests-on-demand.yaml`
+  - Builds Windows binary
+  - Runs smoke tests on Linux and Windows
+  - Posts results as PR comments
+  - Auto-removes label after completion
+  - **Note:** This only works for PRs from the main repository, not forked PRs
+
+### Labels for Forked PRs
+
+Forked PRs require maintainer approval due to security considerations:
+
+- `approved-for-smoke-tests` - Triggers `fork-smoke-tests.yaml`
+  - Performs security scans (Trivy, gosec)
+  - Builds Windows binary from fork PR code
+  - Runs smoke tests on Linux and Windows with manual approval
+  - Posts results as PR comments
+  - Removes label after completion
+
+**Process for Forked PRs:**
+1. External contributor opens a PR from their fork
+2. Maintainer reviews the code changes for security concerns
+3. Maintainer applies `approved-for-smoke-tests` label to trigger testing
+4. Workflow runs security scans and smoke tests
+5. Results are posted as PR comments
+6. Label is automatically removed after completion
+
+**Important:** If you're an external contributor and apply `run-smoke-tests` label yourself, it won't trigger any workflows. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment on the PR requesting a maintainer review if you need smoke tests to run.
+
 ## Benefits of Reusable Workflows
 
 1. **DRY Principle**: Common patterns defined once, used everywhere
