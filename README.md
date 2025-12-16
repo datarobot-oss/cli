@@ -63,6 +63,7 @@ Before you begin, ensure you have:
 - **Terminal**&mdash;Command-line interface access.
   - **macOS/Linux:** Use Terminal, iTerm2, or your preferred terminal emulator.
   - **Windows:** Use PowerShell, Command Prompt, or Windows Terminal.
+  - **Linux:** Use bash, zsh, or fish.
 
 ## Installation
 
@@ -85,7 +86,13 @@ irm https://cli.datarobot.com/winstall | iex
 The following are alternative installation methods for the DataRobot CLI.
 You can choose to download a binary directly, install a specific version, or build and install from source.
 
-### Download binary (recommended)
+### Install via Homebrew / Linuxbrew (recommended)
+
+```bash
+brew install datarobot-oss/taps/dr-cli
+```
+
+### Download binary
 
 Download the latest release for your operating system:
 
