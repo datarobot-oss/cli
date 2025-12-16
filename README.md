@@ -85,7 +85,13 @@ irm https://cli.datarobot.com/winstall | iex
 The following are alternative installation methods for the DataRobot CLI.
 You can choose to download a binary directly, install a specific version, or build and install from source.
 
-### Download binary (recommended)
+### Install via Homebrew / Linuxbrew (recommended)
+
+```bash
+brew install datarobot-oss/taps/dr-cli
+```
+
+### Download binary
 
 Download the latest release for your operating system:
 
