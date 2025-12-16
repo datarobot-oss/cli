@@ -38,7 +38,7 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(cmd *cobra.Command, args []string) error {
+func RunE(_ *cobra.Command, args []string) error {
 	args, err := getArgsFromCLIOrPrompt(args)
 	if err != nil {
 		return err
@@ -48,9 +48,6 @@ func RunE(cmd *cobra.Command, args []string) error {
 		return errors.New("A component URL is required.")
 	}
 
-	// Parse --data arguments
-	dataArgs, _ := cmd.Flags().GetStringArray("data")
-
 	cliData, err := parseDataArgs(dataArgs)
 	if err != nil {
 		log.Error(err)
@@ -58,9 +55,6 @@ func RunE(cmd *cobra.Command, args []string) error {
 
 		return nil
 	}
-
-	// Get --data-file path if specified
-	dataFile, _ := cmd.Flags().GetString("data-file")
 
 	componentConfig := loadComponentDefaults(dataFile)
 

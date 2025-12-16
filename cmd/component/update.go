@@ -54,21 +54,15 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		updateFileName = args[0]
 	}
 
-	// Parse --data arguments
-	dataArgs, _ := cmd.Flags().GetStringArray("data")
-
 	cliData, err := parseDataArgs(dataArgs)
 	if err != nil {
 		fmt.Println("Fatal:", err)
 		os.Exit(1)
 	}
 
-	// Get --data-file path if specified
-	dataFile, _ := cmd.Flags().GetString("data-file")
-
 	// If file name has been provided
 	if updateFileName != "" {
-		err := runUpdateWithDataFile(updateFileName, cliData, dataFile)
+		err := runUpdate(updateFileName, cliData, dataFile)
 		if err != nil {
 			fmt.Println("Fatal:", err)
 			os.Exit(1)
@@ -127,7 +121,7 @@ func UpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdateWithDataFile(yamlFile string, cliData map[string]interface{}, dataFilePath string) error {
+func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath string) error {
 	// Clean path like this `./.datarobot/answers/cli/../react-frontend_web.yml`
 	// to .datarobot/answers/react-frontend_web.yml
 	yamlFile = filepath.Clean(yamlFile)
