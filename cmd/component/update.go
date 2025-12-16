@@ -143,6 +143,8 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
+	debug := viper.GetBool("debug")
+
 	// Get the repo URL from the answers file to look up defaults
 	repoURL, err := getRepoURLFromAnswersFile(yamlFile)
 	if err != nil {
@@ -162,15 +164,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	// Merge defaults with CLI data (CLI data takes precedence)
 	mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-	var execErr error
-	if len(mergedData) > 0 {
-		execErr = copier.ExecUpdateWithData(yamlFile, mergedData)
-	} else {
-		debug := viper.GetBool("debug")
-
-		execErr = copier.ExecUpdate(yamlFile, recopy, quiet, debug, overwrite)
-	}
-
+	execErr := copier.ExecUpdate(yamlFile, mergedData, recopy, quiet, debug, overwrite)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

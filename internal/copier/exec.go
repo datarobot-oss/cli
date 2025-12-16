@@ -25,44 +25,28 @@ func cmdRun(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
-func Add(repoURL string) *exec.Cmd {
-	return exec.Command("uvx", "copier", "copy", repoURL, ".")
+// Add creates a copier copy command with optional --data arguments
+func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
+	commandParts := []string{"copier", "copy", repoURL, "."}
+
+	for key, value := range data {
+		commandParts = append(commandParts, "--data", key+"="+formatDataValue(value))
+	}
+
+	return exec.Command("uvx", commandParts...)
 }
 
-func ExecAdd(repoURL string) error {
+// ExecAdd executes a copier copy command with optional --data arguments
+func ExecAdd(repoURL string, data map[string]interface{}) error {
 	if repoURL == "" {
 		return errors.New("Repository URL is missing.")
 	}
 
-	return cmdRun(Add(repoURL))
+	return cmdRun(Add(repoURL, data))
 }
 
-// AddWithData creates a copier copy command with --data arguments
-func AddWithData(repoURL string, data map[string]interface{}) *exec.Cmd {
-	args := []string{"copier", "copy", repoURL, "."}
-
-	for key, value := range data {
-		args = append(args, "--data", key+"="+formatDataValue(value))
-	}
-
-	return exec.Command("uvx", args...)
-}
-
-// ExecAddWithData executes a copier copy command with --data arguments
-func ExecAddWithData(repoURL string, data map[string]interface{}) error {
-	if repoURL == "" {
-		return errors.New("repository URL is missing")
-	}
-
-	cmd := AddWithData(repoURL, data)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-
-	return cmd.Run()
-}
-
-func Update(yamlFile string, recopy, quiet, debug bool, overwrite bool) *exec.Cmd {
+// Update creates a copier update command with optional --data arguments
+func Update(yamlFile string, data map[string]interface{}, recopy, quiet, debug, overwrite bool) *exec.Cmd {
 	copierCommand := "update"
 
 	if recopy {
@@ -80,6 +64,10 @@ func Update(yamlFile string, recopy, quiet, debug bool, overwrite bool) *exec.Cm
 		commandParts = append(commandParts, "--overwrite")
 	}
 
+	for key, value := range data {
+		commandParts = append(commandParts, "--data", key+"="+formatDataValue(value))
+	}
+
 	cmd := exec.Command("uvx", commandParts...)
 
 	// Suppress all Python warnings unless debug mode is enabled
@@ -90,37 +78,13 @@ func Update(yamlFile string, recopy, quiet, debug bool, overwrite bool) *exec.Cm
 	return cmd
 }
 
-func ExecUpdate(yamlFile string, recopy, quiet, debug bool, overwrite bool) error {
+// ExecUpdate executes a copier update command with optional --data arguments
+func ExecUpdate(yamlFile string, data map[string]interface{}, recopy, quiet, debug, overwrite bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	return cmdRun(Update(yamlFile, recopy, quiet, debug, overwrite))
-}
-
-// UpdateWithData creates a copier update command with --data arguments
-func UpdateWithData(yamlFile string, data map[string]interface{}) *exec.Cmd {
-	args := []string{"copier", "update", "-a", yamlFile}
-
-	for key, value := range data {
-		args = append(args, "--data", key+"="+formatDataValue(value))
-	}
-
-	return exec.Command("uvx", args...)
-}
-
-// ExecUpdateWithData executes a copier update command with --data arguments
-func ExecUpdateWithData(yamlFile string, data map[string]interface{}) error {
-	if yamlFile == "" {
-		return errors.New("Path to YAML file is missing.")
-	}
-
-	cmd := UpdateWithData(yamlFile, data)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-
-	return cmd.Run()
+	return cmdRun(Update(yamlFile, data, recopy, quiet, debug, overwrite))
 }
 
 // formatDataValue converts a value to a string suitable for --data arguments

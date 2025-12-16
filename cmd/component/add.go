@@ -120,15 +120,9 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 		// Merge defaults with CLI data (CLI data takes precedence)
 		mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-		var execErr error
-		if len(mergedData) > 0 {
-			execErr = copier.ExecAddWithData(repoURL, mergedData)
-		} else {
-			execErr = copier.ExecAdd(repoURL)
-		}
-
-		if execErr != nil {
-			log.Error(execErr)
+		err := copier.ExecAdd(repoURL, mergedData)
+		if err != nil {
+			log.Error(err)
 			os.Exit(1)
 
 			return nil
