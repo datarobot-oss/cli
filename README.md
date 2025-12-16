@@ -63,7 +63,6 @@ Before you begin, ensure you have:
 - **Terminal**&mdash;Command-line interface access.
   - **macOS/Linux:** Use Terminal, iTerm2, or your preferred terminal emulator.
   - **Windows:** Use PowerShell, Command Prompt, or Windows Terminal.
-  - **Linux:** Use bash, zsh, or fish.
 
 ## Installation
 
