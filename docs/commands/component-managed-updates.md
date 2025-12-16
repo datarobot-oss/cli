@@ -17,7 +17,7 @@ When working with copier-based components, you often need to provide the same an
 Add a component with specific answers:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git \
+dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data base_answers_file=.datarobot/answers/base.yml \
   --data llm_answers_file=.datarobot/answers/llm-llm.yml \
   --data use_low_code_interface=false
@@ -26,7 +26,7 @@ dr component add git@github.com:datarobot-community/af-component-agent.git \
 Add a component using a specific data file:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git \
+dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data-file .datarobot/.copier-answers-defaults.yaml
 ```
 
@@ -74,7 +74,7 @@ Following copier's `data_file` convention, the default filename is `.copier-answ
 
 ```yaml
 defaults:
-  git@github.com:datarobot-community/af-component-agent.git:
+  https://github.com/datarobot-community/af-component-agent.git:
     base_answers_file: .datarobot/answers/base.yml
     llm_answers_file: .datarobot/answers/llm-llm.yml
     use_low_code_interface: false
@@ -99,7 +99,7 @@ Create `.datarobot/.copier-answers-defaults.yaml` in your repository root:
 
 ```yaml
 defaults:
-  git@github.com:datarobot-community/af-component-agent.git:
+  https://github.com/datarobot-community/af-component-agent.git:
     base_answers_file: .datarobot/answers/base.yml
     llm_answers_file: .datarobot/answers/llm-llm.yml
     use_low_code_interface: false
@@ -111,7 +111,7 @@ Create `~/.config/datarobot/.copier-answers-defaults.yaml`:
 
 ```yaml
 defaults:
-  git@github.com:datarobot-community/af-component-agent.git:
+  https://github.com/datarobot-community/af-component-agent.git:
     agent_template_framework: langgraph
 ```
 
@@ -120,13 +120,13 @@ defaults:
 With the repository data file shown above, running:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git
+dr component add https://github.com/datarobot-community/af-component-agent.git
 ```
 
 Is equivalent to:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git \
+dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data base_answers_file=.datarobot/answers/base.yml \
   --data llm_answers_file=.datarobot/answers/llm-llm.yml \
   --data use_low_code_interface=false
@@ -135,7 +135,7 @@ dr component add git@github.com:datarobot-community/af-component-agent.git \
 If you want to override a default:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git \
+dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data use_low_code_interface=true
 ```
 
@@ -144,7 +144,7 @@ This will use the configured defaults for `base_answers_file` and `llm_answers_f
 You can also use a different data file temporarily:
 
 ```bash
-dr component add git@github.com:datarobot-community/af-component-agent.git \
+dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data-file /path/to/custom-defaults.yaml
 ```
 

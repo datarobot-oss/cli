@@ -11,24 +11,24 @@
 
 defaults:
   # Example: Set default answers for the agent component
-  git@github.com:datarobot-community/af-component-agent.git:
+  https://github.com/datarobot-community/af-component-agent.git:
     base_answers_file: .datarobot/answers/base.yml
     llm_answers_file: .datarobot/answers/llm-llm.yml
     use_low_code_interface: false
 
   # Example: Set default answers for another component
-  git@github.com:datarobot-community/af-component-fastapi-backend.git:
+  https://github.com/datarobot-community/af-component-fastapi-backend.git:
     base_answers_file: .datarobot/answers/base.yml
     fastapi_app: api
 
 # Usage examples:
 #
 # 1. Add component with defaults from config:
-#    dr component add git@github.com:datarobot-community/af-component-agent.git
+#    dr component add https://github.com/datarobot-community/af-component-agent.git
 #    (Will automatically use base_answers_file and llm_answers_file from config)
 #
 # 2. Add component with defaults + override:
-#    dr component add git@github.com:datarobot-community/af-component-agent.git --data use_low_code_interface=true
+#    dr component add https://github.com/datarobot-community/af-component-agent.git --data use_low_code_interface=true
 #    (Will use defaults but override use_low_code_interface)
 #
 # 3. Update component with defaults:

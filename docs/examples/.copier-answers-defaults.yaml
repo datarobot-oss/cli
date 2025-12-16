@@ -21,74 +21,74 @@
 
 defaults:
   # Agent component defaults
-  git@github.com:datarobot-community/af-component-agent.git:
+  https://github.com/datarobot-community/af-component-agent.git:
     # Path to base component answers file
     base_answers_file: .datarobot/answers/base.yml
-    
+
     # Path to LLM component answers file
     llm_answers_file: .datarobot/answers/llm-llm.yml
-    
+
     # Path to FastMCP component answers file (if using MCP)
     fastmcp_answers_file: .datarobot/answers/fastmcp-mcp_server.yml
-    
+
     # Agent framework to use
     agent_template_framework: langgraph
-    
+
     # Whether to use low code interface
     use_low_code_interface: false
 
   # Base component defaults
-  git@github.com:datarobot-community/af-component-base.git:
+  https://github.com/datarobot-community/af-component-base.git:
     # Project name (usually set per-project, not in defaults)
     # project_name: my-project
-    
+
     # Whether to include example files
     include_examples: true
 
   # React component defaults
-  git@github.com:datarobot-community/af-component-react.git:
+  https://github.com/datarobot-community/af-component-react.git:
     # Base answers file
     base_answers_file: .datarobot/answers/base.yml
-    
+
     # React app name (usually varies per instance)
     # react_app: frontend_web
-    
+
     # Use TypeScript
     use_typescript: true
 
   # FastAPI component defaults
-  git@github.com:datarobot-community/af-component-fastapi-backend.git:
+  https://github.com/datarobot-community/af-component-fastapi-backend.git:
     # Base answers file
     base_answers_file: .datarobot/answers/base.yml
-    
+
     # FastAPI app name (usually varies per instance)
     # fastapi_app: api_server
-    
+
     # Include OpenAPI documentation
     include_openapi: true
 
   # FastMCP component defaults
-  git@github.com:datarobot-community/af-component-fastmcp-backend.git:
+  https://github.com/datarobot-community/af-component-fastmcp-backend.git:
     # Base answers file
     base_answers_file: .datarobot/answers/base.yml
-    
+
     # FastMCP app name (usually varies per instance)
     # fastmcp_app: mcp_server
-    
+
     # Include example tools
     include_example_tools: false
 
   # LLM component defaults
-  git@github.com:datarobot-community/af-component-llm.git:
+  https://github.com/datarobot-community/af-component-llm.git:
     # Base answers file
     base_answers_file: .datarobot/answers/base.yml
-    
+
     # LLM name (usually varies per instance)
     # llm_name: llm
-    
+
     # LLM provider
     llm_provider: openai
-    
+
     # Model name
     model_name: gpt-4
 
