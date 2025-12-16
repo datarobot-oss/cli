@@ -85,7 +85,7 @@ func TestPromptString(t *testing.T) {
 		}
 
 		str := prompt.String()
-		expected := "\n# Lorem Ipsum.\nMY_VAR=\"my-value\""
+		expected := "#\n# Lorem Ipsum.\nMY_VAR=\"my-value\""
 
 		if str != expected {
 			t.Errorf("Expected '%s', got '%s'", expected, str)
@@ -102,7 +102,7 @@ func TestPromptString(t *testing.T) {
 		}
 
 		str := prompt.String()
-		expected := "\n# Lorem Ipsum.\n# More info here.\nMY_VAR=\"my-value\""
+		expected := "#\n# Lorem Ipsum.\n# More info here.\nMY_VAR=\"my-value\""
 
 		if str != expected {
 			t.Errorf("Expected '%s', got '%s'", expected, str)
