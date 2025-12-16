@@ -23,7 +23,7 @@ type Options struct {
 	AnswerYes bool
 }
 
-func Cmd() *cobra.Command {
+func Cmd() *cobra.Command { //nolint: cyclop
 	var opts Options
 
 	cmd := &cobra.Command{
@@ -54,17 +54,16 @@ The following actions will be performed:
 				return err
 			}
 
+			innerModel, ok := getInnerModel(finalModel)
+			if !ok {
+				return nil
+			}
+
+			if innerModel.err != nil {
+				os.Exit(1)
+			}
+
 			// Check if we need to launch template setup after quitting
-			startModel, ok := finalModel.(tui.InterruptibleModel)
-			if !ok {
-				return nil
-			}
-
-			innerModel, ok := startModel.Model.(Model)
-			if !ok {
-				return nil
-			}
-
 			if innerModel.needTemplateSetup && innerModel.done && !innerModel.quitting {
 				// Need to run template setup
 				// After it completes, we'll be in the cloned directory,
@@ -79,9 +78,19 @@ The following actions will be performed:
 				m2 := NewStartModel(opts)
 				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2))
 
-				_, err = p2.Run()
+				finalModel2, err := p2.Run()
+				if err != nil {
+					return err
+				}
 
-				return err
+				innerModel2, ok := getInnerModel(finalModel2)
+				if !ok {
+					return nil
+				}
+
+				if innerModel2.err != nil {
+					os.Exit(1)
+				}
 			}
 
 			return nil
@@ -91,4 +100,18 @@ The following actions will be performed:
 	cmd.Flags().BoolVarP(&opts.AnswerYes, "yes", "y", false, "Assume \"yes\" as answer to all prompts.")
 
 	return cmd
+}
+
+func getInnerModel(finalModel tea.Model) (Model, bool) {
+	startModel, ok := finalModel.(tui.InterruptibleModel)
+	if !ok {
+		return Model{}, false
+	}
+
+	innerModel, ok := startModel.Model.(Model)
+	if !ok {
+		return Model{}, false
+	}
+
+	return innerModel, true
 }
