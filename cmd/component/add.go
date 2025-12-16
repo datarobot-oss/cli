@@ -143,9 +143,6 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 		fmt.Printf("Component %s added.\n", repoURL)
 	}
 
-	// @carson, do we need to run this or not?
-	compose.Cmd().Run(nil, nil)
-
 	return nil
 }
 
