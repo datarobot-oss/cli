@@ -38,10 +38,15 @@ func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func UpdateRunE(cmd *cobra.Command, args []string) error {
-	if err := setupDebugLogging(); err != nil {
-		fmt.Println("Fatal:", err)
-		os.Exit(1)
+func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
+	if viper.GetBool("debug") {
+		f, err := tea.LogToFile("tea-debug.log", "debug")
+		if err != nil {
+			fmt.Println("fatal: ", err)
+			os.Exit(1)
+		}
+
+		defer f.Close()
 	}
 
 	var updateFileName string
@@ -63,7 +68,8 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 
 	// If file name has been provided
 	if updateFileName != "" {
-		if err := runUpdateWithDataFile(updateFileName, cliData, dataFile); err != nil {
+		err := runUpdateWithDataFile(updateFileName, cliData, dataFile)
+		if err != nil {
 			fmt.Println("Fatal:", err)
 			os.Exit(1)
 		}
@@ -74,26 +80,6 @@ func UpdateRunE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return runInteractiveUpdate()
-}
-
-func setupDebugLogging() error {
-	if !viper.GetBool("debug") {
-		return nil
-	}
-
-	f, err := tea.LogToFile("tea-debug.log", "debug")
-	if err != nil {
-		return err
-	}
-
-	// FIXME: this should be outside of setupDebugLogging()
-	defer f.Close()
-
-	return nil
-}
-
-func runInteractiveUpdate() error {
 	m := NewUpdateComponentModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
