@@ -66,6 +66,15 @@ type (
 	DotenvChunks []Chunk
 )
 
+// mergedDotenvChunks walks dotenv file line-by-line, grouping lines into three chunk types:
+// - variables backed by prompts (can be commented)
+// - user-provided variables (not commented)
+// - everything else (comments, empty lines, etc.)
+//
+// help comments for prompt-backed variables are split from user-provided comments and discarded
+// they are added later from UserPrompt struct value
+//
+// returns slice of chunks of dotenv file with their position
 func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //nolint: cyclop
 	result := make(DotenvChunks, 0)
 
@@ -190,6 +199,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 	return result
 }
 
+// Sort sorts by chunk position in dotenv file
 func (ch DotenvChunks) Sort() DotenvChunks {
 	slices.SortFunc(ch, func(a, b Chunk) int {
 		// If both are prompt chunks sort by position in prompts array
