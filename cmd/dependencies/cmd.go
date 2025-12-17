@@ -6,22 +6,23 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package main
+package dependencies
 
 import (
-	"context"
-	"os"
-	"os/signal"
-
-	"github.com/datarobot/cli/cmd"
+	"github.com/datarobot/cli/cmd/dependencies/check"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	// Create a context that's canceled on interrupt signals
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer cancel()
-
-	if err := cmd.ExecuteContext(ctx); err != nil {
-		os.Exit(1)
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "dependencies",
+		GroupID: "advanced",
+		Short:   "Commands related to template dependencies.",
 	}
+
+	cmd.AddCommand(
+		check.Cmd(),
+	)
+
+	return cmd
 }

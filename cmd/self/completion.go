@@ -88,6 +88,7 @@ PowerShell:
 			case internalShell.PowerShell:
 				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
 			default:
+				cmd.SilenceUsage = true
 				return fmt.Errorf("Unsupported shell %q.", args[0])
 			}
 		},
