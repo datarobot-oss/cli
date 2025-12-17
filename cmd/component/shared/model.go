@@ -104,6 +104,7 @@ type Model struct {
 	keys        detailKeyMap
 	ready       bool
 	ExitMessage string
+	updateFlags copier.UpdateFlags
 
 	ComponentUpdated bool
 }
@@ -120,9 +121,9 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func updateComponent(item ListItem) tea.Cmd {
+func updateComponent(item ListItem, updateFlags copier.UpdateFlags) tea.Cmd {
 	debug := viper.GetBool("debug")
-	command := copier.Update(item.component.FileName, nil, false, false, debug, false)
+	command := copier.Update(item.component.FileName, nil, updateFlags, debug)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}
@@ -183,15 +184,16 @@ func (m Model) getSelectedComponents() []ListItem {
 	return values
 }
 
-func NewUpdateComponentModel() Model {
+func NewUpdateComponentModel(updateFlags copier.UpdateFlags) Model {
 	h := help.New()
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
 	return Model{
-		screen: listScreen,
-		help:   h,
-		keys:   newDetailKeys(),
+		screen:      listScreen,
+		help:        h,
+		keys:        newDetailKeys(),
+		updateFlags: updateFlags,
 	}
 }
 
@@ -307,7 +309,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 					var cmdsToRun []tea.Cmd
 
 					for _, listItem := range m.getSelectedComponents() {
-						cmdsToRun = append(cmdsToRun, updateComponent(listItem))
+						cmdsToRun = append(cmdsToRun, updateComponent(listItem, m.updateFlags))
 					}
 
 					cmd := tea.Sequence(cmdsToRun...)

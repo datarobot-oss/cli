@@ -31,13 +31,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var (
-	dataArgs  []string
-	dataFile  string
-	recopy    bool
-	quiet     bool
-	overwrite bool
-)
+var updateFlags copier.UpdateFlags
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
@@ -63,7 +57,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		updateFileName = args[0]
 	}
 
-	cliData, err := shared.ParseDataArgs(dataArgs)
+	cliData, err := shared.ParseDataArgs(updateFlags.DataArgs)
 	if err != nil {
 		fmt.Println("Fatal:", err)
 		os.Exit(1)
@@ -71,7 +65,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	// If file name has been provided
 	if updateFileName != "" {
-		err := runUpdate(updateFileName, cliData, dataFile)
+		err := runUpdate(updateFileName, cliData, updateFlags.DataFile)
 		if err != nil {
 			fmt.Println("Fatal:", err)
 			os.Exit(1)
@@ -83,7 +77,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return nil
 	}
 
-	m := shared.NewUpdateComponentModel()
+	m := shared.NewUpdateComponentModel(updateFlags)
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 	finalModel, err := p.Run()
@@ -113,11 +107,12 @@ func Cmd() *cobra.Command {
 		RunE:    RunE,
 	}
 
-	cmd.Flags().StringArrayVar(&dataArgs, "data", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
-	cmd.Flags().StringVar(&dataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
-	cmd.Flags().BoolVarP(&recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
-	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress status output.")
-	cmd.Flags().BoolVarP(&overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
+	cmd.Flags().StringArrayVarP(&updateFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
+	cmd.Flags().StringVar(&updateFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
+	cmd.Flags().BoolVarP(&updateFlags.Recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
+	cmd.Flags().StringVar(&updateFlags.VcsRef, "vcs-ref", "", "Git reference to checkout in `template_src`.")
+	cmd.Flags().BoolVarP(&updateFlags.Quiet, "quiet", "q", false, "Suppress status output.")
+	cmd.Flags().BoolVarP(&updateFlags.Overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
 
 	return cmd
 }
@@ -165,7 +160,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	// Merge defaults with CLI data (CLI data takes precedence)
 	mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-	execErr := copier.ExecUpdate(yamlFile, mergedData, recopy, quiet, debug, overwrite)
+	execErr := copier.ExecUpdate(yamlFile, mergedData, updateFlags, debug)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {

@@ -26,10 +26,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	dataArgs []string
-	dataFile string
-)
+var addFlags copier.AddFlags
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
@@ -49,7 +46,7 @@ func RunE(_ *cobra.Command, args []string) error {
 		return errors.New("A component URL is required.")
 	}
 
-	cliData, err := shared.ParseDataArgs(dataArgs)
+	cliData, err := shared.ParseDataArgs(addFlags.DataArgs)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -57,7 +54,7 @@ func RunE(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	componentConfig := loadComponentDefaults(dataFile)
+	componentConfig := loadComponentDefaults(addFlags.DataFile)
 
 	if err := addComponents(args, componentConfig, cliData); err != nil {
 		return err
@@ -145,8 +142,8 @@ func Cmd() *cobra.Command {
 		RunE:    RunE,
 	}
 
-	cmd.Flags().StringArrayVarP(&dataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
-	cmd.Flags().StringVar(&dataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
+	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
+	cmd.Flags().StringVar(&addFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 
 	return cmd
 }
