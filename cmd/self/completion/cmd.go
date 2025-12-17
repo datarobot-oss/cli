@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package completion
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ func supportedShells() []string {
 	}
 }
 
-func CompletionCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
 		Short: "Generate or manage shell completion scripts.",
@@ -83,7 +83,7 @@ PowerShell:
 				// Cobra v1.1.1+ supports GenZshCompletion
 				return cmd.Root().GenZshCompletion(os.Stdout)
 			case internalShell.Fish:
-				// the `true` gives fish the “__fish_use_subcommand” behavior
+				// the `true` gives fish the "__fish_use_subcommand" behavior
 				return cmd.Root().GenFishCompletion(os.Stdout, true)
 			case internalShell.PowerShell:
 				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
@@ -96,8 +96,8 @@ PowerShell:
 
 	// Add subcommands
 	cmd.AddCommand(
-		installCompletionCmd(),
-		uninstallCompletionCmd(),
+		installCmd(),
+		uninstallCmd(),
 	)
 
 	return cmd

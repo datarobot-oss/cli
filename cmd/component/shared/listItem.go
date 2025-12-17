@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"fmt"
@@ -18,13 +18,13 @@ import (
 type ListItem struct {
 	current   bool
 	checked   bool
-	component copier.Answers
+	Component copier.Answers
 }
 
 func (i ListItem) Title() string {
 	return fmt.Sprintf("%s (%s)",
-		i.component.ComponentDetails.Name,
-		i.component.FileName,
+		i.Component.ComponentDetails.Name,
+		i.Component.FileName,
 	)
 }
 
@@ -32,5 +32,5 @@ func (i ListItem) Title() string {
 func (i ListItem) Description() string { return "" }
 
 func (i ListItem) FilterValue() string {
-	return strings.ToLower(i.component.FileName)
+	return strings.ToLower(i.Component.FileName)
 }

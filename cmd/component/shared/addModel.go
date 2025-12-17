@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"fmt"
@@ -81,10 +81,10 @@ func (i AddComponentDelegate) Render(w io.Writer, m list.Model, index int, listI
 
 	str := fmt.Sprintf("%s%s", checkbox, i.details.Name)
 
-	fn := itemStyle.Render
+	fn := ItemStyle.Render
 	if index == m.Index() {
 		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+			return SelectedItemStyle.Render("> " + strings.Join(s, " "))
 		}
 	}
 

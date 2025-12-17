@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package update
 
 import (
 	"fmt"
@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func UpdateCmd() *cobra.Command { //nolint:cyclop
+func Cmd() *cobra.Command { //nolint:cyclop
 	var force bool
 
 	cmd := &cobra.Command{

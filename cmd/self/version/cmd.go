@@ -6,13 +6,13 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package version
 
 import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/datarobot/cli/internal/version"
+	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -55,14 +55,14 @@ type versionOptions struct {
 	short  bool
 }
 
-func VersionCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	var options versionOptions
 
 	options.format = FormatText
 
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "📋 Show " + version.AppName + " version information",
+		Short: "📋 Show " + internalVersion.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := getVersion(options)
@@ -94,11 +94,11 @@ func VersionCmd() *cobra.Command {
 
 func getVersion(opts versionOptions) (string, error) {
 	if opts.short {
-		return version.Version, nil
+		return internalVersion.Version, nil
 	}
 
 	if opts.format == FormatJSON {
-		b, err := json.Marshal(version.Info)
+		b, err := json.Marshal(internalVersion.Info)
 		if err != nil {
 			return "", fmt.Errorf("Failed to marshal version info to JSON: %w", err)
 		}
@@ -106,5 +106,5 @@ func getVersion(opts versionOptions) (string, error) {
 		return string(b), nil
 	}
 
-	return version.GetAppNameVersionText(), nil
+	return internalVersion.GetAppNameVersionText(), nil
 }

@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package update
 
 import (
 	"errors"
@@ -19,6 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/internal/config"
@@ -30,7 +31,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func UpdatePreRunE(_ *cobra.Command, _ []string) error {
+var (
+	dataArgs  []string
+	dataFile  string
+	recopy    bool
+	quiet     bool
+	overwrite bool
+)
+
+func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
 		return errors.New("You must be in the repository root directory.")
 	}
@@ -38,7 +47,7 @@ func UpdatePreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
+func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -54,7 +63,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		updateFileName = args[0]
 	}
 
-	cliData, err := parseDataArgs(dataArgs)
+	cliData, err := shared.ParseDataArgs(dataArgs)
 	if err != nil {
 		fmt.Println("Fatal:", err)
 		os.Exit(1)
@@ -74,7 +83,7 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return nil
 	}
 
-	m := NewUpdateComponentModel()
+	m := shared.NewUpdateComponentModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
 	finalModel, err := p.Run()
@@ -83,10 +92,10 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	}
 
 	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := setupModel.Model.(Model); ok {
-			fmt.Println(innerModel.exitMessage)
+		if innerModel, ok := setupModel.Model.(shared.Model); ok {
+			fmt.Println(innerModel.ExitMessage)
 
-			if innerModel.componentUpdated {
+			if innerModel.ComponentUpdated {
 				compose.Cmd().Run(nil, nil)
 				run.Cmd().Run(nil, []string{"reinstall"})
 			}
@@ -96,20 +105,12 @@ func UpdateRunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	return nil
 }
 
-var (
-	dataArgs  []string
-	dataFile  string
-	recopy    bool
-	quiet     bool
-	overwrite bool
-)
-
-func UpdateCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update [answers_file]",
 		Short:   "Update installed component.",
-		PreRunE: UpdatePreRunE,
-		RunE:    UpdateRunE,
+		PreRunE: PreRunE,
+		RunE:    RunE,
 	}
 
 	cmd.Flags().StringArrayVar(&dataArgs, "data", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
@@ -199,7 +200,6 @@ func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
 	return answers.SrcPath, nil
 }
 
-// TODO: Maybe use `IsValidYAML` from /internal/misc/yaml/validation.go instead or even move this function there
 func isYamlFile(yamlFile string) bool {
 	info, err := os.Stat(yamlFile)
 

@@ -37,7 +37,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	os.Setenv("HOME", tempDir)
 
 	// Save original callback function.
-	originalCallback := apiKeyCallbackFunc
+	originalCallback := APIKeyCallbackFunc
 
 	viper.Reset()
 
@@ -76,7 +76,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 		os.RemoveAll(tempDir)
 		viper.Reset()
 
-		apiKeyCallbackFunc = originalCallback
+		APIKeyCallbackFunc = originalCallback
 	}
 
 	return server, cleanup
@@ -90,7 +90,7 @@ func TestEnsureAuthenticated_MissingCredentials(t *testing.T) {
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	// Mock the callback to simulate failure to retrieve API key.
-	apiKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("simulated authentication failure")
 	}
 
@@ -114,7 +114,7 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	assert.Empty(t, apiKey, "Expected GetAPIKey to return empty string for expired token")
 
 	// Mock the callback to simulate failure to refresh expired credentials.
-	apiKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("simulated authentication failure")
 	}
 

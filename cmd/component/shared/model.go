@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"errors"
@@ -40,14 +40,13 @@ type (
 )
 
 const (
-	listScreen = screens(iota)
-	componentDetailScreen
+	ListScreen = screens(iota)
+	ComponentDetailScreen
 )
 
 var (
-	// TODO: Maybe move to tui?
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
+	ItemStyle         = lipgloss.NewStyle().PaddingLeft(4)
+	SelectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
 )
 
 type detailKeyMap struct {
@@ -103,9 +102,9 @@ type Model struct {
 	help        help.Model
 	keys        detailKeyMap
 	ready       bool
-	exitMessage string
+	ExitMessage string
 
-	componentUpdated bool
+	ComponentUpdated bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -122,7 +121,7 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 
 func updateComponent(item ListItem) tea.Cmd {
 	debug := viper.GetBool("debug")
-	command := copier.Update(item.component.FileName, nil, recopy, quiet, debug, overwrite)
+	command := copier.Update(item.Component.FileName, nil, false, false, debug, false)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}
@@ -130,19 +129,19 @@ func updateComponent(item ListItem) tea.Cmd {
 }
 
 func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea.Cmd) {
-	details := itemToUnselect.component.ComponentDetails
+	details := itemToUnselect.Component.ComponentDetails
 
 	if err != nil {
-		m.exitMessage += fmt.Sprintf(
+		m.ExitMessage += fmt.Sprintf(
 			"Update of \"%s\" component finished with error: %s.",
 			details.Name, err,
 		)
 	} else {
-		m.exitMessage += fmt.Sprintf(
+		m.ExitMessage += fmt.Sprintf(
 			"Update of \"%s\" component finished successfully.",
 			details.Name,
 		)
-		m.componentUpdated = true
+		m.ComponentUpdated = true
 	}
 
 	count := 0
@@ -158,7 +157,7 @@ func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea
 	}
 
 	for i, item := range m.list.VisibleItems() {
-		if item.(ListItem).component.FileName == itemToUnselect.component.FileName {
+		if item.(ListItem).Component.FileName == itemToUnselect.Component.FileName {
 			newItem := item.(ListItem)
 			newItem.checked = false
 
@@ -189,7 +188,7 @@ func NewUpdateComponentModel() Model {
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
 	return Model{
-		screen: listScreen,
+		screen: ListScreen,
 		help:   h,
 		keys:   newDetailKeys(),
 	}
@@ -214,7 +213,7 @@ func (m Model) loadComponents() tea.Cmd {
 		items := make([]list.Item, 0, len(answers))
 
 		for i, c := range answers {
-			items = append(items, ListItem{current: i == 0, component: c})
+			items = append(items, ListItem{current: i == 0, Component: c})
 		}
 
 		delegateKeys := newDelegateKeyMap()
@@ -242,7 +241,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 		return m, nil
 	case componentInfoRequestMsg:
-		m.screen = componentDetailScreen
+		m.screen = ComponentDetailScreen
 		m.ready = false
 
 		return m, tea.WindowSize()
@@ -251,7 +250,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	}
 
 	switch m.screen {
-	case listScreen:
+	case ListScreen:
 		// IMPT: Since we're using a custom item & respective delegate
 		// we need to account for filtering here and allow list to handle updating
 		if m.list.FilterState() == list.Filtering {
@@ -331,7 +330,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			m.err = msg.err
 			return m, nil
 		}
-	case componentDetailScreen:
+	case ComponentDetailScreen:
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
 			headerHeight := 4
@@ -354,7 +353,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		case tea.KeyMsg:
 			switch msg.String() {
 			case "q", tea.KeyEscape.String():
-				m.screen = listScreen
+				m.screen = ListScreen
 				m.ready = false
 
 				return m, nil
@@ -391,9 +390,9 @@ func (m Model) View() string {
 	var sb strings.Builder
 
 	switch m.screen {
-	case listScreen:
+	case ListScreen:
 		sb.WriteString(m.viewListScreen())
-	case componentDetailScreen:
+	case ComponentDetailScreen:
 		sb.WriteString(m.viewComponentDetailScreen())
 	}
 

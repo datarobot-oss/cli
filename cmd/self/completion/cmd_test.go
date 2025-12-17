@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package completion
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ func TestSupportedShells(t *testing.T) {
 }
 
 func TestCmd(t *testing.T) {
-	cmd := CompletionCmd()
+	cmd := Cmd()
 
 	if cmd == nil {
 		t.Fatal("Cmd() returned nil")
@@ -146,7 +146,7 @@ func TestCompletionInvalidShell(t *testing.T) {
 		Short: "DataRobot CLI.",
 	}
 
-	cmd := CompletionCmd()
+	cmd := Cmd()
 	rootCmd.AddCommand(cmd)
 
 	var buf bytes.Buffer

@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func (m Model) getCurrentComponentFileName() string {
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 
-	return item.component.FileName
+	return item.Component.FileName
 }
 
 // getComponentDetailContent generates the markdown content for component details
@@ -52,7 +52,7 @@ func (m Model) getComponentDetailContent() string {
 	var sb strings.Builder
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
-	selectedComponent := item.component
+	selectedComponent := item.Component
 	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.Repo]
 
 	style := "light"

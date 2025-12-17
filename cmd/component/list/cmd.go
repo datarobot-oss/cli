@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package list
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func ListRunE(_ *cobra.Command, _ []string) error {
+func RunE(_ *cobra.Command, _ []string) error {
 	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err
@@ -36,8 +36,10 @@ func ListRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-var ListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List installed components.",
-	RunE:  ListRunE,
+func Cmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List installed components.",
+		RunE:  RunE,
+	}
 }
