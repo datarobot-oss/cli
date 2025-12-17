@@ -138,7 +138,9 @@ func GetTemplates() (*TemplateList, error) {
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

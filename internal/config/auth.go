@@ -11,6 +11,7 @@ package config
 import (
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/viper"
@@ -29,7 +30,9 @@ func VerifyToken(datarobotHost, token string) (bool, error) {
 
 	log.Debug("Request Info: \n" + RedactedReqInfo(req))
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
