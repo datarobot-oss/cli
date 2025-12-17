@@ -404,9 +404,9 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		}
 	}
 
-	// No start command found
+	// No start command found - warn user that template may not support DR CLI
 	return stepCompleteMsg{
-		message: "No start command or quickstart script found.\n",
+		message: "No start command or quickstart script found.\nThis template may not yet fully support the DataRobot CLI.\nPlease check the template README for more information on how to get started.\n",
 		done:    true,
 	}
 }
