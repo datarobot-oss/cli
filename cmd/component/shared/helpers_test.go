@@ -31,17 +31,25 @@ func TestParseDataArgs_ValidFormats(t *testing.T) {
 			},
 		},
 		{
-			name: "boolean true",
-			args: []string{"enabled=true"},
+			name: "string values",
+			args: []string{"key1=value1", "key2=value2"},
 			expected: map[string]interface{}{
-				"enabled": true,
+				"key1": "value1",
+				"key2": "value2",
+			},
+		},
+		{
+			name: "boolean true",
+			args: []string{"use_feature=true"},
+			expected: map[string]interface{}{
+				"use_feature": true,
 			},
 		},
 		{
 			name: "boolean false",
-			args: []string{"enabled=false"},
+			args: []string{"use_feature=false"},
 			expected: map[string]interface{}{
-				"enabled": false,
+				"use_feature": false,
 			},
 		},
 		{
@@ -54,10 +62,39 @@ func TestParseDataArgs_ValidFormats(t *testing.T) {
 			},
 		},
 		{
-			name: "value with equals sign",
-			args: []string{"formula=a=b+c"},
+			name: "path values",
+			args: []string{"base_answers_file=.datarobot/answers/base.yml"},
 			expected: map[string]interface{}{
-				"formula": "a=b+c",
+				"base_answers_file": ".datarobot/answers/base.yml",
+			},
+		},
+		{
+			name: "value with equals sign",
+			args: []string{"url=https://example.com?key=value"},
+			expected: map[string]interface{}{
+				"url": "https://example.com?key=value",
+			},
+		},
+		{
+			name: "numeric values",
+			args: []string{"port=8080", "timeout=30.5"},
+			expected: map[string]interface{}{
+				"port":    "8080",
+				"timeout": "30.5",
+			},
+		},
+		{
+			name: "list syntax - yaml style",
+			args: []string{"python_versions=[3.10, 3.11, 3.12]"},
+			expected: map[string]interface{}{
+				"python_versions": "[3.10, 3.11, 3.12]",
+			},
+		},
+		{
+			name: "list syntax - string items",
+			args: []string{"databases=[postgres, mysql, sqlite]"},
+			expected: map[string]interface{}{
+				"databases": "[postgres, mysql, sqlite]",
 			},
 		},
 		{
