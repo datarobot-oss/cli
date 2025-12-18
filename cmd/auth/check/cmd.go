@@ -173,7 +173,7 @@ func checkDotenvCredentials(dotenvPath string) bool {
 	return true
 }
 
-func runCheck() {
+func Run(_ *cobra.Command, _ []string) {
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
@@ -203,8 +203,6 @@ func Cmd() *cobra.Command {
 		Long: `Verify that your DataRobot credentials are properly configured and valid.
 
 If you're in a project directory with a '.env' file, this will also check those credentials.`,
-		Run: func(_ *cobra.Command, _ []string) {
-			runCheck()
-		},
+		Run: Run,
 	}
 }

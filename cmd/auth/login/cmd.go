@@ -9,7 +9,6 @@
 package login
 
 import (
-	"context"
 	"errors"
 	"strings"
 
@@ -20,12 +19,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-func Action(ctx context.Context) error {
+func RunE(cmd *cobra.Command, _ []string) error {
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viper.GetBool("skip_auth") {
-		return errors.New("Login has been disabled via the '--skip-auth' flag.")
+		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
+		log.Error(err)
+		return err
 	}
 
 	datarobotHost := config.GetBaseURL()
@@ -48,8 +49,9 @@ func Action(ctx context.Context) error {
 	// Clear existing token and get new one
 	viper.Set(config.DataRobotAPIKey, "")
 
-	key, err := auth.WaitForAPIKeyCallback(ctx, datarobotHost)
+	key, err := auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
 	if err != nil {
+		log.Error(err)
 		return err
 	}
 
@@ -74,11 +76,6 @@ This command will:
   1. Open your default browser.
   2. Redirect you to the DataRobot login page.
   3. Securely store your API key for future CLI operations.`,
-		Run: func(cmd *cobra.Command, _ []string) {
-			err := Action(cmd.Context())
-			if err != nil {
-				log.Error(err)
-			}
-		},
+		RunE: RunE,
 	}
 }
