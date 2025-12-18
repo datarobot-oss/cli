@@ -9,6 +9,10 @@
 package auth
 
 import (
+	"github.com/datarobot/cli/cmd/auth/check"
+	"github.com/datarobot/cli/cmd/auth/login"
+	"github.com/datarobot/cli/cmd/auth/logout"
+	"github.com/datarobot/cli/cmd/auth/seturl"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -29,10 +33,10 @@ Manage your DataRobot credentials and connection settings:
 	}
 
 	cmd.AddCommand(
-		checkCmd,
-		loginCmd,
-		logoutCmd,
-		setURLCmd,
+		check.Cmd(),
+		login.Cmd(),
+		logout.Cmd(),
+		seturl.Cmd(),
 	)
 
 	return cmd

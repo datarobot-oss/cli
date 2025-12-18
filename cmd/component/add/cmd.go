@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package add
 
 import (
 	"errors"
@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/copier"
@@ -25,15 +26,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	dataArgs []string
+	dataFile string
+)
+
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
 		return errors.New("You must be in the repository root directory.")
 	}
-
-	// Do we have the required tools?
-	//if err := tools.CheckPrerequisites(); err != nil {
-	//	return err
-	//}
 
 	return nil
 }
@@ -48,7 +49,7 @@ func RunE(_ *cobra.Command, args []string) error {
 		return errors.New("A component URL is required.")
 	}
 
-	cliData, err := parseDataArgs(dataArgs)
+	cliData, err := shared.ParseDataArgs(dataArgs)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -72,7 +73,7 @@ func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
 		return args, nil
 	}
 
-	am := NewAddModel()
+	am := shared.NewAddModel()
 	p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
 
 	finalModel, err := p.Run()
@@ -82,7 +83,7 @@ func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
 
 	// Check if we need to launch template setup after quitting
 	if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := startModel.Model.(AddModel); ok {
+		if innerModel, ok := startModel.Model.(shared.AddModel); ok {
 			return innerModel.RepoURLs, nil
 		}
 	}
@@ -134,7 +135,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 	return nil
 }
 
-func AddCmd() *cobra.Command {
+func Cmd() *cobra.Command {
 	names := strings.Join(copier.EnabledShortNames, ", ")
 
 	cmd := &cobra.Command{
@@ -144,8 +145,8 @@ func AddCmd() *cobra.Command {
 		RunE:    RunE,
 	}
 
-	cmd.Flags().StringArrayP("data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
-	cmd.Flags().String("data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
+	cmd.Flags().StringArrayVarP(&dataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
+	cmd.Flags().StringVar(&dataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 
 	return cmd
 }

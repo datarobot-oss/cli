@@ -12,7 +12,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/log"
-	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/spf13/cobra"
 )

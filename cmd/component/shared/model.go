@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"errors"
@@ -45,7 +45,6 @@ const (
 )
 
 var (
-	// TODO: Maybe move to tui?
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)
 )
@@ -103,9 +102,9 @@ type Model struct {
 	help        help.Model
 	keys        detailKeyMap
 	ready       bool
-	exitMessage string
+	ExitMessage string
 
-	componentUpdated bool
+	ComponentUpdated bool
 }
 
 func (m Model) toggleCurrent() (Model, tea.Cmd) {
@@ -122,7 +121,7 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 
 func updateComponent(item ListItem) tea.Cmd {
 	debug := viper.GetBool("debug")
-	command := copier.Update(item.component.FileName, nil, recopy, quiet, debug, overwrite)
+	command := copier.Update(item.component.FileName, nil, false, false, debug, false)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}
@@ -133,16 +132,16 @@ func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea
 	details := itemToUnselect.component.ComponentDetails
 
 	if err != nil {
-		m.exitMessage += fmt.Sprintf(
+		m.ExitMessage += fmt.Sprintf(
 			"Update of \"%s\" component finished with error: %s.",
 			details.Name, err,
 		)
 	} else {
-		m.exitMessage += fmt.Sprintf(
+		m.ExitMessage += fmt.Sprintf(
 			"Update of \"%s\" component finished successfully.",
 			details.Name,
 		)
-		m.componentUpdated = true
+		m.ComponentUpdated = true
 	}
 
 	count := 0

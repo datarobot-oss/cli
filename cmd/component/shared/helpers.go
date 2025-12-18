@@ -6,15 +6,15 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"fmt"
 	"strings"
 )
 
-// parseDataArgs parses --data arguments in key=value format
-func parseDataArgs(dataArgs []string) (map[string]interface{}, error) {
+// ParseDataArgs parses --data arguments in key=value format
+func ParseDataArgs(dataArgs []string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 
 	for _, arg := range dataArgs {

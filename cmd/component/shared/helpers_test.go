@@ -6,24 +6,29 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package component
+package shared
 
 import (
 	"testing"
 )
 
-func TestParseDataArgs(t *testing.T) {
+func TestParseDataArgs_ValidFormats(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
 		expected map[string]interface{}
-		wantErr  bool
 	}{
 		{
 			name:     "empty args",
 			args:     []string{},
 			expected: map[string]interface{}{},
-			wantErr:  false,
+		},
+		{
+			name: "single string value",
+			args: []string{"name=test"},
+			expected: map[string]interface{}{
+				"name": "test",
+			},
 		},
 		{
 			name: "string values",
@@ -32,7 +37,6 @@ func TestParseDataArgs(t *testing.T) {
 				"key1": "value1",
 				"key2": "value2",
 			},
-			wantErr: false,
 		},
 		{
 			name: "boolean true",
@@ -40,7 +44,6 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"use_feature": true,
 			},
-			wantErr: false,
 		},
 		{
 			name: "boolean false",
@@ -48,17 +51,15 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"use_feature": false,
 			},
-			wantErr: false,
 		},
 		{
-			name: "mixed types",
-			args: []string{"name=test", "enabled=true", "disabled=false"},
+			name: "multiple values",
+			args: []string{"name=test", "enabled=true", "port=8080"},
 			expected: map[string]interface{}{
-				"name":     "test",
-				"enabled":  true,
-				"disabled": false,
+				"name":    "test",
+				"enabled": true,
+				"port":    "8080",
 			},
-			wantErr: false,
 		},
 		{
 			name: "path values",
@@ -66,19 +67,6 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"base_answers_file": ".datarobot/answers/base.yml",
 			},
-			wantErr: false,
-		},
-		{
-			name:     "invalid format - no equals",
-			args:     []string{"invalid"},
-			expected: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "invalid format - empty key",
-			args:     []string{"=value"},
-			expected: nil,
-			wantErr:  true,
 		},
 		{
 			name: "value with equals sign",
@@ -86,7 +74,6 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"url": "https://example.com?key=value",
 			},
-			wantErr: false,
 		},
 		{
 			name: "numeric values",
@@ -95,7 +82,6 @@ func TestParseDataArgs(t *testing.T) {
 				"port":    "8080",
 				"timeout": "30.5",
 			},
-			wantErr: false,
 		},
 		{
 			name: "list syntax - yaml style",
@@ -103,7 +89,6 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"python_versions": "[3.10, 3.11, 3.12]",
 			},
-			wantErr: false,
 		},
 		{
 			name: "list syntax - string items",
@@ -111,39 +96,56 @@ func TestParseDataArgs(t *testing.T) {
 			expected: map[string]interface{}{
 				"databases": "[postgres, mysql, sqlite]",
 			},
-			wantErr: false,
+		},
+		{
+			name: "whitespace trimmed",
+			args: []string{" name = test "},
+			expected: map[string]interface{}{
+				"name": "test",
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseDataArgs(tt.args)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDataArgs() error = %v, wantErr %v", err, tt.wantErr)
-
-				return
+			result, err := ParseDataArgs(tt.args)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if !tt.wantErr {
-				if len(result) != len(tt.expected) {
-					t.Errorf("parseDataArgs() got %d items, expected %d", len(result), len(tt.expected))
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d keys, got %d", len(tt.expected), len(result))
+			}
 
-					return
+			for key, expectedValue := range tt.expected {
+				if result[key] != expectedValue {
+					t.Errorf("key %s: expected %v, got %v", key, expectedValue, result[key])
 				}
+			}
+		})
+	}
+}
 
-				for key, expectedValue := range tt.expected {
-					actualValue, ok := result[key]
-					if !ok {
-						t.Errorf("parseDataArgs() missing key %s", key)
+func TestParseDataArgs_InvalidFormats(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "missing equals sign",
+			args: []string{"nametest"},
+		},
+		{
+			name: "empty key",
+			args: []string{"=value"},
+		},
+	}
 
-						continue
-					}
-
-					if actualValue != expectedValue {
-						t.Errorf("parseDataArgs() key %s = %v, expected %v", key, actualValue, expectedValue)
-					}
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseDataArgs(tt.args)
+			if err == nil {
+				t.Error("expected error, got nil")
 			}
 		})
 	}

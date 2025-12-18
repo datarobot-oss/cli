@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package self
+package completion
 
 import (
 	"os"
@@ -180,7 +180,7 @@ func TestGetInstallFunc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, fn, err := getCompletionInstallFunc(rootCmd, tt.shell, tt.force)
+			path, fn, err := getInstallFunc(rootCmd, tt.shell, tt.force)
 
 			if tt.expectError {
 				if err == nil {
@@ -213,7 +213,7 @@ func TestInstallZsh(t *testing.T) {
 		Short: "DataRobot CLI.",
 	}
 
-	path, fn := installCompletionZsh(rootCmd, false)
+	path, fn := installZsh(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -235,7 +235,7 @@ func TestInstallBash(t *testing.T) {
 		Short: "DataRobot CLI.",
 	}
 
-	path, fn := installCompletionBash(rootCmd, false)
+	path, fn := installBash(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -257,7 +257,7 @@ func TestInstallFish(t *testing.T) {
 		Short: "DataRobot CLI.",
 	}
 
-	path, fn := installCompletionFish(rootCmd, false)
+	path, fn := installFish(rootCmd, false)
 
 	if path == "" {
 		t.Error("expected non-empty install path")
@@ -361,7 +361,7 @@ func TestFindExistingCompletions(t *testing.T) {
 }
 
 func TestInstallCmd(t *testing.T) {
-	cmd := installCompletionCmd()
+	cmd := installCmd()
 
 	if cmd == nil {
 		t.Fatal("installCmd() returned nil")
@@ -388,7 +388,7 @@ func TestInstallCmd(t *testing.T) {
 }
 
 func TestUninstallCmd(t *testing.T) {
-	cmd := uninstallCompletionCmd()
+	cmd := uninstallCmd()
 
 	if cmd == nil {
 		t.Fatal("uninstallCmd() returned nil")
@@ -452,7 +452,7 @@ func TestGetUninstallPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			paths := getCompletionUninstallPaths(tt.shell)
+			paths := getUninstallPaths(tt.shell)
 
 			if len(paths) != tt.expectedCount {
 				t.Errorf("expected %d paths, got %d", tt.expectedCount, len(paths))
@@ -543,7 +543,7 @@ func TestResolveShellForUninstall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shell, err := resolveShellForCompletionUninstall(tt.input)
+			shell, err := resolveShellForUninstall(tt.input)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -602,7 +602,7 @@ func TestPerformUninstall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := performCompletionUninstall(tt.shell)
+			err := performUninstall(tt.shell)
 
 			if tt.expectError {
 				if err == nil {
@@ -635,7 +635,7 @@ func TestUninstallZsh(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallCompletionZsh()
+	removed := uninstallZsh()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -655,7 +655,7 @@ func TestUninstallZsh(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallCompletionZsh()
+	removed = uninstallZsh()
 
 	if !removed {
 		t.Error("expected true when file exists")
@@ -680,7 +680,7 @@ func TestUninstallBash(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallCompletionBash()
+	removed := uninstallBash()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -700,7 +700,7 @@ func TestUninstallBash(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallCompletionBash()
+	removed = uninstallBash()
 
 	if !removed {
 		t.Error("expected true when file exists")
@@ -725,7 +725,7 @@ func TestUninstallFish(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 
 	// Test with no files
-	removed := uninstallCompletionFish()
+	removed := uninstallFish()
 
 	if removed {
 		t.Error("expected false when no files exist")
@@ -745,7 +745,7 @@ func TestUninstallFish(t *testing.T) {
 	}
 
 	// Test with file
-	removed = uninstallCompletionFish()
+	removed = uninstallFish()
 
 	if !removed {
 		t.Error("expected true when file exists")
