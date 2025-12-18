@@ -26,6 +26,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 	if viper.GetBool("skip_auth") {
 		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
 		log.Error(err)
+
 		return err
 	}
 
