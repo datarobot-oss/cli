@@ -18,13 +18,13 @@ import (
 type ListItem struct {
 	current   bool
 	checked   bool
-	Component copier.Answers
+	component copier.Answers
 }
 
 func (i ListItem) Title() string {
 	return fmt.Sprintf("%s (%s)",
-		i.Component.ComponentDetails.Name,
-		i.Component.FileName,
+		i.component.ComponentDetails.Name,
+		i.component.FileName,
 	)
 }
 
@@ -32,5 +32,5 @@ func (i ListItem) Title() string {
 func (i ListItem) Description() string { return "" }
 
 func (i ListItem) FilterValue() string {
-	return strings.ToLower(i.Component.FileName)
+	return strings.ToLower(i.component.FileName)
 }

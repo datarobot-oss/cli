@@ -44,7 +44,7 @@ func (m Model) getCurrentComponentFileName() string {
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 
-	return item.Component.FileName
+	return item.component.FileName
 }
 
 // getComponentDetailContent generates the markdown content for component details
@@ -52,7 +52,7 @@ func (m Model) getComponentDetailContent() string {
 	var sb strings.Builder
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
-	selectedComponent := item.Component
+	selectedComponent := item.component
 	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.Repo]
 
 	style := "light"

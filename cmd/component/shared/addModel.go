@@ -81,10 +81,10 @@ func (i AddComponentDelegate) Render(w io.Writer, m list.Model, index int, listI
 
 	str := fmt.Sprintf("%s%s", checkbox, i.details.Name)
 
-	fn := ItemStyle.Render
+	fn := itemStyle.Render
 	if index == m.Index() {
 		fn = func(s ...string) string {
-			return SelectedItemStyle.Render("> " + strings.Join(s, " "))
+			return selectedItemStyle.Render("> " + strings.Join(s, " "))
 		}
 	}
 
