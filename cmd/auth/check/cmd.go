@@ -137,7 +137,9 @@ func verifyDotenvToken(envEndpoint, envToken string) bool {
 	return true
 }
 
-func checkDotenvCredentials(dotenvPath string) bool {
+func checkDotenvCredentials(repoRoot string) bool {
+	dotenvPath := filepath.Join(repoRoot, ".env")
+
 	_, statErr := os.Stat(dotenvPath)
 	if statErr != nil {
 		printDotenvMissingError()
@@ -185,9 +187,7 @@ func Run(_ *cobra.Command, _ []string) {
 		return
 	}
 
-	dotenvPath := filepath.Join(repoRoot, ".env")
-
-	if !checkDotenvCredentials(dotenvPath) {
+	if !checkDotenvCredentials(repoRoot) {
 		os.Exit(1)
 	}
 
