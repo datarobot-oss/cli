@@ -19,7 +19,7 @@ import (
 )
 
 // getScrollPercent calculates the scroll percentage for the viewport
-func (m Model) getScrollPercent() int {
+func (m UpdateModel) getScrollPercent() int {
 	if m.viewport.TotalLineCount() <= m.viewport.Height {
 		return 100 // If content fits in viewport, we're at 100%
 	}
@@ -37,7 +37,7 @@ func (m Model) getScrollPercent() int {
 }
 
 // getCurrentComponentFileName returns the filename of the currently selected component
-func (m Model) getCurrentComponentFileName() string {
+func (m UpdateModel) getCurrentComponentFileName() string {
 	if len(m.list.VisibleItems()) == 0 {
 		return ""
 	}
@@ -48,7 +48,7 @@ func (m Model) getCurrentComponentFileName() string {
 }
 
 // getComponentDetailContent generates the markdown content for component details
-func (m Model) getComponentDetailContent() string {
+func (m UpdateModel) getComponentDetailContent() string {
 	var sb strings.Builder
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
@@ -67,7 +67,7 @@ func (m Model) getComponentDetailContent() string {
 }
 
 // renderStatusBar creates the status bar for the detail view
-func (m Model) renderStatusBar() string {
+func (m UpdateModel) renderStatusBar() string {
 	fileName := m.getCurrentComponentFileName()
 	scrollPercent := m.getScrollPercent()
 
@@ -122,7 +122,7 @@ func (m Model) renderStatusBar() string {
 }
 
 // viewComponentDetailScreen renders the component detail screen
-func (m Model) viewComponentDetailScreen() string {
+func (m UpdateModel) viewComponentDetailScreen() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}

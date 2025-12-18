@@ -86,7 +86,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	}
 
 	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := setupModel.Model.(shared.Model); ok {
+		if innerModel, ok := setupModel.Model.(shared.UpdateModel); ok {
 			fmt.Println(innerModel.ExitMessage)
 
 			if innerModel.ComponentUpdated {
