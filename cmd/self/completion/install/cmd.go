@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package install
 
 import (
 	"errors"
@@ -29,7 +29,16 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
-func installCmd() *cobra.Command {
+func SupportedShells() []string {
+	return []string{
+		string(internalShell.Bash),
+		string(internalShell.Zsh),
+		string(internalShell.Fish),
+		string(internalShell.PowerShell),
+	}
+}
+
+func Cmd() *cobra.Command {
 	var force bool
 
 	var yes bool
@@ -67,7 +76,7 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
   # Force reinstall, even if completions are already installed:
   ` + version.CliName + ` completion install --force --yes`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: supportedShells(),
+		ValidArgs: SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var shell string
 			if len(args) > 0 {

@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/self/completion/install"
+	"github.com/datarobot/cli/cmd/self/completion/uninstall"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -96,8 +98,8 @@ PowerShell:
 
 	// Add subcommands
 	cmd.AddCommand(
-		installCmd(),
-		uninstallCmd(),
+		install.Cmd(),
+		uninstall.Cmd(),
 	)
 
 	return cmd

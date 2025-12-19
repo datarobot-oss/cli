@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package uninstall
 
 import (
 	"fmt"
@@ -15,12 +15,37 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-func uninstallCmd() *cobra.Command {
+var (
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+)
+
+func supportedShells() []string {
+	return []string{
+		string(internalShell.Bash),
+		string(internalShell.Zsh),
+		string(internalShell.Fish),
+		string(internalShell.PowerShell),
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+
+	return !info.IsDir()
+}
+
+func Cmd() *cobra.Command {
 	var yes bool
 
 	var dryRun bool
