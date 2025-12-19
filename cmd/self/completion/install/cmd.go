@@ -579,6 +579,7 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	return err
 }
 
+// TODO: DRY this up
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -588,6 +589,7 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
+// TODO: DRY this up
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
