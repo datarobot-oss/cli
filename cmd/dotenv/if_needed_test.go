@@ -83,4 +83,46 @@ OTHER_VAR=value
 		require.NoError(t, err)
 		require.False(t, shouldSkip, "Should not skip setup when validation fails")
 	})
+
+	t.Run("should skip when no parakeet.yaml exists but core variables are set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		// Don't create parakeet.yaml - only core variables will be checked
+
+		// Create .env with core DataRobot variables
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+DATAROBOT_API_TOKEN=test-token
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.True(t, shouldSkip, "Should skip when core variables are set even without parakeet.yaml")
+	})
+
+	t.Run("should not skip when core variables are missing", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte("root: []"), 0o644)
+		require.NoError(t, err)
+
+		// Create .env without core DataRobot variables
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `SOME_OTHER_VAR=value
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.False(t, shouldSkip, "Should not skip when core DataRobot variables are missing")
+	})
 }
