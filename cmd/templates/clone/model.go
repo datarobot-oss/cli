@@ -79,8 +79,6 @@ type (
 func focusInput() tea.Msg { return focusInputMsg{} }
 func back() tea.Msg       { return backMsg{} }
 
-
-
 func dirIsAbsolute(dir string) bool {
 	return filepath.IsAbs(dir)
 }

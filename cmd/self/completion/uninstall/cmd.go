@@ -28,8 +28,6 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
-
-
 func Cmd() *cobra.Command {
 	var yes bool
 

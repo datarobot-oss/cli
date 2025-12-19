@@ -579,5 +579,3 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 
 	return err
 }
-
-
