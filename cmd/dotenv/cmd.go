@@ -128,20 +128,20 @@ This wizard will help you:
 		if err != nil {
 			return err
 		}
+
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
 		// Check if we should skip when .env exists and all required variables are set
 		ifNeeded, _ := cmd.Flags().GetBool("if-needed")
 		if ifNeeded {
-			if _, err := os.Stat(dotenvFile); err == nil {
-				dotenvFileLines, _ := readDotenvFile(dotenvFile)
-				variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+			shouldSkip, err := shouldSkipSetup(repositoryRoot, dotenvFile)
+			if err != nil {
+				return err
+			}
 
-				result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
-				if !result.HasErrors() {
-					fmt.Println("Configuration already exists, skipping setup.")
-					return nil
-				}
+			if shouldSkip {
+				fmt.Println("Configuration already exists, skipping setup.")
+				return nil
 			}
 		}
 
@@ -174,6 +174,22 @@ This wizard will help you:
 
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or is empty")
+}
+
+// shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
+// Returns true if .env file exists and all required variables are valid.
+func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
+	if _, err := os.Stat(dotenvFile); err != nil {
+		// .env doesn't exist, don't skip
+		return false, nil
+	}
+
+	dotenvFileLines, _ := readDotenvFile(dotenvFile)
+	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
+	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+
+	return !result.HasErrors(), nil
 }
 
 var UpdateCmd = &cobra.Command{
