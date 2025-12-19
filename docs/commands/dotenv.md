@@ -104,10 +104,10 @@ When the `--if-needed` flag is set, the command validates your existing `.env` f
 - ⚠️ **Runs setup** if validation fails for any reason.
 
 This makes `--if-needed` ideal for:
-- **Automation scripts** that need to ensure configuration without user interaction
-- **CI/CD pipelines** that should only prompt when necessary
-- **Onboarding workflows** that intelligently skip already-completed steps
-- **Idempotent operations** that can be safely run multiple times
+- **Automation scripts** that need to ensure configuration without user interaction.
+- **CI/CD pipelines** that should only prompt when necessary.
+- **Onboarding workflows** that intelligently skip already-completed steps.
+- **Idempotent operations** that can be safely run multiple times.
 
 ### dr dotenv edit
 
@@ -370,8 +370,8 @@ dr dotenv setup --if-needed
 ```
 
 This will:
-- Skip the wizard if configuration is already valid
-- Run the wizard only if configuration is missing or incomplete
+- Skip the wizard if configuration is already valid.
+- Run the wizard only if configuration is missing or incomplete.
 
 **Use case example - CI/CD pipeline:**
 
