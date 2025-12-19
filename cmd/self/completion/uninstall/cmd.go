@@ -27,6 +27,7 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
+// TODO: DRY this up
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
