@@ -44,6 +44,7 @@ const (
 	componentDetailScreen
 )
 
+// TODO: Maybe move to tui?
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(tui.DrPurple)

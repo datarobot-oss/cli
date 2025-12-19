@@ -6,7 +6,7 @@
 // The copyright notice above does not evidence any actual or intended
 // publication of such source code.
 
-package completion
+package uninstall
 
 import (
 	"fmt"
@@ -15,12 +15,20 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-func uninstallCmd() *cobra.Command {
+var (
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+)
+
+func Cmd() *cobra.Command {
 	var yes bool
 
 	var dryRun bool
@@ -47,7 +55,7 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
   ` + version.CliName + ` completion uninstall bash --yes
   ` + version.CliName + ` completion uninstall zsh --yes`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: supportedShells(),
+		ValidArgs: internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var shell string
 			if len(args) > 0 {
@@ -136,7 +144,7 @@ func findExistingCompletions(shell internalShell.Shell) []string {
 	var existingPaths []string
 
 	for _, path := range paths {
-		if fileExists(path) {
+		if fsutil.FileExists(path) {
 			existingPaths = append(existingPaths, path)
 		}
 	}
@@ -257,7 +265,7 @@ func uninstallZsh() bool {
 
 	// Oh-My-Zsh location
 	path1 := filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions", "_"+version.CliName)
-	if fileExists(path1) {
+	if fsutil.FileExists(path1) {
 		_ = os.Remove(path1)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path1)
 
@@ -266,7 +274,7 @@ func uninstallZsh() bool {
 
 	// Standard Zsh location
 	path2 := filepath.Join(os.Getenv("HOME"), ".zsh", "completions", "_"+version.CliName)
-	if fileExists(path2) {
+	if fsutil.FileExists(path2) {
 		_ = os.Remove(path2)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path2)
 
@@ -288,7 +296,7 @@ func uninstallZsh() bool {
 
 func uninstallBash() bool {
 	path := filepath.Join(os.Getenv("HOME"), ".bash_completions", version.CliName)
-	if fileExists(path) {
+	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
 
@@ -300,7 +308,7 @@ func uninstallBash() bool {
 
 func uninstallFish() bool {
 	path := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions", version.CliName+".fish")
-	if fileExists(path) {
+	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
 
@@ -325,7 +333,7 @@ func uninstallPowerShell() bool {
 }
 
 func removePowerShellCompletionFromProfile(profilePath string) bool {
-	if !fileExists(profilePath) {
+	if !fsutil.FileExists(profilePath) {
 		return false
 	}
 

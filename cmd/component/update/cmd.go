@@ -200,6 +200,7 @@ func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
 	return answers.SrcPath, nil
 }
 
+// TODO: Maybe use `IsValidYAML` from /internal/misc/yaml/validation.go instead or even move this function there
 func isYamlFile(yamlFile string) bool {
 	info, err := os.Stat(yamlFile)
 

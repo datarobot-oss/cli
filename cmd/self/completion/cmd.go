@@ -13,23 +13,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/self/completion/install"
+	"github.com/datarobot/cli/cmd/self/completion/uninstall"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
-func supportedShells() []string {
-	return []string{
-		string(internalShell.Bash),
-		string(internalShell.Zsh),
-		string(internalShell.Fish),
-		string(internalShell.PowerShell),
-	}
-}
-
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   fmt.Sprintf("completion [%s]", strings.Join(supportedShells(), "|")),
+		Use:   fmt.Sprintf("completion [%s]", strings.Join(internalShell.SupportedShells(), "|")),
 		Short: "Generate or manage shell completion scripts.",
 		Long: `Generate shell completion script for supported shells. This will be output
 		to stdout so it can be redirected to the appropriate location.
@@ -72,7 +65,7 @@ PowerShell:
 `,
 		DisableFlagsInUseLine: true,
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
-		ValidArgs:             supportedShells(),
+		ValidArgs:             internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			shell := internalShell.Shell(args[0])
 
@@ -96,8 +89,8 @@ PowerShell:
 
 	// Add subcommands
 	cmd.AddCommand(
-		installCmd(),
-		uninstallCmd(),
+		install.Cmd(),
+		uninstall.Cmd(),
 	)
 
 	return cmd
