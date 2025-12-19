@@ -173,7 +173,7 @@ This wizard will help you:
 }
 
 func init() {
-	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or is empty")
+	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or validation fails")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
