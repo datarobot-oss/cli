@@ -125,4 +125,46 @@ DATAROBOT_API_TOKEN=test-token
 		require.NoError(t, err)
 		require.False(t, shouldSkip, "Should not skip when core DataRobot variables are missing")
 	})
+
+	t.Run("should not skip when only DATAROBOT_ENDPOINT is set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte("root: []"), 0o644)
+		require.NoError(t, err)
+
+		// Create .env with only DATAROBOT_ENDPOINT (missing DATAROBOT_API_TOKEN)
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.False(t, shouldSkip, "Should not skip when DATAROBOT_API_TOKEN is missing")
+	})
+
+	t.Run("should not skip when only DATAROBOT_API_TOKEN is set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte("root: []"), 0o644)
+		require.NoError(t, err)
+
+		// Create .env with only DATAROBOT_API_TOKEN (missing DATAROBOT_ENDPOINT)
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `DATAROBOT_API_TOKEN=test-token
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.False(t, shouldSkip, "Should not skip when DATAROBOT_ENDPOINT is missing")
+	})
 }
