@@ -32,7 +32,6 @@ func DirExists(path string) bool {
 
 // PathExists checks if a given path exists (either file or directory).
 func PathExists(path string) bool {
-
 	_, err := os.Stat(path)
 
 	return !os.IsNotExist(err)
