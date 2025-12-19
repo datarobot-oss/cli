@@ -115,19 +115,18 @@ This wizard will help you:
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
-	Run: func(cmd *cobra.Command, _ []string) {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
-				fmt.Println("fatal: ", err)
-				os.Exit(1)
+				return fmt.Errorf("fatal: %w", err)
 			}
 			defer f.Close()
 		}
 
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
-			os.Exit(1)
+			return err
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
@@ -141,7 +140,7 @@ This wizard will help you:
 				result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
 				if !result.HasErrors() {
 					fmt.Println("Configuration already exists, skipping setup.")
-					return
+					return nil
 				}
 			}
 		}
@@ -163,12 +162,13 @@ This wizard will help you:
 		)
 		_, err = p.Run()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 
 		// Update state after successful completion
 		_ = state.UpdateAfterDotenvSetup()
+
+		return nil
 	},
 }
 
