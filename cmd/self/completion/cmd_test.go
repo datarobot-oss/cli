@@ -18,7 +18,7 @@ import (
 )
 
 func TestSupportedShells(t *testing.T) {
-	shells := supportedShells()
+	shells := internalShell.SupportedShells()
 
 	expected := []string{"bash", "zsh", "fish", "powershell"}
 

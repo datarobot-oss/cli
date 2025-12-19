@@ -27,6 +27,15 @@ const (
 	PowerShell Shell = "powershell"
 )
 
+func SupportedShells() []string {
+	return []string{
+		string(Bash),
+		string(Zsh),
+		string(Fish),
+		string(PowerShell),
+	}
+}
+
 func DetectShell() (string, error) {
 	// Try SHELL environment variable first
 	shellPath := os.Getenv("SHELL")

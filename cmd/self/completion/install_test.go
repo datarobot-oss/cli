@@ -231,7 +231,7 @@ func TestInstallZsh(t *testing.T) {
 
 func TestInstallBash(t *testing.T) {
 	rootCmd := &cobra.Command{
-		Use:   "dr",F
+		Use:   "dr",
 		Short: "DataRobot CLI.",
 	}
 

@@ -29,15 +29,6 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
-func SupportedShells() []string {
-	return []string{
-		string(internalShell.Bash),
-		string(internalShell.Zsh),
-		string(internalShell.Fish),
-		string(internalShell.PowerShell),
-	}
-}
-
 func Cmd() *cobra.Command {
 	var force bool
 
@@ -76,7 +67,7 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
   # Force reinstall, even if completions are already installed:
   ` + version.CliName + ` completion install --force --yes`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: SupportedShells(),
+		ValidArgs: internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var shell string
 			if len(args) > 0 {

@@ -27,15 +27,6 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
-func supportedShells() []string {
-	return []string{
-		string(internalShell.Bash),
-		string(internalShell.Zsh),
-		string(internalShell.Fish),
-		string(internalShell.PowerShell),
-	}
-}
-
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -72,7 +63,7 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
   ` + version.CliName + ` completion uninstall bash --yes
   ` + version.CliName + ` completion uninstall zsh --yes`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: supportedShells(),
+		ValidArgs: internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var shell string
 			if len(args) > 0 {
