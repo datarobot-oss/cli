@@ -131,23 +131,15 @@ This wizard will help you:
 		}
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
-		// Check if we should skip when .env exists and is already configured
+		// Check if we should skip when .env exists and all required variables are set
 		ifNeeded, _ := cmd.Flags().GetBool("if-needed")
 		if ifNeeded {
 			if _, err := os.Stat(dotenvFile); err == nil {
-				// File exists, check if it has content beyond comments/whitespace
 				dotenvFileLines, _ := readDotenvFile(dotenvFile)
 				variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
-				hasContent := false
-				for _, v := range variables {
-					if v.Value != "" {
-						hasContent = true
-						break
-					}
-				}
-
-				if hasContent {
+				result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+				if !result.HasErrors() {
 					fmt.Println("Configuration already exists, skipping setup.")
 					return
 				}
