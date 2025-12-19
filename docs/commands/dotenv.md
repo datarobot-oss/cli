@@ -33,7 +33,7 @@ The `dr dotenv` command provides tools for creating, editing, validating, and up
 Launch the interactive wizard to configure environment variables.
 
 ```bash
-dr dotenv setup
+dr dotenv setup [--if-needed]
 ```
 
 **Features:**
@@ -45,11 +45,16 @@ dr dotenv setup
 - Secure handling of secret values.
 - DataRobot authentication integration.
 - Automatic state tracking of completion timestamp.
+- Conditional execution with `--if-needed` flag.
 
 **Prerequisites:**
 
 - Must be run inside a git repository.
 - Requires authentication with DataRobot.
+
+**Flags:**
+
+- `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
 
 **State tracking:**
 
@@ -65,11 +70,20 @@ dr templates setup --force-interactive
 
 This is useful for testing or when you need to reconfigure your environment from scratch.
 
-**Example:**
+**Examples:**
 
+Standard setup:
 ```bash
 cd my-template
 dr dotenv setup
+```
+
+Conditional setup (skip if already configured):
+```bash
+cd my-template
+dr dotenv setup --if-needed
+# Output: "Configuration already exists, skipping setup." (if valid)
+# Or: launches wizard (if missing or invalid)
 ```
 
 The wizard guides you through:
@@ -79,6 +93,21 @@ The wizard guides you through:
 3. Optional features and integrations.
 4. Validation of all inputs.
 5. Generation of `.env` file.
+
+**How `--if-needed` works:**
+
+When the `--if-needed` flag is set, the command validates your existing `.env` file against all required variables:
+
+- ✅ **Skips setup** if `.env` exists and all required variables are properly set (including core DataRobot variables and template-specific variables).
+- ⚠️ **Runs setup** if `.env` doesn't exist.
+- ⚠️ **Runs setup** if any required variables are missing or empty.
+- ⚠️ **Runs setup** if validation fails for any reason.
+
+This makes `--if-needed` ideal for:
+- **Automation scripts** that need to ensure configuration without user interaction
+- **CI/CD pipelines** that should only prompt when necessary
+- **Onboarding workflows** that intelligently skip already-completed steps
+- **Idempotent operations** that can be safely run multiple times
 
 ### dr dotenv edit
 
@@ -329,6 +358,40 @@ Set up a new template with all configuration:
 ```bash
 cd my-template
 dr dotenv setup
+```
+
+### Automated/idempotent setup
+
+Ensure configuration exists without unnecessary prompts (useful in scripts):
+
+```bash
+cd my-template
+dr dotenv setup --if-needed
+```
+
+This will:
+- Skip the wizard if configuration is already valid
+- Run the wizard only if configuration is missing or incomplete
+
+**Use case example - CI/CD pipeline:**
+
+```bash
+#!/bin/bash
+# Ensure environment is configured before running tests
+dr dotenv setup --if-needed
+dr run test
+```
+
+**Use case example - Onboarding script:**
+
+```bash
+#!/bin/bash
+# Multi-step setup that can be safely re-run
+git clone https://github.com/myorg/my-app
+cd my-app
+npm install
+dr dotenv setup --if-needed  # Only prompts if needed
+dr run dev
 ```
 
 ### Quick updates
