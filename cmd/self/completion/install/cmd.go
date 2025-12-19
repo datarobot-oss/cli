@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -111,7 +112,7 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 	}
 
 	// Check if already installed
-	alreadyInstalled := fileExists(installPath)
+	alreadyInstalled := fsutil.FileExists(installPath)
 	if !force && alreadyInstalled {
 		return showAlreadyInstalled(installPath)
 	}
@@ -229,7 +230,7 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	var compDir string
 
 	// Check for Oh-My-Zsh first (most common)
-	if dirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
+	if fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
 		compDir = filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions")
 		installPath = filepath.Join(compDir, "_"+version.CliName)
 	} else {
@@ -265,7 +266,7 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 		}
 
 		// Add to fpath if using standard Zsh (not Oh-My-Zsh)
-		if !dirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
+		if !fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
 			zshrc := filepath.Join(os.Getenv("HOME"), ".zshrc")
 			if err := ensureFpathInZshrc(zshrc, compDir); err != nil {
 				fmt.Printf("%s %s\n", warnStyle.Render("Warning: "), err)
@@ -358,7 +359,7 @@ func isBashCompletionAvailable() bool {
 	}
 
 	for _, loc := range locations {
-		if fileExists(loc) {
+		if fsutil.FileExists(loc) {
 			return true
 		}
 	}
@@ -417,7 +418,7 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 
 		// Try PowerShell Core first (PowerShell 7+)
 		psCorePath := filepath.Join(documentsPath, "PowerShell")
-		if dirExists(psCorePath) {
+		if fsutil.DirExists(psCorePath) {
 			profilePath = filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1")
 		} else {
 			// Fall back to Windows PowerShell 5.x
@@ -443,7 +444,7 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 		completionScript += "}\n"
 
 		// Check if profile exists and if completion is already set up
-		if fileExists(profilePath) {
+		if fsutil.FileExists(profilePath) {
 			content, err := os.ReadFile(profilePath)
 			if err != nil {
 				return fmt.Errorf("Failed to read PowerShell profile: %w", err)
@@ -511,7 +512,7 @@ func showActivationInstructions(shell internalShell.Shell) {
 
 func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Check if file exists
-	if !fileExists(zshrc) {
+	if !fsutil.FileExists(zshrc) {
 		return errors.New("~/.zshrc not found, please create it first.")
 	}
 
@@ -548,7 +549,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 
 func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Check if file exists
-	if !fileExists(bashrc) {
+	if !fsutil.FileExists(bashrc) {
 		return errors.New("~/.bashrc not found, please create it first.")
 	}
 
@@ -579,22 +580,4 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	return err
 }
 
-// TODO: DRY this up
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
 
-	return !info.IsDir()
-}
-
-// TODO: DRY this up
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-
-	return info.IsDir()
-}

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/spf13/cobra"
 )
@@ -93,11 +94,11 @@ func TestFileExists(t *testing.T) {
 
 	tmpFile.Close()
 
-	if !fileExists(tmpFile.Name()) {
+	if !fsutil.FileExists(tmpFile.Name()) {
 		t.Error("fileExists returned false for existing file")
 	}
 
-	if fileExists("/nonexistent/file/path") {
+	if fsutil.FileExists("/nonexistent/file/path") {
 		t.Error("fileExists returned true for nonexistent file")
 	}
 }
@@ -111,11 +112,11 @@ func TestDirExists(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	if !dirExists(tmpDir) {
+	if !fsutil.DirExists(tmpDir) {
 		t.Error("dirExists returned false for existing directory")
 	}
 
-	if dirExists("/nonexistent/directory/path") {
+	if fsutil.DirExists("/nonexistent/directory/path") {
 		t.Error("dirExists returned true for nonexistent directory")
 	}
 
@@ -129,7 +130,7 @@ func TestDirExists(t *testing.T) {
 
 	tmpFile.Close()
 
-	if dirExists(tmpFile.Name()) {
+	if fsutil.DirExists(tmpFile.Name()) {
 		t.Error("dirExists returned true for a file")
 	}
 }

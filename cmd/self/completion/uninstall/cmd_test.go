@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 )
 
@@ -332,7 +333,7 @@ func TestUninstallZsh(t *testing.T) {
 		t.Error("expected true when file exists")
 	}
 
-	if fileExists(compFile) {
+	if fsutil.FileExists(compFile) {
 		t.Error("completion file still exists after uninstall")
 	}
 }
@@ -377,7 +378,7 @@ func TestUninstallBash(t *testing.T) {
 		t.Error("expected true when file exists")
 	}
 
-	if fileExists(compFile) {
+	if fsutil.FileExists(compFile) {
 		t.Error("completion file still exists after uninstall")
 	}
 }
@@ -422,7 +423,7 @@ func TestUninstallFish(t *testing.T) {
 		t.Error("expected true when file exists")
 	}
 
-	if fileExists(compFile) {
+	if fsutil.FileExists(compFile) {
 		t.Error("completion file still exists after uninstall")
 	}
 }

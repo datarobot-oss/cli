@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -27,15 +28,7 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
-// TODO: DRY this up
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
 
-	return !info.IsDir()
-}
 
 func Cmd() *cobra.Command {
 	var yes bool
@@ -153,7 +146,7 @@ func findExistingCompletions(shell internalShell.Shell) []string {
 	var existingPaths []string
 
 	for _, path := range paths {
-		if fileExists(path) {
+		if fsutil.FileExists(path) {
 			existingPaths = append(existingPaths, path)
 		}
 	}
@@ -274,7 +267,7 @@ func uninstallZsh() bool {
 
 	// Oh-My-Zsh location
 	path1 := filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions", "_"+version.CliName)
-	if fileExists(path1) {
+	if fsutil.FileExists(path1) {
 		_ = os.Remove(path1)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path1)
 
@@ -283,7 +276,7 @@ func uninstallZsh() bool {
 
 	// Standard Zsh location
 	path2 := filepath.Join(os.Getenv("HOME"), ".zsh", "completions", "_"+version.CliName)
-	if fileExists(path2) {
+	if fsutil.FileExists(path2) {
 		_ = os.Remove(path2)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path2)
 
@@ -305,7 +298,7 @@ func uninstallZsh() bool {
 
 func uninstallBash() bool {
 	path := filepath.Join(os.Getenv("HOME"), ".bash_completions", version.CliName)
-	if fileExists(path) {
+	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
 
@@ -317,7 +310,7 @@ func uninstallBash() bool {
 
 func uninstallFish() bool {
 	path := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions", version.CliName+".fish")
-	if fileExists(path) {
+	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
 
@@ -342,7 +335,7 @@ func uninstallPowerShell() bool {
 }
 
 func removePowerShellCompletionFromProfile(profilePath string) bool {
-	if !fileExists(profilePath) {
+	if !fsutil.FileExists(profilePath) {
 		return false
 	}
 
