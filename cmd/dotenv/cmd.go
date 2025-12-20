@@ -132,14 +132,14 @@ This wizard will help you:
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
 		// Check if we should skip when .env exists and all required variables are set
-		ifNeeded, _ := cmd.Flags().GetBool("if-needed")
-		if ifNeeded {
-			shouldSkip, err := shouldSkipSetup(repositoryRoot, dotenvFile)
+		flagIfNeededSet, _ := cmd.Flags().GetBool("if-needed")
+		if flagIfNeededSet {
+			shouldSkipSetup, err := shouldSkipSetup(repositoryRoot, dotenvFile)
 			if err != nil {
 				return err
 			}
 
-			if shouldSkip {
+			if shouldSkipSetup {
 				fmt.Println("Configuration already exists, skipping setup.")
 				return nil
 			}
@@ -185,7 +185,7 @@ This wizard will help you:
 }
 
 func init() {
-	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or validation fails")
+	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
