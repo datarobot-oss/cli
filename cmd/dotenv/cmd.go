@@ -199,27 +199,13 @@ func init() {
 func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	if _, err := os.Stat(dotenvFile); err != nil {
 		// .env doesn't exist, don't skip
-		log.Debug("shouldSkipSetup: .env file does not exist", "dotenvFile", dotenvFile)
-
 		return false, nil
 	}
 
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
-	log.Debug("shouldSkipSetup: parsed variables", "count", len(variables))
-
-	for i, v := range variables {
-		log.Debug("  variable", "index", i, "name", v.Name, "value", v.Value, "commented", v.Commented, "secret", v.Secret)
-	}
-
 	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
-
-	log.Debug("shouldSkipSetup: validation result", "hasErrors", result.HasErrors())
-
-	for i, r := range result.Results {
-		log.Debug("  result", "index", i, "field", r.Field, "valid", r.Valid, "value", r.Value, "message", r.Message)
-	}
 
 	return !result.HasErrors(), nil
 }
