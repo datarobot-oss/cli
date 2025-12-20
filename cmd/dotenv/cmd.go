@@ -145,6 +145,18 @@ This wizard will help you:
 			}
 		}
 
+		// TODO: There's an inconsistency between validation and wizard variable loading:
+		// - shouldSkipSetup uses ParseVariablesOnly (reads only .env file)
+		// - ValidateEnvironment also checks OS environment variables (os.LookupEnv)
+		// - But here we use VariablesFromLines which auto-populates from auth (setValue)
+		//
+		// This means:
+		// 1. If validation passes (vars in .env or OS env), setup is skipped correctly
+		// 2. If validation fails (vars missing), wizard runs but shows auto-populated values from auth
+		//
+		// This is probably acceptable UX (pre-fill makes wizard easier) but creates confusion
+		// about what --if-needed is actually checking. Consider refactoring to be more consistent
+		// or documenting the behavior more clearly in the flag description.
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
@@ -178,16 +190,36 @@ func init() {
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
 // Returns true if .env file exists and all required variables are valid.
+//
+// Note: This uses ParseVariablesOnly to read only what's in the .env file, but
+// ValidateEnvironment also checks OS environment variables via os.LookupEnv.
+// This means validation can pass if required variables are set as environment
+// variables even if they're not in the .env file. This is intentional - if the
+// app can run (because vars are available from any source), setup can be skipped.
 func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	if _, err := os.Stat(dotenvFile); err != nil {
 		// .env doesn't exist, don't skip
+		log.Debug("shouldSkipSetup: .env file does not exist", "dotenvFile", dotenvFile)
+
 		return false, nil
 	}
 
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
+	log.Debug("shouldSkipSetup: parsed variables", "count", len(variables))
+
+	for i, v := range variables {
+		log.Debug("  variable", "index", i, "name", v.Name, "value", v.Value, "commented", v.Commented, "secret", v.Secret)
+	}
+
 	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+
+	log.Debug("shouldSkipSetup: validation result", "hasErrors", result.HasErrors())
+
+	for i, r := range result.Results {
+		log.Debug("  result", "index", i, "field", r.Field, "valid", r.Valid, "value", r.Value, "message", r.Message)
+	}
 
 	return !result.HasErrors(), nil
 }
