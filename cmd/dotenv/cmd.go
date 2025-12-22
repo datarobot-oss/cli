@@ -115,45 +115,48 @@ This wizard will help you:
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
-	Run: func(cmd *cobra.Command, _ []string) {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		if viper.GetBool("debug") {
 			f, err := tea.LogToFile("tea-debug.log", "debug")
 			if err != nil {
-				fmt.Println("fatal: ", err)
-				os.Exit(1)
+				return fmt.Errorf("fatal: %w", err)
 			}
 			defer f.Close()
 		}
 
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
-			os.Exit(1)
+			return err
 		}
+
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
-		// Check if we should skip when .env exists and is already configured
-		ifNeeded, _ := cmd.Flags().GetBool("if-needed")
-		if ifNeeded {
-			if _, err := os.Stat(dotenvFile); err == nil {
-				// File exists, check if it has content beyond comments/whitespace
-				dotenvFileLines, _ := readDotenvFile(dotenvFile)
-				variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+		// Check if we should skip when .env exists and all required variables are set
+		flagIfNeededSet, _ := cmd.Flags().GetBool("if-needed")
+		if flagIfNeededSet {
+			shouldSkipSetup, err := shouldSkipSetup(repositoryRoot, dotenvFile)
+			if err != nil {
+				return err
+			}
 
-				hasContent := false
-				for _, v := range variables {
-					if v.Value != "" {
-						hasContent = true
-						break
-					}
-				}
-
-				if hasContent {
-					fmt.Println("Configuration already exists, skipping setup.")
-					return
-				}
+			if shouldSkipSetup {
+				fmt.Println("Configuration already exists, skipping setup.")
+				return nil
 			}
 		}
 
+		// TODO: There's an inconsistency between validation and wizard variable loading:
+		// - shouldSkipSetup uses ParseVariablesOnly (reads only .env file)
+		// - ValidateEnvironment also checks OS environment variables (os.LookupEnv)
+		// - But here we use VariablesFromLines which auto-populates from auth (setValue)
+		//
+		// This means:
+		// 1. If validation passes (vars in .env or OS env), setup is skipped correctly
+		// 2. If validation fails (vars missing), wizard runs but shows auto-populated values from auth
+		//
+		// This is probably acceptable UX (pre-fill makes wizard easier) but creates confusion
+		// about what --if-needed is actually checking. Consider refactoring to be more consistent
+		// or documenting the behavior more clearly in the flag description.
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
@@ -171,17 +174,40 @@ This wizard will help you:
 		)
 		_, err = p.Run()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 
 		// Update state after successful completion
 		_ = state.UpdateAfterDotenvSetup()
+
+		return nil
 	},
 }
 
 func init() {
-	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or is empty")
+	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
+}
+
+// shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
+// Returns true if .env file exists and all required variables are valid.
+//
+// Note: This uses ParseVariablesOnly to read only what's in the .env file, but
+// ValidateEnvironment also checks OS environment variables via os.LookupEnv.
+// This means validation can pass if required variables are set as environment
+// variables even if they're not in the .env file. This is intentional - if the
+// app can run (because vars are available from any source), setup can be skipped.
+func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
+	if _, err := os.Stat(dotenvFile); err != nil {
+		// .env doesn't exist, don't skip
+		return false, nil
+	}
+
+	dotenvFileLines, _ := readDotenvFile(dotenvFile)
+	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
+	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+
+	return !result.HasErrors(), nil
 }
 
 var UpdateCmd = &cobra.Command{
