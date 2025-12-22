@@ -123,11 +123,13 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
 		viper.Set(config.DataRobotAPIKey, apiKey)
-		auth.WriteConfigFileSilent()
+
+		// Ignore errors when writing config file
+		_ = auth.WriteConfigFileSilent()
 
 		// Now shut down the server after key is received
 		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
+			return errMsg{fmt.Errorf("error during shutdown: %w", err)}
 		}
 
 		return lm.SuccessCmd()

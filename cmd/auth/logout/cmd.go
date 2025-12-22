@@ -15,10 +15,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-func Run(_ *cobra.Command, _ []string) {
+func RunE(_ *cobra.Command, _ []string) error {
 	viper.Set(config.DataRobotAPIKey, "")
 
-	auth.WriteConfigFile()
+	return auth.WriteConfigFile()
 }
 
 func Cmd() *cobra.Command {
@@ -26,6 +26,6 @@ func Cmd() *cobra.Command {
 		Use:   "logout",
 		Short: "Log out from DataRobot.",
 		Long:  `Log out from DataRobot and clear the stored API key.`,
-		Run:   Run,
+		RunE:  RunE,
 	}
 }
