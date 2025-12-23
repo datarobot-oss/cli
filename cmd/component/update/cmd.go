@@ -41,7 +41,7 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
+func RunE(cmd *cobra.Command, args []string) error {
 	cleanup := tui.SetupDebugLogging()
 	defer cleanup()
 
