@@ -11,11 +11,15 @@ package logout
 import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 func Run(_ *cobra.Command, _ []string) {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	viper.Set(config.DataRobotAPIKey, "")
 
 	auth.WriteConfigFile()

@@ -10,6 +10,7 @@ package config
 
 import (
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,9 @@ func Cmd() *cobra.Command {
 }
 
 func RunE(cmd *cobra.Command, _ []string) error {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	output, err := config.DebugViperConfig()
 	if err != nil {
 		return err

@@ -11,13 +11,16 @@ package list
 import (
 	"fmt"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
-func Run() error {
+func RunE(_ *cobra.Command, _ []string) error {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	templateList, err := drapi.GetTemplates()
 	if err != nil {
 		return err
@@ -46,11 +49,5 @@ start building AI applications. Each template includes:
 	PreRunE: func(cmd *cobra.Command, _ []string) error {
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
-	Run: func(_ *cobra.Command, _ []string) {
-		err := Run()
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	},
+	RunE: RunE,
 }

@@ -176,6 +176,9 @@ func checkDotenvCredentials(repoRoot string) bool {
 }
 
 func Run(_ *cobra.Command, _ []string) {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()

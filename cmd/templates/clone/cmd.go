@@ -25,6 +25,9 @@ import (
 )
 
 func Run(args []string) error {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	templateID, dir, err := validateArgs(args)
 	if err != nil {
 		return err

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -24,6 +25,9 @@ func Cmd() *cobra.Command {
 		Long:  "Display all available commands, subcommands, and their flags, in a tree format.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cleanup := tui.SetupDebugLogging()
+			defer cleanup()
+
 			output := GenerateCommandTree(cmd.Root())
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
