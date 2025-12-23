@@ -146,9 +146,7 @@ func (vv Variables) find(prompt UserPrompt) (Variable, bool) {
 // requires dependencies in selected options.
 func DetermineRequiredSections(userPrompts []UserPrompt) []UserPrompt {
 	for p := range userPrompts {
-		if !userPrompts[p].Root {
-			userPrompts[p].Active = false
-		}
+		userPrompts[p].Active = userPrompts[p].Root
 	}
 
 	activeSections := make(map[string]struct{})
@@ -164,6 +162,26 @@ func DetermineRequiredSections(userPrompts []UserPrompt) []UserPrompt {
 		if _, active := activeSections[prompt.Section]; active {
 			userPrompts[p].Active = true
 		}
+	}
+
+	duplicates := make(map[string]struct{})
+
+	for p, prompt := range userPrompts {
+		if !userPrompts[p].Active {
+			continue
+		}
+
+		varName := prompt.VarName()
+
+		if varName == "" {
+			continue
+		}
+
+		if _, ok := duplicates[varName]; ok {
+			userPrompts[p].Active = false
+		}
+
+		duplicates[varName] = struct{}{}
 	}
 
 	return userPrompts

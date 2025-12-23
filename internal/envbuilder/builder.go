@@ -183,7 +183,6 @@ func filePrompts(yamlFile string) ([]UserPrompt, error) {
 	for p := range prompts {
 		if slices.Contains(roots, prompts[p].Section) {
 			prompts[p].Root = true
-			prompts[p].Active = true
 		}
 
 		prompts[p].Section = yamlFile + ":" + prompts[p].Section
