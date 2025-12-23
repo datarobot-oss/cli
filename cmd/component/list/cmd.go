@@ -14,14 +14,10 @@ import (
 	"text/tabwriter"
 
 	"github.com/datarobot/cli/internal/copier"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func RunE(_ *cobra.Command, _ []string) error {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err

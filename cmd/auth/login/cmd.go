@@ -15,15 +15,11 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 func RunE(cmd *cobra.Command, _ []string) error {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.

@@ -12,7 +12,6 @@ import (
 	"errors"
 
 	"github.com/datarobot/cli/internal/tools"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -27,9 +26,6 @@ func Cmd() *cobra.Command {
 }
 
 func RunE(cmd *cobra.Command, _ []string) error {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	missing := tools.MissingPrerequisites()
 
 	if missing != "" {

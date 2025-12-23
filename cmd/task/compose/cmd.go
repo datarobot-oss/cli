@@ -17,16 +17,12 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/task"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 var templatePath string
 
 func Run(_ *cobra.Command, _ []string) {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	taskfileName := detectExistingTaskfile()
 	discovery := createDiscovery(taskfileName)
 
