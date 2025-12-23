@@ -18,6 +18,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "templates",
+		Aliases: []string{"template"},
 		GroupID: "core",
 		Short:   "📚 DataRobot application templates commands",
 		Long: `Application templates commands for ` + version.AppName + `.

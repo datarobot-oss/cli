@@ -177,7 +177,7 @@ func printSetURLPrompt() {
 	fmt.Print("Enter your choice: ")
 }
 
-func checkDatarobotHost() {
+func checkDatarobotHost() bool {
 	datarobotHost := config.GetBaseURL()
 
 	if len(datarobotHost) > 0 {
@@ -187,21 +187,26 @@ func checkDatarobotHost() {
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			return
+			return false
 		}
 
 		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
 			fmt.Println("Exiting without overwriting the DataRobot URL.")
-			return
+			return true
 		}
 	}
+
+	return false
 }
 
 func SetURLAction(checkHost bool) {
 	reader := bufio.NewReader(os.Stdin)
 
 	if checkHost {
-		checkDatarobotHost()
+		shouldExit := checkDatarobotHost()
+		if shouldExit {
+			return
+		}
 	}
 
 	printSetURLPrompt()
