@@ -25,6 +25,11 @@ func cmdRun(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
+type AddFlags struct {
+	DataArgs []string
+	DataFile string
+}
+
 // Add creates a copier copy command with optional --data arguments
 func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
 	commandParts := []string{"copier", "copy", repoURL, "."}
@@ -45,22 +50,36 @@ func ExecAdd(repoURL string, data map[string]interface{}) error {
 	return cmdRun(Add(repoURL, data))
 }
 
+type UpdateFlags struct {
+	DataArgs  []string
+	DataFile  string
+	Recopy    bool
+	VcsRef    string
+	Quiet     bool
+	Overwrite bool
+}
+
 // Update creates a copier update command with optional --data arguments
-func Update(yamlFile string, data map[string]interface{}, recopy, quiet, debug, overwrite bool) *exec.Cmd {
+func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags, debug bool) *exec.Cmd {
 	copierCommand := "update"
 
-	if recopy {
+	if flags.Recopy {
 		copierCommand = "recopy"
 	}
 
 	commandParts := []string{
 		"copier", copierCommand, "--answers-file", yamlFile, "--skip-answered",
 	}
-	if quiet {
+
+	if flags.VcsRef != "" {
+		commandParts = append(commandParts, "--vcs-ref", flags.VcsRef)
+	}
+
+	if flags.Quiet {
 		commandParts = append(commandParts, "--quiet")
 	}
 
-	if recopy && overwrite {
+	if flags.Recopy && flags.Overwrite {
 		commandParts = append(commandParts, "--overwrite")
 	}
 
@@ -79,12 +98,12 @@ func Update(yamlFile string, data map[string]interface{}, recopy, quiet, debug, 
 }
 
 // ExecUpdate executes a copier update command with optional --data arguments
-func ExecUpdate(yamlFile string, data map[string]interface{}, recopy, quiet, debug, overwrite bool) error {
+func ExecUpdate(yamlFile string, data map[string]interface{}, flags UpdateFlags, debug bool) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	return cmdRun(Update(yamlFile, data, recopy, quiet, debug, overwrite))
+	return cmdRun(Update(yamlFile, data, flags, debug))
 }
 
 // formatDataValue converts a value to a string suitable for --data arguments

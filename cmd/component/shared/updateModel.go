@@ -94,7 +94,7 @@ func newDetailKeys() detailKeyMap {
 	}
 }
 
-type Model struct {
+type UpdateModel struct {
 	err         error
 	infoMessage string
 	screen      screens
@@ -104,11 +104,12 @@ type Model struct {
 	keys        detailKeyMap
 	ready       bool
 	ExitMessage string
+	updateFlags copier.UpdateFlags
 
 	ComponentUpdated bool
 }
 
-func (m Model) toggleCurrent() (Model, tea.Cmd) {
+func (m UpdateModel) toggleCurrent() (UpdateModel, tea.Cmd) {
 	items := m.list.VisibleItems()
 	currentItem := items[m.list.Index()].(ListItem)
 
@@ -120,16 +121,16 @@ func (m Model) toggleCurrent() (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func updateComponent(item ListItem) tea.Cmd {
+func updateComponent(item ListItem, updateFlags copier.UpdateFlags) tea.Cmd {
 	debug := viper.GetBool("debug")
-	command := copier.Update(item.component.FileName, nil, false, false, debug, false)
+	command := copier.Update(item.component.FileName, nil, updateFlags, debug)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}
 	})
 }
 
-func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea.Cmd) {
+func (m UpdateModel) unselectComponent(itemToUnselect ListItem, err error) (UpdateModel, tea.Cmd) {
 	details := itemToUnselect.component.ComponentDetails
 
 	if err != nil {
@@ -169,7 +170,7 @@ func (m Model) unselectComponent(itemToUnselect ListItem, err error) (Model, tea
 	return m, nil
 }
 
-func (m Model) getSelectedComponents() []ListItem {
+func (m UpdateModel) getSelectedComponents() []ListItem {
 	items := m.list.VisibleItems()
 
 	values := make([]ListItem, 0, len(items))
@@ -183,23 +184,24 @@ func (m Model) getSelectedComponents() []ListItem {
 	return values
 }
 
-func NewUpdateComponentModel() Model {
+func NewUpdateComponentModel(updateFlags copier.UpdateFlags) UpdateModel {
 	h := help.New()
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
-	return Model{
-		screen: listScreen,
-		help:   h,
-		keys:   newDetailKeys(),
+	return UpdateModel{
+		screen:      listScreen,
+		help:        h,
+		keys:        newDetailKeys(),
+		updateFlags: updateFlags,
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m UpdateModel) Init() tea.Cmd {
 	return tea.Batch(m.loadComponents(), tea.WindowSize())
 }
 
-func (m Model) loadComponents() tea.Cmd {
+func (m UpdateModel) loadComponents() tea.Cmd {
 	return func() tea.Msg {
 		answers, err := copier.AnswersFromPath(".", false)
 		if err != nil {
@@ -228,14 +230,14 @@ func (m Model) loadComponents() tea.Cmd {
 	}
 }
 
-func (m Model) showComponentInfo() tea.Cmd {
+func (m UpdateModel) showComponentInfo() tea.Cmd {
 	return func() tea.Msg {
 		item := m.list.VisibleItems()[m.list.Index()]
 		return componentInfoRequestMsg{item.(ListItem)}
 	}
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
+func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	switch msg := msg.(type) {
 	case componentsLoadedMsg:
 		m.list = msg.list
@@ -307,7 +309,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 					var cmdsToRun []tea.Cmd
 
 					for _, listItem := range m.getSelectedComponents() {
-						cmdsToRun = append(cmdsToRun, updateComponent(listItem))
+						cmdsToRun = append(cmdsToRun, updateComponent(listItem, m.updateFlags))
 					}
 
 					cmd := tea.Sequence(cmdsToRun...)
@@ -387,7 +389,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m UpdateModel) View() string {
 	var sb strings.Builder
 
 	switch m.screen {
@@ -400,7 +402,7 @@ func (m Model) View() string {
 	return sb.String()
 }
 
-func (m Model) viewListScreen() string {
+func (m UpdateModel) viewListScreen() string {
 	var sb strings.Builder
 
 	// Display error message
