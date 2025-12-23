@@ -54,9 +54,6 @@ var EditCmd = &cobra.Command{
 	Use:   "edit",
 	Short: "✏️ Edit '.env' file using built-in editor.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cleanup := tui.SetupDebugLogging()
-		defer cleanup()
-
 		cwd, err := os.Getwd()
 		if err != nil {
 			return err
@@ -82,12 +79,7 @@ var EditCmd = &cobra.Command{
 			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
-		p := tea.NewProgram(
-			tui.NewInterruptibleModel(m),
-			tea.WithAltScreen(),
-			tea.WithContext(cmd.Context()),
-		)
-		_, err = p.Run()
+		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 
 		return err
 	},
@@ -109,9 +101,6 @@ This wizard will help you:
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cleanup := tui.SetupDebugLogging()
-		defer cleanup()
-
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
 			return err
@@ -155,12 +144,7 @@ This wizard will help you:
 			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
-		p := tea.NewProgram(
-			tui.NewInterruptibleModel(m),
-			tea.WithAltScreen(),
-			tea.WithContext(cmd.Context()),
-		)
-		_, err = p.Run()
+		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
 			return err
 		}

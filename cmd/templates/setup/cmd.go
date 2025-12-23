@@ -38,17 +38,9 @@ var Cmd = &cobra.Command{
 
 // RunTea starts the template setup TUI, optionally from the start command
 func RunTea(ctx context.Context, fromStartCommand bool) error {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	m := NewModel(fromStartCommand)
-	p := tea.NewProgram(
-		tui.NewInterruptibleModel(m),
-		tea.WithAltScreen(),
-		tea.WithContext(ctx),
-	)
 
-	_, err := p.Run()
+	_, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(ctx))
 	// TODO: Re-enable after further testing of component configure
 	// if err != nil {
 	// 	return err

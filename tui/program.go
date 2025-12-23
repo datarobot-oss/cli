@@ -20,21 +20,25 @@ import (
 // DebugLogFile is the filename for TUI debug logs
 const DebugLogFile = "dr-tui-debug.log"
 
-// SetupDebugLogging configures debug logging for the TUI if debug mode is enabled.
-// It should be called at the start of TUI programs when debug logging is needed.
-// Returns a cleanup function that should be deferred to close the log file.
-func SetupDebugLogging() func() {
-	if !viper.GetBool("debug") {
-		return func() {}
+// Run is a wrapper for tea.NewProgram and (p *Program) Run()
+// Configures debug logging for the TUI if debug mode is enabled
+// Wraps a model in NewInterruptibleModel
+func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+	if viper.GetBool("debug") {
+		f, err := tea.LogToFile(DebugLogFile, "debug")
+		if err != nil {
+			fmt.Println("fatal:", err)
+			os.Exit(1)
+		}
+
+		log.SetOutput(f)
+
+		defer f.Close()
 	}
 
-	f, err := tea.LogToFile(DebugLogFile, "debug")
-	if err != nil {
-		fmt.Println("fatal:", err)
-		os.Exit(1)
-	}
+	p := tea.NewProgram(NewInterruptibleModel(model), opts...)
 
-	log.SetOutput(f)
+	finalModel, err := p.Run()
 
-	return func() { f.Close() }
+	return finalModel, err
 }

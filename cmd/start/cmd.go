@@ -34,13 +34,9 @@ The following actions will be performed:
 - Checking for prerequisite tooling
 - Executing the start script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cleanup := tui.SetupDebugLogging()
-			defer cleanup()
-
 			m := NewStartModel(opts)
-			p := tea.NewProgram(tui.NewInterruptibleModel(m))
 
-			finalModel, err := p.Run()
+			finalModel, err := tui.Run(m)
 			if err != nil {
 				return err
 			}
@@ -67,9 +63,8 @@ The following actions will be performed:
 				// Now run start again - we're in the cloned repo directory
 				// Create a new start model and run it
 				m2 := NewStartModel(opts)
-				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2))
 
-				finalModel2, err := p2.Run()
+				finalModel2, err := tui.Run(m2)
 				if err != nil {
 					return err
 				}

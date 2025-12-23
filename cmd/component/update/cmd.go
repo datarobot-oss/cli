@@ -42,9 +42,6 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 }
 
 func RunE(cmd *cobra.Command, args []string) error {
-	cleanup := tui.SetupDebugLogging()
-	defer cleanup()
-
 	var updateFileName string
 	if len(args) > 0 && args[0] != "" {
 		updateFileName = args[0]
@@ -71,9 +68,8 @@ func RunE(cmd *cobra.Command, args []string) error {
 	}
 
 	m := shared.NewUpdateComponentModel(updateFlags)
-	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
-	finalModel, err := p.Run()
+	finalModel, err := tui.Run(m, tea.WithAltScreen())
 	if err != nil {
 		return err
 	}
