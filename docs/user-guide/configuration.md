@@ -196,17 +196,21 @@ export DR_TEMPLATES_DIR=~/workspace/datarobot
 
 ### Debugging configuration
 
-Enable debug logging:
+Enable debug logging to see detailed execution information:
 
 ```yaml
 debug: true
 ```
 
-Or temporarily:
+Or temporarily enable it with the `--debug` flag:
 
 ```bash
 dr --debug templates list
 ```
+
+When you enable debug mode, the CLI:
+- Prints detailed log messages to stderr.
+- Creates a `dr-tui-debug.log` file in the current directory for terminal UI debug information.
 
 ## Configuration examples
 
