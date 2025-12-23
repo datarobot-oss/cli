@@ -1,6 +1,26 @@
-# `dr self` - CLI Utility Commands
+# `dr self` - CLI utility commands
 
 Commands for managing and configuring the DataRobot CLI itself.
+
+## Quick start
+
+For most users, common CLI management tasks are straightforward:
+
+```bash
+# Check CLI version
+dr self version
+
+# Update to latest version
+dr self update
+
+# View current configuration
+dr self config
+```
+
+These commands help you manage the CLI tool itself, including updates, version information, and configuration.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -102,7 +122,8 @@ The update process will download and install the latest version while preserving
 dr self update
 ```
 
-**Note:** This command requires an active internet connection and appropriate permissions to install software on your system.
+> [!NOTE]
+> This command requires an active internet connection and appropriate permissions to install software on your system.
 
 ### `version`
 
@@ -126,9 +147,9 @@ dr self version
 dr self version --format json
 ```
 
-## Global flags
+## Global options
 
-All `dr` global flags are available:
+All `dr` global options are available:
 
 - `-v, --verbose`&mdash;enable verbose output
 - `--debug`&mdash;enable debug output
@@ -193,4 +214,4 @@ $ dr self version --format json
 
 - [Shell completions guide](../user-guide/shell-completions.md)&mdash;detailed completion setup
 - [Completion command](completion.md)&mdash;completion command reference
-- [Getting started](../user-guide/getting-started.md)&mdash;initial CLI setup
+- [Quick start](../../README.md#quick-start)&mdash;initial CLI setup

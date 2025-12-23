@@ -1,23 +1,32 @@
-# dr start
+# `dr start` - Application quickstart
 
 Run the application quickstart process for the current template.
 
-## Synopsis
+## Quick start
 
-The `start` command (also available as `quickstart`) provides an automated way to initialize and launch your DataRobot application. It performs several checks and either executes a template-specific quickstart script or seamlessly launches the interactive template setup wizard.
+For most users, getting started is a single command:
+
+```bash
+# Run the quickstart process (interactive)
+dr start
+```
+
+The command automatically detects your template's configuration and either runs a custom quickstart script or launches the interactive setup wizard.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Synopsis
 
 ```bash
 dr start [flags]
 ```
 
-## Aliases
-
-- `dr start`
-- `dr quickstart`
-
 ## Description
 
-The `start` command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
+The `start` command (also available as `quickstart`) provides an automated way to initialize and launch your DataRobot application. It performs several checks and either executes a template-specific quickstart script or seamlessly launches the interactive template setup wizard.
+
+The command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
 
 1. **Prerequisite checks**&mdash;verifies that required tools are installed.
 2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/` (if in a DataRobot repository).
@@ -27,24 +36,29 @@ The `start` command streamlines the process of getting your DataRobot applicatio
 
 This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If you're not in a DataRobot repository or no script exists, the command gracefully falls back to the standard setup wizard.
 
-## Flags
+## Aliases
 
-```text
+- `dr start`
+- `dr quickstart`
+
+## Options
+
+```bash
   -y, --yes     Skip confirmation prompts and execute immediately
   -h, --help    Show help information
 ```
 
-### Global flags
+### Global options
 
-All [global flags](README.md#global-flags) are also available.
+All [global options](README.md#global-options) are also available.
 
-## Quickstart Scripts
+## Quickstart scripts
 
 ### Location
 
 Quickstart scripts must be placed in:
 
-```
+```text
 .datarobot/cli/bin/
 ```
 
@@ -147,7 +161,7 @@ The `dr start` command automatically tracks when it runs successfully by updatin
 - Timestamp of when the command last started (ISO 8601 format)
 - CLI version used
 
-This state information is stored in `.datarobot/state/info.yml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
+This state information is stored in `.datarobot/cli/state.yaml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
 
 The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
 
@@ -176,7 +190,23 @@ If the user declines, the command exits gracefully and still updates the state f
 
 Before proceeding, the command verifies:
 
-- ✅ Required tools are installed (Git, etc.)
+- ✅ Required tools are installed (python, uv, task, pulumi, etc.)
+
+Required tools and versions can be configured by creating `.datarobot/cli/versions.yaml` file with content like this:
+
+```yaml
+---
+dr:
+  name: DataRobot CLI
+  minimum-version: 0.2.0
+  command: dr self version
+  url: https://github.com/datarobot-oss/cli
+uv:
+  name: uv Python package manager
+  minimum-version: 1.7.0
+  command: uv self version
+  url: https://docs.astral.sh/uv/getting-started/installation/
+```
 
 When searching for a quickstart script, the command checks:
 
@@ -227,7 +257,7 @@ If a quickstart script fails, the error is displayed and the command exits. Chec
 
 ## See also
 
-- [`dr templates setup`](templates.md#setup)&mdash;interactive template setup wizard.
+- [Template system](../template-system/README.md)&mdash;understanding templates and the setup wizard.
 - [`dr run`](run.md)&mdash;execute specific application tasks.
 - [`dr dotenv`](dotenv.md)&mdash;manage environment configuration.
 - [Template Structure](../template-system/structure.md)&mdash;understanding template organization.

@@ -135,8 +135,13 @@ func GetTemplates() (*TemplateList, error) {
 	bearer := "Bearer " + config.GetAPIKey()
 	req.Header.Add("Authorization", bearer)
 	req.Header.Add("X-DataRobot-Api-Consumer-Trace", "true")
+	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
-	client := &http.Client{}
+	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

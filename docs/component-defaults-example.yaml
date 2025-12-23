@@ -1,0 +1,41 @@
+# Example component-defaults.yaml
+# This file should be placed at ~/.config/datarobot/component-defaults.yaml
+#
+# It allows you to configure default answers for copier templates
+# so that you don't have to provide them every time you add or update
+# a component.
+#
+# The structure maps component repository URLs to their default answers.
+# When running `dr component add` or `dr component update`, these defaults
+# will be automatically applied unless overridden by --data flags.
+
+defaults:
+  # Example: Set default answers for the agent component
+  https://github.com/datarobot-community/af-component-agent.git:
+    base_answers_file: .datarobot/answers/base.yml
+    llm_answers_file: .datarobot/answers/llm-llm.yml
+    use_low_code_interface: false
+
+  # Example: Set default answers for another component
+  https://github.com/datarobot-community/af-component-fastapi-backend.git:
+    base_answers_file: .datarobot/answers/base.yml
+    fastapi_app: api
+
+# Usage examples:
+#
+# 1. Add component with defaults from config:
+#    dr component add https://github.com/datarobot-community/af-component-agent.git
+#    (Will automatically use base_answers_file and llm_answers_file from config)
+#
+# 2. Add component with defaults + override:
+#    dr component add https://github.com/datarobot-community/af-component-agent.git --data use_low_code_interface=true
+#    (Will use defaults but override use_low_code_interface)
+#
+# 3. Update component with defaults:
+#    dr component update .datarobot/answers/agent-writer_agent.yml
+#    (Will automatically use configured defaults for the component's repo)
+#
+# 4. Update component with explicit data:
+#    dr component update .datarobot/answers/agent-writer_agent.yml \
+#      --data base_answers_file=.datarobot/answers/base.yml \
+#      --data llm_answers_file=.datarobot/answers/llm-llm.yml

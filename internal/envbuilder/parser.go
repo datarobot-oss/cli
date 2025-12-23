@@ -10,10 +10,12 @@ package envbuilder
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -29,21 +31,39 @@ type Variable struct {
 type Variables []Variable
 
 func (v *Variable) String() string {
+	quotedValue := strconv.Quote(v.Value)
+
 	if v.Commented {
-		return "# " + v.Name + "=" + v.Value + "\n"
+		return "# " + v.Name + "=" + quotedValue + "\n"
 	}
 
-	return v.Name + "=" + v.Value + "\n"
+	return v.Name + "=" + quotedValue + "\n"
 }
 
-// ParseVariablesOnly parses variables from template lines without attempting to auto-populate them.
+func (v *Variable) StringSecret() string {
+	if v.Secret {
+		secretLength := len(v.Value)
+		if secretLength > 20 {
+			secretLength = 20
+		}
+
+		secret := strings.Repeat("*", secretLength)
+
+		return "# " + v.Name + "=" + secret + "\n"
+	}
+
+	return v.String()
+}
+
+// ParseVariablesOnly parses variables from lines without attempting to auto-populate them.
 // This is used when parsing .env files to extract variable names and values.
 // Commented lines (starting with #) are marked as such.
-func ParseVariablesOnly(templateLines []string) []Variable {
+func ParseVariablesOnly(dotenvLines []string) []Variable {
+	unquotedValues, _ := godotenv.Unmarshal(strings.Join(dotenvLines, "\n"))
 	variables := make([]Variable, 0)
 
-	for _, templateLine := range templateLines {
-		v := NewFromLine(templateLine)
+	for _, templateLine := range dotenvLines {
+		v := NewFromLine(templateLine, unquotedValues)
 
 		if v.Name != "" {
 			variables = append(variables, v)
@@ -53,9 +73,15 @@ func ParseVariablesOnly(templateLines []string) []Variable {
 	return variables
 }
 
-func NewFromLine(line string) Variable {
+func NewFromLine(line string, unquotedValues map[string]string) Variable {
 	expr := regexp.MustCompile(`^(?P<commented>\s*#\s*)?(?P<name>[a-zA-Z_]+[a-zA-Z0-9_]*) *= *(?P<value>[^\n]*)\n$`)
 	result := regexp2.NamedStringMatches(expr, line)
+
+	if unquotedValue, ok := unquotedValues[result["name"]]; ok {
+		result["value"] = unquotedValue
+	} else if unquotedResultValue, err := strconv.Unquote(result["value"]); err == nil {
+		result["value"] = unquotedResultValue
+	}
 
 	return Variable{
 		Name:      result["name"],
@@ -66,12 +92,13 @@ func NewFromLine(line string) Variable {
 }
 
 func VariablesFromLines(lines []string) ([]Variable, string) {
+	unquotedValues, _ := godotenv.Unmarshal(strings.Join(lines, "\n"))
 	variables := make([]Variable, 0)
 
 	var contents strings.Builder
 
 	for _, line := range lines {
-		v := NewFromLine(line)
+		v := NewFromLine(line, unquotedValues)
 
 		if v.Name != "" && v.Commented {
 			variables = append(variables, v)

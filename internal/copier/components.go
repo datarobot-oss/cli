@@ -37,6 +37,11 @@ func init() {
 	for _, details := range ComponentDetails {
 		ComponentDetailsByURL[details.RepoURL] = details
 		ComponentDetailsByShortName[details.ShortName] = details
+
+		if details.Enabled {
+			EnabledComponents = append(EnabledComponents, details)
+			EnabledShortNames = append(EnabledShortNames, details.ShortName)
+		}
 	}
 }
 
@@ -45,6 +50,8 @@ func init() {
 var (
 	ComponentDetailsByURL       = map[string]Details{}
 	ComponentDetailsByShortName = map[string]Details{}
+	EnabledComponents           = make([]Details, 0, len(ComponentDetails))
+	EnabledShortNames           = make([]string, 0, len(ComponentDetails))
 )
 
 var ComponentDetails = []Details{
@@ -53,42 +60,42 @@ var ComponentDetails = []Details{
 
 		Name:      "Agent",
 		ShortName: "agent",
-		RepoURL:   "git@github.com:datarobot/af-component-agent.git",
+		RepoURL:   "https://github.com/datarobot-community/af-component-agent.git",
 		Enabled:   true,
 	},
 	{
 		readMeFile: "af-component-base.md",
 
 		Name:      "Base",
-		ShortName: "Base",
-		RepoURL:   "git@github.com:datarobot/af-component-base.git",
+		ShortName: "base",
+		RepoURL:   "https://github.com/datarobot/af-component-base.git",
 	},
 	{
 		readMeFile: "af-component-fastapi-backend.md",
 
 		Name:      "FastAPI backend",
 		ShortName: "fastapi",
-		RepoURL:   "git@github.com:datarobot/af-component-fastapi-backend.git",
+		RepoURL:   "https://github.com/datarobot/af-component-fastapi-backend.git",
 	},
 	{
 		readMeFile: "af-component-fastmcp-backend.md",
 
 		Name:      "FastMCP backend",
 		ShortName: "fastmcp",
-		RepoURL:   "git@github.com:datarobot/af-component-fastmcp-backend.git",
+		RepoURL:   "https://github.com/datarobot/af-component-fastmcp-backend.git",
 	},
 	{
 		readMeFile: "af-component-llm.md",
 
 		Name:      "LLM",
 		ShortName: "llm",
-		RepoURL:   "git@github.com:datarobot/af-component-llm.git",
+		RepoURL:   "https://github.com/datarobot/af-component-llm.git",
 	},
 	{
 		readMeFile: "af-component-react.md",
 
 		Name:      "React",
 		ShortName: "react",
-		RepoURL:   "git@github.com:datarobot/af-component-react.git",
+		RepoURL:   "https://github.com/datarobot/af-component-react.git",
 	},
 }

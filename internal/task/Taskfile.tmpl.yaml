@@ -16,14 +16,21 @@ tasks:
     cmds:
       - task --list --sort none
     silent: true
+  {{- if .HasStart }}
 
   start:
     desc: "💻 Prepare local development environment"
     cmds:
-      - dr dotenv setup
-      - task: install
-
+      - dr self update
+      - dr dotenv setup --if-needed
+      - task install
+      {{- range .StartComponents }}
+      - task {{ . }}:start
+      {{- end }}
+      - echo '✅ You are all set. Run `task dev` to start developing, or run `task deploy-dev` to deploy to DataRobot.'
+  {{- end }}
   {{- if .HasLint }}
+
   lint:
     desc: "🧹 Run linters"
     cmds:
@@ -31,8 +38,8 @@ tasks:
       - task: {{ . }}:lint
       {{- end }}
   {{- end }}
-
   {{- if .HasInstall }}
+
   install:
     desc: "🛠️ Install all dependencies"
     cmds:
@@ -40,8 +47,27 @@ tasks:
       - task: {{ . }}:install
       {{- end }}
   {{- end }}
+  {{- if .HasUninstall }}
 
+  uninstall:
+    desc: "🛠️ Uninstall all dependencies"
+    cmds:
+      {{- range .UninstallComponents }}
+      - task: {{ . }}:uninstall
+      {{- end }}
+
+  reinstall:
+    desc: "🛠️ Reinstall all dependencies"
+    cmds:
+      - task: uninstall
+      - task: install
+  {{- else }}
+
+  reinstall:
+    desc: "🛠️ Reinstall all dependencies (placeholder task)"
+  {{- end }}
   {{- if .HasTest }}
+
   test:
     desc: "🧪 Run tests across all components"
     cmds:
@@ -49,7 +75,6 @@ tasks:
       - task: {{ . }}:test
       {{- end }}
   {{- end }}
-
   {{- if .HasDev }}
   dev:
     desc: "🚀 Run all services together"

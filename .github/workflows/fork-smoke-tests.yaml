@@ -1,0 +1,158 @@
+name: Fork PR Smoke Tests (Manual Approval)
+
+# This workflow allows fork PRs to run smoke tests after maintainer approval
+# Uses pull_request_target to access secrets safely with manual approval gate
+on:
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  # Security check before running tests with secrets
+  security-scan:
+    if: |
+      github.event.label.name == 'approved-for-smoke-tests' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    name: Security Scan
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'  # Fail if vulnerabilities found
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec security scanner
+        run: |
+          gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
+
+
+  build-windows:
+    needs: security-scan
+    uses: ./.github/workflows/.build-windows.yaml
+    with:
+      go-version: '1.25.5'
+      artifact-name: 'dr-windows-fork'
+      ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
+
+  notify-approval-needed:
+    if: |
+      github.event.label.name == 'approved-for-smoke-tests' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Notify awaiting approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🔐 **Smoke tests approved by maintainer**\n\n' +
+                    '⏳ Running security scans before executing smoke tests with secrets...\n\n' +
+                    '_A maintainer has approved this fork PR to run smoke tests. Security scans will run first._'
+            });
+
+  linux-smoke-tests:
+    needs: security-scan
+    uses: ./.github/workflows/.smoke-tests-matrix.yaml
+    with:
+      go-version: '1.25.5'
+      ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
+    # Require manual approval via GitHub environment
+    # Note: environment can't be passed to reusable workflows,
+    # so we gate on the security-scan instead
+
+  windows-smoke-tests:
+    needs: [security-scan, build-windows]
+    uses: ./.github/workflows/.windows-smoke-test.yaml
+    with:
+      artifact-name: 'dr-windows-fork'
+      ref: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
+
+  notify-results:
+    needs: [security-scan, notify-approval-needed, linux-smoke-tests, windows-smoke-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Comment on PR with results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const securityStatus = '${{ needs.security-scan.result }}';
+            const linuxStatus = '${{ needs.linux-smoke-tests.result }}';
+            const windowsStatus = '${{ needs.windows-smoke-tests.result }}';
+
+            const securityEmoji = securityStatus === 'success' ? '✅' : '❌';
+            const linuxEmoji = linuxStatus === 'success' ? '✅' : '❌';
+            const windowsEmoji = windowsStatus === 'success' ? '✅' : '❌';
+
+            const allPassed = securityStatus === 'success' && linuxStatus === 'success' && windowsStatus === 'success';
+            const overallEmoji = allPassed ? '✅' : '❌';
+            const overallMessage = allPassed ? 'All smoke tests passed!' : 'Some smoke tests failed.';
+
+            let failureNote = '';
+            if (securityStatus === 'failure') {
+              failureNote = '\n\n⚠️ **Security vulnerabilities detected!** Check the Security tab for details.';
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${overallEmoji} **${overallMessage}** (Fork PR)\n\n` +
+                    `${securityEmoji} Security Scan: ${securityStatus}\n` +
+                    `${linuxEmoji} Linux: ${linuxStatus}\n` +
+                    `${windowsEmoji} Windows: ${windowsStatus}\n\n` +
+                    `[View run details](${context.payload.repository.html_url}/actions/runs/${context.runId})` +
+                    failureNote
+            });
+
+      - name: Remove approved-for-smoke-tests label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'approved-for-smoke-tests'
+              });
+              console.log('Removed label: approved-for-smoke-tests');
+            } catch (error) {
+              console.log('Label approved-for-smoke-tests already removed or does not exist');
+            }

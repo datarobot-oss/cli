@@ -2,13 +2,13 @@
 
 ## Overview
 
-The CLI provides a reusable authentication mechanism that you can use with any command that requires valid DataRobot credentials. Authentication is handled using Cobra's `PreRunE` hooks, which ensure credentials are valid before a command executes.
+The CLI provides a reusable authentication mechanism that you can use with any command requiring valid DataRobot credentials. Cobra's `PreRunE` hooks handle authentication and ensure credentials are valid before a command executes.
 
-## Using authentication in commands
+## Use authentication in commands
 
-### PreRunE hook (recommended)
+### PreRunE hook
 
-The recommended approach is to use the `auth.EnsureAuthenticatedE()` function in your command's `PreRunE` hook:
+DataRobot recommends using the `auth.EnsureAuthenticatedE()` function in your command's `PreRunE` hook.
 
 ```go
 import "github.com/datarobot/cli/cmd/auth"
@@ -26,16 +26,18 @@ var MyCmd = &cobra.Command{
 }
 ```
 
-### How it works
+#### How it works
 
-1. **Checks for valid credentials**&mdash;first checks if a valid API key already exists.
-2. **Auto-configures URL if missing**&mdash;if no DataRobot URL is configured, prompts you to set it up.
-3. **Retrieves new credentials**&mdash;if credentials are missing or expired, automatically triggers the browser-based login flow.
-4. **Fails early**&mdash;if authentication cannot be established, the command won't run and returns an error.
+The hook functions are outlined below.
 
-### Direct call (for non-command code)
+1. **Checks for valid credentials**: Checks if a valid API key already exists.
+2. **Auto-configures URL if missing**: If no DataRobot URL is configured, prompts you to set it up.
+3. **Retrieves new credentials**: If credentials are missing or expired, the hook automatically triggers the browser-based login flow.
+4. **Fails early**: If authentication cannot be established, the command will not run and  returns an error.
 
-For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated()` directly:
+### Direct call for non-command code
+
+For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated()` directly.
 
 ```go
 import "github.com/datarobot/cli/cmd/auth"
@@ -45,18 +47,18 @@ func MyFunction() error {
     if !auth.EnsureAuthenticated() {
         return errors.New("authentication failed")
     }
-    
+
     // Continue with authenticated operations.
     apiKey := config.GetAPIKey()
     // ... use apiKey for API calls
-    
+
     return nil
 }
 ```
 
-### When to use
+#### When to use a direct call
 
-Add authentication to any command that:
+Use a direct call to add authentication to any command that does the following:
 
 - Makes API calls to DataRobot endpoints.
 - Needs to populate DataRobot credentials in configuration files.
@@ -66,15 +68,15 @@ Add authentication to any command that:
 
 The following commands use `PreRunE` to ensure authentication:
 
-- **`dr dotenv update`**&mdash;automatically ensures authentication before updating environment variables.
-- **`dr templates list`**&mdash;requires authentication to fetch templates from the API.
-- **`dr templates clone`**&mdash;requires authentication to fetch template details.
+- `dr dotenv update`: Automatically ensures authentication before updating environment variables.
+- `dr templates list`: Requires authentication to fetch templates from the API.
+- `dr templates clone`: Requires authentication to fetch template details.
 
-## Skipping authentication
+## Skip authentication
 
 For advanced use cases where authentication is handled externally or not required, you can bypass authentication checks using the `--skip-auth` global flag.
 
-### Using the skip-auth flag
+Use the `--skip-auth` global flag to skip authentication for any command. You can also skip authentication with an environment variable.
 
 ```bash
 # Skip authentication for any command
@@ -85,24 +87,25 @@ dr dotenv update --skip-auth
 DATAROBOT_CLI_SKIP_AUTH=true dr templates setup
 ```
 
-### Behavior
+#### Behavior
 
-When `--skip-auth` is enabled:
+When `--skip-auth` is enabled, it expect the following behavior:
 
-1. **Bypasses all authentication checks**&mdash;the `EnsureAuthenticated()` function returns `true` immediately without validating credentials.
-2. **Emits a warning**&mdash;logs a warning message: "Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail."
-3. **May cause API failures**&mdash;commands that make API calls will likely fail if no valid credentials are present.
+1. **Bypass all authentication checks**: The `EnsureAuthenticated()` function returns `true` immediately without validating credentials.
+2. **Emit a warning**: Logs a warning message: `Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail`.
+3. **May cause API failures**: Commands that make API calls will likely fail if no valid credentials are present.
 
-### When to use skip-auth
+#### When to use skip-auth
 
 The `--skip-auth` flag is intended for advanced scenarios such as:
 
-- **Testing**&mdash;testing command logic without requiring valid credentials.
-- **CI/CD pipelines**&mdash;when authentication is managed through environment variables (`DATAROBOT_API_TOKEN`).
-- **Offline development**&mdash;working in environments without internet access or access to DataRobot.
-- **Debugging**&mdash;isolating authentication issues from other command behavior.
+- **Testing**: Test command logic without requiring valid credentials.
+- **CI/CD pipelines**: Use when authentication is managed through environment variables (`DATAROBOT_API_TOKEN`).
+- **Offline development**: When working in environments without internet access or access to DataRobot.
+- **Debugging**: Isolate authentication issues from other command behavior.
 
-> **⚠️ Warning:** This flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.
+> [!WARNING]
+> The `--skip-auth` flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.
 
 ## Manual login
 

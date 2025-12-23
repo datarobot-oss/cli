@@ -7,14 +7,42 @@ on:
 jobs:
   handle-comment:
     # Only run on PRs (not issues) and not from forks
-    if: github.event.issue.pull_request && github.event.pull_request.head.repo.full_name == github.repository
+    # Note: issue_comment events don't have pull_request context, need to check differently
+    if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       issues: write
     steps:
+      - name: Check if PR is from fork and commenter permissions
+        id: check-fork
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const isFork = pr.data.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo;
+            core.setOutput('is_fork', isFork);
+
+            // Check if commenter is a maintainer (write or admin permission)
+            const permission = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const isMaintainer = ['write', 'admin'].includes(permission.data.permission);
+            core.setOutput('is_maintainer', isMaintainer);
+
+            return { isFork, isMaintainer };
+
       - name: Handle smoke test command
-        if: contains(github.event.comment.body, '/trigger-smoke-test') || contains(github.event.comment.body, '/trigger-test-smoke')
+        if: |
+          (contains(github.event.comment.body, '/trigger-smoke-test') ||
+           contains(github.event.comment.body, '/trigger-test-smoke')) &&
+          steps.check-fork.outputs.is_fork == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -35,7 +63,10 @@ jobs:
             });
 
       - name: Handle install test command
-        if: contains(github.event.comment.body, '/trigger-install-test') || contains(github.event.comment.body, '/trigger-test-install')
+        if: |
+          (contains(github.event.comment.body, '/trigger-install-test') ||
+           contains(github.event.comment.body, '/trigger-test-install')) &&
+          steps.check-fork.outputs.is_fork == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -53,4 +84,70 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               labels: ['run-install-tests']
+            });
+
+      - name: Handle fork smoke test approval (maintainers only)
+        if: |
+          (contains(github.event.comment.body, '/approve-smoke-tests') ||
+           contains(github.event.comment.body, '/approve-fork-tests')) &&
+          steps.check-fork.outputs.is_fork == 'true' &&
+          steps.check-fork.outputs.is_maintainer == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Add reaction
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+            // Add label to trigger fork smoke tests
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['approved-for-smoke-tests']
+            });
+
+            // Add comment explaining what happens next
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🔐 **Fork PR approved for smoke tests by @' + context.actor + '**\n\n' +
+                    '⚠️ **Security Notice**: This will run tests with access to repository secrets.\n\n' +
+                    '**What happens next:**\n' +
+                    '1. Security scans will run automatically (Trivy, gosec, govulncheck)\n' +
+                    '2. If security scans pass, smoke tests will await manual approval\n' +
+                    '3. Review the security scan results before final approval\n' +
+                    '4. Approve the workflow run in the Actions tab to execute smoke tests\n\n' +
+                    '⚠️ **Important**: Review the PR code carefully before final approval!'
+            });
+
+      - name: Handle unauthorized fork smoke test attempt
+        if: |
+          (contains(github.event.comment.body, '/approve-smoke-tests') ||
+           contains(github.event.comment.body, '/approve-fork-tests')) &&
+          steps.check-fork.outputs.is_maintainer == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Add reaction
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'confused'
+            });
+
+            // Add comment explaining permissions
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '❌ **Insufficient permissions**\n\n' +
+                    'Only maintainers with write or admin access can approve fork PRs for smoke tests.\n\n' +
+                    'Please wait for a maintainer to review and approve.'
             });

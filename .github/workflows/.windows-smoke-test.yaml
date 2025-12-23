@@ -1,0 +1,54 @@
+name: Windows Smoke Test
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: 'Name of the Windows binary artifact to download'
+        required: false
+        type: string
+        default: 'dr-windows'
+      ref:
+        description: 'Git ref to checkout (for fork PRs)'
+        required: false
+        type: string
+    secrets:
+      DR_API_TOKEN:
+        required: true
+
+jobs:
+  windows-smoke-test:
+    runs-on: windows-latest
+    name: Run Windows Smoke Tests
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Download Windows Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: C:\temp\dr-bin
+
+      - name: Move Binary to PATH
+        shell: powershell
+        run: |
+          $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
+          New-Item -ItemType Directory -Force -Path "$INSTALL_DIR"
+          Move-Item -Path "C:\temp\dr-bin\dr.exe" -Destination "$INSTALL_DIR\dr.exe" -Force
+          echo "$INSTALL_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Smoke Tests for Binary
+        run: |
+          task smoke-test-windows DR_API_TOKEN="$DR_API_TOKEN"
+        env:
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

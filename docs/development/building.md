@@ -1,24 +1,24 @@
-# Development Guide
+# Development guide
 
-This guide covers building, testing, and developing the DataRobot CLI.
+This guide outlines how to build, test, and develop with the DataRobot CLI.
 
-## Table of Contents
+## Table of contents
 
-- [Building from Source](#building-from-source)
-- [Project Architecture](#project-architecture)
-- [Coding Standards](#coding-standards)
-- [Development Workflow](#development-workflow)
+- [Build from source](#build-from-source)
+- [Project architecture](#project-architecture)
+- [Coding standards](#coding-standards)
+- [Development workflow](#development-workflow)
 - [Testing](#testing)
 - [Debugging](#debugging)
-- [Release Process](#release-process)
+- [Release process](#release-process)
 
-## Building from source
+## Build from source
 
 ### Prerequisites
 
-- **Go 1.25.3+**&mdash;[Download](https://golang.org/dl/).
-- **Git**&mdash;version control.
-- **Task**&mdash;task runner ([install](https://taskfile.dev/installation/)).
+- [Go 1.25.5+](https://golang.org/dl/)
+- Git version control
+- [Task](https://taskfile.dev/installation/) (The task runner)
 
 ### Quick build
 
@@ -56,7 +56,7 @@ task run                # Run CLI without building
 
 ### Build options
 
-**Always use `task build` for building the CLI**. This ensures proper version information and build flags are applied:
+Always use `task build` for building the CLI to ensure that the proper version information and build flags are applied.
 
 ```bash
 # Standard build (recommended)
@@ -68,16 +68,14 @@ task run -- templates list
 
 The `task build` command automatically includes:
 
-- Version information from git
-- Git commit hash
-- Build timestamp
-- Proper ldflags configuration
+- Version information from Git
+- The Git commit hash
+- A build timestamp
+- Proper `ldflags` configuration
 
-For cross-platform builds and releases, we use GoReleaser (see [Release Process](#release-process)).
+For cross-platform builds and releases, task build includes GoReleaser (see [Release Process](#release-process)).
 
-## Project architecture
-
-### Directory structure
+## Directory structure
 
 ```sh
 cli/
@@ -106,7 +104,7 @@ cli/
 │       ├── cmd.go           # Self command group
 │       ├── completion.go    # Completion generation
 │       └── version.go       # Version command
-├── internal/                 # Private packages (not importable)
+├── internal/                # Private packages (not importable)
 │   ├── assets/              # Embedded assets
 │   │   └── templates/       # HTML templates
 │   ├── config/              # Configuration management
@@ -135,15 +133,15 @@ cli/
 └── goreleaser.yaml          # Release configuration
 ```
 
-### Key Components
+### Key components
 
-#### Command Layer (cmd/)
+#### Command layer (cmd/)
 
 The CLI is built using the [Cobra](https://github.com/spf13/cobra) framework.
 
-Commands are organized hierarchically, and there should be a one-to-one mapping between commands and files/directories. For example, the `templates` command group is in `cmd/templates/`, with subcommands in their own directories.
+Commands are hierarchically organized. There should be a one-to-one mapping between commands and files/directories. For example, the `templates` command group is in `cmd/templates/`, with subcommands in their own directories.
 
-Code in the `cmd/` folder should primarily handle command-line parsing, argument validation, and orchestrating calls to internal packages. There should be minimal to no business logic here. **Consider this the UI layer of the application.**
+Code in the `cmd/` folder should primarily handle command-line parsing, argument validation, and the orchestration of calls to internal packages. There should be minimal to no business logic here. **Consider this the UI layer of the application.**
 
 ```go
 // cmd/root.go - Root command definition
@@ -161,12 +159,12 @@ RootCmd.AddCommand(
 )
 ```
 
-#### TUI Layer (cmd/dotenv/, cmd/templates/setup/)
+#### TUI layer
 
-Uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for interactive UIs:
+The TUI layer contains the `cmd/dotenv/` and `cmd/templates/setup/` directories. It uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for interactive UIs.
 
 ```go
-// Bubble Tea Model
+// Bubble Tea model
 type Model struct {
     // State
     screen screens
@@ -182,13 +180,13 @@ func (m Model) Update(tea.Msg) (tea.Model, tea.Cmd)
 func (m Model) View() string
 ```
 
-#### Internal Packages (internal/)
+#### Internal packages
 
-Houses core business logic, API clients, configuration management, etc.
+Internal packages (`internal/`) house core business logic, API clients, configuration management, and more.
 
-#### Configuration (internal/config/)
+#### Configuration
 
-Uses [Viper](https://github.com/spf13/viper) for configuration as well as a state registry:
+Configuration is found in `internal/config/`. The CLI uses [Viper](https://github.com/spf13/viper) for configuration as well as a state registry.
 
 ```go
 // Load config
@@ -201,9 +199,9 @@ viper.ReadInConfig()
 endpoint := viper.GetString("datarobot.endpoint")
 ```
 
-#### API Client (internal/drapi/)
+#### API client
 
-HTTP client for DataRobot APIs:
+Using the API client directory, `internal/drapi/`, you can make requests to the HTTP client for DataRobot APIs.
 
 ```go
 // Make API request
@@ -213,9 +211,9 @@ func GetTemplates() (*TemplateList, error) {
 }
 ```
 
-### Design Patterns
+### Design patterns
 
-#### Command Pattern
+#### Command pattern
 
 Each command is self-contained:
 
@@ -232,7 +230,7 @@ var Cmd = &cobra.Command{
 }
 ```
 
-`RunE` is the main execution function. Cobra also provides `PreRunE`, `PostRunE`, and other hooks. Prefer to use these for setup/teardown, validation, etc.:
+`RunE` is the main execution function. Cobra also provides `PreRunE`, `PostRunE`, and other hooks. DataRobot recommends using these functions for setup, teardown, and validation.
 
 ```go
 PersistPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -249,12 +247,11 @@ PostRunE: func(cmd *cobra.Command, args []string) error {
 },
 ```
 
-Each command can be assigned to a group via `GroupID` for better organization in `dr help` views. Commands without a `GroupID` are listed under "Additional Commands".
+Each command can be assigned to a group via `GroupID` for better organization in `dr help` views. Commands without a `GroupID` are listed under [Additional commands](#additional-commands).
 
+#### Model-view-update
 
-#### Model-View-Update (Bubble Tea)
-
-Interactive UIs use MVU pattern:
+Interactive UIs like Bubble Tea use the Model-view-update (MVU) pattern:
 
 ```go
 // Update handles events
@@ -279,18 +276,18 @@ func (m Model) View() string {
 }
 ```
 
-## Coding Standards
+## Coding standards
 
-### Go Style Requirements
+### Go style requirements
 
-**Critical**: All code must pass `golangci-lint` with zero errors. Follow these whitespace rules strictly:
+**Critical**: All code must pass `golangci-lint` with zero errors. Strictly follow these whitespace rules:
 
-1. **Never cuddle declarations**: Always add a blank line before `var`, `const`, `type` declarations when they follow other statements
-2. **Separate statement types**: Add blank lines between different statement types (assign, if, for, return, etc.)
-3. **Blank line after block start**: Add blank line after opening braces of functions/blocks when they follow declarations
-4. **Blank line before multi-line statements**: Add blank line before if/for/switch statements
+1. Never cuddle declarations Always add a blank line before `var`, `const`, and `type` declarations when they follow other statements.
+2. Separate statement types: Add blank lines between different statement types (assign, if, for, return, etc.).
+3. Blank line after block start: Add a blank line after the opening braces of functions/blocks when they follow declarations.
+4. Blank line before multi-line statements: Add a blank line before if/for/switch statements.
 
-**Example of correct spacing:**
+Review an example of correct spacing below.
 
 ```go
 func example() {
@@ -310,13 +307,13 @@ func example() {
 }
 ```
 
-**Common mistakes to avoid:**
+The example below outlines common mistakes to avoid.
 
 ```go
 // ❌ BAD: Cuddled declaration
 func bad() {
     x := 1
-    var y int  // Missing blank line before declaration
+    var y int  // Missing a blank line before the declaration
 }
 
 // ✅ GOOD: Properly spaced
@@ -327,45 +324,45 @@ func good() {
 }
 ```
 
-### TUI Development Standards
+### TUI development standards
 
-When building terminal user interfaces:
+Consider the following when building terminal user interfaces.
 
-1. **Always wrap TUI models with InterruptibleModel**&mdash;ensures global Ctrl-C handling:
+1. **Always wrap TUI models with InterruptibleModel**. This ensures global `Ctrl-C` handling.
 
    ```go
    import "github.com/datarobot/cli/tui"
-   
+
    // Wrap your model
    interruptible := tui.NewInterruptibleModel(yourModel)
    program := tea.NewProgram(interruptible)
    ```
 
-2. **Reuse existing TUI components**&mdash;check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
+2. **Reuse existing TUI components**. Check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
 
-3. **Use common lipgloss styles**&mdash;defined in `tui/theme.go` for visual consistency:
+3. **Use common lipgloss styles**. The styles are defined in [tui/styles.go](../../tui/styles.go) for visual consistency:
 
    ```go
    import "github.com/datarobot/cli/tui"
-   
+
    // Use theme styles
    title := tui.TitleStyle.Render("My Title")
    error := tui.ErrorStyle.Render("Error message")
    ```
 
-### Quality Tools
+### Quality tools
 
 All code must pass these tools without errors:
 
-- **`go mod tidy`**&mdash;dependency management
-- **`go fmt`**&mdash;basic formatting
-- **`go vet`**&mdash;suspicious constructs
-- **`golangci-lint`**&mdash;comprehensive linting (includes wsl, revive, staticcheck, etc.)
-- **`goreleaser check`**&mdash;release configuration validation
+- `go mod tidy`: Dependency management
+- `go fmt`: Basic formatting
+- `go vet`: Suspicious constructs
+- `golangci-lint`: Comprehensive linting (includes wsl, revive, staticcheck, etc.)
+- `goreleaser check`: Release configuration validation
 
-**Before committing code, verify it follows wsl (whitespace) rules.**
+**Before committing code, verify it follows [wsl](https://github.com/bombsimon/wsl?tab=readme-ov-file#wsl---whitespace-linter) (whitespace) rules.**
 
-### Running Quality Checks
+### Run quality checks
 
 ```bash
 # Run all quality checks at once
@@ -380,11 +377,9 @@ task install-tools  # Install golangci-lint
 ./tmp/bin/goreleaser check
 ```
 
-## Development Workflow
+## Development workflow
 
-### Important: Use Taskfile, Not Direct Go Commands
-
-**Always use Taskfile tasks** for development operations rather than direct `go` commands. This ensures consistency, proper build flags, and correct environment setup.
+**Always use Taskfile tasks for development operations and not direct `go` commands**. This ensures consistency, proper build flags, and a correct environment setup.
 
 ```bash
 # ✅ CORRECT: Use task commands
@@ -397,7 +392,7 @@ go build
 go test
 ```
 
-### 1. Setup Development Environment
+### 1. Set up the development environment
 
 ```bash
 # Clone and setup
@@ -406,13 +401,13 @@ cd cli
 task dev-init
 ```
 
-### 2. Create Feature Branch
+### 2. Create a feature branch
 
 ```bash
 git checkout -b feature/my-feature
 ```
 
-### 3. Make Changes
+### 3. Make changes
 
 ```bash
 # Edit code
@@ -422,13 +417,13 @@ vim cmd/templates/new-feature.go
 task lint
 ```
 
-### 4. Test Changes
+### 4. Test changes
 
 ```bash
 # Run tests
 task test
 
-# Run specific test (direct go test is acceptable for specific tests)
+# Run a specific test (direct go test is acceptable for specific tests)
 go test -run TestMyFeature ./cmd/templates
 
 # Test manually using task run
@@ -439,7 +434,7 @@ task build
 ./dist/dr templates list
 ```
 
-### 5. Commit and Push
+### 5. Commit and push
 
 ```bash
 git add .
@@ -449,7 +444,7 @@ git push origin feature/my-feature
 
 ## Testing
 
-### Unit Tests
+### Unit tests
 
 ```go
 // cmd/auth/login_test.go
@@ -472,7 +467,7 @@ func TestLogin(t *testing.T) {
 }
 ```
 
-### Integration Tests
+### Integration tests
 
 ```go
 // internal/config/config_test.go
@@ -494,7 +489,7 @@ func TestConfigReadWrite(t *testing.T) {
 }
 ```
 
-### TUI Tests
+### TUI tests
 
 Using [teatest](https://github.com/charmbracelet/x/tree/main/exp/teatest):
 
@@ -517,13 +512,13 @@ func TestDotenvModel(t *testing.T) {
 }
 ```
 
-### Running Tests
+### Running tests
 
 ```bash
 # All tests (recommended)
 task test
 
-# With coverage (opens HTML report)
+# With coverage (opens an HTML report)
 task test-coverage
 
 # Specific package (direct go test is fine for targeted testing)
@@ -541,18 +536,18 @@ go test -run TestLogin ./cmd/auth
 
 **Note**: `task test` automatically runs tests with race detection and coverage enabled.
 
-### Running Smoke Tests Using GitHub Actions
+### Run smoke tests using GitHub Actions
 
-We have smoke tests that are not currently run on Pull Requests however _can_ be using PR comments to trigger them.
+DataRobot has smoke tests that are not currently run on Pull Requests. However you can use PR comments to trigger them.
 
 These are the appropriate comments to trigger respective tests:
 
-- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR
-- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR
+- `/trigger-smoke-test` or `/trigger-test-smoke`: Run smoke tests on a PR.
+- `/trigger-install-test` or `/trigger-test-install`: Run installation tests on a PR.
 
 ## Debugging
 
-### Using Delve
+### Use Delve
 
 ```bash
 # Install delve
@@ -568,7 +563,7 @@ dlv debug main.go -- templates list
 (dlv) next
 ```
 
-### Debug Logging
+### Debug logging
 
 ```bash
 # Enable debug mode (use task run)
@@ -579,7 +574,7 @@ task build
 ./dist/dr --debug templates list
 ```
 
-### Add Debug Statements
+### Add debug statements
 
 ```go
 import "github.com/charmbracelet/log"
@@ -591,11 +586,11 @@ log.Warn("Unexpected condition")
 log.Error("Operation failed", "error", err)
 ```
 
-## Release Process
+## Release process
 
-See [Release Documentation](../../README.md#release) for detailed release process.
+See [Release documentation](../../README.md#release) for a detailed overview of the release process.
 
-### Quick Release
+### Quick release
 
 ```bash
 # Tag version
@@ -612,6 +607,5 @@ git push --tags
 ## See also
 
 - [Contributing Guide](../../CONTRIBUTING.md)
-- [Architecture Details](architecture.md)
-- [Testing Guide](testing.md)
-- [Release Process](release.md)
+- [Project structure](structure.md)&mdash;code organization and design
+- [Release process](releasing.md)&mdash;how releases are created and published

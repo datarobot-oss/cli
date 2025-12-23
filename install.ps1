@@ -157,8 +157,8 @@ function Test-ExistingInstallation {
         try {
             $currentVersionOutput = & $BinaryPath --version 2>$null | Select-Object -First 1
 
-            # Extract version number (e.g., "v1.2.3" from "dr version v1.2.3")
-            if ($currentVersionOutput -match '(v?\d+\.\d+\.\d+)') {
+            # Extract version number (e.g., "v1.2.3" from "DataRobot CLI version: v1.2.3")
+            if ($currentVersionOutput -match 'version:\s*(v?\d+\.\d+\.\d+[^\s]*)') {
                 $currentVersion = $matches[1]
             } else {
                 Write-Warn "Unable to determine current version"
@@ -302,7 +302,7 @@ function Show-PathInstructions {
     Write-Host "Run this command to add it (requires reopening terminal):"
     Write-Host ""
     Write-Host '  $path = [Environment]::GetEnvironmentVariable("Path", "User")' -ForegroundColor Blue
-    Write-Host "  `$newPath = `"`$path;$INSTALL_DIR`"" -ForegroundColor Blue
+    Write-Host ('  $newPath = "$path;' + $INSTALL_DIR + '"') -ForegroundColor Blue
     Write-Host '  [Environment]::SetEnvironmentVariable("Path", $newPath, "User")' -ForegroundColor Blue
     Write-Host ""
     Write-Host "Or use the full path: " -NoNewline
@@ -376,7 +376,7 @@ function Invoke-CompletionPrompt {
         Write-Host ""
         Write-Info "Skipping completion installation"
         Write-Step "You can install completions later with:"
-        Write-Host "  $BINARY_NAME completion install --yes" -ForegroundColor Blue
+        Write-Host "  $BINARY_NAME self completion install --yes" -ForegroundColor Blue
         return $false
     }
 
@@ -391,38 +391,21 @@ function Install-Completions {
     Write-Info "Installing shell completions..."
 
     try {
-        # Note: PowerShell doesn't have the interactive install command yet
-        # Fall back to the manual method
-        $completionScript = & $BinaryPath self completion powershell 2>$null | Out-String
+        # Use the built-in completion installer
+        $output = & $BinaryPath self completion install --yes 2>&1 | Out-String
 
-        if (-not $completionScript) {
-            Write-Warn "Failed to generate completion script"
-            Write-Step "Install manually with: $BINARY_NAME completion powershell --help"
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Shell completions installed successfully"
+            Write-Step "Restart PowerShell to activate completions"
+            return $true
+        } else {
+            Write-Warn "Failed to install completions automatically"
+            Write-Step "Install manually with: $BINARY_NAME self completion install --yes"
             return $false
         }
-
-        # Check if profile exists
-        if (-not (Test-Path $PROFILE)) {
-            New-Item -Path $PROFILE -ItemType File -Force | Out-Null
-        }
-
-        # Check if completion is already in profile
-        $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
-        if ($profileContent -and $profileContent -match "$BINARY_NAME completion") {
-            Write-Success "Shell completions already installed"
-            return $true
-        }
-
-        # Add completion to profile
-        $completionLine = "`n# $BINARY_NAME completion`n& '$BinaryPath' self completion powershell | Out-String | Invoke-Expression"
-        Add-Content -Path $PROFILE -Value $completionLine
-
-        Write-Success "Shell completions installed successfully"
-        Write-Step "Restart PowerShell or run: . `$PROFILE"
-        return $true
     } catch {
         Write-Warn "Failed to install completions: $_"
-        Write-Step "Install manually with: $BINARY_NAME completion powershell --help"
+        Write-Step "Install manually with: $BINARY_NAME self completion install --yes"
         return $false
     }
 }

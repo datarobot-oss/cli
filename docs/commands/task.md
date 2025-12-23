@@ -1,6 +1,26 @@
-# dr task
+# `dr task`
 
 Manage Taskfile composition and task execution for DataRobot templates.
+
+## Quick start
+
+For most users, working with Taskfiles is straightforward:
+
+```bash
+# Compose a unified Taskfile from components
+dr task compose
+
+# List available tasks
+dr task list
+
+# Execute tasks
+dr task run dev
+```
+
+The command automatically discovers Taskfiles in your template components and aggregates them into a unified configuration.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -589,14 +609,14 @@ task mcp_server:dev &
 sleep 3
 task web:dev &
 sleep 3
-task writer_agent:dev &
+task agent:dev &
 sleep 3
 task frontend_web:dev &
 sleep 8
 ✅ All servers started!
 🔗 Backend API: http://localhost:8080
 🔗 Frontend: http://localhost:5173
-🔗 Worker Service: http://localhost:8842
+🔗 Agent Service: http://localhost:8842
 🔗 MCP Server: http://localhost:9000
 ```
 

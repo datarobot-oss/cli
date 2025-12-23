@@ -30,9 +30,7 @@ const (
 	keyOpenExternal = "o"
 	keyExit         = "esc"
 	keySave         = "ctrl+s"
-
-	// Editor fallback if env vars are not set
-	defaultEditor = "vi"
+	keyBack         = "ctrl+p"
 )
 
 type screens int
@@ -103,10 +101,10 @@ func (m Model) openInExternalEditor() tea.Cmd {
 
 func (m Model) externalEditorCmd() *exec.Cmd {
 	// Determine the editor to use
+	// TODO we may want to refactor this in the future to
+	// use a separate viper instance for better testability
+	// rather than the global one.
 	editor := viper.GetString("external-editor")
-	if editor == "" {
-		editor = defaultEditor // fallback to vi
-	}
 
 	return exec.Command(editor, m.DotenvFile)
 }
@@ -164,16 +162,20 @@ func (m Model) loadPrompts() tea.Cmd {
 }
 
 func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	m.currentPrompt, cmd = newPromptModel(m.prompts[m.currentPromptIndex], promptFinishedCmd)
+
+	return m, cmd
+}
+
+func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 	// Update required sections
 	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
-	var prompt envbuilder.UserPrompt
-
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
-		prompt = m.prompts[m.currentPromptIndex]
-
-		if prompt.ShouldAsk() {
+		if m.prompts[m.currentPromptIndex].ShouldAsk() {
 			break
 		}
 
@@ -183,16 +185,32 @@ func (m Model) updateCurrentPrompt() (tea.Model, tea.Cmd) {
 	if m.currentPromptIndex >= len(m.prompts) {
 		// Finished all prompts
 		// Update the .env file with the responses
-		m.contents = envbuilder.DotenvFromPrompts(m.prompts)
+		m.contents = envbuilder.DotenvFromPromptsMerged(m.prompts, m.contents)
 
 		return m, m.saveEditedFile()
 	}
 
-	var cmd tea.Cmd
+	return m.updateCurrentPrompt()
+}
 
-	m.currentPrompt, cmd = newPromptModel(prompt, promptFinishedCmd)
+func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
+	currentPromptIndex := m.currentPromptIndex
 
-	return m, cmd
+	// Get back to previous prompt that is required
+	for {
+		currentPromptIndex--
+		if currentPromptIndex < 0 {
+			return m, nil
+		}
+
+		if m.prompts[currentPromptIndex].ShouldAsk() {
+			break
+		}
+	}
+
+	m.currentPromptIndex = currentPromptIndex
+
+	return m.updateCurrentPrompt()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -246,7 +264,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, nil
 		}
 
-		return m.updateCurrentPrompt()
+		return m.moveToNextPrompt()
 	case openEditorMsg:
 		m.screen = editorScreen
 
@@ -312,6 +330,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case keyExit:
 				m.screen = listScreen
 				return m, nil
+			case keyBack:
+				return m.moveToPreviousPrompt()
 			}
 		case promptFinishedMsg:
 			if m.currentPromptIndex < len(m.prompts) {
@@ -321,7 +341,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 				m.currentPromptIndex++
 
-				return m.updateCurrentPrompt()
+				return m.moveToNextPrompt()
 			}
 
 			m.screen = listScreen
@@ -362,6 +382,8 @@ func (m Model) View() string {
 }
 
 func (m Model) viewListScreen() string {
+	editor := viper.GetString("external-editor")
+
 	var sb strings.Builder
 
 	var content strings.Builder
@@ -371,17 +393,7 @@ func (m Model) viewListScreen() string {
 	fmt.Fprintf(&content, "Variables found in %s:\n\n", m.DotenvFile)
 
 	for _, v := range m.variables {
-		if v.Commented {
-			fmt.Fprintf(&content, "# ")
-		}
-
-		fmt.Fprintf(&content, "%s=", v.Name)
-
-		if v.Secret {
-			fmt.Fprintf(&content, "***\n")
-		} else {
-			fmt.Fprintf(&content, "%s\n", v.Value)
-		}
+		content.WriteString(v.StringSecret())
 	}
 
 	sb.WriteString(tui.BoxStyle.Render(content.String()))
@@ -394,7 +406,7 @@ func (m Model) viewListScreen() string {
 
 	sb.WriteString(tui.BaseTextStyle.Render("Press e to edit the file directly."))
 	sb.WriteString("\n")
-	sb.WriteString(tui.BaseTextStyle.Render("Press o to open the file in your EDITOR."))
+	sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Press o to open the file in your EDITOR (%s).", editor)))
 	sb.WriteString("\n")
 	sb.WriteString(tui.BaseTextStyle.Render("Press enter to finish."))
 

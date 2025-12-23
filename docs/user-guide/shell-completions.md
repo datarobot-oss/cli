@@ -448,6 +448,6 @@ dr completion powershell > $PROFILE
 
 ## See also
 
-- [Getting started setup guide](getting-started.md)
+- [Quick start](../../README.md#quick-start)
 - [Command reference](../commands/)
 - [Cobra documentation (underlying completion framework)](https://github.com/spf13/cobra/blob/main/shell_completions.md)

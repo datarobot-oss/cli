@@ -279,18 +279,24 @@ func (pm promptModel) View() string {
 	sb.WriteString(tui.BaseTextStyle.Render(pm.prompt.Help))
 	sb.WriteString("\n")
 
-	if len(pm.prompt.Options) > 0 {
-		sb.WriteString(pm.list.View())
-	} else {
-		sb.WriteString(pm.input.View())
-	}
-
-	sb.WriteString("\n")
-
 	if pm.prompt.Default != "" {
 		sb.WriteString(tui.BaseTextStyle.Render(fmt.Sprintf("Default: %v", pm.prompt.Default)))
-		sb.WriteString("\n")
+		sb.WriteString("\n\n")
 	}
+
+	if len(pm.prompt.Options) > 0 {
+		sb.WriteString(pm.list.View())
+		sb.WriteString("\n  ")
+
+		if pm.prompt.Multiple {
+			sb.WriteString(tui.DimStyle.Render("space to toggle • enter to answer • "))
+		}
+	} else {
+		sb.WriteString(pm.input.View())
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString(tui.DimStyle.Render("ctrl-p back to previous"))
 
 	return sb.String()
 }

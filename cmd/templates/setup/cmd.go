@@ -35,17 +35,12 @@ var Cmd = &cobra.Command{
 
 💡 Perfect for first-time users or someone starting a new project.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return RunTea(cmd.Context())
+		return RunTea(cmd.Context(), false)
 	},
 }
 
-// RunTea starts the template setup TUI
-func RunTea(ctx context.Context) error {
-	return RunTeaFromStart(ctx, false)
-}
-
-// RunTeaFromStart starts the template setup TUI, optionally from the start command
-func RunTeaFromStart(ctx context.Context, fromStartCommand bool) error {
+// RunTea starts the template setup TUI, optionally from the start command
+func RunTea(ctx context.Context, fromStartCommand bool) error {
 	if viper.GetBool("debug") {
 		f, err := tea.LogToFile("tea-debug.log", "debug")
 		if err != nil {
@@ -61,7 +56,21 @@ func RunTeaFromStart(ctx context.Context, fromStartCommand bool) error {
 		tea.WithAltScreen(),
 		tea.WithContext(ctx),
 	)
+
 	_, err := p.Run()
+	// TODO: Re-enable after further testing of component configure
+	// if err != nil {
+	// 	return err
+	// }
+
+	// // Check if we need to launch template setup after quitting
+	// if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
+	// 	if innerModel, ok := setupModel.Model.(Model); ok {
+	// 		if innerModel.dotenvSetupCompleted {
+	// 			return component.RunE(component.AddCmd, nil)
+	// 		}
+	// 	}
+	// }
 
 	return err
 }

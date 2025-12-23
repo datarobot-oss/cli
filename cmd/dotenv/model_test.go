@@ -199,9 +199,9 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 
 	actualContentsStr := string(actualContents)
 
-	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=\"456\"\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"case\"\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=\"blueprint_with_llm_gateway.py\"\n", "Expected env file to contain the selected LLM option")
 
 	os.Remove(fm.DotenvFile)
 }
@@ -252,12 +252,12 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	suite.Require().NoError(err, "Expected to read .env file")
 
 	actualContentsStr := string(actualContents)
-	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
-	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=\"456\"\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"case\"\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=\"blueprint_with_llm_gateway.py\"\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=\"google_parakeet_id\"\n", "Expected env file to contain the entered Google client ID")
 	suite.Contains(actualContentsStr, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
-	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=\"google_parakeet_secret\"\n", "Expected env file to contain the entered Google client secret")
 
 	os.Remove(fm.DotenvFile)
 }
@@ -318,14 +318,14 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	suite.Require().NoError(err, "Expected to read .env file")
 
 	actualContentsStr := string(actualContents)
-	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=456\n", "Expected env file to contain the entered passphrase")
-	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=case\n", "Expected env file to contain the default use case")
-	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=blueprint_with_llm_gateway.py\n", "Expected env file to contain the selected LLM option")
-	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=google_parakeet_id\n", "Expected env file to contain the entered Google client ID")
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=\"456\"\n", "Expected env file to contain the entered passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"case\"\n", "Expected env file to contain the default use case")
+	suite.Contains(actualContentsStr, "INFRA_ENABLE_LLM=\"blueprint_with_llm_gateway.py\"\n", "Expected env file to contain the selected LLM option")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_ID=\"google_parakeet_id\"\n", "Expected env file to contain the entered Google client ID")
 	suite.Contains(actualContentsStr, "# The client ID for the Google data source.", "Expected env file to have the 'help' entry from YAML as comment.")
-	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=google_parakeet_secret\n", "Expected env file to contain the entered Google client secret")
-	suite.Contains(actualContentsStr, "BOX_CLIENT_ID=box_parakeet_id\n", "Expected env file to contain the entered Box client ID")
-	suite.Contains(actualContentsStr, "BOX_CLIENT_SECRET=box_parakeet_secret\n", "Expected env file to contain the entered Box client secret")
+	suite.Contains(actualContentsStr, "GOOGLE_CLIENT_SECRET=\"google_parakeet_secret\"\n", "Expected env file to contain the entered Google client secret")
+	suite.Contains(actualContentsStr, "BOX_CLIENT_ID=\"box_parakeet_id\"\n", "Expected env file to contain the entered Box client ID")
+	suite.Contains(actualContentsStr, "BOX_CLIENT_SECRET=\"box_parakeet_secret\"\n", "Expected env file to contain the entered Box client secret")
 
 	os.Remove(fm.DotenvFile)
 }
@@ -361,17 +361,17 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 }
 
 func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
+	// The function under test is Model.externalEditorCmd()
+	// and is dependent ONLY on the global viper config.
+	m := Model{
+		DotenvFile: "/path/to/dotenv/file",
+	}
+
 	// Test VISUAL takes precedence
 	suite.T().Setenv("VISUAL", "nano")
 	suite.T().Setenv("EDITOR", "vim")
-
-	// Initialize Viper to read the environment variables
-	err := viper.BindEnv("external-editor", "VISUAL", "EDITOR")
-	suite.Require().NoError(err, "Failed to bind VISUAL and EDITOR environment variables")
-
-	m := Model{
-		DotenvFile: filepath.Join(suite.tempDir, ".env"),
-	}
+	// Bind the env vars to viper
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd := m.externalEditorCmd()
 	suite.Contains(cmd.Path, "nano", "Expected VISUAL to take precedence")
@@ -379,14 +379,25 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 
 	// Test EDITOR fallback
 	suite.T().Setenv("VISUAL", "")
+	// Bind the env vars to viper
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vim", "Expected EDITOR as fallback")
 
-	// Test vi fallback when neither is set
+	// Test when neither is set
 	suite.T().Setenv("EDITOR", "")
+	// Bind the env vars to viper
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
+	suite.Contains(cmd.Path, "", "Expected empty editor when none is set")
 
+	// Test default value
+	viper.SetDefault("external-editor", "vi")
+	// Bind the env vars to viper; this should not override the default
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+
+	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
 }

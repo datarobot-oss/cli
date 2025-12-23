@@ -51,3 +51,11 @@ func init() {
 func GetAppNameFullVersionText() string {
 	return AppName + " version: " + FullVersion
 }
+
+func GetAppNameVersionText() string {
+	return AppName + " version: " + Version
+}
+
+func GetAppNameWithVersion() string {
+	return fmt.Sprintf("%s (version %s)", AppName, Version)
+}

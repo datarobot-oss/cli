@@ -17,6 +17,7 @@ import (
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
+	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
@@ -34,8 +35,9 @@ var configFilePath string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   internalVersion.CliName,
-	Short: "🚀 " + internalVersion.AppName + " - Build AI Applications Faster",
+	Use:     internalVersion.CliName,
+	Version: internalVersion.Version,
+	Short:   "Build AI Applications Faster",
 	Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
@@ -47,27 +49,34 @@ using pre-built templates. Get from idea to production in minutes, not hours.
   • Manage environment variables and configurations
 
 🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
-  dr templates setup   # Interactive setup wizard
-  dr run dev           # Start development server
+  dr start             # Create your first AI app (start here!)
   dr --help            # Show all available commands
 
-💡 ` + tui.BaseTextStyle.Render("New to DataRobot CLI?") + ` Run 'dr templates setup' to get started!`,
+💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
 	// Show help by default when no subcommands match
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		// PersistentPreRunE is a hook called after flags are parsed
 		// but before the command is run. Any logic that needs to happen
 		// before ANY command execution should go here.
+		useDebug, _ := cmd.Flags().GetBool("debug")
+		useVerbose, _ := cmd.Flags().GetBool("verbose")
+		// Debug takes precedence
+		if useDebug {
+			setLogLevel(log.DebugLevel)
+		} else if useVerbose {
+			setLogLevel(log.InfoLevel)
+		}
 		return initializeConfig(cmd)
+	},
+	PostRun: func(_ *cobra.Command, _ []string) {
+		// Always reset log level from config in case it was altered with CLI args '--verbose' or '--debug'
+		setLogLevelFromConfig()
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() error {
-	return RootCmd.Execute()
-}
-
 // ExecuteContext executes the root command with the given context.
+// It adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
 func ExecuteContext(ctx context.Context) error {
 	return RootCmd.ExecuteContext(ctx)
 }
@@ -78,6 +87,9 @@ func init() {
 
 	// Disable Cobra's default completion command since we have our own under 'self'
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
+
+	// Set custom version template to match our unified format
+	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n")
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
@@ -96,7 +108,7 @@ func init() {
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 
-	setLogLevel()
+	setLogLevelFromConfig()
 
 	// Add command groups
 	RootCmd.AddGroup(
@@ -112,6 +124,7 @@ func init() {
 	RootCmd.AddCommand(
 		auth.Cmd(),
 		component.Cmd(),
+		dependencies.Cmd(),
 		dotenv.Cmd(),
 		run.Cmd(),
 		self.Cmd(),
@@ -132,7 +145,7 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprintln(cmd.OutOrStdout(), tui.BaseTextStyle.Render(internalVersion.AppName)+" (version "+tui.InfoStyle.Render(internalVersion.Version)+")")
+			fmt.Fprintln(cmd.OutOrStdout(), internalVersion.GetAppNameVersionText())
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)
@@ -165,7 +178,10 @@ func initializeConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
 	}
 
-	// map VISUAL and EDITOR to external-editor config key
+	// map VISUAL and EDITOR to external-editor config key,
+	// but set a default value
+	viper.SetDefault("external-editor", "vi")
+
 	err = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 	if err != nil {
 		return fmt.Errorf("Failed to bind environment variables for external-editor: %w", err)
@@ -194,7 +210,11 @@ func initializeConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-func setLogLevel() {
+func setLogLevel(level log.Level) {
+	log.SetLevel(level)
+}
+
+func setLogLevelFromConfig() {
 	if viper.GetBool("debug") {
 		log.SetLevel(log.DebugLevel)
 	} else if viper.GetBool("verbose") {

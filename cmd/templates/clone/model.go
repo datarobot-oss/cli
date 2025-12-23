@@ -23,6 +23,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -78,11 +79,6 @@ type (
 func focusInput() tea.Msg { return focusInputMsg{} }
 func back() tea.Msg       { return backMsg{} }
 
-func dirExists(dir string) bool {
-	_, err := os.Stat(dir)
-	return !os.IsNotExist(err)
-}
-
 func dirIsAbsolute(dir string) bool {
 	return filepath.IsAbs(dir)
 }
@@ -108,7 +104,7 @@ func cleanDirPath(dir string) string {
 func dirStatus(dir string) dirStatusMsg {
 	updatedDir := cleanDirPath(dir)
 
-	if dirExists(updatedDir) {
+	if fsutil.PathExists(updatedDir) {
 		return dirStatusMsg{updatedDir, true, gitOrigin(updatedDir, dirIsAbsolute(updatedDir))}
 	}
 

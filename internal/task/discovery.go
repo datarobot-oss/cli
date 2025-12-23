@@ -40,10 +40,14 @@ type devPort struct {
 
 type taskfileTmplData struct {
 	Includes            []componentInclude
+	HasStart            bool
+	StartComponents     []string
 	HasLint             bool
 	LintComponents      []string
 	HasInstall          bool
 	InstallComponents   []string
+	HasUninstall        bool
+	UninstallComponents []string
 	HasTest             bool
 	TestComponents      []string
 	HasDev              bool
@@ -102,7 +106,7 @@ func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discover
 
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	// Check if .env file exists in the root directory
-	envPath := filepath.Join(root, ".env")
+	envPath := filepath.Join(root, ".datarobot")
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		return "", ErrNotInTemplate
 	}
@@ -139,7 +143,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 func ExitWithError(err error) {
 	if errors.Is(err, ErrNotInTemplate) {
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.env' file to be present."))
+		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
 		os.Exit(1)
 
 		return
@@ -293,8 +297,10 @@ func (d *Discovery) genRootTaskfile(filename string, data interface{}) error {
 func (d *Discovery) buildComposeData(root string, includes []componentInclude) (taskfileTmplData, error) {
 	data := taskfileTmplData{
 		Includes:            includes,
+		StartComponents:     []string{},
 		LintComponents:      []string{},
 		InstallComponents:   []string{},
+		UninstallComponents: []string{},
 		TestComponents:      []string{},
 		DevComponents:       []string{},
 		DeployComponents:    []string{},
@@ -337,8 +343,10 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 		components *[]string
 		hasFlag    *bool
 	}{
+		"start":      {&data.StartComponents, &data.HasStart},
 		"lint":       {&data.LintComponents, &data.HasLint},
 		"install":    {&data.InstallComponents, &data.HasInstall},
+		"uninstall":  {&data.UninstallComponents, &data.HasUninstall},
 		"test":       {&data.TestComponents, &data.HasTest},
 		"dev":        {&data.DevComponents, &data.HasDev},
 		"deploy":     {&data.DeployComponents, &data.HasDeploy},
@@ -360,8 +368,15 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 	}
 }
 
-// addComponentOnce adds a component to the list if it's not already present
+// addComponentOnce adds a component to the list if it's not already present.
+// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate)
 func addComponentOnce(components *[]string, hasFlag *bool, componentName string) {
+	if components == nil {
+		// Just set the flag without adding to components
+		*hasFlag = true
+		return
+	}
+
 	for _, c := range *components {
 		if c == componentName {
 			return

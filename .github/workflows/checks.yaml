@@ -10,7 +10,41 @@ on:
       - main
 
 jobs:
+
+  detect-changes:
+    runs-on: ubuntu-latest
+    name: Detect Changes
+    outputs:
+      completion: ${{ steps.changes.outputs.completion }}
+      dotenv: ${{ steps.changes.outputs.dotenv }}
+      templates: ${{ steps.changes.outputs.templates }}
+      auth: ${{ steps.changes.outputs.auth }}
+      go_code: ${{ steps.changes.outputs.go_code }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            completion:
+              - 'cmd/completion/**'
+            dotenv:
+              - 'cmd/dotenv/**'
+            templates:
+              - 'cmd/templates/**'
+            auth:
+              - 'cmd/auth/**'
+            go_code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+
   lint:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Lint Code
 
@@ -21,7 +55,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.3'
+          go-version: '1.25.5'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -46,9 +80,9 @@ jobs:
         run: |
           task lint
 
-
-
   test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Run Tests
 
@@ -59,7 +93,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.3'
+          go-version: '1.25.5'
 
       - name: Install Taskfile
         uses: arduino/setup-task@v2
@@ -102,6 +136,8 @@ jobs:
           config: .licenserc.yaml
 
   generate:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Ensure Code Generated
 
@@ -118,7 +154,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.3'
+          go-version: '1.25.5'
 
       - name: Install Envdoc
         run: |
@@ -133,72 +169,15 @@ jobs:
           task gen-check
 
   build:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    name: Build Binary
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.3'
-
-      - name: Build the DR CLI Binary
-        run:  task build
-
-      - name: Check if binary runs without errors
-        shell: bash
-        run: |
-          ./dist/dr --help
-
-      - name: Upload Ubuntu Binary for completion tests
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dr-ubuntu-checks
-          path: dist/dr
-          retention-days: 1
-
-  detect-changes:
-    runs-on: ubuntu-latest
-    name: Detect Changes
-    outputs:
-      completion: ${{ steps.changes.outputs.completion }}
-      dotenv: ${{ steps.changes.outputs.dotenv }}
-      templates: ${{ steps.changes.outputs.templates }}
-      auth: ${{ steps.changes.outputs.auth }}
-      go_code: ${{ steps.changes.outputs.go_code }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Detect file changes
-        uses: dorny/paths-filter@v3
-        id: changes
-        with:
-          filters: |
-            completion:
-              - 'cmd/completion/**'
-            dotenv:
-              - 'cmd/dotenv/**'
-            templates:
-              - 'cmd/templates/**'
-            auth:
-              - 'cmd/auth/**'
-            go_code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
+    needs: detect-changes
+    name: Build Binaries
+    if: needs.detect-changes.outputs.go_code == 'true'
+    uses: ./.github/workflows/.build-matrix.yaml
+    with:
+      go-version: '1.25.5'
+      upload-artifact: true
+      artifact-name-prefix: 'dr'
+    secrets: inherit
 
   auto-label:
     needs: detect-changes
@@ -232,7 +211,7 @@ jobs:
       - name: Download Binary
         uses: actions/download-artifact@v4
         with:
-          name: dr-ubuntu-checks
+          name: dr-ubuntu
           path: /tmp/dr-bin
 
       - name: Move Binary to PATH
@@ -255,7 +234,7 @@ jobs:
         shell: bash
         run: |
           # Test bash completion generation and content
-          dr completion bash > /tmp/dr-bash.sh
+          dr self completion bash > /tmp/dr-bash.sh
 
           # Check if we have the expected __start_dr() function
           if grep -q "__start_dr()" /tmp/dr-bash.sh; then

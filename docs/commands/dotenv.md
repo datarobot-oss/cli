@@ -1,19 +1,39 @@
-# dotenv command
+# `dr dotenv` - Environment variable management
 
 Manage environment variables and `.env` files in DataRobot templates.
 
-## Overview
+## Quick start
+
+For most users, setting up environment variables is a single command:
+
+```bash
+# Interactive wizard guides you through all configuration
+dr dotenv setup
+```
+
+The wizard automatically discovers your template's requirements and prompts you for all necessary values. Your credentials are saved securely and you're ready to use the CLI.
+
+> [!NOTE]
+> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+
+## Synopsis
+
+```bash
+dr dotenv <command> [flags]
+```
+
+## Description
 
 The `dr dotenv` command provides tools for creating, editing, validating, and updating environment configuration files. It includes an interactive wizard for guided setup and a text editor for direct file manipulation.
 
-## Commands
+## Subcommands
 
 ### dr dotenv setup
 
 Launch the interactive wizard to configure environment variables.
 
 ```bash
-dr dotenv setup
+dr dotenv setup [--if-needed]
 ```
 
 **Features:**
@@ -25,16 +45,22 @@ dr dotenv setup
 - Secure handling of secret values.
 - DataRobot authentication integration.
 - Automatic state tracking of completion timestamp.
+- Conditional execution with `--if-needed` flag.
 
 **Prerequisites:**
 
 - Must be run inside a git repository.
 - Requires authentication with DataRobot.
 
+**Flags:**
+
+- `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
+
 **State tracking:**
 
-Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed. The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that
-`dr dotenv setup` will always prompt for configuration if run manually, regardless of state.
+Upon successful completion, `dr dotenv setup` records the timestamp in the state file. This allows `dr templates setup` to intelligently skip dotenv configuration if it has already been completed.
+
+The state is stored in the same location as other CLI state (see [Configuration - State tracking](../user-guide/configuration.md#state-tracking)). Keep in mind that manually running `dr dotenv setup` always prompts for configuration, regardless of state.
 
 To force the setup wizard to run again (ignoring the state file), use the `--force-interactive` flag:
 
@@ -44,19 +70,44 @@ dr templates setup --force-interactive
 
 This is useful for testing or when you need to reconfigure your environment from scratch.
 
-**Example:**
+**Examples:**
 
+Standard setup:
 ```bash
 cd my-template
 dr dotenv setup
 ```
 
+Conditional setup (skip if already configured):
+```bash
+cd my-template
+dr dotenv setup --if-needed
+# Output: "Configuration already exists, skipping setup." (if valid)
+# Or: launches wizard (if missing or invalid)
+```
+
 The wizard guides you through:
+
 1. DataRobot credentials (auto-populated if authenticated).
 2. Application-specific configuration.
 3. Optional features and integrations.
 4. Validation of all inputs.
 5. Generation of `.env` file.
+
+**How `--if-needed` works:**
+
+When the `--if-needed` flag is set, the command validates your existing `.env` file against all required variables:
+
+- ✅ **Skips setup** if `.env` exists and all required variables are properly set (including core DataRobot variables and template-specific variables).
+- ⚠️ **Runs setup** if `.env` doesn't exist.
+- ⚠️ **Runs setup** if any required variables are missing or empty.
+- ⚠️ **Runs setup** if validation fails for any reason.
+
+This makes `--if-needed` ideal for:
+- **Automation scripts** that need to ensure configuration without user interaction.
+- **CI/CD pipelines** that should only prompt when necessary.
+- **Onboarding workflows** that intelligently skip already-completed steps.
+- **Idempotent operations** that can be safely run multiple times.
 
 ### dr dotenv edit
 
@@ -67,18 +118,21 @@ dr dotenv edit
 ```
 
 **Behavior:**
+
 - If `.env` exists, opens it in the editor.
 - If no extra variables are detected, opens text editor mode.
 - If template prompts are found, offers wizard mode.
 - Can switch between editor and wizard modes.
 
 **Editor mode controls:**
+
 - `e`&mdash;edit in text editor.
 - `w`&mdash;switch to wizard mode.
 - `Enter`&mdash;save and exit.
 - `Esc`&mdash;save and exit.
 
 **Wizard mode controls:**
+
 - Navigate prompts with arrow keys.
 - Enter values or select options.
 - `Esc`&mdash;return to previous screen.
@@ -99,12 +153,14 @@ dr dotenv update
 ```
 
 **Features:**
+
 - Updates `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN`.
 - Preserves all other environment variables.
 - Automatically authenticates if needed.
 - Uses current authentication session.
 
 **Prerequisites:**
+
 - Must be run inside a git repository.
 - Must have a `.env` or `.env.template` file.
 - Requires authentication with DataRobot.
@@ -117,6 +173,7 @@ dr dotenv update
 ```
 
 **Use cases:**
+
 - Refresh expired API tokens.
 - Switch DataRobot environments.
 - Update credentials after re-authentication.
@@ -130,6 +187,7 @@ dr dotenv validate
 ```
 
 **Features:**
+
 - Validates against template requirements defined in `.datarobot/prompts.yaml`.
 - Checks both `.env` file and environment variables.
 - Verifies core DataRobot variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`).
@@ -137,6 +195,7 @@ dr dotenv validate
 - Respects conditional requirements based on selected options.
 
 **Prerequisites:**
+
 - Must be run inside a git repository.
 - Must have a `.env` file.
 
@@ -150,7 +209,8 @@ dr dotenv validate
 **Output:**
 
 Successful validation:
-```
+
+```text
 Validating required variables:
   APP_NAME: my-app
   DATAROBOT_ENDPOINT: https://app.datarobot.com
@@ -161,7 +221,8 @@ Validation passed: all required variables are set.
 ```
 
 Validation errors:
-```
+
+```text
 Validating required variables:
   APP_NAME: my-app
   DATAROBOT_ENDPOINT: https://app.datarobot.com
@@ -178,6 +239,7 @@ Error: required variable DATABASE_URL is not set
 ```
 
 **Use cases:**
+
 - Verify configuration before running tasks.
 - Debug missing environment variables.
 - CI/CD pipeline checks.
@@ -189,7 +251,7 @@ Error: required variable DATABASE_URL is not set
 
 Template file committed to version control:
 
-```bash
+```env
 # Required Configuration
 APP_NAME=
 DATAROBOT_ENDPOINT=
@@ -204,7 +266,7 @@ DATAROBOT_API_TOKEN=
 
 Generated configuration file (never committed):
 
-```bash
+```env
 # Required Configuration
 APP_NAME=my-awesome-app
 DATAROBOT_ENDPOINT=https://app.datarobot.com
@@ -222,6 +284,7 @@ PORT=8000
 The wizard supports multiple input types defined in `.datarobot/prompts.yaml`:
 
 **Text input:**
+
 ```yaml
 prompts:
   - key: "app_name"
@@ -230,6 +293,7 @@ prompts:
 ```
 
 **Secret string:**
+
 ```yaml
 prompts:
   - key: "api_key"
@@ -240,6 +304,7 @@ prompts:
 ```
 
 **Single selection:**
+
 ```yaml
 prompts:
   - key: "environment"
@@ -253,6 +318,7 @@ prompts:
 ```
 
 **Multiple selection:**
+
 ```yaml
 prompts:
   - key: "features"
@@ -292,6 +358,40 @@ Set up a new template with all configuration:
 ```bash
 cd my-template
 dr dotenv setup
+```
+
+### Automated/idempotent setup
+
+Ensure configuration exists without unnecessary prompts (useful in scripts):
+
+```bash
+cd my-template
+dr dotenv setup --if-needed
+```
+
+This will:
+- Skip the wizard if configuration is already valid.
+- Run the wizard only if configuration is missing or incomplete.
+
+**Use case example - CI/CD pipeline:**
+
+```bash
+#!/bin/bash
+# Ensure environment is configured before running tests
+dr dotenv setup --if-needed
+dr run test
+```
+
+**Use case example - Onboarding script:**
+
+```bash
+#!/bin/bash
+# Multi-step setup that can be safely re-run
+git clone https://github.com/myorg/my-app
+cd my-app
+npm install
+dr dotenv setup --if-needed  # Only prompts if needed
+dr run dev
 ```
 
 ### Quick updates
@@ -343,6 +443,7 @@ The CLI automatically discovers configuration from:
 4. **Environment variables**&mdash;system environment (override `.env`).
 
 Priority order (highest to lowest):
+
 1. System environment variables.
 2. User input from wizard.
 3. Existing `.env` file values.
@@ -356,7 +457,9 @@ Priority order (highest to lowest):
 - Secret values are masked in the UI.
 - Variables containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets.
 - The `secret_string` prompt type enables secure input with masking.
-- `.env` files should never be committed (add to `.gitignore`).
+
+> [!WARNING]
+> `.env` files should never be committed. To ensure this, add it to `.gitignore`.
 
 ### Auto-generation
 
@@ -377,7 +480,7 @@ This generates a cryptographically secure random string when no value exists.
 
 ### Not in repository
 
-```
+```text
 Error: not inside a git repository
 
 Run this command from within an application template git repository.
@@ -388,7 +491,7 @@ To create a new template, run `dr templates setup`.
 
 ### Missing .env file
 
-```
+```text
 Error: .env file does not exist at /path/to/.env
 
 Run `dr dotenv setup` to create one.
@@ -398,7 +501,7 @@ Run `dr dotenv setup` to create one.
 
 ### Authentication required
 
-```
+```text
 Error: not authenticated
 
 Run `dr auth login` to authenticate.
@@ -408,7 +511,7 @@ Run `dr auth login` to authenticate.
 
 ### Validation failures
 
-```
+```text
 Validation errors:
 
 Error: required variable DATABASE_URL is not set

@@ -9,25 +9,22 @@
 package copier
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/log"
 	"gopkg.in/yaml.v3"
 )
 
 type Answers struct {
-	FileName string
-	Repo     string `yaml:"_src_path"`
+	FileName         string
+	ComponentDetails Details
+	// TODO: Add more properties to account for what we need to determine as canonical values expected for components
+
+	Repo string `yaml:"_src_path"`
 }
 
-// TODO: Add more properties to account for what we need to determine as canonical values expected for components
-type Component struct {
-	FileName string
-	SrcPath  string `yaml:"_src_path"`
-}
-
-func AnswersFromPath(path string) ([]Answers, error) {
+func AnswersFromPath(path string, all bool) ([]Answers, error) {
 	pattern := filepath.Join(path, ".datarobot/answers/*.y*ml")
 
 	yamlFiles, err := filepath.Glob(pattern)
@@ -40,38 +37,24 @@ func AnswersFromPath(path string) ([]Answers, error) {
 	for _, yamlFile := range yamlFiles {
 		data, err := os.ReadFile(yamlFile)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to read yaml file %s: %w", yamlFile, err)
+			log.Errorf("Failed to read yaml file %s: %s", yamlFile, err)
+			continue
 		}
 
 		fileParsed := Answers{FileName: yamlFile}
 
 		if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-			return nil, fmt.Errorf("Failed to unmarshal yaml file %s: %w", yamlFile, err)
+			log.Errorf("Failed to unmarshal yaml file %s: %s", yamlFile, err)
+			continue
 		}
 
-		result = append(result, fileParsed)
+		componentDetails := ComponentDetailsByURL[fileParsed.Repo]
+
+		if all || componentDetails.Enabled {
+			fileParsed.ComponentDetails = componentDetails
+			result = append(result, fileParsed)
+		}
 	}
 
 	return result, nil
-}
-
-func ComponentsFromAnswers(answers []Answers) ([]Component, error) {
-	components := make([]Component, 0)
-
-	for _, a := range answers {
-		data, err := os.ReadFile(a.FileName)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to read yaml file %s: %w", a.FileName, err)
-		}
-
-		component := Component{FileName: a.FileName}
-
-		if err = yaml.Unmarshal(data, &component); err != nil {
-			return nil, fmt.Errorf("Failed to unmarshal yaml file %s: %w", a.FileName, err)
-		}
-
-		components = append(components, component)
-	}
-
-	return components, nil
 }

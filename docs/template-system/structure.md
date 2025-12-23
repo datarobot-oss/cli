@@ -1,10 +1,10 @@
-# Template System Structure
+# Template system structure
 
-Understanding how DataRobot application templates are organized and configured.
+This page provides an understanding of how DataRobot organizes and configures application templates.
 
 ## Overview
 
-DataRobot templates are Git repositories that contain application code, configuration, and metadata for deploying custom applications to DataRobot. The CLI provides tools to clone, configure, and manage these templates.
+DataRobot templates are Git repositories that contain application code, configuration, and metadata to deploy custom applications to DataRobot. The CLI provides tools to clone, configure, and manage these templates.
 
 ## Template repository structure
 
@@ -12,7 +12,7 @@ A typical template repository:
 
 ```
 my-datarobot-template/
-├── .datarobot/               # Template metadata
+├── .datarobot/              # Template metadata
 │   ├── prompts.yaml         # Configuration prompts
 │   ├── config.yaml          # Template settings
 │   └── cli/                 # CLI-specific files
@@ -28,7 +28,7 @@ my-datarobot-template/
 │   │   └── main.py
 │   └── tests/
 ├── requirements.txt         # Python dependencies
-└── package.json            # Node dependencies (if applicable)
+└── package.json             # Node dependencies (if applicable)
 ```
 
 ## Template metadata
@@ -46,9 +46,9 @@ The `.datarobot` directory contains template-specific configuration:
 
 ### prompts.yaml
 
-Defines interactive configuration prompts. See [Interactive Configuration](interactive-config.md) for detailed documentation.
+Defines interactive configuration prompts. See [Interactive configuration](interactive-config.md) for more details.
 
-Example:
+Review the example prompt yaml configuration below.
 
 ```yaml
 prompts:
@@ -100,18 +100,18 @@ requirements:
 
 ### .env.template
 
-The template for environment variables. Commented lines are optional:
+Review a template for environment variables. Note that the commented lines are optional.
 
 ```bash
-# Required Configuration
+# Required configuration
 APP_NAME=
 DATAROBOT_ENDPOINT=
 
-# Optional Configuration (commented out by default)
+# Optional configuration (commented out by default)
 # DEBUG=false
 # LOG_LEVEL=info
 
-# Database Configuration (conditional)
+# Database configuration (conditional)
 # DATABASE_URL=postgresql://localhost:5432/mydb
 # DATABASE_POOL_SIZE=10
 
@@ -122,37 +122,32 @@ DATAROBOT_ENDPOINT=
 
 ### .env (Generated)
 
-Created by the CLI during setup, contains actual values:
+Created by the CLI during setup, the `.env` file contains actual values.
+
+> [!WARNING]
+> Add the `.env` file to `.gitignore` to ensure it is never committed.
 
 ```bash
-# Required Configuration
+# Required configuration
 APP_NAME=my-awesome-app
 DATAROBOT_ENDPOINT=https://app.datarobot.com
 
-# Optional Configuration
+# Optional configuration
 DEBUG=true
 LOG_LEVEL=debug
 
-# Database Configuration
+# Database configuration
 DATABASE_URL=postgresql://localhost:5432/mydb
 DATABASE_POOL_SIZE=5
 ```
-
-**Note:** `.env` should be in `.gitignore` and never committed.
 
 ## Quickstart scripts
 
 Templates can optionally provide quickstart scripts to automate application initialization. These scripts are executed by the `dr start` command.
 
-### Location
+Quickstart scripts must be placed in `.datarobot/cli/bin/`.
 
-Quickstart scripts must be placed in:
-
-```text
-.datarobot/cli/bin/
-```
-
-### Naming convention
+### Naming conventions
 
 Scripts must start with `quickstart` (case-sensitive):
 
@@ -160,34 +155,36 @@ Scripts must start with `quickstart` (case-sensitive):
 - ✅ `quickstart.sh`
 - ✅ `quickstart.py`
 - ✅ `quickstart-dev`
-- ❌ `Quickstart.sh` (wrong case)
+- ❌ `Quickstart.sh` (wrong casing)
 - ❌ `start.sh` (wrong name)
 
 If there are multiple scripts matching the pattern, the first one found in lexicographical order will be executed.
 
 ### Platform requirements
 
-**Unix/Linux/macOS:**
+Review the requirements for different platforms below.
+
+#### Unix/Linux/macOS
 
 - Must have executable permissions (`chmod +x`)
 - Can be any executable file (shell script, Python script, compiled binary, etc.)
 
-**Windows:**
+#### Windows
 
-- Must have executable extension: `.exe`, `.bat`, `.cmd`, or `.ps1`
+- Must have an executable extension: `.exe`, `.bat`, `.cmd`, or `.ps1`
 
 ### When to use quickstart scripts
 
 Quickstart scripts are useful for:
 
-- **Multi-step initialization**&mdash;when your application requires several setup steps.
-- **Dependency management**&mdash;installing packages or tools before starting.
-- **Environment validation**&mdash;checking prerequisites before launch.
-- **Custom workflows**&mdash;template-specific initialization logic.
+- Multi-step initialization: When your application requires several setup steps
+- Dependency management: Install packages or tools before starting
+- Environment validation: Check prerequisites before launch
+- Custom workflows: Template-specific initialization logic
 
 ### Fallback behavior
 
-If no quickstart script is found, `dr start` automatically launches the interactive `dr templates setup` wizard instead, ensuring users can always get started even without a custom script.
+If `dr start` does not find a quickstart, it automatically launches the interactive `dr templates setup` wizard instead to ensure that you can always get started even without a custom script.
 
 ## Task definitions
 
@@ -195,7 +192,10 @@ If no quickstart script is found, `dr start` automatically launches the interact
 
 The CLI automatically generates `Taskfile.gen.yaml` to aggregate component tasks. This file includes a `dotenv` directive to load environment variables from `.env`.
 
-**Generated structure:**
+> [!WARNING]
+> Component taskfiles cannot have their own `dotenv` directives. The CLI detects conflicts and prevents generation if a component taskfile already has a `dotenv` declaration.
+
+The generated structure is shown below.
 
 ```yaml
 version: '3'
@@ -211,18 +211,16 @@ includes:
     dir: ./frontend
 ```
 
-**Important:** Component Taskfiles cannot have their own `dotenv` directives. The CLI detects conflicts and prevents generation if a component Taskfile already has a `dotenv` declaration.
-
-### Component Taskfiles
+### Component taskfiles
 
 Component directories define their own tasks:
 
-**backend/Taskfile.yaml:**
+Review the structure of `backend/Taskfile.yaml` below.
 
 ```yaml
 version: '3'
 
-# Note: No dotenv directive allowed here
+# Note: No dotenv directive are allowed here
 
 tasks:
   dev:
@@ -259,7 +257,7 @@ dr run lint test
 dr run lint test --parallel
 ```
 
-If you're not in a DataRobot template directory (no `.env` file), you'll see:
+If you're not in a DataRobot template directory (no `.env` file), you'll see the following message:
 
 ```
 You don't seem to be in a DataRobot Template directory.
@@ -350,9 +348,9 @@ dr templates list
 Output:
 ```
 Available templates:
-* python-streamlit     - Streamlit application template.
-* react-frontend       - React frontend template.
-* fastapi-backend      - FastAPI backend template.
+* python-streamlit     - Streamlit application template
+* react-frontend       - React frontend template
+* fastapi-backend      - FastAPI backend template
 ```
 
 ### 2. Cloning
@@ -360,10 +358,10 @@ Available templates:
 Clone a template to your local machine:
 
 ```bash
-# Clone specific template
+# Clone a specific template
 dr templates clone python-streamlit
 
-# Clone to custom directory
+# Clone to a custom directory
 dr templates clone python-streamlit my-app
 ```
 
@@ -400,7 +398,8 @@ dr run test
 dr run build
 ```
 
-**Note:** All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv setup` to create your `.env` file.
+> [!NOTE]
+> All `dr run` commands require a `.env` file in the current directory. If you see an error about not being in a template directory, run `dr dotenv setup` to create your `.env` file.
 
 ### 5. Deployment
 
@@ -426,7 +425,7 @@ python-template/
 └── .env.template
 ```
 
-**Key features:**
+#### Key features
 - Python dependencies in `requirements.txt`
 - Source code in `src/`
 - Tests in `tests/`
@@ -443,7 +442,8 @@ node-template/
 └── .env.template
 ```
 
-**Key features:**
+#### Key features
+
 - Node dependencies in `package.json`
 - Source code in `src/`
 - npm scripts integration
@@ -465,14 +465,18 @@ full-stack-template/
 └── .env.template
 ```
 
-**Key features:**
+#### Key features
+
 - Separate backend and frontend
 - Component-specific configuration
 - Docker composition
 
 ## Best practices
 
-### 1. Version control
+### Version control
+
+> [!WARNING]
+> Always exclude `.env` and `Taskfile.gen.yaml` from version control by adding them to `.gitignore`. The CLI generates `Taskfile.gen.yaml` automatically.
 
 ```bash
 # .gitignore should include:
@@ -484,11 +488,9 @@ node_modules/
 dist/
 ```
 
-**Note:** Always exclude `.env` and `Taskfile.gen.yaml` from version control. The CLI generates `Taskfile.gen.yaml` automatically.
+### Documentation
 
-### 2. Documentation
-
-Include clear README:
+Include a clear README.
 
 ```markdown
 # My template
@@ -501,14 +503,14 @@ Include clear README:
 
 ## Available tasks
 
-- `dr run dev`&mdash;development server.
-- `dr run test`&mdash;run tests.
-- `dr run build`&mdash;build for production.
+- `dr run dev`: development server.
+- `dr run test`: run tests.
+- `dr run build`: build for production.
 ```
 
-### 3. Sensible defaults
+### Sensible defaults
 
-Provide defaults in `.env.template`:
+Provide defaults in `.env.template`.
 
 ```bash
 # Good defaults for local development
@@ -517,9 +519,9 @@ DEBUG=true
 LOG_LEVEL=info
 ```
 
-### 4. Clear prompts
+### Clear prompts
 
-Use descriptive help text:
+Use descriptive help text.
 
 ```yaml
 prompts:
@@ -529,7 +531,7 @@ prompts:
 
 ### 5. Organized structure
 
-Keep related files together:
+Keep related files together.
 
 ```
 src/
@@ -576,7 +578,7 @@ git init
 
 ### 2. Add template files
 
-Create necessary files:
+Create the necessary files:
 
 ```bash
 # Configuration
@@ -604,7 +606,7 @@ prompts:
     optional: false
 ```
 
-### 4. Create environment template
+### 4. Create an environment template
 
 `.env.template`:
 
@@ -627,9 +629,9 @@ tasks:
       - echo "Starting {{.APP_NAME}}"
 ```
 
-### 6. Configure Taskfile data (optional)
+### 6. Configure Taskfile data
 
-Create `.taskfile-data.yaml` to provide additional configuration for the generated root Taskfile:
+Optional. Create `.taskfile-data.yaml` to provide additional configuration for the generated root taskfile:
 
 ```yaml
 # .taskfile-data.yaml
@@ -645,17 +647,17 @@ ports:
 
 This allows developers using your template to see which ports services run on when they execute `task dev`.
 
-### 7. Test template
+### 7. Test the template
 
 ```bash
-# Test setup locally
+# Test the setup locally
 dr templates setup
 
 # Verify configuration
 dr run --list
 ```
 
-### 7. Publish template
+### 8. Publish the template
 
 ```bash
 # Push to GitHub
@@ -668,8 +670,8 @@ git push origin main
 
 ## See also
 
-- [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
-- [Environment variables](environment-variables.md)&mdash;managing .env files.
-- [dr run](../commands/run.md)&mdash;task execution.
-- [dr task compose](../commands/task.md)&mdash;Taskfile composition and configuration.
-- [Command reference: templates](../commands/templates.md)&mdash;template commands.
+- [Interactive configuration](interactive-config.md): Configuration wizard details.
+- [Environment variables](environment-variables.md): Manage .env files.
+- [dr run](../commands/run.md): Task execution.
+- [dr task compose](../commands/task.md): Taskfile composition and configuration.
+- [Template system](README.md): Template system overview and documentation.
