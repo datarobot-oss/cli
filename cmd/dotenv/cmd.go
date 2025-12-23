@@ -22,7 +22,6 @@ import (
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func Cmd() *cobra.Command {
@@ -55,14 +54,8 @@ var EditCmd = &cobra.Command{
 	Use:   "edit",
 	Short: "✏️ Edit '.env' file using built-in editor.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if viper.GetBool("debug") {
-			cleanup, err := tui.SetupDebugLogging()
-			if err != nil {
-				return err
-			}
-
-			defer cleanup()
-		}
+		cleanup := tui.SetupDebugLogging()
+		defer cleanup()
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -116,14 +109,8 @@ This wizard will help you:
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if viper.GetBool("debug") {
-			cleanup, err := tui.SetupDebugLogging()
-			if err != nil {
-				return fmt.Errorf("fatal: %w", err)
-			}
-
-			defer cleanup()
-		}
+		cleanup := tui.SetupDebugLogging()
+		defer cleanup()
 
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {

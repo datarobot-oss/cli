@@ -42,15 +42,8 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 }
 
 func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
-	if viper.GetBool("debug") {
-		f, err := tea.LogToFile("tea-debug.log", "debug")
-		if err != nil {
-			fmt.Println("fatal: ", err)
-			os.Exit(1)
-		}
-
-		defer f.Close()
-	}
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
 
 	var updateFileName string
 	if len(args) > 0 && args[0] != "" {

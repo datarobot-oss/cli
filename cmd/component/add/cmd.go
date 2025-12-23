@@ -37,6 +37,9 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 }
 
 func RunE(_ *cobra.Command, args []string) error {
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
+
 	args, err := getArgsFromCLIOrPrompt(args)
 	if err != nil {
 		return err

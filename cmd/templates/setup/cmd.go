@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{
@@ -39,14 +38,8 @@ var Cmd = &cobra.Command{
 
 // RunTea starts the template setup TUI, optionally from the start command
 func RunTea(ctx context.Context, fromStartCommand bool) error {
-	if viper.GetBool("debug") {
-		cleanup, err := tui.SetupDebugLogging()
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-	}
+	cleanup := tui.SetupDebugLogging()
+	defer cleanup()
 
 	m := NewModel(fromStartCommand)
 	p := tea.NewProgram(
