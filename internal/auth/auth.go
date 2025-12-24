@@ -55,8 +55,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
 
-		checkHost := true
-		SetURLAction(checkHost)
+		SetURLAction(true)
 
 		datarobotHost = config.GetBaseURL()
 		if datarobotHost == "" {
@@ -177,7 +176,7 @@ func printSetURLPrompt() {
 	fmt.Print("Enter your choice: ")
 }
 
-func checkDatarobotHost() bool {
+func exitWithoutHostChange() bool {
 	datarobotHost := config.GetBaseURL()
 
 	if len(datarobotHost) > 0 {
@@ -187,7 +186,7 @@ func checkDatarobotHost() bool {
 
 		selectedOption, err := reader.ReadString('\n')
 		if err != nil {
-			return false
+			return true
 		}
 
 		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
@@ -199,14 +198,11 @@ func checkDatarobotHost() bool {
 	return false
 }
 
-func SetURLAction(checkHost bool) {
+func SetURLAction(askForHostChange bool) {
 	reader := bufio.NewReader(os.Stdin)
 
-	if checkHost {
-		shouldExit := checkDatarobotHost()
-		if shouldExit {
-			return
-		}
+	if askForHostChange && exitWithoutHostChange() {
+		return
 	}
 
 	printSetURLPrompt()
