@@ -9,7 +9,6 @@
 package envbuilder
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -571,8 +570,6 @@ func TestDetermineRequiredSectionsDuplicates(t *testing.T) {
 		}
 
 		prompts = DetermineRequiredSections(prompts)
-
-		fmt.Println(prompts)
 
 		if prompts[0].String() != `DUP="root dup"` {
 			t.Errorf("Expected root dup [0] to be enabled, got: %s", prompts[0])
