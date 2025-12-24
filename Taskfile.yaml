@@ -146,6 +146,11 @@ tasks:
     cmds:
       - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
 
+  release-test:
+    desc: "Check to see if the release process would complete successfully"
+    cmds:
+      - '{{.BIN_DIR}}/goreleaser release --snapshot --clean --skip=sign'
+
   copyright:
     silent: true
     desc: "Apply copyrights to all files"
