@@ -82,7 +82,11 @@ func EnsureAuthenticated(ctx context.Context) bool {
 	}
 
 	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
-	WriteConfigFileSilent()
+
+	if err := WriteConfigFileSilent(); err != nil {
+		log.Error("Failed to save API key to config file.", "error", err)
+		return false
+	}
 
 	log.Info("Authentication successful")
 
@@ -145,18 +149,26 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	}
 }
 
-func WriteConfigFileSilent() {
+func WriteConfigFileSilent() error {
 	err := viper.WriteConfig()
 	if err != nil {
 		log.Error(err)
-		return
+
+		return err
 	}
+
+	return nil
 }
 
-func WriteConfigFile() {
-	WriteConfigFileSilent()
+func WriteConfigFile() error {
+	err := WriteConfigFileSilent()
+	if err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
 
 	fmt.Println("Config file written successfully.")
+
+	return nil
 }
 
 func printSetURLPrompt() {
