@@ -27,8 +27,7 @@ This command helps you choose the correct DataRobot environment:
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
 		Run: func(_ *cobra.Command, _ []string) {
-			checkHost := true
-			auth.SetURLAction(checkHost)
+			auth.SetURLAction(true)
 		},
 		PostRunE: func(cmd *cobra.Command, _ []string) error {
 			return auth.EnsureAuthenticatedE(cmd.Context())
