@@ -65,7 +65,7 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	prompts, err := GatherUserPrompts(suite.tempDir, nil)
 	suite.Require().NoError(err)
 
-	suite.Len(prompts, 8, "Expected to find 6 UserPrompt entries")
+	suite.Len(prompts, 11, "Expected to find 11 UserPrompt entries")
 
 	i := 0
 	suite.Equal("DATAROBOT_ENDPOINT", prompts[i].Env, "Expected prompt[i].Env to match")
@@ -86,12 +86,27 @@ func (suite *BuilderTestSuite) TestBuilderGeneratesInterfaces() {
 	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
 
 	i++
+	suite.Equal("DUPLICATE", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.Equal("Duplicate deployed_llm.", prompts[i].Help, "Expected prompt[i].Env to match")
+	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
+
+	i++
 	suite.Equal("TEXTGEN_REGISTERED_MODEL_ID", prompts[i].Env, "Expected prompt[i].Env to match")
 	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
 
 	i++
 	suite.Equal("DATAROBOT_TIMEOUT_MINUTES", prompts[i].Env, "Expected prompt[i].Env to match")
 	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
+
+	i++
+	suite.Equal("DUPLICATE", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.Equal("Duplicate registered_model.", prompts[i].Help, "Expected prompt[i].Env to match")
+	suite.False(prompts[i].Active, "Expected prompt[i].Active to be false")
+
+	i++
+	suite.Equal("DUPLICATE", prompts[i].Env, "Expected prompt[i].Env to match")
+	suite.Equal("Duplicate root.", prompts[i].Help, "Expected prompt[i].Env to match")
+	suite.True(prompts[i].Active, "Expected prompt[i].Active to be true")
 
 	i++
 	suite.Equal("PULUMI_CONFIG_PASSPHRASE", prompts[i].Env, "Expected prompt[i].Env to match")

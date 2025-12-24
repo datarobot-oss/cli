@@ -479,7 +479,6 @@ func TestDetermineRequiredSections(t *testing.T) {
 				Section: "root",
 				Env:     "FEATURE_TOGGLE",
 				Root:    true,
-				Active:  true,
 				Value:   "yes",
 				Options: []PromptOption{
 					{
@@ -508,7 +507,7 @@ func TestDetermineRequiredSections(t *testing.T) {
 			{
 				Section: "root",
 				Env:     "FEATURE_TOGGLE",
-				Active:  true,
+				Root:    true,
 				Value:   "yes",
 				Options: []PromptOption{
 					{
@@ -535,6 +534,140 @@ func TestDetermineRequiredSections(t *testing.T) {
 
 		if prompts[2].Active {
 			t.Error("Expected disable-config to not be enabled")
+		}
+	})
+}
+
+func TestDetermineRequiredSectionsDuplicates(t *testing.T) {
+	t.Run("Deactivates prompts with same Env, active first", func(t *testing.T) {
+		prompts := []UserPrompt{
+			{
+				Section: "root",
+				Root:    true,
+				Env:     "DUP",
+				Value:   "root dup",
+			},
+			{
+				Section: "root",
+				Root:    true,
+				Env:     "FEATURE_TOGGLE",
+				Value:   "one,two",
+				Options: []PromptOption{
+					{
+						Name:     "Enable",
+						Value:    "one",
+						Requires: "one-config",
+					},
+					{
+						Name:     "Disable",
+						Value:    "two",
+						Requires: "two-config",
+					},
+				},
+			},
+			{Section: "one-config", Env: "DUP", Value: "one dup"},
+			{Section: "two-config", Env: "DUP", Value: "two dup"},
+		}
+
+		prompts = DetermineRequiredSections(prompts)
+
+		if prompts[0].String() != `DUP="root dup"` {
+			t.Errorf("Expected root dup [0] to be enabled, got: %s", prompts[0])
+		}
+
+		if prompts[2].String() != `# DUP="one dup"` {
+			t.Errorf("Expected other dup [2] to not be enabled, got: %s", prompts[2])
+		}
+
+		if prompts[3].String() != `# DUP="two dup"` {
+			t.Errorf("Expected other dup [3] to not be enabled, got: %s", prompts[3])
+		}
+	})
+
+	t.Run("Deactivates prompts with same Env, active middle", func(t *testing.T) {
+		prompts := []UserPrompt{
+			{
+				Section: "root",
+				Root:    true,
+				Env:     "FEATURE_TOGGLE",
+				Value:   "two",
+				Options: []PromptOption{
+					{
+						Name:     "Enable",
+						Value:    "one",
+						Requires: "one-config",
+					},
+					{
+						Name:     "Disable",
+						Value:    "two",
+						Requires: "two-config",
+					},
+				},
+			},
+			{Section: "one-config", Env: "DUP", Value: "one dup"},
+			{Section: "two-config", Env: "DUP", Value: "two dup"},
+			{
+				Section: "root", Root: true,
+				Env:   "DUP",
+				Value: "root dup",
+			},
+		}
+
+		prompts = DetermineRequiredSections(prompts)
+
+		if prompts[1].String() != `# DUP="one dup"` {
+			t.Errorf("Expected other dup [1] to not be enabled, got: %s", prompts[1])
+		}
+
+		if prompts[2].String() != `DUP="two dup"` {
+			t.Errorf("Expected other dup [2] to not be enabled, got: %s", prompts[2])
+		}
+
+		if prompts[3].String() != `# DUP="root dup"` {
+			t.Errorf("Expected root dup [3] to be enabled, got: %s", prompts[3])
+		}
+	})
+
+	t.Run("Deactivates prompts with same Env, active last", func(t *testing.T) {
+		prompts := []UserPrompt{
+			{
+				Section: "root",
+				Root:    true,
+				Env:     "FEATURE_TOGGLE",
+				Value:   "",
+				Options: []PromptOption{
+					{
+						Name:     "Enable",
+						Value:    "one",
+						Requires: "one-config",
+					},
+					{
+						Name:     "Disable",
+						Value:    "two",
+						Requires: "two-config",
+					},
+				},
+			},
+			{Section: "one-config", Env: "DUP", Value: "one dup"},
+			{Section: "two-config", Env: "DUP", Value: "two dup"},
+			{
+				Section: "root", Root: true,
+				Env: "DUP", Value: "root dup",
+			},
+		}
+
+		prompts = DetermineRequiredSections(prompts)
+
+		if prompts[1].String() != `# DUP="one dup"` {
+			t.Errorf("Expected other dup [1] to not be enabled, got: %s", prompts[1])
+		}
+
+		if prompts[2].String() != `# DUP="two dup"` {
+			t.Errorf("Expected other dup [2] to not be enabled, got: %s", prompts[2])
+		}
+
+		if prompts[3].String() != `DUP="root dup"` {
+			t.Errorf("Expected root dup [3] to be enabled, got: %s", prompts[3])
 		}
 	})
 }

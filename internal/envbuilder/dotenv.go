@@ -44,12 +44,12 @@ func DotenvFromPromptsMerged(prompts []UserPrompt, contents string) string {
 }
 
 type (
-	PromptIndex struct {
+	PromptInstance struct {
 		Prompt      UserPrompt
 		PromptIndex int
-		LineIndex   int
+		HelpLines   []string
 	}
-	PromptIndices map[string]PromptIndex
+	PromptInstances map[string]PromptInstance
 
 	MissingPromptLineIndex struct {
 		LineIndex int
@@ -78,19 +78,34 @@ type (
 func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //nolint: cyclop
 	result := make(DotenvChunks, 0)
 
-	allPrompts := make(PromptIndices, len(prompts))
+	promptInstances := make(PromptInstances, len(prompts))
 	// Need to add prompts that are currently missing in dotenv file separately
 	missingPrompts := make(MissingPrompts, len(prompts))
 
 	for pi, prompt := range prompts {
-		// Start PromptIndex from 1 to distinguish user and prompt chunks when sorting
-		if prompt.Key != "" {
-			allPrompts[prompt.Key] = PromptIndex{Prompt: prompt, PromptIndex: pi + 1}
-			missingPrompts[prompt.Key] = MissingPromptLineIndex{}
-		} else if prompt.Env != "" {
-			allPrompts[prompt.Env] = PromptIndex{Prompt: prompt, PromptIndex: pi + 1}
-			missingPrompts[prompt.Env] = MissingPromptLineIndex{}
+		varName := prompt.VarName()
+
+		if promptInstance, ok := promptInstances[varName]; ok {
+			// Found prompt with duplicated name
+			if prompt.Active {
+				promptInstance.Prompt = prompt
+				promptInstance.PromptIndex = pi + 1
+			}
+
+			// Help lines in dotenv file might come from different duplicate, need to clean them all
+			promptInstance.HelpLines = append(promptInstance.HelpLines, prompt.HelpLines()...)
+
+			promptInstances[varName] = promptInstance
+		} else {
+			// Start PromptIndex from 1 to distinguish user and prompt chunks when sorting
+			promptInstances[varName] = PromptInstance{
+				Prompt:      prompt,
+				PromptIndex: pi + 1,
+				HelpLines:   prompt.HelpLines(),
+			}
 		}
+
+		missingPrompts[varName] = MissingPromptLineIndex{}
 	}
 
 	unquotedValues, _ := godotenv.Unmarshal(contents)
@@ -108,7 +123,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 			continue
 		}
 
-		promptIndex, ok := allPrompts[v.Name]
+		promptInstance, ok := promptInstances[v.Name]
 
 		// If user-provided variable
 		if !ok {
@@ -135,7 +150,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 		}
 
 		// Prompt managed by cli
-		prompt := promptIndex.Prompt
+		prompt := promptInstance.Prompt
 
 		noPromptsYet = false
 
@@ -143,7 +158,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 		chunkString := strings.Join(lines[linesStart:l], "")
 
 		// Remove prompt help lines from current chunk
-		for _, helpLine := range prompt.HelpLines() {
+		for _, helpLine := range promptInstance.HelpLines {
 			chunkString = strings.ReplaceAll(chunkString, helpLine, "")
 		}
 
@@ -154,11 +169,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 		})
 
 		// Remove found prompt
-		if prompt.Key != "" {
-			delete(missingPrompts, prompt.Key)
-		} else if prompt.Env != "" {
-			delete(missingPrompts, prompt.Env)
-		}
+		delete(missingPrompts, prompt.VarName())
 
 		// Advance by number of lines in user chunk
 		linesStart += strings.Count(chunkString, "\n")
@@ -166,7 +177,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 		// Add prompt chunk
 		result = append(result, Chunk{
 			Prompt:      prompt,
-			PromptIndex: promptIndex.PromptIndex,
+			PromptIndex: promptInstance.PromptIndex,
 			LineIndex:   linesStart,
 		})
 
@@ -190,8 +201,8 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 	// Add prompt chunks that were missing in dotenv file
 	for missingPromptKey := range missingPrompts {
 		result = append(result, Chunk{
-			Prompt:      allPrompts[missingPromptKey].Prompt,
-			PromptIndex: allPrompts[missingPromptKey].PromptIndex,
+			Prompt:      promptInstances[missingPromptKey].Prompt,
+			PromptIndex: promptInstances[missingPromptKey].PromptIndex,
 			LineIndex:   missingPrompts[missingPromptKey].LineIndex,
 		})
 	}

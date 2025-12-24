@@ -47,12 +47,20 @@ root:
       - name: "Registered Model with an LLM Blueprint"
         value: "registered_model.py"
         requires: registered_model
+  - env: DUPLICATE
+    type: string
+    optional: true
+    help: "Duplicate root."
 
 deployed_llm:
   - env: TEXTGEN_DEPLOYMENT_ID
     type: string
     optional: false
     help: "The deployment ID of the DataRobot Deployed LLM to use."
+  - env: DUPLICATE
+    type: string
+    optional: true
+    help: "Duplicate deployed_llm."
 
 registered_model:
   - env: TEXTGEN_REGISTERED_MODEL_ID
@@ -64,6 +72,10 @@ registered_model:
     default: "30"
     optional: true
     help: "The timeout in minutes for DataRobot operations. Default is 30 minutes."
+  - env: DUPLICATE
+    type: string
+    optional: true
+    help: "Duplicate registered_model."
 `
 
 func TestDiscoverTestSuite(t *testing.T) {
