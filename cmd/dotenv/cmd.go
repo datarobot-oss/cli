@@ -22,7 +22,6 @@ import (
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func Cmd() *cobra.Command {
@@ -55,15 +54,6 @@ var EditCmd = &cobra.Command{
 	Use:   "edit",
 	Short: "✏️ Edit '.env' file using built-in editor.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
-			if err != nil {
-				fmt.Println("fatal: ", err)
-				os.Exit(1)
-			}
-			defer f.Close()
-		}
-
 		cwd, err := os.Getwd()
 		if err != nil {
 			return err
@@ -89,12 +79,7 @@ var EditCmd = &cobra.Command{
 			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
-		p := tea.NewProgram(
-			tui.NewInterruptibleModel(m),
-			tea.WithAltScreen(),
-			tea.WithContext(cmd.Context()),
-		)
-		_, err = p.Run()
+		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 
 		return err
 	},
@@ -116,14 +101,6 @@ This wizard will help you:
 		return auth.EnsureAuthenticatedE(cmd.Context())
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		if viper.GetBool("debug") {
-			f, err := tea.LogToFile("tea-debug.log", "debug")
-			if err != nil {
-				return fmt.Errorf("fatal: %w", err)
-			}
-			defer f.Close()
-		}
-
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
 			return err
@@ -167,12 +144,7 @@ This wizard will help you:
 			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
-		p := tea.NewProgram(
-			tui.NewInterruptibleModel(m),
-			tea.WithAltScreen(),
-			tea.WithContext(cmd.Context()),
-		)
-		_, err = p.Run()
+		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
 			return err
 		}

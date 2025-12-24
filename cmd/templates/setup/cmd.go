@@ -10,13 +10,10 @@ package setup
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{
@@ -41,23 +38,9 @@ var Cmd = &cobra.Command{
 
 // RunTea starts the template setup TUI, optionally from the start command
 func RunTea(ctx context.Context, fromStartCommand bool) error {
-	if viper.GetBool("debug") {
-		f, err := tea.LogToFile("tea-debug.log", "debug")
-		if err != nil {
-			fmt.Println("fatal: ", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-	}
-
 	m := NewModel(fromStartCommand)
-	p := tea.NewProgram(
-		tui.NewInterruptibleModel(m),
-		tea.WithAltScreen(),
-		tea.WithContext(ctx),
-	)
 
-	_, err := p.Run()
+	_, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(ctx))
 	// TODO: Re-enable after further testing of component configure
 	// if err != nil {
 	// 	return err

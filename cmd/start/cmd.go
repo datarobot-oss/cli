@@ -9,14 +9,12 @@
 package start
 
 import (
-	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 type Options struct {
@@ -36,20 +34,9 @@ The following actions will be performed:
 - Checking for prerequisite tooling
 - Executing the start script associated with the template, if available.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if viper.GetBool("debug") {
-				f, err := tea.LogToFile("tea-debug.log", "debug")
-				if err != nil {
-					fmt.Println("fatal: ", err)
-					os.Exit(1)
-				}
-
-				defer f.Close()
-			}
-
 			m := NewStartModel(opts)
-			p := tea.NewProgram(tui.NewInterruptibleModel(m))
 
-			finalModel, err := p.Run()
+			finalModel, err := tui.Run(m)
 			if err != nil {
 				return err
 			}
@@ -76,9 +63,8 @@ The following actions will be performed:
 				// Now run start again - we're in the cloned repo directory
 				// Create a new start model and run it
 				m2 := NewStartModel(opts)
-				p2 := tea.NewProgram(tui.NewInterruptibleModel(m2))
 
-				finalModel2, err := p2.Run()
+				finalModel2, err := tui.Run(m2)
 				if err != nil {
 					return err
 				}

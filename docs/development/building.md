@@ -328,14 +328,13 @@ func good() {
 
 Consider the following when building terminal user interfaces.
 
-1. **Always wrap TUI models with InterruptibleModel**. This ensures global `Ctrl-C` handling.
+1. **Always use the `tui.Run` wrapper to execute TUI models**. This ensures global `Ctrl-C` handling and sets up debug logging to `dr-tui-debug.log` when the `--debug` flag is enabled.
 
    ```go
    import "github.com/datarobot/cli/tui"
 
-   // Wrap your model
-   interruptible := tui.NewInterruptibleModel(yourModel)
-   program := tea.NewProgram(interruptible)
+   // Run your model
+   _, err := tui.Run(yourModel)
    ```
 
 2. **Reuse existing TUI components**. Check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
@@ -565,6 +564,8 @@ dlv debug main.go -- templates list
 
 ### Debug logging
 
+Enable debug logging to see detailed execution information:
+
 ```bash
 # Enable debug mode (use task run)
 task run -- --debug templates list
@@ -573,6 +574,10 @@ task run -- --debug templates list
 task build
 ./dist/dr --debug templates list
 ```
+
+When you enable debug mode, the CLI:
+- Prints detailed log messages to stderr.
+- Creates a `dr-tui-debug.log` file in the current directory for TUI-related debug information.
 
 ### Add debug statements
 

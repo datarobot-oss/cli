@@ -31,6 +31,7 @@ cli/
 ├── tui/                     # Terminal UI components
 │   ├── banner.go            # Banner display
 │   ├── interrupt.go         # Interrupt handling
+│   ├── program.go           # TUI execution wrapper
 │   └── theme.go             # Visual theme
 ├── docs/                    # Documentation
 │   ├── commands/            # Command reference
@@ -152,7 +153,7 @@ func init() {
 
 ### TUI models
 
-TUI components use the Bubble Tea framework and are wrapped with `InterruptibleModel` for consistent `Ctrl-C` handling:
+TUI components use the Bubble Tea framework and are executed using the `tui.Run` wrapper, which handles `Ctrl-C` signals and debug logging:
 
 ```go
 // cmd/example/model.go
@@ -184,8 +185,7 @@ func (m model) View() string {
 // Usage in command
 func runInteractive() error {
     m := model{}
-    wrapped := tui.NewInterruptibleModel(m)
-    _, err := tea.NewProgram(wrapped).Run()
+    _, err := tui.Run(m)
     return err
 }
 ```

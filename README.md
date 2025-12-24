@@ -491,7 +491,8 @@ dr --verbose templates list
 
 # Enable debug output for detailed information
 dr --debug templates list
-```
+
+When you enable debug mode, the CLI creates a `dr-tui-debug.log` file in the current directory for terminal UI debug information.
 
 ## Contributing
 

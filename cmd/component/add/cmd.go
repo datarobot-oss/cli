@@ -71,9 +71,8 @@ func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
 	}
 
 	am := shared.NewAddModel()
-	p := tea.NewProgram(tui.NewInterruptibleModel(am), tea.WithAltScreen())
 
-	finalModel, err := p.Run()
+	finalModel, err := tui.Run(am, tea.WithAltScreen())
 	if err != nil {
 		return nil, err
 	}

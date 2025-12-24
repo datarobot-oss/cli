@@ -41,17 +41,7 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
-	if viper.GetBool("debug") {
-		f, err := tea.LogToFile("tea-debug.log", "debug")
-		if err != nil {
-			fmt.Println("fatal: ", err)
-			os.Exit(1)
-		}
-
-		defer f.Close()
-	}
-
+func RunE(cmd *cobra.Command, args []string) error {
 	var updateFileName string
 	if len(args) > 0 && args[0] != "" {
 		updateFileName = args[0]
@@ -78,9 +68,8 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	}
 
 	m := shared.NewUpdateComponentModel(updateFlags)
-	p := tea.NewProgram(tui.NewInterruptibleModel(m), tea.WithAltScreen())
 
-	finalModel, err := p.Run()
+	finalModel, err := tui.Run(m, tea.WithAltScreen())
 	if err != nil {
 		return err
 	}

@@ -56,9 +56,10 @@ func example() {
 
 ### TUI Standards
 
-- Always wrap new TUI models with `InterruptibleModel` from the `tui` package for global Ctrl-C handling
+- Always use `tui.Run()` to execute TUI models for global Ctrl-C handling and debug logging
 - Reuse existing TUI components from `tui` package or Bubbles library (https://github.com/charmbracelet/bubbles)
 - Use styles from `tui/styles.go` for consistency
+- When `--debug` is enabled, TUI debug logs are written to `dr-tui-debug.log`
 
 ## Quality Tools
 
