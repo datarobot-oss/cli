@@ -102,7 +102,10 @@ jobs:
 
   notify-results:
     needs: [security-scan, notify-approval-needed, linux-smoke-tests, windows-smoke-tests]
-    if: always()
+    if: |
+      always() &&
+      github.event.label.name == 'approved-for-smoke-tests' &&
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

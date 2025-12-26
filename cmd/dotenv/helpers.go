@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 )
@@ -75,4 +77,68 @@ func ensureInRepoWithDotenv() (string, error) {
 	}
 
 	return dotenv, nil
+}
+
+// ValidateAndEditIfNeeded validates the .env file and prompts for editing if validation fails.
+// Returns nil if validation passes or editing completes successfully.
+// Returns an error if validation or editing fails.
+func ValidateAndEditIfNeeded() error {
+	dotenv, err := ensureInRepoWithDotenv()
+	if err != nil {
+		return err
+	}
+
+	repoRoot := filepath.Dir(dotenv)
+
+	dotenvFileLines, contents := readDotenvFile(dotenv)
+
+	// Parse variables from '.env' file
+	parsedVars := envbuilder.ParseVariablesOnly(dotenvFileLines)
+
+	// Validate using envbuilder
+	result := envbuilder.ValidateEnvironment(repoRoot, parsedVars)
+
+	// If validation passes, we're done
+	if !result.HasErrors() {
+		return nil
+	}
+
+	// Validation failed, prompt user to edit
+	fmt.Println()
+	fmt.Println(tui.InfoStyle.Render("⚠️  Configuration Update Needed"))
+	fmt.Println()
+	fmt.Println("The newly added component requires additional environment variables.")
+	fmt.Println("Let's set those up now.")
+	fmt.Println()
+
+	// Check if there are extra variables that need wizard setup
+	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
+	screen := editorScreen
+
+	if handleExtraEnvVars(variables) {
+		screen = wizardScreen
+	}
+
+	// Launch the edit flow
+	m := Model{
+		initialScreen: screen,
+		DotenvFile:    dotenv,
+		variables:     variables,
+		contents:      contents,
+		SuccessCmd:    tea.Quit,
+	}
+
+	_, err = tui.Run(m, tea.WithAltScreen())
+	if err != nil {
+		fmt.Println()
+		fmt.Println(tui.ErrorStyle.Render("⚠️  Configuration update incomplete"))
+		fmt.Println()
+		fmt.Println("You may need to update your '.env' file manually or run:")
+		fmt.Println("  " + tui.InfoStyle.Render("dr dotenv edit"))
+		fmt.Println()
+
+		return err
+	}
+
+	return nil
 }
