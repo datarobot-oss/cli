@@ -55,7 +55,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 	if datarobotHost == "" {
 		log.Warn("No DataRobot URL configured. Running auth setup...")
 
-		SetURLAction(true)
+		SetURLAction()
 
 		datarobotHost = config.GetBaseURL()
 		if datarobotHost == "" {
@@ -190,7 +190,6 @@ func exitWithoutHostChange() bool {
 		}
 
 		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
-			fmt.Println("Exiting without overwriting the DataRobot URL.")
 			return true
 		}
 	}
@@ -198,27 +197,38 @@ func exitWithoutHostChange() bool {
 	return false
 }
 
-func SetURLAction(askForHostChange bool) {
+func SetURLAction() bool {
 	reader := bufio.NewReader(os.Stdin)
 
-	if askForHostChange && exitWithoutHostChange() {
-		return
+	if exitWithoutHostChange() {
+		fmt.Println("Exiting without changing the DataRobot URL.")
+		return false
 	}
 
-	printSetURLPrompt()
+	for {
+		printSetURLPrompt()
 
-	url, err := reader.ReadString('\n')
-	if err != nil {
-		return
-	}
-
-	err = config.SaveURLToConfig(url)
-	if err != nil {
-		if errors.Is(err, config.ErrInvalidURL) {
-			fmt.Println("\nInvalid URL provided. Verify your URL and try again.")
-			SetURLAction(false)
+		url, err := reader.ReadString('\n')
+		if err != nil || url == "\n" {
+			break
 		}
+
+		err = config.SaveURLToConfig(url)
+		if err != nil {
+			if errors.Is(err, config.ErrInvalidURL) {
+				fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
+				continue
+			}
+
+			break
+		}
+
+		fmt.Println("Environment URL configured successfully!")
+
+		return true
 	}
 
-	fmt.Println("Environment URL configured successfully!")
+	fmt.Println("Exiting without changing the DataRobot URL.")
+
+	return false
 }

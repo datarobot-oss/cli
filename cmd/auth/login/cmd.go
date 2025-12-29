@@ -32,7 +32,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
-		auth.SetURLAction(true)
+		auth.SetURLAction()
 
 		datarobotHost = config.GetBaseURL()
 	}

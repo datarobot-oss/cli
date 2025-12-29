@@ -157,26 +157,14 @@ func init() {
 // initializeConfig initializes the configuration by reading from
 // various sources such as environment variables and config files.
 func initializeConfig(cmd *cobra.Command) error {
+	var err error
+
 	// Set up Viper to process environment variables
 	// First automatically map any environment variables
 	// that are prefixed with DATAROBOT_CLI_ to config keys
 	viper.SetEnvPrefix("DATAROBOT_CLI")
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-
-	// Now map other environment variables to config keys
-	// such as those used by the DataRobot platform or other SDKs
-	// and clients. If the DATAROBOT_CLI equivalents are not set,
-	// then Viper will fallback to these
-	err := viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-	if err != nil {
-		return fmt.Errorf("Failed to bind environment variables for endpoint: %w", err)
-	}
-
-	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
-	if err != nil {
-		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
-	}
 
 	// map VISUAL and EDITOR to external-editor config key,
 	// but set a default value

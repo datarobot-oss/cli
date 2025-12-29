@@ -26,11 +26,12 @@ This command helps you choose the correct DataRobot environment:
   • Custom/On-Premise: Your organization's DataRobot URL
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
-		Run: func(_ *cobra.Command, _ []string) {
-			auth.SetURLAction(true)
-		},
-		PostRunE: func(cmd *cobra.Command, _ []string) error {
-			return auth.EnsureAuthenticatedE(cmd.Context())
+		Run: func(cmd *cobra.Command, _ []string) {
+			urlChanged := auth.SetURLAction()
+
+			if urlChanged {
+				auth.EnsureAuthenticated(cmd.Context())
+			}
 		},
 	}
 }
