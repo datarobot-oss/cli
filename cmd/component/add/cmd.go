@@ -17,6 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/component/shared"
+	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/copier"
@@ -61,6 +62,12 @@ func RunE(_ *cobra.Command, args []string) error {
 	}
 
 	compose.Cmd().Run(nil, nil)
+
+	// Validate and edit .env if needed
+	if err := dotenv.ValidateAndEditIfNeeded(); err != nil {
+		// Log warning but don't fail the command - the component was successfully added
+		log.Warn("Environment configuration may need manual updates")
+	}
 
 	return nil
 }
