@@ -109,7 +109,7 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 			continue
 		}
 
-		v.setValue()
+		v.updateValue()
 
 		if v.Value == "" {
 			contents.WriteString(line)
@@ -124,7 +124,7 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 	return variables, contents.String()
 }
 
-func (v *Variable) setValue() {
+func (v *Variable) updateValue() {
 	conf, found := knownVariables[v.Name]
 
 	if !found {
@@ -137,7 +137,7 @@ func (v *Variable) setValue() {
 	case conf.getValue != nil:
 		var err error
 
-		v.Value, err = conf.getValue()
+		v.Value, err = conf.getValue(v.Value)
 		if err != nil && v.Value != "" {
 			// Only log error if we actually got a non-empty value with an error
 			// Ignore "empty url" and similar errors when exiting setup
