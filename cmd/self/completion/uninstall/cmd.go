@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/misc/reader"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -101,7 +102,8 @@ func runUninstall(specifiedShell string, yes, dryRun bool) error {
 
 	// Dry-run mode
 	if dryRun {
-		return showUninstallDryRunMessage(shell)
+		showUninstallDryRunMessage(shell)
+		return nil
 	}
 
 	// Ask for confirmation if not auto-confirmed
@@ -164,13 +166,11 @@ func showUninstallationPlan(shell string, existingPaths []string) {
 	fmt.Println()
 }
 
-func showUninstallDryRunMessage(shell string) error {
+func showUninstallDryRunMessage(shell string) {
 	fmt.Println(infoStyle.Render("🔍 Dry-run mode (no changes will be made)"))
 	fmt.Println()
 	fmt.Println("To proceed with uninstallation, run:")
 	fmt.Println(infoStyle.Render("  " + version.CliName + " completion uninstall " + shell + " --yes"))
-
-	return nil
 }
 
 func performUninstall(shell internalShell.Shell) error {
@@ -242,10 +242,8 @@ func getUninstallPaths(shell internalShell.Shell) []string {
 func promptForUninstallConfirmation() (bool, error) {
 	fmt.Print("Proceed with uninstallation? [y/N]: ")
 
-	var response string
-
-	_, err := fmt.Scanln(&response)
-	if err != nil && err.Error() != "unexpected newline" {
+	response, err := reader.ReadString()
+	if err != nil {
 		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 

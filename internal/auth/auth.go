@@ -9,19 +9,18 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/misc/open"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/spf13/viper"
 )
 
@@ -183,11 +182,9 @@ func askForNewHost() bool {
 		return true
 	}
 
-	reader := bufio.NewReader(os.Stdin)
-
 	fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite it? (y/N): ", datarobotHost)
 
-	selectedOption, err := reader.ReadString('\n')
+	selectedOption, err := reader.ReadString()
 	if err != nil {
 		return false
 	}
@@ -197,12 +194,10 @@ func askForNewHost() bool {
 
 func SetURLAction() bool {
 	if askForNewHost() {
-		reader := bufio.NewReader(os.Stdin)
-
 		for {
 			printSetURLPrompt()
 
-			url, err := reader.ReadString('\n')
+			url, err := reader.ReadString()
 			if err != nil || url == "\n" {
 				break
 			}

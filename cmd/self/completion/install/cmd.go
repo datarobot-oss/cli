@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/misc/reader"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -114,7 +115,8 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 	// Check if already installed
 	alreadyInstalled := fsutil.FileExists(installPath)
 	if !force && alreadyInstalled {
-		return showAlreadyInstalled(installPath)
+		showAlreadyInstalled(installPath)
+		return nil
 	}
 
 	// Show installation plan
@@ -122,7 +124,8 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 
 	// Dry-run mode
 	if dryRun {
-		return showDryRunMessage(shell)
+		showDryRunMessage(shell)
+		return nil
 	}
 
 	// Ask for confirmation if not auto-confirmed
@@ -153,12 +156,10 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 	return nil
 }
 
-func showAlreadyInstalled(installPath string) error {
+func showAlreadyInstalled(installPath string) {
 	fmt.Printf("%s Completion already installed at: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
 	fmt.Println(infoStyle.Render("To reinstall, use: " + version.CliName + " completion install --force --yes"))
-
-	return nil
 }
 
 func showInstallationPlan(shell, installPath string, alreadyInstalled bool) {
@@ -175,22 +176,18 @@ func showInstallationPlan(shell, installPath string, alreadyInstalled bool) {
 	fmt.Println()
 }
 
-func showDryRunMessage(shell string) error {
+func showDryRunMessage(shell string) {
 	fmt.Println(infoStyle.Render("🔍 Dry-run mode (no changes will be made)"))
 	fmt.Println()
 	fmt.Println("To proceed with installation, run:")
 	fmt.Println(infoStyle.Render("  " + version.CliName + " completion install " + shell + " --yes"))
-
-	return nil
 }
 
 func promptForConfirmation() (bool, error) {
 	fmt.Print("Proceed with installation? [y/N]: ")
 
-	var response string
-
-	_, err := fmt.Scanln(&response)
-	if err != nil && err.Error() != "unexpected newline" {
+	response, err := reader.ReadString()
+	if err != nil {
 		return false, fmt.Errorf("Failed to read input: %w", err)
 	}
 
