@@ -176,56 +176,51 @@ func printSetURLPrompt() {
 	fmt.Print("Enter your choice: ")
 }
 
-func exitWithoutHostChange() bool {
+func askForNewHost() bool {
 	datarobotHost := config.GetBaseURL()
 
-	if len(datarobotHost) > 0 {
-		reader := bufio.NewReader(os.Stdin)
-
-		fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite it? (y/N): ", datarobotHost)
-
-		selectedOption, err := reader.ReadString('\n')
-		if err != nil {
-			return true
-		}
-
-		if strings.ToLower(strings.TrimSpace(selectedOption)) != "y" {
-			return true
-		}
+	if len(datarobotHost) == 0 {
+		return true
 	}
 
-	return false
-}
-
-func SetURLAction() bool {
 	reader := bufio.NewReader(os.Stdin)
 
-	if exitWithoutHostChange() {
-		fmt.Println("Exiting without changing the DataRobot URL.")
+	fmt.Printf("A DataRobot URL of %s is already present; do you want to overwrite it? (y/N): ", datarobotHost)
+
+	selectedOption, err := reader.ReadString('\n')
+	if err != nil {
 		return false
 	}
 
-	for {
-		printSetURLPrompt()
+	return strings.ToLower(strings.TrimSpace(selectedOption)) == "y"
+}
 
-		url, err := reader.ReadString('\n')
-		if err != nil || url == "\n" {
-			break
-		}
+func SetURLAction() bool {
+	if askForNewHost() {
+		reader := bufio.NewReader(os.Stdin)
 
-		err = config.SaveURLToConfig(url)
-		if err != nil {
-			if errors.Is(err, config.ErrInvalidURL) {
-				fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
-				continue
+		for {
+			printSetURLPrompt()
+
+			url, err := reader.ReadString('\n')
+			if err != nil || url == "\n" {
+				break
 			}
 
-			break
+			err = config.SaveURLToConfig(url)
+			if err != nil {
+				if errors.Is(err, config.ErrInvalidURL) {
+					fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
+					continue
+				}
+
+				break
+			}
+
+			fmt.Println("Environment URL configured successfully!")
+
+			return true
 		}
-
-		fmt.Println("Environment URL configured successfully!")
-
-		return true
 	}
 
 	fmt.Println("Exiting without changing the DataRobot URL.")
