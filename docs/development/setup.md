@@ -105,7 +105,7 @@ task run -- templates list
 ## Running tests
 
 ```bash
-# Run all tests
+# Run all tests (both unit and integration)
 task test
 
 # Run tests with coverage
@@ -114,8 +114,6 @@ task test-coverage
 # Run specific test
 go test ./cmd/auth/...
 ```
-
-`task test` runs both unit tests and integration tests.
 
 ## Linting and formatting
 

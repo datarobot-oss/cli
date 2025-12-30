@@ -447,12 +447,6 @@ git push origin feature/my-feature
 
 Unit tests are `*_test.go` files colocated with the code they test.
 
-Run all tests (including unit tests) with:
-
-```bash
-task test
-```
-
 ```go
 // cmd/auth/login_test.go
 package auth
@@ -477,12 +471,6 @@ func TestLogin(t *testing.T) {
 ### Integration tests
 
 Integration tests are also written as Go tests (`*_test.go`). They typically exercise interactions between multiple packages and/or use temporary on-disk state.
-
-Run all tests (including integration tests) with:
-
-```bash
-task test
-```
 
 ```go
 // internal/config/config_test.go
