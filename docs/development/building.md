@@ -247,7 +247,7 @@ PostRunE: func(cmd *cobra.Command, args []string) error {
 },
 ```
 
-Each command can be assigned to a group via `GroupID` for better organization in `dr help` views. Commands without a `GroupID` are listed under [Additional commands](#additional-commands).
+Each command can be assigned to a group via `GroupID` for better organization in `dr help` views. Commands without a `GroupID` are listed under Additional commands.
 
 #### Model-view-update
 
