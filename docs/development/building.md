@@ -5,7 +5,7 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 ## Table of contents
 
 - [Build from source](#build-from-source)
-- [Project architecture](#project-architecture)
+- [Directory structure](#directory-structure)
 - [Coding standards](#coding-standards)
 - [Development workflow](#development-workflow)
 - [Testing](#testing)
@@ -445,6 +445,14 @@ git push origin feature/my-feature
 
 ### Unit tests
 
+Unit tests are `*_test.go` files colocated with the code they test.
+
+Run all tests (including unit tests) with:
+
+```bash
+task test
+```
+
 ```go
 // cmd/auth/login_test.go
 package auth
@@ -467,6 +475,14 @@ func TestLogin(t *testing.T) {
 ```
 
 ### Integration tests
+
+Integration tests are also written as Go tests (`*_test.go`). They typically exercise interactions between multiple packages and/or use temporary on-disk state.
+
+Run all tests (including integration tests) with:
+
+```bash
+task test
+```
 
 ```go
 // internal/config/config_test.go
@@ -576,6 +592,7 @@ task build
 ```
 
 When you enable debug mode, the CLI:
+
 - Prints detailed log messages to stderr.
 - Creates a `dr-tui-debug.log` file in the current directory for TUI-related debug information.
 

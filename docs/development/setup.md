@@ -115,6 +115,8 @@ task test-coverage
 go test ./cmd/auth/...
 ```
 
+`task test` runs both unit tests and integration tests.
+
 ## Linting and formatting
 
 For linting and formatting, this project uses the following tools:
