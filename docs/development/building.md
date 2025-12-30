@@ -445,7 +445,7 @@ git push origin feature/my-feature
 
 ### Unit tests
 
-Unit tests are `*_test.go` files colocated with the code they test.
+Unit tests are `*_test.go` files co-located with the code they test.
 
 ```go
 // cmd/auth/login_test.go
