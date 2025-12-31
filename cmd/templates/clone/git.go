@@ -9,9 +9,7 @@
 package clone
 
 import (
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -42,12 +40,7 @@ func gitOrigin(dir string) string {
 func gitPull(dir string) (string, error) {
 	cmd := exec.Command("git", "pull")
 
-	path, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	cmd.Dir = filepath.Join(path, dir)
+	cmd.Dir = dir
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
