@@ -14,23 +14,30 @@ import (
 
 type variableConfig = struct {
 	viperKey string
-	getValue func() (string, error)
+	getValue func(currentValue string) (string, error)
 	secret   bool
 }
 
 var knownVariables = map[string]variableConfig{
 	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func() (string, error) {
+		getValue: func(_ string) (string, error) {
 			return config.GetEndpointURL("")
 		},
 	},
 	"DATAROBOT_ENDPOINT": {
-		getValue: func() (string, error) {
+		getValue: func(_ string) (string, error) {
 			return config.GetEndpointURL("/api/v2")
 		},
 	},
 	"DATAROBOT_API_TOKEN": {
-		getValue: func() (string, error) {
+		getValue: func(token string) (string, error) {
+			datarobotHost := config.GetBaseURL()
+			if token != "" {
+				if isValid, _ := config.VerifyToken(datarobotHost, token); isValid {
+					return token, nil
+				}
+			}
+
 			return config.GetAPIKey(), nil
 		},
 		secret: true,
