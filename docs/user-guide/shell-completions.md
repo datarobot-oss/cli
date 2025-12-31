@@ -71,7 +71,7 @@ source ~/.bashrc
   $ dr self completion zsh > "${fpath[1]}/_dr"
 ```
 
-#### MacOS
+#### macOS
 
 The default shell in MacOS is `zsh`. Shell completions for `zsh`
 are typically stored in one of the following directories:
@@ -86,6 +86,10 @@ wish to put CLI completions into ZDOTDIR, then run:
 ```zsh
 dr self completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr
 ```
+
+If you use Bash on macOS, Homebrew stores bash completions in its prefix. If completion does not work after install, check that your shell loads files from:
+
+- `$(brew --prefix)/etc/bash_completion.d`.
 
 #### Temporary session
 
@@ -378,10 +382,10 @@ If you get permission errors when installing:
 
 ```bash
 # Use sudo for system-wide installation
-sudo dr completion bash > /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Or use user-level installation
-dr completion bash > ~/.bash_completions/dr
+dr self completion bash > ~/.bash_completions/dr
 source ~/.bash_completions/dr
 ```
 
@@ -406,10 +410,7 @@ You can customize how completions work by modifying the generated script.
 For example, in the Bash completion script, you can add custom completion logic:
 
 ```bash
-# Extract the generated script
-dr completion bash > ~/dr-completion.bash
-
-# Edit the script to add custom logic
+dr self completion bash > ~/dr-completion.bash
 vim ~/dr-completion.bash
 
 # Source it in your .bashrc
@@ -421,10 +422,9 @@ source ~/dr-completion.bash
 If you use multiple shells, install completions for each:
 
 ```bash
-# Install for all shells you use
-dr completion bash > ~/.bash_completions/dr
-dr completion zsh > ~/.zsh/completions/_dr
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion bash > ~/.bash_completions/dr
+dr self completion zsh > ~/.zsh/completions/_dr
+dr self completion fish > ~/.config/fish/completions/dr.fish
 ```
 
 ## Updating completions
@@ -433,21 +433,21 @@ When the CLI is updated, regenerate completions:
 
 ```bash
 # Bash
-dr completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 
 # Zsh
-dr completion zsh > ~/.zsh/completions/_dr
+dr self completion zsh > ~/.zsh/completions/_dr
 rm -f ~/.zcompdump
 
 # Fish
-dr completion fish > ~/.config/fish/completions/dr.fish
+dr self completion fish > ~/.config/fish/completions/dr.fish
 
 # PowerShell
-dr completion powershell > $PROFILE
+dr self completion powershell >> $PROFILE
 ```
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)
-- [Command reference](../commands/)
-- [Cobra documentation (underlying completion framework)](https://github.com/spf13/cobra/blob/main/shell_completions.md)
+- [Quick start](../../README.md#quick-start)&mdash;get started with the CLI.
+- [Command reference](../commands/)&mdash;browse commands and flags.
+- [Cobra documentation](https://github.com/spf13/cobra/blob/main/shell_completions.md)&mdash;completion implementation details.
