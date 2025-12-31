@@ -154,6 +154,26 @@ dr quickstart
 
 ## Behavior
 
+### CLI version check and update
+
+If your template defines a minimum CLI version in `.datarobot/cli/versions.yaml`, `dr start` checks the installed version before continuing.
+
+If your CLI version does not meet the minimum, `dr start` prompts you to run `dr self update`.
+
+Example prompt:
+
+```text
+DataRobot AI Application Quickstart
+
+  ✓ Starting application quickstart process...
+  ✓ Checking DataRobot CLI version...
+
+DataRobot CLI (minimal: v0.2.0, installed: v0.1.0)
+Do you want to update it now?
+
+Press 'y' or ENTER to confirm, 'n' to cancel
+```
+
 ### State tracking
 
 The `dr start` command automatically tracks when it runs successfully by updating a state file with:
