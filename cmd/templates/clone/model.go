@@ -11,7 +11,6 @@ package clone
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,21 +81,6 @@ type (
 
 func focusInput() tea.Msg { return focusInputMsg{} }
 func back() tea.Msg       { return backMsg{} }
-
-func absDirPath(dir string) string {
-	if strings.HasPrefix(dir, "~/") {
-		dir = strings.Replace(dir, "~/", "$HOME/", 1)
-	}
-
-	dir = os.ExpandEnv(dir)
-
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return dir
-	}
-
-	return absDir
-}
 
 func dirGitOrigin(dir string) (string, bool) {
 	if fsutil.PathExists(dir) {
@@ -172,7 +156,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 			m.directoryInput.Blur()
 			m.cloning = true
-			m.Dir = absDirPath(m.directoryInput.Value())
+			m.Dir = fsutil.AbsolutePath(m.directoryInput.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		case "esc":
@@ -218,7 +202,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	currValue := m.directoryInput.Value()
 
 	if prevValue != currValue {
-		m.Dir = absDirPath(currValue)
+		m.Dir = fsutil.AbsolutePath(currValue)
 		m.exists = false
 		m.debounceID++
 
@@ -335,7 +319,7 @@ func (m *Model) SetTemplate(template drapi.Template) {
 	m.directoryInput.Width = m.width - inputStyle.GetHorizontalFrameSize() - 3
 	m.directoryInput.CharLimit = 256
 
-	m.Dir = absDirPath(template.DefaultDir())
+	m.Dir = fsutil.AbsolutePath(template.DefaultDir())
 
 	m.template = template
 
