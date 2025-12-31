@@ -8,7 +8,7 @@ The CLI provides a reusable authentication mechanism that you can use with any c
 
 ### PreRunE hook
 
-DataRobot recommends using the `auth.EnsureAuthenticatedE()` function in your command's `PreRunE` hook.
+DataRobot recommends using the `auth.EnsureAuthenticatedE(ctx)` function in your command's `PreRunE` hook.
 
 ```go
 import "github.com/datarobot/cli/cmd/auth"
@@ -16,8 +16,8 @@ import "github.com/datarobot/cli/cmd/auth"
 var MyCmd = &cobra.Command{
     Use:   "mycommand",
     Short: "My command description",
-    PreRunE: func(_ *cobra.Command, _ []string) error {
-        return auth.EnsureAuthenticatedE()
+    PreRunE: func(cmd *cobra.Command, _ []string) error {
+        return auth.EnsureAuthenticatedE(cmd.Context())
     },
     Run: func(_ *cobra.Command, _ []string) {
         // Command implementation
@@ -110,3 +110,11 @@ The `--skip-auth` flag is intended for advanced scenarios such as:
 ## Manual login
 
 You can still manually run `dr auth login` to refresh credentials or change accounts. The `LoginAction()` function provides the interactive login experience with confirmation prompts for overwriting existing credentials.
+
+## Internal APIs
+
+The auth package writes configuration through Viper.
+
+- `WriteConfigFileSilent()`&mdash;writes the config file and returns an error.
+- `WriteConfigFile()`&mdash;writes the config file, prints a success message, and returns an error.
+- `SetURLAction()`&mdash;prompts for a DataRobot URL, optionally overwrites an existing value, and returns a boolean indicating whether the URL changed.
