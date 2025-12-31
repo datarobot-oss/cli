@@ -50,7 +50,7 @@ type Model struct {
 	keys           keyMap
 	debounceID     int
 	cloning        bool
-	exists         string
+	exists         bool
 	repoURL        string
 	cloneError     bool
 	finished       bool
@@ -193,12 +193,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 		return m, nil
 	case dirStatusMsg:
 		m.repoURL = msg.repoURL
-
-		if msg.exists {
-			m.exists = msg.dir
-		} else {
-			m.exists = ""
-		}
+		m.exists = msg.exists
 
 		return m, focusInput
 	case cloneSuccessMsg:
@@ -281,20 +276,17 @@ func (m Model) View() string {
 	sb.WriteString("\n")
 
 	// Status messages
-	if m.exists != "" {
-		sb.WriteString("\n")
-
-		var statusMsg string
+	if m.exists {
 		if m.repoURL == m.template.Repository.URL {
-			statusMsg = tui.InfoStyle.Render(fmt.Sprintf("💡 Directory '%s' exists and will be updated from origin", m.exists))
+			sb.WriteString(tui.InfoStyle.Render(fmt.Sprintf(
+				"\n💡 Directory '%s' exists and will be updated from origin\n", m.Dir)))
 		} else if m.repoURL != "" {
-			statusMsg = tui.ErrorStyle.Render(fmt.Sprintf("⚠️ Directory '%s' contains a different repository: '%s'", m.exists, m.repoURL))
+			sb.WriteString(tui.ErrorStyle.Render(fmt.Sprintf(
+				"\n⚠️ Directory '%s' contains a different repository: '%s'\n", m.Dir, m.repoURL)))
 		} else {
-			statusMsg = tui.ErrorStyle.Render(fmt.Sprintf("⚠️ Directory '%s' already exists", m.exists))
+			sb.WriteString(tui.ErrorStyle.Render(fmt.Sprintf(
+				"\n⚠️ Directory '%s' already exists\n", m.Dir)))
 		}
-
-		sb.WriteString(statusMsg)
-		sb.WriteString("\n")
 	}
 
 	if m.cloneError {
