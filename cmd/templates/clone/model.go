@@ -215,9 +215,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 	var cmd tea.Cmd
 
 	m.directoryInput, cmd = m.directoryInput.Update(msg)
+	currValue := m.directoryInput.Value()
 
-	if prevValue != m.directoryInput.Value() {
+	if prevValue != currValue {
+		m.Dir = absDirPath(currValue)
+		m.exists = false
 		m.debounceID++
+
 		tick := tea.Tick(debounceDuration, func(_ time.Time) tea.Msg {
 			return validateInputMsg{m.debounceID}
 		})
@@ -330,6 +334,9 @@ func (m *Model) SetTemplate(template drapi.Template) {
 	m.directoryInput.Placeholder = "e.g., ~/projects/my-ai-app"
 	m.directoryInput.Width = m.width - inputStyle.GetHorizontalFrameSize() - 3
 	m.directoryInput.CharLimit = 256
+
+	m.Dir = absDirPath(template.DefaultDir())
+
 	m.template = template
 
 	m.spinner = spinner.New()
