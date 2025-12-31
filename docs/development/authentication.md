@@ -8,7 +8,7 @@ The CLI provides a reusable authentication mechanism that you can use with any c
 
 ### PreRunE hook
 
-DataRobot recommends using the `auth.EnsureAuthenticatedE(ctx)` function in your command's `PreRunE` hook.
+Use the `auth.EnsureAuthenticatedE(ctx)` function in your command's `PreRunE` hook.
 
 ```go
 import "github.com/datarobot/cli/cmd/auth"
