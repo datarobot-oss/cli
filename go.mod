@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20250818131617-61d774aefe53
 	github.com/gitsight/go-vcsurl v1.0.1
 	github.com/joho/godotenv v1.5.1
+	github.com/muesli/cancelreader v0.2.2
 	github.com/sergi/go-diff v1.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -46,7 +47,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
-	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect

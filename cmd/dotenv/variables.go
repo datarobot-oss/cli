@@ -9,13 +9,12 @@
 package dotenv
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 )
@@ -76,9 +75,7 @@ func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 		fmt.Println("")
 		fmt.Println("Configure required missing variables now? (y/N): ")
 
-		reader := bufio.NewReader(os.Stdin)
-
-		selectedOption, err := reader.ReadString('\n')
+		selectedOption, err := reader.ReadString()
 		if err != nil {
 			log.Fatalf("Error reading user reply: %v", err)
 		}
