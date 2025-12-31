@@ -105,7 +105,7 @@ task run -- templates list
 ## Running tests
 
 ```bash
-# Run all tests
+# Run all tests (both unit and integration)
 task test
 
 # Run tests with coverage
