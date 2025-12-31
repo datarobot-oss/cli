@@ -83,10 +83,6 @@ type (
 func focusInput() tea.Msg { return focusInputMsg{} }
 func back() tea.Msg       { return backMsg{} }
 
-func dirIsAbsolute(dir string) bool {
-	return filepath.IsAbs(dir)
-}
-
 func cleanDirPath(dir string) string {
 	if strings.HasPrefix(dir, "~/") {
 		dir = strings.Replace(dir, "~/", "$HOME/", 1)
@@ -102,9 +98,9 @@ func cleanDirPath(dir string) string {
 	return absDir
 }
 
-func dirStatus(dir string) (string, bool) {
+func dirGitOrigin(dir string) (string, bool) {
 	if fsutil.PathExists(dir) {
-		return gitOrigin(dir, dirIsAbsolute(dir)), true
+		return gitOrigin(dir), true
 	}
 
 	return "", false
@@ -112,7 +108,7 @@ func dirStatus(dir string) (string, bool) {
 
 func (m Model) pullRepository() tea.Cmd {
 	return func() tea.Msg {
-		repoURL, exists := dirStatus(m.Dir) // Dir should be independently validated here
+		repoURL, exists := dirGitOrigin(m.Dir) // Dir should be independently validated here
 
 		if repoURL == m.template.Repository.URL {
 			out, err := gitPull(m.Dir)
@@ -145,7 +141,7 @@ func (m Model) pullRepository() tea.Cmd {
 
 func (m Model) validateDir() tea.Cmd {
 	return func() tea.Msg {
-		repoURL, exists := dirStatus(m.Dir)
+		repoURL, exists := dirGitOrigin(m.Dir)
 		return dirStatusMsg{m.Dir, exists, repoURL}
 	}
 }

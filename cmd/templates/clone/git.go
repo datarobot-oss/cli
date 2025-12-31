@@ -26,19 +26,10 @@ func gitClone(repoURL, dir string) (string, error) {
 	return string(stdout), nil
 }
 
-func gitOrigin(dir string, isAbsolute bool) string {
+func gitOrigin(dir string) string {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 
-	path, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-
-	if isAbsolute {
-		cmd.Dir = dir
-	} else {
-		cmd.Dir = filepath.Join(path, dir)
-	}
+	cmd.Dir = dir
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {

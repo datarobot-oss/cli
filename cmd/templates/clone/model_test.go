@@ -86,8 +86,3 @@ func (suite *ModelTestSuite) TestCreateAbsoluteFilepathEnvVarExistingFile() {
 
 	suite.Equal(expectedDir, resultDir, "Expected directory status message to match")
 }
-
-func (suite *ModelTestSuite) TestAbsolutePathDetectedCorrectly() {
-	suite.True(dirIsAbsolute("/squak/squak"), "Expected /squak/squak absolute path to be detected correctly")
-	suite.False(dirIsAbsolute("squak/squak"), "Expected squak/squak relative path to be detected correctly")
-}
