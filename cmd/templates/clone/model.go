@@ -83,7 +83,7 @@ type (
 func focusInput() tea.Msg { return focusInputMsg{} }
 func back() tea.Msg       { return backMsg{} }
 
-func cleanDirPath(dir string) string {
+func absDirPath(dir string) string {
 	if strings.HasPrefix(dir, "~/") {
 		dir = strings.Replace(dir, "~/", "$HOME/", 1)
 	}
@@ -172,7 +172,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { //nolint: cyclop
 
 			m.directoryInput.Blur()
 			m.cloning = true
-			m.Dir = cleanDirPath(m.directoryInput.Value())
+			m.Dir = absDirPath(m.directoryInput.Value())
 
 			return m, tea.Batch(m.validateDir(), m.pullRepository())
 		case "esc":
