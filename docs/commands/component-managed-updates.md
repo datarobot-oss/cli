@@ -14,7 +14,9 @@ When working with copier-based components, you often need to provide the same an
 
 ### Component Add
 
-Add a component with specific answers:
+Use `dr component add` to add a component repository to your application. This will launch an interactive wizard unless you provide answers via CLI arguments or a data file.
+
+To add a component with specific answers:
 
 ```bash
 dr component add https://github.com/datarobot-community/af-component-agent.git \
@@ -23,11 +25,21 @@ dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data use_low_code_interface=false
 ```
 
-Add a component using a specific data file:
+To add a component using a specific data file:
 
 ```bash
 dr component add https://github.com/datarobot-community/af-component-agent.git \
   --data-file .datarobot/.copier-answers-defaults.yaml
+
+### Post-add environment validation
+
+After the CLI adds a component, it validates your `.env` file.
+
+- If validation passes, the command continues.
+- If validation fails, the CLI launches `dr dotenv edit` so you can add required variables.
+- If the edit flow fails or you exit early, the component is still added and the CLI prints a warning.
+
+This behavior helps keep your application configuration in sync when a new component introduces new required environment variables.
 ```
 
 ### Component Update
@@ -150,12 +162,12 @@ dr component add https://github.com/datarobot-community/af-component-agent.git \
 
 ## Benefits
 
-1. **Team Consistency**: Repository-level defaults ensure the same answers across team members
-2. **Speed**: Skip repetitive prompts for common answers
-3. **Flexibility**: Override defaults on a per-command basis when needed
-4. **Personal Customization**: Personal defaults in home directory for individual preferences
-5. **Compatibility**: Follows copier's `data_file` convention for familiarity
-6. **Version Control Friendly**: Repository defaults can be committed, personal defaults stay local
+1. **Team consistency**&mdash;repository-level defaults keep answers consistent across team members.
+2. **Speed**&mdash;skip repetitive prompts for common answers.
+3. **Flexibility**&mdash;override defaults per command.
+4. **Personal customization**&mdash;use local defaults without committing them.
+5. **Compatibility**&mdash;follows copier's `data_file` convention.
+6. **Version control friendly**&mdash;commit repository defaults and keep personal defaults local.
 
 ## Data types
 
