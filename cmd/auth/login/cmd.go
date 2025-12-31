@@ -61,7 +61,11 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
-	auth.WriteConfigFile()
+	err = auth.WriteConfigFile()
+	if err != nil {
+		log.Error(err)
+		return err
+	}
 
 	return nil
 }

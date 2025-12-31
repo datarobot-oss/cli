@@ -9,6 +9,9 @@
 package logout
 
 import (
+	"os"
+
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
@@ -18,7 +21,11 @@ import (
 func Run(_ *cobra.Command, _ []string) {
 	viper.Set(config.DataRobotAPIKey, "")
 
-	auth.WriteConfigFile()
+	err := auth.WriteConfigFile()
+	if err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
 }
 
 func Cmd() *cobra.Command {
