@@ -374,6 +374,7 @@ dr start
 This command will:
 
 - Check prerequisites and validate your environment.
+- Prompt you to update the CLI if the template requires a newer version.
 - Execute a template-specific quickstart script if available.
 - Fall back to the setup wizard if no script exists.
 
