@@ -1,6 +1,6 @@
-# Managed Component Updates
+# Managed component updates
 
-This feature allows you to manage component updates and additions with preconfigured default answers, following copier's `data_file` semantics with support for multiple repositories.
+Manage component updates and additions with preconfigured default answers.
 
 ## Overview
 
@@ -10,7 +10,7 @@ When working with copier-based components, you often need to provide the same an
 2. **Data file**: Store default answers in a YAML file (follows copier's `data_file` convention)
 3. **Automatic discovery**: Data files are automatically discovered in priority order
 
-## CLI Usage
+## CLI usage
 
 ### Component Add
 
@@ -57,13 +57,13 @@ copier update -a .datarobot/answers/agent-writer_agent.yml \
   --data use_low_code_interface=false
 ```
 
-## Data File
+## Data file
 
-### Naming and Location
+### Naming and location
 
 Following copier's `data_file` convention, the default filename is `.copier-answers-defaults.yaml`.
 
-**Discovery Priority Order:**
+**Discovery priority order:**
 
 1. **Explicit path** via `--data-file` flag (highest priority)
 2. **Repository root**: `.datarobot/.copier-answers-defaults.yaml`
@@ -157,7 +157,7 @@ dr component add https://github.com/datarobot-community/af-component-agent.git \
 5. **Compatibility**: Follows copier's `data_file` convention for familiarity
 6. **Version Control Friendly**: Repository defaults can be committed, personal defaults stay local
 
-## Data Types
+## Data types
 
 The data file and `--data` arguments support all copier question types:
 
