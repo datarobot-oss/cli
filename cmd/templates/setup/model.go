@@ -55,7 +55,7 @@ type Model struct {
 	keys            keyMap
 	isLoading       bool
 	loadingMessage  string
-	exitMessage     string
+	ExitMessage     string
 	width           int
 	isAuthenticated bool // Track if we've already authenticated
 	fetchSessionID  int  // Track current fetch session to ignore stale responses
@@ -166,6 +166,7 @@ func handleExistingRepo(repoRoot string) tea.Msg {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return networkTimeoutMsg()
 		}
+
 		log.Warn("Failed to get templates", "error", err)
 	}
 
@@ -219,6 +220,7 @@ func getTemplates(sessionID int) tea.Cmd {
 			if errors.Is(err, context.DeadlineExceeded) {
 				return networkTimeoutMsg()
 			}
+
 			return authKeyStartMsg{}
 		}
 
@@ -450,7 +452,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, exit
 	case exitMsg:
 		m.screen = exitScreen
-		m.exitMessage = msg.message
+		m.ExitMessage = msg.message
 
 		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	}
@@ -594,9 +596,10 @@ func (m Model) View() string { //nolint: cyclop
 	case dotenvScreen:
 		sb.WriteString(m.dotenv.View())
 	case exitScreen:
-		if m.exitMessage != "" {
-			sb.WriteString(tui.BaseTextStyle.Render(m.exitMessage))
+		if m.ExitMessage != "" {
+			sb.WriteString(tui.BaseTextStyle.Render(m.ExitMessage))
 			sb.WriteString("\n")
+
 			return sb.String()
 		}
 
