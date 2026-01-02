@@ -37,7 +37,6 @@ func checkCLICredentials() bool {
 	}
 
 	_, err := config.GetAPIKey()
-
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
@@ -127,10 +126,16 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 
 	err = config.VerifyToken(dotenvBaseURL, dotenvToken)
 	if err != nil {
-		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
-		fmt.Print(tui.BaseTextStyle.Render("Run "))
-		fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
-		fmt.Println(tui.BaseTextStyle.Render(" to refresh credentials."))
+		if errors.Is(err, context.DeadlineExceeded) {
+			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Print(tui.InfoStyle.Render(dotenvBaseURL))
+			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+		} else {
+			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
+			fmt.Print(tui.BaseTextStyle.Render("Run "))
+			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
+			fmt.Println(tui.BaseTextStyle.Render(" to refresh credentials."))
+		}
 
 		return false
 	}

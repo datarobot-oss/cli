@@ -110,7 +110,7 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	viper.Set(config.DataRobotAPIKey, "expired-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	apiKey := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey()
 	assert.Empty(t, apiKey, "Expected GetAPIKey to return empty string for expired token")
 
 	// Mock the callback to simulate failure to refresh expired credentials.
@@ -129,7 +129,7 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	viper.Set(config.DataRobotAPIKey, "valid-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	apiKey := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey()
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token")
 
 	result := EnsureAuthenticated(context.Background())
@@ -143,7 +143,7 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 	os.Setenv("DATAROBOT_API_TOKEN", "valid-token")
 	viper.Set(config.DataRobotAPIKey, "")
 
-	apiKey := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey()
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token from environment")
 
 	result := EnsureAuthenticated(context.Background())

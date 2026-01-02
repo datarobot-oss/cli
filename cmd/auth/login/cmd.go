@@ -43,6 +43,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		log.Errorf("Connection to %s timed out. Check your network and try again.", datarobotHost)
 		os.Exit(1)
+
 		return nil
 	}
 

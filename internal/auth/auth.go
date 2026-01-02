@@ -21,6 +21,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
 )
 
@@ -63,9 +64,16 @@ func EnsureAuthenticated(ctx context.Context) bool {
 		}
 	}
 
-	if token, _ := config.GetAPIKey(); token != "" {
+	_, err := config.GetAPIKey()
+	if err == nil {
 		// Valid token exists
 		return true
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+		fmt.Print(tui.InfoStyle.Render(datarobotHost))
+		fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+
+		return false
 	}
 
 	// No valid token, attempt to get one
