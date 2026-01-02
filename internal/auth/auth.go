@@ -63,7 +63,7 @@ func EnsureAuthenticated(ctx context.Context) bool {
 		}
 	}
 
-	if token := config.GetAPIKey(); token != "" {
+	if token, _ := config.GetAPIKey(); token != "" {
 		// Valid token exists
 		return true
 	}

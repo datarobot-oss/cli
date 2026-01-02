@@ -9,6 +9,8 @@
 package check
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,20 +36,19 @@ func checkCLICredentials() bool {
 		allValid = false
 	}
 
-	cliToken := config.GetAPIKey()
+	_, err := config.GetAPIKey()
 
-	if cliToken == "" {
-		fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
-		fmt.Print(tui.BaseTextStyle.Render("Run "))
-		fmt.Print(tui.InfoStyle.Render("dr auth login"))
-		fmt.Println(tui.BaseTextStyle.Render(" to authenticate."))
-		fmt.Println(tui.BaseTextStyle.Render("\n  If this error persists, your DATAROBOT_API_TOKEN environment variable"))
-		fmt.Println(tui.BaseTextStyle.Render("  contains an expired or invalid token. Unset it:"))
-		fmt.Print(tui.BaseTextStyle.Render("  "))
-		fmt.Print(tui.InfoStyle.Render("unset DATAROBOT_API_TOKEN"))
-		fmt.Print(tui.BaseTextStyle.Render(" (or "))
-		fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-		fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Print(tui.InfoStyle.Render(datarobotHost))
+			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+		} else {
+			fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
+			fmt.Print(tui.BaseTextStyle.Render("Run "))
+			fmt.Print(tui.InfoStyle.Render("dr auth login"))
+			fmt.Println(tui.BaseTextStyle.Render(" to authenticate."))
+		}
 
 		allValid = false
 	} else {
@@ -84,7 +85,7 @@ func printMissingEnvVarError(varName string) {
 	fmt.Println(tui.BaseTextStyle.Render(" to configure the '.env' file."))
 }
 
-func extractEnvVars(dotenvPath string) (string, string, error) {
+func extractDotenvVars(dotenvPath string) (string, string, error) {
 	fileContents, readErr := os.ReadFile(dotenvPath)
 	if readErr != nil {
 		return "", "", readErr
@@ -98,23 +99,23 @@ func extractEnvVars(dotenvPath string) (string, string, error) {
 
 	variables := envbuilder.ParseVariablesOnly(lines)
 
-	var envToken, envEndpoint string
+	var dotenvToken, dotenvEndpoint string
 
 	for _, v := range variables {
 		if v.Name == "DATAROBOT_API_TOKEN" {
-			envToken = v.Value
+			dotenvToken = v.Value
 		}
 
 		if v.Name == "DATAROBOT_ENDPOINT" {
-			envEndpoint = v.Value
+			dotenvEndpoint = v.Value
 		}
 	}
 
-	return envToken, envEndpoint, nil
+	return dotenvToken, dotenvEndpoint, nil
 }
 
-func verifyDotenvToken(envEndpoint, envToken string) bool {
-	envBaseURL, err := config.SchemeHostOnly(envEndpoint)
+func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
+	dotenvBaseURL, err := config.SchemeHostOnly(dotenvEndpoint)
 	if err != nil {
 		fmt.Println(tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in '.env'."))
 		fmt.Print(tui.BaseTextStyle.Render("Run "))
@@ -124,8 +125,8 @@ func verifyDotenvToken(envEndpoint, envToken string) bool {
 		return false
 	}
 
-	tokenValid, _ := config.VerifyToken(envBaseURL, envToken)
-	if !tokenValid {
+	err = config.VerifyToken(dotenvBaseURL, dotenvToken)
+	if err != nil {
 		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
 		fmt.Print(tui.BaseTextStyle.Render("Run "))
 		fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
@@ -147,26 +148,26 @@ func checkDotenvCredentials(repoRoot string) bool {
 		return false
 	}
 
-	envToken, envEndpoint, err := extractEnvVars(dotenvPath)
+	dotenvToken, dotenvEndpoint, err := extractDotenvVars(dotenvPath)
 	if err != nil {
 		printDotenvReadError()
 
 		return false
 	}
 
-	if envToken == "" {
+	if dotenvToken == "" {
 		printMissingEnvVarError("DATAROBOT_API_TOKEN")
 
 		return false
 	}
 
-	if envEndpoint == "" {
+	if dotenvEndpoint == "" {
 		printMissingEnvVarError("DATAROBOT_ENDPOINT")
 
 		return false
 	}
 
-	if !verifyDotenvToken(envEndpoint, envToken) {
+	if !verifyDotenvToken(dotenvEndpoint, dotenvToken) {
 		return false
 	}
 

@@ -132,8 +132,12 @@ func GetTemplates() (*TemplateList, error) {
 		return nil, err
 	}
 
-	bearer := "Bearer " + config.GetAPIKey()
-	req.Header.Add("Authorization", bearer)
+	token, err := config.GetAPIKey()
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
