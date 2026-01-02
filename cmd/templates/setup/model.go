@@ -9,6 +9,8 @@
 package setup
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,6 +55,7 @@ type Model struct {
 	keys            keyMap
 	isLoading       bool
 	loadingMessage  string
+	exitMessage     string
 	width           int
 	isAuthenticated bool // Track if we've already authenticated
 	fetchSessionID  int  // Track current fetch session to ignore stale responses
@@ -102,7 +105,9 @@ type (
 		template   drapi.Template
 	}
 	dotenvUpdatedMsg struct{}
-	exitMsg          struct{}
+	exitMsg          struct {
+		message string
+	}
 )
 
 func getHost() tea.Msg          { return getHostMsg{} }
@@ -158,6 +163,9 @@ func handleExistingRepo(repoRoot string) tea.Msg {
 	// Try to fetch templates to match against git remote
 	templatesList, err := drapi.GetPublicTemplatesSorted()
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return networkTimeoutMsg()
+		}
 		log.Warn("Failed to get templates", "error", err)
 	}
 
@@ -208,6 +216,9 @@ func getTemplates(sessionID int) tea.Cmd {
 		// Not in a DataRobot repo, fetch templates and show gallery
 		templatesList, err := drapi.GetPublicTemplatesSorted()
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return networkTimeoutMsg()
+			}
 			return authKeyStartMsg{}
 		}
 
@@ -216,6 +227,16 @@ func getTemplates(sessionID int) tea.Cmd {
 			sessionID:     sessionID,
 		}
 	}
+}
+
+func networkTimeoutMsg() tea.Msg {
+	datarobotHost := config.GetBaseURL()
+
+	message := tui.BaseTextStyle.Render("❌ Connection to ") +
+		tui.InfoStyle.Render(datarobotHost) +
+		tui.BaseTextStyle.Render(" timed out. Check your network and try again.")
+
+	return exitMsg{message}
 }
 
 func saveHost(host string) tea.Cmd {
@@ -429,6 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, exit
 	case exitMsg:
 		m.screen = exitScreen
+		m.exitMessage = msg.message
 
 		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	}
@@ -572,6 +594,12 @@ func (m Model) View() string { //nolint: cyclop
 	case dotenvScreen:
 		sb.WriteString(m.dotenv.View())
 	case exitScreen:
+		if m.exitMessage != "" {
+			sb.WriteString(tui.BaseTextStyle.Render(m.exitMessage))
+			sb.WriteString("\n")
+			return sb.String()
+		}
+
 		// Show template name if we have it
 		if m.template.Name != "" {
 			sb.WriteString(tui.SubTitleStyle.Render(fmt.Sprintf("🎉 Template %s ready to use.", m.template.Name)))
