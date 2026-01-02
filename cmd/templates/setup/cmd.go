@@ -57,3 +57,17 @@ func RunTea(ctx context.Context, fromStartCommand bool) error {
 
 	return err
 }
+
+func InnerModel(finalModel tea.Model) (Model, bool) {
+	startModel, ok := finalModel.(tui.InterruptibleModel)
+	if !ok {
+		return Model{}, false
+	}
+
+	innerModel, ok := startModel.Model.(Model)
+	if !ok {
+		return Model{}, false
+	}
+
+	return innerModel, true
+}

@@ -9,7 +9,9 @@
 package login
 
 import (
+	"context"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -37,8 +39,16 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		datarobotHost = config.GetBaseURL()
 	}
 
+	token, err := config.GetAPIKey()
+	if errors.Is(err, context.DeadlineExceeded) {
+		log.Errorf("Connection to %s timed out. Check your network and try again.", datarobotHost)
+		os.Exit(1)
+
+		return nil
+	}
+
 	// If they explicitly ran 'dr auth login', just authenticate them
-	if token := config.GetAPIKey(); token != "" {
+	if token != "" {
 		log.Info("Re-authenticating with DataRobot...")
 	} else {
 		log.Warn("No valid API key found. Retrieving a new one...")

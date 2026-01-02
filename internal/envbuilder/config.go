@@ -32,13 +32,12 @@ var knownVariables = map[string]variableConfig{
 	"DATAROBOT_API_TOKEN": {
 		getValue: func(token string) (string, error) {
 			datarobotHost := config.GetBaseURL()
-			if token != "" {
-				if isValid, _ := config.VerifyToken(datarobotHost, token); isValid {
-					return token, nil
-				}
+
+			if err := config.VerifyToken(datarobotHost, token); err == nil {
+				return token, nil
 			}
 
-			return config.GetAPIKey(), nil
+			return config.GetAPIKey()
 		},
 		secret: true,
 	},

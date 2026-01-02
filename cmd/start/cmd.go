@@ -50,33 +50,42 @@ The following actions will be performed:
 				os.Exit(1)
 			}
 
-			// Check if we need to launch template setup after quitting
-			if innerModel.needTemplateSetup && innerModel.done && !innerModel.quitting {
-				// Need to run template setup
-				// After it completes, we'll be in the cloned directory,
-				// so we can just run start again
-				err := setup.RunTea(cmd.Context(), true)
-				if err != nil {
-					return err
-				}
+			// Check if we do not need to launch template setup after quitting
+			if !innerModel.needTemplateSetup || !innerModel.done || innerModel.quitting {
+				return nil
+			}
 
-				// Now run start again - we're in the cloned repo directory
-				// Create a new start model and run it
-				m2 := NewStartModel(opts)
+			// Need to run template setup
+			// After it completes, we'll be in the cloned directory,
+			// so we can just run start again
+			sm := setup.NewModel(true)
 
-				finalModel2, err := tui.Run(m2)
-				if err != nil {
-					return err
-				}
+			finalSetupModel, err := tui.Run(sm, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
+			if err != nil {
+				return err
+			}
 
-				innerModel2, ok := getInnerModel(finalModel2)
-				if !ok {
-					return nil
-				}
+			innerSetupModel, ok := setup.InnerModel(finalSetupModel)
+			if ok && innerSetupModel.ExitMessage != "" {
+				os.Exit(1)
+			}
 
-				if innerModel2.err != nil {
-					os.Exit(1)
-				}
+			// Now run start again - we're in the cloned repo directory
+			// Create a new start model and run it
+			m2 := NewStartModel(opts)
+
+			finalModel2, err := tui.Run(m2)
+			if err != nil {
+				return err
+			}
+
+			innerModel2, ok := getInnerModel(finalModel2)
+			if !ok {
+				return nil
+			}
+
+			if innerModel2.err != nil {
+				os.Exit(1)
 			}
 
 			return nil
