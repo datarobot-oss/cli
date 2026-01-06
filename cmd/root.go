@@ -11,7 +11,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -167,11 +166,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
-	err = bindValidAuthEnv()
-	if err != nil {
-		return err
-	}
-
 	// map VISUAL and EDITOR to external-editor config key,
 	// but set a default value
 	viper.SetDefault("external-editor", "vi")
@@ -199,43 +193,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	err = viper.BindPFlags(cmd.Flags())
 	if err != nil {
 		return err
-	}
-
-	return nil
-}
-
-// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
-func bindValidAuthEnv() error {
-	var endpoint string
-
-	datarobotEndpoint := os.Getenv("DATAROBOT_ENDPOINT")
-	datarobotAPIEndpoint := os.Getenv("DATAROBOT_API_ENDPOINT")
-	token := os.Getenv("DATAROBOT_API_TOKEN")
-
-	if datarobotEndpoint != "" {
-		endpoint = datarobotEndpoint
-	} else if datarobotAPIEndpoint != "" {
-		endpoint = datarobotAPIEndpoint
-	}
-
-	err := config.VerifyToken(endpoint, token)
-	if err != nil {
-		// Token verification error is intentionally not propagated
-		return nil
-	}
-
-	// Now map other environment variables to config keys
-	// such as those used by the DataRobot platform or other SDKs
-	// and clients. If the DATAROBOT_CLI equivalents are not set,
-	// then Viper will fallback to these
-	err = viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-	if err != nil {
-		return fmt.Errorf("Failed to bind environment variables for endpoint: %w", err)
-	}
-
-	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
-	if err != nil {
-		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
 	}
 
 	return nil
