@@ -69,6 +69,7 @@ release:
     - glob: ./**/*.rb
   footer: |
     **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+  prerelease: auto
 
 homebrew_casks:
   - name: dr-cli
