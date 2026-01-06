@@ -20,7 +20,7 @@ import (
 )
 
 // FindRepoRoot walks up the directory tree from the current directory looking for
-// a .datarobot/cli folder to determine if we're inside a DataRobot repository.
+// a .datarobot/answers folder to determine if we're inside a DataRobot repository.
 // It stops searching when it reaches the user's home directory or finds a .git folder.
 // Returns the path to the repository root if found, or an empty string if not found.
 func FindRepoRoot() (string, error) {
@@ -37,7 +37,7 @@ func FindRepoRoot() (string, error) {
 	currentDir := cwd
 
 	for {
-		// Check if .datarobot/cli exists in current directory
+		// Check if .datarobot/answers exists in current directory
 		datarobotTemplatePath := filepath.Join(currentDir, DataRobotTemplateDetectPath)
 		if info, err := os.Stat(datarobotTemplatePath); err == nil && info.IsDir() {
 			return currentDir, nil
@@ -51,7 +51,7 @@ func FindRepoRoot() (string, error) {
 		// Check if .git folder exists (stop searching beyond git repo boundary)
 		gitPath := filepath.Join(currentDir, ".git")
 		if info, err := os.Stat(gitPath); err == nil && info.IsDir() {
-			// We found a .git folder but no .datarobot/cli, so not in a DataRobot repo
+			// We found a .git folder but no .datarobot/answers, so not in a DataRobot repo
 			return "", nil
 		}
 
@@ -68,7 +68,7 @@ func FindRepoRoot() (string, error) {
 }
 
 // IsInRepo checks if the current directory is inside a DataRobot repository
-// by looking for a .datarobot/cli folder in the current or parent directories.
+// by looking for a .datarobot/answers folder in the current or parent directories.
 func IsInRepo() bool {
 	repoRoot, err := FindRepoRoot()
 	return err == nil && repoRoot != ""

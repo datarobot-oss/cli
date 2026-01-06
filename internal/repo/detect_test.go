@@ -58,8 +58,8 @@ func (suite *DetectTestSuite) TearDownTest() {
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
+	// Create .datarobot/answers directory
+	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "answers")
 	err := os.MkdirAll(datarobotCLIPath, 0o755)
 	suite.Require().NoError(err)
 
@@ -82,8 +82,8 @@ func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
+	// Create .datarobot/answers directory
+	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "answers")
 	err := os.MkdirAll(datarobotCLIPath, 0o755)
 	suite.Require().NoError(err)
 
@@ -116,7 +116,7 @@ func (suite *DetectTestSuite) TestFindRepoRootStopsAtGitFolder() {
 	err := os.MkdirAll(gitPath, 0o755)
 	suite.Require().NoError(err)
 
-	// Don't create .datarobot/cli, so it's a git repo but not a DataRobot repo
+	// Don't create .datarobot/answers, so it's a git repo but not a DataRobot repo
 	err = os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
@@ -127,7 +127,7 @@ func (suite *DetectTestSuite) TestFindRepoRootStopsAtGitFolder() {
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
-	// Don't create .datarobot/cli directory
+	// Don't create .datarobot/answers directory
 	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
@@ -138,8 +138,8 @@ func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
 }
 
 func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
+	// Create .datarobot/answers directory
+	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "answers")
 	err := os.MkdirAll(datarobotCLIPath, 0o755)
 	suite.Require().NoError(err)
 
@@ -152,7 +152,7 @@ func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
 }
 
 func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenNotInRepo() {
-	// Don't create .datarobot/cli directory
+	// Don't create .datarobot/answers directory
 	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
