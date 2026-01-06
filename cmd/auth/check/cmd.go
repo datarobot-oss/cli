@@ -124,7 +124,7 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 		return false
 	}
 
-	err = config.VerifyToken(dotenvBaseURL, dotenvToken)
+	err = config.VerifyToken(dotenvEndpoint, dotenvToken)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))

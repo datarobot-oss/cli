@@ -13,34 +13,29 @@ import (
 )
 
 type variableConfig = struct {
-	viperKey string
-	getValue func(currentValue string) (string, error)
-	secret   bool
+	value  string
+	secret bool
 }
 
-var knownVariables = map[string]variableConfig{
-	"DATAROBOT_ENDPOINT_SHORT": {
-		getValue: func(_ string) (string, error) {
-			return config.GetEndpointURL("")
-		},
-	},
-	"DATAROBOT_ENDPOINT": {
-		getValue: func(_ string) (string, error) {
-			return config.GetEndpointURL("/api/v2")
-		},
-	},
-	"DATAROBOT_API_TOKEN": {
-		getValue: func(token string) (string, error) {
-			datarobotHost := config.GetBaseURL()
+func knownVariables(allValues map[string]string) map[string]variableConfig {
+	datarobotEndpoint := allValues["DATAROBOT_ENDPOINT"]
+	token := allValues["DATAROBOT_API_TOKEN"]
 
-			if err := config.VerifyToken(datarobotHost, token); err == nil {
-				return token, nil
-			}
+	err := config.VerifyToken(datarobotEndpoint, token)
+	if err != nil {
+		datarobotEndpoint, _ = config.GetEndpointURL("/api/v2")
+		token, _ = config.GetAPIKey()
+	}
 
-			return config.GetAPIKey()
+	return map[string]variableConfig{
+		"DATAROBOT_ENDPOINT": {
+			value: datarobotEndpoint,
 		},
-		secret: true,
-	},
+		"DATAROBOT_API_TOKEN": {
+			value:  token,
+			secret: true,
+		},
+	}
 }
 
 const coreSection = "__DR_CLI_CORE_PROMPT"

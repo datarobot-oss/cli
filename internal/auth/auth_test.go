@@ -136,20 +136,6 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid credentials")
 }
 
-func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
-	_, cleanup := setupTestEnvironment(t)
-	defer cleanup()
-
-	os.Setenv("DATAROBOT_API_TOKEN", "valid-token")
-	viper.Set(config.DataRobotAPIKey, "")
-
-	apiKey, _ := config.GetAPIKey()
-	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token from environment")
-
-	result := EnsureAuthenticated(context.Background())
-	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid environment credentials")
-}
-
 func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()

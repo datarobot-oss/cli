@@ -11,20 +11,25 @@ package config
 import (
 	"errors"
 	"net/http"
-	"os"
+	"net/url"
 	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/viper"
 )
 
-// VerifyToken verifies if the datarobot host + api key pair correspond to a valid pair.
-func VerifyToken(datarobotHost, token string) error {
+// VerifyToken verifies if the datarobot endpoint + api key pair correspond to a valid pair.
+func VerifyToken(datarobotEndpoint, token string) error {
+	_, err := url.Parse(datarobotEndpoint)
+	if err != nil {
+		return err
+	}
+
 	if token == "" {
 		return errors.New("empty token")
 	}
 
-	req, err := http.NewRequest(http.MethodGet, datarobotHost+"/api/v2/version/", nil)
+	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"/version/", nil)
 	if err != nil {
 		return err
 	}
@@ -54,18 +59,11 @@ func VerifyToken(datarobotHost, token string) error {
 }
 
 func GetAPIKey() (string, error) {
-	datarobotHost := GetBaseURL()
-
-	// Return API key from environment variable
-	envToken := os.Getenv("DATAROBOT_API_TOKEN")
-	if err := VerifyToken(datarobotHost, envToken); err == nil {
-		return envToken, nil
-	}
-
-	// Return API key from viper config
+	viperEndpoint := viper.GetString(DataRobotURL)
 	viperToken := viper.GetString(DataRobotAPIKey)
 
-	err := VerifyToken(datarobotHost, viperToken)
+	// Returns valid API key if there is one, otherwise returns an empty string
+	err := VerifyToken(viperEndpoint, viperToken)
 	if err != nil {
 		return "", err
 	}
