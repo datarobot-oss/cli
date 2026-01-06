@@ -15,7 +15,7 @@
 package repo
 
 const (
-	// DataRobotTemplateDetectPath is the path to the DataRobot CLI folder relative to CWD
+	// DataRobotTemplateDetectPath is the path to the answers folder relative to CWD
 	DataRobotTemplateDetectPath = ".datarobot/answers"
 	// QuickstartScriptPath is the path to the quickstart scripts directory relative to CWD
 	QuickstartScriptPath = ".datarobot/cli/bin"
