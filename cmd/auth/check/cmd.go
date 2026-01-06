@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func validCLICredentials() bool {
+func checkCLICredentials() bool {
 	allValid := true
 
 	datarobotHost := config.GetBaseURL()
@@ -143,7 +143,7 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 	return true
 }
 
-func validDotenvCredentials(repoRoot string) bool {
+func checkDotenvCredentials(repoRoot string) bool {
 	dotenvPath := filepath.Join(repoRoot, ".env")
 
 	_, statErr := os.Stat(dotenvPath)
@@ -186,18 +186,18 @@ func Run(_ *cobra.Command, _ []string) {
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil || repoRoot == "" {
-		if validCLICredentials() {
+		if checkCLICredentials() {
 			return
 		}
 
 		os.Exit(1)
 	}
 
-	if validDotenvCredentials(repoRoot) {
+	if checkDotenvCredentials(repoRoot) {
 		return
 	}
 
-	if validCLICredentials() {
+	if checkCLICredentials() {
 		return
 	}
 

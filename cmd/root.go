@@ -218,20 +218,24 @@ func bindValidAuthEnv() error {
 		endpoint = datarobotAPIEndpoint
 	}
 
-	if err := config.VerifyToken(endpoint, token); err == nil {
-		// Now map other environment variables to config keys
-		// such as those used by the DataRobot platform or other SDKs
-		// and clients. If the DATAROBOT_CLI equivalents are not set,
-		// then Viper will fallback to these
-		err = viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-		if err != nil {
-			return fmt.Errorf("Failed to bind environment variables for endpoint: %w", err)
-		}
+	err := config.VerifyToken(endpoint, token)
+	if err != nil {
+		// Token verification error is intentionally not propagated
+		return nil
+	}
 
-		err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
-		if err != nil {
-			return fmt.Errorf("Failed to bind environment variables for token: %w", err)
-		}
+	// Now map other environment variables to config keys
+	// such as those used by the DataRobot platform or other SDKs
+	// and clients. If the DATAROBOT_CLI equivalents are not set,
+	// then Viper will fallback to these
+	err = viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	if err != nil {
+		return fmt.Errorf("Failed to bind environment variables for endpoint: %w", err)
+	}
+
+	err = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
+	if err != nil {
+		return fmt.Errorf("Failed to bind environment variables for token: %w", err)
 	}
 
 	return nil
