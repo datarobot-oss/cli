@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -50,6 +51,8 @@ func EnsureAuthenticated(ctx context.Context) bool {
 
 		return true
 	}
+
+	bindValidAuthEnv()
 
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
@@ -99,6 +102,41 @@ func EnsureAuthenticated(ctx context.Context) bool {
 	log.Info("Authentication successful")
 
 	return true
+}
+
+// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
+func bindValidAuthEnv() {
+	var endpoint string
+
+	datarobotEndpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	datarobotAPIEndpoint := os.Getenv("DATAROBOT_API_ENDPOINT")
+	token := os.Getenv("DATAROBOT_API_TOKEN")
+
+	if datarobotEndpoint != "" {
+		endpoint = datarobotEndpoint
+	} else if datarobotAPIEndpoint != "" {
+		endpoint = datarobotAPIEndpoint
+	}
+
+	err := config.VerifyToken(endpoint, token)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			datarobotHost, _ := config.SchemeHostOnly(datarobotEndpoint)
+
+			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Print(tui.InfoStyle.Render(datarobotHost))
+			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+		}
+
+		return
+	}
+
+	// Now map other environment variables to config keys
+	// such as those used by the DataRobot platform or other SDKs
+	// and clients. If the DATAROBOT_CLI equivalents are not set,
+	// then Viper will fallback to these
+	_ = viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	_ = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
 }
 
 func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, error) {
