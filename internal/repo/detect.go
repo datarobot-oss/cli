@@ -38,8 +38,8 @@ func FindRepoRoot() (string, error) {
 
 	for {
 		// Check if .datarobot/cli exists in current directory
-		datarobotCLIPath := filepath.Join(currentDir, DataRobotRepoPath)
-		if info, err := os.Stat(datarobotCLIPath); err == nil && info.IsDir() {
+		datarobotTemplatePath := filepath.Join(currentDir, DataRobotTemplateDetectPath)
+		if info, err := os.Stat(datarobotTemplatePath); err == nil && info.IsDir() {
 			return currentDir, nil
 		}
 
