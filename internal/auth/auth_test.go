@@ -29,6 +29,9 @@ import (
 func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 
+	// So much of the login process depends on the config file location, and
+	// we obviously don't want to destroy users' real config files, so we
+	// create a temp dir and point HOME there.
 	tempDir, err := os.MkdirTemp("", "auth-test-*")
 	require.NoError(t, err)
 
