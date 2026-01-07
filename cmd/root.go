@@ -170,10 +170,7 @@ func initializeConfig(cmd *cobra.Command) error {
 	// but set a default value
 	viper.SetDefault("external-editor", "vi")
 
-	err = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
-	if err != nil {
-		return fmt.Errorf("Failed to bind environment variables for external-editor: %w", err)
-	}
+	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
 	// use the environment variable value
