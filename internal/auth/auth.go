@@ -42,8 +42,7 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 }
 
 // EnsureAuthenticated checks if valid authentication exists, and if not,
-// triggers the login flow automatically. This is a non-interactive version
-// intended for use in automated workflows. Returns true if authentication
+// triggers the login flow automatically. Returns true if authentication
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	if viper.GetBool("skip_auth") {
