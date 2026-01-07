@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/log"
 )
 
 func cmdRun(cmd *exec.Cmd) error {
@@ -38,7 +40,14 @@ func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
 		commandParts = append(commandParts, "--data", key+"="+formatDataValue(value))
 	}
 
-	return exec.Command("uvx", commandParts...)
+	cmd := exec.Command("uvx", commandParts...)
+
+	// Suppress all Python warnings unless debug mode is enabled
+	if log.GetLevel() >= log.WarnLevel {
+		cmd.Env = append(os.Environ(), "PYTHONWARNINGS=ignore")
+	}
+
+	return cmd
 }
 
 // ExecAdd executes a copier copy command with optional --data arguments
@@ -60,7 +69,7 @@ type UpdateFlags struct {
 }
 
 // Update creates a copier update command with optional --data arguments
-func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags, debug bool) *exec.Cmd {
+func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags) *exec.Cmd {
 	copierCommand := "update"
 
 	if flags.Recopy {
@@ -90,7 +99,7 @@ func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags, deb
 	cmd := exec.Command("uvx", commandParts...)
 
 	// Suppress all Python warnings unless debug mode is enabled
-	if !debug {
+	if log.GetLevel() >= log.WarnLevel {
 		cmd.Env = append(os.Environ(), "PYTHONWARNINGS=ignore")
 	}
 
@@ -98,12 +107,12 @@ func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags, deb
 }
 
 // ExecUpdate executes a copier update command with optional --data arguments
-func ExecUpdate(yamlFile string, data map[string]interface{}, flags UpdateFlags, debug bool) error {
+func ExecUpdate(yamlFile string, data map[string]interface{}, flags UpdateFlags) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
 	}
 
-	return cmdRun(Update(yamlFile, data, flags, debug))
+	return cmdRun(Update(yamlFile, data, flags))
 }
 
 // formatDataValue converts a value to a string suitable for --data arguments
