@@ -80,6 +80,9 @@ func RunE(cmd *cobra.Command, args []string) error {
 			if innerModel.ComponentUpdated {
 				compose.Cmd().Run(nil, nil)
 				run.Cmd().Run(nil, []string{"reinstall"})
+
+				fmt.Println(innerModel.ExitMessage)
+				fmt.Println("Post-install tasks finished.")
 			}
 		}
 	}
