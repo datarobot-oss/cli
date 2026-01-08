@@ -27,7 +27,6 @@ import (
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -81,6 +80,9 @@ func RunE(cmd *cobra.Command, args []string) error {
 			if innerModel.ComponentUpdated {
 				compose.Cmd().Run(nil, nil)
 				run.Cmd().Run(nil, []string{"reinstall"})
+
+				fmt.Println(innerModel.ExitMessage)
+				fmt.Println("Post-install tasks finished.")
 			}
 		}
 	}
@@ -128,8 +130,6 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 		return errors.New("The supplied filename doesn't exist in answers.")
 	}
 
-	debug := viper.GetBool("debug")
-
 	// Get the repo URL from the answers file to look up defaults
 	repoURL, err := getRepoURLFromAnswersFile(yamlFile)
 	if err != nil {
@@ -149,7 +149,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	// Merge defaults with CLI data (CLI data takes precedence)
 	mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-	execErr := copier.ExecUpdate(yamlFile, mergedData, updateFlags, debug)
+	execErr := copier.ExecUpdate(yamlFile, mergedData, updateFlags)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
