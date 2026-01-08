@@ -71,6 +71,9 @@ release:
     **Full Changelog**: https://github.com/datarobot-oss/cli/compare/{{ .PreviousTag }}...{{ .Tag }}
   prerelease: auto
 
+git:
+  tag_sort: -version:creatordate
+
 homebrew_casks:
   - name: dr-cli
     hooks:
