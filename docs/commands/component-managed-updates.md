@@ -69,6 +69,12 @@ copier update -a .datarobot/answers/agent-writer_agent.yml \
   --data use_low_code_interface=false
 ```
 
+
+### Extra flags
+
+By default, python warnings emitted by copier are suppressed.
+You can use `--verbose` or `--debug` flags to show them.
+
 ## Data file
 
 ### Naming and location
