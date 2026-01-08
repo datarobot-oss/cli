@@ -16,7 +16,11 @@ package repo
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // FindRepoRoot walks up the directory tree from the current directory looking for
@@ -24,54 +28,67 @@ import (
 // It stops searching when it reaches the user's home directory or finds a .git folder.
 // Returns the path to the repository root if found, or an empty string if not found.
 func FindRepoRoot() (string, error) {
-	cwd, err := os.Getwd()
+	currentDir, err := gitTopLevel()
 	if err != nil {
 		return "", err
 	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	currentDir := cwd
 
 	for {
 		// Check if .datarobot/answers exists in current directory
-		datarobotTemplatePath := filepath.Join(currentDir, DataRobotTemplateDetectPath)
-		if info, err := os.Stat(datarobotTemplatePath); err == nil && info.IsDir() {
+		if detectTemplate(currentDir) {
 			return currentDir, nil
 		}
 
-		// Check if we've reached the home directory
-		if currentDir == homeDir {
+		// Check if we are in submodule
+		superDir, err := gitSuperProject()
+		if err != nil {
+			return "", err
+		}
+
+		if superDir == "" {
 			return "", nil
 		}
 
-		// Check if .git folder exists (stop searching beyond git repo boundary)
-		gitPath := filepath.Join(currentDir, ".git")
-		if info, err := os.Stat(gitPath); err == nil && info.IsDir() {
-			// We found a .git folder but no .datarobot/answers, so not in a DataRobot repo
-			return "", nil
-		}
-
-		// Move up one directory
-		parentDir := filepath.Dir(currentDir)
-
-		// Check if we've reached the root of the filesystem
-		if parentDir == currentDir {
-			return "", nil
-		}
-
-		currentDir = parentDir
+		currentDir = superDir
 	}
+}
+
+// detectTemplate checks if .datarobot/answers exists in dir directory
+func detectTemplate(dir string) bool {
+	return fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectPath))
+}
+
+func gitTopLevel() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+func gitSuperProject() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-superproject-working-tree")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
 }
 
 // IsInRepo checks if the current directory is inside a DataRobot repository
 // by looking for a .datarobot/answers folder in the current or parent directories.
 func IsInRepo() bool {
 	repoRoot, err := FindRepoRoot()
-	return err == nil && repoRoot != ""
+	if err != nil {
+		return false
+	}
+
+	return repoRoot != ""
 }
 
 func IsInRepoRoot() bool {
@@ -81,6 +98,9 @@ func IsInRepoRoot() bool {
 	}
 
 	repoRoot, err := FindRepoRoot()
+	if err != nil {
+		return false
+	}
 
-	return err == nil && repoRoot == cwd
+	return repoRoot == cwd
 }
