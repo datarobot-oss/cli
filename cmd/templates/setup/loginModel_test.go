@@ -44,7 +44,6 @@ func (suite *LoginModelTestSuite) SetupTest() {
 	}
 
 	suite.T().Setenv("DATAROBOT_ENDPOINT", "")
-	suite.T().Setenv("DATAROBOT_ENDPOINT_SHORT", "")
 	suite.T().Setenv("DATAROBOT_API_TOKEN", "")
 }
 

@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/joho/godotenv"
-	"github.com/spf13/viper"
 )
 
 // Variable represents a parsed environment variable from a .env file or template.
@@ -86,13 +85,14 @@ func NewFromLine(line string, unquotedValues map[string]string) Variable {
 	return Variable{
 		Name:      result["name"],
 		Value:     result["value"],
-		Secret:    knownVariables[result["name"]].secret,
 		Commented: result["commented"] != "",
 	}
 }
 
 func VariablesFromLines(lines []string) ([]Variable, string) {
 	unquotedValues, _ := godotenv.Unmarshal(strings.Join(lines, "\n"))
+	variablesConfig := knownVariables(unquotedValues)
+
 	variables := make([]Variable, 0)
 
 	var contents strings.Builder
@@ -109,7 +109,8 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 			continue
 		}
 
-		v.updateValue()
+		v.Value = variablesConfig[v.Name].value
+		v.Secret = variablesConfig[v.Name].secret
 
 		if v.Value == "" {
 			contents.WriteString(line)
@@ -122,26 +123,4 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 	}
 
 	return variables, contents.String()
-}
-
-func (v *Variable) updateValue() {
-	conf, found := knownVariables[v.Name]
-
-	if !found {
-		return
-	}
-
-	switch {
-	case conf.viperKey != "":
-		v.Value = viper.GetString(conf.viperKey)
-	case conf.getValue != nil:
-		var err error
-
-		v.Value, err = conf.getValue(v.Value)
-		if err != nil && v.Value != "" {
-			// Only log error if we actually got a non-empty value with an error
-			// Ignore "empty url" and similar errors when exiting setup
-			log.Error(err)
-		}
-	}
 }

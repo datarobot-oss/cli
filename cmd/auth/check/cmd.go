@@ -124,7 +124,7 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 		return false
 	}
 
-	err = config.VerifyToken(dotenvBaseURL, dotenvToken)
+	err = config.VerifyToken(dotenvEndpoint, dotenvToken)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
@@ -186,20 +186,22 @@ func Run(_ *cobra.Command, _ []string) {
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil || repoRoot == "" {
-		if !checkCLICredentials() {
-			os.Exit(1)
+		if checkCLICredentials() {
+			return
 		}
 
+		os.Exit(1)
+	}
+
+	if checkDotenvCredentials(repoRoot) {
 		return
 	}
 
-	if !checkDotenvCredentials(repoRoot) {
-		os.Exit(1)
+	if checkCLICredentials() {
+		return
 	}
 
-	if !checkCLICredentials() {
-		os.Exit(1)
-	}
+	os.Exit(1)
 }
 
 func Cmd() *cobra.Command {
@@ -208,7 +210,7 @@ func Cmd() *cobra.Command {
 		Short: "Check if DataRobot credentials are valid.",
 		Long: `Verify that your DataRobot credentials are properly configured and valid.
 
-If you're in a project directory with a '.env' file, this will also check those credentials.`,
+If you're in a project directory with a '.env' file, this will check those credentials.`,
 		Run: Run,
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -41,38 +42,81 @@ func EnsureAuthenticatedE(ctx context.Context) error {
 }
 
 // EnsureAuthenticated checks if valid authentication exists, and if not,
-// triggers the login flow automatically. This is a non-interactive version
-// intended for use in automated workflows. Returns true if authentication
+// triggers the login flow automatically. Returns true if authentication
 // is valid or was successfully obtained.
-func EnsureAuthenticated(ctx context.Context) bool {
+func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	if viper.GetBool("skip_auth") {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
 
 		return true
 	}
 
-	datarobotHost := config.GetBaseURL()
-	if datarobotHost == "" {
-		log.Warn("No DataRobot URL configured. Running auth setup...")
+	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
+	envEndpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	envToken := os.Getenv("DATAROBOT_API_TOKEN")
 
-		SetURLAction()
-
-		datarobotHost = config.GetBaseURL()
-		if datarobotHost == "" {
-			log.Error("Failed to configure the DataRobot URL.")
-			return false
+	if envEndpoint == "" {
+		if apiEndpoint := os.Getenv("DATAROBOT_API_ENDPOINT"); apiEndpoint != "" {
+			envEndpoint = apiEndpoint
 		}
 	}
 
-	_, err := config.GetAPIKey()
-	if err == nil {
-		// Valid token exists
+	envErr := config.VerifyToken(envEndpoint, envToken)
+	if envErr == nil {
+		// Now map other environment variables to config keys
+		// such as those used by the DataRobot platform or other SDKs
+		// and clients. If the DATAROBOT_CLI equivalents are not set,
+		// then Viper will fallback to these
+		_ = viper.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+		_ = viper.BindEnv("token", "DATAROBOT_API_TOKEN")
+
 		return true
-	} else if errors.Is(err, context.DeadlineExceeded) {
+	}
+
+	datarobotHost := GetBaseURLOrAsk()
+	if datarobotHost == "" {
+		// Appropriate error message was already displayed in GetBaseURLOrAsk() and SetURLAction()
+		return false
+	}
+
+	_, viperErr := config.GetAPIKey()
+	if viperErr == nil {
+		// Valid token exists in viper config file
+		return true
+	}
+
+	skipAuthFlow := false
+
+	if errors.Is(envErr, context.DeadlineExceeded) {
+		envDatarobotHost, _ := config.SchemeHostOnly(envEndpoint)
+
+		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+		fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
+		fmt.Println(tui.BaseTextStyle.Render(" from DATAROBOT_ENDPOINT environment variable timed out."))
+		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
+
+		skipAuthFlow = true
+	} else if envToken != "" {
+		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
+		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
+		fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
+		fmt.Print(tui.BaseTextStyle.Render(" (or "))
+		fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+		fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+
+		skipAuthFlow = true
+	}
+
+	if errors.Is(viperErr, context.DeadlineExceeded) {
 		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
 		fmt.Print(tui.InfoStyle.Render(datarobotHost))
-		fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+		fmt.Println(tui.BaseTextStyle.Render(" from dr cli config timed out."))
+		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
 
+		skipAuthFlow = true
+	}
+
+	if skipAuthFlow {
 		return false
 	}
 
@@ -241,4 +285,21 @@ func SetURLAction() bool {
 	fmt.Println("Exiting without changing the DataRobot URL.")
 
 	return false
+}
+
+func GetBaseURLOrAsk() string {
+	datarobotHost := config.GetBaseURL()
+	if datarobotHost == "" {
+		log.Warn("No DataRobot URL configured. Running auth setup...")
+
+		SetURLAction()
+
+		datarobotHost = config.GetBaseURL()
+		if datarobotHost == "" {
+			log.Error("Failed to configure the DataRobot URL.")
+			return ""
+		}
+	}
+
+	return datarobotHost
 }

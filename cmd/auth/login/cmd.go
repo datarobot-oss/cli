@@ -32,11 +32,12 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	datarobotHost := config.GetBaseURL()
+	datarobotHost := auth.GetBaseURLOrAsk()
 	if datarobotHost == "" {
-		auth.SetURLAction()
+		log.Info("💡 To set your DataRobot URL, run 'dr auth set-url'.")
+		os.Exit(1)
 
-		datarobotHost = config.GetBaseURL()
+		return nil
 	}
 
 	token, err := config.GetAPIKey()
