@@ -18,6 +18,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,7 @@ var Cmd = &cobra.Command{
 🎉 You'll have a working AI app at the end
 
 💡 Perfect for first-time users or someone starting a new project.`,
+	PreRunE: auth.EnsureAuthenticatedE,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return RunTea(cmd.Context(), false)
 	},

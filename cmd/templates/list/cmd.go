@@ -49,9 +49,7 @@ start building AI applications. Each template includes:
   • Ready-to-deploy setup
 
 💡 Use 'dr templates setup' for an interactive selection experience.`,
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE(cmd.Context())
-	},
+	PreRunE: auth.EnsureAuthenticatedE,
 	Run: func(_ *cobra.Command, _ []string) {
 		err := Run()
 		if err != nil {
