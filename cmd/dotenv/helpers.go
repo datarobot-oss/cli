@@ -42,7 +42,7 @@ func generateRandomSecret(length int) (string, error) {
 // ensureInRepo checks if we're in a git repository, and returns the repo root path.
 func ensureInRepo() (string, error) {
 	repoRoot, err := repo.FindRepoRoot()
-	if err != nil || repoRoot == "" {
+	if err != nil {
 		fmt.Println(tui.ErrorStyle.Render("Oops! ") + "This command needs to run inside your AI application folder.")
 		fmt.Println()
 		fmt.Println("📁 What this means:")

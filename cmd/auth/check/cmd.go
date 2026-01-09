@@ -191,7 +191,7 @@ func Run(_ *cobra.Command, _ []string) {
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
-	if err != nil || repoRoot == "" {
+	if err != nil {
 		if checkCLICredentials() {
 			return
 		}

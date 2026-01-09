@@ -215,7 +215,7 @@ func getTemplates(sessionID int) tea.Cmd {
 
 		// Check if we're already in a DataRobot repo
 		repoRoot, err := repo.FindRepoRoot()
-		if err == nil && repoRoot != "" {
+		if err == nil {
 			// We're in an existing DataRobot repo - handle that case
 			return handleExistingRepo(repoRoot)
 		}

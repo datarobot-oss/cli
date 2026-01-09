@@ -91,7 +91,7 @@ func LoadComponentDefaults(explicitPath string) (*ComponentDefaults, error) {
 func findComponentDefaultsPath() string {
 	// 1. Check repo root .datarobot folder
 	repoRoot, err := repo.FindRepoRoot()
-	if err == nil && repoRoot != "" {
+	if err == nil {
 		repoPath := filepath.Join(repoRoot, ".datarobot", ComponentDefaultsFileName)
 		if _, err := os.Stat(repoPath); err == nil {
 			return repoPath
