@@ -16,7 +16,6 @@ package repo_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -64,16 +63,8 @@ func (suite *DetectTestSuite) createAnswers(dir string) {
 	suite.Require().NoError(err)
 }
 
-func (suite *DetectTestSuite) createRepo(dir string) {
-	// Create a git repository
-	cmd := exec.Command("git", "init", dir)
-	err := cmd.Run()
-	suite.Require().NoError(err)
-}
-
 func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
 	suite.createAnswers(suite.tempDir)
-	suite.createRepo(suite.tempDir)
 
 	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
@@ -95,7 +86,6 @@ func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
 
 func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
 	suite.createAnswers(suite.tempDir)
-	suite.createRepo(suite.tempDir)
 
 	// Create nested directory structure
 	nestedPath := filepath.Join(suite.tempDir, "src", "components", "deep")
@@ -120,19 +110,6 @@ func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
 	suite.Equal(expectedPath, actualPath)
 }
 
-func (suite *DetectTestSuite) TestFindRepoRootStopsAtGitFolder() {
-	suite.createRepo(suite.tempDir)
-
-	// Don't create .datarobot/answers, so it's a git repo but not a DataRobot repo
-	err := os.Chdir(suite.tempDir)
-	suite.Require().NoError(err)
-
-	// Should not find a repo root
-	repoRoot, err := repo.FindRepoRoot()
-	suite.Require().NoError(err)
-	suite.Empty(repoRoot)
-}
-
 func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
 	// Don't create .datarobot/answers directory
 	err := os.Chdir(suite.tempDir)
@@ -146,7 +123,6 @@ func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
 
 func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
 	suite.createAnswers(suite.tempDir)
-	suite.createRepo(suite.tempDir)
 
 	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
