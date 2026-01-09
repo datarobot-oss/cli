@@ -151,7 +151,7 @@ func SufficientSelfVersion(minimal string) bool {
 	}
 
 	if minimal == "" {
-		return false
+		return true
 	}
 
 	_, sufficient := sufficientVersion(version.Version, minimal)
