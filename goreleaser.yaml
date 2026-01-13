@@ -91,7 +91,7 @@ homebrew_casks:
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
     directory: Casks
     description: "DataRobot command-line interface."
-    skip_upload: "{{ if contains .Tag \"rc\" }}true{{ else }}false{{ end }}"
+    skip_upload: "{{ if or (.Prerelease) (contains .Tag \"rc\") }}true{{ else }}false{{ end }}"
     repository:
       owner: datarobot-oss
       name: homebrew-taps
