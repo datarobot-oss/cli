@@ -112,7 +112,7 @@ func (m Model) executeCurrentStep() tea.Cmd {
 	}
 
 	currentStep := m.currentStep()
-	log.Info("start: execute step", "index", m.current, "description", currentStep.description)
+	log.Info("start: execute step ", "idx", m.current, "desc", currentStep.description)
 
 	return func() tea.Msg {
 		return currentStep.fn(&m)
@@ -218,8 +218,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// If we're waiting for user confirmation to execute the script
 	if m.waitingToExecute {
-		log.Debug("start: key while waiting", "key", msg.String(), "self_update", m.selfUpdate, "script", m.quickstartScriptPath)
-
 		switch msg.String() {
 		case "y", "Y", "enter":
 			// Punch it, Chewie!
@@ -390,7 +388,7 @@ func checkSelfVersion(_ *Model) tea.Msg {
 	}
 
 	if !tools.SufficientSelfVersion(tool.MinimumVersion) {
-		log.Info("start: insufficient self version", "minimal", tool.MinimumVersion, "installed", version.Version)
+		log.Info("start: insufficient CLI version", "minimal", tool.MinimumVersion, "installed", version.Version)
 		missing := fmt.Sprintf("%s (minimal: v%s, installed: %s)\nDo you want to update it now?",
 			tool.Name, tool.MinimumVersion, version.Version)
 

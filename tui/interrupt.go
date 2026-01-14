@@ -1,6 +1,9 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/log"
+)
 
 // InterruptibleModel wraps any Bubble Tea model to ensure Ctrl-C always works.
 // This wrapper intercepts ALL messages before they reach the underlying model,
@@ -31,6 +34,8 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// screen state, or what the underlying model does
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "ctrl+c" {
+			// Log the interrupt for debugging purposes
+			log.Info("Ctrl-C detected, quitting...")
 			return m, tea.Quit
 		}
 	}
