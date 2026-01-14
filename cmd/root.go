@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -31,6 +32,7 @@ import (
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/plugin"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -116,12 +118,11 @@ func init() {
 
 	setLogLevelFromConfig()
 
-	// Add command groups
+	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
 		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},
 		&cobra.Group{ID: "self", Title: tui.BaseTextStyle.Render("Self Commands:")},
 		&cobra.Group{ID: "advanced", Title: tui.BaseTextStyle.Render("Advanced Commands:")},
-		&cobra.Group{ID: "plugin", Title: tui.BaseTextStyle.Render("Plugin Commands:")},
 	)
 
 	// Add commands here to ensure that they are available to users.
@@ -138,6 +139,9 @@ func init() {
 		task.Cmd(),
 		templates.Cmd(),
 	)
+
+	// Discover and register plugin commands
+	registerPluginCommands()
 
 	// Override the default help command to add --all-commands flag
 	defaultHelpFunc := RootCmd.HelpFunc()
@@ -212,5 +216,59 @@ func setLogLevelFromConfig() {
 		log.SetLevel(log.InfoLevel)
 	} else {
 		log.SetLevel(log.WarnLevel)
+	}
+}
+
+// registerPluginCommands discovers and registers plugin commands
+func registerPluginCommands() {
+	// Get list of builtin command names FIRST (before adding plugins)
+	builtinNames := make(map[string]bool)
+	for _, cmd := range RootCmd.Commands() {
+		builtinNames[cmd.Name()] = true
+	}
+
+	plugins, err := plugin.GetPlugins()
+	if err != nil {
+		log.Debug("Plugin discovery failed", "error", err)
+		return
+	}
+
+	if len(plugins) == 0 {
+		// No plugins found, don't add empty group header
+		return
+	}
+
+	// Only add plugin group if we have plugins to show
+	RootCmd.AddGroup(&cobra.Group{
+		ID:    "plugin",
+		Title: tui.BaseTextStyle.Render("Plugin Commands:"),
+	})
+
+	for _, p := range plugins {
+		// Skip if conflicts with builtin command
+		if builtinNames[p.Manifest.Name] {
+			log.Debug("Plugin name conflicts with builtin command",
+				"plugin", p.Manifest.Name,
+				"path", p.Executable)
+
+			continue
+		}
+
+		RootCmd.AddCommand(createPluginCommand(p))
+	}
+}
+
+func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
+	executable := p.Executable // Capture for closure
+
+	return &cobra.Command{
+		Use:                p.Manifest.Name,
+		Short:              p.Manifest.Description,
+		GroupID:            "plugin",
+		DisableFlagParsing: true, // Pass all args to plugin
+		Run: func(_ *cobra.Command, args []string) {
+			exitCode := plugin.ExecutePlugin(executable, args)
+			os.Exit(exitCode)
+		},
 	}
 }
