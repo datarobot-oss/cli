@@ -390,6 +390,7 @@ func checkSelfVersion(_ *Model) tea.Msg {
 	}
 
 	if !tools.SufficientSelfVersion(tool.MinimumVersion) {
+		log.Info("start: insufficient self version", "minimal", tool.MinimumVersion, "installed", version.Version)
 		missing := fmt.Sprintf("%s (minimal: v%s, installed: %s)\nDo you want to update it now?",
 			tool.Name, tool.MinimumVersion, version.Version)
 
