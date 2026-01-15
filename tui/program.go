@@ -23,6 +23,12 @@ func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 			os.Exit(1)
 		}
 
+		styles := log.DefaultStyles()
+		for level, style := range styles.Levels {
+			styles.Levels[level] = style.MaxWidth(5)
+		}
+
+		log.SetStyles(styles)
 		log.SetOutput(f)
 
 		defer f.Close()
