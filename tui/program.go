@@ -27,7 +27,7 @@ func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 		// so that we can see the full level name, e.g. "DEBUG"
 		styles := log.DefaultStyles()
 		for level, style := range styles.Levels {
-			styles.Levels[level] = style.MaxWidth(5)
+			styles.Levels[level] = style.MaxWidth(5).PaddingRight(1)
 		}
 
 		log.SetStyles(styles)
