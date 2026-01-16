@@ -19,6 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -39,6 +40,7 @@ func Cmd() *cobra.Command { //nolint: cyclop
 The following actions will be performed:
 - Checking for prerequisite tooling
 - Executing the start script associated with the template, if available.`,
+		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			m := NewStartModel(opts)
 

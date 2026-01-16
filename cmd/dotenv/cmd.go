@@ -103,9 +103,7 @@ This wizard will help you:
   4️⃣  Validate your configuration
 
 💡 Perfect for first-time setup or when adding new integrations.`,
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE(cmd.Context())
-	},
+	PreRunE: auth.EnsureAuthenticatedE,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
@@ -199,9 +197,7 @@ This command will:
   • Preserve your existing custom settings
 
 💡 Use this when your credentials expire or you need to refresh your connection.`,
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE(cmd.Context())
-	},
+	PreRunE: auth.EnsureAuthenticatedE,
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {

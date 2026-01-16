@@ -29,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -39,8 +40,8 @@ var APIKeyCallbackFunc = WaitForAPIKeyCallback
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns an error if authentication
 // fails, suitable for use in Cobra PreRunE hooks.
-func EnsureAuthenticatedE(ctx context.Context) error {
-	if !EnsureAuthenticated(ctx) {
+func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
+	if !EnsureAuthenticated(cmd.Context()) {
 		return errors.New("Authentication failed.")
 	}
 
