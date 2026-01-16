@@ -23,6 +23,7 @@ func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 			os.Exit(1)
 		}
 
+		log.SetStyles(DebugLogStyles)
 		log.SetOutput(f)
 
 		defer f.Close()
