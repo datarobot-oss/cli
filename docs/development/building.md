@@ -584,6 +584,11 @@ When you enable debug mode, the CLI:
 - Prints detailed log messages to stderr.
 - Creates a `dr-tui-debug.log` file in the current directory for TUI-related debug information.
 
+When adding new debug output:
+
+- Prefer TUI debug logging via `tui.Run()` so logs go to `dr-tui-debug.log` whenever possible.
+- Never log user-provided input (including prompt responses), and avoid logging secrets (tokens, passwords, etc.).
+
 ### Add debug statements
 
 ```go

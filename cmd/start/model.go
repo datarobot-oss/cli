@@ -26,6 +26,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
@@ -100,6 +101,8 @@ func NewStartModel(opts Options) Model {
 }
 
 func (m Model) Init() tea.Cmd {
+	log.Info("start: init", "steps", len(m.steps), "answer_yes", m.opts.AnswerYes)
+
 	return m.executeCurrentStep()
 }
 
@@ -109,6 +112,7 @@ func (m Model) executeCurrentStep() tea.Cmd {
 	}
 
 	currentStep := m.currentStep()
+	log.Info("start: execute step ", "idx", m.current, "desc", currentStep.description)
 
 	return func() tea.Msg {
 		return currentStep.fn(&m)
@@ -119,7 +123,10 @@ func (m Model) executeNextStep() (Model, tea.Cmd) {
 	// Check if there are more steps
 	if m.current >= len(m.steps)-1 {
 		// No more steps, we're done
+		log.Info("start: all steps complete", "current", m.current, "steps", len(m.steps))
+
 		m.done = true
+
 		return m, tea.Quit
 	}
 
@@ -183,10 +190,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleStepComplete(msg)
 
 	case stepErrorMsg:
+		log.Debug("start: step error", "error", msg.err)
+
 		m.err = msg.err
+
 		return m, tea.Quit
 
 	case scriptCompleteMsg:
+		log.Debug("start: script complete")
+
 		// Script execution completed successfully, update state and quit
 		_ = state.UpdateAfterSuccessfulRun()
 
@@ -199,6 +211,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// If there's an error, any key press quits
 	if m.err != nil {
+		log.Debug("start: key ignored due to error", "key", msg.String(), "error", m.err)
+
 		return m, tea.Quit
 	}
 
@@ -239,7 +253,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Normal key handling when not waiting
 	switch msg.String() {
 	case "q", "esc":
+		log.Info("start: quit requested", "key", msg.String())
+
 		m.quitting = true
+
 		return m, tea.Quit
 	}
 
@@ -247,6 +264,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
+	log.Debug(
+		"start: step complete",
+		"message", msg.message,
+		"waiting", msg.waiting,
+		"done", msg.done,
+		"hide_menu", msg.hideMenu,
+		"self_update", msg.selfUpdate,
+		"execute_script", msg.executeScript,
+		"quickstart_script_path", msg.quickstartScriptPath,
+		"need_template_setup", msg.needTemplateSetup,
+	)
+
 	// Store any message from the completed step
 	if msg.message != "" {
 		m.stepCompleteMessage = msg.message
@@ -359,6 +388,7 @@ func checkSelfVersion(_ *Model) tea.Msg {
 	}
 
 	if !tools.SufficientSelfVersion(tool.MinimumVersion) {
+		log.Info("start: insufficient CLI version", "minimal", tool.MinimumVersion, "installed", version.Version)
 		missing := fmt.Sprintf("%s (minimal: v%s, installed: %s)\nDo you want to update it now?",
 			tool.Name, tool.MinimumVersion, version.Version)
 
@@ -407,6 +437,8 @@ func checkRepository(m *Model) tea.Msg {
 	// Check if we're in a DataRobot repository
 	// If not, we need to run templates setup
 	if !repo.IsInRepo() {
+		pwd, _ := os.Getwd()
+		log.Info("start: pwd " + pwd + " is not a DataRobot repository")
 		// Not in a repo, signal that we need to run templates setup and quit
 		return stepCompleteMsg{
 			message:           "Not in a DataRobot repository. Launching template setup...\n",
