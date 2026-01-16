@@ -23,14 +23,7 @@ func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 			os.Exit(1)
 		}
 
-		// Customize log styles to increase level width
-		// so that we can see the full level name, e.g. "DEBUG"
-		styles := log.DefaultStyles()
-		for level, style := range styles.Levels {
-			styles.Levels[level] = style.MaxWidth(5).PaddingRight(1)
-		}
-
-		log.SetStyles(styles)
+		log.SetStyles(DebugLogStyles)
 		log.SetOutput(f)
 
 		defer f.Close()
