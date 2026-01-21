@@ -218,7 +218,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 
 // Sort sorts by chunk position in dotenv file
 func (ch DotenvChunks) Sort() DotenvChunks {
-	slices.SortFunc(ch, func(a, b Chunk) int {
+	slices.SortStableFunc(ch, func(a, b Chunk) int {
 		// If both are prompt chunks sort by position in prompts array
 		if a.PromptIndex != 0 && b.PromptIndex != 0 {
 			return cmp.Compare(a.PromptIndex, b.PromptIndex)
