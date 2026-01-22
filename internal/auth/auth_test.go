@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,9 +42,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	tempDir, err := os.MkdirTemp("", "auth-test-*")
 	require.NoError(t, err)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	// Save original callback function.
 	originalCallback := APIKeyCallbackFunc
@@ -81,7 +80,6 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 
 	cleanup := func() {
 		server.Close()
-		os.Setenv("HOME", originalHome)
 		os.RemoveAll(tempDir)
 		viper.Reset()
 
@@ -196,11 +194,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
@@ -219,7 +213,10 @@ func TestConfig_WriteAndRead(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	configFilePath := filepath.Join(os.Getenv("HOME"), ".config", "datarobot", "drconfig.yaml")
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	configFilePath := filepath.Join(homeDir, ".config", "datarobot", "drconfig.yaml")
 	viper.SetConfigFile(configFilePath)
 
 	viper.Set(config.DataRobotAPIKey, "test-token")
@@ -248,11 +245,7 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
