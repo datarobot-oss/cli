@@ -249,7 +249,10 @@ func networkTimeoutMsg() tea.Msg {
 
 func saveHost(host string) tea.Cmd {
 	return func() tea.Msg {
-		_ = config.SaveURLToConfig(host)
+		err := config.SaveURLToConfig(host)
+		if err != nil {
+			return exitMsg{message: err.Error()}
+		}
 
 		return authKeyStartMsg{}
 	}

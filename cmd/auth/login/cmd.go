@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func RunE(cmd *cobra.Command, _ []string) error {
+func RunE(cmd *cobra.Command, args []string) error {
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
@@ -36,6 +36,13 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		log.Error(err)
 
 		return err
+	}
+
+	if url := args[0]; url != "" {
+		err := config.SaveURLToConfig(args[0])
+		if err != nil {
+			log.Error(err.Error())
+		}
 	}
 
 	datarobotHost := auth.GetBaseURLOrAsk()
@@ -89,7 +96,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "login",
+		Use:   "login [url]",
 		Short: "🔐 Log in to DataRobot using OAuth authentication.",
 		Long: `Log in to DataRobot using OAuth authentication in your browser.
 

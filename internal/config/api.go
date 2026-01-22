@@ -88,7 +88,7 @@ func SaveURLToConfig(newURL string) error {
 		return err
 	}
 
-	if err := CreateConfigFileDirIfNotExists(); err != nil {
+	if err = CreateConfigFileDirIfNotExists(); err != nil {
 		return err
 	}
 
@@ -98,16 +98,12 @@ func SaveURLToConfig(newURL string) error {
 		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
 
-		_ = viper.WriteConfig()
-
-		return nil
+		return viper.WriteConfig()
 	}
 
 	viper.Set(DataRobotURL, newURL+"/api/v2")
 
-	_ = viper.WriteConfig()
-
-	return nil
+	return viper.WriteConfig()
 }
 
 func urlFromShortcut(selectedOption string) string {
