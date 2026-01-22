@@ -228,17 +228,22 @@ func getInstallFunc(rootCmd *cobra.Command, shellType internalShell.Shell, force
 }
 
 func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
 	var installPath string
 
 	var compDir string
 
 	// Check for Oh-My-Zsh first (most common)
-	if fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
-		compDir = filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions")
+	if fsutil.DirExists(filepath.Join(homeDir, ".oh-my-zsh")) {
+		compDir = filepath.Join(homeDir, ".oh-my-zsh", "custom", "completions")
 		installPath = filepath.Join(compDir, "_"+version.CliName)
 	} else {
 		// Use standard Zsh completion directory
-		compDir = filepath.Join(os.Getenv("HOME"), ".zsh", "completions")
+		compDir = filepath.Join(homeDir, ".zsh", "completions")
 		installPath = filepath.Join(compDir, "_"+version.CliName)
 	}
 
@@ -261,7 +266,7 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 		}
 
 		// Clear cache
-		cachePattern := filepath.Join(os.Getenv("HOME"), ".zcompdump*")
+		cachePattern := filepath.Join(homeDir, ".zcompdump*")
 
 		matches, _ := filepath.Glob(cachePattern)
 		for _, match := range matches {
@@ -269,8 +274,8 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 		}
 
 		// Add to fpath if using standard Zsh (not Oh-My-Zsh)
-		if !fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
-			zshrc := filepath.Join(os.Getenv("HOME"), ".zshrc")
+		if !fsutil.DirExists(filepath.Join(homeDir, ".oh-my-zsh")) {
+			zshrc := filepath.Join(homeDir, ".zshrc")
 			if err := ensureFpathInZshrc(zshrc, compDir); err != nil {
 				fmt.Printf("%s %s\n", warnStyle.Render("Warning: "), err)
 			}
