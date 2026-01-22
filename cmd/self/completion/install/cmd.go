@@ -422,34 +422,9 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 }
 
 func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	// Get PowerShell profile path
-	var profilePath string
-
-	if runtime.GOOS == "windows" {
-		// On Windows, use $PROFILE (Documents\PowerShell or Documents\WindowsPowerShell)
-		documentsPath, err := os.UserHomeDir()
-		if err != nil {
-			return "", func(*cobra.Command) error { return err }
-		}
-
-		documentsPath = filepath.Join(documentsPath, "Documents")
-
-		// Try PowerShell Core first (PowerShell 7+)
-		psCorePath := filepath.Join(documentsPath, "PowerShell")
-		if fsutil.DirExists(psCorePath) {
-			profilePath = filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1")
-		} else {
-			// Fall back to Windows PowerShell 5.x
-			profilePath = filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
-		}
-	} else {
-		// On Unix-like systems with PowerShell Core
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", func(*cobra.Command) error { return err }
-		}
-
-		profilePath = filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1")
+	profilePath, err := powerShellProfilePath()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
 	}
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -493,6 +468,25 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 	}
 
 	return profilePath, installFunc
+}
+
+func powerShellProfilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	if runtime.GOOS != "windows" {
+		return filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"), nil
+	}
+
+	documentsPath := filepath.Join(homeDir, "Documents")
+	psCorePath := filepath.Join(documentsPath, "PowerShell")
+	if fsutil.DirExists(psCorePath) {
+		return filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1"), nil
+	}
+
+	return filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"), nil
 }
 
 func showActivationInstructions(shell internalShell.Shell) {

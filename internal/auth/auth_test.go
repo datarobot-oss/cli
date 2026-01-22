@@ -222,7 +222,7 @@ func TestConfig_WriteAndRead(t *testing.T) {
 	viper.Set(config.DataRobotAPIKey, "test-token")
 
 	// SafeWriteConfig creates the file if it doesn't exist.
-	err := viper.SafeWriteConfig()
+	err = viper.SafeWriteConfig()
 	if err != nil {
 		// File might already exist, try WriteConfig.
 		err = viper.WriteConfig()
