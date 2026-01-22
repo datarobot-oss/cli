@@ -117,11 +117,7 @@ func TestWriteConfigFileSilent_PreservesExtraFields(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
@@ -176,11 +172,7 @@ func TestWriteConfigFileSilent_FailsWhenMultipleFieldsChanged(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
