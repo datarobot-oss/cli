@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,11 +33,7 @@ func TestWriteConfigFileSilent_OnlyTokenChanged(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
