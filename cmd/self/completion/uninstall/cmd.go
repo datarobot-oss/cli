@@ -205,19 +205,24 @@ func performUninstall(shell internalShell.Shell) error {
 }
 
 func getUninstallPaths(shell internalShell.Shell) []string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = ""
+	}
+
 	switch shell {
 	case internalShell.Zsh:
 		return []string{
-			filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions", "_"+version.CliName),
-			filepath.Join(os.Getenv("HOME"), ".zsh", "completions", "_"+version.CliName),
+			filepath.Join(homeDir, ".oh-my-zsh", "custom", "completions", "_"+version.CliName),
+			filepath.Join(homeDir, ".zsh", "completions", "_"+version.CliName),
 		}
 	case internalShell.Bash:
 		return []string{
-			filepath.Join(os.Getenv("HOME"), ".bash_completions", version.CliName),
+			filepath.Join(homeDir, ".bash_completions", version.CliName),
 		}
 	case internalShell.Fish:
 		return []string{
-			filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions", version.CliName+".fish"),
+			filepath.Join(homeDir, ".config", "fish", "completions", version.CliName+".fish"),
 		}
 	case internalShell.PowerShell:
 		var paths []string
@@ -235,7 +240,6 @@ func getUninstallPaths(shell internalShell.Shell) []string {
 			// Windows PowerShell
 			paths = append(paths, filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"))
 		} else {
-			homeDir := os.Getenv("HOME")
 			paths = append(paths, filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"))
 		}
 
@@ -265,10 +269,15 @@ func promptForUninstallConfirmation() (bool, error) {
 }
 
 func uninstallZsh() bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = ""
+	}
+
 	var removed bool
 
 	// Oh-My-Zsh location
-	path1 := filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions", "_"+version.CliName)
+	path1 := filepath.Join(homeDir, ".oh-my-zsh", "custom", "completions", "_"+version.CliName)
 	if fsutil.FileExists(path1) {
 		_ = os.Remove(path1)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path1)
@@ -277,7 +286,7 @@ func uninstallZsh() bool {
 	}
 
 	// Standard Zsh location
-	path2 := filepath.Join(os.Getenv("HOME"), ".zsh", "completions", "_"+version.CliName)
+	path2 := filepath.Join(homeDir, ".zsh", "completions", "_"+version.CliName)
 	if fsutil.FileExists(path2) {
 		_ = os.Remove(path2)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path2)
@@ -287,7 +296,7 @@ func uninstallZsh() bool {
 
 	// Clear cache
 	if removed {
-		cachePattern := filepath.Join(os.Getenv("HOME"), ".zcompdump*")
+		cachePattern := filepath.Join(homeDir, ".zcompdump*")
 
 		matches, _ := filepath.Glob(cachePattern)
 		for _, match := range matches {
@@ -299,7 +308,12 @@ func uninstallZsh() bool {
 }
 
 func uninstallBash() bool {
-	path := filepath.Join(os.Getenv("HOME"), ".bash_completions", version.CliName)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = ""
+	}
+
+	path := filepath.Join(homeDir, ".bash_completions", version.CliName)
 	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
@@ -311,7 +325,12 @@ func uninstallBash() bool {
 }
 
 func uninstallFish() bool {
-	path := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions", version.CliName+".fish")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = ""
+	}
+
+	path := filepath.Join(homeDir, ".config", "fish", "completions", version.CliName+".fish")
 	if fsutil.FileExists(path) {
 		_ = os.Remove(path)
 		fmt.Printf("%s Removed: %s\n", successStyle.Render("✓"), path)
