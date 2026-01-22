@@ -288,7 +288,12 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 }
 
 func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	compDir := filepath.Join(os.Getenv("HOME"), ".bash_completions")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
+	compDir := filepath.Join(homeDir, ".bash_completions")
 	installPath := filepath.Join(compDir, version.CliName)
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -342,7 +347,7 @@ func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 		}
 
 		// Add sourcing to bashrc if not already there
-		bashrc := filepath.Join(os.Getenv("HOME"), ".bashrc")
+		bashrc := filepath.Join(homeDir, ".bashrc")
 		if err := ensureSourceInBashrc(bashrc, installPath); err != nil {
 			fmt.Printf("%s %s\n", warnStyle.Render("Warning:"), err)
 		}
@@ -388,7 +393,12 @@ func isBashCompletionAvailable() bool {
 }
 
 func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	compDir := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
+	compDir := filepath.Join(homeDir, ".config", "fish", "completions")
 	installPath := filepath.Join(compDir, version.CliName+".fish")
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -434,7 +444,11 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 		}
 	} else {
 		// On Unix-like systems with PowerShell Core
-		homeDir := os.Getenv("HOME")
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", func(*cobra.Command) error { return err }
+		}
+
 		profilePath = filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1")
 	}
 
