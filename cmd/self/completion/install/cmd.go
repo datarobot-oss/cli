@@ -427,9 +427,9 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 
 	if runtime.GOOS == "windows" {
 		// On Windows, use $PROFILE (Documents\PowerShell or Documents\WindowsPowerShell)
-		documentsPath := os.Getenv("USERPROFILE")
-		if documentsPath == "" {
-			documentsPath = os.Getenv("HOME")
+		documentsPath, err := os.UserHomeDir()
+		if err != nil {
+			return "", func(*cobra.Command) error { return err }
 		}
 
 		documentsPath = filepath.Join(documentsPath, "Documents")

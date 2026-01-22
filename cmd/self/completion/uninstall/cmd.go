@@ -228,9 +228,9 @@ func getUninstallPaths(shell internalShell.Shell) []string {
 		var paths []string
 
 		if runtime.GOOS == "windows" {
-			documentsPath := os.Getenv("USERPROFILE")
-			if documentsPath == "" {
-				documentsPath = os.Getenv("HOME")
+			documentsPath, err := os.UserHomeDir()
+			if err != nil {
+				return []string{}
 			}
 
 			documentsPath = filepath.Join(documentsPath, "Documents")
