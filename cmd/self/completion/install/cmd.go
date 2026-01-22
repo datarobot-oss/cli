@@ -481,6 +481,7 @@ func powerShellProfilePath() (string, error) {
 	}
 
 	documentsPath := filepath.Join(homeDir, "Documents")
+
 	psCorePath := filepath.Join(documentsPath, "PowerShell")
 	if fsutil.DirExists(psCorePath) {
 		return filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1"), nil
