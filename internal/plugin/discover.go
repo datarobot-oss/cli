@@ -21,7 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -98,12 +97,7 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 
 		fullPath := filepath.Join(dir, name)
 
-		// Must be executable
-		if !isExecutable(fullPath) {
-			continue
-		}
-
-		// Validate plugin can be found by exec.LookPath
+		// Validate plugin is executable by Go runtime
 		if _, err := exec.LookPath(fullPath); err != nil {
 			log.Debug("Plugin not executable by Go runtime", "path", fullPath, "error", err)
 			continue
@@ -135,23 +129,6 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 	}
 
 	return plugins, errors
-}
-
-func isExecutable(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-
-	if runtime.GOOS == "windows" {
-		// Check for executable extensions
-		ext := strings.ToLower(filepath.Ext(path))
-
-		return ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ".ps1"
-	}
-
-	// Unix: check execute bit
-	return info.Mode()&0o111 != 0
 }
 
 func getManifest(executable string) (*PluginManifest, error) {

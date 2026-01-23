@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -49,61 +48,6 @@ fi
 	require.NoError(t, err)
 
 	return path
-}
-
-// TestIsExecutable tests the isExecutable function
-func TestIsExecutable(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "plugin-exec-test")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(tempDir)
-
-	t.Run("non-existent file", func(t *testing.T) {
-		result := isExecutable(filepath.Join(tempDir, "nonexistent"))
-		require.False(t, result)
-	})
-
-	if runtime.GOOS != "windows" {
-		t.Run("unix file with execute bit", func(t *testing.T) {
-			path := filepath.Join(tempDir, "executable")
-			err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0"), 0o755)
-			require.NoError(t, err)
-
-			result := isExecutable(path)
-			require.True(t, result)
-		})
-
-		t.Run("unix file without execute bit", func(t *testing.T) {
-			path := filepath.Join(tempDir, "non-executable")
-			err := os.WriteFile(path, []byte("just a file"), 0o644)
-			require.NoError(t, err)
-
-			result := isExecutable(path)
-			require.False(t, result)
-		})
-	}
-
-	if runtime.GOOS == "windows" {
-		for _, ext := range []string{".exe", ".bat", ".cmd", ".ps1"} {
-			t.Run("windows "+ext, func(t *testing.T) {
-				path := filepath.Join(tempDir, "test"+ext)
-				err := os.WriteFile(path, []byte("test"), 0o644)
-				require.NoError(t, err)
-
-				result := isExecutable(path)
-				require.True(t, result)
-			})
-		}
-
-		t.Run("windows non-executable extension", func(t *testing.T) {
-			path := filepath.Join(tempDir, "test.txt")
-			err := os.WriteFile(path, []byte("test"), 0o644)
-			require.NoError(t, err)
-
-			result := isExecutable(path)
-			require.False(t, result)
-		})
-	}
 }
 
 // DiscoverTestSuite tests discovery functions with filesystem fixtures
