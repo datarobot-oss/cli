@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
+	plugincmd "github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
@@ -138,6 +139,7 @@ func init() {
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
+		plugincmd.Cmd(),
 	)
 
 	// Discover and register plugin commands
