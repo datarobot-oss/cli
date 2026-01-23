@@ -11,7 +11,7 @@ Builds the DR CLI binary across multiple operating systems (Linux, macOS, Window
 
 **Inputs:**
 - `os-matrix` (string, default: `["ubuntu-latest", "macos-latest", "windows-latest"]`) - OS matrix for builds
-- `go-version` (string, default: `1.25.5`) - Go version to use
+- `go-version` (string, default: `1.25.6`) - Go version to use
 - `upload-artifact` (boolean, default: `false`) - Whether to upload artifacts
 - `artifact-name-prefix` (string, default: `dr`) - Prefix for artifact names
 
@@ -21,7 +21,7 @@ jobs:
   build:
     uses: ./.github/workflows/.build-matrix.yaml
     with:
-      go-version: '1.25.5'
+      go-version: '1.25.6'
       upload-artifact: true
     secrets: inherit
 ```
@@ -30,7 +30,7 @@ jobs:
 Builds Windows binary using GoReleaser (cross-compiled from Ubuntu).
 
 **Inputs:**
-- `go-version` (string, default: `1.25.5`) - Go version to use
+- `go-version` (string, default: `1.25.6`) - Go version to use
 - `artifact-name` (string, default: `dr-windows`) - Name for the artifact
 - `ref` (string, optional) - Git ref to checkout (useful for fork PRs)
 
@@ -49,7 +49,7 @@ Runs smoke tests on Linux and macOS.
 
 **Inputs:**
 - `os-matrix` (string, default: `["ubuntu-latest", "macos-latest"]`) - OS matrix
-- `go-version` (string, default: `1.25.5`) - Go version to use
+- `go-version` (string, default: `1.25.6`) - Go version to use
 - `ref` (string, optional) - Git ref to checkout
 
 **Secrets (required):**
@@ -62,7 +62,7 @@ jobs:
   smoke-test:
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
-      go-version: '1.25.5'
+      go-version: '1.25.6'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
 Basic environment setup (checkout, Go, Taskfile, caching).
 
 **Inputs:**
-- `go-version` (string, default: `1.25.5`) - Go version to use
+- `go-version` (string, default: `1.25.6`) - Go version to use
 - `install-taskfile` (boolean, default: `true`) - Whether to install Taskfile
 - `setup-cache` (boolean, default: `false`) - Whether to setup Go cache
 
