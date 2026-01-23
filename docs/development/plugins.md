@@ -99,6 +99,29 @@ Minimum requirements:
 3. Implement `--dr-plugin-manifest` to print valid JSON with at least `name`.
 4. Put it in `.dr/plugins/` or on `PATH`.
 
+## Troubleshooting: `dr <command>` not found
+
+If you run `dr <command>` expecting `<command>` to be provided by a plugin, but the CLI reports it as an unknown command, check:
+
+1. **Is the plugin discoverable?** Run:
+
+   ```bash
+   dr plugin list
+   ```
+
+   If the plugin is not listed, it was not discovered during startup.
+
+2. **Is the plugin executable accessible on `PATH`?** The CLI discovers plugins from `.dr/plugins/` and from `PATH`.
+   - Ensure the plugin binary is named `dr-<something>` and is executable.
+   - Ensure the directory containing `dr-<something>` is on your `PATH`.
+   - You can verify with your shell, e.g.:
+
+     ```bash
+     which dr-<something>
+     ```
+
+3. **Did you disable or time out discovery?** If `--plugin-discovery-timeout` is `0s` (disabled) or too low, plugins may not be registered.
+
 ## Related commands
 
 - `dr plugin list` / `dr plugins list`: show discovered plugins and their manifest metadata.
