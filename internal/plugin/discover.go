@@ -29,9 +29,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+// TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder
 var registry = &PluginRegistry{}
 
 // GetPlugins returns discovered plugins, discovering lazily on first call
+// TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
 func GetPlugins() ([]DiscoveredPlugin, error) {
 	registry.once.Do(func() {
 		registry.plugins, registry.err = discoverPlugins()
@@ -40,12 +42,16 @@ func GetPlugins() ([]DiscoveredPlugin, error) {
 	return registry.plugins, registry.err
 }
 
+// TODO: Consider parallel manifest fetching using errgroup for better performance with many PATH directories
 func discoverPlugins() ([]DiscoveredPlugin, error) {
 	plugins := make([]DiscoveredPlugin, 0)
 
 	seen := make(map[string]bool)
 
+	// TODO: Add support for user-global plugins directory (~/.datarobot/cli/plugins)
+
 	// 1. Check project-local directory first (higher priority)
+	// TODO: LocalPluginDir shares path with QuickstartScriptPath - consider dedicated plugin directory
 	localPlugins, errs := discoverInDir(repo.LocalPluginDir, seen)
 	plugins = append(plugins, localPlugins...)
 
@@ -145,6 +151,7 @@ func getManifest(executable string) (*PluginManifest, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
+		// TODO: Wrap error with executable path for better debugging context
 		return nil, err
 	}
 
@@ -158,6 +165,8 @@ func getManifest(executable string) (*PluginManifest, error) {
 	if manifest.Name == "" {
 		return nil, errors.New("plugin manifest missing required field: name")
 	}
+
+	// TODO: Validate manifest.Name against a pattern (alphanumeric + hyphens) to prevent confusing command names
 
 	return &manifest, nil
 }

@@ -17,9 +17,11 @@ package plugin
 import "sync"
 
 // PluginManifest represents the JSON manifest returned by plugins
+// TODO: Consider adding Aliases field for command aliases (e.g., "d" for "deploy")
+// TODO: Consider adding MinCLIVersion field for compatibility checking
 type PluginManifest struct {
 	Name        string `json:"name"`
-	Version     string `json:"version"`
+	Version     string `json:"version"` // TODO: Version is currently unused - consider logging or version checking
 	Description string `json:"description"`
 }
 

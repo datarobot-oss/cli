@@ -220,6 +220,7 @@ func setLogLevelFromConfig() {
 }
 
 // registerPluginCommands discovers and registers plugin commands
+// TODO: Consider adding a "dr plugins list" subcommand to show discovered plugins with paths and versions
 func registerPluginCommands() {
 	// Get list of builtin command names FIRST (before adding plugins)
 	builtinNames := make(map[string]bool)
@@ -247,6 +248,7 @@ func registerPluginCommands() {
 	for _, p := range plugins {
 		// Skip if conflicts with builtin command
 		if builtinNames[p.Manifest.Name] {
+			// TODO: Consider logging at Info level since this affects user-visible behavior
 			log.Debug("Plugin name conflicts with builtin command",
 				"plugin", p.Manifest.Name,
 				"path", p.Executable)
