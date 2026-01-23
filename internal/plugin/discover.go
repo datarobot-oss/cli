@@ -17,6 +17,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -185,6 +186,11 @@ func getManifest(executable string) (*PluginManifest, error) {
 
 	if err := json.Unmarshal(output, &manifest); err != nil {
 		return nil, err
+	}
+
+	// Validate required fields
+	if manifest.Name == "" {
+		return nil, fmt.Errorf("plugin manifest missing required field: name")
 	}
 
 	return &manifest, nil
