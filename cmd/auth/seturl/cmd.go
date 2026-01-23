@@ -34,8 +34,13 @@ This command helps you choose the correct DataRobot environment:
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if url := args[0]; url != "" {
-				err := config.SaveURLToConfig(args[0])
+			var url string
+			if len(args) > 0 {
+				url = args[0]
+			}
+
+			if url != "" {
+				err := config.SaveURLToConfig(url)
 				if err == nil {
 					_ = auth.EnsureAuthenticatedE(cmd, args)
 
