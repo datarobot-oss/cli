@@ -23,6 +23,8 @@ Use Taskfile tasks rather than raw Go commands:
 - Test files follow `*_test.go` naming convention
 - If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
 
+**Go Version Requirement:** Tests run with the `-race` flag for data race detection. The race runtime must match your Go compiler version exactly. If you see errors like `compile: version "go1.X.Y" does not match go tool version "go1.X.Z"`, ensure your installed Go version matches the version in `go.mod` (run `brew upgrade go` or adjust `go.mod` accordingly).
+
 ## Code Style Requirements
 
 ### Go Whitespace Rules (Critical)
