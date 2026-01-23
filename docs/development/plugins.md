@@ -2,6 +2,8 @@
 
 This document describes how the DataRobot CLI plugin system works and how to build a plugin.
 
+See more information on Confluence at [DataRobot CLI Integration Analysis](https://datarobot.atlassian.net/wiki/spaces/CFX/pages/7220985894/DataRobot+CLI+Integration+Analysis).
+
 ## Overview
 
 Plugins are external executables that extend the `dr` CLI with additional top-level commands.
