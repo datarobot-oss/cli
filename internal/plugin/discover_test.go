@@ -51,75 +51,6 @@ fi
 	return path
 }
 
-// TestExtractPluginName tests the extractPluginName function
-func TestExtractPluginName(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		expected string
-	}{
-		{
-			name:     "unix plugin simple",
-			filename: "dr-myplugin",
-			expected: "myplugin",
-		},
-		{
-			name:     "unix plugin with dashes",
-			filename: "dr-my-cool-plugin",
-			expected: "my-cool-plugin",
-		},
-		{
-			name:     "just prefix",
-			filename: "dr-",
-			expected: "",
-		},
-		{
-			name:     "no prefix",
-			filename: "myplugin",
-			expected: "myplugin",
-		},
-	}
-
-	// Add Windows-specific tests
-	if runtime.GOOS == "windows" {
-		tests = append(tests, []struct {
-			name     string
-			filename string
-			expected string
-		}{
-			{
-				name:     "windows exe",
-				filename: "dr-myplugin.exe",
-				expected: "myplugin",
-			},
-			{
-				name:     "windows bat",
-				filename: "dr-tool.bat",
-				expected: "tool",
-			},
-			{
-				name:     "windows cmd",
-				filename: "dr-tool.cmd",
-				expected: "tool",
-			},
-			{
-				name:     "windows ps1",
-				filename: "dr-tool.ps1",
-				expected: "tool",
-			},
-		}...)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractPluginName(tt.filename)
-			if result != tt.expected {
-				t.Errorf("extractPluginName(%q) = %q, expected %q", tt.filename, result, tt.expected)
-			}
-		})
-	}
-}
-
 // TestIsExecutable tests the isExecutable function
 func TestIsExecutable(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "plugin-exec-test")
@@ -225,7 +156,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirValidPlugin() {
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
 	s.Equal("1.0.0", plugins[0].Manifest.Version)
 	s.Equal("Test plugin", plugins[0].Manifest.Description)
-	s.True(seen["testplugin"])
+	s.True(seen["test-plugin"]) // seen map now uses manifest.Name
 }
 
 func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
@@ -258,15 +189,30 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonExecutable() {
 func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 	createMockPlugin(s.T(), s.tempDir, "dr-duplicate", validManifest)
 
-	// Pre-populate seen map to simulate earlier discovery
+	// Pre-populate seen map with manifest name (not filename)
 	seen := map[string]bool{
-		"duplicate": true,
+		"test-plugin": true, // validManifest has name: "test-plugin"
 	}
 
 	plugins, _ := discoverInDir(s.tempDir, seen)
 
-	// Should be skipped due to duplicate
+	// Should be skipped due to duplicate manifest name
 	s.Empty(plugins)
+}
+
+func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
+	// Two different binary names, same manifest name
+	manifest := `{"name":"shared-name","version":"1.0.0","description":"Test"}`
+	createMockPlugin(s.T(), s.tempDir, "dr-first", manifest)
+	createMockPlugin(s.T(), s.tempDir, "dr-second", manifest)
+
+	seen := make(map[string]bool)
+	plugins, errs := discoverInDir(s.tempDir, seen)
+
+	// Only one should be registered (first one wins based on directory order)
+	s.Len(plugins, 1)
+	s.Empty(errs)
+	s.Equal("shared-name", plugins[0].Manifest.Name)
 }
 
 func (s *DiscoverTestSuite) TestDiscoverInDirInvalidManifest() {

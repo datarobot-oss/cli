@@ -17,7 +17,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,12 +96,6 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 			continue
 		}
 
-		// Skip if already seen (earlier path takes precedence)
-		pluginName := extractPluginName(name)
-		if seen[pluginName] {
-			continue
-		}
-
 		fullPath := filepath.Join(dir, name)
 
 		// Must be executable
@@ -123,7 +117,16 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 			continue
 		}
 
-		seen[pluginName] = true
+		// Deduplicate on manifest.Name (the actual command name)
+		if seen[manifest.Name] {
+			log.Debug("Plugin name already registered, skipping",
+				"name", manifest.Name,
+				"path", fullPath)
+
+			continue
+		}
+
+		seen[manifest.Name] = true
 
 		plugins = append(plugins, DiscoveredPlugin{
 			Manifest:   *manifest,
@@ -132,20 +135,6 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 	}
 
 	return plugins, errors
-}
-
-func extractPluginName(filename string) string {
-	// Remove dr- prefix
-	name := strings.TrimPrefix(filename, "dr-")
-
-	// Remove extension on Windows
-	if runtime.GOOS == "windows" {
-		for _, ext := range []string{".exe", ".bat", ".cmd", ".ps1"} {
-			name = strings.TrimSuffix(name, ext)
-		}
-	}
-
-	return name
 }
 
 func isExecutable(path string) bool {
@@ -190,7 +179,7 @@ func getManifest(executable string) (*PluginManifest, error) {
 
 	// Validate required fields
 	if manifest.Name == "" {
-		return nil, fmt.Errorf("plugin manifest missing required field: name")
+		return nil, errors.New("plugin manifest missing required field: name")
 	}
 
 	return &manifest, nil
