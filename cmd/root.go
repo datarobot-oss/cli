@@ -264,6 +264,7 @@ func registerPluginCommands() {
 
 func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 	executable := p.Executable // Capture for closure
+	pluginName := p.Manifest.Name
 
 	return &cobra.Command{
 		Use:                p.Manifest.Name,
@@ -272,6 +273,9 @@ func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
 		Run: func(_ *cobra.Command, args []string) {
+			fmt.Printf("Running plugin: %s\n", pluginName)
+			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
+
 			exitCode := plugin.ExecutePlugin(executable, args)
 			os.Exit(exitCode)
 		},
