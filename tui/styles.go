@@ -8,6 +8,7 @@ var (
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
 	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	TitleStyle    = BaseTextStyle.Foreground(GetAdaptiveColor(DrGreen, DrGreenDark)).Bold(true).MarginBottom(1)
 
 	// Specific UI styles
 	LogoStyle     = BaseTextStyle
@@ -25,9 +26,10 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).
 			Padding(0, 1)
-	StatusBarStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(DrPurpleLight).
-			Foreground(DrPurpleLight).
-			Padding(0, 1)
+	TableBorderStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight))
+	StatusBarStyle   = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(DrPurpleLight).
+				Foreground(DrPurpleLight).
+				Padding(0, 1)
 )

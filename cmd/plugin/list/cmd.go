@@ -50,35 +50,23 @@ func runList(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	titleColor := tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
-	nameColor := tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
-	descColor := tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark)
-	pathColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
-	borderColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
-
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(titleColor).
-		MarginBottom(1)
-
-	fmt.Println(titleStyle.Render("Discovered Plugins"))
+	fmt.Println(tui.TitleStyle.Render("Discovered Plugins"))
 	fmt.Println()
 
-	nameStyle := lipgloss.NewStyle().
-		Foreground(nameColor).
+	nameStyle := tui.BaseTextStyle.
+		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
 		Padding(0, 1)
 
-	descStyle := lipgloss.NewStyle().
-		Foreground(descColor).
+	descStyle := tui.DimStyle.
 		Padding(0, 1)
 
-	pathStyle := lipgloss.NewStyle().
-		Foreground(pathColor).
+	pathStyle := tui.BaseTextStyle.
+		Foreground(tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)).
 		Padding(0, 1)
 
 	t := table.New().
 		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(borderColor)).
+		BorderStyle(tui.TableBorderStyle).
 		StyleFunc(func(_, col int) lipgloss.Style {
 			switch col {
 			case 0:
