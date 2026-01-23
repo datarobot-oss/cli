@@ -273,7 +273,7 @@ func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
 		Run: func(_ *cobra.Command, args []string) {
-			fmt.Printf("Running plugin: %s\n", pluginName)
+			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := plugin.ExecutePlugin(executable, args)
