@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
@@ -109,6 +110,7 @@ func init() {
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
+	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -116,6 +118,7 @@ func init() {
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 
 	setLogLevelFromConfig()
 
@@ -229,9 +232,36 @@ func registerPluginCommands() {
 		builtinNames[cmd.Name()] = true
 	}
 
-	plugins, err := plugin.GetPlugins()
-	if err != nil {
-		log.Debug("Plugin discovery failed", "error", err)
+	type pluginDiscoveryResult struct {
+		plugins []plugin.DiscoveredPlugin
+		err     error
+	}
+
+	resultCh := make(chan pluginDiscoveryResult, 1)
+
+	go func() {
+		plugins, err := plugin.GetPlugins()
+		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
+	}()
+
+	timeout := viper.GetDuration("plugin-discovery-timeout")
+	if timeout <= 0 {
+		log.Debug("Plugin discovery disabled", "timeout", timeout)
+		return
+	}
+
+	var plugins []plugin.DiscoveredPlugin
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil {
+			log.Debug("Plugin discovery failed", "error", r.err)
+			return
+		}
+
+		plugins = r.plugins
+	case <-time.After(timeout):
+		log.Debug("Plugin discovery timed out", "timeout", timeout)
 		return
 	}
 
