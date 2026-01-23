@@ -103,12 +103,6 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 			continue
 		}
 
-		// Validate plugin can be found by exec.LookPath
-		if _, err := exec.LookPath(fullPath); err != nil {
-			log.Debug("Plugin not executable by Go runtime", "path", fullPath, "error", err)
-			continue
-		}
-
 		// Try to get manifest
 		manifest, err := getManifest(fullPath)
 		if err != nil {
