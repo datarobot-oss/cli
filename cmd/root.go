@@ -222,7 +222,6 @@ func setLogLevelFromConfig() {
 }
 
 // registerPluginCommands discovers and registers plugin commands
-// TODO: Consider adding a "dr plugins list" subcommand to show discovered plugins with paths and versions
 func registerPluginCommands() {
 	// Get list of builtin command names FIRST (before adding plugins)
 	builtinNames := make(map[string]bool)
