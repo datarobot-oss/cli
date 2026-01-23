@@ -266,6 +266,7 @@ func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 		Short:              p.Manifest.Description,
 		GroupID:            "plugin",
 		DisableFlagParsing: true, // Pass all args to plugin
+		DisableSuggestions: true,
 		Run: func(_ *cobra.Command, args []string) {
 			exitCode := plugin.ExecutePlugin(executable, args)
 			os.Exit(exitCode)

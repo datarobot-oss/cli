@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -53,7 +54,8 @@ func ExecutePlugin(executable string, args []string) int {
 	signal.Stop(sigChan)
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return exitErr.ExitCode()
 		}
 

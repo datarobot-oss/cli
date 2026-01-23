@@ -19,4 +19,6 @@ const (
 	DataRobotTemplateDetectPath = ".datarobot/answers"
 	// QuickstartScriptPath is the path to the quickstart scripts directory relative to CWD
 	QuickstartScriptPath = ".datarobot/cli/bin"
+	// LocalPluginDir is the project-local plugin directory relative to CWD
+	LocalPluginDir = ".datarobot/cli/bin"
 )

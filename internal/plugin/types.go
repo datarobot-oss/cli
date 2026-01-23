@@ -18,18 +18,9 @@ import "sync"
 
 // PluginManifest represents the JSON manifest returned by plugins
 type PluginManifest struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Description  string            `json:"description"`
-	Commands     []PluginCommand   `json:"commands,omitempty"`
-	Requirements map[string]string `json:"requirements,omitempty"`
-}
-
-// PluginCommand describes a command exposed by a plugin
-type PluginCommand struct {
 	Name        string `json:"name"`
+	Version     string `json:"version"`
 	Description string `json:"description"`
-	Usage       string `json:"usage,omitempty"`
 }
 
 // DiscoveredPlugin pairs a manifest with its executable path

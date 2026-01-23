@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/repo"
+	"github.com/spf13/viper"
 )
 
 var registry = &PluginRegistry{}
@@ -44,12 +46,11 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 	seen := make(map[string]bool)
 
 	// 1. Check project-local directory first (higher priority)
-	localDir := ".datarobot/cli/bin"
-	localPlugins, errs := discoverInDir(localDir, seen)
+	localPlugins, errs := discoverInDir(repo.LocalPluginDir, seen)
 	plugins = append(plugins, localPlugins...)
 
 	for _, err := range errs {
-		log.Debug("Plugin discovery error in local dir", "dir", localDir, "error", err)
+		log.Debug("Plugin discovery error in local dir", "dir", repo.LocalPluginDir, "error", err)
 	}
 
 	// 2. Check PATH directories
@@ -107,6 +108,12 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 			continue
 		}
 
+		// Validate plugin can be found by exec.LookPath
+		if _, err := exec.LookPath(fullPath); err != nil {
+			log.Debug("Plugin not executable by Go runtime", "path", fullPath, "error", err)
+			continue
+		}
+
 		// Try to get manifest
 		manifest, err := getManifest(fullPath)
 		if err != nil {
@@ -158,7 +165,13 @@ func isExecutable(path string) bool {
 }
 
 func getManifest(executable string) (*PluginManifest, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Default timeout if not configured
+	timeout := 500 * time.Millisecond
+	if viper.IsSet("plugin.manifest_timeout_ms") {
+		timeout = time.Duration(viper.GetInt("plugin.manifest_timeout_ms")) * time.Millisecond
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, executable, "--dr-plugin-manifest")
