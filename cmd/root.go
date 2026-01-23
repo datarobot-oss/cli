@@ -261,7 +261,8 @@ func registerPluginCommands() {
 
 		plugins = r.plugins
 	case <-time.After(timeout):
-		log.Debug("Plugin discovery timed out", "timeout", timeout)
+		// TODO Log this at Info level since it affects user-visible behavior
+		log.Warn("Plugin discovery timed out", "timeout", timeout)
 		return
 	}
 
