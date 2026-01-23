@@ -68,7 +68,7 @@ type stepCompleteMsg struct {
 	needTemplateSetup    bool   // Whether we need to run template setup
 }
 
-type scriptCompleteMsg struct{}
+type startScriptCompleteMsg struct{ err error }
 
 type stepErrorMsg struct {
 	err error // Error encountered during step execution
@@ -152,16 +152,16 @@ func (m Model) execQuickstartScript() tea.Cmd {
 
 		cmd := exec.Command(taskPath, "start")
 
-		return tea.ExecProcess(cmd, func(_ error) tea.Msg {
-			return scriptCompleteMsg{}
+		return tea.ExecProcess(cmd, func(e error) tea.Msg {
+			return startScriptCompleteMsg{err: e}
 		})
 	}
 
 	// Regular quickstart script execution
 	cmd := exec.Command(m.quickstartScriptPath)
 
-	return tea.ExecProcess(cmd, func(_ error) tea.Msg {
-		return scriptCompleteMsg{}
+	return tea.ExecProcess(cmd, func(e error) tea.Msg {
+		return startScriptCompleteMsg{err: e}
 	})
 }
 
@@ -196,8 +196,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Quit
 
-	case scriptCompleteMsg:
+	case startScriptCompleteMsg:
 		log.Debug("start: script complete")
+
+		m.err = msg.err
+
+		if m.err != nil {
+			return m, tea.Quit
+		}
 
 		// Script execution completed successfully, update state and quit
 		_ = state.UpdateAfterSuccessfulRun()
