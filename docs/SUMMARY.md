@@ -43,6 +43,7 @@ docs/
 ├── commands/                           # Command reference
 │   ├── README.md                      # Command overview ✓
 │   ├── auth.md                        # auth command ✓
+│   ├── plugins.md                     # plugin command ✓
 │   ├── start.md                       # start/quickstart command ✓
 │   ├── templates.md                   # templates command (TODO)
 │   ├── run.md                         # run command (TODO)
