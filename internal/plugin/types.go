@@ -12,13 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package repo
+package plugin
 
-const (
-	// DataRobotTemplateDetectPath is the path to the answers folder relative to CWD
-	DataRobotTemplateDetectPath = ".datarobot/answers"
-	// QuickstartScriptPath is the path to the quickstart scripts directory relative to CWD
-	QuickstartScriptPath = ".datarobot/cli/bin"
-	// LocalPluginDir is the project-local plugin directory relative to CWD
-	LocalPluginDir = ".datarobot/cli/bin"
-)
+import "sync"
+
+// PluginManifest represents the JSON manifest returned by plugins
+type PluginManifest struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+}
+
+// DiscoveredPlugin pairs a manifest with its executable path
+type DiscoveredPlugin struct {
+	Manifest   PluginManifest
+	Executable string // Full path to executable
+}
+
+// PluginRegistry holds discovered plugins with lazy initialization
+type PluginRegistry struct {
+	plugins []DiscoveredPlugin
+	once    sync.Once
+	err     error
+}
