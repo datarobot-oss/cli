@@ -31,11 +31,16 @@ var (
 )
 
 func CreateConfigFileDirIfNotExists() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
 	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+	defaultConfigFileDir := filepath.Join(homeDir, configFileDir)
 	defaultConfigFilePath := filepath.Join(defaultConfigFileDir, configFileName)
 
-	_, err := os.Stat(defaultConfigFilePath)
+	_, err = os.Stat(defaultConfigFilePath)
 	if err == nil {
 		// File exists, do nothing
 		return nil
@@ -61,8 +66,13 @@ func CreateConfigFileDirIfNotExists() error {
 }
 
 func ReadConfigFile(filePath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
 	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+	defaultConfigFileDir := filepath.Join(homeDir, configFileDir)
 
 	viper.SetConfigType("yaml")
 
