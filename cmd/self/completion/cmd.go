@@ -15,6 +15,7 @@
 package completion
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -73,9 +74,15 @@ PowerShell:
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1)),
 		ValidArgs:             internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			shell := internalShell.Shell(args[0])
+			var shell internalShell.Shell
+			if len(args) > 0 {
+				shell = internalShell.Shell(args[0])
+			}
 
 			switch shell {
+			case "":
+				cmd.SilenceUsage = true
+				return errors.New("No shell provided.")
 			case internalShell.Bash:
 				return cmd.Root().GenBashCompletion(os.Stdout)
 			case internalShell.Zsh:

@@ -16,12 +16,13 @@ package seturl
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set-url",
+		Use:   "set-url [url]",
 		Short: "🌐 Configure your DataRobot environment URL.",
 		Long: `Configure your DataRobot environment URL with an interactive selection.
 
@@ -33,6 +34,20 @@ This command helps you choose the correct DataRobot environment:
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			var url string
+			if len(args) > 0 {
+				url = args[0]
+			}
+
+			if url != "" {
+				err := config.SaveURLToConfig(url)
+				if err == nil {
+					_ = auth.EnsureAuthenticatedE(cmd, args)
+
+					return
+				}
+			}
+
 			urlChanged := auth.SetURLAction()
 
 			if urlChanged {

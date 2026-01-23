@@ -280,6 +280,8 @@ func SetURLAction() bool {
 					continue
 				}
 
+				log.Error(err)
+
 				break
 			}
 

@@ -48,7 +48,7 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 
 func RunE(cmd *cobra.Command, args []string) error {
 	var updateFileName string
-	if len(args) > 0 && args[0] != "" {
+	if len(args) > 0 {
 		updateFileName = args[0]
 	}
 
