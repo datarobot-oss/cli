@@ -1,6 +1,6 @@
 # DR CLI Plugin System POC
 
-This branch (`chas/plugin-poc`) implements a plugin discovery and execution system for the DR CLI.
+This branch (`chas/plugin-poc-v2`) implements a plugin discovery and execution system for the DR CLI.
 
 ## Overview
 
@@ -17,7 +17,7 @@ Plugins must follow the naming convention `dr-<name>` and respond to `--dr-plugi
 
 ```bash
 cd /path/to/cli
-git checkout chas/plugin-poc
+git checkout chas/plugin-poc-v2
 task build
 ```
 
@@ -29,7 +29,7 @@ The `dr-agentassist` plugin must be installed and available in PATH:
 
 ```bash
 cd /path/to/dr-agent-cli
-git checkout chas/plugin-poc
+git checkout chas/plugin-poc-v2
 cd mdb
 uv tool install --force --editable .
 ```
@@ -71,19 +71,14 @@ On CLI startup, the plugin system:
 {
   "name": "agentassist",
   "version": "0.1.0",
-  "description": "AI agent design, coding, and deployment assistant",
-  "commands": [
-    {
-      "name": "agentassist",
-      "description": "Interactive agent development assistant",
-      "usage": "dr agentassist [options]"
-    }
-  ],
-  "requirements": {
-    "python": ">=3.10"
-  }
+  "description": "AI agent design, coding, and deployment assistant"
 }
 ```
+
+The manifest requires three fields:
+- `name` (required): The command name used to invoke the plugin (e.g., `dr agentassist`)
+- `version`: Semantic version of the plugin
+- `description`: Short description shown in `dr --help` output
 
 ### Plugin Execution
 
@@ -112,11 +107,15 @@ This means if you've authenticated with `dr auth login`, the agent-assist plugin
 ```
 cli/
 ├── internal/plugin/
-│   ├── types.go      # Manifest structs
-│   ├── discover.go   # Plugin discovery logic
-│   └── exec.go       # Plugin execution with signal handling
+│   ├── types.go          # Manifest structs
+│   ├── discover.go       # Plugin discovery logic
+│   ├── discover_test.go  # Discovery unit tests
+│   ├── exec.go           # Plugin execution with signal handling
+│   └── exec_test.go      # Execution unit tests
+├── internal/repo/
+│   └── paths.go          # Modified: added LocalPluginDir constant
 └── cmd/
-    └── root.go       # Modified: plugin registration
+    └── root.go           # Modified: plugin registration
 ```
 
 ## Testing
