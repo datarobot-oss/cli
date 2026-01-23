@@ -29,7 +29,7 @@ expect {
     }
 }
 
-set timeout -1
+set timeout 360
 
 # Filter
 send -- {/}
@@ -45,30 +45,46 @@ sleep 1
 expect "talk-to-my-docs-agents"
 send -- "\r\n"
 
-expect "Interactive Setup"
+expect "AGENT_RETRIEVAL_AGENT_ENDPOINT"
+send -- "\r\n"
+
+expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
 send -- "\r\n"
 
 expect "PULUMI_CONFIG_PASSPHRASE"
 send -- "\r\n"
 
-expect "SESSION_SECRET_KEY"
-send -- "TESTING_SESSION_SECRET_KEY\r\n"
-
-expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
+expect "DATAROBOT_DEFAULT_USE_CASE"
 send -- "\r\n"
 
-expect "data source to use for this application"
+expect "INFRA_ENABLE_LLM"
+send -- "\r\n"
+
+expect "LLM_DEFAULT_MODEL"
+send -- "\r\n"
+
+expect "LLM_DEFAULT_LLM_ID"
+send -- "\r\n"
+
+expect "SESSION_SECRET_KEY"
+send -- "\025"
+send -- "TESTING_SESSION_SECRET_KEY\r\n"
+
+expect "DATABASE_URI"
+send -- "\r\n"
+
+expect "None (leave blank)"
 send -- "\r\n"
 
 expect "Environment Variables Menu"
 send -- "\r\n"
 
-# Component selection screen - press space to select first component, then enter
-expect "Available Components"
-sleep 1
-send -- " "
-
-sleep 1
-send -- "\r\n"
+# # Component selection screen - press space to select first component, then enter
+# expect "Available Components"
+# sleep 1
+# send -- " "
+#
+# sleep 1
+# send -- "\r\n"
 
 expect eof
