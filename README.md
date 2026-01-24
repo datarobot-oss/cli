@@ -149,7 +149,7 @@ If you would like to build and install from source, you can do so by following t
 
 #### Prerequisites
 
-- Go 1.25.5 or later (for building from source)
+- Go 1.25.6 or later (for building from source)
 - Git
 - [Task](https://taskfile.dev/) (for development and task running)
 
