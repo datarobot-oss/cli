@@ -27,14 +27,14 @@ import (
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
-	plugincmd "github.com/datarobot/cli/cmd/plugin"
+	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/plugin"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -142,7 +142,7 @@ func init() {
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
-		plugincmd.Cmd(),
+		plugin.Cmd(),
 	)
 
 	// Discover and register plugin commands
@@ -233,14 +233,14 @@ func registerPluginCommands() {
 	}
 
 	type pluginDiscoveryResult struct {
-		plugins []plugin.DiscoveredPlugin
+		plugins []internalPlugin.DiscoveredPlugin
 		err     error
 	}
 
 	resultCh := make(chan pluginDiscoveryResult, 1)
 
 	go func() {
-		plugins, err := plugin.GetPlugins()
+		plugins, err := internalPlugin.GetPlugins()
 		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
 	}()
 
@@ -250,7 +250,7 @@ func registerPluginCommands() {
 		return
 	}
 
-	var plugins []plugin.DiscoveredPlugin
+	var plugins []internalPlugin.DiscoveredPlugin
 
 	select {
 	case r := <-resultCh:
@@ -292,7 +292,7 @@ func registerPluginCommands() {
 	}
 }
 
-func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
+func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	executable := p.Executable // Capture for closure
 	pluginName := p.Manifest.Name
 
@@ -306,7 +306,7 @@ func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
-			exitCode := plugin.ExecutePlugin(executable, args)
+			exitCode := internalPlugin.ExecutePlugin(executable, args)
 			os.Exit(exitCode)
 		},
 	}
