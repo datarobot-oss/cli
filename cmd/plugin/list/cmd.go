@@ -51,7 +51,6 @@ func runList(_ *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println(tui.TitleStyle.Render("Discovered Plugins"))
-	fmt.Println()
 
 	nameStyle := tui.BaseTextStyle.
 		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).

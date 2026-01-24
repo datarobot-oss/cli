@@ -5,13 +5,14 @@ import "github.com/charmbracelet/lipgloss"
 // Common style definitions using DataRobot branding
 var (
 	// Adaptive colors for light/dark terminals
+	TitleColor  = GetAdaptiveColor(DrGreen, DrGreenDark)
 	BorderColor = GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)
 
 	BaseTextStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurple, DrPurpleDark))
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
 	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	TitleStyle    = BaseTextStyle.Foreground(GetAdaptiveColor(DrGreen, DrGreenDark)).Bold(true).MarginBottom(1)
+	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
 
 	// Specific UI styles
 	LogoStyle     = BaseTextStyle

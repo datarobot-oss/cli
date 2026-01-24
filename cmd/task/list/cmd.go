@@ -191,18 +191,12 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	}
 
 	// Adaptive colors for light/dark terminals
-	titleColor := tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
 	taskColor := tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
 	aliasColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
 	descColor := tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark)
 	tipBorderColor := tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(titleColor).
-		MarginBottom(1)
-
-	fmt.Println(titleStyle.Render("Available Tasks"))
+	fmt.Println(tui.TitleStyle.Render("Available Tasks"))
 
 	// Define table styles
 	taskNameStyle := lipgloss.NewStyle().
