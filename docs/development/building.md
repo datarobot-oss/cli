@@ -539,6 +539,22 @@ go test -run TestLogin ./cmd/auth
 
 **Note**: `task test` automatically runs tests with race detection and coverage enabled.
 
+### Go version requirements for race detection
+
+The `-race` flag requires the race runtime library to match your Go compiler version exactly. If you see an error like:
+
+```text
+compile: version "go1.X.Y" does not match go tool version "go1.X.Z"
+```
+
+This means your installed Go version doesn't match the version specified in `go.mod`. Go's `GOTOOLCHAIN=auto` setting (the default) automatically downloads the required toolchain, but the race runtime comes from your local `GOROOT` installation.
+
+**To resolve:**
+
+- **Upgrade Go** to match `go.mod`: `brew upgrade go` (macOS)
+- **Or downgrade `go.mod`**: `go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version)
+- **Or force the downloaded toolchain**: `export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`)
+
 ### Run smoke tests using GitHub Actions
 
 DataRobot has smoke tests that are not currently run on Pull Requests. However you can use PR comments to trigger them.
