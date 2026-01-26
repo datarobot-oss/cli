@@ -39,6 +39,7 @@ These flags are available for all commands:
 | [`task`](task.md)     | Manage Taskfile composition and task execution.     |
 | [`dotenv`](dotenv.md) | Manage environment variables.                       |
 | [`self`](self.md)     | CLI utility commands (update, version, completion). |
+| [`plugin`](plugins.md) | Inspect and manage CLI plugins.                    |
 
 ### Command tree
 
