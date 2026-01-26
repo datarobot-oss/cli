@@ -119,7 +119,7 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 
 		// Deduplicate on manifest.Name (the actual command name)
 		if seen[manifest.Name] {
-			log.Debug("Plugin name already registered, skipping",
+			log.Warn("Plugin name already registered, skipping",
 				"name", manifest.Name,
 				"path", fullPath)
 
