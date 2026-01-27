@@ -719,9 +719,6 @@ Test your prompt configuration:
 # Dry run without saving
 dr dotenv setup
 
-# Check discovered prompts
-dr templates status
-
 # View generated .env
 cat .env
 ```

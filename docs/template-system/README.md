@@ -41,8 +41,7 @@ dr templates list
 # Interactive setup (recommended)
 dr templates setup
 
-# Manual setup
-dr templates clone my-template
+# Manual setup (if you already have a template directory)
 cd my-template
 dr dotenv setup
 dr run dev
