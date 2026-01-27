@@ -1,0 +1,85 @@
+site_name: DataRobot CLI Documentation
+site_url: https://datarobot-oss.github.io/cli2/dev-preview/
+site_description: Documentation for the DataRobot CLI tool
+repo_url: https://github.com/datarobot-oss/cli2
+repo_name: datarobot-oss/cli2
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+  - same-dir
+
+# Output configuration
+site_dir: dev-preview
+docs_dir: .
+
+# Navigation structure
+nav:
+  - Home: index.md
+  - User Guide:
+      - user-guide/README.md
+      - Quick Reference: user-guide/quick-reference.md
+      - Shell Completions: user-guide/shell-completions.md
+      - Configuration: user-guide/configuration.md
+  - Template System:
+      - template-system/README.md
+      - Structure: template-system/structure.md
+      - Interactive Configuration: template-system/interactive-config.md
+      - Environment Variables: template-system/environment-variables.md
+  - Commands:
+      - commands/README.md
+      - auth: commands/auth.md
+      - start: commands/start.md
+      - run: commands/run.md
+      - task: commands/task.md
+      - dotenv: commands/dotenv.md
+      - completion: commands/completion.md
+      - self: commands/self.md
+      - plugins: commands/plugins.md
+      - component: commands/component-managed-updates.md
+  - Development:
+      - development/README.md
+      - Setup: development/setup.md
+      - Building: development/building.md
+      - Structure: development/structure.md
+      - Authentication: development/authentication.md
+      - Releasing: development/releasing.md
+      - Plugins: development/plugins.md
+
+# Exclude patterns to avoid processing non-documentation files
+exclude_docs: |
+  dev-preview/
+  .venv/
+  pyproject.toml
+  component-defaults-example.yaml
+  install
+  winstall

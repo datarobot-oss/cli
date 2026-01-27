@@ -36,6 +36,18 @@ To start contributing, you'll need to set up your development environment:
    - Architecture overview
    - Coding standards and quality tools
 
+### Documentation Preview
+
+To preview the documentation site locally:
+
+```bash
+cd docs
+uv sync
+uv run mkdocs serve
+```
+
+Then open `http://localhost:8000` in your browser. The preview will auto-reload when you edit markdown files.
+
 ## Development Workflow
 
 ### Quick Start

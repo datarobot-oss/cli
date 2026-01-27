@@ -43,6 +43,11 @@ coverage.html
 # Tea
 dr-tui-debug.log
 
+# MkDocs
+docs/dev-preview/
+docs/.venv/
+docs/uv.lock
+
 # IDEs/Editors
 *.sublime-project
 *.sublime-workspace
