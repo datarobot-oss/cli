@@ -46,8 +46,7 @@ func TestGetStatePath(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get state path
-		statePath, err := getStatePath()
-		require.NoError(t, err)
+		statePath := getStatePath(tmpDir)
 
 		expected := filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml")
 		assert.Equal(t, expected, statePath)
@@ -76,6 +75,7 @@ func TestLoadSave(t *testing.T) {
 
 		// Create and save state
 		originalState := state{
+			fullPath:   getStatePath(tmpDir),
 			LastStart:  time.Now().UTC().Truncate(time.Second),
 			CLIVersion: "1.0.0",
 		}
@@ -84,7 +84,7 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load state back
-		loadedState, err := load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
 
 		assert.Equal(t, originalState.CLIVersion, loadedState.CLIVersion)
@@ -108,7 +108,7 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to load non-existent state
-		loadedState, err := load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
 		assert.Nil(t, loadedState.LastTemplatesSetup)
 		assert.Nil(t, loadedState.LastDotenvSetup)
@@ -137,13 +137,13 @@ func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	// Update state
 	beforeUpdate := time.Now().UTC()
 
-	err = UpdateAfterSuccessfulRun()
+	err = UpdateAfterSuccessfulRun(tmpDir)
 	require.NoError(t, err)
 
 	afterUpdate := time.Now().UTC()
 
 	// Load and verify
-	loadedState, err := load()
+	loadedState, err := load(tmpDir)
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, loadedState.CLIVersion)

@@ -24,10 +24,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var stateFilePath = filepath.Join(".datarobot", "cli", "state.yaml")
-
 // state represents the current state of CLI interactions with a repository.
 type state struct {
+	fullPath string
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
@@ -40,28 +39,19 @@ type state struct {
 
 // getStatePath determines the appropriate location for the state file.
 // The state file is stored in .datarobot/cli directory within the current repository.
-func getStatePath() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Use local .datarobot/cli directory
-	return filepath.Join(cwd, stateFilePath), nil
+func getStatePath(basePath string) string {
+	return filepath.Join(basePath, ".datarobot", "cli", "state.yaml")
 }
 
 // load reads the state file from the appropriate location.
 // Returns nil if the file doesn't exist (first run).
-func load() (state, error) {
-	statePath, err := getStatePath()
-	if err != nil {
-		return state{}, err
-	}
+func load(basePath string) (state, error) {
+	fullPath := getStatePath(basePath)
 
-	data, err := os.ReadFile(statePath)
+	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return state{}, nil // File doesn't exist yet, not an error
+			return state{fullPath: fullPath}, nil // File doesn't exist yet, not an error
 		}
 
 		return state{}, err
@@ -73,6 +63,8 @@ func load() (state, error) {
 	if err != nil {
 		return state{}, err
 	}
+
+	existingState.fullPath = fullPath
 
 	return existingState, nil
 }
@@ -89,15 +81,10 @@ func (s state) update() error {
 // Creates parent directories if they don't exist.
 // Note: Consider using update() instead, which automatically sets CLIVersion.
 func (s state) save() error {
-	statePath, err := getStatePath()
-	if err != nil {
-		return err
-	}
-
 	// Ensure parent directory exists
-	stateDir := filepath.Dir(statePath)
+	stateDir := filepath.Dir(s.fullPath)
 
-	err = os.MkdirAll(stateDir, 0o755)
+	err := os.MkdirAll(stateDir, 0o755)
 	if err != nil {
 		return err
 	}
@@ -107,7 +94,7 @@ func (s state) save() error {
 		return err
 	}
 
-	err = os.WriteFile(statePath, data, 0o644)
+	err = os.WriteFile(s.fullPath, data, 0o644)
 	if err != nil {
 		return err
 	}
@@ -116,9 +103,9 @@ func (s state) save() error {
 }
 
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
-func UpdateAfterSuccessfulRun() error {
+func UpdateAfterSuccessfulRun(path string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load()
+	existingState, err := load(path)
 	if err != nil {
 		return err
 	}
@@ -129,9 +116,9 @@ func UpdateAfterSuccessfulRun() error {
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
-func UpdateAfterDotenvSetup() error {
+func UpdateAfterDotenvSetup(path string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load()
+	existingState, err := load(path)
 	if err != nil {
 		return err
 	}
@@ -143,9 +130,9 @@ func UpdateAfterDotenvSetup() error {
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup() error {
+func UpdateAfterTemplatesSetup(path string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load()
+	existingState, err := load(path)
 	if err != nil {
 		return err
 	}
@@ -158,13 +145,13 @@ func UpdateAfterTemplatesSetup() error {
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
 // If force-interactive flag is set, this always returns false to force re-execution.
-func HasCompletedDotenvSetup() bool {
+func HasCompletedDotenvSetup(path string) bool {
 	// Check if we should force the wizard to run
 	if viper.GetBool("force-interactive") {
 		return false
 	}
 
-	existingState, err := load()
+	existingState, err := load(path)
 	if err != nil {
 		return false
 	}
