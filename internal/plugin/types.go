@@ -21,7 +21,7 @@ import "sync"
 // TODO: Consider adding MinCLIVersion field for compatibility checking
 type PluginManifest struct {
 	Name        string `json:"name"`
-	Version     string `json:"version"` // TODO: Version is currently unused - consider logging or version checking
+	Version     string `json:"version"`
 	Description string `json:"description"`
 }
 
