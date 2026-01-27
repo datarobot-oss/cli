@@ -59,13 +59,13 @@ func TestDotenvSetupTracking(t *testing.T) {
 		afterUpdate := time.Now().UTC()
 
 		// Load and verify
-		state, err := Load()
+		loadedState, err := load()
 		require.NoError(t, err)
-		require.NotNil(t, state)
-		require.NotNil(t, state.LastDotenvSetup)
+		require.NotNil(t, loadedState)
+		require.NotNil(t, loadedState.LastDotenvSetup)
 
-		assert.True(t, state.LastDotenvSetup.After(beforeUpdate) || state.LastDotenvSetup.Equal(beforeUpdate))
-		assert.True(t, state.LastDotenvSetup.Before(afterUpdate) || state.LastDotenvSetup.Equal(afterUpdate))
+		assert.True(t, loadedState.LastDotenvSetup.After(beforeUpdate) || loadedState.LastDotenvSetup.Equal(beforeUpdate))
+		assert.True(t, loadedState.LastDotenvSetup.Before(afterUpdate) || loadedState.LastDotenvSetup.Equal(afterUpdate))
 	})
 
 	t.Run("UpdateAfterDotenvSetup preserves existing fields", func(t *testing.T) {
@@ -101,13 +101,13 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load and verify both fields are present
-		state, err := Load()
+		loadedState, err := load()
 		require.NoError(t, err)
-		require.NotNil(t, state)
+		require.NotNil(t, loadedState)
 
-		assert.NotEmpty(t, state.CLIVersion)
-		assert.False(t, state.LastStart.IsZero())
-		assert.NotNil(t, state.LastDotenvSetup)
+		assert.NotEmpty(t, loadedState.CLIVersion)
+		assert.False(t, loadedState.LastStart.IsZero())
+		assert.NotNil(t, loadedState.LastDotenvSetup)
 	})
 
 	t.Run("HasCompletedDotenvSetup returns true when setup completed in past", func(t *testing.T) {

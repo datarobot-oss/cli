@@ -206,7 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Script execution completed successfully, update state and quit
-		_ = state.UpdateAfterSuccessfulRun()
+		_ = state.UpdateAfterSuccessfulRun() // TODO: pass directory here
 
 		return m, tea.Quit
 	}
@@ -247,7 +247,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 			// User chose to not execute script, so update state and quit
-			_ = state.UpdateAfterSuccessfulRun()
+			_ = state.UpdateAfterSuccessfulRun() // TODO: pass directory here
 			m.quitting = true
 
 			return m, tea.Quit

@@ -24,14 +24,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	stateFileName = "state.yaml"
-	cliSubDir     = "cli"
-	localStateDir = ".datarobot"
-)
+var stateFilePath = filepath.Join(".datarobot", "cli", "state.yaml")
 
-// State represents the current state of CLI interactions with a repository.
-type State struct {
+// state represents the current state of CLI interactions with a repository.
+type state struct {
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
@@ -42,61 +38,58 @@ type State struct {
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
 
-// GetStatePath determines the appropriate location for the state file.
+// getStatePath determines the appropriate location for the state file.
 // The state file is stored in .datarobot/cli directory within the current repository.
-func GetStatePath() (string, error) {
+func getStatePath() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 
 	// Use local .datarobot/cli directory
-	localPath := filepath.Join(cwd, localStateDir, cliSubDir)
-	statePath := filepath.Join(localPath, stateFileName)
-
-	return statePath, nil
+	return filepath.Join(cwd, stateFilePath), nil
 }
 
-// Load reads the state file from the appropriate location.
+// load reads the state file from the appropriate location.
 // Returns nil if the file doesn't exist (first run).
-func Load() (*State, error) {
-	statePath, err := GetStatePath()
+func load() (state, error) {
+	statePath, err := getStatePath()
 	if err != nil {
-		return nil, err
+		return state{}, err
 	}
 
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil // File doesn't exist yet, not an error
+			return state{}, nil // File doesn't exist yet, not an error
 		}
 
-		return nil, err
+		return state{}, err
 	}
 
-	var state State
+	var existingState state
 
-	err = yaml.Unmarshal(data, &state)
+	err = yaml.Unmarshal(data, &existingState)
 	if err != nil {
-		return nil, err
+		return state{}, err
 	}
 
-	return &state, nil
+	return existingState, nil
 }
 
-// Update saves the state file and automatically sets the CLIVersion.
+// update saves the state file and automatically sets the CLIVersion.
 // This should be the preferred method for saving state.
-func (s *State) Update() error {
+func (s state) update() error {
 	s.CLIVersion = version.Version
 
-	return Save(s)
+	return s.save()
 }
 
-// Save writes the state file to the appropriate location.
+// save writes the state file to the appropriate location.
 // Creates parent directories if they don't exist.
-// Note: Consider using Update() instead, which automatically sets CLIVersion.
-func Save(state *State) error {
-	statePath, err := GetStatePath()
+// Note: Consider using update() instead, which automatically sets CLIVersion.
+func (s state) save() error {
+	statePath, err := getStatePath()
 	if err != nil {
 		return err
 	}
@@ -109,7 +102,7 @@ func Save(state *State) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(state)
+	data, err := yaml.Marshal(s)
 	if err != nil {
 		return err
 	}
@@ -125,54 +118,42 @@ func Save(state *State) error {
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
 func UpdateAfterSuccessfulRun() error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load()
 	if err != nil {
 		return err
 	}
 
-	if existingState == nil {
-		existingState = &State{}
-	}
-
 	existingState.LastStart = time.Now().UTC()
 
-	return existingState.Update()
+	return existingState.update()
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
 func UpdateAfterDotenvSetup() error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load()
 	if err != nil {
 		return err
-	}
-
-	if existingState == nil {
-		existingState = &State{}
 	}
 
 	now := time.Now().UTC()
 	existingState.LastDotenvSetup = &now
 
-	return existingState.Update()
+	return existingState.update()
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
 func UpdateAfterTemplatesSetup() error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load()
 	if err != nil {
 		return err
-	}
-
-	if existingState == nil {
-		existingState = &State{}
 	}
 
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
 
-	return existingState.Update()
+	return existingState.update()
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
@@ -183,10 +164,11 @@ func HasCompletedDotenvSetup() bool {
 		return false
 	}
 
-	state, err := Load()
-	if err != nil || state == nil {
+	existingState, err := load()
+	if err != nil {
 		return false
 	}
 
-	return state.LastDotenvSetup != nil && state.LastDotenvSetup.Before(time.Now())
+	return existingState.LastDotenvSetup != nil &&
+		existingState.LastDotenvSetup.Before(time.Now())
 }
