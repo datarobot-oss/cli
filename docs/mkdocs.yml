@@ -1,8 +1,8 @@
 site_name: DataRobot CLI Documentation
-site_url: https://datarobot-oss.github.io/cli2/dev-preview/
+site_url: https://datarobot-oss.github.io/cli/dev-preview/
 site_description: Documentation for the DataRobot CLI tool
-repo_url: https://github.com/datarobot-oss/cli2
-repo_name: datarobot-oss/cli2
+repo_url: https://github.com/datarobot-oss/cli
+repo_name: datarobot-oss/cli
 edit_uri: edit/main/docs/
 
 theme:
