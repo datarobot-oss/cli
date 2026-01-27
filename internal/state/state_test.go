@@ -74,9 +74,11 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create and save state
+		lastStart := time.Now().UTC().Truncate(time.Second)
+
 		originalState := state{
 			fullPath:   getStatePath(tmpDir),
-			LastStart:  time.Now().UTC().Truncate(time.Second),
+			LastStart:  &lastStart,
 			CLIVersion: "1.0.0",
 		}
 

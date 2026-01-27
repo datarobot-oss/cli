@@ -30,7 +30,7 @@ type state struct {
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
-	LastStart time.Time `yaml:"last_start"`
+	LastStart *time.Time `yaml:"last_start,omitempty"`
 	// LastTemplatesSetup is an ISO8601-compliant timestamp of the last successful `dr templates setup` run
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
@@ -110,7 +110,8 @@ func UpdateAfterSuccessfulRun(path string) error {
 		return err
 	}
 
-	existingState.LastStart = time.Now().UTC()
+	now := time.Now().UTC()
+	existingState.LastStart = &now
 
 	return existingState.update()
 }
