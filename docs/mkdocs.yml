@@ -1,5 +1,5 @@
 site_name: DataRobot CLI Documentation
-site_url: https://datarobot-oss.github.io/cli/dev-preview/
+site_url: https://datarobot-oss.github.io/cli/dev-docs/
 site_description: Documentation for the DataRobot CLI tool
 repo_url: https://github.com/datarobot-oss/cli
 repo_name: datarobot-oss/cli
@@ -39,7 +39,7 @@ plugins:
   - same-dir
 
 # Output configuration
-site_dir: dev-preview
+site_dir: dev-docs
 docs_dir: .
 
 # Navigation structure

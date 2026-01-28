@@ -44,7 +44,7 @@ coverage.html
 dr-tui-debug.log
 
 # MkDocs
-docs/dev-preview/
+docs/dev-docs/
 docs/.venv/
 docs/uv.lock
 
