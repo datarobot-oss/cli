@@ -358,11 +358,8 @@ Available templates:
 Clone a template to your local machine:
 
 ```bash
-# Clone a specific template
-dr templates clone python-streamlit
-
-# Clone to a custom directory
-dr templates clone python-streamlit my-app
+# Set up a template (clones and configures interactively)
+dr templates setup
 ```
 
 This:
@@ -497,9 +494,8 @@ Include a clear README.
 
 ## Quick start
 
-1. Clone: `dr templates clone my-template`
-2. Configure: `dr templates setup`
-3. Run: `dr run dev`
+1. Set up: `dr templates setup`
+2. Run: `dr run dev`
 
 ## Available tasks
 
@@ -542,19 +538,6 @@ src/
 ```
 
 ## Template updates
-
-### Checking for updates
-
-```bash
-# Check current template status
-dr templates status
-
-# Shows:
-# - Current version
-# - Latest available version
-# - Modified files
-# - Available updates
-```
 
 ### Updating templates
 

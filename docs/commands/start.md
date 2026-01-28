@@ -29,10 +29,15 @@ The `start` command (also available as `quickstart`) provides an automated way t
 The command streamlines the process of getting your DataRobot application up and running. It automates the following workflow:
 
 1. **Prerequisite checks**&mdash;verifies that required tools are installed.
-2. **Quickstart script detection**&mdash;searches for template-specific quickstart scripts in `.datarobot/cli/bin/` (if in a DataRobot repository).
-3. **Execution**&mdash;either:
+2. **CLI version check**&mdash;verifies that your CLI version meets the template's minimum requirements.
+3. **Repository check**&mdash;verifies you're in a DataRobot repository (if not, launches template setup).
+4. **Start command detection**&mdash;searches for a start command in this order:
+   - First checks for `task start` command in the Taskfile
+   - Then searches for template-specific quickstart scripts in `.datarobot/cli/bin/`
+5. **Execution**&mdash;either:
+   - Runs `task start` if found (executes immediately).
    - Runs the quickstart script if found (after user confirmation, unless `--yes` is specified).
-   - Launches the interactive `dr templates setup` wizard if no script is found or not in a repository.
+   - Launches the interactive `dr templates setup` wizard if no start command or script is found.
 
 This command is designed to work intelligently with your template's structure. Templates can optionally provide custom quickstart scripts to automate their specific initialization needs. If you're not in a DataRobot repository or no script exists, the command gracefully falls back to the standard setup wizard.
 
@@ -51,6 +56,13 @@ This command is designed to work intelligently with your template's structure. T
 ### Global options
 
 All [global options](README.md#global-options) are also available.
+
+## Start command detection
+
+The `dr start` command looks for a start command in the following order:
+
+1. **`task start` command** (highest priority)&mdash;If your template's Taskfile defines a `start` task, it will be executed automatically.
+2. **Quickstart scripts**&mdash;If no `task start` is found, the command searches for quickstart scripts.
 
 ## Quickstart scripts
 
@@ -185,7 +197,14 @@ This state information is stored in `.datarobot/cli/state.yaml` within the repos
 
 The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
 
-### When a quickstart script exists
+### When `task start` exists
+
+1. `task start` command is detected in the Taskfile
+2. Command executes immediately (no confirmation prompt)
+3. Command completes when the task finishes
+4. State file is updated with current timestamp and CLI version
+
+### When a quickstart script exists (but no `task start`)
 
 1. Script is detected in `.datarobot/cli/bin/`
 2. User is prompted for confirmation (unless `--yes` or `-y` is used)
@@ -195,16 +214,14 @@ The state file helps other commands (like `dr templates setup`) know that you've
 
 If the user declines to execute the script, the command exits gracefully and still updates the state file.
 
-### When no quickstart script exists
+### When no start command or script exists
 
-1. No script is found in `.datarobot/cli/bin/` (or not in a DataRobot repository)
-2. User is notified
-3. User is prompted for confirmation (unless `--yes` or `-y` is used)
-4. If user confirms (or `--yes` is specified), interactive `dr templates setup` wizard launches automatically
-5. User completes template configuration through the wizard
+1. No `task start` command is found in the Taskfile
+2. No script is found in `.datarobot/cli/bin/` (or not in a DataRobot repository)
+3. User is notified that no start command was found
+4. If not in a DataRobot repository, interactive `dr templates setup` wizard launches automatically
+5. If in a repository but no start command exists, the command completes with a message
 6. State file is updated with current timestamp and CLI version
-
-If the user declines, the command exits gracefully and still updates the state file.
 
 ### Prerequisites checked
 

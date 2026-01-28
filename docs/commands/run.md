@@ -237,7 +237,7 @@ file does not exist
 Error: failed to list tasks: exit status 1
 ```
 
-**Solution:** Add Taskfiles to your template components or use `dr templates clone` to start with a pre-configured template.
+**Solution:** Add Taskfiles to your template components or use `dr templates setup` to start with a pre-configured template.
 
 ## Task definitions
 
@@ -371,8 +371,8 @@ tasks:
 ### With dr templates
 
 ```bash
-# Clone and set up template
-dr templates clone python-streamlit my-app
+# Set up template (clones and configures)
+dr templates setup
 cd my-app
 
 # Configure environment

@@ -62,7 +62,7 @@ Detailed documentation for each command:
 - [dotenv](commands/dotenv.md)&mdash;environment variable management with interactive wizard and validation.
 - [self](commands/self.md)&mdash;CLI utility commands including version information, completion setup, and self-update.
 
-For template operations (list, clone, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
+For template operations (list, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
 
 ### 🔧 Development guide
 
