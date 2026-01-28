@@ -2,18 +2,6 @@
 
 Welcome to the DataRobot CLI documentation. This directory contains comprehensive guides and references for using and developing the DataRobot CLI tool.
 
-## Table of contents
-
-- [Quick install](#quick-install)
-- [Documentation structure](#documentation-structure)
-  - [User guide](#-user-guide)
-  - [Template system](#-template-system)
-  - [Command reference](#-command-reference)
-  - [Development guide](#-development-guide)
-- [Quick links](#quick-links)
-- [Getting help](#getting-help)
-- [Contributing to documentation](#contributing-to-documentation)
-
 ## Quick install
 
 Install the latest version with a single command that auto-detects your operating system:
@@ -60,7 +48,10 @@ Detailed documentation for each command:
 - [run](commands/run.md)&mdash;task execution with automatic Taskfile discovery and parallel execution support.
 - [task](commands/task.md)&mdash;Taskfile composition and management, including task listing and execution.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management with interactive wizard and validation.
-- [self](commands/self.md)&mdash;CLI utility commands including version information, completion setup, and self-update.
+- [completion](commands/completion.md)&mdash;shell completion setup for various shells.
+- [self](commands/self.md)&mdash;CLI utility commands including version information and self-update.
+- [plugins](commands/plugins.md)&mdash;plugin system documentation.
+- [component](commands/component-managed-updates.md)&mdash;component management and updates.
 
 For template operations (list, clone, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
 
@@ -73,6 +64,7 @@ For contributors and developers:
 - [Project structure](development/structure.md)&mdash;code organization and design, including directory structure and component overview.
 - [Authentication](development/authentication.md)&mdash;authentication implementation details and OAuth flow.
 - [Release process](development/releasing.md)&mdash;how releases are created, versioning, and release workflow.
+- [Plugin development](development/plugins.md)&mdash;creating and distributing plugins for the CLI.
 
 ## Quick links
 
@@ -89,6 +81,56 @@ If you can't find what you're looking for:
 2. Open a [new issue](https://github.com/datarobot-oss/cli/issues/new).
 3. Email: [oss-community-management@datarobot.com](mailto:oss-community-management@datarobot.com).
 
-## Contributing to documentation
+## For contributors
+
+### Documentation coverage
+
+#### ✅ Complete
+
+- Main README with comprehensive overview
+- Getting Started guide
+- Shell completions setup (all shells)
+- Configuration files guide
+- Template system structure and quickstart
+- Interactive configuration deep-dive
+- Environment variables management
+- auth, start, task, dotenv, completion, self, plugins, component commands
+- Building from source guide
+
+#### 📝 To be added (Future)
+
+- User guide: authentication details, working with templates, FAQ
+- Command reference: templates, version
+- Development: architecture details, testing guide
+
+### Documentation principles
+
+**User-focused**: Written from the user's perspective with task-oriented content and real-world examples.
+
+**Progressive disclosure**: Quick start for beginners, deep-dive for advanced users, reference for specific details.
+
+**Maintainable**: Keep in sync with code, update with each release, clear and consistent structure.
+
+**Discoverable**: Good navigation, search-friendly, cross-referenced.
+
+### Local documentation preview
+
+To preview the documentation site locally with MkDocs:
+
+```bash
+cd docs
+uv sync
+uv run mkdocs serve
+```
+
+Then open `http://localhost:8000` in your browser.
+
+### Contributing to documentation
 
 Found an error or want to improve the docs? Please see our [Contributing Guidelines](../CONTRIBUTING.md) for information on submitting documentation improvements.
+
+---
+
+**Documentation version**: Synchronized with CLI version  
+**CLI version**: 0.1.0+  
+**Status**: Active development
