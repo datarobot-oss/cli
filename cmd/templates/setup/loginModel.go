@@ -71,7 +71,16 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 
 		listen, err := net.Listen("tcp", addr)
 		if err != nil {
-			return errMsg{err}
+			// close previous auth server if address already in use
+			_, err = http.Get("http://" + addr)
+			if err != nil {
+				return errMsg{err}
+			}
+
+			listen, err = net.Listen("tcp", addr)
+			if err != nil {
+				return errMsg{err}
+			}
 		}
 
 		// Start the server in a goroutine
@@ -128,16 +137,22 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
+
+		// Now shut down the server after key is received
+		if err := lm.server.Shutdown(context.Background()); err != nil {
+			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
+		}
+
+		// empty apiKey means we need to interrupt current auth flow
+		if apiKey == "" {
+			return errMsg{errors.New("Interrupt request received.")}
+		}
+
 		viper.Set(config.DataRobotAPIKey, apiKey)
 
 		err := auth.WriteConfigFileSilent()
 		if err != nil {
 			return errMsg{fmt.Errorf("Error during writing config file: %v", err)}
-		}
-
-		// Now shut down the server after key is received
-		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
 		}
 
 		return lm.SuccessCmd()
