@@ -14,6 +14,11 @@
 
 package repo
 
+import (
+	"os"
+	"path/filepath"
+)
+
 const (
 	// DataRobotTemplateDetectAnswersPath is the path to the answers folder relative to CWD
 	DataRobotTemplateDetectAnswersPath = ".datarobot/answers"
@@ -24,3 +29,14 @@ const (
 	// LocalPluginDir is the project-local plugin directory relative to CWD
 	LocalPluginDir = ".datarobot/cli/bin"
 )
+
+// ManagedPluginsDir returns the user-global managed plugins directory
+// ~/.config/datarobot/plugins/
+func ManagedPluginsDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(homeDir, ".config", "datarobot", "plugins"), nil
+}

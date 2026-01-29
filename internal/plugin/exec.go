@@ -19,12 +19,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
 // ExecutePlugin runs a plugin and returns its exit code
 func ExecutePlugin(executable string, args []string) int {
-	cmd := exec.Command(executable, args...)
+	cmd := buildPluginCommand(executable, args)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -63,4 +65,19 @@ func ExecutePlugin(executable string, args []string) int {
 	}
 
 	return 0
+}
+
+// buildPluginCommand creates the appropriate exec.Cmd for the given executable
+// On Windows, .ps1 files are executed via PowerShell
+func buildPluginCommand(executable string, args []string) *exec.Cmd {
+	ext := filepath.Ext(executable)
+
+	// On Windows, execute .ps1 files through PowerShell
+	if runtime.GOOS == "windows" && ext == ".ps1" {
+		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
+
+		return exec.Command("powershell.exe", psArgs...)
+	}
+
+	return exec.Command(executable, args...)
 }
