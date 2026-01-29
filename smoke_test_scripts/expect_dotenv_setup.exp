@@ -28,9 +28,8 @@ match_max 100000
 
 expect {
     "DATABASE_URI" {
-        # Final menu - press Enter to exit
         send -- "\025"
-        send -- "sqlite+aiosqlite:///.data/database.sqlite\r\n"
+        send -- "sqlite+aiosqlite:///.data/database.sqlite\r"
         exp_continue
     }
     -re ">" {
