@@ -72,10 +72,12 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 		listen, err := net.Listen("tcp", addr)
 		if err != nil {
 			// close previous auth server if address already in use
-			_, err = http.Get("http://" + addr)
+			resp, err := http.Get("http://" + addr)
 			if err != nil {
 				return errMsg{err}
 			}
+
+			resp.Body.Close()
 
 			listen, err = net.Listen("tcp", addr)
 			if err != nil {
