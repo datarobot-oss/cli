@@ -39,14 +39,14 @@ type state struct {
 
 // getStatePath determines the appropriate location for the state file.
 // The state file is stored in .datarobot/cli directory within the current repository.
-func getStatePath(basePath string) string {
-	return filepath.Join(basePath, ".datarobot", "cli", "state.yaml")
+func getStatePath(repoRoot string) string {
+	return filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml")
 }
 
 // load reads the state file from the appropriate location.
 // Returns nil if the file doesn't exist (first run).
-func load(basePath string) (state, error) {
-	fullPath := getStatePath(basePath)
+func load(repoRoot string) (state, error) {
+	fullPath := getStatePath(repoRoot)
 
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -103,9 +103,9 @@ func (s state) save() error {
 }
 
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
-func UpdateAfterSuccessfulRun(path string) error {
+func UpdateAfterSuccessfulRun(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load(path)
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -117,9 +117,9 @@ func UpdateAfterSuccessfulRun(path string) error {
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
-func UpdateAfterDotenvSetup(path string) error {
+func UpdateAfterDotenvSetup(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load(path)
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -131,9 +131,9 @@ func UpdateAfterDotenvSetup(path string) error {
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup(path string) error {
+func UpdateAfterTemplatesSetup(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := load(path)
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -146,13 +146,13 @@ func UpdateAfterTemplatesSetup(path string) error {
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
 // If force-interactive flag is set, this always returns false to force re-execution.
-func HasCompletedDotenvSetup(path string) bool {
+func HasCompletedDotenvSetup(repoRoot string) bool {
 	// Check if we should force the wizard to run
 	if viper.GetBool("force-interactive") {
 		return false
 	}
 
-	existingState, err := load(path)
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return false
 	}
