@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/datarobot/cli/internal/fsutil"
 )
@@ -60,7 +61,7 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
-// detectTemplate checks if .datarobot/answers exists in dir directory
+// detectTemplate checks if .datarobot/answers or .datarobot/cli exists in dir directory
 func detectTemplate(dir string) bool {
 	if fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectAnswersPath)) {
 		return true
@@ -71,14 +72,11 @@ func detectTemplate(dir string) bool {
 		return false
 	}
 
-	for _, entry := range entries {
-		// Older versions were incorrectly creating state.yaml file outside of template directories
-		if entry.Name() != "state.yaml" {
-			return true
-		}
-	}
-
-	return false
+	// Older versions were incorrectly creating state.yaml file outside of template directories
+	// return true if any file other than state.yaml exists in .datarobot/cli
+	return slices.ContainsFunc(entries, func(entry os.DirEntry) bool {
+		return entry.Name() != "state.yaml"
+	})
 }
 
 // IsInRepo checks if the current directory is inside a DataRobot repository
