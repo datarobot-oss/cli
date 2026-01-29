@@ -1,22 +1,27 @@
+// Copyright 2025 DataRobot, Inc. and its affiliates.
+// All rights reserved.
+// DataRobot, Inc. Confidential.
+// This is unpublished proprietary source code of DataRobot, Inc.
+// and its affiliates.
+// The copyright notice above does not evidence any actual or intended
+// publication of such source code.
+
 package tui
 
 import "github.com/charmbracelet/lipgloss"
 
 // Common style definitions using DataRobot branding
 var (
-	// Adaptive colors for light/dark terminals
-	TitleColor  = GetAdaptiveColor(DrGreen, DrGreenDark)
-	BorderColor = GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)
-
 	BaseTextStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurple, DrPurpleDark))
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
+	SuccessStyle  = lipgloss.NewStyle().Foreground(DrGreen).Bold(true)
 	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
 
 	// Specific UI styles
 	LogoStyle     = BaseTextStyle
 	WelcomeStyle  = BaseTextStyle.Bold(true)
+	TitleStyle    = BaseTextStyle.Bold(true).MarginBottom(1)
 	SubTitleStyle = BaseTextStyle.Bold(true).
 			Foreground(DrPurpleLight).
 			BorderBottom(true).
@@ -26,14 +31,11 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(DrPurple).
 			Padding(1, 2)
-	NoteBoxStyle = lipgloss.NewStyle().
+	StatusBarStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(BorderColor).
+			BorderForeground(DrPurpleLight).
+			Foreground(DrPurpleLight).
 			Padding(0, 1)
-	TableBorderStyle = lipgloss.NewStyle().Foreground(BorderColor)
-	StatusBarStyle   = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(DrPurpleLight).
-				Foreground(DrPurpleLight).
-				Padding(0, 1)
+	TableBorderStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight))
+	BorderColor      = GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)
 )

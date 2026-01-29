@@ -16,13 +16,49 @@ package plugin
 
 import "sync"
 
+// PluginScripts maps platforms to their script paths within the plugin package
+type PluginScripts struct {
+	Posix   string `json:"posix,omitempty"`   // Script for Linux/macOS (e.g., "scripts/plugin.sh")
+	Windows string `json:"windows,omitempty"` // Script for Windows (e.g., "scripts/plugin.ps1")
+}
+
 // PluginManifest represents the JSON manifest returned by plugins
-// TODO: Consider adding Aliases field for command aliases (e.g., "d" for "deploy")
-// TODO: Consider adding MinCLIVersion field for compatibility checking
 type PluginManifest struct {
+	Name          string         `json:"name"`
+	Version       string         `json:"version,omitempty"`
+	Description   string         `json:"description,omitempty"`
+	Scripts       *PluginScripts `json:"scripts,omitempty"`       // Platform-specific script paths
+	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
+}
+
+// IndexVersion represents a specific version in the plugin index
+type IndexVersion struct {
+	Version     string `json:"version"`
+	URL         string `json:"url"`
+	SHA256      string `json:"sha256,omitempty"`
+	ReleaseDate string `json:"releaseDate,omitempty"`
+}
+
+// IndexPlugin represents a plugin entry in the remote index
+type IndexPlugin struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Repository  string         `json:"repository,omitempty"`
+	Versions    []IndexVersion `json:"versions"`
+}
+
+// PluginIndex represents the remote plugin index structure
+type PluginIndex struct {
+	Version string                 `json:"version"`
+	Plugins map[string]IndexPlugin `json:"plugins"`
+}
+
+// InstalledPlugin represents metadata about an installed remote plugin
+type InstalledPlugin struct {
 	Name        string `json:"name"`
 	Version     string `json:"version"`
-	Description string `json:"description"`
+	Source      string `json:"source"`      // URL or local path where it was installed from
+	InstalledAt string `json:"installedAt"` // RFC3339 timestamp
 }
 
 // DiscoveredPlugin pairs a manifest with its executable path
