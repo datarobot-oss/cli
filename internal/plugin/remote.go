@@ -328,6 +328,8 @@ func downloadFile(url, baseURL string) (string, error) {
 		finalURL = baseURL + "/" + strings.TrimPrefix(url, "/")
 	}
 
+	log.Debug("Downloading plugin", "url", finalURL)
+
 	client := &http.Client{Timeout: 5 * time.Minute}
 
 	req, err := http.NewRequest(http.MethodGet, finalURL, nil)

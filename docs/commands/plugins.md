@@ -1,6 +1,61 @@
 # plugins / plugin
 
-The `dr plugin` (alias: `dr plugins`) commands help you inspect plugins discovered by the CLI.
+The `dr plugin` (alias: `dr plugins`) commands help you inspect and manage plugins.
+
+## dr plugin install
+
+```bash
+dr plugin install
+dr plugin install <plugin-name>
+dr plugin install <plugin-name> --version 1.0.0
+dr plugin install <plugin-name> --version "^1.0.0"
+dr plugin install --list
+dr plugin install <plugin-name> --versions
+dr plugin install --list --index-url http://localhost:8000/plugins
+```
+
+Installs a plugin from the remote plugin registry.
+
+When run without arguments, displays the list of available plugins (equivalent to using `--list`).
+
+### Flags
+
+- `--version`: Version constraint (default: `latest`)
+  - Exact version: `1.2.3`
+  - Caret (compatible): `^1.2.3` (any 1.x.x >= 1.2.3)
+  - Tilde (patch-level): `~1.2.3` (any 1.2.x >= 1.2.3)
+  - Minimum: `>=1.0.0`
+  - Latest: `latest`
+- `--index-url`: URL of the plugin index (default: `https://cli.data
+- `--versions`: List available versions for a specific pluginrobot.com/plugins/index.json`)
+- `--list`: List available plugins from the index without installing
+
+### Examples(shows latest version for each)
+dr plugin install
+dr plugin install --list
+
+# List plugins from local development server
+dr plugin install
+
+# List plugins from local development server
+dr plugin install --list --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+List available versions for a plugin
+dr plugin install apps --versions
+dr plugin install apps --versions --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+
+# 
+# Install latest version of apps plugin
+dr plugin install apps
+
+# Install specific version
+dr plugin install apps --version 1.0.0
+
+# Install with semver constraint
+dr plugin install apps --version "^1.0.0"
+
+# Install from custom registry
+dr plugin install apps --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+```
 
 ## dr plugin list
 

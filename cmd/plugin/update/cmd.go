@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -155,7 +156,11 @@ func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex, bas
 		return false
 	}
 
-	fmt.Printf(tui.SuccessStyle.Render("✓ Updated %s to %s"), p.Name, latestVersion.Version)
+	successMsg := lipgloss.NewStyle().
+		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreen)).
+		Bold(true).
+		Render("✓ Updated " + p.Name + " to " + latestVersion.Version)
+	fmt.Println(successMsg)
 	fmt.Println()
 
 	return true

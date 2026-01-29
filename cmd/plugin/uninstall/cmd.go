@@ -17,6 +17,7 @@ package uninstall
 import (
 	"fmt"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -62,7 +63,12 @@ func runUninstall(_ *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Printf(tui.SuccessStyle.Render("✓ Successfully uninstalled %s"), pluginName)
+
+	successMsg := lipgloss.NewStyle().
+		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreen)).
+		Bold(true).
+		Render("✓ Successfully uninstalled " + pluginName)
+	fmt.Println(successMsg)
 	fmt.Println()
 
 	return nil
