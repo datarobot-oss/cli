@@ -125,3 +125,147 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 ## Related commands
 
 - `dr plugin list` / `dr plugins list`: show discovered plugins and their manifest metadata.
+
+## Packaging and Publishing Plugins
+
+The CLI provides tools to help package and publish plugins to a plugin index.
+
+### Quick Start: Publish Command (Recommended)
+
+The easiest way to package and publish a plugin is the all-in-one `publish` command:
+
+```bash
+dr self plugin publish <plugin-dir> [flags]
+```
+
+This command does everything in one step:
+1. Validates the plugin manifest
+2. Creates a `.tar.xz` archive
+3. Copies it to `plugins/<plugin-name>/<plugin-name>-<version>.tar.xz`
+4. Updates the `index.json` file
+
+**Example:**
+
+```bash
+# Publish to default location (docs/plugins/)
+dr self plugin publish ./my-plugin
+
+# Publish to custom location
+dr self plugin publish ./my-plugin --plugins-dir dist/plugins --index dist/plugins/index.json
+
+# Output:
+# ✅ Published my-plugin version 1.0.0
+#    Archive: docs/plugins/my-plugin/my-plugin-1.0.0.tar.xz
+#    SHA256: abc123...
+#    Index: docs/plugins/index.json
+```
+
+### Advanced: Manual Workflow
+
+For more control over the packaging process, you can use the individual commands:
+
+#### Packaging a Plugin
+
+Use `dr self plugin package` to create a distributable `.tar.xz` archive:
+
+```bash
+dr self plugin package <plugin-dir> [flags]
+```
+
+**Flags:**
+- `-o, --output`: Output file path or directory (default: current directory)
+  - If path ends with `.tar.xz`, uses exact filename
+  - Otherwise treats as directory and creates `<plugin-name>-<version>.tar.xz` inside
+- `--index-output`: Save index JSON fragment to file for use with `dr self plugin add --from-file`
+
+Requirements:
+- Plugin directory must contain a valid `manifest.json` with `name` and `version` fields
+
+The command will:
+1. Validate the manifest
+2. Create a compressed `.tar.xz` archive
+3. Calculate SHA256 checksum
+4. Optionally save metadata to a file for easy index updates
+5. Output a JSON snippet ready for your plugin index
+
+**Examples:**
+
+```bash
+# Package to current directory (creates my-plugin-1.0.0.tar.xz)
+dr self plugin package ./my-plugin
+
+# Package to specific directory
+dr self plugin package ./my-plugin -o dist/
+
+# Package with custom filename
+dr self plugin package ./my-plugin -o dist/custom-name.tar.xz
+
+# Package and save metadata for later
+dr self plugin package ./my-plugin -o dist/ --index-output /tmp/my-plugin.json
+
+# Output:
+# ✅ Package created: dist/my-plugin-1.0.0.tar.xz
+#    SHA256: abc123...
+# 📝 Index fragment saved to: /tmp/my-plugin.json
+# 
+# Add to index.json:
+# ```json
+# {
+#   "version": "1.0.0",
+#   "url": "my-plugin/my-plugin-1.0.0.tar.xz",
+#   "sha256": "abc123...",
+#   "releaseDate": "2026-01-28"
+# }
+# ```
+```
+
+#### Adding to Plugin Index
+
+Use `dr self plugin add` to add the packaged version to your plugin index.
+
+**Option 1: Using saved metadata (recommended):**
+
+```bash
+# Package and save metadata
+dr self plugin package ./my-plugin --index-output /tmp/my-plugin.json
+
+# Add to index using the saved file
+dr self plugin add docs/plugins/index.json --from-file /tmp/my-plugin.json
+```
+
+**Option 2: Manual entry:**
+
+```bash
+dr self plugin add <path-to-index.json> \
+  --name my-plugin \
+  --version 1.0.0 \
+  --url my-plugin/my-plugin-1.0.0.tar.xz \
+  --sha256 abc123... \
+  --release-date 2026-01-28
+```
+
+The `add` command will:
+- Create the index file if it doesn't exist
+- Add a new plugin entry or append a new version to an existing plugin
+- Validate that the version doesn't already exist
+- Format the index with proper JSON indentation
+
+**Complete workflow example:**
+
+```bash
+# Quick: One command to do it all
+dr self plugin publish ./my-plugin
+
+# Or manual workflow:
+
+# 1. Package the plugin and save metadata
+dr self plugin package ./my-plugin -o docs/plugins/ --index-output /tmp/my-plugin.json
+
+# 2. Add to index using saved metadata
+dr self plugin add docs/plugins/index.json --from-file /tmp/my-plugin.json
+
+# 3. Commit and publish
+git add docs/plugins/
+git commit -m "Add my-plugin v1.0.0"
+git push
+```

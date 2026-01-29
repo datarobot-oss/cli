@@ -171,7 +171,9 @@ This pattern:
 | `cmd/plugin/update/cmd.go` | Update command |
 | `internal/plugin/remote.go` | Remote fetch & install logic |
 | `internal/plugin/types.go` | Extended type definitions |
-| `scripts/package-plugin.sh` | Plugin packaging helper |
+| `cmd/self/plugin/package/cmd.go` | Package command |
+| `cmd/self/plugin/add/cmd.go` | Add to index command |
+| `cmd/self/plugin/publish/cmd.go` | Publish command (all-in-one) |
 
 ## Files Modified
 
