@@ -27,7 +27,7 @@ A minimal JSON schema pointing to plugin archives:
       "versions": [
         {
           "version": "1.0.0",
-          "url": "https://cli.datarobot.com/plugins/dr-apps-1.0.0.tar.xz",
+          "url": "dr-apps/dr-apps-1.0.0.tar.xz",
           "sha256": "...",
           "releaseDate": "2026-01-27"
         }
@@ -35,6 +35,9 @@ A minimal JSON schema pointing to plugin archives:
     }
   }
 }
+```
+
+**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the index. This enables the same index to work with both local development servers and production CDNs
 ```
 
 ### Plugin Package Structure
@@ -181,10 +184,15 @@ This pattern:
 ## Usage Examples
 
 ```bash
+# List available plugins from registry
+dr plugin install --list
+dr plugin install --list --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+
 # Install a plugin
 dr plugin install apps
 dr plugin install apps --version 1.0.0
 dr plugin install apps --version "^1.0.0"
+dr plugin install apps --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Update plugins
 dr plugin update apps

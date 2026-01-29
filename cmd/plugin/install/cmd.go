@@ -17,14 +17,18 @@ package install
 import (
 	"fmt"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
 	versionConstraint string
 	indexURL          string
+	listPlugins       bool
+	listVersions      bool
 )
 
 func Cmd() *cobra.Command {
@@ -42,31 +46,61 @@ Use --version to specify a version constraint:
   - Latest: latest (default)`,
 		Example: `  dr plugin install apps
   dr plugin install apps --version 1.0.0
-  dr plugin install apps --version "^1.0.0"`,
-		Args: cobra.ExactArgs(1),
+  dr plugin install apps -
+  dr plugin install apps --versions-version "^1.0.0"
+  dr plugin install --list`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: runInstall,
 	}
 
 	cmd.Flags().StringVar(&versionConstraint, "version", "latest", "Version constraint")
+	cmd.Flags().BoolVar(&listVersions, "versions", false, "List available versions for a plugin")
 	cmd.Flags().StringVar(&indexURL, "index-url", plugin.PluginIndexURL, "URL of the plugin index")
+	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the index")
 
 	return cmd
 }
 
 func runInstall(_ *cobra.Command, args []string) error {
-	pluginName := args[0]
-
-	fmt.Println(tui.TitleStyle.Render("Installing Plugin"))
-	fmt.Println()
-
 	finalIndexURL := normalizeIndexURL(indexURL)
-
-	fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+	if viper.GetBool("verbose") {
+		fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+	}
 
 	index, baseURL, err := plugin.FetchIndex(finalIndexURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch plugin index: %w", err)
 	}
+
+	// Handle --list flag or no args (show list by default)
+	if listPlugins || len(args) == 0 {
+		fmt.Println()
+		fmt.Println(tui.SubTitleStyle.Render("Available Plugins"))
+		printAvailablePlugins(index)
+
+		return nil
+	}
+
+	pluginName := args[0]
+
+	// Handle --versions flag
+	if listVersions {
+		pluginEntry, ok := index.Plugins[pluginName]
+		if !ok {
+			printAvailablePlugins(index)
+
+			return fmt.Errorf("plugin %q not found in index", pluginName)
+		}
+
+		fmt.Println()
+		fmt.Println(tui.SubTitleStyle.Render("Available Versions for " + pluginName))
+		printAvailableVersions(pluginEntry.Versions)
+
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SubTitleStyle.Render("Installing Plugin"))
 
 	pluginEntry, ok := index.Plugins[pluginName]
 	if !ok {
@@ -83,6 +117,7 @@ func runInstall(_ *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Installing %s version %s...\n", pluginEntry.Name, version.Version)
+	fmt.Printf("Downloading from: %s/%s\n", baseURL, version.URL)
 
 	if err := plugin.InstallPlugin(pluginEntry, *version, baseURL); err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
@@ -106,18 +141,17 @@ func normalizeIndexURL(url string) string {
 }
 
 func printAvailablePlugins(index *plugin.PluginIndex) {
-	fmt.Println()
-	fmt.Println("Available plugins:")
-
 	for name, p := range index.Plugins {
-		fmt.Printf("  - %s: %s\n", name, p.Description)
+		latestVersion := "-"
+		if len(p.Versions) > 0 {
+			latestVersion = p.Versions[0].Version
+		}
+
+		fmt.Printf("  - %s (%s): %s\n", name, latestVersion, p.Description)
 	}
 }
 
 func printAvailableVersions(versions []plugin.IndexVersion) {
-	fmt.Println()
-	fmt.Println("Available versions:")
-
 	for _, v := range versions {
 		fmt.Printf("  - %s\n", v.Version)
 	}
@@ -125,8 +159,12 @@ func printAvailableVersions(versions []plugin.IndexVersion) {
 
 func printSuccess(name, version string) {
 	fmt.Println()
-	fmt.Printf(tui.SuccessStyle.Render("✓ Successfully installed %s %s"), name, version)
-	fmt.Println()
+
+	successMsg := lipgloss.NewStyle().
+		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreen)).
+		Bold(true).
+		Render("✓ Successfully installed " + name + " " + version)
+	fmt.Println(successMsg)
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", name)
 }
