@@ -449,7 +449,7 @@ The CLI maintains state information about your interactions with repositories to
 
 The CLI stores state locally within each repository:
 
-- `.datarobot/cli/state.yaml` in the current working directory
+- `.datarobot/cli/state.yaml` in template directory
 
 ### Tracked information
 

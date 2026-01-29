@@ -189,7 +189,7 @@ func handleExistingRepo(repoRoot string) tea.Msg {
 		envExists = true
 	}
 
-	dotenvCompleted := state.HasCompletedDotenvSetup()
+	dotenvCompleted := state.HasCompletedDotenvSetup(repoRoot)
 
 	// If .env exists AND dotenv setup was completed, skip setup
 	if envExists && dotenvCompleted {
@@ -265,7 +265,13 @@ func NewModel(fromStartCommand bool) Model {
 	}
 
 	// Check if dotenv setup was already completed
-	skipDotenv := state.HasCompletedDotenvSetup()
+	var skipDotenv bool
+
+	repoRoot, err := repo.FindRepoRoot()
+	if err == nil {
+		skipDotenv = state.HasCompletedDotenvSetup(repoRoot)
+	}
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = tui.InfoStyle
@@ -450,13 +456,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			}
 		}
 
+		repoRoot := filepath.Dir(m.dotenv.DotenvFile)
+
 		// Update state if dotenv setup was completed
 		if m.dotenvSetupCompleted {
-			_ = state.UpdateAfterDotenvSetup()
+			_ = state.UpdateAfterDotenvSetup(repoRoot)
 		}
 
 		// Update state for templates setup completion
-		_ = state.UpdateAfterTemplatesSetup()
+		_ = state.UpdateAfterTemplatesSetup(repoRoot)
 
 		return m, exit
 	case exitMsg:

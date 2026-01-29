@@ -46,8 +46,7 @@ func TestGetStatePath(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get state path
-		statePath, err := GetStatePath()
-		require.NoError(t, err)
+		statePath := getStatePath(tmpDir)
 
 		expected := filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml")
 		assert.Equal(t, expected, statePath)
@@ -55,7 +54,7 @@ func TestGetStatePath(t *testing.T) {
 }
 
 func TestLoadSave(t *testing.T) {
-	t.Run("Save creates file and Load reads it back", func(t *testing.T) {
+	t.Run("save() creates file and load() reads it back", func(t *testing.T) {
 		// Create temporary directory
 		tmpDir := t.TempDir()
 		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
@@ -75,25 +74,26 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create and save state
-		now := time.Now().UTC().Truncate(time.Second)
-		originalState := &State{
-			LastStart:  now,
+		lastStart := time.Now().UTC().Truncate(time.Second)
+
+		originalState := state{
+			fullPath:   getStatePath(tmpDir),
+			LastStart:  &lastStart,
 			CLIVersion: "1.0.0",
 		}
 
-		err = Save(originalState)
+		err = originalState.save()
 		require.NoError(t, err)
 
 		// Load state back
-		loadedState, err := Load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
-		require.NotNil(t, loadedState)
 
 		assert.Equal(t, originalState.CLIVersion, loadedState.CLIVersion)
-		assert.Equal(t, now.Unix(), loadedState.LastStart.Unix())
+		assert.Equal(t, originalState.LastStart.Unix(), loadedState.LastStart.Unix())
 	})
 
-	t.Run("Load returns nil when file doesn't exist", func(t *testing.T) {
+	t.Run("load() returns zero value when file doesn't exist", func(t *testing.T) {
 		// Create temporary directory without state file
 		tmpDir := t.TempDir()
 
@@ -110,9 +110,10 @@ func TestLoadSave(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to load non-existent state
-		state, err := Load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
-		assert.Nil(t, state)
+		assert.Nil(t, loadedState.LastTemplatesSetup)
+		assert.Nil(t, loadedState.LastDotenvSetup)
 	})
 }
 
@@ -138,17 +139,16 @@ func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	// Update state
 	beforeUpdate := time.Now().UTC()
 
-	err = UpdateAfterSuccessfulRun()
+	err = UpdateAfterSuccessfulRun(tmpDir)
 	require.NoError(t, err)
 
 	afterUpdate := time.Now().UTC()
 
 	// Load and verify
-	state, err := Load()
+	loadedState, err := load(tmpDir)
 	require.NoError(t, err)
-	require.NotNil(t, state)
 
-	assert.NotEmpty(t, state.CLIVersion)
-	assert.True(t, state.LastStart.After(beforeUpdate) || state.LastStart.Equal(beforeUpdate))
-	assert.True(t, state.LastStart.Before(afterUpdate) || state.LastStart.Equal(afterUpdate))
+	assert.NotEmpty(t, loadedState.CLIVersion)
+	assert.True(t, loadedState.LastStart.After(beforeUpdate) || loadedState.LastStart.Equal(beforeUpdate))
+	assert.True(t, loadedState.LastStart.Before(afterUpdate) || loadedState.LastStart.Equal(afterUpdate))
 }
