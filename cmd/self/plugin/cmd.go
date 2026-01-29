@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,30 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package self
+package selfplugin
 
 import (
-	"github.com/datarobot/cli/cmd/self/completion"
-	"github.com/datarobot/cli/cmd/self/config"
-	selfplugin "github.com/datarobot/cli/cmd/self/plugin"
-	"github.com/datarobot/cli/cmd/self/update"
-	"github.com/datarobot/cli/cmd/self/version"
+	"github.com/datarobot/cli/cmd/self/plugin/add"
+	pluginpackage "github.com/datarobot/cli/cmd/self/plugin/package"
+	"github.com/datarobot/cli/cmd/self/plugin/publish"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "self",
-		GroupID: "self",
-		Short:   "Run DataRobot CLI utility commands.",
+		Use:   "plugin",
+		Short: "Plugin packaging and development tools",
 	}
 
 	cmd.AddCommand(
-		completion.Cmd(),
-		config.Cmd(),
-		selfplugin.Cmd(),
-		update.Cmd(),
-		version.Cmd(),
+		add.Cmd(),
+		publish.Cmd(),
+		pluginpackage.Cmd(),
 	)
 
 	return cmd
