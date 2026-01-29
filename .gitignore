@@ -53,3 +53,6 @@ docs/uv.lock
 *.sublime-workspace
 *.code-workspace
 *.vscode/
+
+
+__pycache__/

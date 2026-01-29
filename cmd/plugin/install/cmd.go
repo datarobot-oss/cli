@@ -45,9 +45,10 @@ Use --version to specify a version constraint:
   - Minimum: >=1.0.0
   - Latest: latest (default)`,
 		Example: `  dr plugin install apps
+  dr plugin install apps
   dr plugin install apps --version 1.0.0
-  dr plugin install apps -
-  dr plugin install apps --versions-version "^1.0.0"
+  dr plugin install apps --version "^1.0.0"
+  dr plugin install apps --versions
   dr plugin install --list`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runInstall,

@@ -42,10 +42,6 @@ plugins:
 site_dir: dev-docs
 docs_dir: .
 
-# Watch additional directories for changes
-watch:
-  - plugins
-
 # Navigation structure
 nav:
   - Home: index.md
