@@ -175,11 +175,9 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	if err != nil {
 		// close previous auth server if address already in use
 		resp, err := http.Get("http://" + addr)
-		if err != nil {
-			return "", err
+		if err == nil {
+			resp.Body.Close()
 		}
-
-		resp.Body.Close()
 
 		listen, err = net.Listen("tcp", addr)
 		if err != nil {
