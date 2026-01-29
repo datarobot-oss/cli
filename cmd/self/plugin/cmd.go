@@ -12,30 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package plugin
+package selfplugin
 
 import (
-	"github.com/datarobot/cli/cmd/plugin/install"
-	"github.com/datarobot/cli/cmd/plugin/list"
-	"github.com/datarobot/cli/cmd/plugin/uninstall"
-	"github.com/datarobot/cli/cmd/plugin/update"
+	"github.com/datarobot/cli/cmd/self/plugin/add"
+	pluginpackage "github.com/datarobot/cli/cmd/self/plugin/package"
+	"github.com/datarobot/cli/cmd/self/plugin/publish"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "plugin",
-		GroupID: "advanced",
-		Aliases: []string{"plugins"},
-		Short:   "🔌 Plugin management commands",
-		Long:    "Commands for managing and inspecting CLI plugins.",
+		Use:   "plugin",
+		Short: "Plugin packaging and development tools",
 	}
 
 	cmd.AddCommand(
-		list.Cmd(),
-		install.Cmd(),
-		uninstall.Cmd(),
-		update.Cmd(),
+		add.Cmd(),
+		publish.Cmd(),
+		pluginpackage.Cmd(),
 	)
 
 	return cmd
