@@ -117,7 +117,7 @@ func publishPlugin(pluginDir, pluginsDir, indexPath string) error {
 
 	url := fmt.Sprintf("%s/%s", manifest.Name, archiveName)
 
-	if err := addToIndex(indexPath, manifest.Name, manifest.Version, url, sha256sum, releaseDate); err != nil {
+	if err := addToIndex(indexPath, manifest.Name, manifest.Description, manifest.Version, url, sha256sum, releaseDate); err != nil {
 		return fmt.Errorf("failed to update index: %w", err)
 	}
 
@@ -149,6 +149,10 @@ func loadManifest(pluginDir string) (*pluginManifest, error) {
 
 	if manifest.Version == "" {
 		return nil, errors.New("manifest.json missing required field: version")
+	}
+
+	if manifest.Description == "" {
+		return nil, errors.New("manifest.json missing required field: description")
 	}
 
 	return &manifest, nil
@@ -227,7 +231,7 @@ func calculateSHA256(filePath string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func addToIndex(indexPath, pluginName, version, url, sha256sum, releaseDate string) error {
+func addToIndex(indexPath, pluginName, description, version, url, sha256sum, releaseDate string) error {
 	absPath, err := filepath.Abs(indexPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve index path: %w", err)
@@ -252,8 +256,9 @@ func addToIndex(indexPath, pluginName, version, url, sha256sum, releaseDate stri
 	pluginEntry, exists := index.Plugins[pluginName]
 	if !exists {
 		pluginEntry = plugin.IndexPlugin{
-			Name:     pluginName,
-			Versions: []plugin.IndexVersion{newVersion},
+			Name:        pluginName,
+			Description: description,
+			Versions:    []plugin.IndexVersion{newVersion},
 		}
 
 		log.Info("Creating new plugin entry", "name", pluginName)
@@ -264,6 +269,7 @@ func addToIndex(indexPath, pluginName, version, url, sha256sum, releaseDate stri
 			}
 		}
 
+		pluginEntry.Description = description
 		pluginEntry.Versions = append(pluginEntry.Versions, newVersion)
 
 		log.Info("Adding version to existing plugin", "name", pluginName, "version", version)
