@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,8 +58,14 @@ func TestLivePluginIndexSchema(t *testing.T) {
 					assert.NotEmpty(t, version.Version, "Plugin %s version %d must have a version", pluginName, i)
 					assert.NotEmpty(t, version.URL, "Plugin %s version %s must have a URL", pluginName, version.Version)
 
-					// Validate URL format
-					assert.Contains(t, version.URL, "://", "Plugin %s version %s URL must be a valid URL", pluginName, version.Version)
+					// URL can be absolute (with ://) or relative (without ://)
+					// Examples:
+					// - Absolute: https://cli.datarobot.com/plugins/dr-apps/dr-apps-1.0.0.tar.xz
+					// - Relative: dr-apps/dr-apps-1.0.0.tar.xz
+					isAbsolute := strings.Contains(version.URL, "://")
+					isRelative := !isAbsolute && (strings.HasSuffix(version.URL, ".tar.xz") || strings.HasSuffix(version.URL, ".tar.gz"))
+
+					assert.True(t, isAbsolute || isRelative, "Plugin %s version %s URL must be either absolute (with ://) or relative path ending in .tar.xz/.tar.gz", pluginName, version.Version)
 
 					// Warn if SHA256 is missing (not required but recommended)
 					if version.SHA256 == "" {

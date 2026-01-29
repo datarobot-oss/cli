@@ -37,13 +37,14 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-// FetchIndex downloads and parses the plugin index from the remote URL
-func FetchIndex(indexURL string) (*PluginIndex, error) {
+// FetchIndex downloads and parses the plugin index from the remote URL.
+// Returns the index, the base URL (directory of index), and any error.
+func FetchIndex(indexURL string) (*PluginIndex, string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	req, err := http.NewRequest(http.MethodGet, indexURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", config.GetUserAgentHeader())
@@ -51,21 +52,27 @@ func FetchIndex(indexURL string) (*PluginIndex, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch index: %w", err)
+		return nil, "", fmt.Errorf("failed to fetch index: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch index: HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("failed to fetch index: HTTP %d", resp.StatusCode)
 	}
 
 	var index PluginIndex
 
 	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-		return nil, fmt.Errorf("failed to parse index: %w", err)
+		return nil, "", fmt.Errorf("failed to parse index: %w", err)
 	}
 
-	return &index, nil
+	// Extract base URL (directory containing index.json)
+	baseURL := indexURL
+	if idx := strings.LastIndex(baseURL, "/"); idx > 0 {
+		baseURL = baseURL[:idx]
+	}
+
+	return &index, baseURL, nil
 }
 
 // ResolveVersion finds the best matching version for a constraint
@@ -163,13 +170,13 @@ func resolveGTEConstraint(sorted []IndexVersion, constraint string) (*IndexVersi
 }
 
 // InstallPlugin downloads and installs a plugin
-func InstallPlugin(pluginEntry IndexPlugin, version IndexVersion) error {
+func InstallPlugin(pluginEntry IndexPlugin, version IndexVersion, baseURL string) error {
 	pluginDir, err := preparePluginDirectory(pluginEntry.Name)
 	if err != nil {
 		return err
 	}
 
-	archivePath, err := downloadAndVerifyPlugin(version)
+	archivePath, err := downloadAndVerifyPlugin(version, baseURL)
 	if err != nil {
 		return err
 	}
@@ -191,10 +198,10 @@ func preparePluginDirectory(name string) (string, error) {
 	return filepath.Join(managedDir, name), nil
 }
 
-func downloadAndVerifyPlugin(version IndexVersion) (string, error) {
+func downloadAndVerifyPlugin(version IndexVersion, baseURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", version.URL)
 
-	archivePath, err := downloadFile(version.URL)
+	archivePath, err := downloadFile(version.URL, baseURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to download plugin: %w", err)
 	}
@@ -311,11 +318,19 @@ func loadPluginMetadata(managedDir, name string) InstalledPlugin {
 	return meta
 }
 
-// downloadFile downloads a file to a temporary location and returns the path
-func downloadFile(url string) (string, error) {
+// downloadFile downloads a file to a temporary location and returns the path.
+// If the URL is relative, it is resolved against baseURL.
+func downloadFile(url, baseURL string) (string, error) {
+	// Resolve relative URLs
+	finalURL := url
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		// Relative URL - join with base
+		finalURL = baseURL + "/" + strings.TrimPrefix(url, "/")
+	}
+
 	client := &http.Client{Timeout: 5 * time.Minute}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, finalURL, nil)
 	if err != nil {
 		return "", err
 	}

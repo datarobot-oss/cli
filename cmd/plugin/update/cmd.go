@@ -64,16 +64,24 @@ func runUpdate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Fetching plugin index from %s...\n", indexURL)
+	// Auto-append index.json if not present
+	finalIndexURL := indexURL
+	if len(finalIndexURL) > 0 && finalIndexURL[len(finalIndexURL)-1] == '/' {
+		finalIndexURL += "index.json"
+	} else if len(finalIndexURL) > 5 && finalIndexURL[len(finalIndexURL)-5:] != ".json" {
+		finalIndexURL += "/index.json"
+	}
 
-	index, err := plugin.FetchIndex(indexURL)
+	fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+
+	index, baseURL, err := plugin.FetchIndex(finalIndexURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch plugin index: %w", err)
 	}
 
 	fmt.Println()
 
-	updated := updatePlugins(toUpdate, index)
+	updated := updatePlugins(toUpdate, index, baseURL)
 
 	fmt.Println()
 
@@ -106,11 +114,11 @@ func selectPluginsToUpdate(args []string, installed []plugin.InstalledPlugin) ([
 	return nil, errors.New("specify a plugin name or use --all to update all plugins")
 }
 
-func updatePlugins(toUpdate []plugin.InstalledPlugin, index *plugin.PluginIndex) int {
+func updatePlugins(toUpdate []plugin.InstalledPlugin, index *plugin.PluginIndex, baseURL string) int {
 	var updated int
 
 	for _, p := range toUpdate {
-		if updateSinglePlugin(p, index) {
+		if updateSinglePlugin(p, index, baseURL) {
 			updated++
 		}
 	}
@@ -118,7 +126,7 @@ func updatePlugins(toUpdate []plugin.InstalledPlugin, index *plugin.PluginIndex)
 	return updated
 }
 
-func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex) bool {
+func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex, baseURL string) bool {
 	pluginEntry, ok := index.Plugins[p.Name]
 	if !ok {
 		fmt.Printf("⚠ Plugin %s not found in index, skipping\n", p.Name)
@@ -141,7 +149,7 @@ func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex) boo
 
 	fmt.Printf("Updating %s from %s to %s...\n", p.Name, p.Version, latestVersion.Version)
 
-	if err := plugin.InstallPlugin(pluginEntry, *latestVersion); err != nil {
+	if err := plugin.InstallPlugin(pluginEntry, *latestVersion, baseURL); err != nil {
 		fmt.Printf("✗ Failed to update %s: %v\n", p.Name, err)
 
 		return false

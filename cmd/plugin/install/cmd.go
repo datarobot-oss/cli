@@ -59,48 +59,74 @@ func runInstall(_ *cobra.Command, args []string) error {
 	fmt.Println(tui.TitleStyle.Render("Installing Plugin"))
 	fmt.Println()
 
-	fmt.Printf("Fetching plugin index from %s...\n", indexURL)
+	finalIndexURL := normalizeIndexURL(indexURL)
 
-	index, err := plugin.FetchIndex(indexURL)
+	fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+
+	index, baseURL, err := plugin.FetchIndex(finalIndexURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch plugin index: %w", err)
 	}
 
 	pluginEntry, ok := index.Plugins[pluginName]
 	if !ok {
-		fmt.Println()
-		fmt.Println("Available plugins:")
-
-		for name, p := range index.Plugins {
-			fmt.Printf("  - %s: %s\n", name, p.Description)
-		}
+		printAvailablePlugins(index)
 
 		return fmt.Errorf("plugin %q not found in index", pluginName)
 	}
 
 	version, err := plugin.ResolveVersion(pluginEntry.Versions, versionConstraint)
 	if err != nil {
-		fmt.Println()
-		fmt.Println("Available versions:")
-
-		for _, v := range pluginEntry.Versions {
-			fmt.Printf("  - %s\n", v.Version)
-		}
+		printAvailableVersions(pluginEntry.Versions)
 
 		return fmt.Errorf("failed to resolve version: %w", err)
 	}
 
 	fmt.Printf("Installing %s version %s...\n", pluginEntry.Name, version.Version)
 
-	if err := plugin.InstallPlugin(pluginEntry, *version); err != nil {
+	if err := plugin.InstallPlugin(pluginEntry, *version, baseURL); err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Printf(tui.SuccessStyle.Render("✓ Successfully installed %s %s"), pluginEntry.Name, version.Version)
-	fmt.Println()
-	fmt.Println()
-	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
+	printSuccess(pluginEntry.Name, version.Version)
 
 	return nil
+}
+
+func normalizeIndexURL(url string) string {
+	if len(url) > 0 && url[len(url)-1] == '/' {
+		return url + "index.json"
+	}
+
+	if len(url) > 5 && url[len(url)-5:] != ".json" {
+		return url + "/index.json"
+	}
+
+	return url
+}
+
+func printAvailablePlugins(index *plugin.PluginIndex) {
+	fmt.Println()
+	fmt.Println("Available plugins:")
+
+	for name, p := range index.Plugins {
+		fmt.Printf("  - %s: %s\n", name, p.Description)
+	}
+}
+
+func printAvailableVersions(versions []plugin.IndexVersion) {
+	fmt.Println()
+	fmt.Println("Available versions:")
+
+	for _, v := range versions {
+		fmt.Printf("  - %s\n", v.Version)
+	}
+}
+
+func printSuccess(name, version string) {
+	fmt.Println()
+	fmt.Printf(tui.SuccessStyle.Render("✓ Successfully installed %s %s"), name, version)
+	fmt.Println()
+	fmt.Println()
+	fmt.Printf("Run `dr %s --help` to get started.\n", name)
 }
