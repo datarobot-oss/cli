@@ -173,7 +173,16 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		return "", err
+		// close previous auth server if address already in use
+		resp, err := http.Get("http://" + addr)
+		if err == nil {
+			resp.Body.Close()
+		}
+
+		listen, err = net.Listen("tcp", addr)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Start the server in a goroutine
@@ -195,11 +204,17 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	select {
 	// Wait for the key from the handler
 	case apiKey := <-apiKeyChan:
-		fmt.Println("Successfully consumed API key from API request")
 		// Now shut down the server after key is received
 		if err := server.Shutdown(ctx); err != nil {
 			return "", fmt.Errorf("Error during shutdown: %v", err)
 		}
+
+		// empty apiKey means we need to interrupt current auth flow
+		if apiKey == "" {
+			return "", errors.New("Interrupt request received.")
+		}
+
+		fmt.Println("Successfully consumed API key from API request")
 
 		return apiKey, nil
 	case <-ctx.Done():

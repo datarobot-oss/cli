@@ -81,6 +81,9 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	key, err := auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
 	if err != nil {
 		log.Error(err)
+
+		cmd.SilenceUsage = true
+
 		return err
 	}
 
@@ -93,6 +96,9 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	err = auth.WriteConfigFile()
 	if err != nil {
 		log.Error(err)
+
+		cmd.SilenceUsage = true
+
 		return err
 	}
 
