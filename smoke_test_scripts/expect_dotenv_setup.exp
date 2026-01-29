@@ -27,6 +27,12 @@ match_max 100000
 # until we reach the final menu or EOF
 
 expect {
+    "DATABASE_URI" {
+        # Final menu - press Enter to exit
+        send -- "\025"
+        send -- "sqlite+aiosqlite:///.data/database.sqlite\r\n"
+        exp_continue
+    }
     -re ">" {
         # Input prompt - press Enter to accept default
         send -- "\r"
