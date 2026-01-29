@@ -57,14 +57,40 @@ func (suite *DetectTestSuite) TearDownTest() {
 	}
 }
 
-func (suite *DetectTestSuite) createAnswers(dir string) {
+func (suite *DetectTestSuite) createAnswersDir() {
 	// Create .datarobot/answers directory
-	err := os.MkdirAll(filepath.Join(dir, ".datarobot", "answers"), 0o755)
+	err := os.MkdirAll(filepath.Join(suite.tempDir, ".datarobot", "answers"), 0o755)
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliDir() {
+	// Create .datarobot/cli directory
+	err := os.MkdirAll(filepath.Join(suite.tempDir, ".datarobot", "cli"), 0o755)
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliVersionsYaml() {
+	suite.createCliDir()
+	// Create .datarobot/cli/versions.yaml file
+	versionsFile := filepath.Join(suite.tempDir, ".datarobot", "cli", "versions.yaml")
+	file, err := os.OpenFile(versionsFile, os.O_RDONLY|os.O_CREATE, 0o644)
+	suite.Require().NoError(err)
+	err = file.Close()
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliStateYaml() {
+	suite.createCliDir()
+	// Create .datarobot/cli/state.yaml file
+	stateFile := filepath.Join(suite.tempDir, ".datarobot", "cli", "state.yaml")
+	file, err := os.OpenFile(stateFile, os.O_RDONLY|os.O_CREATE, 0o644)
+	suite.Require().NoError(err)
+	err = file.Close()
 	suite.Require().NoError(err)
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
-	suite.createAnswers(suite.tempDir)
+	suite.createAnswersDir()
 
 	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
@@ -85,7 +111,7 @@ func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
-	suite.createAnswers(suite.tempDir)
+	suite.createAnswersDir()
 
 	// Create nested directory structure
 	nestedPath := filepath.Join(suite.tempDir, "src", "components", "deep")
@@ -121,8 +147,32 @@ func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
 	suite.Empty(repoRoot)
 }
 
-func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
-	suite.createAnswers(suite.tempDir)
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoAnswers() {
+	suite.createAnswersDir()
+
+	// Change to temp directory
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return true
+	suite.True(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoVersions() {
+	suite.createCliVersionsYaml()
+
+	// Change to temp directory
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return true
+	suite.True(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoAll() {
+	suite.createAnswersDir()
+	suite.createCliVersionsYaml()
+	suite.createCliStateYaml()
 
 	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
@@ -134,6 +184,17 @@ func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
 
 func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenNotInRepo() {
 	// Don't create .datarobot/answers directory
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return false
+	suite.False(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenOnlyStateYaml() {
+	suite.createCliStateYaml()
+
+	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 

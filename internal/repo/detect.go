@@ -18,7 +18,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/fsutil"
 )
 
@@ -60,9 +62,35 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
-// detectTemplate checks if .datarobot/answers exists in dir directory
+// detectTemplate checks if .datarobot/answers or .datarobot/cli exists in dir directory
 func detectTemplate(dir string) bool {
-	return fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectPath))
+	answersDirPresent := fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectAnswersPath))
+	if answersDirPresent {
+		log.Debugf("Directory %s exists, treating %s as template", DataRobotTemplateDetectAnswersPath, dir)
+		return true
+	}
+
+	entries, err := os.ReadDir(filepath.Join(dir, DataRobotTemplateDetectCliPath))
+	if err != nil {
+		return false
+	}
+
+	if len(entries) == 0 {
+		log.Debugf("Empty CLI configuration directory %s exists, treating %s as template", DataRobotTemplateDetectCliPath, dir)
+	}
+
+	// Older versions were incorrectly creating state.yaml file outside of template directories
+	// return true if any file other than state.yaml exists in .datarobot/cli
+	cliConfigDirPresent := slices.ContainsFunc(entries, func(entry os.DirEntry) bool {
+		return entry.Name() != "state.yaml"
+	})
+
+	if cliConfigDirPresent {
+		log.Debugf("CLI configuration files present, treating %s as template", dir)
+		return true
+	}
+
+	return false
 }
 
 // IsInRepo checks if the current directory is inside a DataRobot repository
