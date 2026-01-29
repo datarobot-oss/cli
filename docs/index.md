@@ -53,7 +53,7 @@ Detailed documentation for each command:
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
 
-For template operations (list, clone, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
+For template operations (list, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
 
 ### 🔧 Development guide
 

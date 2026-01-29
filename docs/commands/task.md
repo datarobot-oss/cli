@@ -732,8 +732,8 @@ ports:
 #### Initial setup
 
 ```bash
-# Clone template
-dr templates clone python-fullstack my-app
+# Set up template (clones and configures)
+dr templates setup
 cd my-app
 
 # Set up environment

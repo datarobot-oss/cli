@@ -103,7 +103,7 @@ func init() {
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
-		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+		"path to config file (default location: $HOME/.config/datarobot/drconfig.yaml)")
 	RootCmd.PersistentFlags().BoolP("version", "V", false, "display the version")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")

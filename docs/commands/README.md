@@ -12,7 +12,7 @@ These flags are available for all commands:
   -V, --version           Display version information
   -v, --verbose           Enable verbose output (info level logging)
       --debug             Enable debug output (debug level logging)
-      --config string     Path to config file (default: $HOME/.datarobot/drconfig.yaml)
+      --config string     Path to config file (default: $HOME/.config/datarobot/drconfig.yaml)
       --skip-auth         Skip authentication checks (for advanced users)
       --force-interactive Force the setup wizard to run even if already completed
       --all-commands      Display all available commands and their flags in tree format

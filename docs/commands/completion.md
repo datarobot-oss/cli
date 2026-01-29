@@ -224,10 +224,6 @@ $ dr --<Tab>
 Some commands support argument completion:
 
 ```bash
-# Template names (when connected to DataRobot)
-$ dr templates clone <Tab>
-python-streamlit  react-frontend  fastapi-backend
-
 # Task names (when in a template directory)
 $ dr run <Tab>
 build  dev  deploy  lint  test
@@ -396,10 +392,8 @@ In Fish and PowerShell, completions include descriptions:
 
 ```fish
 $ dr templates <Tab>
-clone   (Clone a template repository)
 list    (List available templates)
 setup   (Interactive template setup wizard)
-status  (Show current template status)
 ```
 
 ### Dynamic completion
@@ -407,9 +401,6 @@ status  (Show current template status)
 Some completions are generated dynamically:
 
 ```bash
-# Template names from DataRobot API
-dr templates clone <Tab>
-
 # Task names from current Taskfile
 dr run <Tab>
 
