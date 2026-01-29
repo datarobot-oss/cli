@@ -224,10 +224,6 @@ $ dr --<Tab>
 Some commands support argument completion:
 
 ```bash
-# Template names (when connected to DataRobot)
-$ dr templates list
-python-streamlit  react-frontend  fastapi-backend
-
 # Task names (when in a template directory)
 $ dr run <Tab>
 build  dev  deploy  lint  test
@@ -405,9 +401,6 @@ setup   (Interactive template setup wizard)
 Some completions are generated dynamically:
 
 ```bash
-# List templates from DataRobot API
-dr templates list
-
 # Task names from current Taskfile
 dr run <Tab>
 
