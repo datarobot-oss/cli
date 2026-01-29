@@ -46,11 +46,11 @@ echo ""
 echo "Package created: $OUTPUT_PATH"
 echo "SHA256: $SHA256"
 echo ""
-echo "Add to index.json:"{OUTPUT_NAME}/${VERSION}/${OUTPUT_FILE}
+echo "Add to index.json:"
 cat <<EOF
 {
   "version": "$VERSION",
-  "url": "https://cli.datarobot.com/plugins/$OUTPUT_FILE",
+  "url": "${OUTPUT_NAME}/${OUTPUT_FILE}",
   "sha256": "$SHA256"
 }
 EOF
