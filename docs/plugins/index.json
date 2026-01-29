@@ -1,18 +1,5 @@
 {
   "version": "1",
   "plugins": {
-    "apps": {
-      "name": "apps",
-      "description": "Host custom applications in DataRobot using execution environments",
-      "repository": "https://github.com/datarobot/dr-apps",
-      "versions": [
-        {
-          "version": "1.0.0",
-          "url": "dr-apps/dr-apps-1.0.0.tar.xz",
-          "sha256": "2ee3423e5996072b0b442a754c3c15260456d28805b266e33a788b39dab4fe2a",
-          "releaseDate": "2026-01-27"
-        }
-      ]
-    }
   }
 }
