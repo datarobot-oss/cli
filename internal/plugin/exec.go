@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -22,10 +23,23 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+
+	"github.com/datarobot/cli/internal/auth"
 )
 
 // ExecutePlugin runs a plugin and returns its exit code
-func ExecutePlugin(executable string, args []string) int {
+// If the plugin manifest requires authentication, it will check/prompt for auth first
+func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
+	// Check authentication if required by the plugin
+	if manifest.Authentication && !auth.EnsureAuthenticated(context.Background()) {
+		return 1
+	}
+
+	return executePluginCommand(executable, args)
+}
+
+// executePluginCommand runs the actual plugin command
+func executePluginCommand(executable string, args []string) int {
 	cmd := buildPluginCommand(executable, args)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

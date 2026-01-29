@@ -52,7 +52,8 @@ The CLI currently understands the following fields:
 {
   "name": "my-plugin",
   "version": "1.2.3",
-  "description": "Adds extra commands to dr"
+  "description": "Adds extra commands to dr",
+  "authentication": true
 }
 ```
 
@@ -66,6 +67,10 @@ The CLI currently understands the following fields:
 
 - `version` (string): Displayed in `dr plugin list` (shown as `-` if empty).
 - `description` (string): Displayed in `dr plugin list` and used as the command short help when registered as `dr <name>`.
+- `authentication` (boolean): When `true`, the CLI will check for valid DataRobot authentication before executing the plugin.
+  - If no valid credentials exist, the user will be prompted to log in.
+  - Respects the global `--skip-auth` flag.
+  - Defaults to `false` if omitted.
 
 ### Notes / recommendations
 
@@ -84,6 +89,33 @@ dr <plugin-name> [args...]
 The CLI:
 
 1. Prints a short info line indicating which plugin is being run.
+2. If the plugin manifest has `"authentication": true`, checks for valid authentication and prompts for login if needed.
+3. Executes the plugin binary.
+4. Passes all remaining arguments to the plugin verbatim.
+5. Exits with the same exit code as the plugin.
+
+Because plugin commands are registered as top-level commands, a plugin cannot conflict with an existing built-in command name.
+
+### Authentication
+
+If your plugin needs to interact with the DataRobot API, set `"authentication": true` in your manifest. This ensures users are authenticated before your plugin runs.
+
+**Example manifest with authentication:**
+
+```json
+{
+  "name": "apps",
+  "version": "11.1.0",
+  "description": "Host custom applications in DataRobot",
+  "authentication": true
+}
+```
+
+When `authentication` is enabled:
+- The CLI checks for valid credentials from environment variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`) or the config file.
+- If no valid credentials exist, the user is automatically prompted to log in via `dr auth login`.
+- Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
+- Your plugin will receive a clean environment with authentication already validated
 2. Executes the plugin binary.
 3. Passes all remaining arguments to the plugin verbatim.
 4. Exits with the same exit code as the plugin.

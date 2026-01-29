@@ -27,17 +27,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
 	"github.com/ulikunitz/xz"
 )
-
-// PluginManifest represents the manifest.json in a plugin directory
-type PluginManifest struct {
-	Name          string `json:"name"`
-	Version       string `json:"version"`
-	Description   string `json:"description,omitempty"`
-	MinCLIVersion string `json:"minCLIVersion,omitempty"`
-}
 
 func Cmd() *cobra.Command {
 	var outputDir string
@@ -86,6 +79,10 @@ func packagePlugin(pluginDir, output, indexOutput string) error {
 		return err
 	}
 
+	if err := validatePluginScript(pluginDir, manifest); err != nil {
+		return err
+	}
+
 	archiveName := fmt.Sprintf("%s-%s.tar.xz", manifest.Name, manifest.Version)
 	archivePath := determineOutputPath(output, archiveName)
 
@@ -126,7 +123,7 @@ func packagePlugin(pluginDir, output, indexOutput string) error {
 	return nil
 }
 
-func loadManifest(pluginDir string) (*PluginManifest, error) {
+func loadManifest(pluginDir string) (*plugin.PluginManifest, error) {
 	manifestPath := filepath.Join(pluginDir, "manifest.json")
 
 	data, err := os.ReadFile(manifestPath)
@@ -134,7 +131,7 @@ func loadManifest(pluginDir string) (*PluginManifest, error) {
 		return nil, fmt.Errorf("failed to read manifest.json: %w", err)
 	}
 
-	var manifest PluginManifest
+	var manifest plugin.PluginManifest
 
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest.json: %w", err)
@@ -149,6 +146,18 @@ func loadManifest(pluginDir string) (*PluginManifest, error) {
 	}
 
 	return &manifest, nil
+}
+
+func validatePluginScript(pluginDir string, expectedManifest *plugin.PluginManifest) error {
+	log.Info("Validating plugin script output", "plugin", expectedManifest.Name)
+
+	if err := plugin.ValidatePluginScript(pluginDir, *expectedManifest); err != nil {
+		return err
+	}
+
+	log.Info("✓ Plugin script output matches manifest.json")
+
+	return nil
 }
 
 func determineOutputPath(output, archiveName string) string {
@@ -234,7 +243,7 @@ func calculateSHA256(filePath string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func printIndexJSON(manifest *PluginManifest, archiveName, sha256sum, releaseDate string) {
+func printIndexJSON(manifest *plugin.PluginManifest, archiveName, sha256sum, releaseDate string) {
 	fmt.Println("Add to index.json:")
 	fmt.Println("```json")
 
@@ -259,7 +268,7 @@ type indexFragment struct {
 	ReleaseDate string `json:"releaseDate"`
 }
 
-func saveIndexFragment(path string, manifest *PluginManifest, archiveName, sha256sum, releaseDate string) error {
+func saveIndexFragment(path string, manifest *plugin.PluginManifest, archiveName, sha256sum, releaseDate string) error {
 	fragment := indexFragment{
 		Name:        manifest.Name,
 		Version:     manifest.Version,
