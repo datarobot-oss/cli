@@ -294,6 +294,7 @@ func registerPluginCommands() {
 
 func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	executable := p.Executable // Capture for closure
+	manifest := p.Manifest     // Capture for closure
 	pluginName := p.Manifest.Name
 
 	return &cobra.Command{
@@ -306,7 +307,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
-			exitCode := internalPlugin.ExecutePlugin(executable, args)
+			exitCode := internalPlugin.ExecutePlugin(manifest, executable, args)
 			os.Exit(exitCode)
 		},
 	}

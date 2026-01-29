@@ -32,13 +32,6 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-type pluginManifest struct {
-	Name          string `json:"name"`
-	Version       string `json:"version"`
-	Description   string `json:"description,omitempty"`
-	MinCLIVersion string `json:"minCLIVersion,omitempty"`
-}
-
 func Cmd() *cobra.Command {
 	var pluginsDir string
 
@@ -91,6 +84,10 @@ func publishPlugin(pluginDir, pluginsDir, indexPath string) error {
 		return err
 	}
 
+	if err := validatePluginScript(pluginDir, manifest); err != nil {
+		return err
+	}
+
 	archiveName := fmt.Sprintf("%s-%s.tar.xz", manifest.Name, manifest.Version)
 	pluginOutputDir := filepath.Join(pluginsDir, manifest.Name)
 	archivePath := filepath.Join(pluginOutputDir, archiveName)
@@ -129,7 +126,7 @@ func publishPlugin(pluginDir, pluginsDir, indexPath string) error {
 	return nil
 }
 
-func loadManifest(pluginDir string) (*pluginManifest, error) {
+func loadManifest(pluginDir string) (*plugin.PluginManifest, error) {
 	manifestPath := filepath.Join(pluginDir, "manifest.json")
 
 	data, err := os.ReadFile(manifestPath)
@@ -137,7 +134,7 @@ func loadManifest(pluginDir string) (*pluginManifest, error) {
 		return nil, fmt.Errorf("failed to read manifest.json: %w", err)
 	}
 
-	var manifest pluginManifest
+	var manifest plugin.PluginManifest
 
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest.json: %w", err)
@@ -335,4 +332,10 @@ func saveIndex(path string, index *plugin.PluginIndex) error {
 	}
 
 	return nil
+}
+
+func validatePluginScript(pluginDir string, manifest *plugin.PluginManifest) error {
+	log.Info("Validating plugin script output", "plugin", manifest.Name)
+
+	return plugin.ValidatePluginScript(pluginDir, *manifest)
 }

@@ -104,12 +104,13 @@ func TestPluginManifestSchema(t *testing.T) {
 			},
 		},
 		{
-			name: "valid full manifest",
+			name: "valid full manifest with authentication",
 			json: `{
 				"name":"test",
 				"version":"1.0.0",
 				"description":"Test plugin",
 				"minCLIVersion":"0.2.0",
+				"authentication":true,
 				"scripts":{
 					"posix":"scripts/test.sh",
 					"windows":"scripts/test.ps1"
@@ -120,9 +121,30 @@ func TestPluginManifestSchema(t *testing.T) {
 				assert.Equal(t, "1.0.0", m.Version)
 				assert.Equal(t, "Test plugin", m.Description)
 				assert.Equal(t, "0.2.0", m.MinCLIVersion)
+				assert.True(t, m.Authentication)
 				require.NotNil(t, m.Scripts)
 				assert.Equal(t, "scripts/test.sh", m.Scripts.Posix)
 				assert.Equal(t, "scripts/test.ps1", m.Scripts.Windows)
+			},
+		},
+		{
+			name: "wrong field name - authenticated instead of authentication",
+			json: `{
+				"name":"test",
+				"version":"1.0.0",
+				"description":"Test plugin",
+				"authenticated":true,
+				"scripts":{
+					"posix":"scripts/test.sh"
+				}
+			}`,
+			validate: func(t *testing.T, m *PluginManifest) {
+				assert.Equal(t, "test", m.Name)
+				assert.Equal(t, "1.0.0", m.Version)
+				assert.Equal(t, "Test plugin", m.Description)
+				assert.False(t, m.Authentication, "authenticated field should be ignored, authentication should be false")
+				require.NotNil(t, m.Scripts)
+				assert.Equal(t, "scripts/test.sh", m.Scripts.Posix)
 			},
 		},
 		{

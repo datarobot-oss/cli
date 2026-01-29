@@ -22,11 +22,18 @@ type PluginScripts struct {
 	Windows string `json:"windows,omitempty"` // Script for Windows (e.g., "scripts/plugin.ps1")
 }
 
-// PluginManifest represents the JSON manifest returned by plugins
+// BasicPluginManifest contains the core fields that all plugin manifests must have.
+type BasicPluginManifest struct {
+	Name           string `json:"name"`
+	Version        string `json:"version,omitempty"`
+	Description    string `json:"description,omitempty"`
+	Authentication bool   `json:"authentication,omitempty"`
+}
+
+// PluginManifest represents the full JSON manifest returned by managed plugins.
+// Embeds BasicPluginManifest and adds additional fields for managed plugins.
 type PluginManifest struct {
-	Name          string         `json:"name"`
-	Version       string         `json:"version,omitempty"`
-	Description   string         `json:"description,omitempty"`
+	BasicPluginManifest
 	Scripts       *PluginScripts `json:"scripts,omitempty"`       // Platform-specific script paths
 	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
 }

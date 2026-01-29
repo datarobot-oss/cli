@@ -63,26 +63,26 @@ exit %d
 func (s *ExecTestSuite) TestExecutePluginSuccessfulExecution() {
 	path := s.createScript("success", 0)
 
-	exitCode := ExecutePlugin(path, []string{})
+	exitCode := ExecutePlugin(PluginManifest{}, path, []string{})
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeOne() {
 	path := s.createScript("fail-one", 1)
 
-	exitCode := ExecutePlugin(path, []string{})
+	exitCode := ExecutePlugin(PluginManifest{}, path, []string{})
 	s.Equal(1, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeFortyTwo() {
 	path := s.createScript("fail-42", 42)
 
-	exitCode := ExecutePlugin(path, []string{})
+	exitCode := ExecutePlugin(PluginManifest{}, path, []string{})
 	s.Equal(42, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginCommandNotFound() {
-	exitCode := ExecutePlugin(filepath.Join(s.tempDir, "nonexistent"), []string{})
+	exitCode := ExecutePlugin(PluginManifest{}, filepath.Join(s.tempDir, "nonexistent"), []string{})
 	s.Equal(1, exitCode)
 }
 
@@ -98,7 +98,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(path, []string{"expected", "args"})
+	exitCode := ExecutePlugin(PluginManifest{}, path, []string{"expected", "args"})
 	s.Equal(0, exitCode)
 }
 
@@ -114,7 +114,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args-fail")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(path, []string{"wrong", "arguments"})
+	exitCode := ExecutePlugin(PluginManifest{}, path, []string{"wrong", "arguments"})
 	s.Equal(1, exitCode)
 }
 
@@ -147,7 +147,7 @@ exit %d
 			path := filepath.Join(tempDir, fmt.Sprintf("exit-%d", tt.exitCode))
 			require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 
-			result := ExecutePlugin(path, []string{})
+			result := ExecutePlugin(PluginManifest{}, path, []string{})
 			require.Equal(t, tt.expectedCode, result)
 		})
 	}
