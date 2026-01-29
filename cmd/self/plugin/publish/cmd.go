@@ -62,14 +62,19 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginDir := args[0]
 
-			return publishPlugin(pluginDir, pluginsDir, indexPath)
+			resolvedIndexPath := indexPath
+			if resolvedIndexPath == "" {
+				resolvedIndexPath = filepath.Join(pluginsDir, "index.json")
+			}
+
+			return publishPlugin(pluginDir, pluginsDir, resolvedIndexPath)
 		},
 	}
 
 	cmd.Flags().StringVar(&pluginsDir, "plugins-dir", "docs/plugins",
 		"Directory where plugin archives are stored")
-	cmd.Flags().StringVar(&indexPath, "index", "docs/plugins/index.json",
-		"Path to the plugin index.json file")
+	cmd.Flags().StringVar(&indexPath, "index", "",
+		"Path to the plugin index.json file (defaults to <plugins-dir>/index.json)")
 
 	return cmd
 }
