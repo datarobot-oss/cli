@@ -62,7 +62,23 @@ func FindRepoRoot() (string, error) {
 
 // detectTemplate checks if .datarobot/answers exists in dir directory
 func detectTemplate(dir string) bool {
-	return fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectPath))
+	if fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectAnswersPath)) {
+		return true
+	}
+
+	entries, err := os.ReadDir(filepath.Join(dir, DataRobotTemplateDetectCliPath))
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		// Older versions were incorrectly creating state.yaml file outside of template directories
+		if entry.Name() != "state.yaml" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // IsInRepo checks if the current directory is inside a DataRobot repository
