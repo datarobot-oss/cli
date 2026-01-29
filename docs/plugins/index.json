@@ -1,5 +1,17 @@
 {
   "version": "1",
   "plugins": {
+    "apps": {
+      "name": "apps",
+      "description": "Host custom applications in DataRobot using execution environments",
+      "versions": [
+        {
+          "version": "11.1.1",
+          "url": "apps/apps-11.1.1.tar.xz",
+          "sha256": "95d4cd668ebb836d1926c185ef940ecf3bc61e12a4b4151b10b010d8136058b9",
+          "releaseDate": "2026-01-28"
+        }
+      ]
+    }
   }
 }
