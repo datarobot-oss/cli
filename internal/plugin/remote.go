@@ -321,6 +321,11 @@ func loadPluginMetadata(managedDir, name string) InstalledPlugin {
 // downloadFile downloads a file to a temporary location and returns the path.
 // If the URL is relative, it is resolved against baseURL.
 func downloadFile(url, baseURL string) (string, error) {
+	// Handle file:// URLs for testing
+	if strings.HasPrefix(url, "file://") {
+		return copyFileURL(url)
+	}
+
 	// Resolve relative URLs
 	finalURL := url
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
@@ -328,6 +333,38 @@ func downloadFile(url, baseURL string) (string, error) {
 		finalURL = baseURL + "/" + strings.TrimPrefix(url, "/")
 	}
 
+	return downloadHTTP(finalURL)
+}
+
+// copyFileURL handles file:// URLs by copying to a temp file
+func copyFileURL(url string) (string, error) {
+	srcPath := strings.TrimPrefix(url, "file://")
+
+	tmpFile, err := os.CreateTemp("", "dr-plugin-*.tar.xz")
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		os.Remove(tmpFile.Name())
+
+		return "", err
+	}
+	defer srcFile.Close()
+
+	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+		os.Remove(tmpFile.Name())
+
+		return "", err
+	}
+
+	return tmpFile.Name(), nil
+}
+
+// downloadHTTP downloads a file via HTTP to a temp file
+func downloadHTTP(finalURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", finalURL)
 
 	client := &http.Client{Timeout: 5 * time.Minute}
@@ -495,6 +532,150 @@ func saveInstalledMetadata(pluginDir string, entry IndexPlugin, version IndexVer
 	}
 
 	return os.WriteFile(filepath.Join(pluginDir, ".installed.json"), data, 0o644)
+}
+
+// BackupPlugin creates a backup of an installed plugin in a temporary directory
+// Returns the path to the backup directory
+func BackupPlugin(name string) (string, error) {
+	managedDir, err := repo.ManagedPluginsDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	pluginDir := filepath.Join(managedDir, name)
+
+	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+		return "", fmt.Errorf("plugin %s is not installed", name)
+	}
+
+	backupDir, err := os.MkdirTemp("", fmt.Sprintf("dr-plugin-backup-%s-*", name))
+	if err != nil {
+		return "", fmt.Errorf("failed to create backup directory: %w", err)
+	}
+
+	if err := copyDir(pluginDir, backupDir); err != nil {
+		os.RemoveAll(backupDir)
+
+		return "", fmt.Errorf("failed to copy plugin to backup: %w", err)
+	}
+
+	return backupDir, nil
+}
+
+// RestorePlugin restores a plugin from a backup directory
+func RestorePlugin(name, backupPath string) error {
+	managedDir, err := repo.ManagedPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	pluginDir := filepath.Join(managedDir, name)
+
+	if err := os.RemoveAll(pluginDir); err != nil {
+		return fmt.Errorf("failed to remove corrupted plugin: %w", err)
+	}
+
+	if err := copyDir(backupPath, pluginDir); err != nil {
+		return fmt.Errorf("failed to restore plugin from backup: %w", err)
+	}
+
+	return nil
+}
+
+// CleanupBackup removes a backup directory
+func CleanupBackup(backupPath string) {
+	if backupPath != "" {
+		os.RemoveAll(backupPath)
+	}
+}
+
+// ValidatePlugin validates that a plugin installation is working correctly
+func ValidatePlugin(name string) error {
+	managedDir, err := repo.ManagedPluginsDir()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins directory: %w", err)
+	}
+
+	pluginDir := filepath.Join(managedDir, name)
+
+	metadataPath := filepath.Join(pluginDir, ".installed.json")
+	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
+		return errors.New("plugin metadata not found")
+	}
+
+	manifestPath := filepath.Join(pluginDir, "manifest.json")
+	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+		return errors.New("plugin manifest not found")
+	}
+
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	var manifest PluginManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("failed to parse manifest: %w", err)
+	}
+
+	if manifest.Name != name {
+		return fmt.Errorf("manifest name mismatch: expected %s, got %s", name, manifest.Name)
+	}
+
+	return nil
+}
+
+// copyDir recursively copies a directory
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a single file
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+
+	return err
 }
 
 // Version comparison helpers

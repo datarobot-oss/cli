@@ -15,13 +15,16 @@
 package plugin
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/ulikunitz/xz"
 )
 
 // TestLivePluginManifests validates all manifest.json files in docs/plugins/
@@ -223,4 +226,221 @@ func findInString(s, substr string) int {
 	}
 
 	return -1
+}
+
+// TestPluginUpgradeWithRollback tests the complete upgrade flow with backup and rollback
+func TestPluginUpgradeWithRollback(t *testing.T) {
+	// Note: This test uses the actual user plugins directory
+	// We'll verify the test plugin specifically
+	pluginName := "test-upgrade-rollback-plugin"
+
+	// Clean up any previous test artifacts
+	defer func() {
+		_ = UninstallPlugin(pluginName)
+	}()
+
+	t.Run("install working plugin v1.0.0", func(t *testing.T) {
+		archivePath := createTestPluginArchive(t, pluginName, "1.0.0", true)
+		defer os.Remove(archivePath)
+
+		entry := IndexPlugin{
+			Name:        pluginName,
+			Description: "Test plugin",
+		}
+		version := IndexVersion{
+			Version: "1.0.0",
+			URL:     "file://" + archivePath,
+		}
+
+		err := InstallPlugin(entry, version, "")
+		require.NoError(t, err)
+
+		installedPlugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		// Find our test plugin
+		var found bool
+
+		for _, p := range installedPlugins {
+			if p.Name == pluginName {
+				found = true
+				assert.Equal(t, "1.0.0", p.Version)
+
+				break
+			}
+		}
+
+		assert.True(t, found, "test plugin should be installed")
+	})
+
+	t.Run("verify plugin v1.0.0 validates successfully", func(t *testing.T) {
+		err := ValidatePlugin(pluginName)
+		require.NoError(t, err)
+	})
+
+	t.Run("backup plugin v1.0.0", func(t *testing.T) {
+		backupPath, err := BackupPlugin(pluginName)
+		require.NoError(t, err)
+
+		require.NotEmpty(t, backupPath)
+		defer CleanupBackup(backupPath)
+
+		assert.DirExists(t, backupPath)
+
+		manifestPath := filepath.Join(backupPath, "manifest.json")
+		assert.FileExists(t, manifestPath)
+
+		data, err := os.ReadFile(manifestPath)
+		require.NoError(t, err)
+
+		var manifest PluginManifest
+
+		err = json.Unmarshal(data, &manifest)
+		require.NoError(t, err)
+		assert.Equal(t, "1.0.0", manifest.Version)
+	})
+
+	t.Run("upgrade to broken plugin v2.0.0 and rollback", func(t *testing.T) {
+		backupPath, err := BackupPlugin(pluginName)
+		require.NoError(t, err)
+
+		defer CleanupBackup(backupPath)
+
+		brokenArchive := createTestPluginArchive(t, pluginName, "2.0.0", false)
+		defer os.Remove(brokenArchive)
+
+		entry := IndexPlugin{
+			Name:        pluginName,
+			Description: "Test plugin",
+		}
+		version := IndexVersion{
+			Version: "2.0.0",
+			URL:     "file://" + brokenArchive,
+		}
+
+		err = InstallPlugin(entry, version, "")
+		require.NoError(t, err)
+
+		err = ValidatePlugin(pluginName)
+		require.Error(t, err, "broken plugin should fail validation")
+
+		err = RestorePlugin(pluginName, backupPath)
+		require.NoError(t, err)
+
+		installedPlugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		// Find our test plugin and verify it's back to v1.0.0
+		var found bool
+
+		for _, p := range installedPlugins {
+			if p.Name == pluginName {
+				found = true
+				assert.Equal(t, "1.0.0", p.Version, "should be rolled back to v1.0.0")
+
+				break
+			}
+		}
+
+		assert.True(t, found, "test plugin should still be installed after rollback")
+	})
+
+	t.Run("verify plugin v1.0.0 still works after rollback", func(t *testing.T) {
+		err := ValidatePlugin(pluginName)
+		require.NoError(t, err, "rolled back plugin should validate successfully")
+
+		managedDir, err := repo.ManagedPluginsDir()
+		require.NoError(t, err)
+
+		pluginDir := filepath.Join(managedDir, pluginName)
+		manifestPath := filepath.Join(pluginDir, "manifest.json")
+
+		data, err := os.ReadFile(manifestPath)
+		require.NoError(t, err)
+
+		var manifest PluginManifest
+
+		err = json.Unmarshal(data, &manifest)
+		require.NoError(t, err)
+		assert.Equal(t, "1.0.0", manifest.Version)
+		assert.Equal(t, pluginName, manifest.Name)
+	})
+
+	t.Run("cleanup backup removes directory", func(t *testing.T) {
+		backupPath, err := BackupPlugin(pluginName)
+		require.NoError(t, err)
+
+		assert.DirExists(t, backupPath)
+
+		CleanupBackup(backupPath)
+
+		_, err = os.Stat(backupPath)
+		assert.True(t, os.IsNotExist(err), "backup directory should be removed")
+	})
+}
+
+// createTestPluginArchive creates a test plugin archive (.tar.xz) for testing
+// If valid is false, creates a broken plugin missing the manifest
+func createTestPluginArchive(t *testing.T, name, version string, valid bool) string {
+	t.Helper()
+
+	tmpFile, err := os.CreateTemp("", "test-plugin-*.tar.xz")
+	require.NoError(t, err)
+
+	defer tmpFile.Close()
+
+	xzWriter, err := xz.NewWriter(tmpFile)
+	require.NoError(t, err)
+
+	defer xzWriter.Close()
+
+	tarWriter := tar.NewWriter(xzWriter)
+	defer tarWriter.Close()
+
+	if valid {
+		manifest := PluginManifest{
+			BasicPluginManifest: BasicPluginManifest{
+				Name:        name,
+				Version:     version,
+				Description: "Test plugin for integration testing",
+			},
+		}
+
+		manifestData, err := json.MarshalIndent(manifest, "", "  ")
+		require.NoError(t, err)
+
+		err = tarWriter.WriteHeader(&tar.Header{
+			Name:     "manifest.json",
+			Mode:     0o644,
+			Size:     int64(len(manifestData)),
+			Typeflag: tar.TypeReg,
+		})
+		require.NoError(t, err)
+
+		_, err = tarWriter.Write(manifestData)
+		require.NoError(t, err)
+	}
+
+	metadata := InstalledPlugin{
+		Name:        name,
+		Version:     version,
+		Source:      "test",
+		InstalledAt: "2026-01-30T00:00:00Z",
+	}
+
+	metadataData, err := json.MarshalIndent(metadata, "", "  ")
+	require.NoError(t, err)
+
+	err = tarWriter.WriteHeader(&tar.Header{
+		Name:     ".installed.json",
+		Mode:     0o644,
+		Size:     int64(len(metadataData)),
+		Typeflag: tar.TypeReg,
+	})
+	require.NoError(t, err)
+
+	_, err = tarWriter.Write(metadataData)
+	require.NoError(t, err)
+
+	return tmpFile.Name()
 }

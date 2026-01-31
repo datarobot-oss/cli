@@ -150,8 +150,29 @@ func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex, bas
 
 	fmt.Printf("Updating %s from %s to %s...\n", p.Name, p.Version, latestVersion.Version)
 
+	backupPath, err := plugin.BackupPlugin(p.Name)
+	if err != nil {
+		fmt.Printf("✗ Failed to backup %s: %v\n", p.Name, err)
+
+		return false
+	}
+	defer plugin.CleanupBackup(backupPath)
+
 	if err := plugin.InstallPlugin(pluginEntry, *latestVersion, baseURL); err != nil {
 		fmt.Printf("✗ Failed to update %s: %v\n", p.Name, err)
+
+		return false
+	}
+
+	if err := plugin.ValidatePlugin(p.Name); err != nil {
+		fmt.Printf("✗ Plugin validation failed: %v\n", err)
+		fmt.Printf("Rolling back to previous version...\n")
+
+		if restoreErr := plugin.RestorePlugin(p.Name, backupPath); restoreErr != nil {
+			fmt.Printf("✗ Failed to restore backup: %v\n", restoreErr)
+		} else {
+			fmt.Printf("✓ Restored previous version\n")
+		}
 
 		return false
 	}
