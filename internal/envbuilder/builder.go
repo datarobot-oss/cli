@@ -148,10 +148,6 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 		return nil, fmt.Errorf("Failed to discover task yaml files: %w", err)
 	}
 
-	if len(yamlFiles) == 0 {
-		return nil, nil
-	}
-
 	allPrompts := make([]UserPrompt, 0)
 	allPrompts = append(allPrompts, corePrompts...)
 
