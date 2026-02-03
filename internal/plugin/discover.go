@@ -56,7 +56,7 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 	seen := make(map[string]bool)
 
 	// 1. Check managed plugins directory first (highest priority)
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err == nil {
 		managedPlugins, errs := discoverManagedPlugins(managedDir, seen)
 		plugins = append(plugins, managedPlugins...)

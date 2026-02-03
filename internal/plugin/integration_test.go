@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/datarobot/cli/internal/repo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/ulikunitz/xz"
@@ -343,7 +342,7 @@ func TestPluginUpgradeWithRollback(t *testing.T) {
 		err := ValidatePlugin(pluginName)
 		require.NoError(t, err, "rolled back plugin should validate successfully")
 
-		managedDir, err := repo.ManagedPluginsDir()
+		managedDir, err := ManagedPluginsDir()
 		require.NoError(t, err)
 
 		pluginDir := filepath.Join(managedDir, pluginName)
