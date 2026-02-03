@@ -154,6 +154,13 @@ func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistr
 
 	if err := plugin.InstallPlugin(pluginEntry, *latestVersion, baseURL); err != nil {
 		fmt.Printf("✗ Failed to update %s: %v\n", p.Name, err)
+		fmt.Printf("Rolling back to previous version...\n")
+
+		if restoreErr := plugin.RestorePlugin(p.Name, backupPath); restoreErr != nil {
+			fmt.Printf("✗ Failed to restore backup: %v\n", restoreErr)
+		} else {
+			fmt.Printf("✓ Restored previous version\n")
+		}
 
 		return false
 	}
