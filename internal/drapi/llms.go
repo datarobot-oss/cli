@@ -19,39 +19,40 @@ import (
 )
 
 type LLM struct {
-	Model                string   `json:"model"`
-	LlmID                string   `json:"llmId"`
-	Name                 string   `json:"name"`
-	Version              string   `json:"version"`
-	Description          string   `json:"description"`
-	Provider             string   `json:"provider"`
-	Creator              string   `json:"creator"`
-	ContextSize          int      `json:"contextSize"`
-	MaxCompletionTokens  int      `json:"maxCompletionTokens"`
-	Capabilities         []string `json:"capabilities"`
-	SupportedLanguages   []string `json:"supportedLanguages"`
-	InputTypes           []string `json:"inputTypes"`
-	OutputTypes          []string `json:"outputTypes"`
-	DocumentationLink    string   `json:"documentationLink"`
-	DateAdded            string   `json:"dateAdded"`
-	License              string   `json:"license"`
-	IsPreview            bool     `json:"isPreview"`
-	IsMetered            bool     `json:"isMetered"`
-	RetirementDate       string   `json:"retirementDate"`
-	SuggestedReplacement string   `json:"suggestedReplacement"`
-	IsDeprecated         bool     `json:"isDeprecated"`
-	IsActive             bool     `json:"isActive"`
-	AvailableRegions     []string `json:"availableRegions"`
+	LlmID    string `json:"llmId"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	IsActive bool   `json:"isActive"`
 
-	ReferenceLinks []struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
-	} `json:"referenceLinks"`
-
-	AvailableLitellmEndpoints struct {
-		SupportsChatCompletions bool `json:"supportsChatCompletions"`
-		SupportsResponses       bool `json:"supportsResponses"`
-	} `json:"availableLitellmEndpoints"`
+	//Model                string   `json:"model"`
+	//Version              string   `json:"version"`
+	//Description          string   `json:"description"`
+	//Creator              string   `json:"creator"`
+	//ContextSize          int      `json:"contextSize"`
+	//MaxCompletionTokens  int      `json:"maxCompletionTokens"`
+	//Capabilities         []string `json:"capabilities"`
+	//SupportedLanguages   []string `json:"supportedLanguages"`
+	//InputTypes           []string `json:"inputTypes"`
+	//OutputTypes          []string `json:"outputTypes"`
+	//DocumentationLink    string   `json:"documentationLink"`
+	//DateAdded            string   `json:"dateAdded"`
+	//License              string   `json:"license"`
+	//IsPreview            bool     `json:"isPreview"`
+	//IsMetered            bool     `json:"isMetered"`
+	//RetirementDate       string   `json:"retirementDate"`
+	//SuggestedReplacement string   `json:"suggestedReplacement"`
+	//IsDeprecated         bool     `json:"isDeprecated"`
+	//AvailableRegions     []string `json:"availableRegions"`
+	//
+	//ReferenceLinks []struct {
+	//	Name string `json:"name"`
+	//	URL  string `json:"url"`
+	//} `json:"referenceLinks"`
+	//
+	//AvailableLitellmEndpoints struct {
+	//	SupportsChatCompletions bool `json:"supportsChatCompletions"`
+	//	SupportsResponses       bool `json:"supportsResponses"`
+	//} `json:"availableLitellmEndpoints"`
 }
 
 type LLMList struct {
