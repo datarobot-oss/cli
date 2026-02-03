@@ -34,7 +34,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/codeclysm/extract/v3"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/repo"
 	"github.com/ulikunitz/xz"
 )
 
@@ -182,7 +181,7 @@ func InstallPlugin(pluginEntry RegistryPlugin, version RegistryVersion, baseURL 
 }
 
 func preparePluginDirectory(name string) (string, error) {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
@@ -247,7 +246,7 @@ func installPluginFromArchive(archivePath, pluginDir string, entry RegistryPlugi
 
 // UninstallPlugin removes an installed plugin
 func UninstallPlugin(name string) error {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
@@ -267,7 +266,7 @@ func UninstallPlugin(name string) error {
 
 // GetInstalledPlugins returns metadata about installed managed plugins
 func GetInstalledPlugins() ([]InstalledPlugin, error) {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +471,7 @@ func saveInstalledMetadata(pluginDir string, entry RegistryPlugin, version Regis
 // BackupPlugin creates a backup of an installed plugin in a temporary directory
 // Returns the path to the backup directory
 func BackupPlugin(name string) (string, error) {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
@@ -499,7 +498,7 @@ func BackupPlugin(name string) (string, error) {
 
 // RestorePlugin restores a plugin from a backup directory
 func RestorePlugin(name, backupPath string) error {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
@@ -526,7 +525,7 @@ func CleanupBackup(backupPath string) {
 
 // ValidatePlugin validates that a plugin installation is working correctly
 func ValidatePlugin(name string) error {
-	managedDir, err := repo.ManagedPluginsDir()
+	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins directory: %w", err)
 	}
