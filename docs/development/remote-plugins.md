@@ -12,7 +12,7 @@ The system enables:
 
 ## Architecture
 
-### Plugin Index (`index.json`)
+### Plugin Registry (`index.json`)
 
 A minimal JSON schema pointing to plugin archives:
 
@@ -37,7 +37,7 @@ A minimal JSON schema pointing to plugin archives:
 }
 ```
 
-**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the index. This enables the same index to work with both local development servers and production CDNs
+**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the registry. This enables the same registry to work with both local development servers and production CDNs
 ```
 
 ### Plugin Package Structure
@@ -70,7 +70,7 @@ The `manifest.json` inside each package defines platform-specific executables:
 
 ## Implementation Steps
 
-### 1. Create Plugin Index Schema
+### 1. Create Plugin Registry Schema
 
 - Add `docs/plugins/index.json` with minimal schema
 - Support plugin names, semver versions, descriptions, and download URLs
@@ -87,7 +87,7 @@ The `manifest.json` inside each package defines platform-specific executables:
 ### 3. Implement Plugin Install Command
 
 - Create `cmd/plugin/install/cmd.go`
-- Fetch `index.json` from remote URL
+- Fetch registry (`index.json`) from remote URL
 - Parse semver constraints using version comparison logic
 - Select appropriate platform (windows vs posix)
 - Download and verify SHA256 checksums
@@ -172,7 +172,7 @@ This pattern:
 | `internal/plugin/remote.go` | Remote fetch & install logic |
 | `internal/plugin/types.go` | Extended type definitions |
 | `cmd/self/plugin/package/cmd.go` | Package command |
-| `cmd/self/plugin/add/cmd.go` | Add to index command |
+| `cmd/self/plugin/add/cmd.go` | Add to registry command |
 | `cmd/self/plugin/publish/cmd.go` | Publish command (all-in-one) |
 
 ## Files Modified
@@ -188,13 +188,13 @@ This pattern:
 ```bash
 # List available plugins from registry
 dr plugin install --list
-dr plugin install --list --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install --list --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Install a plugin
 dr plugin install apps
 dr plugin install apps --version 1.0.0
 dr plugin install apps --version "^1.0.0"
-dr plugin install apps --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Update plugins
 dr plugin update apps
