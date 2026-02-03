@@ -226,7 +226,7 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 		name := entry.Name()
 
 		// Must match dr-* pattern
-		if !strings.HasPrefix(name, "dr-") {
+		if !strings.HasPrefix(name, PluginPrefix) {
 			continue
 		}
 
@@ -276,7 +276,7 @@ func getManifest(executable string) (*PluginManifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, "--dr-plugin-manifest")
+	cmd := exec.CommandContext(ctx, executable, PluginManifestFlag)
 
 	output, err := cmd.Output()
 	if err != nil {

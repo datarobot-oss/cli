@@ -16,6 +16,12 @@ package plugin
 
 import "sync"
 
+// PluginPrefix is the required prefix for all plugin executables
+const PluginPrefix = "dr-"
+
+// PluginManifestFlag is the command-line flag plugins must implement to output their manifest
+const PluginManifestFlag = "--dr-plugin-manifest"
+
 // PluginScripts maps platforms to their script paths within the plugin package
 type PluginScripts struct {
 	Posix   string `json:"posix,omitempty"`   // Script for Linux/macOS (e.g., "scripts/plugin.sh")

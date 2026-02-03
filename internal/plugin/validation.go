@@ -66,7 +66,7 @@ func validateManifests(expected, actual PluginManifest) error {
 // FindPluginScript finds the plugin script in the given directory.
 func FindPluginScript(pluginDir, pluginName string) (string, error) {
 	// First try exact match (no extension)
-	scriptPath := filepath.Join(pluginDir, "dr-"+pluginName)
+	scriptPath := filepath.Join(pluginDir, PluginPrefix+pluginName)
 
 	if _, err := os.Stat(scriptPath); err == nil {
 		return scriptPath, nil
@@ -94,14 +94,15 @@ func FindPluginScript(pluginDir, pluginName string) (string, error) {
 	}
 
 	if len(foundFiles) == 0 {
-		return "", fmt.Errorf("plugin script not found: expected 'dr-%s' in directory %s (directory is empty)", pluginName, pluginDir)
+		return "", fmt.Errorf("plugin script not found: expected '%s%s' in directory %s (directory is empty)", PluginPrefix, pluginName, pluginDir)
 	}
 
-	return "", fmt.Errorf("plugin script not found: expected 'dr-%s' in directory %s (found: %v)", pluginName, pluginDir, foundFiles)
+	return "", fmt.Errorf("plugin script not found: expected '%s%s' in directory %s (found: %v)", PluginPrefix, pluginName, pluginDir, foundFiles)
 }
 
 func isPluginScript(name string) bool {
-	if len(name) < 3 || name[:3] != "dr-" {
+	prefixLen := len(PluginPrefix)
+	if len(name) < prefixLen || name[:prefixLen] != PluginPrefix {
 		return false
 	}
 
@@ -126,7 +127,7 @@ func ExecPluginManifest(scriptPath string) (*PluginManifest, error) {
 		return nil, fmt.Errorf("failed to make script executable: %w", err)
 	}
 
-	cmd := exec.Command(scriptPath, "--dr-plugin-manifest")
+	cmd := exec.Command(scriptPath, PluginManifestFlag)
 
 	var stdout, stderr bytes.Buffer
 
