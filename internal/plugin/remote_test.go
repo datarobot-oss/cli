@@ -315,8 +315,8 @@ func TestResolveVersion(t *testing.T) {
 		{"tilde newer minor excluded", "~1.0.0", "1.0.0", false, ""},
 		{"gte constraint", ">=1.2.0", "2.1.0", false, ""},
 		{"gte exact match", ">=1.5.0", "2.1.0", false, ""},
-		{"version not found", "3.0.0", "", true, "not found"},
-		{"invalid constraint", "@invalid", "", true, "not found"}, // Invalid syntax falls through to exact match
+		{"version not found", "3.0.0", "", true, "No version matching constraint found"},
+		{"invalid constraint", "@invalid", "", true, "Invalid version constraint"}, // Invalid semver syntax
 	}
 
 	for _, tt := range tests {
@@ -342,65 +342,6 @@ func TestResolveVersionEmpty(t *testing.T) {
 	_, err := ResolveVersion([]RegistryVersion{}, "latest")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "No versions available")
-}
-
-// TestCompareVersions tests version comparison logic
-func TestCompareVersions(t *testing.T) {
-	tests := []struct {
-		a        string
-		b        string
-		expected int // -1: a < b, 0: a == b, 1: a > b
-	}{
-		{"1.0.0", "1.0.0", 0},
-		{"2.0.0", "1.0.0", 1},
-		{"1.0.0", "2.0.0", -1},
-		{"1.2.0", "1.1.0", 1},
-		{"1.1.0", "1.2.0", -1},
-		{"1.2.3", "1.2.2", 1},
-		{"1.2.2", "1.2.3", -1},
-		{"v1.0.0", "1.0.0", 0},
-		{"2.0.0", "v1.0.0", 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
-			result := compareVersions(tt.a, tt.b)
-
-			if tt.expected < 0 {
-				assert.Negative(t, result, "%s should be less than %s", tt.a, tt.b)
-			} else if tt.expected > 0 {
-				assert.Positive(t, result, "%s should be greater than %s", tt.a, tt.b)
-			} else {
-				assert.Equal(t, 0, result, "%s should equal %s", tt.a, tt.b)
-			}
-		})
-	}
-}
-
-// TestParseVersion tests semver parsing
-func TestParseVersion(t *testing.T) {
-	tests := []struct {
-		version string
-		major   int
-		minor   int
-		patch   int
-	}{
-		{"1.2.3", 1, 2, 3},
-		{"v1.2.3", 1, 2, 3},
-		{"2.0.0", 2, 0, 0},
-		{"1.2", 1, 2, 0},
-		{"1", 1, 0, 0},
-		{"invalid", 0, 0, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			major, minor, patch := parseVersion(tt.version)
-			assert.Equal(t, tt.major, major, "major mismatch")
-			assert.Equal(t, tt.minor, minor, "minor mismatch")
-			assert.Equal(t, tt.patch, patch, "patch mismatch")
-		})
-	}
 }
 
 // Helper function to find project root

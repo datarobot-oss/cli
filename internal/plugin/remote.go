@@ -26,11 +26,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Masterminds/semver/v3"
 
 	"github.com/charmbracelet/log"
 	"github.com/codeclysm/extract/v3"
@@ -87,97 +86,83 @@ func FetchRegistry(registryURL string) (*PluginRegistry, string, error) {
 }
 
 // ResolveVersion finds the best matching version for a constraint
-// Supports: exact (1.2.3), caret (^1.2.3), tilde (~1.2.3), range (>=1.0.0), latest
+// Supports full semver constraint syntax including: exact (1.2.3), caret (^1.2.3), tilde (~1.2.3),
+// ranges (>=1.0.0), comma-separated constraints (>=1.0.0, <2.0.0), and latest
 func ResolveVersion(versions []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	if len(versions) == 0 {
 		return nil, errors.New("No versions available")
 	}
 
-	// Sort versions descending (newest first)
-	sorted := make([]RegistryVersion, len(versions))
-	copy(sorted, versions)
-
-	sort.Slice(sorted, func(i, j int) bool {
-		return compareVersions(sorted[i].Version, sorted[j].Version) > 0
-	})
-
-	return resolveConstraint(sorted, constraint)
-}
-
-func resolveConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	constraint = strings.TrimSpace(constraint)
-
 	if constraint == "" || constraint == "latest" {
-		return &sorted[0], nil
+		return findLatestVersion(versions)
 	}
 
-	if !strings.ContainsAny(constraint, "^~<>=") {
-		return findExactVersion(sorted, constraint)
+	c, err := semver.NewConstraint(constraint)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid version constraint '%s': %w", constraint, err)
 	}
 
-	if strings.HasPrefix(constraint, "^") {
-		return resolveCaretConstraint(sorted, constraint)
-	}
-
-	if strings.HasPrefix(constraint, "~") {
-		return resolveTildeConstraint(sorted, constraint)
-	}
-
-	if strings.HasPrefix(constraint, ">=") {
-		return resolveGTEConstraint(sorted, constraint)
-	}
-
-	return nil, fmt.Errorf("Unsupported version constraint: %s", constraint)
+	return findBestMatch(versions, c)
 }
 
-func findExactVersion(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
-	for i := range sorted {
-		if sorted[i].Version == constraint || sorted[i].Version == "v"+constraint {
-			return &sorted[i], nil
+func findLatestVersion(versions []RegistryVersion) (*RegistryVersion, error) {
+	if len(versions) == 0 {
+		return nil, errors.New("No versions available")
+	}
+
+	var latest *RegistryVersion
+
+	var latestVer *semver.Version
+
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			continue
+		}
+
+		if latestVer == nil || v.GreaterThan(latestVer) {
+			latestVer = v
+			latest = &versions[i]
 		}
 	}
 
-	return nil, fmt.Errorf("Version %s not found", constraint)
+	if latest == nil {
+		return nil, errors.New("No valid semver versions found")
+	}
+
+	return latest, nil
 }
 
-func resolveCaretConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
-	target := strings.TrimPrefix(constraint, "^")
-	majorTarget := parseMajor(target)
+func findBestMatch(versions []RegistryVersion, constraint *semver.Constraints) (*RegistryVersion, error) {
+	var candidates []*semver.Version
 
-	for i := range sorted {
-		major := parseMajor(sorted[i].Version)
-		if major == majorTarget && compareVersions(sorted[i].Version, target) >= 0 {
-			return &sorted[i], nil
+	var candidateIndexes []int
+
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			continue
+		}
+
+		if constraint.Check(v) {
+			candidates = append(candidates, v)
+			candidateIndexes = append(candidateIndexes, i)
 		}
 	}
 
-	return nil, fmt.Errorf("No version matching %s found", constraint)
-}
+	if len(candidates) == 0 {
+		return nil, errors.New("No version matching constraint found")
+	}
 
-func resolveTildeConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
-	target := strings.TrimPrefix(constraint, "~")
-	majorTarget, minorTarget := parseMajorMinor(target)
-
-	for i := range sorted {
-		major, minor := parseMajorMinor(sorted[i].Version)
-		if major == majorTarget && minor == minorTarget && compareVersions(sorted[i].Version, target) >= 0 {
-			return &sorted[i], nil
+	bestIdx := 0
+	for i := 1; i < len(candidates); i++ {
+		if candidates[i].GreaterThan(candidates[bestIdx]) {
+			bestIdx = i
 		}
 	}
 
-	return nil, fmt.Errorf("No version matching %s found", constraint)
-}
-
-func resolveGTEConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
-	target := strings.TrimPrefix(constraint, ">=")
-
-	for i := range sorted {
-		if compareVersions(sorted[i].Version, target) >= 0 {
-			return &sorted[i], nil
-		}
-	}
-
-	return nil, fmt.Errorf("No version matching %s found", constraint)
+	return &versions[candidateIndexes[bestIdx]], nil
 }
 
 // InstallPlugin downloads and installs a plugin
@@ -626,54 +611,4 @@ func copyFile(src, dst string) error {
 	_, err = io.Copy(dstFile, srcFile)
 
 	return err
-}
-
-// Version comparison helpers
-
-var semverRegex = regexp.MustCompile(`v?(\d+)(?:\.(\d+))?(?:\.(\d+))?`)
-
-func parseVersion(v string) (major, minor, patch int) {
-	matches := semverRegex.FindStringSubmatch(v)
-	if len(matches) < 2 {
-		return 0, 0, 0
-	}
-
-	major, _ = strconv.Atoi(matches[1])
-
-	if len(matches) >= 3 && matches[2] != "" {
-		minor, _ = strconv.Atoi(matches[2])
-	}
-
-	if len(matches) >= 4 && matches[3] != "" {
-		patch, _ = strconv.Atoi(matches[3])
-	}
-
-	return major, minor, patch
-}
-
-func parseMajor(v string) int {
-	major, _, _ := parseVersion(v)
-
-	return major
-}
-
-func parseMajorMinor(v string) (int, int) {
-	major, minor, _ := parseVersion(v)
-
-	return major, minor
-}
-
-func compareVersions(a, b string) int {
-	aMaj, aMin, aPatch := parseVersion(a)
-	bMaj, bMin, bPatch := parseVersion(b)
-
-	if aMaj != bMaj {
-		return aMaj - bMaj
-	}
-
-	if aMin != bMin {
-		return aMin - bMin
-	}
-
-	return aPatch - bPatch
 }
