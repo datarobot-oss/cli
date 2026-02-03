@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/datarobot/cli/internal/config"
 )
 
 type Template struct {
@@ -120,21 +122,28 @@ func (tl TemplateList) SortByName() TemplateList {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	url := "/api/v2/applicationTemplates/?limit=100"
+	url, err := config.GetEndpointURL("/api/v2/applicationTemplates/?limit=100")
+	if err != nil {
+		return nil, err
+	}
 
 	var templateList TemplateList
 
-	for url != "" {
-		prevTemplates := templateList.Templates
+	var templates []Template
 
-		err := GetJSON(url, "templates", &templateList)
+	for url != "" {
+		templateList = TemplateList{}
+
+		err = GetJSON(url, "templates", &templateList)
 		if err != nil {
 			return nil, err
 		}
 
-		templateList.Templates = append(prevTemplates, templateList.Templates...)
+		templates = append(templates, templateList.Templates...)
 		url = templateList.Next
 	}
+
+	templateList.Templates = templates
 
 	return &templateList, nil
 }

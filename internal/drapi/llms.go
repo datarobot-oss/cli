@@ -14,6 +14,10 @@
 
 package drapi
 
+import (
+	"github.com/datarobot/cli/internal/config"
+)
+
 type LLM struct {
 	Model                string   `json:"model"`
 	LlmID                string   `json:"llmId"`
@@ -59,21 +63,33 @@ type LLMList struct {
 }
 
 func GetLLMs() (*LLMList, error) {
-	url := "/api/v2/genai/llmgw/catalog/?limit=100"
+	url, err := config.GetEndpointURL("/api/v2/genai/llmgw/catalog/?limit=100")
+	if err != nil {
+		return nil, err
+	}
 
 	var llmList LLMList
 
-	for url != "" {
-		prevLLMs := llmList.LLMs
+	var active []LLM
 
-		err := GetJSON(url, "LLMs", &llmList)
+	for url != "" {
+		llmList = LLMList{}
+
+		err = GetJSON(url, "LLMs", &llmList)
 		if err != nil {
 			return nil, err
 		}
 
-		llmList.LLMs = append(prevLLMs, llmList.LLMs...)
+		for _, llm := range llmList.LLMs {
+			if llm.IsActive {
+				active = append(active, llm)
+			}
+		}
+
 		url = llmList.Next
 	}
+
+	llmList.LLMs = active
 
 	return &llmList, nil
 }

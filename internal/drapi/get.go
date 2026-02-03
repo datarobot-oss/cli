@@ -24,28 +24,20 @@ import (
 	"github.com/datarobot/cli/internal/config"
 )
 
-var (
-	datarobotEndpoint string
-	token             string
-)
+var token string
 
 func Get(url, info string) (*http.Response, error) {
 	var err error
 
-	// memoize datarobotEndpoint and token to avoid extra VerifyToken() calls
-	if datarobotEndpoint == "" || token == "" {
-		datarobotEndpoint, err = config.GetEndpointURL(url)
-		if err != nil {
-			return nil, err
-		}
-
+	// memoize token to avoid extra VerifyToken() calls
+	if token == "" {
 		token, err = config.GetAPIKey()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
