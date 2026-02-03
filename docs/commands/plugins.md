@@ -11,7 +11,7 @@ dr plugin install PLUGIN_NAME --version 1.0.0
 dr plugin install PLUGIN_NAME --version "^1.0.0"
 dr plugin install --list
 dr plugin install PLUGIN_NAME --versions
-dr plugin install --list --index-url http://localhost:8000/plugins
+dr plugin install --list --registry-url http://localhost:8000/plugins
 ```
 
 Installs a plugin from the remote plugin registry.
@@ -26,9 +26,9 @@ When you run the command without arguments, it displays the list of available pl
   - Tilde (patch-level): `~1.2.3` (any 1.2.x >= 1.2.3)
   - Minimum: `>=1.0.0`
   - Latest: `latest`
-- `--index-url`&mdash;URL of the plugin index (default: `https://cli.datarobot.com/plugins/index.json`).
+- `--registry-url`&mdash;URL of the plugin registry (default: `https://cli.datarobot.com/plugins/index.json`).
 - `--versions`&mdash;list available versions for a specific plugin.
-- `--list`&mdash;list available plugins from the index without installing.
+- `--list`&mdash;list available plugins from the registry without installing.
 
 ### Examples
 
@@ -38,11 +38,11 @@ dr plugin install
 dr plugin install --list
 
 # List plugins from local development server.
-dr plugin install --list --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install --list --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # List available versions for a plugin.
 dr plugin install apps --versions
-dr plugin install apps --versions --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install apps --versions --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Install latest version of apps plugin.
 dr plugin install apps
@@ -54,7 +54,7 @@ dr plugin install apps --version 1.0.0
 dr plugin install apps --version "^1.0.0"
 
 # Install from custom registry.
-dr plugin install apps --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 ```
 
 ## dr plugin uninstall
@@ -79,7 +79,7 @@ dr plugin uninstall apps
 ```bash
 dr plugin update PLUGIN_NAME
 dr plugin update --all
-dr plugin update PLUGIN_NAME --index-url http://localhost:8000/plugins
+dr plugin update PLUGIN_NAME --registry-url http://localhost:8000/plugins
 ```
 
 Updates an installed plugin to the latest available version.
@@ -89,7 +89,7 @@ When you run the command with `--all`, it checks all installed managed plugins f
 ### Flags
 
 - `--all`&mdash;update all installed plugins.
-- `--index-url`&mdash;URL of the plugin index (default: `https://cli.datarobot.com/plugins/index.json`).
+- `--registry-url`&mdash;URL of the plugin registry (default: `https://cli.datarobot.com/plugins/index.json`).
 
 ### Examples
 
@@ -101,7 +101,7 @@ dr plugin update apps
 dr plugin update --all
 
 # Update from a custom registry.
-dr plugin update apps --index-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin update apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 ```
 
 ## dr plugin list

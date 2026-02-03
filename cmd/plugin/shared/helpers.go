@@ -14,8 +14,8 @@
 
 package shared
 
-// NormalizeIndexURL ensures the URL ends with index.json
-func NormalizeIndexURL(url string) string {
+// NormalizeRegistryURL ensures the URL ends with index.json
+func NormalizeRegistryURL(url string) string {
 	if len(url) > 0 && url[len(url)-1] == '/' {
 		return url + "index.json"
 	}

@@ -26,7 +26,7 @@ import (
 
 var (
 	versionConstraint string
-	indexURL          string
+	registryURL       string
 	listPlugins       bool
 	listVersions      bool
 )
@@ -37,7 +37,7 @@ func Cmd() *cobra.Command {
 		Short: "Install a plugin from the remote registry",
 		Long: `Install a plugin from the remote plugin registry.
 
-The plugin name should match an entry in the plugin index.
+The plugin name should match an entry in the plugin registry.
 Use --version to specify a version constraint:
   - Exact version: 1.2.3
   - Caret (compatible): ^1.2.3 (any 1.x.x >= 1.2.3)
@@ -56,28 +56,28 @@ Use --version to specify a version constraint:
 
 	cmd.Flags().StringVar(&versionConstraint, "version", "latest", "Version constraint")
 	cmd.Flags().BoolVar(&listVersions, "versions", false, "List available versions for a plugin")
-	cmd.Flags().StringVar(&indexURL, "index-url", plugin.PluginIndexURL, "URL of the plugin index")
-	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the index")
+	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
+	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 
 	return cmd
 }
 
 func runInstall(_ *cobra.Command, args []string) error {
-	finalIndexURL := shared.NormalizeIndexURL(indexURL)
+	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
 	if viper.GetBool("verbose") {
-		fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+		fmt.Printf("Fetching plugin registry from %s...\n", finalRegistryURL)
 	}
 
-	index, baseURL, err := plugin.FetchIndex(finalIndexURL)
+	registry, baseURL, err := plugin.FetchRegistry(finalRegistryURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch plugin index: %w", err)
+		return fmt.Errorf("failed to fetch plugin registry: %w", err)
 	}
 
 	// Handle --list flag or no args (show list by default)
 	if listPlugins || len(args) == 0 {
 		fmt.Println()
 		fmt.Println(tui.SubTitleStyle.Render("Available Plugins"))
-		printAvailablePlugins(index)
+		printAvailablePlugins(registry)
 
 		return nil
 	}
@@ -86,11 +86,11 @@ func runInstall(_ *cobra.Command, args []string) error {
 
 	// Handle --versions flag
 	if listVersions {
-		pluginEntry, ok := index.Plugins[pluginName]
+		pluginEntry, ok := registry.Plugins[pluginName]
 		if !ok {
-			printAvailablePlugins(index)
+			printAvailablePlugins(registry)
 
-			return fmt.Errorf("plugin %q not found in index", pluginName)
+			return fmt.Errorf("plugin %q not found in registry", pluginName)
 		}
 
 		fmt.Println()
@@ -103,11 +103,11 @@ func runInstall(_ *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println(tui.SubTitleStyle.Render("Installing Plugin"))
 
-	pluginEntry, ok := index.Plugins[pluginName]
+	pluginEntry, ok := registry.Plugins[pluginName]
 	if !ok {
-		printAvailablePlugins(index)
+		printAvailablePlugins(registry)
 
-		return fmt.Errorf("plugin %q not found in index", pluginName)
+		return fmt.Errorf("plugin %q not found in registry", pluginName)
 	}
 
 	version, err := plugin.ResolveVersion(pluginEntry.Versions, versionConstraint)
@@ -132,8 +132,8 @@ func runInstall(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func printAvailablePlugins(index *plugin.PluginIndex) {
-	for name, p := range index.Plugins {
+func printAvailablePlugins(registry *plugin.PluginRegistry) {
+	for name, p := range registry.Plugins {
 		latestVersion := "-"
 		if len(p.Versions) > 0 {
 			latestVersion = p.Versions[0].Version
@@ -143,7 +143,7 @@ func printAvailablePlugins(index *plugin.PluginIndex) {
 	}
 }
 
-func printAvailableVersions(versions []plugin.IndexVersion) {
+func printAvailableVersions(versions []plugin.RegistryVersion) {
 	for _, v := range versions {
 		fmt.Printf("  - %s\n", v.Version)
 	}

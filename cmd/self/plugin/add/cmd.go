@@ -35,10 +35,10 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add <path-to-index.json>",
-		Short: "Add a packaged plugin version to an index.json file",
-		Long: `Add a packaged plugin version entry to an index.json file.
+		Short: "Add a packaged plugin version to a registry file (index.json)",
+		Long: `Add a packaged plugin version entry to a registry file (index.json).
 
-This command helps maintain the plugin index by adding new version entries
+This command helps maintain the plugin registry by adding new version entries
 to the specified index.json file.
 
 You can either:
@@ -95,7 +95,7 @@ Example with manual flags:
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Load plugin data from file created by 'dr self plugin package --index-output'")
 	cmd.Flags().StringVar(&pluginName, "name", "", "Plugin name (required if not using --from-file)")
 	cmd.Flags().StringVar(&version, "version", "", "Plugin version (required if not using --from-file)")
-	cmd.Flags().String("url", "", "Archive URL relative to index base (required if not using --from-file)")
+	cmd.Flags().String("url", "", "Archive URL relative to registry base (required if not using --from-file)")
 	cmd.Flags().String("sha256", "", "SHA256 checksum of the archive (required if not using --from-file)")
 	cmd.Flags().String("release-date", "", "Release date in YYYY-MM-DD format (required if not using --from-file)")
 
@@ -144,30 +144,30 @@ func addFromFile(indexPath, fragmentPath string) error {
 func addPluginToIndex(indexPath, pluginName, version, url, sha256, releaseDate string) error {
 	absPath, err := filepath.Abs(indexPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve index path: %w", err)
+		return fmt.Errorf("failed to resolve registry path: %w", err)
 	}
 
-	index, err := loadOrCreateIndex(absPath)
+	registry, err := loadOrCreateRegistry(absPath)
 	if err != nil {
 		return err
 	}
 
-	if index.Plugins == nil {
-		index.Plugins = make(map[string]plugin.IndexPlugin)
+	if registry.Plugins == nil {
+		registry.Plugins = make(map[string]plugin.RegistryPlugin)
 	}
 
-	newVersion := plugin.IndexVersion{
+	newVersion := plugin.RegistryVersion{
 		Version:     version,
 		URL:         url,
 		SHA256:      sha256,
 		ReleaseDate: releaseDate,
 	}
 
-	pluginEntry, exists := index.Plugins[pluginName]
+	pluginEntry, exists := registry.Plugins[pluginName]
 	if !exists {
-		pluginEntry = plugin.IndexPlugin{
+		pluginEntry = plugin.RegistryPlugin{
 			Name:     pluginName,
-			Versions: []plugin.IndexVersion{newVersion},
+			Versions: []plugin.RegistryVersion{newVersion},
 		}
 
 		log.Info("Creating new plugin entry", "name", pluginName)
@@ -183,9 +183,9 @@ func addPluginToIndex(indexPath, pluginName, version, url, sha256, releaseDate s
 		log.Info("Adding version to existing plugin", "name", pluginName, "version", version)
 	}
 
-	index.Plugins[pluginName] = pluginEntry
+	registry.Plugins[pluginName] = pluginEntry
 
-	if err := saveIndex(absPath, index); err != nil {
+	if err := saveRegistry(absPath, registry); err != nil {
 		return err
 	}
 
@@ -194,54 +194,54 @@ func addPluginToIndex(indexPath, pluginName, version, url, sha256, releaseDate s
 	return nil
 }
 
-func loadOrCreateIndex(path string) (*plugin.PluginIndex, error) {
+func loadOrCreateRegistry(path string) (*plugin.PluginRegistry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Info("Creating new index file", "path", path)
+			log.Info("Creating new registry file", "path", path)
 
-			return &plugin.PluginIndex{
+			return &plugin.PluginRegistry{
 				Version: "1",
-				Plugins: make(map[string]plugin.IndexPlugin),
+				Plugins: make(map[string]plugin.RegistryPlugin),
 			}, nil
 		}
 
-		return nil, fmt.Errorf("failed to read index: %w", err)
+		return nil, fmt.Errorf("failed to read registry: %w", err)
 	}
 
-	var index plugin.PluginIndex
+	var registry plugin.PluginRegistry
 
-	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, fmt.Errorf("failed to parse index: %w", err)
+	if err := json.Unmarshal(data, &registry); err != nil {
+		return nil, fmt.Errorf("failed to parse registry: %w", err)
 	}
 
-	if index.Version == "" {
-		index.Version = "1"
+	if registry.Version == "" {
+		registry.Version = "1"
 	}
 
-	if index.Plugins == nil {
-		index.Plugins = make(map[string]plugin.IndexPlugin)
+	if registry.Plugins == nil {
+		registry.Plugins = make(map[string]plugin.RegistryPlugin)
 	}
 
-	return &index, nil
+	return &registry, nil
 }
 
-func saveIndex(path string, index *plugin.PluginIndex) error {
+func saveRegistry(path string, registry *plugin.PluginRegistry) error {
 	dir := filepath.Dir(path)
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(index, "", "  ")
+	data, err := json.MarshalIndent(registry, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal index: %w", err)
+		return fmt.Errorf("failed to marshal registry: %w", err)
 	}
 
 	data = append(data, '\n')
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write index: %w", err)
+		return fmt.Errorf("failed to write registry: %w", err)
 	}
 
 	return nil

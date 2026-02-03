@@ -50,7 +50,7 @@ The command will:
   1. Validate the manifest
   2. Create a .tar.xz archive
   3. Calculate SHA256 checksum
-  4. Output a JSON snippet for index.json`,
+	  4. Output a JSON snippet for the registry`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginDir := args[0]
@@ -62,7 +62,7 @@ The command will:
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".",
 		"Output file path (e.g., my-plugin-1.0.0.tar.xz) or directory (defaults to current directory)")
 	cmd.Flags().StringVar(&indexOutput, "index-output", "",
-		"Save index JSON fragment to file for use with 'dr self plugin add --from-file'")
+		"Save registry JSON fragment to file for use with 'dr self plugin add --from-file'")
 
 	return cmd
 }
@@ -112,10 +112,10 @@ func packagePlugin(pluginDir, output, indexOutput string) error {
 
 	if indexOutput != "" {
 		if err := saveIndexFragment(indexOutput, manifest, archiveName, sha256sum, releaseDate); err != nil {
-			return fmt.Errorf("failed to save index fragment: %w", err)
+			return fmt.Errorf("failed to save registry fragment: %w", err)
 		}
 
-		fmt.Printf("📝 Index fragment saved to: %s\n\n", indexOutput)
+		fmt.Printf("📝 Registry fragment saved to: %s\n\n", indexOutput)
 	}
 
 	printIndexJSON(manifest, archiveName, sha256sum, releaseDate)
@@ -244,7 +244,7 @@ func calculateSHA256(filePath string) (string, error) {
 }
 
 func printIndexJSON(manifest *plugin.PluginManifest, archiveName, sha256sum, releaseDate string) {
-	fmt.Println("Add to index.json:")
+	fmt.Println("Add to registry (index.json):")
 	fmt.Println("```json")
 
 	snippet := map[string]interface{}{

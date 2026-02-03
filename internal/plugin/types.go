@@ -38,26 +38,26 @@ type PluginManifest struct {
 	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
 }
 
-// IndexVersion represents a specific version in the plugin index
-type IndexVersion struct {
+// RegistryVersion represents a specific version in the plugin registry
+type RegistryVersion struct {
 	Version     string `json:"version"`
 	URL         string `json:"url"`
 	SHA256      string `json:"sha256,omitempty"`
 	ReleaseDate string `json:"releaseDate,omitempty"`
 }
 
-// IndexPlugin represents a plugin entry in the remote index
-type IndexPlugin struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Repository  string         `json:"repository,omitempty"`
-	Versions    []IndexVersion `json:"versions"`
+// RegistryPlugin represents a plugin entry in the remote registry
+type RegistryPlugin struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Repository  string            `json:"repository,omitempty"`
+	Versions    []RegistryVersion `json:"versions"`
 }
 
-// PluginIndex represents the remote plugin index structure
-type PluginIndex struct {
-	Version string                 `json:"version"`
-	Plugins map[string]IndexPlugin `json:"plugins"`
+// PluginRegistry represents the remote plugin registry structure
+type PluginRegistry struct {
+	Version string                    `json:"version"`
+	Plugins map[string]RegistryPlugin `json:"plugins"`
 }
 
 // InstalledPlugin represents metadata about an installed remote plugin
@@ -74,8 +74,8 @@ type DiscoveredPlugin struct {
 	Executable string // Full path to executable
 }
 
-// PluginRegistry holds discovered plugins with lazy initialization
-type PluginRegistry struct {
+// DiscoveredPluginsRegistry holds discovered plugins with lazy initialization
+type DiscoveredPluginsRegistry struct {
 	plugins []DiscoveredPlugin
 	once    sync.Once
 	err     error

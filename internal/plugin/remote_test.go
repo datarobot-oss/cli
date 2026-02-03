@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLivePluginIndexSchema validates the actual docs/plugins/index.json file
-func TestLivePluginIndexSchema(t *testing.T) {
+// TestLivePluginRegistrySchema validates the actual docs/plugins/index.json file
+func TestLivePluginRegistrySchema(t *testing.T) {
 	// Find the project root by looking for go.mod
 	projectRoot, err := findProjectRoot()
 	require.NoError(t, err, "Failed to find project root")
@@ -36,17 +36,17 @@ func TestLivePluginIndexSchema(t *testing.T) {
 	data, err := os.ReadFile(indexPath)
 	require.NoError(t, err, "Failed to read docs/plugins/index.json - file must exist")
 
-	var index PluginIndex
+	var registry PluginRegistry
 
-	err = json.Unmarshal(data, &index)
+	err = json.Unmarshal(data, &registry)
 	require.NoError(t, err, "docs/plugins/index.json must be valid JSON")
 
 	// Validate required fields
-	assert.NotEmpty(t, index.Version, "index.json must have a version field")
-	assert.NotEmpty(t, index.Plugins, "index.json must have at least one plugin")
+	assert.NotEmpty(t, registry.Version, "index.json must have a version field")
+	assert.NotEmpty(t, registry.Plugins, "index.json must have at least one plugin")
 
 	// Validate each plugin entry
-	for pluginName, plugin := range index.Plugins {
+	for pluginName, plugin := range registry.Plugins {
 		t.Run("Plugin_"+pluginName, func(t *testing.T) {
 			assert.NotEmpty(t, plugin.Name, "Plugin %s must have a name", pluginName)
 			assert.NotEmpty(t, plugin.Description, "Plugin %s must have a description", pluginName)
@@ -183,13 +183,13 @@ func TestPluginManifestSchema(t *testing.T) {
 	}
 }
 
-// TestPluginIndexParsing validates plugin index JSON parsing
-func TestPluginIndexParsing(t *testing.T) {
+// TestPluginRegistryParsing validates plugin registry JSON parsing
+func TestPluginRegistryParsing(t *testing.T) {
 	tests := []struct {
 		name        string
 		json        string
 		expectError bool
-		validate    func(*testing.T, *PluginIndex)
+		validate    func(*testing.T, *PluginRegistry)
 	}{
 		{
 			name: "valid index with one plugin",
@@ -210,10 +210,10 @@ func TestPluginIndexParsing(t *testing.T) {
 					}
 				}
 			}`,
-			validate: func(t *testing.T, idx *PluginIndex) {
-				assert.Equal(t, "1", idx.Version)
-				assert.Len(t, idx.Plugins, 1)
-				plugin := idx.Plugins["test"]
+			validate: func(t *testing.T, reg *PluginRegistry) {
+				assert.Equal(t, "1", reg.Version)
+				assert.Len(t, reg.Plugins, 1)
+				plugin := reg.Plugins["test"]
 				assert.Equal(t, "test", plugin.Name)
 				assert.Equal(t, "Test plugin", plugin.Description)
 				assert.Len(t, plugin.Versions, 1)
@@ -233,9 +233,9 @@ func TestPluginIndexParsing(t *testing.T) {
 					]}
 				}
 			}`,
-			validate: func(t *testing.T, idx *PluginIndex) {
-				assert.Len(t, idx.Plugins, 2)
-				assert.Len(t, idx.Plugins["plugin2"].Versions, 2)
+			validate: func(t *testing.T, reg *PluginRegistry) {
+				assert.Len(t, reg.Plugins, 2)
+				assert.Len(t, reg.Plugins["plugin2"].Versions, 2)
 			},
 		},
 		{
@@ -247,9 +247,9 @@ func TestPluginIndexParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var index PluginIndex
+			var registry PluginRegistry
 
-			err := json.Unmarshal([]byte(tt.json), &index)
+			err := json.Unmarshal([]byte(tt.json), &registry)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -257,7 +257,7 @@ func TestPluginIndexParsing(t *testing.T) {
 				require.NoError(t, err)
 
 				if tt.validate != nil {
-					tt.validate(t, &index)
+					tt.validate(t, &registry)
 				}
 			}
 		})
@@ -289,7 +289,7 @@ func TestInstalledPluginMetadata(t *testing.T) {
 
 // TestResolveVersion tests semver constraint resolution
 func TestResolveVersion(t *testing.T) {
-	versions := []IndexVersion{
+	versions := []RegistryVersion{
 		{Version: "2.1.0", URL: "url-2.1.0"},
 		{Version: "2.0.0", URL: "url-2.0.0"},
 		{Version: "1.5.0", URL: "url-1.5.0"},
@@ -339,7 +339,7 @@ func TestResolveVersion(t *testing.T) {
 
 // TestResolveVersionEmpty tests error handling for empty version list
 func TestResolveVersionEmpty(t *testing.T) {
-	_, err := ResolveVersion([]IndexVersion{}, "latest")
+	_, err := ResolveVersion([]RegistryVersion{}, "latest")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "No versions available")
 }

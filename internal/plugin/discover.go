@@ -30,11 +30,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// PluginIndexURL is the default URL for the remote plugin index
-const PluginIndexURL = "https://cli.datarobot.com/plugins/index.json"
+// PluginRegistryTerminology is the user-facing term for the plugin registry
+const PluginRegistryTerminology = "registry"
+
+// PluginRegistryURL is the default URL for the remote plugin registry
+const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
 
 // TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder
-var registry = &PluginRegistry{}
+var registry = &DiscoveredPluginsRegistry{}
 
 // GetPlugins returns discovered plugins, discovering lazily on first call
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation

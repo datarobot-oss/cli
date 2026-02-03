@@ -40,20 +40,20 @@ import (
 )
 
 const (
-	indexFetchTimeout     = 30 * time.Second
+	registryFetchTimeout  = 30 * time.Second
 	pluginDownloadTimeout = 5 * time.Minute  // Future note: this might need to be configurable for very large plugins
 	httpDialTimeout       = 30 * time.Second // Connection timeout - fail fast if no internet
 )
 
-// FetchIndex downloads and parses the plugin index from the remote URL.
-// Returns the index, the base URL (directory of index), and any error.
-func FetchIndex(indexURL string) (*PluginIndex, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), indexFetchTimeout)
+// FetchRegistry downloads and parses the plugin registry from the remote URL.
+// Returns the registry, the base URL (directory of registry file), and any error.
+func FetchRegistry(registryURL string) (*PluginRegistry, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), registryFetchTimeout)
 	defer cancel()
 
 	client := &http.Client{}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("Failed to create request: %w", err)
 	}
@@ -63,38 +63,38 @@ func FetchIndex(indexURL string) (*PluginIndex, string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("Failed to fetch index: %w", err)
+		return nil, "", fmt.Errorf("Failed to fetch registry: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("Failed to fetch index: HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("Failed to fetch registry: HTTP %d", resp.StatusCode)
 	}
 
-	var index PluginIndex
+	var registry PluginRegistry
 
-	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-		return nil, "", fmt.Errorf("Failed to parse index: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		return nil, "", fmt.Errorf("Failed to parse registry: %w", err)
 	}
 
 	// Extract base URL (directory containing index.json)
-	baseURL := indexURL
+	baseURL := registryURL
 	if idx := strings.LastIndex(baseURL, "/"); idx > 0 {
 		baseURL = baseURL[:idx]
 	}
 
-	return &index, baseURL, nil
+	return &registry, baseURL, nil
 }
 
 // ResolveVersion finds the best matching version for a constraint
 // Supports: exact (1.2.3), caret (^1.2.3), tilde (~1.2.3), range (>=1.0.0), latest
-func ResolveVersion(versions []IndexVersion, constraint string) (*IndexVersion, error) {
+func ResolveVersion(versions []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	if len(versions) == 0 {
 		return nil, errors.New("No versions available")
 	}
 
 	// Sort versions descending (newest first)
-	sorted := make([]IndexVersion, len(versions))
+	sorted := make([]RegistryVersion, len(versions))
 	copy(sorted, versions)
 
 	sort.Slice(sorted, func(i, j int) bool {
@@ -104,7 +104,7 @@ func ResolveVersion(versions []IndexVersion, constraint string) (*IndexVersion, 
 	return resolveConstraint(sorted, constraint)
 }
 
-func resolveConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
+func resolveConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	constraint = strings.TrimSpace(constraint)
 
 	if constraint == "" || constraint == "latest" {
@@ -130,7 +130,7 @@ func resolveConstraint(sorted []IndexVersion, constraint string) (*IndexVersion,
 	return nil, fmt.Errorf("Unsupported version constraint: %s", constraint)
 }
 
-func findExactVersion(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
+func findExactVersion(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	for i := range sorted {
 		if sorted[i].Version == constraint || sorted[i].Version == "v"+constraint {
 			return &sorted[i], nil
@@ -140,7 +140,7 @@ func findExactVersion(sorted []IndexVersion, constraint string) (*IndexVersion, 
 	return nil, fmt.Errorf("Version %s not found", constraint)
 }
 
-func resolveCaretConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
+func resolveCaretConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	target := strings.TrimPrefix(constraint, "^")
 	majorTarget := parseMajor(target)
 
@@ -154,7 +154,7 @@ func resolveCaretConstraint(sorted []IndexVersion, constraint string) (*IndexVer
 	return nil, fmt.Errorf("No version matching %s found", constraint)
 }
 
-func resolveTildeConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
+func resolveTildeConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	target := strings.TrimPrefix(constraint, "~")
 	majorTarget, minorTarget := parseMajorMinor(target)
 
@@ -168,7 +168,7 @@ func resolveTildeConstraint(sorted []IndexVersion, constraint string) (*IndexVer
 	return nil, fmt.Errorf("No version matching %s found", constraint)
 }
 
-func resolveGTEConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
+func resolveGTEConstraint(sorted []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	target := strings.TrimPrefix(constraint, ">=")
 
 	for i := range sorted {
@@ -181,7 +181,7 @@ func resolveGTEConstraint(sorted []IndexVersion, constraint string) (*IndexVersi
 }
 
 // InstallPlugin downloads and installs a plugin
-func InstallPlugin(pluginEntry IndexPlugin, version IndexVersion, baseURL string) error {
+func InstallPlugin(pluginEntry RegistryPlugin, version RegistryVersion, baseURL string) error {
 	pluginDir, err := preparePluginDirectory(pluginEntry.Name)
 	if err != nil {
 		return err
@@ -209,7 +209,7 @@ func preparePluginDirectory(name string) (string, error) {
 	return filepath.Join(managedDir, name), nil
 }
 
-func downloadAndVerifyPlugin(version IndexVersion, baseURL string) (string, error) {
+func downloadAndVerifyPlugin(version RegistryVersion, baseURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", version.URL)
 
 	archivePath, err := downloadFile(version.URL, baseURL)
@@ -236,7 +236,7 @@ func downloadAndVerifyPlugin(version IndexVersion, baseURL string) (string, erro
 	return archivePath, nil
 }
 
-func installPluginFromArchive(archivePath, pluginDir string, entry IndexPlugin, version IndexVersion) error {
+func installPluginFromArchive(archivePath, pluginDir string, entry RegistryPlugin, version RegistryVersion) error {
 	if _, err := os.Stat(pluginDir); err == nil {
 		if err := os.RemoveAll(pluginDir); err != nil {
 			return fmt.Errorf("Failed to remove existing installation: %w", err)
@@ -468,7 +468,7 @@ func extractTarXz(archivePath, destDir string) error {
 }
 
 // saveInstalledMetadata saves metadata about the installed plugin
-func saveInstalledMetadata(pluginDir string, entry IndexPlugin, version IndexVersion) error {
+func saveInstalledMetadata(pluginDir string, entry RegistryPlugin, version RegistryVersion) error {
 	meta := InstalledPlugin{
 		Name:        entry.Name,
 		Version:     version.Version,

@@ -25,8 +25,8 @@ import (
 )
 
 var (
-	indexURL string
-	checkAll bool
+	registryURL string
+	checkAll    bool
 )
 
 func Cmd() *cobra.Command {
@@ -42,7 +42,7 @@ If no plugin name is provided with --all, checks all installed plugins for updat
 		RunE: runUpdate,
 	}
 
-	cmd.Flags().StringVar(&indexURL, "index-url", plugin.PluginIndexURL, "URL of the plugin index")
+	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
 	cmd.Flags().BoolVar(&checkAll, "all", false, "Update all installed plugins")
 
 	return cmd
@@ -65,18 +65,18 @@ func runUpdate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	finalIndexURL := shared.NormalizeIndexURL(indexURL)
+	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
 
-	fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
+	fmt.Printf("Fetching plugin registry from %s...\n", finalRegistryURL)
 
-	index, baseURL, err := plugin.FetchIndex(finalIndexURL)
+	registry, baseURL, err := plugin.FetchRegistry(finalRegistryURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch plugin index: %w", err)
+		return fmt.Errorf("failed to fetch plugin registry: %w", err)
 	}
 
 	fmt.Println()
 
-	updated := updatePlugins(toUpdate, index, baseURL)
+	updated := updatePlugins(toUpdate, registry, baseURL)
 
 	fmt.Println()
 
@@ -109,11 +109,11 @@ func selectPluginsToUpdate(args []string, installed []plugin.InstalledPlugin) ([
 	return nil, errors.New("specify a plugin name or use --all to update all plugins")
 }
 
-func updatePlugins(toUpdate []plugin.InstalledPlugin, index *plugin.PluginIndex, baseURL string) int {
+func updatePlugins(toUpdate []plugin.InstalledPlugin, registry *plugin.PluginRegistry, baseURL string) int {
 	var updated int
 
 	for _, p := range toUpdate {
-		if updateSinglePlugin(p, index, baseURL) {
+		if updateSinglePlugin(p, registry, baseURL) {
 			updated++
 		}
 	}
@@ -121,10 +121,10 @@ func updatePlugins(toUpdate []plugin.InstalledPlugin, index *plugin.PluginIndex,
 	return updated
 }
 
-func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex, baseURL string) bool {
-	pluginEntry, ok := index.Plugins[p.Name]
+func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistry, baseURL string) bool {
+	pluginEntry, ok := registry.Plugins[p.Name]
 	if !ok {
-		fmt.Printf("⚠ Plugin %s not found in index, skipping\n", p.Name)
+		fmt.Printf("⚠ Plugin %s not found in registry, skipping\n", p.Name)
 
 		return false
 	}

@@ -160,7 +160,7 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 
 ## Packaging and Publishing Plugins
 
-The CLI provides tools to help package and publish plugins to a plugin index.
+The CLI provides tools to help package and publish plugins to a plugin registry.
 
 ### Quick Start: Publish Command (Recommended)
 
@@ -174,7 +174,7 @@ This command does everything in one step:
 1. Validates the plugin manifest
 2. Creates a `.tar.xz` archive
 3. Copies it to `plugins/<plugin-name>/<plugin-name>-<version>.tar.xz`
-4. Updates the `index.json` file
+4. Updates the registry file (`index.json`)
 
 **Example:**
 
@@ -189,7 +189,7 @@ dr self plugin publish ./my-plugin --plugins-dir dist/plugins --index dist/plugi
 # ✅ Published my-plugin version 1.0.0
 #    Archive: docs/plugins/my-plugin/my-plugin-1.0.0.tar.xz
 #    SHA256: abc123...
-#    Index: docs/plugins/index.json
+#    Registry: docs/plugins/index.json
 ```
 
 ### Advanced: Manual Workflow
@@ -208,7 +208,7 @@ dr self plugin package <plugin-dir> [flags]
 - `-o, --output`: Output file path or directory (default: current directory)
   - If path ends with `.tar.xz`, uses exact filename
   - Otherwise treats as directory and creates `<plugin-name>-<version>.tar.xz` inside
-- `--index-output`: Save index JSON fragment to file for use with `dr self plugin add --from-file`
+- `--index-output`: Save registry JSON fragment to file for use with `dr self plugin add --from-file`
 
 Requirements:
 - Plugin directory must contain a valid `manifest.json` with `name` and `version` fields
@@ -217,8 +217,8 @@ The command will:
 1. Validate the manifest
 2. Create a compressed `.tar.xz` archive
 3. Calculate SHA256 checksum
-4. Optionally save metadata to a file for easy index updates
-5. Output a JSON snippet ready for your plugin index
+4. Optionally save metadata to a file for easy registry updates
+5. Output a JSON snippet ready for your plugin registry
 
 **Examples:**
 
@@ -238,9 +238,9 @@ dr self plugin package ./my-plugin -o dist/ --index-output /tmp/my-plugin.json
 # Output:
 # ✅ Package created: dist/my-plugin-1.0.0.tar.xz
 #    SHA256: abc123...
-# 📝 Index fragment saved to: /tmp/my-plugin.json
+# 📝 Registry fragment saved to: /tmp/my-plugin.json
 # 
-# Add to index.json:
+# Add to registry (index.json):
 # ```json
 # {
 #   "version": "1.0.0",
@@ -251,9 +251,9 @@ dr self plugin package ./my-plugin -o dist/ --index-output /tmp/my-plugin.json
 # ```
 ```
 
-#### Adding to Plugin Index
+#### Adding to Plugin Registry
 
-Use `dr self plugin add` to add the packaged version to your plugin index.
+Use `dr self plugin add` to add the packaged version to your plugin registry.
 
 **Option 1: Using saved metadata (recommended):**
 
@@ -261,7 +261,7 @@ Use `dr self plugin add` to add the packaged version to your plugin index.
 # Package and save metadata
 dr self plugin package ./my-plugin --index-output /tmp/my-plugin.json
 
-# Add to index using the saved file
+# Add to registry using the saved file
 dr self plugin add docs/plugins/index.json --from-file /tmp/my-plugin.json
 ```
 
@@ -277,10 +277,10 @@ dr self plugin add <path-to-index.json> \
 ```
 
 The `add` command will:
-- Create the index file if it doesn't exist
+- Create the registry file if it doesn't exist
 - Add a new plugin entry or append a new version to an existing plugin
 - Validate that the version doesn't already exist
-- Format the index with proper JSON indentation
+- Format the registry with proper JSON indentation
 
 **Complete workflow example:**
 
@@ -293,7 +293,7 @@ dr self plugin publish ./my-plugin
 # 1. Package the plugin and save metadata
 dr self plugin package ./my-plugin -o docs/plugins/ --index-output /tmp/my-plugin.json
 
-# 2. Add to index using saved metadata
+# 2. Add to registry using saved metadata
 dr self plugin add docs/plugins/index.json --from-file /tmp/my-plugin.json
 
 # 3. Commit and publish

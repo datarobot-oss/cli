@@ -111,14 +111,14 @@ func TestPluginIndexReferenceIntegrity(t *testing.T) {
 	data, err := os.ReadFile(indexPath)
 	require.NoError(t, err, "Failed to read docs/plugins/index.json")
 
-	var index PluginIndex
+	var registry PluginRegistry
 
-	err = json.Unmarshal(data, &index)
+	err = json.Unmarshal(data, &registry)
 	require.NoError(t, err, "Failed to parse index.json")
 
 	pluginsDir := filepath.Join(projectRoot, "docs", "plugins")
 
-	for pluginName, plugin := range index.Plugins {
+	for pluginName, plugin := range registry.Plugins {
 		t.Run("Plugin_"+pluginName, func(t *testing.T) {
 			for _, version := range plugin.Versions {
 				t.Run("Version_"+version.Version, func(t *testing.T) {
@@ -243,11 +243,11 @@ func TestPluginUpgradeWithRollback(t *testing.T) {
 		archivePath := createTestPluginArchive(t, pluginName, "1.0.0", true)
 		defer os.Remove(archivePath)
 
-		entry := IndexPlugin{
+		entry := RegistryPlugin{
 			Name:        pluginName,
 			Description: "Test plugin",
 		}
-		version := IndexVersion{
+		version := RegistryVersion{
 			Version: "1.0.0",
 			URL:     "file://" + archivePath,
 		}
@@ -306,11 +306,11 @@ func TestPluginUpgradeWithRollback(t *testing.T) {
 		brokenArchive := createTestPluginArchive(t, pluginName, "2.0.0", false)
 		defer os.Remove(brokenArchive)
 
-		entry := IndexPlugin{
+		entry := RegistryPlugin{
 			Name:        pluginName,
 			Description: "Test plugin",
 		}
-		version := IndexVersion{
+		version := RegistryVersion{
 			Version: "2.0.0",
 			URL:     "file://" + brokenArchive,
 		}
