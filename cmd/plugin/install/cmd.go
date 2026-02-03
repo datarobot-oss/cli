@@ -17,7 +17,7 @@ package install
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -63,7 +63,7 @@ Use --version to specify a version constraint:
 }
 
 func runInstall(_ *cobra.Command, args []string) error {
-	finalIndexURL := normalizeIndexURL(indexURL)
+	finalIndexURL := shared.NormalizeIndexURL(indexURL)
 	if viper.GetBool("verbose") {
 		fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
 	}
@@ -124,21 +124,12 @@ func runInstall(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 
-	printSuccess(pluginEntry.Name, version.Version)
+	fmt.Println()
+	fmt.Println(tui.SuccessStyle.Render("✓ Successfully installed " + pluginEntry.Name + " " + version.Version))
+	fmt.Println()
+	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
 
 	return nil
-}
-
-func normalizeIndexURL(url string) string {
-	if len(url) > 0 && url[len(url)-1] == '/' {
-		return url + "index.json"
-	}
-
-	if len(url) > 5 && url[len(url)-5:] != ".json" {
-		return url + "/index.json"
-	}
-
-	return url
 }
 
 func printAvailablePlugins(index *plugin.PluginIndex) {
@@ -156,16 +147,4 @@ func printAvailableVersions(versions []plugin.IndexVersion) {
 	for _, v := range versions {
 		fmt.Printf("  - %s\n", v.Version)
 	}
-}
-
-func printSuccess(name, version string) {
-	fmt.Println()
-
-	successMsg := lipgloss.NewStyle().
-		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreen)).
-		Bold(true).
-		Render("✓ Successfully installed " + name + " " + version)
-	fmt.Println(successMsg)
-	fmt.Println()
-	fmt.Printf("Run `dr %s --help` to get started.\n", name)
 }

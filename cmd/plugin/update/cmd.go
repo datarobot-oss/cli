@@ -18,7 +18,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -65,13 +65,7 @@ func runUpdate(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Auto-append index.json if not present
-	finalIndexURL := indexURL
-	if len(finalIndexURL) > 0 && finalIndexURL[len(finalIndexURL)-1] == '/' {
-		finalIndexURL += "index.json"
-	} else if len(finalIndexURL) > 5 && finalIndexURL[len(finalIndexURL)-5:] != ".json" {
-		finalIndexURL += "/index.json"
-	}
+	finalIndexURL := shared.NormalizeIndexURL(indexURL)
 
 	fmt.Printf("Fetching plugin index from %s...\n", finalIndexURL)
 
@@ -177,11 +171,7 @@ func updateSinglePlugin(p plugin.InstalledPlugin, index *plugin.PluginIndex, bas
 		return false
 	}
 
-	successMsg := lipgloss.NewStyle().
-		Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreen)).
-		Bold(true).
-		Render("✓ Updated " + p.Name + " to " + latestVersion.Version)
-	fmt.Println(successMsg)
+	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + p.Name + " to " + latestVersion.Version))
 	fmt.Println()
 
 	return true

@@ -15,13 +15,14 @@
 package plugin
 
 import (
-	"archive/tar"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,19 +33,29 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/codeclysm/extract/v3"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/ulikunitz/xz"
 )
 
+const (
+	indexFetchTimeout     = 30 * time.Second
+	pluginDownloadTimeout = 5 * time.Minute  // Future note: this might need to be configurable for very large plugins
+	httpDialTimeout       = 30 * time.Second // Connection timeout - fail fast if no internet
+)
+
 // FetchIndex downloads and parses the plugin index from the remote URL.
 // Returns the index, the base URL (directory of index), and any error.
 func FetchIndex(indexURL string) (*PluginIndex, string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), indexFetchTimeout)
+	defer cancel()
 
-	req, err := http.NewRequest(http.MethodGet, indexURL, nil)
+	client := &http.Client{}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL, nil)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create request: %w", err)
+		return nil, "", fmt.Errorf("Failed to create request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", config.GetUserAgentHeader())
@@ -52,18 +63,18 @@ func FetchIndex(indexURL string) (*PluginIndex, string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch index: %w", err)
+		return nil, "", fmt.Errorf("Failed to fetch index: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("failed to fetch index: HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("Failed to fetch index: HTTP %d", resp.StatusCode)
 	}
 
 	var index PluginIndex
 
 	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-		return nil, "", fmt.Errorf("failed to parse index: %w", err)
+		return nil, "", fmt.Errorf("Failed to parse index: %w", err)
 	}
 
 	// Extract base URL (directory containing index.json)
@@ -79,7 +90,7 @@ func FetchIndex(indexURL string) (*PluginIndex, string, error) {
 // Supports: exact (1.2.3), caret (^1.2.3), tilde (~1.2.3), range (>=1.0.0), latest
 func ResolveVersion(versions []IndexVersion, constraint string) (*IndexVersion, error) {
 	if len(versions) == 0 {
-		return nil, errors.New("no versions available")
+		return nil, errors.New("No versions available")
 	}
 
 	// Sort versions descending (newest first)
@@ -116,7 +127,7 @@ func resolveConstraint(sorted []IndexVersion, constraint string) (*IndexVersion,
 		return resolveGTEConstraint(sorted, constraint)
 	}
 
-	return nil, fmt.Errorf("unsupported version constraint: %s", constraint)
+	return nil, fmt.Errorf("Unsupported version constraint: %s", constraint)
 }
 
 func findExactVersion(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
@@ -126,7 +137,7 @@ func findExactVersion(sorted []IndexVersion, constraint string) (*IndexVersion, 
 		}
 	}
 
-	return nil, fmt.Errorf("version %s not found", constraint)
+	return nil, fmt.Errorf("Version %s not found", constraint)
 }
 
 func resolveCaretConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
@@ -140,7 +151,7 @@ func resolveCaretConstraint(sorted []IndexVersion, constraint string) (*IndexVer
 		}
 	}
 
-	return nil, fmt.Errorf("no version matching %s found", constraint)
+	return nil, fmt.Errorf("No version matching %s found", constraint)
 }
 
 func resolveTildeConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
@@ -154,7 +165,7 @@ func resolveTildeConstraint(sorted []IndexVersion, constraint string) (*IndexVer
 		}
 	}
 
-	return nil, fmt.Errorf("no version matching %s found", constraint)
+	return nil, fmt.Errorf("No version matching %s found", constraint)
 }
 
 func resolveGTEConstraint(sorted []IndexVersion, constraint string) (*IndexVersion, error) {
@@ -166,7 +177,7 @@ func resolveGTEConstraint(sorted []IndexVersion, constraint string) (*IndexVersi
 		}
 	}
 
-	return nil, fmt.Errorf("no version matching %s found", constraint)
+	return nil, fmt.Errorf("No version matching %s found", constraint)
 }
 
 // InstallPlugin downloads and installs a plugin
@@ -188,11 +199,11 @@ func InstallPlugin(pluginEntry IndexPlugin, version IndexVersion, baseURL string
 func preparePluginDirectory(name string) (string, error) {
 	managedDir, err := repo.ManagedPluginsDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get plugins directory: %w", err)
+		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
 
 	if err := os.MkdirAll(managedDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create plugins directory: %w", err)
+		return "", fmt.Errorf("Failed to create plugins directory: %w", err)
 	}
 
 	return filepath.Join(managedDir, name), nil
@@ -203,14 +214,22 @@ func downloadAndVerifyPlugin(version IndexVersion, baseURL string) (string, erro
 
 	archivePath, err := downloadFile(version.URL, baseURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to download plugin: %w", err)
+		return "", fmt.Errorf("Failed to download plugin: %w", err)
+	}
+
+	// Require SHA256 for remote downloads (not for file:// URLs used in testing)
+	isRemote := strings.HasPrefix(version.URL, "http://") || strings.HasPrefix(version.URL, "https://")
+	if isRemote && version.SHA256 == "" {
+		os.Remove(archivePath)
+
+		return "", errors.New("Plugin version missing required SHA256 checksum")
 	}
 
 	if version.SHA256 != "" {
 		if err := verifyChecksum(archivePath, version.SHA256); err != nil {
 			os.Remove(archivePath)
 
-			return "", fmt.Errorf("checksum verification failed: %w", err)
+			return "", fmt.Errorf("Checksum verification failed: %w", err)
 		}
 	}
 
@@ -220,22 +239,18 @@ func downloadAndVerifyPlugin(version IndexVersion, baseURL string) (string, erro
 func installPluginFromArchive(archivePath, pluginDir string, entry IndexPlugin, version IndexVersion) error {
 	if _, err := os.Stat(pluginDir); err == nil {
 		if err := os.RemoveAll(pluginDir); err != nil {
-			return fmt.Errorf("failed to remove existing installation: %w", err)
+			return fmt.Errorf("Failed to remove existing installation: %w", err)
 		}
 	}
 
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create plugin directory: %w", err)
+		return fmt.Errorf("Failed to create plugin directory: %w", err)
 	}
 
 	if err := extractTarXz(archivePath, pluginDir); err != nil {
 		os.RemoveAll(pluginDir)
 
-		return fmt.Errorf("failed to extract plugin: %w", err)
-	}
-
-	if err := makeScriptsExecutable(pluginDir); err != nil {
-		log.Warn("Failed to make scripts executable", "error", err)
+		return fmt.Errorf("Failed to extract plugin: %w", err)
 	}
 
 	if err := saveInstalledMetadata(pluginDir, entry, version); err != nil {
@@ -249,17 +264,17 @@ func installPluginFromArchive(archivePath, pluginDir string, entry IndexPlugin, 
 func UninstallPlugin(name string) error {
 	managedDir, err := repo.ManagedPluginsDir()
 	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+		return fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
 
 	pluginDir := filepath.Join(managedDir, name)
 
 	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		return fmt.Errorf("plugin %s is not installed", name)
+		return fmt.Errorf("Plugin %s is not installed", name)
 	}
 
 	if err := os.RemoveAll(pluginDir); err != nil {
-		return fmt.Errorf("failed to remove plugin: %w", err)
+		return fmt.Errorf("Failed to remove plugin: %w", err)
 	}
 
 	return nil
@@ -367,9 +382,19 @@ func copyFileURL(url string) (string, error) {
 func downloadHTTP(finalURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", finalURL)
 
-	client := &http.Client{Timeout: 5 * time.Minute}
+	ctx, cancel := context.WithTimeout(context.Background(), pluginDownloadTimeout)
+	defer cancel()
 
-	req, err := http.NewRequest(http.MethodGet, finalURL, nil)
+	// Custom transport with connection timeout to fail fast if no internet
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: httpDialTimeout,
+		}).DialContext,
+	}
+
+	client := &http.Client{Transport: transport}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, finalURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -418,13 +443,14 @@ func verifyChecksum(filePath, expected string) error {
 	actual := hex.EncodeToString(h.Sum(nil))
 
 	if actual != expected {
-		return fmt.Errorf("expected %s, got %s", expected, actual)
+		return fmt.Errorf("Expected %s, got %s", expected, actual)
 	}
 
 	return nil
 }
 
 // extractTarXz extracts a .tar.xz archive to the destination directory
+// Uses secure extraction library to prevent path traversal, zip bombs, and symlink attacks
 func extractTarXz(archivePath, destDir string) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -434,87 +460,11 @@ func extractTarXz(archivePath, destDir string) error {
 
 	xzReader, err := xz.NewReader(f)
 	if err != nil {
-		return fmt.Errorf("failed to create xz reader: %w", err)
+		return fmt.Errorf("Failed to create xz reader: %w", err)
 	}
 
-	tarReader := tar.NewReader(xzReader)
-
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return err
-		}
-
-		if err := extractTarEntry(tarReader, header, destDir); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func extractTarEntry(tarReader *tar.Reader, header *tar.Header, destDir string) error {
-	cleanName := filepath.Clean(header.Name)
-
-	// Skip root directory entries (. or ./)
-	if cleanName == "." || cleanName == "" {
-		return nil
-	}
-
-	targetPath := filepath.Join(destDir, cleanName)
-
-	if !strings.HasPrefix(targetPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
-		return fmt.Errorf("invalid file path in archive: %s", header.Name)
-	}
-
-	switch header.Typeflag {
-	case tar.TypeDir:
-		return os.MkdirAll(targetPath, 0o755)
-	case tar.TypeReg:
-		return extractRegularFile(tarReader, targetPath, header.Mode)
-	}
-
-	return nil
-}
-
-func extractRegularFile(tarReader *tar.Reader, targetPath string, mode int64) error {
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return err
-	}
-
-	outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(mode))
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
-
-	_, err = io.Copy(outFile, tarReader)
-
-	return err
-}
-
-// makeScriptsExecutable sets executable permissions on script files
-func makeScriptsExecutable(pluginDir string) error {
-	return filepath.Walk(pluginDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		ext := filepath.Ext(path)
-		if ext == ".sh" || ext == "" {
-			return os.Chmod(path, 0o755)
-		}
-
-		return nil
-	})
+	// Use extract library for secure extraction with built-in protections
+	return extract.Tar(context.Background(), xzReader, destDir, nil)
 }
 
 // saveInstalledMetadata saves metadata about the installed plugin
@@ -539,24 +489,24 @@ func saveInstalledMetadata(pluginDir string, entry IndexPlugin, version IndexVer
 func BackupPlugin(name string) (string, error) {
 	managedDir, err := repo.ManagedPluginsDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get plugins directory: %w", err)
+		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
 
 	pluginDir := filepath.Join(managedDir, name)
 
 	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		return "", fmt.Errorf("plugin %s is not installed", name)
+		return "", fmt.Errorf("Plugin %s is not installed", name)
 	}
 
 	backupDir, err := os.MkdirTemp("", fmt.Sprintf("dr-plugin-backup-%s-*", name))
 	if err != nil {
-		return "", fmt.Errorf("failed to create backup directory: %w", err)
+		return "", fmt.Errorf("Failed to create backup directory: %w", err)
 	}
 
 	if err := copyDir(pluginDir, backupDir); err != nil {
 		os.RemoveAll(backupDir)
 
-		return "", fmt.Errorf("failed to copy plugin to backup: %w", err)
+		return "", fmt.Errorf("Failed to copy plugin to backup: %w", err)
 	}
 
 	return backupDir, nil
@@ -566,17 +516,17 @@ func BackupPlugin(name string) (string, error) {
 func RestorePlugin(name, backupPath string) error {
 	managedDir, err := repo.ManagedPluginsDir()
 	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+		return fmt.Errorf("Failed to get plugins directory: %w", err)
 	}
 
 	pluginDir := filepath.Join(managedDir, name)
 
 	if err := os.RemoveAll(pluginDir); err != nil {
-		return fmt.Errorf("failed to remove corrupted plugin: %w", err)
+		return fmt.Errorf("Failed to remove corrupted plugin: %w", err)
 	}
 
 	if err := copyDir(backupPath, pluginDir); err != nil {
-		return fmt.Errorf("failed to restore plugin from backup: %w", err)
+		return fmt.Errorf("Failed to restore plugin from backup: %w", err)
 	}
 
 	return nil
@@ -600,26 +550,26 @@ func ValidatePlugin(name string) error {
 
 	metadataPath := filepath.Join(pluginDir, ".installed.json")
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
-		return errors.New("plugin metadata not found")
+		return errors.New("Plugin metadata not found")
 	}
 
 	manifestPath := filepath.Join(pluginDir, "manifest.json")
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		return errors.New("plugin manifest not found")
+		return errors.New("Plugin manifest not found")
 	}
 
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("failed to read manifest: %w", err)
+		return fmt.Errorf("Failed to read manifest: %w", err)
 	}
 
 	var manifest PluginManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("failed to parse manifest: %w", err)
+		return fmt.Errorf("Failed to parse manifest: %w", err)
 	}
 
 	if manifest.Name != name {
-		return fmt.Errorf("manifest name mismatch: expected %s, got %s", name, manifest.Name)
+		return fmt.Errorf("Manifest name mismatch: expected %s, got %s", name, manifest.Name)
 	}
 
 	return nil

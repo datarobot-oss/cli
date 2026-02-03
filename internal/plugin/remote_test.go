@@ -341,7 +341,7 @@ func TestResolveVersion(t *testing.T) {
 func TestResolveVersionEmpty(t *testing.T) {
 	_, err := ResolveVersion([]IndexVersion{}, "latest")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no versions available")
+	assert.Contains(t, err.Error(), "No versions available")
 }
 
 // TestCompareVersions tests version comparison logic
