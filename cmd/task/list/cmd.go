@@ -196,7 +196,7 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	descColor := tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark)
 	tipBorderColor := tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
 
-	fmt.Println(tui.TitleStyle.Render("Available Tasks"))
+	fmt.Println(tui.SubTitleStyle.Render("Available Tasks"))
 
 	// Define table styles
 	taskNameStyle := lipgloss.NewStyle().
