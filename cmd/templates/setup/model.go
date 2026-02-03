@@ -429,6 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.loadingMessage = ""
 		m.screen = dotenvScreen
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
+		m.dotenv.NeedsPulumiLogin, m.dotenv.PulumiAlreadyLoggedIn, m.dotenv.NeedsPulumiPassphrase = dotenv.CheckPulumiSetup(m.clone.Dir, nil)
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
@@ -437,6 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = dotenvScreen
 		m.list.Template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
+		m.dotenv.NeedsPulumiLogin, m.dotenv.PulumiAlreadyLoggedIn, m.dotenv.NeedsPulumiPassphrase = dotenv.CheckPulumiSetup(filepath.Dir(msg.dotenvFile), nil)
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()

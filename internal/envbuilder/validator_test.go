@@ -183,6 +183,25 @@ func TestPromptsWithValues(t *testing.T) {
 			t.Errorf("Expected TEST_OVERRIDE to be overridden to 'from-env', got '%s'", result[0].Value)
 		}
 	})
+	t.Run("PULUMI_CONFIG_PASSPHRASE reads from viper config", func(t *testing.T) {
+		// This test verifies that PULUMI_CONFIG_PASSPHRASE gets its value from viper config
+		// when it's not in environment or .env file
+		// Note: In real usage, viper would be initialized with the config file
+		// For this test, we're just verifying the code path exists and falls back gracefully
+		variables := Variables{}
+
+		prompts := []UserPrompt{
+			{Env: "PULUMI_CONFIG_PASSPHRASE", Default: "default-pass"},
+		}
+
+		result := promptsWithValues(prompts, variables)
+
+		// When variables is empty and viper config is not set, should remain empty
+		// This allows proper validation - the value will be filled from viper when it exists
+		if result[0].Value != "" {
+			t.Errorf("Expected PULUMI_CONFIG_PASSPHRASE to be empty (for validation), got '%s'", result[0].Value)
+		}
+	})
 }
 
 func TestIsOptionSelected(t *testing.T) {

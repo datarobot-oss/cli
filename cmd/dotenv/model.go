@@ -45,25 +45,30 @@ const (
 	listScreen = screens(iota)
 	editorScreen
 	wizardScreen
+	pulumiScreen
 )
 
 type Model struct {
-	screen             screens
-	initialScreen      screens
-	DotenvFile         string
-	variables          []envbuilder.Variable
-	err                error
-	textarea           textarea.Model
-	contents           string
-	width              int
-	height             int
-	SuccessCmd         tea.Cmd
-	prompts            []envbuilder.UserPrompt
-	currentPromptIndex int
-	currentPrompt      promptModel
-	hasPrompts         *bool // Cache whether prompts are available
-	ShowAllPrompts     bool  // When true, show all prompts regardless of defaults
-	skippedPrompts     int   // Count of prompts skipped due to having defaults
+	screen                screens
+	initialScreen         screens
+	DotenvFile            string
+	variables             []envbuilder.Variable
+	err                   error
+	textarea              textarea.Model
+	contents              string
+	width                 int
+	height                int
+	SuccessCmd            tea.Cmd
+	prompts               []envbuilder.UserPrompt
+	currentPromptIndex    int
+	currentPrompt         promptModel
+	hasPrompts            *bool             // Cache whether prompts are available
+	ShowAllPrompts        bool              // When true, show all prompts regardless of defaults
+	skippedPrompts        int               // Count of prompts skipped due to having defaults
+	pulumiModel           *pulumiLoginModel // Sub-model for Pulumi login flow, shown before wizard if needed
+	NeedsPulumiLogin      bool              // Set by callers before Init(); true when login or passphrase setup is needed
+	PulumiAlreadyLoggedIn bool              // Set by callers; when true, Pulumi screen skips backend selection
+	NeedsPulumiPassphrase bool              // Set by callers; when true, passphrase prompt is shown after login
 }
 
 type (
@@ -245,7 +250,32 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.loadVariables(), tea.WindowSize())
 }
 
+func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case pulumiLoginCompleteMsg:
+		// Pulumi setup finished — reload prompts so the newly saved passphrase
+		// is picked up before the wizard starts.
+		m.pulumiModel = nil
+		m.NeedsPulumiLogin = false
+
+		return m, m.loadPrompts()
+	}
+
+	subModel, cmd := m.pulumiModel.Update(msg)
+
+	if plm, ok := subModel.(pulumiLoginModel); ok {
+		m.pulumiModel = &plm
+	}
+
+	return m, cmd
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
+	// If Pulumi login sub-model is active, delegate to it
+	if m.pulumiModel != nil {
+		return m.handlePulumiUpdate(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -281,7 +311,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 
 		if len(m.prompts) == 0 {
 			m.screen = listScreen
+
 			return m, nil
+		}
+
+		// Check if Pulumi login/passphrase setup is needed before the wizard
+		if m.NeedsPulumiLogin {
+			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase)
+			m.pulumiModel = &plm
+			m.screen = pulumiScreen
+
+			return m, plm.Init()
 		}
 
 		return m.moveToNextPrompt()
@@ -307,6 +347,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	}
 
 	switch m.screen {
+	case pulumiScreen:
+		// Handled above via m.pulumiModel delegation
 	case listScreen:
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -385,6 +427,10 @@ func (m Model) View() string {
 	var sb strings.Builder
 
 	switch m.screen {
+	case pulumiScreen:
+		if m.pulumiModel != nil {
+			sb.WriteString(m.pulumiModel.View())
+		}
 	case listScreen:
 		sb.WriteString(m.viewListScreen())
 	case editorScreen:

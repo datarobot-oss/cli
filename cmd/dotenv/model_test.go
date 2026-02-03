@@ -103,6 +103,9 @@ type DotenvModelTestSuite struct {
 }
 
 func (suite *DotenvModelTestSuite) SetupTest() {
+	// Reset viper to prevent user's drconfig.yaml values from leaking into tests.
+	viper.Reset()
+
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 

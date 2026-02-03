@@ -13,6 +13,7 @@ var (
 	SuccessStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGreen, DrGreen)).Bold(true)
 	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	HintStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGray, DrGrayDark))
 	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
 
 	// Specific UI styles

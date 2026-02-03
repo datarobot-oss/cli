@@ -291,6 +291,31 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 		"need_template_setup", msg.needTemplateSetup,
 	)
 
+	m.updateFromStepComplete(msg)
+
+	// If this step requires executing a script, do it now
+	if msg.executeScript && m.quickstartScriptPath != "" {
+		return m, m.execQuickstartScript()
+	}
+
+	// If this step requires waiting for user input, set the flag and stop
+	if msg.waiting {
+		m.waitingToExecute = true
+		return m, nil
+	}
+
+	// If this step marks completion, we're done
+	if msg.done {
+		m.done = true
+
+		return m, tea.Quit
+	}
+
+	// Move to next step
+	return m.executeNextStep()
+}
+
+func (m *Model) updateFromStepComplete(msg stepCompleteMsg) {
 	// Store any message from the completed step
 	if msg.message != "" {
 		m.stepCompleteMessage = msg.message
@@ -313,27 +338,6 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	if msg.needTemplateSetup {
 		m.needTemplateSetup = true
 	}
-
-	// If this step requires executing a script, do it now
-	if msg.executeScript && m.quickstartScriptPath != "" {
-		return m, m.execQuickstartScript()
-	}
-
-	// If this step requires waiting for user input, set the flag and stop
-	if msg.waiting {
-		m.waitingToExecute = true
-		return m, nil
-	}
-
-	// If this step marks completion, we're done
-	if msg.done {
-		m.done = true
-
-		return m, tea.Quit
-	}
-
-	// Move to next step
-	return m.executeNextStep()
 }
 
 func (m Model) View() string { //nolint: cyclop

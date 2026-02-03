@@ -15,6 +15,7 @@
 package copier
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -353,7 +354,7 @@ func TestAddTrustFlag(t *testing.T) {
 			cmd := Add(repoURL, data, flags)
 
 			// THEN: the command should be built correctly with expected trust flag
-			if cmd.Path != "uvx" {
+			if filepath.Base(cmd.Path) != "uvx" {
 				t.Errorf("command path should be uvx, got %v", cmd.Path)
 			}
 
@@ -427,7 +428,7 @@ func TestUpdateTrustFlag(t *testing.T) {
 			cmd := Update(yamlFile, data, flags)
 
 			// THEN: the command should be built correctly with expected trust flag
-			if cmd.Path != "uvx" {
+			if filepath.Base(cmd.Path) != "uvx" {
 				t.Errorf("command path should be uvx, got %v", cmd.Path)
 			}
 

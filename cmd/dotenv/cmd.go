@@ -143,17 +143,37 @@ This wizard will help you:
 
 		showAllPrompts, _ := cmd.Flags().GetBool("all")
 
+		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
+
 		m := Model{
-			initialScreen:  wizardScreen,
-			DotenvFile:     dotenvFile,
-			variables:      variables,
-			contents:       contents,
-			SuccessCmd:     tea.Quit,
-			ShowAllPrompts: showAllPrompts,
+			initialScreen:         wizardScreen,
+			DotenvFile:            dotenvFile,
+			variables:             variables,
+			contents:              contents,
+			SuccessCmd:            tea.Quit,
+			ShowAllPrompts:        showAllPrompts,
+			NeedsPulumiLogin:      needsPulumi,
+			PulumiAlreadyLoggedIn: pulumiLoggedIn,
+			NeedsPulumiPassphrase: needsPassphrase,
 		}
-		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
+
+		finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
 			return err
+		}
+
+		// Check if the model has an error (e.g., from Pulumi login failure)
+		// The model is wrapped in InterruptibleModel, so we need to unwrap it
+		if finalM, ok := finalModel.(tui.InterruptibleModel); ok {
+			if m, ok := finalM.Model.(Model); ok {
+				if m.err != nil {
+					return m.err
+				}
+
+				if m.pulumiModel != nil && m.pulumiModel.err != nil {
+					return m.pulumiModel.err
+				}
+			}
 		}
 
 		// Update state after successful completion
