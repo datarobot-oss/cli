@@ -104,6 +104,10 @@ func buildPluginCommand(executable string, args []string, requireAuth bool) *exe
 
 func buildPluginEnv(requireAuth bool) []string {
 	env := os.Environ()
+
+	// Always set plugin mode flag so plugins can detect they were invoked by dr CLI
+	env = append(env, "DR_PLUGIN_MODE=1")
+
 	if !requireAuth {
 		return env
 	}
