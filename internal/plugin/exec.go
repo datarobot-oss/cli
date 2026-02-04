@@ -99,6 +99,7 @@ func buildPluginCommand(executable string, args []string, requireAuth bool) *exe
 
 	cmd := exec.Command(executable, args...)
 	cmd.Env = buildPluginEnv(requireAuth)
+
 	return cmd
 }
 
