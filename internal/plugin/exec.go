@@ -94,6 +94,7 @@ func buildPluginCommand(executable string, args []string, requireAuth bool) *exe
 
 		cmd := exec.Command("powershell.exe", psArgs...)
 		cmd.Env = buildPluginEnv(requireAuth)
+
 		return cmd
 	}
 
