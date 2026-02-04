@@ -17,6 +17,7 @@ package plugin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,6 +31,10 @@ import (
 // ValidatePluginScript validates that a plugin script outputs a manifest matching the expected manifest.
 // All fields must match exactly, including Scripts and MinCLIVersion for managed plugins.
 func ValidatePluginScript(pluginDir string, expectedManifest PluginManifest) error {
+	if err := ValidateLicense(pluginDir); err != nil {
+		return err
+	}
+
 	scriptPath, err := FindPluginScript(pluginDir, expectedManifest.Name)
 	if err != nil {
 		return err
@@ -43,6 +48,23 @@ func ValidatePluginScript(pluginDir string, expectedManifest PluginManifest) err
 	}
 
 	return validateManifests(expectedManifest, *scriptManifest)
+}
+
+// ValidateLicense validates that a plugin has a LICENSE.txt file.
+func ValidateLicense(pluginDir string) error {
+	licensePath := filepath.Join(pluginDir, "LICENSE.txt")
+
+	if _, err := os.Stat(licensePath); err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("plugin must contain LICENSE.txt file")
+		}
+
+		return fmt.Errorf("failed to check for LICENSE.txt: %w", err)
+	}
+
+	log.Debug("Plugin license validation passed", "path", licensePath)
+
+	return nil
 }
 
 // validateManifests compares two manifests and returns an error if they differ.
