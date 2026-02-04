@@ -33,9 +33,6 @@ dr templates list
 
 # ⭐ Interactive setup wizard (recommended)
 dr templates setup
-
-# Clone a specific template
-dr templates clone TEMPLATE_NAME [DIRECTORY]
 ```
 
 ## Environment configuration

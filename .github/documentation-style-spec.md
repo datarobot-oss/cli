@@ -332,8 +332,7 @@ When updating documentation, verify these files follow the style guide:
 - [ ] `release.md`
 
 ### Documentation Hub
-- [ ] `docs/README.md`
-- [ ] `docs/SUMMARY.md`
+- [ ] `docs/index.md`
 
 ## Verification Process
 

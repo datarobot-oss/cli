@@ -43,8 +43,15 @@ coverage.html
 # Tea
 dr-tui-debug.log
 
+# MkDocs
+docs/dev-docs/
+docs/.venv/
+docs/uv.lock
+
 # IDEs/Editors
 *.sublime-project
 *.sublime-workspace
 *.code-workspace
 *.vscode/
+*.claude/
+__pycache__/

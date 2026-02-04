@@ -238,8 +238,8 @@ dr run --par<Tab>
 For commands that support it:
 
 ```bash
-# Template names when using clone
-dr templates clone <Tab>
+# Template names when using setup
+dr templates setup <Tab>
 # Shows available template names from DataRobot
 
 # Task names when using run (if in a template directory)

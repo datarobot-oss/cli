@@ -24,97 +24,77 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	stateFileName = "state.yaml"
-	cliSubDir     = "cli"
-	localStateDir = ".datarobot"
-)
-
-// State represents the current state of CLI interactions with a repository.
-type State struct {
+// state represents the current state of CLI interactions with a repository.
+type state struct {
+	fullPath string
 	// CLIVersion is the version of the CLI used for the successful run
 	CLIVersion string `yaml:"cli_version"`
 	// LastStart is an ISO8601-compliant timestamp of the last successful `dr start` run
-	LastStart time.Time `yaml:"last_start"`
+	LastStart *time.Time `yaml:"last_start,omitempty"`
 	// LastTemplatesSetup is an ISO8601-compliant timestamp of the last successful `dr templates setup` run
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 }
 
-// GetStatePath determines the appropriate location for the state file.
+// getStatePath determines the appropriate location for the state file.
 // The state file is stored in .datarobot/cli directory within the current repository.
-func GetStatePath() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Use local .datarobot/cli directory
-	localPath := filepath.Join(cwd, localStateDir, cliSubDir)
-	statePath := filepath.Join(localPath, stateFileName)
-
-	return statePath, nil
+func getStatePath(repoRoot string) string {
+	return filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml")
 }
 
-// Load reads the state file from the appropriate location.
+// load reads the state file from the appropriate location.
 // Returns nil if the file doesn't exist (first run).
-func Load() (*State, error) {
-	statePath, err := GetStatePath()
-	if err != nil {
-		return nil, err
-	}
+func load(repoRoot string) (state, error) {
+	fullPath := getStatePath(repoRoot)
 
-	data, err := os.ReadFile(statePath)
+	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil // File doesn't exist yet, not an error
+			return state{fullPath: fullPath}, nil // File doesn't exist yet, not an error
 		}
 
-		return nil, err
+		return state{}, err
 	}
 
-	var state State
+	var existingState state
 
-	err = yaml.Unmarshal(data, &state)
+	err = yaml.Unmarshal(data, &existingState)
 	if err != nil {
-		return nil, err
+		return state{}, err
 	}
 
-	return &state, nil
+	existingState.fullPath = fullPath
+
+	return existingState, nil
 }
 
-// Update saves the state file and automatically sets the CLIVersion.
+// update saves the state file and automatically sets the CLIVersion.
 // This should be the preferred method for saving state.
-func (s *State) Update() error {
+func (s state) update() error {
 	s.CLIVersion = version.Version
 
-	return Save(s)
+	return s.save()
 }
 
-// Save writes the state file to the appropriate location.
+// save writes the state file to the appropriate location.
 // Creates parent directories if they don't exist.
-// Note: Consider using Update() instead, which automatically sets CLIVersion.
-func Save(state *State) error {
-	statePath, err := GetStatePath()
-	if err != nil {
-		return err
-	}
-
+// Note: Consider using update() instead, which automatically sets CLIVersion.
+func (s state) save() error {
 	// Ensure parent directory exists
-	stateDir := filepath.Dir(statePath)
+	stateDir := filepath.Dir(s.fullPath)
 
-	err = os.MkdirAll(stateDir, 0o755)
+	err := os.MkdirAll(stateDir, 0o755)
 	if err != nil {
 		return err
 	}
 
-	data, err := yaml.Marshal(state)
+	data, err := yaml.Marshal(s)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(statePath, data, 0o644)
+	err = os.WriteFile(s.fullPath, data, 0o644)
 	if err != nil {
 		return err
 	}
@@ -123,70 +103,60 @@ func Save(state *State) error {
 }
 
 // UpdateAfterSuccessfulRun creates or updates the state file after a successful `dr start` run.
-func UpdateAfterSuccessfulRun() error {
+func UpdateAfterSuccessfulRun(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
 
-	if existingState == nil {
-		existingState = &State{}
-	}
+	now := time.Now().UTC()
+	existingState.LastStart = &now
 
-	existingState.LastStart = time.Now().UTC()
-
-	return existingState.Update()
+	return existingState.update()
 }
 
 // UpdateAfterDotenvSetup updates the state file after a successful `dr dotenv setup` run.
-func UpdateAfterDotenvSetup() error {
+func UpdateAfterDotenvSetup(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
-	}
-
-	if existingState == nil {
-		existingState = &State{}
 	}
 
 	now := time.Now().UTC()
 	existingState.LastDotenvSetup = &now
 
-	return existingState.Update()
+	return existingState.update()
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup() error {
+func UpdateAfterTemplatesSetup(repoRoot string) error {
 	// Load existing state to preserve other fields
-	existingState, err := Load()
+	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
-	}
-
-	if existingState == nil {
-		existingState = &State{}
 	}
 
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
 
-	return existingState.Update()
+	return existingState.update()
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
 // If force-interactive flag is set, this always returns false to force re-execution.
-func HasCompletedDotenvSetup() bool {
+func HasCompletedDotenvSetup(repoRoot string) bool {
 	// Check if we should force the wizard to run
 	if viper.GetBool("force-interactive") {
 		return false
 	}
 
-	state, err := Load()
-	if err != nil || state == nil {
+	existingState, err := load(repoRoot)
+	if err != nil {
 		return false
 	}
 
-	return state.LastDotenvSetup != nil && state.LastDotenvSetup.Before(time.Now())
+	return existingState.LastDotenvSetup != nil &&
+		existingState.LastDotenvSetup.Before(time.Now())
 }

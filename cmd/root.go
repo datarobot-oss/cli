@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
@@ -26,13 +27,14 @@ import (
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
+	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/plugin"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -101,13 +103,14 @@ func init() {
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
-		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+		"path to config file (default location: $HOME/.config/datarobot/drconfig.yaml)")
 	RootCmd.PersistentFlags().BoolP("version", "V", false, "display the version")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
+	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -115,6 +118,7 @@ func init() {
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 
 	setLogLevelFromConfig()
 
@@ -138,6 +142,7 @@ func init() {
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
+		plugin.Cmd(),
 	)
 
 	// Discover and register plugin commands
@@ -227,9 +232,37 @@ func registerPluginCommands() {
 		builtinNames[cmd.Name()] = true
 	}
 
-	plugins, err := plugin.GetPlugins()
-	if err != nil {
-		log.Debug("Plugin discovery failed", "error", err)
+	type pluginDiscoveryResult struct {
+		plugins []internalPlugin.DiscoveredPlugin
+		err     error
+	}
+
+	resultCh := make(chan pluginDiscoveryResult, 1)
+
+	go func() {
+		plugins, err := internalPlugin.GetPlugins()
+		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
+	}()
+
+	timeout := viper.GetDuration("plugin-discovery-timeout")
+	if timeout <= 0 {
+		log.Debug("Plugin discovery disabled", "timeout", timeout)
+		return
+	}
+
+	var plugins []internalPlugin.DiscoveredPlugin
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil {
+			log.Debug("Plugin discovery failed", "error", r.err)
+			return
+		}
+
+		plugins = r.plugins
+	case <-time.After(timeout):
+		// TODO Log this at Info level since it affects user-visible behavior
+		log.Warn("Plugin discovery timed out", "timeout", timeout)
 		return
 	}
 
@@ -247,6 +280,7 @@ func registerPluginCommands() {
 	for _, p := range plugins {
 		// Skip if conflicts with builtin command
 		if builtinNames[p.Manifest.Name] {
+			// TODO: Consider logging at Info level since this affects user-visible behavior
 			log.Debug("Plugin name conflicts with builtin command",
 				"plugin", p.Manifest.Name,
 				"path", p.Executable)
@@ -258,8 +292,10 @@ func registerPluginCommands() {
 	}
 }
 
-func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
+func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	executable := p.Executable // Capture for closure
+	manifest := p.Manifest     // Capture for closure
+	pluginName := p.Manifest.Name
 
 	return &cobra.Command{
 		Use:                p.Manifest.Name,
@@ -268,7 +304,10 @@ func createPluginCommand(p plugin.DiscoveredPlugin) *cobra.Command {
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
 		Run: func(_ *cobra.Command, args []string) {
-			exitCode := plugin.ExecutePlugin(executable, args)
+			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
+			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
+
+			exitCode := internalPlugin.ExecutePlugin(manifest, executable, args)
 			os.Exit(exitCode)
 		},
 	}

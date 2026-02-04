@@ -12,7 +12,7 @@ These flags are available for all commands:
   -V, --version           Display version information
   -v, --verbose           Enable verbose output (info level logging)
       --debug             Enable debug output (debug level logging)
-      --config string     Path to config file (default: $HOME/.datarobot/drconfig.yaml)
+      --config string     Path to config file (default: $HOME/.config/datarobot/drconfig.yaml)
       --skip-auth         Skip authentication checks (for advanced users)
       --force-interactive Force the setup wizard to run even if already completed
       --all-commands      Display all available commands and their flags in tree format
@@ -39,6 +39,7 @@ These flags are available for all commands:
 | [`task`](task.md)     | Manage Taskfile composition and task execution.     |
 | [`dotenv`](dotenv.md) | Manage environment variables.                       |
 | [`self`](self.md)     | CLI utility commands (update, version, completion). |
+| [`plugin`](plugins.md) | Inspect and manage CLI plugins.                    |
 
 ### Command tree
 

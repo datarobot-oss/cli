@@ -47,6 +47,7 @@ func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
 	}
 
 	cmd := exec.Command("uvx", commandParts...)
+	log.Debug("Running command: " + cmd.String())
 
 	// Suppress all Python warnings unless debug mode is enabled
 	if log.GetLevel() >= log.WarnLevel {
@@ -103,6 +104,7 @@ func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags) *ex
 	}
 
 	cmd := exec.Command("uvx", commandParts...)
+	log.Debug("Running command: " + cmd.String())
 
 	// Suppress all Python warnings unless debug mode is enabled
 	if log.GetLevel() >= log.WarnLevel {

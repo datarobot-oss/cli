@@ -53,19 +53,19 @@ func TestDotenvSetupTracking(t *testing.T) {
 		// Update dotenv setup state
 		beforeUpdate := time.Now().UTC()
 
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup(tmpDir)
 		require.NoError(t, err)
 
 		afterUpdate := time.Now().UTC()
 
 		// Load and verify
-		state, err := Load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
-		require.NotNil(t, state)
-		require.NotNil(t, state.LastDotenvSetup)
+		require.NotNil(t, loadedState)
+		require.NotNil(t, loadedState.LastDotenvSetup)
 
-		assert.True(t, state.LastDotenvSetup.After(beforeUpdate) || state.LastDotenvSetup.Equal(beforeUpdate))
-		assert.True(t, state.LastDotenvSetup.Before(afterUpdate) || state.LastDotenvSetup.Equal(afterUpdate))
+		assert.True(t, loadedState.LastDotenvSetup.After(beforeUpdate) || loadedState.LastDotenvSetup.Equal(beforeUpdate))
+		assert.True(t, loadedState.LastDotenvSetup.Before(afterUpdate) || loadedState.LastDotenvSetup.Equal(afterUpdate))
 	})
 
 	t.Run("UpdateAfterDotenvSetup preserves existing fields", func(t *testing.T) {
@@ -93,21 +93,21 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create initial state with dr start info
-		err = UpdateAfterSuccessfulRun()
+		err = UpdateAfterSuccessfulRun(tmpDir)
 		require.NoError(t, err)
 
 		// Update with dotenv setup
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup(tmpDir)
 		require.NoError(t, err)
 
 		// Load and verify both fields are present
-		state, err := Load()
+		loadedState, err := load(tmpDir)
 		require.NoError(t, err)
-		require.NotNil(t, state)
+		require.NotNil(t, loadedState)
 
-		assert.NotEmpty(t, state.CLIVersion)
-		assert.False(t, state.LastStart.IsZero())
-		assert.NotNil(t, state.LastDotenvSetup)
+		assert.NotEmpty(t, loadedState.CLIVersion)
+		assert.False(t, loadedState.LastStart.IsZero())
+		assert.NotNil(t, loadedState.LastDotenvSetup)
 	})
 
 	t.Run("HasCompletedDotenvSetup returns true when setup completed in past", func(t *testing.T) {
@@ -135,14 +135,14 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Initially should be false
-		assert.False(t, HasCompletedDotenvSetup())
+		assert.False(t, HasCompletedDotenvSetup(tmpDir))
 
 		// Update dotenv setup
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup(tmpDir)
 		require.NoError(t, err)
 
 		// Now should be true
-		assert.True(t, HasCompletedDotenvSetup())
+		assert.True(t, HasCompletedDotenvSetup(tmpDir))
 	})
 
 	t.Run("HasCompletedDotenvSetup returns false when never run", func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should be false with no state file
-		assert.False(t, HasCompletedDotenvSetup())
+		assert.False(t, HasCompletedDotenvSetup(tmpDir))
 	})
 
 	t.Run("HasCompletedDotenvSetup returns false when force-interactive is true", func(t *testing.T) {
@@ -190,11 +190,11 @@ func TestDotenvSetupTracking(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update dotenv setup to create state file
-		err = UpdateAfterDotenvSetup()
+		err = UpdateAfterDotenvSetup(tmpDir)
 		require.NoError(t, err)
 
 		// Verify it returns true normally
-		assert.True(t, HasCompletedDotenvSetup())
+		assert.True(t, HasCompletedDotenvSetup(tmpDir))
 
 		// Set force-interactive flag
 		oldValue := viper.GetBool("force-interactive")
@@ -204,12 +204,12 @@ func TestDotenvSetupTracking(t *testing.T) {
 		defer viper.Set("force-interactive", oldValue)
 
 		// Now should return false even though state file exists
-		assert.False(t, HasCompletedDotenvSetup())
+		assert.False(t, HasCompletedDotenvSetup(tmpDir))
 
 		// Reset flag
 		viper.Set("force-interactive", oldValue)
 
 		// Should return true again
-		assert.True(t, HasCompletedDotenvSetup())
+		assert.True(t, HasCompletedDotenvSetup(tmpDir))
 	})
 }

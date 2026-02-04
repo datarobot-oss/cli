@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,16 +15,32 @@
 package plugin
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
+
+	"github.com/datarobot/cli/internal/auth"
 )
 
 // ExecutePlugin runs a plugin and returns its exit code
-func ExecutePlugin(executable string, args []string) int {
-	cmd := exec.Command(executable, args...)
+// If the plugin manifest requires authentication, it will check/prompt for auth first
+func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
+	// Check authentication if required by the plugin
+	if manifest.Authentication && !auth.EnsureAuthenticated(context.Background()) {
+		return 1
+	}
+
+	return executePluginCommand(executable, args)
+}
+
+// executePluginCommand runs the actual plugin command
+func executePluginCommand(executable string, args []string) int {
+	cmd := buildPluginCommand(executable, args)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -63,4 +79,19 @@ func ExecutePlugin(executable string, args []string) int {
 	}
 
 	return 0
+}
+
+// buildPluginCommand creates the appropriate exec.Cmd for the given executable
+// On Windows, .ps1 files are executed via PowerShell
+func buildPluginCommand(executable string, args []string) *exec.Cmd {
+	ext := filepath.Ext(executable)
+
+	// On Windows, execute .ps1 files through PowerShell
+	if runtime.GOOS == "windows" && ext == ".ps1" {
+		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
+
+		return exec.Command("powershell.exe", psArgs...)
+	}
+
+	return exec.Command(executable, args...)
 }

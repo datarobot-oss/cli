@@ -43,6 +43,6 @@ For a complete overview and feature list, see the [main README](../../README.md)
 
 ## Need help?
 
-- Can't find what you're looking for? Check the [main documentation index](../README.md)
-- Have questions? See [Getting help](../README.md#getting-help) in the main docs
+- Can't find what you're looking for? Check the [main documentation index](../index.md)
+- Have questions? See [Getting help](../index.md#getting-help) in the main docs
 - Found an issue? [Open an issue](https://github.com/datarobot-oss/cli/issues) on GitHub

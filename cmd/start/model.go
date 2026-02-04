@@ -55,6 +55,7 @@ type Model struct {
 	selfUpdate           bool   // Whether to ask for self update
 	waitingToExecute     bool   // Whether to wait for user input before proceeding
 	needTemplateSetup    bool   // Whether we need to run template setup after quitting
+	repoRoot             string
 }
 
 type stepCompleteMsg struct {
@@ -86,6 +87,8 @@ var (
 )
 
 func NewStartModel(opts Options) Model {
+	repoRoot, _ := repo.FindRepoRoot()
+
 	return Model{
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
@@ -96,7 +99,8 @@ func NewStartModel(opts Options) Model {
 			{description: "Checking repository setup...", fn: checkRepository},
 			{description: "Finding and executing start command...", fn: findAndExecuteStart},
 		},
-		opts: opts,
+		opts:     opts,
+		repoRoot: repoRoot,
 	}
 }
 
@@ -206,7 +210,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Script execution completed successfully, update state and quit
-		_ = state.UpdateAfterSuccessfulRun()
+		if m.repoRoot != "" {
+			_ = state.UpdateAfterSuccessfulRun(m.repoRoot)
+		}
 
 		return m, tea.Quit
 	}
@@ -247,7 +253,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 			// User chose to not execute script, so update state and quit
-			_ = state.UpdateAfterSuccessfulRun()
+			if m.repoRoot != "" {
+				_ = state.UpdateAfterSuccessfulRun(m.repoRoot)
+			}
+
 			m.quitting = true
 
 			return m, tea.Quit

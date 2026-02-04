@@ -113,6 +113,9 @@ dr templates list --verbose
 
 # Enable debug logging
 dr templates list --debug
+
+# Timeout for plugin discovery (0s disables discovery)
+dr --plugin-discovery-timeout 2s --help
 ```
 
 > [!WARNING]
@@ -446,7 +449,7 @@ The CLI maintains state information about your interactions with repositories to
 
 The CLI stores state locally within each repository:
 
-- `.datarobot/cli/state.yaml` in the current working directory
+- `.datarobot/cli/state.yaml` in template directory
 
 ### Tracked information
 

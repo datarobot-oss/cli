@@ -191,19 +191,12 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 	}
 
 	// Adaptive colors for light/dark terminals
-	titleColor := tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)
 	taskColor := tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)
 	aliasColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
 	descColor := tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark)
-	borderColor := tui.GetAdaptiveColor(tui.DrPurpleLight, tui.DrPurpleDarkLight)
 	tipBorderColor := tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(titleColor).
-		MarginBottom(1)
-
-	fmt.Println(titleStyle.Render("Available Tasks"))
+	fmt.Println(tui.SubTitleStyle.Render("Available Tasks"))
 
 	// Define table styles
 	taskNameStyle := lipgloss.NewStyle().
@@ -228,7 +221,7 @@ func printCategorizedTasks(categories []*Category, showAll bool) error {
 		// Create table for this category
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(borderColor)).
+			BorderStyle(lipgloss.NewStyle().Foreground(tui.BorderColor)).
 			StyleFunc(func(_, col int) lipgloss.Style {
 				// Note: Headers() are styled automatically by the table
 				// We only need to style data rows based on column

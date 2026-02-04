@@ -108,6 +108,10 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 
 		if v.Name != "" && v.Commented {
 			variables = append(variables, v)
+
+			contents.WriteString(line)
+
+			continue
 		}
 
 		if v.Name == "" || v.Commented {
@@ -115,8 +119,10 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 			continue
 		}
 
-		v.Value = variablesConfig[v.Name].value
-		v.Secret = variablesConfig[v.Name].secret
+		if varConfig, ok := variablesConfig[v.Name]; ok {
+			v.Value = varConfig.value
+			v.Secret = varConfig.secret
+		}
 
 		if v.Value == "" {
 			contents.WriteString(line)
