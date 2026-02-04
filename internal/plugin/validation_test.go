@@ -354,3 +354,67 @@ func createScript(t *testing.T, path, content string) {
 	err := os.WriteFile(path, []byte(content), 0o755)
 	require.NoError(t, err)
 }
+
+func TestValidateLicense_Success(t *testing.T) {
+	tempDir := t.TempDir()
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidateLicense(tempDir)
+
+	assert.NoError(t, err)
+}
+
+func TestValidateLicense_Missing(t *testing.T) {
+	tempDir := t.TempDir()
+
+	err := ValidateLicense(tempDir)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plugin must contain LICENSE.txt file")
+}
+
+func TestValidatePluginScript_MissingLicense(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+	}
+
+	createTestScript(t, tempDir, manifest)
+
+	err := ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plugin must contain LICENSE.txt file")
+}
+
+func TestValidatePluginScript_WithLicense(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+	}
+
+	createTestScript(t, tempDir, manifest)
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	assert.NoError(t, err)
+}
