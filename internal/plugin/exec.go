@@ -116,7 +116,7 @@ func buildPluginEnv(requireAuth bool) []string {
 		env = append(env, "DATAROBOT_CONFIG="+configPath)
 	}
 
-	if endpoint := config.GetBaseURL(); endpoint != "" {
+	if endpoint := viper.GetString(config.DataRobotURL); endpoint != "" {
 		env = append(env, "DATAROBOT_ENDPOINT="+endpoint)
 	}
 
