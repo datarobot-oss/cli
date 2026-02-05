@@ -18,7 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"gopkg.in/yaml.v3"
 )
 

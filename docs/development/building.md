@@ -608,7 +608,9 @@ When adding new debug output:
 ### Add debug statements
 
 ```go
-import "github.com/charmbracelet/log"
+import (
+	"github.com/datarobot/cli/internal/log"
+)
 
 // Debug logging
 log.Debug("Variable value", "key", value)

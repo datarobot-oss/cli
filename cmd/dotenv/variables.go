@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"

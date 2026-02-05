@@ -16,11 +16,11 @@ package update
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"runtime"
 
+	"github.com/datarobot/cli/internal/log"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/internal/version"
