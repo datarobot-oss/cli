@@ -54,4 +54,6 @@ docs/uv.lock
 *.code-workspace
 *.vscode/
 *.claude/
+
+# Python
 __pycache__/
