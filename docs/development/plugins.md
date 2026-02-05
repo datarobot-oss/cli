@@ -158,11 +158,11 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 
 - `dr plugin list` / `dr plugins list`: show discovered plugins and their manifest metadata.
 
-## Packaging and Publishing Plugins
+## Packaging and publishing plugins
 
 The CLI provides tools to help package and publish plugins to a plugin registry.
 
-### Quick Start: Publish Command (Recommended)
+### Quick start: publish command (recommended)
 
 The easiest way to package and publish a plugin is the all-in-one `publish` command:
 
@@ -192,11 +192,11 @@ dr self plugin publish ./my-plugin --plugins-dir dist/plugins --index dist/plugi
 #    Registry: docs/plugins/index.json
 ```
 
-### Advanced: Manual Workflow
+### Advanced: manual workflow
 
 For more control over the packaging process, you can use the individual commands:
 
-#### Packaging a Plugin
+#### Packaging a plugin
 
 Use `dr self plugin package` to create a distributable `.tar.xz` archive:
 

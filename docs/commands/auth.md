@@ -136,7 +136,7 @@ Choose your DataRobot environment:
 
 🔗 Don't know which one? Check your DataRobot login page URL.
 
-Enter your choice: 
+Enter your choice:
 ```
 
 **Quick selection:**

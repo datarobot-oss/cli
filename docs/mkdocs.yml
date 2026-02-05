@@ -45,16 +45,16 @@ docs_dir: .
 # Navigation structure
 nav:
   - Home: index.md
-  - User Guide:
+  - User guide:
       - user-guide/README.md
-      - Quick Reference: user-guide/quick-reference.md
-      - Shell Completions: user-guide/shell-completions.md
+      - Quick reference: user-guide/quick-reference.md
+      - Shell completions: user-guide/shell-completions.md
       - Configuration: user-guide/configuration.md
-  - Template System:
+  - Template system:
       - template-system/README.md
       - Structure: template-system/structure.md
-      - Interactive Configuration: template-system/interactive-config.md
-      - Environment Variables: template-system/environment-variables.md
+      - Interactive configuration: template-system/interactive-config.md
+      - Environment variables: template-system/environment-variables.md
   - Commands:
       - commands/README.md
       - auth: commands/auth.md

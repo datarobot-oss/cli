@@ -1,4 +1,4 @@
-# Remote Plugin Download & Installation System
+# Remote plugin download & installation system
 
 This document describes the design and implementation plan for the remote plugin download and installation system, which allows users to install, update, and uninstall plugins from a central registry hosted at `cli.datarobot.com/plugins/index.json`.
 
@@ -37,10 +37,9 @@ A minimal JSON schema pointing to plugin archives:
 }
 ```
 
-**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the registry. This enables the same registry to work with both local development servers and production CDNs
-```
+**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the registry. This enables the same registry to work with both local development servers and production CDNs.
 
-### Plugin Package Structure
+### Plugin package structure
 
 Each `.tar.xz` archive contains:
 
@@ -51,7 +50,7 @@ scripts/
   dr-<name>.ps1        # Windows PowerShell script
 ```
 
-### Manifest Schema
+### Manifest schema
 
 The `manifest.json` inside each package defines platform-specific executables:
 
@@ -68,15 +67,15 @@ The `manifest.json` inside each package defines platform-specific executables:
 }
 ```
 
-## Implementation Steps
+## Implementation steps
 
-### 1. Create Plugin Registry Schema
+### 1. Create plugin registry schema
 
 - Add `docs/plugins/index.json` with minimal schema
 - Support plugin names, semver versions, descriptions, and download URLs
 - Include SHA256 checksums per artifact for verification
 
-### 2. Build dr-apps Plugin Package (PoC)
+### 2. Build dr-apps plugin package (PoC)
 
 - Create wrapper scripts:
   - `dr-apps.sh` (Posix): Executes `uv run --with drapps drapps "$@"`
@@ -84,7 +83,7 @@ The `manifest.json` inside each package defines platform-specific executables:
 - Package with `manifest.json` defining platform script mappings
 - Create `.tar.xz` archive and publish to `docs/plugins/<plugin>/`
 
-### 3. Implement Plugin Install Command
+### 3. Implement plugin install command
 
 - Create `cmd/plugin/install/cmd.go`
 - Fetch registry (`index.json`) from remote URL
@@ -95,7 +94,7 @@ The `manifest.json` inside each package defines platform-specific executables:
 - Make scripts executable
 - Persist installation metadata in `.installed.json`
 
-### 4. Update Plugin Discovery
+### 4. Update plugin discovery
 
 - Modify `internal/plugin/discover.go`
 - Search `~/.config/datarobot/plugins/` first (higher priority than PATH)
@@ -103,7 +102,7 @@ The `manifest.json` inside each package defines platform-specific executables:
 - Resolve platform-specific executable from manifest's `scripts` field
 - Maintain backward compatibility with PATH-based plugins
 
-### 5. Add Update/Uninstall Commands
+### 5. Add update/uninstall commands
 
 - Create `cmd/plugin/update/cmd.go`:
   - Compare installed vs available versions
@@ -113,7 +112,7 @@ The `manifest.json` inside each package defines platform-specific executables:
   - Remove plugin directory from managed plugins
   - Clean up installation metadata
 
-## Semver Support
+## Semver support
 
 Version constraints supported:
 - **Exact**: `1.2.3` - Match exactly this version
@@ -122,7 +121,7 @@ Version constraints supported:
 - **Range**: `>=1.0.0` - Any version at or above
 - **Latest**: `latest` or empty - Most recent version
 
-## Directory Structure
+## Directory structure
 
 ```
 ~/.config/datarobot/
@@ -135,7 +134,7 @@ Version constraints supported:
         dr-apps.ps1
 ```
 
-## Plugin Execution
+## Plugin execution
 
 When a managed plugin is invoked:
 1. Discovery finds the plugin in `~/.config/datarobot/plugins/`
@@ -143,7 +142,7 @@ When a managed plugin is invoked:
 3. On Posix: Execute `.sh` script with bash
 4. On Windows: Execute `.ps1` script with PowerShell
 
-## Python Plugin Pattern
+## Python plugin pattern
 
 For Python-based plugins, wrapper scripts use `uv` for dependency management:
 
@@ -157,7 +156,7 @@ This pattern:
 - Leverages `uv`'s fast package resolution
 - Works in air-gapped environments when pre-cached
 
-## Files Created
+## Files created
 
 | File | Purpose |
 |------|---------|
@@ -175,7 +174,7 @@ This pattern:
 | `cmd/self/plugin/add/cmd.go` | Add to registry command |
 | `cmd/self/plugin/publish/cmd.go` | Publish command (all-in-one) |
 
-## Files Modified
+## Files modified
 
 | File | Changes |
 |------|---------|
@@ -183,7 +182,7 @@ This pattern:
 | `internal/plugin/discover.go` | Scan managed plugins directory |
 | `internal/repo/paths.go` | Added `ManagedPluginsDir()` |
 
-## Usage Examples
+## Usage examples
 
 ```bash
 # List available plugins from registry
@@ -207,7 +206,7 @@ dr plugin uninstall apps
 dr plugin list
 ```
 
-## Future Considerations
+## Future considerations
 
 1. **UV prerequisite checking**: Add `uv` to prerequisites validation
 2. **Plugin update notifications**: Show "(update available)" in `dr plugin list`

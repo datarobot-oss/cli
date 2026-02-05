@@ -83,7 +83,7 @@ Output:
 ```text
 Available tasks:
 * dev        Start development server
-* test       Run tests  
+* test       Run tests
 * lint       Run linters
 * build      Build Docker container
 * deploy     Deploy to DataRobot
@@ -309,10 +309,10 @@ Use clear, action-oriented task names:
 tasks:
   dev:           # ✅ Clear and concise
     desc: Start development server
-  
+
   test:unit:     # ✅ Namespaced for organization
     desc: Run unit tests
-  
+
   lint:python:   # ✅ Specific and descriptive
     desc: Run Python linters
 ```
