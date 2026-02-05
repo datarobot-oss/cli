@@ -59,6 +59,7 @@ func example() {
 ### TUI Standards
 
 - Always use `tui.Run()` to execute TUI models for global Ctrl-C handling and debug logging
+- Always wrap new TUI models with the InterruptibleModel from the `tui` package to ensure global Ctrl-C handling
 - Reuse existing TUI components from `tui` package or Bubbles library (https://github.com/charmbracelet/bubbles)
 - Use styles from `tui/styles.go` for consistency
 - When `--debug` is enabled, TUI debug logs are written to `dr-tui-debug.log`
@@ -72,6 +73,8 @@ All code must pass these tools without errors:
 - `go vet` - suspicious constructs
 - `golangci-lint` - comprehensive linting (includes wsl, revive, staticcheck)
 - `goreleaser check` - release configuration validation
+
+**Before submitting code, mentally verify it follows wsl (whitespace) rules.**
 
 ## PR Output Format
 

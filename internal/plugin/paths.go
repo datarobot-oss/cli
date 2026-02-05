@@ -15,28 +15,22 @@
 package plugin
 
 import (
-	"github.com/datarobot/cli/cmd/plugin/install"
-	"github.com/datarobot/cli/cmd/plugin/list"
-	"github.com/datarobot/cli/cmd/plugin/uninstall"
-	"github.com/datarobot/cli/cmd/plugin/update"
-	"github.com/spf13/cobra"
+	"os"
+	"path/filepath"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "plugin",
-		GroupID: "advanced",
-		Aliases: []string{"plugins"},
-		Short:   "🔌 Plugin management commands",
-		Long:    "Commands for managing and inspecting CLI plugins.",
+// ManagedPluginsDir returns the user-global managed plugins directory.
+// It respects XDG_CONFIG_HOME if set, otherwise falls back to ~/.config/datarobot/plugins/
+func ManagedPluginsDir() (string, error) {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+
+		configHome = filepath.Join(homeDir, ".config")
 	}
 
-	cmd.AddCommand(
-		list.Cmd(),
-		install.Cmd(),
-		uninstall.Cmd(),
-		update.Cmd(),
-	)
-
-	return cmd
+	return filepath.Join(configHome, "datarobot", "plugins"), nil
 }

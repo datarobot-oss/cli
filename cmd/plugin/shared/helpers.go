@@ -12,31 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package plugin
+package shared
 
-import (
-	"github.com/datarobot/cli/cmd/plugin/install"
-	"github.com/datarobot/cli/cmd/plugin/list"
-	"github.com/datarobot/cli/cmd/plugin/uninstall"
-	"github.com/datarobot/cli/cmd/plugin/update"
-	"github.com/spf13/cobra"
-)
-
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "plugin",
-		GroupID: "advanced",
-		Aliases: []string{"plugins"},
-		Short:   "🔌 Plugin management commands",
-		Long:    "Commands for managing and inspecting CLI plugins.",
+// NormalizeRegistryURL ensures the URL ends with index.json
+func NormalizeRegistryURL(url string) string {
+	if len(url) > 0 && url[len(url)-1] == '/' {
+		return url + "index.json"
 	}
 
-	cmd.AddCommand(
-		list.Cmd(),
-		install.Cmd(),
-		uninstall.Cmd(),
-		update.Cmd(),
-	)
+	if len(url) > 5 && url[len(url)-5:] != ".json" {
+		return url + "/index.json"
+	}
 
-	return cmd
+	return url
 }

@@ -10,6 +10,7 @@ var (
 
 	BaseTextStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurple, DrPurpleDark))
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
+	SuccessStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGreen, DrGreen)).Bold(true)
 	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
 	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)

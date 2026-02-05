@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,8 +30,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+// PluginRegistryTerminology is the user-facing term for the plugin registry
+const PluginRegistryTerminology = "registry"
+
+// PluginRegistryURL is the default URL for the remote plugin registry
+const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
+
 // TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder
-var registry = &PluginRegistry{}
+var registry = &DiscoveredPluginsRegistry{}
 
 // GetPlugins returns discovered plugins, discovering lazily on first call
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
@@ -48,9 +55,18 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 
 	seen := make(map[string]bool)
 
-	// TODO: Add support for user-global plugins directory (~/.datarobot/cli/plugins)
+	// 1. Check managed plugins directory first (highest priority)
+	managedDir, err := ManagedPluginsDir()
+	if err == nil {
+		managedPlugins, errs := discoverManagedPlugins(managedDir, seen)
+		plugins = append(plugins, managedPlugins...)
 
-	// 1. Check project-local directory first (higher priority)
+		for _, err := range errs {
+			log.Debug("Plugin discovery error in managed dir", "dir", managedDir, "error", err)
+		}
+	}
+
+	// 2. Check project-local directory (higher priority than PATH)
 	// TODO: LocalPluginDir shares path with QuickstartScriptPath - consider dedicated plugin directory
 	localPlugins, errs := discoverInDir(repo.LocalPluginDir, seen)
 	plugins = append(plugins, localPlugins...)
@@ -59,7 +75,7 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 		log.Debug("Plugin discovery error in local dir", "dir", repo.LocalPluginDir, "error", err)
 	}
 
-	// 2. Check PATH directories
+	// 3. Check PATH directories
 	pathEnv := os.Getenv("PATH")
 
 	for _, dir := range filepath.SplitList(pathEnv) {
@@ -74,6 +90,119 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 	log.Debug("Plugin discovery complete", "count", len(plugins))
 
 	return plugins, nil
+}
+
+// discoverManagedPlugins discovers plugins installed via `dr plugin install`
+// These are in subdirectories with a manifest.json and platform-specific scripts
+func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+	plugins := make([]DiscoveredPlugin, 0)
+
+	var errs []error
+
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, []error{err}
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		plugin, err := loadManagedPlugin(dir, entry.Name(), seen)
+		if err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		if plugin != nil {
+			plugins = append(plugins, *plugin)
+		}
+	}
+
+	return plugins, errs
+}
+
+func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugin, error) {
+	pluginDir := filepath.Join(dir, name)
+	manifestPath := filepath.Join(pluginDir, "manifest.json")
+
+	if _, err := os.Stat(manifestPath); err != nil {
+		return nil, nil
+	}
+
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest PluginManifest
+
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, err
+	}
+
+	if manifest.Name == "" {
+		return nil, errMissingManifestField("name")
+	}
+
+	if seen[manifest.Name] {
+		log.Warn("Plugin name already registered, skipping",
+			"name", manifest.Name,
+			"path", pluginDir)
+
+		return nil, nil
+	}
+
+	executable, err := resolvePlatformExecutable(pluginDir, &manifest)
+	if err != nil {
+		return nil, err
+	}
+
+	seen[manifest.Name] = true
+
+	return &DiscoveredPlugin{
+		Manifest:   manifest,
+		Executable: executable,
+	}, nil
+}
+
+// resolvePlatformExecutable returns the appropriate script path for the current platform
+func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (string, error) {
+	if manifest.Scripts == nil {
+		return "", errors.New("managed plugin missing scripts configuration")
+	}
+
+	var scriptPath string
+
+	if runtime.GOOS == "windows" {
+		scriptPath = manifest.Scripts.Windows
+	} else {
+		scriptPath = manifest.Scripts.Posix
+	}
+
+	if scriptPath == "" {
+		return "", errors.New("no script configured for platform: " + runtime.GOOS)
+	}
+
+	fullPath := filepath.Join(pluginDir, scriptPath)
+
+	// Verify script exists
+	if _, err := os.Stat(fullPath); err != nil {
+		return "", err
+	}
+
+	return fullPath, nil
+}
+
+func errMissingManifestField(field string) error {
+	return errors.New("plugin manifest missing required field: " + field)
 }
 
 func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
@@ -97,7 +226,7 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 		name := entry.Name()
 
 		// Must match dr-* pattern
-		if !strings.HasPrefix(name, "dr-") {
+		if !strings.HasPrefix(name, PluginPrefix) {
 			continue
 		}
 
@@ -147,7 +276,7 @@ func getManifest(executable string) (*PluginManifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, "--dr-plugin-manifest")
+	cmd := exec.CommandContext(ctx, executable, PluginManifestFlag)
 
 	output, err := cmd.Output()
 	if err != nil {
