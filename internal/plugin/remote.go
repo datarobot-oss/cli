@@ -31,9 +31,9 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 
-	"github.com/charmbracelet/log"
 	"github.com/codeclysm/extract/v4"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/ulikunitz/xz"
 )
 

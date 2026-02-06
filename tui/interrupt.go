@@ -2,7 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // InterruptibleModel wraps any Bubble Tea model to ensure Ctrl-C always works.

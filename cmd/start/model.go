@@ -26,7 +26,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"

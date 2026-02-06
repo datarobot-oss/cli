@@ -24,10 +24,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"

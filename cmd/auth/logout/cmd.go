@@ -17,9 +17,9 @@ package logout
 import (
 	"os"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

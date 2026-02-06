@@ -21,12 +21,12 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"github.com/gitsight/go-vcsurl"

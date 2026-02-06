@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // depth gets our current directory depth by file path

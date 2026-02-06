@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 )
 
 func cmdRun(cmd *exec.Cmd) error {

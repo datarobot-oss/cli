@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // FindRepoRoot walks up the directory tree from the current directory looking for

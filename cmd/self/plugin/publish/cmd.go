@@ -26,7 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
 	"github.com/ulikunitz/xz"

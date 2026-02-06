@@ -17,9 +17,9 @@ package list
 import (
 	"fmt"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
 )
 

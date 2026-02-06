@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/joho/godotenv"
 )
