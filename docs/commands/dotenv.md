@@ -330,6 +330,16 @@ prompts:
       - name: "Monitoring"
 ```
 
+**LLM from LLM gateway:**
+
+```yaml
+prompts:
+  - env: "LLM_GATEWAY_MODEL"
+    type: "llmgw_catalog"
+    optional: false
+    help: "Choose LLM from LLM Gateway catalog."
+```
+
 ### Conditional prompts
 
 Prompts can be shown based on previous selections:
