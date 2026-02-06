@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
@@ -92,6 +93,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	if prompt.Type == "llmgw_catalog" {
+		return newLLMListPrompt(prompt, successCmd)
+	}
+
 	if len(prompt.Options) == 0 {
 		return newTextInputPrompt(prompt, successCmd)
 	}
@@ -168,6 +173,25 @@ func newListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMode
 		list:       l,
 		successCmd: successCmd,
 	}, cmd
+}
+
+func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	llms, err := drapi.GetLLMs()
+	if err != nil {
+		return promptModel{}, nil
+	}
+
+	for _, llm := range llms.LLMs {
+		prompt.Options = append(prompt.Options, envbuilder.PromptOption{
+			Blank:    false,
+			Checked:  false,
+			Name:     fmt.Sprintf("%s (%s)", llm.Name, llm.Provider),
+			Value:    llm.LlmID,
+			Requires: "",
+		})
+	}
+
+	return newListPrompt(prompt, successCmd)
 }
 
 func (pm promptModel) GetValues() []string {

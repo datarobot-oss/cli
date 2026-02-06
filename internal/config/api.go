@@ -60,7 +60,7 @@ func GetEndpointURL(endpoint string) (string, error) {
 		return "", errors.New("Empty URL.")
 	}
 
-	return url.JoinPath(baseURL, endpoint)
+	return baseURL + endpoint, nil
 }
 
 func GetUserAgentHeader() string {
