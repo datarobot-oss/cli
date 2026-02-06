@@ -18,6 +18,18 @@
           "releaseDate": "2026-02-04"
         }
       ]
+    },
+    "assist": {
+      "name": "assist",
+      "description": "AI agent design, coding, and deployment assistant",
+      "versions": [
+        {
+          "version": "0.1.4",
+          "url": "assist/assist-0.1.4.tar.xz",
+          "sha256": "15498e3eee53ebb182e45eae06e02b94b47f80ae518afae42d1ed9a4c52de8bb",
+          "releaseDate": "2026-02-06"
+        }
+      ]
     }
   }
 }
