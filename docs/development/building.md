@@ -619,7 +619,7 @@ log.Error("Operation failed", "error", err)
 
 ## Release process
 
-See [Release documentation](../../README.md#release) for a detailed overview of the release process.
+See [Releasing documentation](releasing.md) for a detailed overview of the release process.
 
 ### Quick release
 
@@ -637,6 +637,6 @@ git push --tags
 
 ## See also
 
-- [Contributing Guide](../../CONTRIBUTING.md)
+- [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)
 - [Project structure](structure.md)&mdash;code organization and design
 - [Release process](releasing.md)&mdash;how releases are created and published

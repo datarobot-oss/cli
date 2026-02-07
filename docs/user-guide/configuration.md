@@ -125,10 +125,10 @@ dr --plugin-discovery-timeout 2s --help
 
 When the CLI needs configuration settings, it looks for them in this order (highest to lowest priority):
 
-1. **Command-line flags** (e.g., `--config <path>`) - Overrides everything
-2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`) - Overrides config files
-3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`) - Default location
-4. **Built-in defaults** - Fallback values
+1. **Command-line flags** (e.g., `--config <path>`)&mdash;overrides everything.
+2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`)&mdash;overrides config files.
+3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default location.
+4. **Built-in defaults**&mdash;fallback values.
 
 This means if you set an environment variable, it will take precedence over what's in your config file. This is useful for temporarily overriding settings without editing files.
 

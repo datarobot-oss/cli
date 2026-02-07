@@ -131,6 +131,6 @@ Found an error or want to improve the docs? Please see our [Contributing Guideli
 
 ---
 
-**Documentation version**: Synchronized with CLI version  
-**CLI version**: 0.1.0+  
+**Documentation version**: Synchronized with CLI version
+**CLI version**: 0.1.0+
 **Status**: Active development

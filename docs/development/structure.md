@@ -230,4 +230,4 @@ Generated files and artifacts:
 
 - [Setup guide](setup.md): setting up your development environment
 - [Build guide](building.md): Detailed build information and architecture
-- [Contributions](../../CONTRIBUTING.md): Contribution guidelines
+- [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;contribution guidelines.
