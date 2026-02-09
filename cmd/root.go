@@ -68,16 +68,12 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		// PersistentPreRunE is a hook called after flags are parsed
 		// but before the command is run. Any logic that needs to happen
 		// before ANY command execution should go here.
-		useDebug, _ := cmd.Flags().GetBool("debug")
-		useVerbose, _ := cmd.Flags().GetBool("verbose")
 
-		log.Start(useDebug, useVerbose)
+		log.Start()
 
 		return initializeConfig(cmd)
 	},
-	PostRun: func(_ *cobra.Command, _ []string) {
-		// Always reset log level from config in case it was altered with CLI args '--verbose' or '--debug'
-		log.SetLogLevelFromConfig()
+	PersistentPostRun: func(_ *cobra.Command, _ []string) {
 		log.Stop()
 	},
 }
@@ -117,8 +113,6 @@ func init() {
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
-
-	log.SetLogLevelFromConfig()
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(

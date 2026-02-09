@@ -15,7 +15,6 @@
 package log
 
 import (
-	"fmt"
 	"io"
 	"os"
 
@@ -45,56 +44,9 @@ var (
 	fileLogger   *log.Logger
 )
 
-func Start(useDebug, useVerbose bool) {
-	level = log.Default().GetLevel()
-
+// Start sets up and starts both stderr and file loggers
+func Start() {
 	// Debug takes precedence
-	if useDebug {
-		level = log.DebugLevel
-	} else if useVerbose {
-		level = log.InfoLevel
-	}
-
-	StartStderr()
-	StartFile()
-}
-
-func Stop() {
-	StopFile()
-	StopStderr()
-}
-
-func StartStderr() {
-	stderrLogger = log.New(os.Stderr)
-	stderrLogger.SetStyles(logStyles)
-	stderrLogger.SetLevel(level)
-}
-
-func StopStderr() {
-	stderrLogger = nil
-}
-
-func StartFile() {
-	var err error
-
-	fileWriter, err = os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		fmt.Println("fatal:", err)
-		os.Exit(1)
-	}
-
-	fileLogger = log.New(fileWriter)
-	fileLogger.SetStyles(logStyles)
-	fileLogger.SetLevel(level)
-}
-
-func StopFile() {
-	fileLogger = nil
-
-	fileWriter.Close()
-}
-
-func SetLogLevelFromConfig() {
 	if viper.GetBool("debug") {
 		level = log.DebugLevel
 	} else if viper.GetBool("verbose") {
@@ -102,6 +54,49 @@ func SetLogLevelFromConfig() {
 	} else {
 		level = log.Default().GetLevel()
 	}
+
+	StartStderr()
+	StartFile()
+}
+
+// Stop stops both stderr and file loggers
+func Stop() {
+	StopFile()
+	StopStderr()
+}
+
+// StartStderr starts stderr logger. Useful when running bubbletea TUI models.
+func StartStderr() {
+	stderrLogger = log.New(os.Stderr)
+	stderrLogger.SetStyles(logStyles)
+	stderrLogger.SetLevel(level)
+}
+
+// StopStderr stops stderr logger. Useful when running bubbletea TUI models.
+func StopStderr() {
+	stderrLogger = nil
+}
+
+// StartFile starts file logger.
+func StartFile() {
+	var err error
+
+	fileWriter, err = os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		Warnf("Cannot open log file: %s", err)
+		return
+	}
+
+	fileLogger = log.New(fileWriter)
+	fileLogger.SetStyles(logStyles)
+	fileLogger.SetLevel(level)
+}
+
+// StopFile stops file logger.
+func StopFile() {
+	fileLogger = nil
+
+	fileWriter.Close()
 }
 
 func Log(level log.Level, msg interface{}, keyvals ...interface{}) {

@@ -32,7 +32,7 @@ const (
 )
 
 func GetLevel() log.Level {
-	return log.GetLevel()
+	return level
 }
 
 func Debug(msg interface{}, keyvals ...interface{}) {
