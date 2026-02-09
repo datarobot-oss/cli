@@ -214,7 +214,7 @@ dr <Tab>
 
 # Type 'dr auth' and press Tab to see subcommands
 dr auth <Tab>
-# Shows: login, logout, set-url
+# Shows: check, login, logout, set-url
 
 # Type 'dr templates' and press Tab
 dr templates <Tab>

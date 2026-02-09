@@ -257,3 +257,103 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 	_, err = os.Stat(expectedPath)
 	assert.NoError(t, err, "Expected config file to exist at %s", expectedPath)
 }
+
+func TestGetEnvCredentials(t *testing.T) {
+	t.Run("prefers DATAROBOT_ENDPOINT over DATAROBOT_API_ENDPOINT", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "https://primary.example.com")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "https://fallback.example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "https://primary.example.com", creds.Endpoint)
+		assert.Equal(t, "test-token", creds.Token)
+	})
+
+	t.Run("falls back to DATAROBOT_API_ENDPOINT", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "https://fallback.example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "https://fallback.example.com", creds.Endpoint)
+		assert.Equal(t, "test-token", creds.Token)
+	})
+
+	t.Run("returns empty when no env vars set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds := GetEnvCredentials()
+
+		assert.Empty(t, creds.Endpoint)
+		assert.Empty(t, creds.Token)
+	})
+}
+
+func TestVerifyEnvCredentials(t *testing.T) {
+	t.Run("returns error when env vars not set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.NotNil(t, creds)
+	})
+
+	t.Run("returns error when only endpoint set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "https://example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, "https://example.com", creds.Endpoint)
+	})
+
+	t.Run("returns error when only token set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "some-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, "some-token", creds.Token)
+	})
+
+	t.Run("returns error for invalid token", func(t *testing.T) {
+		server, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "invalid-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
+	})
+
+	t.Run("returns nil error for valid credentials", func(t *testing.T) {
+		server, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.NoError(t, err)
+		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
+		assert.Equal(t, "valid-token", creds.Token)
+	})
+}

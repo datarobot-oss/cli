@@ -201,7 +201,7 @@ $ dr <Tab>
 auth       completion dotenv     run        templates  version
 
 $ dr auth <Tab>
-login      logout     set-url
+check      login      logout     set-url
 
 $ dr templates <Tab>
 clone      list       setup      status
@@ -379,7 +379,7 @@ Completions are context-aware:
 ```bash
 # Only shows valid subcommands
 dr auth <Tab>
-# Shows: login logout set-url (not other commands)
+# Shows: check login logout set-url (not other commands)
 
 # Only shows valid flags
 dr run --l<Tab>

@@ -37,6 +37,42 @@ import (
 // This can be overridden in tests to mock the browser-based authentication flow.
 var APIKeyCallbackFunc = WaitForAPIKeyCallback
 
+// ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
+var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
+
+// EnvCredentials holds environment variable authentication credentials.
+type EnvCredentials struct {
+	Endpoint string
+	Token    string
+}
+
+// GetEnvCredentials reads DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from environment.
+// Falls back to DATAROBOT_API_ENDPOINT if DATAROBOT_ENDPOINT is not set.
+func GetEnvCredentials() EnvCredentials {
+	endpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("DATAROBOT_API_ENDPOINT")
+	}
+
+	return EnvCredentials{
+		Endpoint: endpoint,
+		Token:    os.Getenv("DATAROBOT_API_TOKEN"),
+	}
+}
+
+// VerifyEnvCredentials checks if environment variable credentials are valid.
+// Returns credentials and nil error if valid, credentials and error otherwise.
+func VerifyEnvCredentials() (*EnvCredentials, error) {
+	creds := GetEnvCredentials()
+	if creds.Endpoint == "" || creds.Token == "" {
+		return &creds, ErrEnvCredentialsNotSet
+	}
+
+	err := config.VerifyToken(creds.Endpoint, creds.Token)
+
+	return &creds, err
+}
+
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns an error if authentication
 // fails, suitable for use in Cobra PreRunE hooks.
@@ -59,16 +95,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	}
 
 	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
-	envEndpoint := os.Getenv("DATAROBOT_ENDPOINT")
-	envToken := os.Getenv("DATAROBOT_API_TOKEN")
-
-	if envEndpoint == "" {
-		if apiEndpoint := os.Getenv("DATAROBOT_API_ENDPOINT"); apiEndpoint != "" {
-			envEndpoint = apiEndpoint
-		}
-	}
-
-	envErr := config.VerifyToken(envEndpoint, envToken)
+	creds, envErr := VerifyEnvCredentials()
 	if envErr == nil {
 		// Now map other environment variables to config keys
 		// such as those used by the DataRobot platform or other SDKs
@@ -95,7 +122,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	skipAuthFlow := false
 
 	if errors.Is(envErr, context.DeadlineExceeded) {
-		envDatarobotHost, _ := config.SchemeHostOnly(envEndpoint)
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
 
 		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
 		fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
@@ -103,7 +130,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
 
 		skipAuthFlow = true
-	} else if envToken != "" {
+	} else if creds.Token != "" {
 		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
 		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
 		fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
