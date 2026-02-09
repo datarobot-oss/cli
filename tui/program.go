@@ -1,36 +1,20 @@
 package tui
 
 import (
-	"fmt"
-	"os"
-
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/log"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/log"
 )
 
-// DebugLogFile is the filename for TUI debug logs
-const DebugLogFile = "dr-tui-debug.log"
-
 // Run is a wrapper for tea.NewProgram and (p *Program) Run()
-// Configures debug logging for the TUI if debug mode is enabled
+// Disables stderr logging while bubbletea program is running
 // Wraps a model in NewInterruptibleModel
 func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
-	if viper.GetBool("debug") {
-		f, err := tea.LogToFile(DebugLogFile, "debug")
-		if err != nil {
-			fmt.Println("fatal:", err)
-			os.Exit(1)
-		}
+	// Pause stderr logger to prevent breaking of bubbletea program output
+	log.StopStderr()
 
-		log.SetStyles(DebugLogStyles)
-		log.SetOutput(f)
-
-		defer f.Close()
-	}
+	defer log.StartStderr()
 
 	p := tea.NewProgram(NewInterruptibleModel(model), opts...)
-
 	finalModel, err := p.Run()
 
 	return finalModel, err

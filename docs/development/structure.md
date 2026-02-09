@@ -153,7 +153,8 @@ func init() {
 
 ### TUI models
 
-TUI components use the Bubble Tea framework and are executed using the `tui.Run` wrapper, which handles `Ctrl-C` signals and debug logging:
+TUI components use the Bubble Tea framework and are executed using the `tui.Run` wrapper,
+which handles `Ctrl-C` signals and pauses stderr logging (but not `dr-tui-debug.log`) while program is running:
 
 ```go
 // cmd/example/model.go

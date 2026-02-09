@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 )
 

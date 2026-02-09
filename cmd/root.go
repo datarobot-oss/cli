@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
@@ -34,6 +33,7 @@ import (
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
@@ -68,19 +68,13 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		// PersistentPreRunE is a hook called after flags are parsed
 		// but before the command is run. Any logic that needs to happen
 		// before ANY command execution should go here.
-		useDebug, _ := cmd.Flags().GetBool("debug")
-		useVerbose, _ := cmd.Flags().GetBool("verbose")
-		// Debug takes precedence
-		if useDebug {
-			setLogLevel(log.DebugLevel)
-		} else if useVerbose {
-			setLogLevel(log.InfoLevel)
-		}
+
+		log.Start()
+
 		return initializeConfig(cmd)
 	},
-	PostRun: func(_ *cobra.Command, _ []string) {
-		// Always reset log level from config in case it was altered with CLI args '--verbose' or '--debug'
-		setLogLevelFromConfig()
+	PersistentPostRun: func(_ *cobra.Command, _ []string) {
+		log.Stop()
 	},
 }
 
@@ -119,8 +113,6 @@ func init() {
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
-
-	setLogLevelFromConfig()
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
@@ -208,20 +200,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	}
 
 	return nil
-}
-
-func setLogLevel(level log.Level) {
-	log.SetLevel(level)
-}
-
-func setLogLevelFromConfig() {
-	if viper.GetBool("debug") {
-		log.SetLevel(log.DebugLevel)
-	} else if viper.GetBool("verbose") {
-		log.SetLevel(log.InfoLevel)
-	} else {
-		log.SetLevel(log.WarnLevel)
-	}
 }
 
 // registerPluginCommands discovers and registers plugin commands

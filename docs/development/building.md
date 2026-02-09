@@ -328,7 +328,7 @@ func good() {
 
 Consider the following when building terminal user interfaces.
 
-1. **Always use the `tui.Run` wrapper to execute TUI models**. This ensures global `Ctrl-C` handling and sets up debug logging to `dr-tui-debug.log` when the `--debug` flag is enabled.
+1. **Always use the `tui.Run` wrapper to execute TUI models**. This ensures global `Ctrl-C` handling and sets up logging to `dr-tui-debug.log`.
 
    ```go
    import "github.com/datarobot/cli/tui"
@@ -597,18 +597,18 @@ task build
 
 When you enable debug mode, the CLI:
 
-- Prints detailed log messages to stderr.
-- Creates a `dr-tui-debug.log` file in the current directory for TUI-related debug information.
+- Prints detailed log messages to stderr and `dr-tui-debug.log` file in the current directory.
 
 When adding new debug output:
 
-- Prefer TUI debug logging via `tui.Run()` so logs go to `dr-tui-debug.log` whenever possible.
 - Never log user-provided input (including prompt responses), and avoid logging secrets (tokens, passwords, etc.).
 
 ### Add debug statements
 
 ```go
-import "github.com/charmbracelet/log"
+import (
+	"github.com/datarobot/cli/internal/log"
+)
 
 // Debug logging
 log.Debug("Variable value", "key", value)
