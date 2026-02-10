@@ -40,9 +40,6 @@ tmp
 coverage.txt
 coverage.html
 
-# Tea
-dr-tui-debug.log
-
 # MkDocs
 docs/dev-docs/
 docs/.venv/

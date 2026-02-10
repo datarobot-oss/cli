@@ -213,7 +213,7 @@ dr --debug templates list
 
 When you enable debug mode, the CLI:
 - Prints detailed log messages to stderr.
-- Creates a `dr-tui-debug.log` file in the current directory for terminal UI debug information.
+- Creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
 
 ## Configuration examples
 

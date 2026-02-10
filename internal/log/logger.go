@@ -15,8 +15,10 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/viper"
@@ -24,8 +26,8 @@ import (
 
 const logLevelWidth = 5
 
-// logFile is the filename for logs
-const logFile = "dr-tui-debug.log"
+// logFileName is the filename for logs
+const logFileName = ".dr-tui-debug.log"
 
 // logStyles customizes the log styles for logging
 var logStyles *log.Styles
@@ -79,7 +81,13 @@ func StopStderr() {
 
 // StartFile starts file logger.
 func StartFile() {
-	var err error
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = os.TempDir()
+		fmt.Println("Cannot get home directory, creating log file in", homeDir, "instead.")
+	}
+
+	logFile := filepath.Join(homeDir, logFileName)
 
 	fileWriter, err = os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
