@@ -59,7 +59,7 @@ The `manifest.json` inside each package defines platform-specific executables:
   "name": "apps",
   "version": "1.0.0",
   "description": "Host custom applications in DataRobot",
-  "minCLIVersion": "0.2.0",
+  "cliVersion": "0.2.0",
   "scripts": {
     "posix": "scripts/dr-apps.sh",
     "windows": "scripts/dr-apps.ps1"
