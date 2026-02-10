@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
@@ -32,6 +33,32 @@ import (
 func checkCLICredentials() bool {
 	allValid := true
 
+	// Check environment variables first (same pattern as EnsureAuthenticated)
+	creds, err := auth.VerifyEnvCredentials()
+	if err == nil {
+		fmt.Println(tui.BaseTextStyle.Render("✅ Environment variable authentication is valid."))
+
+		return true
+	}
+
+	// If env vars were set but invalid, report the error
+	if !errors.Is(err, auth.ErrEnvCredentialsNotSet) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
+			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+
+			return false
+		}
+
+		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
+
+		return false
+	}
+
+	// Fall back to config file credentials
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
@@ -42,7 +69,7 @@ func checkCLICredentials() bool {
 		allValid = false
 	}
 
-	_, err := config.GetAPIKey()
+	_, err = config.GetAPIKey()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
