@@ -95,7 +95,7 @@ func StartFile() {
 		return
 	}
 
-	fileLogger = log.New(fileWriter)
+	fileLogger = log.NewWithOptions(fileWriter, log.Options{ReportTimestamp: true})
 	fileLogger.SetStyles(logStyles)
 	fileLogger.SetLevel(level)
 }
