@@ -25,8 +25,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/viper"
 )
 
@@ -205,7 +207,7 @@ func errMissingManifestField(field string) error {
 	return errors.New("plugin manifest missing required field: " + field)
 }
 
-func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) { //nolint: cyclop
 	plugins := make([]DiscoveredPlugin, 0)
 
 	var errors []error
@@ -242,7 +244,6 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 		manifest, err := getManifest(fullPath)
 		if err != nil {
 			errors = append(errors, err)
-
 			continue
 		}
 
@@ -251,6 +252,21 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 			log.Warn("Plugin name already registered, skipping",
 				"name", manifest.Name,
 				"path", fullPath)
+
+			continue
+		}
+
+		compatible, err := compatibleCLIVersion(version.Version, manifest.CLIVersion)
+		if err != nil {
+			log.Warn("Cannot parse cli version constraint for plugin",
+				"name", manifest.Name,
+				"installed", version.Version,
+				"constraint", manifest.CLIVersion)
+		} else if !compatible {
+			log.Warn("Plugin is incompatible with DataRobot CLI version",
+				"name", manifest.Name,
+				"installed", version.Version,
+				"constraint", manifest.CLIVersion)
 
 			continue
 		}
@@ -298,4 +314,23 @@ func getManifest(executable string) (*PluginManifest, error) {
 	// TODO: Validate manifest.Name against a pattern (alphanumeric + hyphens) to prevent confusing command names
 
 	return &manifest, nil
+}
+
+func compatibleCLIVersion(cliVersion, constraint string) (bool, error) {
+	if cliVersion == "dev" || constraint == "" {
+		return true, nil
+	}
+
+	c, err := semver.NewConstraint(constraint)
+	if err != nil {
+		return false, err
+	}
+
+	v, err := semver.NewVersion(cliVersion)
+	if err != nil {
+		return false, err
+	}
+
+	// Check if the version meets the constraints.
+	return c.Check(v), nil
 }
