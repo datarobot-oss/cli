@@ -16,19 +16,20 @@ package reader
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/muesli/cancelreader"
+	"github.com/dolmen-go/contextio"
 )
 
 func ReadString() (string, error) {
-	cr, err := cancelreader.NewReader(os.Stdin)
-	if err != nil {
-		return "", err
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cr := contextio.NewReader(ctx, os.Stdin)
 
 	cancelChan := make(chan os.Signal, 1)
 	defer close(cancelChan)
@@ -38,7 +39,7 @@ func ReadString() (string, error) {
 
 	go func() {
 		<-cancelChan
-		cr.Cancel()
+		cancel()
 	}()
 
 	reader := bufio.NewReader(cr)
