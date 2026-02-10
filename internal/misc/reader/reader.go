@@ -21,7 +21,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/muesli/cancelreader"
+	"github.com/ross96D/cancelreader"
 )
 
 func ReadString() (string, error) {
