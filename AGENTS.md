@@ -62,7 +62,7 @@ func example() {
 - Always wrap new TUI models with the InterruptibleModel from the `tui` package to ensure global Ctrl-C handling
 - Reuse existing TUI components from `tui` package or Bubbles library (https://github.com/charmbracelet/bubbles)
 - Use styles from `tui/styles.go` for consistency
-- When `--debug` is enabled, logs are written to `dr-tui-debug.log`
+- When `--debug` is enabled, logs are written to `.dr-tui-debug.log`
 
 ## Quality Tools
 
