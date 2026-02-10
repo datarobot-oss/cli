@@ -19,12 +19,32 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/muesli/cancelreader"
 )
 
 func ReadString() (string, error) {
+	if runtime.GOOS == "windows" {
+		return ReadStringPlain()
+	}
+
+	return ReadStringCancellable()
+}
+
+func ReadStringPlain() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	str, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println()
+	}
+
+	return str, err
+}
+
+func ReadStringCancellable() (string, error) {
 	cr, err := cancelreader.NewReader(os.Stdin)
 	if err != nil {
 		return "", err
