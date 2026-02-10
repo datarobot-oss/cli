@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: '1.25.7'
 
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
@@ -54,7 +54,7 @@ jobs:
     needs: security-scan
     uses: ./.github/workflows/.build-windows.yaml
     with:
-      go-version: '1.25.6'
+      go-version: '1.25.7'
       artifact-name: 'dr-windows-fork'
       ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
@@ -85,7 +85,7 @@ jobs:
     needs: security-scan
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
-      go-version: '1.25.6'
+      go-version: '1.25.7'
       ref: ${{ github.event.pull_request.head.sha }}
     secrets: inherit
     # Require manual approval via GitHub environment

@@ -55,7 +55,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: '1.25.7'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -93,7 +93,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: '1.25.7'
 
       - name: Install Taskfile
         uses: arduino/setup-task@v2
@@ -154,7 +154,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: '1.25.7'
 
       - name: Install Envdoc
         run: |
@@ -174,7 +174,7 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     uses: ./.github/workflows/.build-matrix.yaml
     with:
-      go-version: '1.25.6'
+      go-version: '1.25.7'
       upload-artifact: true
       artifact-name-prefix: 'dr'
     secrets: inherit
