@@ -4,7 +4,7 @@ This page outlines how to set up your development environment to build and devel
 
 ## Prerequisites
 
-- [Go 1.25.6](https://golang.org/dl/)
+- [Go 1.25.7](https://golang.org/dl/)
 - Git for version control
 - [Task](https://taskfile.dev/installation/) (A task runner)
 

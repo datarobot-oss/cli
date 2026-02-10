@@ -12,7 +12,7 @@ on:
         description: 'Go version to use'
         required: false
         type: string
-        default: '1.25.6'
+        default: '1.25.7'
       upload-artifact:
         description: 'Whether to upload artifacts'
         required: false
