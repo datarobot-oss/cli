@@ -250,7 +250,7 @@ prompts:
 
 ## Conditional prompts
 
-Prompts can be shown or hidden based on previous selections using the `requires` and `section` fields.
+Prompts can be shown or hidden based on previous selections using the `requires` fields.
 
 ### Section-based conditions
 
@@ -266,8 +266,8 @@ prompts:
       - name: "No"
         value: "no"
 
+database_config:  # Only shown if enabled
   - key: "database_type"
-    section: "database_config"  # Only shown if enabled
     help: "Select database type"
     options:
       - name: "PostgreSQL"
@@ -275,9 +275,7 @@ prompts:
       - name: "MySQL"
         value: "mysql"
 
-  - key: "database_url"
-    section: "database_config"  # Only shown if enabled
-    env: "DATABASE_URL"
+  - env: "DATABASE_URL"
     help: "Enter database connection string"
 ```
 
@@ -286,7 +284,7 @@ prompts:
 1. Initial state: All sections start as disabled
 2. User selection: When you select an option with `requires: "section_name"`
 3. Section activation: That section becomes enabled
-4. Prompt display: Prompts with matching `section: "section_name"` are shown
+4. Prompt display: Prompts in matching `section_name:` are shown
 5. Cascade: Newly shown prompts can activate additional sections
 
 ### Example flow
@@ -318,7 +316,7 @@ func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
     // 1. Recursively find all .datarobot directories
     // 2. Load prompts.yaml from each directory
     // 3. Parse and validate prompt definitions
-    // 4. Build dependency graph (sections and requires)
+    // 4. Build dependency graph (requires: "section")
     // 5. Return ordered prompts with root sections
 }
 ```
@@ -343,16 +341,14 @@ my-template/
 Each `prompts.yaml`:
 
 ```yaml
-prompts:
-  - key: "unique_key"
-    env: "ENV_VAR_NAME"      # Optional: Environment variable to set
+section_name: # Optional: Only show if section enabled
+  - env: "ENV_VAR_NAME"      # Optional: Environment variable to set
     type: "secret_string"     # Optional: "string" (default) or "secret_string"
     help: "Help text shown to user"
     default: "default value"  # Optional
     optional: false           # Optional: Can be skipped
     multiple: false           # Optional: Allow multiple selections
     generate: false           # Optional: Auto-generate random value (secret_string only)
-    section: "section_name"   # Optional: Only show if section enabled
     options:                  # Optional: List of choices
       - name: "Display Name"
         value: "actual_value"
@@ -571,9 +567,8 @@ prompts:
         value: "database"
         requires: "db_config"
 
-  - key: "auth_provider"
-    section: "auth_config"
-    env: "AUTH_PROVIDER"
+auth_config:
+  - env: "AUTH_PROVIDER"
     help: "Select authentication provider"
     options:
       - name: "OAuth2"
@@ -581,9 +576,8 @@ prompts:
       - name: "SAML"
         value: "saml"
 
-  - key: "database_url"
-    section: "db_config"
-    env: "DATABASE_URL"
+db_config:
+  - env: "DATABASE_URL"
     help: "Enter database connection string"
     default: "postgresql://localhost:5432/myapp"
 ```
@@ -637,14 +631,15 @@ default: "postgresql://localhost:5432/myapp"
 
 ```yaml
 # Group related prompts
-- key: "enable_monitoring"
-  options:
-    - name: "Yes"
-      requires: "monitoring_config"
+prompts:
+  - key: "enable_monitoring"
+    options:
+      - name: "Yes"
+        requires: "monitoring_config"
 
-- key: "monitoring_url"
-  section: "monitoring_config"
-  help: "Monitoring service URL"
+monitoring_config:
+  - env: "monitoring_url"
+    help: "Monitoring service URL"
 ```
 
 ### 4. Use descriptive keys

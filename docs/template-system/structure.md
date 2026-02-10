@@ -302,17 +302,15 @@ The CLI discovers prompts in this order:
 `backend/.datarobot/prompts.yaml`:
 
 ```yaml
-prompts:
+backend:
   - key: "api_port"
     env: "API_PORT"
     help: "Backend API port"
     default: "8000"
-    section: "backend"
 
   - key: "database_url"
     env: "DATABASE_URL"
     help: "Database connection string"
-    section: "backend"
 ```
 
 ### Example: frontend prompts
@@ -320,18 +318,16 @@ prompts:
 `frontend/.datarobot/prompts.yaml`:
 
 ```yaml
-prompts:
+frontend:
   - key: "ui_port"
     env: "UI_PORT"
     help: "Frontend UI port"
     default: "3000"
-    section: "frontend"
 
   - key: "api_endpoint"
     env: "API_ENDPOINT"
     help: "Backend API endpoint"
     default: "http://localhost:8000"
-    section: "frontend"
 ```
 
 ## Template lifecycle

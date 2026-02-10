@@ -146,9 +146,8 @@ prompts:
         requires: "database_config"
       - name: "No"
 
-  - key: "database_url"
-    section: "database_config"
-    env: "DATABASE_URL"
+database_config:
+  - env: "DATABASE_URL"
     help: "Database connection string"
 ```
 
