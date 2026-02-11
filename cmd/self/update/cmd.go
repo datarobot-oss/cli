@@ -18,8 +18,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/tools"
@@ -94,11 +97,16 @@ with your default shell.
 				return err
 			}
 
-			var command string
+			var (
+				command    string
+				executable string
+				backup     string
+			)
 
 			switch runtime.GOOS {
 			case "windows":
 				command = "irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex"
+				executable, backup = backupExecutable()
 			case "darwin", "linux":
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
 			default:
@@ -111,7 +119,16 @@ with your default shell.
 			execCmd.Stderr = os.Stderr
 
 			if err := execCmd.Run(); err != nil {
-				log.Fatalf("Command execution failed: %v", err)
+				if runtime.GOOS == "windows" {
+					// rename back if update failed
+					err = os.Rename(backup, executable)
+					if err != nil {
+						log.Errorf("Could not revert executable from backup: %s\n", backup)
+					}
+				}
+
+				log.Fatalf("Command execution failed: %v\n", err)
+
 				return err
 			}
 
@@ -122,4 +139,31 @@ with your default shell.
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update to latest version")
 
 	return cmd
+}
+
+func backupExecutable() (string, string) {
+	executable, err := os.Executable()
+	if err != nil {
+		log.Fatal("Could not determine current executable\n")
+	}
+
+	dir, file := filepath.Split(executable)
+	ext := filepath.Ext(file)
+	name := strings.TrimSuffix(file, ext)
+
+	backup := filepath.Join(dir, name+"_"+version.Version+ext)
+
+	if fsutil.FileExists(backup) {
+		err = os.Remove(backup)
+		if err != nil {
+			log.Fatalf("Could not remove old backup executable: %s\n", backup)
+		}
+	}
+
+	err = os.Rename(executable, backup)
+	if err != nil {
+		log.Fatalf("Could not backup current executable\n")
+	}
+
+	return executable, backup
 }
