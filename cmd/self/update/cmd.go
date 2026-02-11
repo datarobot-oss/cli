@@ -122,7 +122,7 @@ with your default shell.
 					// rename back if update failed
 					err = os.Rename(backup, executable)
 					if err != nil {
-						log.Fatal("Could not revert executable from backup\n")
+						log.Fatalf("Could not revert executable from backup: %s\n", backup)
 					}
 				}
 
