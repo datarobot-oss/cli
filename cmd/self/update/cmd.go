@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/tools"
@@ -122,7 +123,7 @@ with your default shell.
 					// rename back if update failed
 					err = os.Rename(backup, executable)
 					if err != nil {
-						log.Fatalf("Could not revert executable from backup: %s\n", backup)
+						log.Errorf("Could not revert executable from backup: %s\n", backup)
 					}
 				}
 
@@ -152,9 +153,16 @@ func backupExecutable() (string, string) {
 
 	backup := filepath.Join(dir, name+"_"+version.Version+ext)
 
+	if fsutil.FileExists(backup) {
+		err = os.Remove(backup)
+		if err != nil {
+			log.Fatalf("Could not remove old backup executable: %s\n", backup)
+		}
+	}
+
 	err = os.Rename(executable, backup)
 	if err != nil {
-		log.Fatal("Could not backup current executable\n")
+		log.Fatalf("Could not backup current executable\n")
 	}
 
 	return executable, backup
