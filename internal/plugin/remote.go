@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-
 	"github.com/codeclysm/extract/v4"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"

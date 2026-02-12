@@ -40,8 +40,8 @@ type BasicPluginManifest struct {
 // Embeds BasicPluginManifest and adds additional fields for managed plugins.
 type PluginManifest struct {
 	BasicPluginManifest
-	Scripts       *PluginScripts `json:"scripts,omitempty"`       // Platform-specific script paths
-	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
+	Scripts    *PluginScripts `json:"scripts,omitempty"`    // Platform-specific script paths
+	CLIVersion string         `json:"cliVersion,omitempty"` // Minimum CLI version required
 }
 
 // RegistryVersion represents a specific version in the plugin registry

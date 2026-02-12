@@ -30,7 +30,7 @@ Plugins are deduplicated by `manifest.name` (not by filename). If multiple binar
 
 ### Timeouts
 
-- Overall discovery is bounded by the global flag `--plugin-discovery-timeout` (default `2s`).
+- Overall discovery is bounded by the global flag `--plugin-discovery-timeout` (default `3s`).
   - Set to `0s` to disable plugin discovery entirely.
 - Manifest retrieval is bounded by `plugin.manifest_timeout_ms` (default `500ms`).
 
