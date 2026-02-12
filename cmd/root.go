@@ -204,6 +204,12 @@ func initializeConfig(cmd *cobra.Command) error {
 
 // registerPluginCommands discovers and registers plugin commands
 func registerPluginCommands() {
+	timeout := viper.GetDuration("plugin-discovery-timeout")
+	if timeout <= 0 {
+		log.Debug("Plugin discovery disabled", "timeout", timeout)
+		return
+	}
+
 	// Get list of builtin command names FIRST (before adding plugins)
 	builtinNames := make(map[string]bool)
 	for _, cmd := range RootCmd.Commands() {
@@ -222,12 +228,6 @@ func registerPluginCommands() {
 		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
 	}()
 
-	timeout := viper.GetDuration("plugin-discovery-timeout")
-	if timeout <= 0 {
-		log.Debug("Plugin discovery disabled", "timeout", timeout)
-		return
-	}
-
 	var plugins []internalPlugin.DiscoveredPlugin
 
 	select {
@@ -239,8 +239,9 @@ func registerPluginCommands() {
 
 		plugins = r.plugins
 	case <-time.After(timeout):
-		// TODO Log this at Info level since it affects user-visible behavior
-		log.Warn("Plugin discovery timed out", "timeout", timeout)
+		log.Info("Plugin discovery timed out", "timeout", timeout)
+		log.Info("Consider increasing timeout using --plugin-discovery-timeout flag")
+
 		return
 	}
 
