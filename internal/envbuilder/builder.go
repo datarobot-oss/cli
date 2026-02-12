@@ -45,15 +45,16 @@ type UserPrompt struct {
 	Value     string
 	Hidden    bool
 
-	Env      string         `yaml:"env"`
-	Key      string         `yaml:"key"`
-	Type     PromptType     `yaml:"type"`
-	Multiple bool           `yaml:"multiple"`
-	Options  []PromptOption `yaml:"options,omitempty"`
-	Default  string         `yaml:"default,omitempty"`
-	Help     string         `yaml:"help"`
-	Optional bool           `yaml:"optional,omitempty"`
-	Generate bool           `yaml:"generate,omitempty"`
+	Env       string         `yaml:"env"`
+	Key       string         `yaml:"key"`
+	Type      PromptType     `yaml:"type"`
+	Multiple  bool           `yaml:"multiple"`
+	Options   []PromptOption `yaml:"options,omitempty"`
+	Default   string         `yaml:"default,omitempty"`
+	Help      string         `yaml:"help"`
+	Optional  bool           `yaml:"optional,omitempty"`
+	Generate  bool           `yaml:"generate,omitempty"`
+	AlwaysAsk bool           `yaml:"always_ask,omitempty"`
 }
 
 type PromptOption struct {
@@ -138,8 +139,29 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
-func (up UserPrompt) ShouldAsk() bool {
-	return up.Active && !up.Hidden
+// ShouldAsk returns true if this prompt should be shown to the user.
+// Prompts with defaults are skipped unless AlwaysAsk is set or showAll is true.
+func (up UserPrompt) ShouldAsk(showAll bool) bool {
+	if !up.Active || up.Hidden {
+		return false
+	}
+
+	// If showAll flag is set, show all active non-hidden prompts
+	if showAll {
+		return true
+	}
+
+	// If prompt has always_ask: true, always show it
+	if up.AlwaysAsk {
+		return true
+	}
+
+	// Skip prompts that have a default and value equals default (not user-modified)
+	if up.Default != "" && up.Value == up.Default {
+		return false
+	}
+
+	return true
 }
 
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {

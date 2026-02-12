@@ -349,6 +349,7 @@ section_name: # Optional: Only show if section enabled
     optional: false           # Optional: Can be skipped
     multiple: false           # Optional: Allow multiple selections
     generate: false           # Optional: Auto-generate random value (secret_string only)
+    always_ask: false         # Optional: Always show prompt even if default is set
     options:                  # Optional: List of choices
       - name: "Display Name"
         value: "actual_value"
@@ -453,6 +454,23 @@ Application port
 
 Default: 8080
 ```
+
+**Note:** Prompts with default values are automatically skipped during the wizard unless the user modifies the value or the prompt has `always_ask: true` set. Use `dr dotenv setup --show-all-prompts` to force all prompts to be shown.
+
+### Always ask prompts
+
+To force a prompt to always be shown even when it has a default value:
+
+```yaml
+prompts:
+  - key: "port"
+    env: "PORT"
+    help: "Application port"
+    default: "8080"
+    always_ask: true  # Always prompt user even though default exists
+```
+
+This is useful for prompts where you want users to consciously confirm or change the default value.
 
 ### Secret values
 

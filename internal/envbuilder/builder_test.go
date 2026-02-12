@@ -194,3 +194,48 @@ root:
 	suite.Equal("A string type.\nWith a multiline help string.", prompts[0].Help)
 	suite.Equal("A secret string type", prompts[1].Help)
 }
+
+func (suite *BuilderTestSuite) TestShouldAsk_ActiveAndNotHidden() {
+	prompt := UserPrompt{Active: true, Hidden: false}
+	suite.True(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_NotActive() {
+	prompt := UserPrompt{Active: false, Hidden: false}
+	suite.False(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_Hidden() {
+	prompt := UserPrompt{Active: true, Hidden: true}
+	suite.False(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsPromptWithDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value"}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt when value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithModifiedValue() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "user_modified"}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when value differs from default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithoutDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "", Value: ""}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when no default is set")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_AlwaysAskOverridesDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value", AlwaysAsk: true}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when always_ask is true even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowAllOverridesDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value"}
+	suite.True(prompt.ShouldAsk(true), "Should show prompt when showAll is true even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowAllDoesNotOverrideHidden() {
+	prompt := UserPrompt{Active: true, Hidden: true, Default: "default_value", Value: "default_value"}
+	suite.False(prompt.ShouldAsk(true), "Should not show hidden prompts even when showAll is true")
+}

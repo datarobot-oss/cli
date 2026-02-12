@@ -62,6 +62,7 @@ type Model struct {
 	currentPromptIndex int
 	currentPrompt      promptModel
 	hasPrompts         *bool // Cache whether prompts are available
+	ShowAllPrompts     bool  // When true, show all prompts regardless of defaults
 }
 
 type (
@@ -181,7 +182,7 @@ func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
-		if m.prompts[m.currentPromptIndex].ShouldAsk() {
+		if m.prompts[m.currentPromptIndex].ShouldAsk(m.ShowAllPrompts) {
 			break
 		}
 
@@ -205,11 +206,12 @@ func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
 	// Get back to previous prompt that is required
 	for {
 		currentPromptIndex--
+
 		if currentPromptIndex < 0 {
 			return m, nil
 		}
 
-		if m.prompts[currentPromptIndex].ShouldAsk() {
+		if m.prompts[currentPromptIndex].ShouldAsk(m.ShowAllPrompts) {
 			break
 		}
 	}
