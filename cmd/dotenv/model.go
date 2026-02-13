@@ -314,6 +314,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case keyQuit:
 				return m, m.SuccessCmd
 			case keyInteractive:
+				// TODO Do we want to reload the prompts and
+				// set ShowAllPrompts to true?
 				return m, m.loadPrompts()
 			case keyEdit:
 				return m, openEditorCmd
