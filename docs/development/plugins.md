@@ -104,9 +104,9 @@ If your plugin needs to interact with the DataRobot API, set `"authentication": 
 
 ```json
 {
-  "name": "apps",
-  "version": "11.1.0",
-  "description": "Host custom applications in DataRobot",
+  "name": "assist",
+  "version": "0.1.6",
+  "description": "AI agent design, coding, and deployment assistant",
   "authentication": true
 }
 ```

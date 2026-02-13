@@ -60,8 +60,8 @@ func TestLivePluginRegistrySchema(t *testing.T) {
 
 					// URL can be absolute (with ://) or relative (without ://)
 					// Examples:
-					// - Absolute: https://cli.datarobot.com/plugins/dr-apps/dr-apps-1.0.0.tar.xz
-					// - Relative: dr-apps/dr-apps-1.0.0.tar.xz
+					// - Absolute: https://cli.datarobot.com/plugins/assist/assist-0.1.6.tar.xz
+					// - Relative: assist/assist-0.1.6.tar.xz
 					isAbsolute := strings.Contains(version.URL, "://")
 					isRelative := !isAbsolute && (strings.HasSuffix(version.URL, ".tar.xz") || strings.HasSuffix(version.URL, ".tar.gz"))
 

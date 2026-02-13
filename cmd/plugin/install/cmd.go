@@ -44,11 +44,10 @@ Use --version to specify a version constraint:
   - Tilde (patch-level): ~1.2.3 (any 1.2.x >= 1.2.3)
   - Minimum: >=1.0.0
   - Latest: latest (default)`,
-		Example: `  dr plugin install apps
-  dr plugin install apps
-  dr plugin install apps --version 1.0.0
-  dr plugin install apps --version "^1.0.0"
-  dr plugin install apps --versions
+		Example: `  dr plugin install assist
+  dr plugin install assist --version 0.1.6
+  dr plugin install assist --version "^0.1.0"
+  dr plugin install assist --versions
   dr plugin install --list`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runInstall,

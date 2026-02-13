@@ -36,7 +36,7 @@ func Cmd() *cobra.Command {
 		Long: `Update an installed plugin to the latest available version.
 
 If no plugin name is provided with --all, checks all installed plugins for updates.`,
-		Example: `  dr plugin update apps
+		Example: `  dr plugin update assist
   dr plugin update --all`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runUpdate,

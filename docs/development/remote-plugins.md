@@ -20,16 +20,15 @@ A minimal JSON schema pointing to plugin archives:
 {
   "version": "1",
   "plugins": {
-    "apps": {
-      "name": "apps",
-      "description": "Host custom applications in DataRobot",
-      "repository": "https://github.com/datarobot/dr-apps",
+    "assist": {
+      "name": "assist",
+      "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
-          "version": "1.0.0",
-          "url": "dr-apps/dr-apps-1.0.0.tar.xz",
+          "version": "0.1.6",
+          "url": "assist/assist-0.1.6.tar.xz",
           "sha256": "...",
-          "releaseDate": "2026-01-27"
+          "releaseDate": "2026-02-11"
         }
       ]
     }
@@ -37,7 +36,7 @@ A minimal JSON schema pointing to plugin archives:
 }
 ```
 
-**Note**: URLs can be relative (e.g., `dr-apps/dr-apps-1.0.0.tar.xz`) or absolute (e.g., `https://example.com/plugins/dr-apps-1.0.0.tar.xz`). Relative URLs are resolved against the base URL of the registry. This enables the same registry to work with both local development servers and production CDNs.
+**Note**: URLs can be relative (e.g., `assist/assist-0.1.6.tar.xz`) or absolute (e.g., `https://example.com/plugins/assist-0.1.6.tar.xz`). Relative URLs are resolved against the base URL of the registry. This enables the same registry to work with both local development servers and production CDNs.
 
 ### Plugin package structure
 
@@ -56,13 +55,13 @@ The `manifest.json` inside each package defines platform-specific executables:
 
 ```json
 {
-  "name": "apps",
-  "version": "1.0.0",
-  "description": "Host custom applications in DataRobot",
+  "name": "assist",
+  "version": "0.1.6",
+  "description": "AI agent design, coding, and deployment assistant",
   "minCLIVersion": "0.2.0",
   "scripts": {
-    "posix": "scripts/dr-apps.sh",
-    "windows": "scripts/dr-apps.ps1"
+    "posix": "scripts/dr-assist.sh",
+    "windows": "scripts/dr-assist.ps1"
   }
 }
 ```
@@ -75,11 +74,11 @@ The `manifest.json` inside each package defines platform-specific executables:
 - Support plugin names, semver versions, descriptions, and download URLs
 - Include SHA256 checksums per artifact for verification
 
-### 2. Build dr-apps plugin package (PoC)
+### 2. Build plugin package
 
 - Create wrapper scripts:
-  - `dr-apps.sh` (Posix): Executes `uv run --with drapps drapps "$@"`
-  - `dr-apps.ps1` (Windows): PowerShell equivalent
+  - `dr-<name>.sh` (Posix): Executes `uv run --with <package> <command> "$@"`
+  - `dr-<name>.ps1` (Windows): PowerShell equivalent
 - Package with `manifest.json` defining platform script mappings
 - Create `.tar.xz` archive and publish to `docs/plugins/<plugin>/`
 
@@ -126,12 +125,12 @@ Version constraints supported:
 ```
 ~/.config/datarobot/
   plugins/
-    apps/                    # Managed plugin directory
+    assist/                  # Managed plugin directory
       manifest.json          # Plugin manifest
       .installed.json        # Installation metadata
       scripts/
-        dr-apps.sh
-        dr-apps.ps1
+        dr-assist.sh
+        dr-assist.ps1
 ```
 
 ## Plugin execution
@@ -161,10 +160,6 @@ This pattern:
 | File | Purpose |
 |------|---------|
 | `docs/plugins/index.json` | Remote plugin registry |
-| `docs/plugins/dr-apps/manifest.json` | Plugin manifest |
-| `docs/plugins/dr-apps/scripts/dr-apps.sh` | Posix wrapper |
-| `docs/plugins/dr-apps/scripts/dr-apps.ps1` | Windows wrapper |
-| `docs/plugins/dr-apps/dr-apps-1.0.0.tar.xz` | Packaged plugin archive |
 | `cmd/plugin/install/cmd.go` | Install command |
 | `cmd/plugin/uninstall/cmd.go` | Uninstall command |
 | `cmd/plugin/update/cmd.go` | Update command |
@@ -190,17 +185,17 @@ dr plugin install --list
 dr plugin install --list --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Install a plugin
-dr plugin install apps
-dr plugin install apps --version 1.0.0
-dr plugin install apps --version "^1.0.0"
-dr plugin install apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install assist
+dr plugin install assist --version 0.1.6
+dr plugin install assist --version "^0.1.0"
+dr plugin install assist --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # Update plugins
-dr plugin update apps
+dr plugin update assist
 dr plugin update --all
 
 # Uninstall a plugin
-dr plugin uninstall apps
+dr plugin uninstall assist
 
 # List installed plugins
 dr plugin list
