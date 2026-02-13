@@ -16,10 +16,12 @@ package dotenv
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +29,19 @@ import (
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
 )
+
+func timingEnabled() bool {
+	return os.Getenv("GITHUB_ACTIONS") != "" || os.Getenv("DR_TIMING") != ""
+}
+
+func timingf(format string, args ...any) {
+	if !timingEnabled() {
+		return
+	}
+
+	tp := time.Now().UTC().Format(time.RFC3339)
+	fmt.Fprintf(os.Stderr, "[%s] TIMING dotenv: %s\n", tp, fmt.Sprintf(format, args...))
+}
 
 const (
 	// Key bindings
@@ -158,10 +173,14 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
+		start := time.Now()
+
 		userPrompts, err := envbuilder.GatherUserPrompts(currentDir, m.variables)
 		if err != nil {
 			return errMsg{err}
 		}
+
+		timingf("loadPrompts dir=%s prompts=%d duration=%s", currentDir, len(userPrompts), time.Since(start))
 
 		return promptsLoadedMsg{userPrompts}
 	}
@@ -341,13 +360,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			}
 		case promptFinishedMsg:
 			if m.currentPromptIndex < len(m.prompts) {
+				promptEnv := m.prompts[m.currentPromptIndex].Env
+				start := time.Now()
+
 				values := m.currentPrompt.Values
 				m.prompts[m.currentPromptIndex].Value = strings.Join(values, ",")
 				m.prompts[m.currentPromptIndex].Commented = false
 
 				m.currentPromptIndex++
+				model, cmd := m.moveToNextPrompt()
+				timingf(
+					"advance from=%s index=%d/%d duration=%s",
+					promptEnv,
+					m.currentPromptIndex,
+					len(m.prompts),
+					time.Since(start),
+				)
 
-				return m.moveToNextPrompt()
+				return model, cmd
 			}
 
 			m.screen = listScreen

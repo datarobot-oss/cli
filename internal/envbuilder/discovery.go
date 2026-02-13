@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/log"
 )
@@ -50,9 +51,15 @@ func Discover(root string, maxDepth int) ([]string, error) {
 // findComponents looks for the *.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given .datarobot directory,
 // and returns discovered components
 func findComponents(root string, maxDepth int) ([]string, error) {
+	start := time.Now()
+	walked := 0
+	globMatches := 0
+
 	var includes []string
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		walked++
+
 		if err != nil {
 			log.Debug(err)
 			return nil
@@ -85,6 +92,8 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 			return nil
 		}
 
+		globMatches += len(matches)
+
 		includes = append(includes, matches...)
 
 		return nil
@@ -94,6 +103,16 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 	sort.Slice(includes, func(i, j int) bool {
 		return includes[i] < includes[j]
 	})
+
+	timingf(
+		"Discover root=%s maxDepth=%d walked=%d matches=%d includes=%d duration=%s",
+		root,
+		maxDepth,
+		walked,
+		globMatches,
+		len(includes),
+		time.Since(start),
+	)
 
 	return includes, err
 }
