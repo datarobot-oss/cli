@@ -165,7 +165,7 @@ This wizard will help you:
 
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
-	SetupCmd.Flags().Bool("show-all-prompts", false, "Show all prompts including those with default values already set.")
+	SetupCmd.Flags().BoolP("show-all-prompts", "a", false, "Show all prompts including those with default values already set.")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
