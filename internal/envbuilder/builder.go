@@ -37,25 +37,40 @@ func (pt PromptType) String() string {
 	return string(pt)
 }
 
+// UserPrompt represents a configuration prompt that can be displayed to users
+// during the dotenv setup wizard. Prompts are defined in YAML files within the .datarobot
+// directory of a given template.
 type UserPrompt struct {
-	Section   string
-	Root      bool
-	Active    bool
+	Section string
+	Root bool
+	// Active indicates if this prompt should be processed (based on conditional logic).
+	Active bool
+	// Commented indicates if the variable should be commented out in the .env file.
 	Commented bool
-	Value     string
-	Hidden    bool
+	// Value is the current value for this prompt (from .env, environment, or user input).
+	Value string
+	// Hidden indicates if this prompt should never be shown to users (e.g., core variables).
+	Hidden bool
 
-	Env      string         `yaml:"env"`
-	Key      string         `yaml:"key"`
-	Type     PromptType     `yaml:"type"`
-	Multiple bool           `yaml:"multiple"`
-	Options  []PromptOption `yaml:"options,omitempty"`
+	// Env is the environment variable name to set (e.g., "DATABASE_URL").
+	Env string `yaml:"env"`
+	// Key is an alternative identifier when Env is not set (written as comment).
+	Key string `yaml:"key"`
+	// Type is the prompt type: "string" (default) or "secret_string" (masked input).
+	Type PromptType `yaml:"type"`
+	// Multiple allows selecting multiple options (checkbox-style) when Options is set.
+	Multiple bool `yaml:"multiple"`
+	// Options provides a list of choices for selection-style prompts.
+	Options []PromptOption `yaml:"options,omitempty"`
 	// Default is the initial value for this prompt. Prompts with defaults are
 	// skipped during the wizard unless the value differs or AlwaysPrompt is set.
-	Default  string `yaml:"default,omitempty"`
-	Help     string `yaml:"help"`
-	Optional bool   `yaml:"optional,omitempty"`
-	Generate bool   `yaml:"generate,omitempty"`
+	Default string `yaml:"default,omitempty"`
+	// Help is the description text shown to users when prompting for input.
+	Help string `yaml:"help"`
+	// Optional allows the prompt to be skipped without providing a value.
+	Optional bool `yaml:"optional,omitempty"`
+	// Generate auto-generates a cryptographic random value for secret_string types.
+	Generate bool `yaml:"generate,omitempty"`
 	// AlwaysPrompt forces the prompt to be shown even when a default value is set.
 	// Use this for prompts where users should consciously confirm or change the default.
 	AlwaysPrompt bool `yaml:"always_prompt,omitempty"`
