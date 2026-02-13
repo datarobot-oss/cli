@@ -195,6 +195,47 @@ root:
 	suite.Equal("A secret string type", prompts[1].Help)
 }
 
+func (suite *BuilderTestSuite) TestAlwaysAskYAMLParsing() {
+	yamlContent := `
+root:
+  - env: PORT
+    type: string
+    default: "8080"
+    help: Application port
+    always_ask: true
+  - env: DEBUG
+    type: string
+    default: "false"
+    help: Enable debug mode
+  - env: LOG_LEVEL
+    type: string
+    default: "info"
+    help: Log level
+    always_ask: false
+`
+
+	// Create a temporary YAML file
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_always_ask.yaml")
+	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
+	suite.Require().NoError(err)
+
+	// Parse the file
+	prompts, err := filePrompts(tmpFile)
+	suite.Require().NoError(err)
+	suite.Require().Len(prompts, 3, "Expected 3 prompts")
+
+	// Verify always_ask is correctly parsed
+	suite.Equal("PORT", prompts[0].Env)
+	suite.True(prompts[0].AlwaysAsk, "PORT should have always_ask=true")
+	suite.Equal("8080", prompts[0].Default)
+
+	suite.Equal("DEBUG", prompts[1].Env)
+	suite.False(prompts[1].AlwaysAsk, "DEBUG should have always_ask=false (default)")
+
+	suite.Equal("LOG_LEVEL", prompts[2].Env)
+	suite.False(prompts[2].AlwaysAsk, "LOG_LEVEL should have always_ask=false (explicit)")
+}
+
 func (suite *BuilderTestSuite) TestShouldAsk_ActiveAndNotHidden() {
 	prompt := UserPrompt{Active: true, Hidden: false}
 	suite.True(prompt.ShouldAsk(false))
