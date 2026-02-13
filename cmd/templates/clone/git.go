@@ -19,8 +19,16 @@ import (
 	"strings"
 )
 
-func gitClone(repoURL, dir string) (string, error) {
-	cmd := exec.Command("git", "clone", repoURL, dir)
+func gitClone(repoURL, dir, tag string) (string, error) {
+	args := []string{"clone", "--depth", "1", "--single-branch"}
+
+	if tag != "" {
+		args = append(args, "--branch", tag)
+	}
+
+	args = append(args, repoURL, dir)
+
+	cmd := exec.Command("git", args...)
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
