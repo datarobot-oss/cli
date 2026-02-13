@@ -280,3 +280,52 @@ func (suite *BuilderTestSuite) TestShouldAsk_ShowAllDoesNotOverrideHidden() {
 	prompt := UserPrompt{Active: true, Hidden: true, Default: "default_value", Value: "default_value"}
 	suite.False(prompt.ShouldAsk(true), "Should not show hidden prompts even when showAll is true")
 }
+
+func (suite *BuilderTestSuite) TestShouldAsk_RequiresOptionsAlwaysShown() {
+	prompt := UserPrompt{
+		Active:  true,
+		Hidden:  false,
+		Default: "option1",
+		Value:   "option1",
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2", Requires: "extra_config"},
+		},
+	}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt with requires options even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_OptionsWithoutRequiresCanBeSkipped() {
+	prompt := UserPrompt{
+		Active:  true,
+		Hidden:  false,
+		Default: "option1",
+		Value:   "option1",
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2"},
+		},
+	}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt with options but no requires if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestHasRequiresOptions() {
+	promptWithRequires := UserPrompt{
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2", Requires: "extra_config"},
+		},
+	}
+	suite.True(promptWithRequires.HasRequiresOptions())
+
+	promptWithoutRequires := UserPrompt{
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2"},
+		},
+	}
+	suite.False(promptWithoutRequires.HasRequiresOptions())
+
+	promptNoOptions := UserPrompt{}
+	suite.False(promptNoOptions.HasRequiresOptions())
+}

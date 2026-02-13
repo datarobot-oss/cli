@@ -455,7 +455,12 @@ Application port
 Default: 8080
 ```
 
-**Note:** Prompts with default values are automatically skipped during the wizard unless the user modifies the value or the prompt has `always_ask: true` set. Use `dr dotenv setup --show-all-prompts` to force all prompts to be shown.
+**Note:** Prompts with default values are automatically skipped during the wizard unless:
+- The user has modified the value from the default
+- The prompt has `always_ask: true` set
+- The prompt has options with `requires` fields (which control conditional sections)
+
+Use `dr dotenv setup --show-all-prompts` to force all prompts to be shown.
 
 ### Always ask prompts
 
@@ -471,6 +476,8 @@ prompts:
 ```
 
 This is useful for prompts where you want users to consciously confirm or change the default value.
+
+**Note:** Prompts with `requires` options are always shown regardless of default values, since they control which conditional sections are enabled.
 
 ### Secret values
 

@@ -139,8 +139,20 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
+// HasRequiresOptions returns true if any option has a requires field set.
+func (up UserPrompt) HasRequiresOptions() bool {
+	for _, opt := range up.Options {
+		if opt.Requires != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ShouldAsk returns true if this prompt should be shown to the user.
-// Prompts with defaults are skipped unless AlwaysAsk is set or showAll is true.
+// Prompts with defaults are skipped unless AlwaysAsk is set, showAll is true,
+// or the prompt has options with requires (which control conditional sections).
 func (up UserPrompt) ShouldAsk(showAll bool) bool {
 	if !up.Active || up.Hidden {
 		return false
@@ -153,6 +165,11 @@ func (up UserPrompt) ShouldAsk(showAll bool) bool {
 
 	// If prompt has always_ask: true, always show it
 	if up.AlwaysAsk {
+		return true
+	}
+
+	// Always show prompts with requires options - they control conditional sections
+	if up.HasRequiresOptions() {
 		return true
 	}
 
