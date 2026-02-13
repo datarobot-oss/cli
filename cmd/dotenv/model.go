@@ -181,6 +181,10 @@ func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 	// Update required sections
 	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
+	// TODO: Add debug logging here to help diagnose prompt visibility issues.
+	// Log which prompts are shown vs skipped, including: VarName, Active, Hidden,
+	// Default, Value, AlwaysPrompt, and the ShouldAsk result.
+
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
 		prompt := m.prompts[m.currentPromptIndex]
