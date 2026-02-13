@@ -91,7 +91,7 @@ expect ./smoke_test_scripts/expect_auth_setURL.exp "$DATAROBOT_CLI_CONFIG"
 # Check if we have the auth URL correctly set
 auth_endpoint_check=$(cat "$DATAROBOT_CLI_CONFIG" | grep endpoint | grep "${testing_url}/api/v2")
 if [[ -n "$auth_endpoint_check" ]]; then
-  echo "✅ Assertion passed: We have expected expected 'endpoint' auth URL value in config."
+  echo "✅ Assertion passed: We have expected 'endpoint' auth URL value in config."
   echo "Value: $auth_endpoint_check"
 else
   echo "❌ Assertion failed: We don't have expected 'endpoint' auth URL value."
