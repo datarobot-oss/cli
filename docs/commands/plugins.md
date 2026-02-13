@@ -41,20 +41,20 @@ dr plugin install --list
 dr plugin install --list --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
 # List available versions for a plugin.
-dr plugin install apps --versions
-dr plugin install apps --versions --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install assist --versions
+dr plugin install assist --versions --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 
-# Install latest version of apps plugin.
-dr plugin install apps
+# Install latest version of assist plugin.
+dr plugin install assist
 
 # Install specific version.
-dr plugin install apps --version 1.0.0
+dr plugin install assist --version 0.1.6
 
 # Install with semver constraint.
-dr plugin install apps --version "^1.0.0"
+dr plugin install assist --version "^0.1.0"
 
 # Install from custom registry.
-dr plugin install apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin install assist --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 ```
 
 ## dr plugin uninstall
@@ -70,8 +70,8 @@ This command only works for managed plugins (installed through the plugin regist
 ### Examples
 
 ```bash
-# Uninstall the apps plugin.
-dr plugin uninstall apps
+# Uninstall the assist plugin.
+dr plugin uninstall assist
 ```
 
 ## dr plugin update
@@ -95,13 +95,13 @@ When you run the command with `--all`, it checks all installed managed plugins f
 
 ```bash
 # Update a specific plugin to the latest version.
-dr plugin update apps
+dr plugin update assist
 
 # Update all installed plugins.
 dr plugin update --all
 
 # Update from a custom registry.
-dr plugin update apps --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
+dr plugin update assist --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 ```
 
 ## dr plugin list
