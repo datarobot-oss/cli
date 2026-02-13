@@ -66,9 +66,7 @@ send -- "\r\n"
 expect "LLM_DEFAULT_LLM_ID"
 send -- "\r\n"
 
-expect "SESSION_SECRET_KEY"
-send -- "\025"
-send -- "TESTING_SESSION_SECRET_KEY\r\n"
+# SESSION_SECRET_KEY is skipped because it has a default value
 
 expect "DATABASE_URI"
 send -- "\r\n"

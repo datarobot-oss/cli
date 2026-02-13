@@ -62,6 +62,8 @@ type Model struct {
 	currentPromptIndex int
 	currentPrompt      promptModel
 	hasPrompts         *bool // Cache whether prompts are available
+	ShowAllPrompts     bool  // When true, show all prompts regardless of defaults
+	skippedPrompts     int   // Count of prompts skipped due to having defaults
 }
 
 type (
@@ -179,10 +181,21 @@ func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 	// Update required sections
 	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
+	// TODO: Add debug logging here to help diagnose prompt visibility issues.
+	// Log which prompts are shown vs skipped, including: VarName, Active, Hidden,
+	// Default, Value, AlwaysPrompt, and the ShouldAsk result.
+
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
-		if m.prompts[m.currentPromptIndex].ShouldAsk() {
+		prompt := m.prompts[m.currentPromptIndex]
+
+		if prompt.ShouldAsk(m.ShowAllPrompts) {
 			break
+		}
+
+		// Count prompts skipped due to defaults (active, not hidden, has default)
+		if prompt.Active && !prompt.Hidden && prompt.Default != "" && prompt.Value == prompt.Default {
+			m.skippedPrompts++
 		}
 
 		m.currentPromptIndex++
@@ -205,11 +218,12 @@ func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
 	// Get back to previous prompt that is required
 	for {
 		currentPromptIndex--
+
 		if currentPromptIndex < 0 {
 			return m, nil
 		}
 
-		if m.prompts[currentPromptIndex].ShouldAsk() {
+		if m.prompts[currentPromptIndex].ShouldAsk(m.ShowAllPrompts) {
 			break
 		}
 	}
@@ -300,6 +314,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case keyQuit:
 				return m, m.SuccessCmd
 			case keyInteractive:
+				// TODO Do we want to reload the prompts and
+				// set ShowAllPrompts to true?
 				return m, m.loadPrompts()
 			case keyEdit:
 				return m, openEditorCmd
@@ -404,6 +420,13 @@ func (m Model) viewListScreen() string {
 
 	sb.WriteString(tui.BoxStyle.Render(content.String()))
 	sb.WriteString("\n\n")
+
+	if m.skippedPrompts > 0 {
+		sb.WriteString(tui.DimStyle.Render(fmt.Sprintf(
+			"Skipped %d prompt(s) with default values. Use --all to configure them.",
+			m.skippedPrompts)))
+		sb.WriteString("\n\n")
+	}
 
 	if m.checkPromptsAvailable() && len(m.variables) > 0 {
 		sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))

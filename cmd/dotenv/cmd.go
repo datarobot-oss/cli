@@ -141,12 +141,15 @@ This wizard will help you:
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
+		showAllPrompts, _ := cmd.Flags().GetBool("all")
+
 		m := Model{
-			initialScreen: wizardScreen,
-			DotenvFile:    dotenvFile,
-			variables:     variables,
-			contents:      contents,
-			SuccessCmd:    tea.Quit,
+			initialScreen:  wizardScreen,
+			DotenvFile:     dotenvFile,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+			ShowAllPrompts: showAllPrompts,
 		}
 		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
@@ -162,6 +165,7 @@ This wizard will help you:
 
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
+	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.

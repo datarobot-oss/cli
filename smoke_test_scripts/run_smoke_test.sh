@@ -112,7 +112,6 @@ if [ "$url_accessible" -eq 0 ]; then
 else
   echo "Testing dr templates setup..."
   expect ./smoke_test_scripts/expect_templates_setup.exp
-  testing_session_secret_key="TESTING_SESSION_SECRET_KEY"
   DIRECTORY="./talk-to-my-docs-agents"
   if [ -d "$DIRECTORY" ]; then
     echo "✅ Directory ($DIRECTORY) exists."
@@ -122,12 +121,13 @@ else
   fi
   cd "$DIRECTORY"
 
-  # Validate the SESSION_SECRET_KEY set during templates setup
-  session_secret_key_check=$(cat .env | grep "SESSION_SECRET_KEY=\"${testing_session_secret_key}\"")
-  if [[ -n "$session_secret_key_check" ]]; then
-    echo "✅ Assertion passed: We have expected SESSION_SECRET_KEY in created .env file."
+  # Validate the SESSION_SECRET_KEY was auto-generated with a non-empty value
+  # Extract the value between quotes after SESSION_SECRET_KEY=
+  session_secret_key_value=$(sed -n 's/^SESSION_SECRET_KEY="\([^"]*\)".*/\1/p' .env)
+  if [[ -n "$session_secret_key_value" ]]; then
+    echo "✅ Assertion passed: SESSION_SECRET_KEY has auto-generated value in .env file."
   else
-    echo "❌ Assertion failed: We don't have expected SESSION_SECRET_KEY value in created .env file."
+    echo "❌ Assertion failed: SESSION_SECRET_KEY is empty or missing in .env file."
     cat .env
     exit 1
   fi

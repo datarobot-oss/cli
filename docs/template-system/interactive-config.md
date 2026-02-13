@@ -93,7 +93,7 @@ Save configuration
 Simple text entry for values:
 
 ```yaml
-# Example from .datarobot/prompts.yaml
+# Example text prompt for database URL
 prompts:
   - key: "database_url"
     env: "DATABASE_URL"
@@ -349,6 +349,7 @@ section_name: # Optional: Only show if section enabled
     optional: false           # Optional: Can be skipped
     multiple: false           # Optional: Allow multiple selections
     generate: false           # Optional: Auto-generate random value (secret_string only)
+    always_prompt: false      # Optional: Always show prompt even if default is set
     options:                  # Optional: List of choices
       - name: "Display Name"
         value: "actual_value"
@@ -453,6 +454,32 @@ Application port
 
 Default: 8080
 ```
+
+**Note:** Prompts with default values are automatically skipped during the wizard unless:
+- The user has modified the value from the default
+- The prompt has `always_prompt: true` set
+- The prompt has options with `requires` fields (which control conditional sections)
+
+Use `dr dotenv setup --all` to force all prompts to be shown.
+
+### Always prompt
+
+To force a prompt to always be shown even when it has a default value:
+
+```yaml
+prompts:
+  - key: "port"
+    env: "PORT"
+    help: "Application port"
+    default: "8080"
+    always_prompt: true  # Always prompt user even though default exists
+```
+
+This is useful for prompts where you want users to consciously confirm or change the default value.
+
+**Note:** Prompts with `requires` options are always shown regardless of default values, since they control which conditional sections are enabled.
+
+**Note:** Prompts with `hidden: true` will never be shown, even if `always_prompt` is set.
 
 ### Secret values
 
