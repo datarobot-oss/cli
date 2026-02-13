@@ -95,7 +95,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirValidPlugin() {
 	seen := make(map[string]bool)
 	plugins, errs := discoverInDir(s.tempDir, seen)
 
-	s.Len(plugins, 1)
+	s.Require().Len(plugins, 1, "Expected exactly one plugin")
 	s.Empty(errs)
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
 	s.Equal("1.0.0", plugins[0].Manifest.Version)
@@ -114,7 +114,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
 	seen := make(map[string]bool)
 	plugins, _ := discoverInDir(s.tempDir, seen)
 
-	s.Len(plugins, 1)
+	s.Require().Len(plugins, 1, "Expected exactly one plugin (non-dr files should be skipped)")
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
 }
 
@@ -154,7 +154,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	plugins, errs := discoverInDir(s.tempDir, seen)
 
 	// Only one should be registered (first one wins based on directory order)
-	s.Len(plugins, 1)
+	s.Require().Len(plugins, 1, "Expected exactly one plugin when two share the same manifest name")
 	s.Empty(errs)
 	s.Equal("shared-name", plugins[0].Manifest.Name)
 }
