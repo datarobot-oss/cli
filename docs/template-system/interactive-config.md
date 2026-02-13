@@ -93,7 +93,7 @@ Save configuration
 Simple text entry for values:
 
 ```yaml
-# Example from .datarobot/prompts.yaml
+# Example text prompt for database URL
 prompts:
   - key: "database_url"
     env: "DATABASE_URL"
@@ -478,6 +478,8 @@ prompts:
 This is useful for prompts where you want users to consciously confirm or change the default value.
 
 **Note:** Prompts with `requires` options are always shown regardless of default values, since they control which conditional sections are enabled.
+
+**Note:** Prompts with `hidden: true` will never be shown, even if `always_prompt` is set.
 
 ### Secret values
 
