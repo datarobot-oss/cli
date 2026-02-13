@@ -121,12 +121,13 @@ else
   fi
   cd "$DIRECTORY"
 
-  # Validate the SESSION_SECRET_KEY exists in created .env file (uses default value since prompt is hidden)
-  session_secret_key_check=$(cat .env | grep "SESSION_SECRET_KEY=")
-  if [[ -n "$session_secret_key_check" ]]; then
-    echo "✅ Assertion passed: SESSION_SECRET_KEY exists in created .env file."
+  # Validate the SESSION_SECRET_KEY was auto-generated with a non-empty value
+  # Extract the value between quotes after SESSION_SECRET_KEY=
+  session_secret_key_value=$(sed -n 's/^SESSION_SECRET_KEY="\([^"]*\)".*/\1/p' .env)
+  if [[ -n "$session_secret_key_value" ]]; then
+    echo "✅ Assertion passed: SESSION_SECRET_KEY has auto-generated value in .env file."
   else
-    echo "❌ Assertion failed: SESSION_SECRET_KEY not found in created .env file."
+    echo "❌ Assertion failed: SESSION_SECRET_KEY is empty or missing in .env file."
     cat .env
     exit 1
   fi
