@@ -460,7 +460,7 @@ Default: 8080
 - The prompt has `always_prompt: true` set
 - The prompt has options with `requires` fields (which control conditional sections)
 
-Use `dr dotenv setup --show-all-prompts` to force all prompts to be shown.
+Use `dr dotenv setup --all` to force all prompts to be shown.
 
 ### Always prompt
 

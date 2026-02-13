@@ -417,7 +417,7 @@ func (m Model) viewListScreen() string {
 
 	if m.skippedPrompts > 0 {
 		sb.WriteString(tui.DimStyle.Render(fmt.Sprintf(
-			"Skipped %d prompt(s) with default values. Use --show-all-prompts to configure them.",
+			"Skipped %d prompt(s) with default values. Use --all to configure them.",
 			m.skippedPrompts)))
 		sb.WriteString("\n\n")
 	}
