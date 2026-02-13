@@ -45,16 +45,20 @@ type UserPrompt struct {
 	Value     string
 	Hidden    bool
 
-	Env       string         `yaml:"env"`
-	Key       string         `yaml:"key"`
-	Type      PromptType     `yaml:"type"`
-	Multiple  bool           `yaml:"multiple"`
-	Options   []PromptOption `yaml:"options,omitempty"`
-	Default   string         `yaml:"default,omitempty"`
-	Help      string         `yaml:"help"`
-	Optional  bool           `yaml:"optional,omitempty"`
-	Generate  bool           `yaml:"generate,omitempty"`
-	AlwaysAsk bool           `yaml:"always_ask,omitempty"`
+	Env      string         `yaml:"env"`
+	Key      string         `yaml:"key"`
+	Type     PromptType     `yaml:"type"`
+	Multiple bool           `yaml:"multiple"`
+	Options  []PromptOption `yaml:"options,omitempty"`
+	// Default is the initial value for this prompt. Prompts with defaults are
+	// skipped during the wizard unless the value differs or AlwaysPrompt is set.
+	Default  string `yaml:"default,omitempty"`
+	Help     string `yaml:"help"`
+	Optional bool   `yaml:"optional,omitempty"`
+	Generate bool   `yaml:"generate,omitempty"`
+	// AlwaysPrompt forces the prompt to be shown even when a default value is set.
+	// Use this for prompts where users should consciously confirm or change the default.
+	AlwaysPrompt bool `yaml:"always_prompt,omitempty"`
 }
 
 type PromptOption struct {
@@ -151,7 +155,7 @@ func (up UserPrompt) HasRequiresOptions() bool {
 }
 
 // ShouldAsk returns true if this prompt should be shown to the user.
-// Prompts with defaults are skipped unless AlwaysAsk is set, showAll is true,
+// Prompts with defaults are skipped unless AlwaysPrompt is set, showAll is true,
 // or the prompt has options with requires (which control conditional sections).
 func (up UserPrompt) ShouldAsk(showAll bool) bool {
 	if !up.Active || up.Hidden {
@@ -163,8 +167,8 @@ func (up UserPrompt) ShouldAsk(showAll bool) bool {
 		return true
 	}
 
-	// If prompt has always_ask: true, always show it
-	if up.AlwaysAsk {
+	// If prompt has always_prompt: true, always show it
+	if up.AlwaysPrompt {
 		return true
 	}
 

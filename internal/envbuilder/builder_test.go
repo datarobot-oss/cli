@@ -195,14 +195,14 @@ root:
 	suite.Equal("A secret string type", prompts[1].Help)
 }
 
-func (suite *BuilderTestSuite) TestAlwaysAskYAMLParsing() {
+func (suite *BuilderTestSuite) TestAlwaysPromptYAMLParsing() {
 	yamlContent := `
 root:
   - env: PORT
     type: string
     default: "8080"
     help: Application port
-    always_ask: true
+    always_prompt: true
   - env: DEBUG
     type: string
     default: "false"
@@ -211,11 +211,11 @@ root:
     type: string
     default: "info"
     help: Log level
-    always_ask: false
+    always_prompt: false
 `
 
 	// Create a temporary YAML file
-	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_always_ask.yaml")
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_always_prompt.yaml")
 	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
 	suite.Require().NoError(err)
 
@@ -224,16 +224,16 @@ root:
 	suite.Require().NoError(err)
 	suite.Require().Len(prompts, 3, "Expected 3 prompts")
 
-	// Verify always_ask is correctly parsed
+	// Verify always_prompt is correctly parsed
 	suite.Equal("PORT", prompts[0].Env)
-	suite.True(prompts[0].AlwaysAsk, "PORT should have always_ask=true")
+	suite.True(prompts[0].AlwaysPrompt, "PORT should have always_prompt=true")
 	suite.Equal("8080", prompts[0].Default)
 
 	suite.Equal("DEBUG", prompts[1].Env)
-	suite.False(prompts[1].AlwaysAsk, "DEBUG should have always_ask=false (default)")
+	suite.False(prompts[1].AlwaysPrompt, "DEBUG should have always_prompt=false (default)")
 
 	suite.Equal("LOG_LEVEL", prompts[2].Env)
-	suite.False(prompts[2].AlwaysAsk, "LOG_LEVEL should have always_ask=false (explicit)")
+	suite.False(prompts[2].AlwaysPrompt, "LOG_LEVEL should have always_prompt=false (explicit)")
 }
 
 func (suite *BuilderTestSuite) TestShouldAsk_ActiveAndNotHidden() {
@@ -266,9 +266,9 @@ func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithoutDefault() {
 	suite.True(prompt.ShouldAsk(false), "Should show prompt when no default is set")
 }
 
-func (suite *BuilderTestSuite) TestShouldAsk_AlwaysAskOverridesDefault() {
-	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value", AlwaysAsk: true}
-	suite.True(prompt.ShouldAsk(false), "Should show prompt when always_ask is true even if value equals default")
+func (suite *BuilderTestSuite) TestShouldAsk_AlwaysPromptOverridesDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value", AlwaysPrompt: true}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when always_prompt is true even if value equals default")
 }
 
 func (suite *BuilderTestSuite) TestShouldAsk_ShowAllOverridesDefault() {
