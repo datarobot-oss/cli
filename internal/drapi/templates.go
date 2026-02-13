@@ -15,10 +15,7 @@
 package drapi
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -126,48 +123,28 @@ func (tl TemplateList) SortByName() TemplateList {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
+	url, err := config.GetEndpointURL("/api/v2/applicationTemplates/?limit=100")
 	if err != nil {
 		return nil, err
-	}
-
-	log.Info("Fetching templates from " + datarobotEndpoint)
-
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := config.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Authorization", "Bearer "+token)
-	req.Header.Add("User-Agent", config.GetUserAgentHeader())
-
-	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Response status code is " + resp.Status + ".")
 	}
 
 	var templateList TemplateList
 
-	err = json.NewDecoder(resp.Body).Decode(&templateList)
-	if err != nil {
-		return nil, err
+	var templates []Template
+
+	for url != "" {
+		templateList = TemplateList{}
+
+		err = GetJSON(url, "templates", &templateList)
+		if err != nil {
+			return nil, err
+		}
+
+		templates = append(templates, templateList.Templates...)
+		url = templateList.Next
 	}
+
+	templateList.Templates = templates
 
 	return &templateList, nil
 }
