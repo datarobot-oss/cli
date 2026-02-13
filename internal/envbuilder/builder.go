@@ -45,7 +45,8 @@ type UserPrompt struct {
 	Root bool
 	// Active indicates if this prompt should be processed (based on conditional logic).
 	Active bool
-	// Commented indicates if the variable should be commented out in the .env file.
+	// Commented indicates if the variable should be commented out in the .env file. This
+	// can be used for variables that the user may want to set but are not required.
 	Commented bool
 	// Value is the current value for this prompt (from .env, environment, or user input).
 	Value string
@@ -73,6 +74,9 @@ type UserPrompt struct {
 	Generate bool `yaml:"generate,omitempty"`
 	// AlwaysPrompt forces the prompt to be shown even when a default value is set.
 	// Use this for prompts where users should consciously confirm or change the default.
+	// This does not affect prompts with options that have "requires" fields -
+	// those prompts are always shown regardless of defaults. This also does not
+	// affect prompts that are required due to conditional logic, or hidden prompts.
 	AlwaysPrompt bool `yaml:"always_prompt,omitempty"`
 }
 
