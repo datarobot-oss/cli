@@ -63,6 +63,7 @@ type Model struct {
 	currentPrompt      promptModel
 	hasPrompts         *bool // Cache whether prompts are available
 	ShowAllPrompts     bool  // When true, show all prompts regardless of defaults
+	skippedPrompts     int   // Count of prompts skipped due to having defaults
 }
 
 type (
@@ -182,8 +183,15 @@ func (m Model) moveToNextPrompt() (tea.Model, tea.Cmd) {
 
 	// Advance to next prompt that is required
 	for m.currentPromptIndex < len(m.prompts) {
-		if m.prompts[m.currentPromptIndex].ShouldAsk(m.ShowAllPrompts) {
+		prompt := m.prompts[m.currentPromptIndex]
+
+		if prompt.ShouldAsk(m.ShowAllPrompts) {
 			break
+		}
+
+		// Count prompts skipped due to defaults (active, not hidden, has default)
+		if prompt.Active && !prompt.Hidden && prompt.Default != "" && prompt.Value == prompt.Default {
+			m.skippedPrompts++
 		}
 
 		m.currentPromptIndex++
@@ -406,6 +414,13 @@ func (m Model) viewListScreen() string {
 
 	sb.WriteString(tui.BoxStyle.Render(content.String()))
 	sb.WriteString("\n\n")
+
+	if m.skippedPrompts > 0 {
+		sb.WriteString(tui.DimStyle.Render(fmt.Sprintf(
+			"Skipped %d prompt(s) with default values. Use --show-all-prompts to configure them.",
+			m.skippedPrompts)))
+		sb.WriteString("\n\n")
+	}
 
 	if m.checkPromptsAvailable() && len(m.variables) > 0 {
 		sb.WriteString(tui.BaseTextStyle.Render("Press w to set up variables interactively."))
