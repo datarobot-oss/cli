@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package check
 
@@ -16,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
@@ -26,6 +33,32 @@ import (
 func checkCLICredentials() bool {
 	allValid := true
 
+	// Check environment variables first (same pattern as EnsureAuthenticated)
+	creds, err := auth.VerifyEnvCredentials()
+	if err == nil {
+		fmt.Println(tui.BaseTextStyle.Render("✅ Environment variable authentication is valid."))
+
+		return true
+	}
+
+	// If env vars were set but invalid, report the error
+	if !errors.Is(err, auth.ErrEnvCredentialsNotSet) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
+			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+
+			return false
+		}
+
+		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
+
+		return false
+	}
+
+	// Fall back to config file credentials
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
 		fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
@@ -36,7 +69,7 @@ func checkCLICredentials() bool {
 		allValid = false
 	}
 
-	_, err := config.GetAPIKey()
+	_, err = config.GetAPIKey()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
@@ -185,7 +218,7 @@ func Run(_ *cobra.Command, _ []string) {
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
-	if err != nil || repoRoot == "" {
+	if err != nil {
 		if checkCLICredentials() {
 			return
 		}

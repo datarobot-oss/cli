@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package setup
 
@@ -23,12 +29,12 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/templates/clone"
 	"github.com/datarobot/cli/cmd/templates/list"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
@@ -183,7 +189,7 @@ func handleExistingRepo(repoRoot string) tea.Msg {
 		envExists = true
 	}
 
-	dotenvCompleted := state.HasCompletedDotenvSetup()
+	dotenvCompleted := state.HasCompletedDotenvSetup(repoRoot)
 
 	// If .env exists AND dotenv setup was completed, skip setup
 	if envExists && dotenvCompleted {
@@ -209,7 +215,7 @@ func getTemplates(sessionID int) tea.Cmd {
 
 		// Check if we're already in a DataRobot repo
 		repoRoot, err := repo.FindRepoRoot()
-		if err == nil && repoRoot != "" {
+		if err == nil {
 			// We're in an existing DataRobot repo - handle that case
 			return handleExistingRepo(repoRoot)
 		}
@@ -243,7 +249,10 @@ func networkTimeoutMsg() tea.Msg {
 
 func saveHost(host string) tea.Cmd {
 	return func() tea.Msg {
-		_ = config.SaveURLToConfig(host)
+		err := config.SaveURLToConfig(host)
+		if err != nil {
+			return exitMsg{message: err.Error()}
+		}
 
 		return authKeyStartMsg{}
 	}
@@ -256,7 +265,13 @@ func NewModel(fromStartCommand bool) Model {
 	}
 
 	// Check if dotenv setup was already completed
-	skipDotenv := state.HasCompletedDotenvSetup()
+	var skipDotenv bool
+
+	repoRoot, err := repo.FindRepoRoot()
+	if err == nil {
+		skipDotenv = state.HasCompletedDotenvSetup(repoRoot)
+	}
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = tui.InfoStyle
@@ -441,13 +456,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			}
 		}
 
+		repoRoot := filepath.Dir(m.dotenv.DotenvFile)
+
 		// Update state if dotenv setup was completed
 		if m.dotenvSetupCompleted {
-			_ = state.UpdateAfterDotenvSetup()
+			_ = state.UpdateAfterDotenvSetup(repoRoot)
 		}
 
 		// Update state for templates setup completion
-		_ = state.UpdateAfterTemplatesSetup()
+		_ = state.UpdateAfterTemplatesSetup(repoRoot)
 
 		return m, exit
 	case exitMsg:

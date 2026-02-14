@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package auth
 
@@ -18,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,9 +42,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	tempDir, err := os.MkdirTemp("", "auth-test-*")
 	require.NoError(t, err)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	// Save original callback function.
 	originalCallback := APIKeyCallbackFunc
@@ -75,7 +80,6 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 
 	cleanup := func() {
 		server.Close()
-		os.Setenv("HOME", originalHome)
 		os.RemoveAll(tempDir)
 		viper.Reset()
 
@@ -190,11 +194,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
@@ -213,13 +213,16 @@ func TestConfig_WriteAndRead(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	configFilePath := filepath.Join(os.Getenv("HOME"), ".config", "datarobot", "drconfig.yaml")
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	configFilePath := filepath.Join(homeDir, ".config", "datarobot", "drconfig.yaml")
 	viper.SetConfigFile(configFilePath)
 
 	viper.Set(config.DataRobotAPIKey, "test-token")
 
 	// SafeWriteConfig creates the file if it doesn't exist.
-	err := viper.SafeWriteConfig()
+	err = viper.SafeWriteConfig()
 	if err != nil {
 		// File might already exist, try WriteConfig.
 		err = viper.WriteConfig()
@@ -242,11 +245,7 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 
 	defer os.RemoveAll(tempDir)
 
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("HOME", tempDir)
-
-	defer os.Setenv("HOME", originalHome)
+	testutil.SetTestHomeDir(t, tempDir)
 
 	viper.Reset()
 
@@ -257,4 +256,104 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 	expectedPath := filepath.Join(tempDir, ".config", "datarobot", "drconfig.yaml")
 	_, err = os.Stat(expectedPath)
 	assert.NoError(t, err, "Expected config file to exist at %s", expectedPath)
+}
+
+func TestGetEnvCredentials(t *testing.T) {
+	t.Run("prefers DATAROBOT_ENDPOINT over DATAROBOT_API_ENDPOINT", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "https://primary.example.com")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "https://fallback.example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "https://primary.example.com", creds.Endpoint)
+		assert.Equal(t, "test-token", creds.Token)
+	})
+
+	t.Run("falls back to DATAROBOT_API_ENDPOINT", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "https://fallback.example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "https://fallback.example.com", creds.Endpoint)
+		assert.Equal(t, "test-token", creds.Token)
+	})
+
+	t.Run("returns empty when no env vars set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds := GetEnvCredentials()
+
+		assert.Empty(t, creds.Endpoint)
+		assert.Empty(t, creds.Token)
+	})
+}
+
+func TestVerifyEnvCredentials(t *testing.T) {
+	t.Run("returns error when env vars not set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.NotNil(t, creds)
+	})
+
+	t.Run("returns error when only endpoint set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "https://example.com")
+		t.Setenv("DATAROBOT_API_TOKEN", "")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, "https://example.com", creds.Endpoint)
+	})
+
+	t.Run("returns error when only token set", func(t *testing.T) {
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_TOKEN", "some-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, "some-token", creds.Token)
+	})
+
+	t.Run("returns error for invalid token", func(t *testing.T) {
+		server, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "invalid-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
+	})
+
+	t.Run("returns nil error for valid credentials", func(t *testing.T) {
+		server, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
+
+		creds, err := VerifyEnvCredentials()
+
+		require.NoError(t, err)
+		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
+		assert.Equal(t, "valid-token", creds.Token)
+	})
 }

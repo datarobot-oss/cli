@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package envbuilder
 
@@ -13,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/joho/godotenv"
 )
@@ -102,6 +108,10 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 
 		if v.Name != "" && v.Commented {
 			variables = append(variables, v)
+
+			contents.WriteString(line)
+
+			continue
 		}
 
 		if v.Name == "" || v.Commented {
@@ -109,8 +119,10 @@ func VariablesFromLines(lines []string) ([]Variable, string) {
 			continue
 		}
 
-		v.Value = variablesConfig[v.Name].value
-		v.Secret = variablesConfig[v.Name].secret
+		if varConfig, ok := variablesConfig[v.Name]; ok {
+			v.Value = varConfig.value
+			v.Secret = varConfig.secret
+		}
 
 		if v.Value == "" {
 			contents.WriteString(line)

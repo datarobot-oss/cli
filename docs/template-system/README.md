@@ -41,8 +41,7 @@ dr templates list
 # Interactive setup (recommended)
 dr templates setup
 
-# Manual setup
-dr templates clone my-template
+# Manual setup (if you already have a template directory)
 cd my-template
 dr dotenv setup
 dr run dev
@@ -147,9 +146,8 @@ prompts:
         requires: "database_config"
       - name: "No"
 
-  - key: "database_url"
-    section: "database_config"
-    env: "DATABASE_URL"
+database_config:
+  - env: "DATABASE_URL"
     help: "Database connection string"
 ```
 

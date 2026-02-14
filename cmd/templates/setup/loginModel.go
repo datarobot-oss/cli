@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package setup
 
@@ -18,10 +24,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -65,7 +71,16 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 
 		listen, err := net.Listen("tcp", addr)
 		if err != nil {
-			return errMsg{err}
+			// close previous auth server if address already in use
+			resp, err := http.Get("http://" + addr)
+			if err == nil {
+				resp.Body.Close()
+			}
+
+			listen, err = net.Listen("tcp", addr)
+			if err != nil {
+				return errMsg{err}
+			}
 		}
 
 		// Start the server in a goroutine
@@ -122,16 +137,22 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 	return func() tea.Msg {
 		// Wait for the key from the handler
 		apiKey := <-lm.APIKeyChan
+
+		// Now shut down the server after key is received
+		if err := lm.server.Shutdown(context.Background()); err != nil {
+			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
+		}
+
+		// empty apiKey means we need to interrupt current auth flow
+		if apiKey == "" {
+			return errMsg{errors.New("Interrupt request received.")}
+		}
+
 		viper.Set(config.DataRobotAPIKey, apiKey)
 
 		err := auth.WriteConfigFileSilent()
 		if err != nil {
 			return errMsg{fmt.Errorf("Error during writing config file: %v", err)}
-		}
-
-		// Now shut down the server after key is received
-		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
 		}
 
 		return lm.SuccessCmd()

@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package auth
 
@@ -17,12 +23,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -30,11 +37,47 @@ import (
 // This can be overridden in tests to mock the browser-based authentication flow.
 var APIKeyCallbackFunc = WaitForAPIKeyCallback
 
+// ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
+var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
+
+// EnvCredentials holds environment variable authentication credentials.
+type EnvCredentials struct {
+	Endpoint string
+	Token    string
+}
+
+// GetEnvCredentials reads DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from environment.
+// Falls back to DATAROBOT_API_ENDPOINT if DATAROBOT_ENDPOINT is not set.
+func GetEnvCredentials() EnvCredentials {
+	endpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("DATAROBOT_API_ENDPOINT")
+	}
+
+	return EnvCredentials{
+		Endpoint: endpoint,
+		Token:    os.Getenv("DATAROBOT_API_TOKEN"),
+	}
+}
+
+// VerifyEnvCredentials checks if environment variable credentials are valid.
+// Returns credentials and nil error if valid, credentials and error otherwise.
+func VerifyEnvCredentials() (*EnvCredentials, error) {
+	creds := GetEnvCredentials()
+	if creds.Endpoint == "" || creds.Token == "" {
+		return &creds, ErrEnvCredentialsNotSet
+	}
+
+	err := config.VerifyToken(creds.Endpoint, creds.Token)
+
+	return &creds, err
+}
+
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns an error if authentication
 // fails, suitable for use in Cobra PreRunE hooks.
-func EnsureAuthenticatedE(ctx context.Context) error {
-	if !EnsureAuthenticated(ctx) {
+func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
+	if !EnsureAuthenticated(cmd.Context()) {
 		return errors.New("Authentication failed.")
 	}
 
@@ -52,16 +95,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	}
 
 	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
-	envEndpoint := os.Getenv("DATAROBOT_ENDPOINT")
-	envToken := os.Getenv("DATAROBOT_API_TOKEN")
-
-	if envEndpoint == "" {
-		if apiEndpoint := os.Getenv("DATAROBOT_API_ENDPOINT"); apiEndpoint != "" {
-			envEndpoint = apiEndpoint
-		}
-	}
-
-	envErr := config.VerifyToken(envEndpoint, envToken)
+	creds, envErr := VerifyEnvCredentials()
 	if envErr == nil {
 		// Now map other environment variables to config keys
 		// such as those used by the DataRobot platform or other SDKs
@@ -88,7 +122,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	skipAuthFlow := false
 
 	if errors.Is(envErr, context.DeadlineExceeded) {
-		envDatarobotHost, _ := config.SchemeHostOnly(envEndpoint)
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
 
 		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
 		fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
@@ -96,7 +130,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
 
 		skipAuthFlow = true
-	} else if envToken != "" {
+	} else if creds.Token != "" {
 		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
 		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
 		fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
@@ -166,7 +200,16 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 
 	listen, err := net.Listen("tcp", addr)
 	if err != nil {
-		return "", err
+		// close previous auth server if address already in use
+		resp, err := http.Get("http://" + addr)
+		if err == nil {
+			resp.Body.Close()
+		}
+
+		listen, err = net.Listen("tcp", addr)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	// Start the server in a goroutine
@@ -188,11 +231,17 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	select {
 	// Wait for the key from the handler
 	case apiKey := <-apiKeyChan:
-		fmt.Println("Successfully consumed API key from API request")
 		// Now shut down the server after key is received
 		if err := server.Shutdown(ctx); err != nil {
 			return "", fmt.Errorf("Error during shutdown: %v", err)
 		}
+
+		// empty apiKey means we need to interrupt current auth flow
+		if apiKey == "" {
+			return "", errors.New("Interrupt request received.")
+		}
+
+		fmt.Println("Successfully consumed API key from API request")
 
 		return apiKey, nil
 	case <-ctx.Done():
@@ -272,6 +321,8 @@ func SetURLAction() bool {
 					fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
 					continue
 				}
+
+				log.Error(err)
 
 				break
 			}

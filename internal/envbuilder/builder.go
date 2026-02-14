@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package envbuilder
 
@@ -16,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,23 +37,47 @@ func (pt PromptType) String() string {
 	return string(pt)
 }
 
+// UserPrompt represents a configuration prompt that can be displayed to users
+// during the dotenv setup wizard. Prompts are defined in YAML files within the .datarobot
+// directory of a given template.
 type UserPrompt struct {
-	Section   string
-	Root      bool
-	Active    bool
+	Section string
+	Root    bool
+	// Active indicates if this prompt should be processed (based on conditional logic).
+	Active bool
+	// Commented indicates if the variable should be commented out in the .env file. This
+	// can be used for variables that the user may want to set but are not required.
 	Commented bool
-	Value     string
-	Hidden    bool
+	// Value is the current value for this prompt (from .env, environment, or user input).
+	Value string
+	// Hidden indicates if this prompt should never be shown to users (e.g., core variables).
+	Hidden bool
 
-	Env      string         `yaml:"env"`
-	Key      string         `yaml:"key"`
-	Type     PromptType     `yaml:"type"`
-	Multiple bool           `yaml:"multiple"`
-	Options  []PromptOption `yaml:"options,omitempty"`
-	Default  string         `yaml:"default,omitempty"`
-	Help     string         `yaml:"help"`
-	Optional bool           `yaml:"optional,omitempty"`
-	Generate bool           `yaml:"generate,omitempty"`
+	// Env is the environment variable name to set (e.g., "DATABASE_URL").
+	Env string `yaml:"env"`
+	// Key is an alternative identifier when Env is not set (written as comment).
+	Key string `yaml:"key"`
+	// Type is the prompt type: "string" (default) or "secret_string" (masked input).
+	Type PromptType `yaml:"type"`
+	// Multiple allows selecting multiple options (checkbox-style) when Options is set.
+	Multiple bool `yaml:"multiple"`
+	// Options provides a list of choices for selection-style prompts.
+	Options []PromptOption `yaml:"options,omitempty"`
+	// Default is the initial value for this prompt. Prompts with defaults are
+	// skipped during the wizard unless the value differs or AlwaysPrompt is set.
+	Default string `yaml:"default,omitempty"`
+	// Help is the description text shown to users when prompting for input.
+	Help string `yaml:"help"`
+	// Optional allows the prompt to be skipped without providing a value.
+	Optional bool `yaml:"optional,omitempty"`
+	// Generate auto-generates a cryptographic random value for secret_string types.
+	Generate bool `yaml:"generate,omitempty"`
+	// AlwaysPrompt forces the prompt to be shown even when a default value is set.
+	// Use this for prompts where users should consciously confirm or change the default.
+	// This does not affect prompts with options that have "requires" fields -
+	// those prompts are always shown regardless of defaults. This also does not
+	// affect prompts that are required due to conditional logic, or hidden prompts.
+	AlwaysPrompt bool `yaml:"always_prompt,omitempty"`
 }
 
 type PromptOption struct {
@@ -132,8 +162,46 @@ func (up UserPrompt) Valid() bool {
 	return up.Optional || up.Value != ""
 }
 
-func (up UserPrompt) ShouldAsk() bool {
-	return up.Active && !up.Hidden
+// HasRequiresOptions returns true if any option has a requires field set.
+func (up UserPrompt) HasRequiresOptions() bool {
+	for _, opt := range up.Options {
+		if opt.Requires != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ShouldAsk returns true if this prompt should be shown to the user.
+// Prompts with defaults are skipped unless AlwaysPrompt is set, showAll is true,
+// or the prompt has options with requires (which control conditional sections).
+func (up UserPrompt) ShouldAsk(showAll bool) bool {
+	if !up.Active || up.Hidden {
+		return false
+	}
+
+	// If showAll flag is set, show all active non-hidden prompts
+	if showAll {
+		return true
+	}
+
+	// If prompt has always_prompt: true, always show it
+	if up.AlwaysPrompt {
+		return true
+	}
+
+	// Always show prompts with requires options - they control conditional sections
+	if up.HasRequiresOptions() {
+		return true
+	}
+
+	// Skip prompts that have a default and value equals default (not user-modified)
+	if up.Default != "" && up.Value == up.Default {
+		return false
+	}
+
+	return true
 }
 
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {

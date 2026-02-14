@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package install
 
@@ -222,17 +228,22 @@ func getInstallFunc(rootCmd *cobra.Command, shellType internalShell.Shell, force
 }
 
 func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
 	var installPath string
 
 	var compDir string
 
 	// Check for Oh-My-Zsh first (most common)
-	if fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
-		compDir = filepath.Join(os.Getenv("HOME"), ".oh-my-zsh", "custom", "completions")
+	if fsutil.DirExists(filepath.Join(homeDir, ".oh-my-zsh")) {
+		compDir = filepath.Join(homeDir, ".oh-my-zsh", "custom", "completions")
 		installPath = filepath.Join(compDir, "_"+version.CliName)
 	} else {
 		// Use standard Zsh completion directory
-		compDir = filepath.Join(os.Getenv("HOME"), ".zsh", "completions")
+		compDir = filepath.Join(homeDir, ".zsh", "completions")
 		installPath = filepath.Join(compDir, "_"+version.CliName)
 	}
 
@@ -255,7 +266,7 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 		}
 
 		// Clear cache
-		cachePattern := filepath.Join(os.Getenv("HOME"), ".zcompdump*")
+		cachePattern := filepath.Join(homeDir, ".zcompdump*")
 
 		matches, _ := filepath.Glob(cachePattern)
 		for _, match := range matches {
@@ -263,8 +274,8 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 		}
 
 		// Add to fpath if using standard Zsh (not Oh-My-Zsh)
-		if !fsutil.DirExists(filepath.Join(os.Getenv("HOME"), ".oh-my-zsh")) {
-			zshrc := filepath.Join(os.Getenv("HOME"), ".zshrc")
+		if !fsutil.DirExists(filepath.Join(homeDir, ".oh-my-zsh")) {
+			zshrc := filepath.Join(homeDir, ".zshrc")
 			if err := ensureFpathInZshrc(zshrc, compDir); err != nil {
 				fmt.Printf("%s %s\n", warnStyle.Render("Warning: "), err)
 			}
@@ -277,7 +288,12 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 }
 
 func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	compDir := filepath.Join(os.Getenv("HOME"), ".bash_completions")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
+	compDir := filepath.Join(homeDir, ".bash_completions")
 	installPath := filepath.Join(compDir, version.CliName)
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -331,7 +347,7 @@ func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 		}
 
 		// Add sourcing to bashrc if not already there
-		bashrc := filepath.Join(os.Getenv("HOME"), ".bashrc")
+		bashrc := filepath.Join(homeDir, ".bashrc")
 		if err := ensureSourceInBashrc(bashrc, installPath); err != nil {
 			fmt.Printf("%s %s\n", warnStyle.Render("Warning:"), err)
 		}
@@ -377,7 +393,12 @@ func isBashCompletionAvailable() bool {
 }
 
 func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	compDir := filepath.Join(os.Getenv("HOME"), ".config", "fish", "completions")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
+	}
+
+	compDir := filepath.Join(homeDir, ".config", "fish", "completions")
 	installPath := filepath.Join(compDir, version.CliName+".fish")
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -401,30 +422,9 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 }
 
 func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	// Get PowerShell profile path
-	var profilePath string
-
-	if runtime.GOOS == "windows" {
-		// On Windows, use $PROFILE (Documents\PowerShell or Documents\WindowsPowerShell)
-		documentsPath := os.Getenv("USERPROFILE")
-		if documentsPath == "" {
-			documentsPath = os.Getenv("HOME")
-		}
-
-		documentsPath = filepath.Join(documentsPath, "Documents")
-
-		// Try PowerShell Core first (PowerShell 7+)
-		psCorePath := filepath.Join(documentsPath, "PowerShell")
-		if fsutil.DirExists(psCorePath) {
-			profilePath = filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1")
-		} else {
-			// Fall back to Windows PowerShell 5.x
-			profilePath = filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
-		}
-	} else {
-		// On Unix-like systems with PowerShell Core
-		homeDir := os.Getenv("HOME")
-		profilePath = filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1")
+	profilePath, err := powerShellProfilePath()
+	if err != nil {
+		return "", func(*cobra.Command) error { return err }
 	}
 
 	installFunc := func(rootCmd *cobra.Command) error {
@@ -468,6 +468,26 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 	}
 
 	return profilePath, installFunc
+}
+
+func powerShellProfilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	if runtime.GOOS != "windows" {
+		return filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"), nil
+	}
+
+	documentsPath := filepath.Join(homeDir, "Documents")
+
+	psCorePath := filepath.Join(documentsPath, "PowerShell")
+	if fsutil.DirExists(psCorePath) {
+		return filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1"), nil
+	}
+
+	return filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"), nil
 }
 
 func showActivationInstructions(shell internalShell.Shell) {

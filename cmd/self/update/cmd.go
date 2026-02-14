@@ -1,20 +1,29 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package update
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/log"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/internal/version"
@@ -88,11 +97,16 @@ with your default shell.
 				return err
 			}
 
-			var command string
+			var (
+				command    string
+				executable string
+				backup     string
+			)
 
 			switch runtime.GOOS {
 			case "windows":
 				command = "irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex"
+				executable, backup = backupExecutable()
 			case "darwin", "linux":
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
 			default:
@@ -105,7 +119,16 @@ with your default shell.
 			execCmd.Stderr = os.Stderr
 
 			if err := execCmd.Run(); err != nil {
-				log.Fatalf("Command execution failed: %v", err)
+				if runtime.GOOS == "windows" {
+					// rename back if update failed
+					err = os.Rename(backup, executable)
+					if err != nil {
+						log.Errorf("Could not revert executable from backup: %s\n", backup)
+					}
+				}
+
+				log.Fatalf("Command execution failed: %v\n", err)
+
 				return err
 			}
 
@@ -116,4 +139,31 @@ with your default shell.
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update to latest version")
 
 	return cmd
+}
+
+func backupExecutable() (string, string) {
+	executable, err := os.Executable()
+	if err != nil {
+		log.Fatal("Could not determine current executable\n")
+	}
+
+	dir, file := filepath.Split(executable)
+	ext := filepath.Ext(file)
+	name := strings.TrimSuffix(file, ext)
+
+	backup := filepath.Join(dir, name+"_"+version.Version+ext)
+
+	if fsutil.FileExists(backup) {
+		err = os.Remove(backup)
+		if err != nil {
+			log.Fatalf("Could not remove old backup executable: %s\n", backup)
+		}
+	}
+
+	err = os.Rename(executable, backup)
+	if err != nil {
+		log.Fatalf("Could not backup current executable\n")
+	}
+
+	return executable, backup
 }

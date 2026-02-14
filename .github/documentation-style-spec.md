@@ -262,7 +262,7 @@ Add periods to descriptions
 
 **Format**
 ```markdown
-✅ **Note:** The CLI requires Go 1.25.5 or later.
+✅ **Note:** The CLI requires Go 1.25.7 or later.
 
 ✅ **Important:** Never commit `.env` files to version control.
 
@@ -332,8 +332,7 @@ When updating documentation, verify these files follow the style guide:
 - [ ] `release.md`
 
 ### Documentation Hub
-- [ ] `docs/README.md`
-- [ ] `docs/SUMMARY.md`
+- [ ] `docs/index.md`
 
 ## Verification Process
 

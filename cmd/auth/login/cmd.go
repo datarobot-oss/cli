@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package login
 
@@ -14,14 +20,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-func RunE(cmd *cobra.Command, _ []string) error {
+func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
@@ -30,6 +36,18 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		log.Error(err)
 
 		return err
+	}
+
+	var url string
+	if len(args) > 0 {
+		url = args[0]
+	}
+
+	if url != "" {
+		err := config.SaveURLToConfig(url)
+		if err != nil {
+			log.Error(err.Error())
+		}
 	}
 
 	datarobotHost := auth.GetBaseURLOrAsk()
@@ -63,6 +81,9 @@ func RunE(cmd *cobra.Command, _ []string) error {
 	key, err := auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
 	if err != nil {
 		log.Error(err)
+
+		cmd.SilenceUsage = true
+
 		return err
 	}
 
@@ -75,6 +96,9 @@ func RunE(cmd *cobra.Command, _ []string) error {
 	err = auth.WriteConfigFile()
 	if err != nil {
 		log.Error(err)
+
+		cmd.SilenceUsage = true
+
 		return err
 	}
 
@@ -83,7 +107,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "login",
+		Use:   "login [url]",
 		Short: "🔐 Log in to DataRobot using OAuth authentication.",
 		Long: `Log in to DataRobot using OAuth authentication in your browser.
 

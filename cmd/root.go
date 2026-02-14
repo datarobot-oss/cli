@@ -1,30 +1,40 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package cmd
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
+	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -58,19 +68,13 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		// PersistentPreRunE is a hook called after flags are parsed
 		// but before the command is run. Any logic that needs to happen
 		// before ANY command execution should go here.
-		useDebug, _ := cmd.Flags().GetBool("debug")
-		useVerbose, _ := cmd.Flags().GetBool("verbose")
-		// Debug takes precedence
-		if useDebug {
-			setLogLevel(log.DebugLevel)
-		} else if useVerbose {
-			setLogLevel(log.InfoLevel)
-		}
+
+		log.Start()
+
 		return initializeConfig(cmd)
 	},
-	PostRun: func(_ *cobra.Command, _ []string) {
-		// Always reset log level from config in case it was altered with CLI args '--verbose' or '--debug'
-		setLogLevelFromConfig()
+	PersistentPostRun: func(_ *cobra.Command, _ []string) {
+		log.Stop()
 	},
 }
 
@@ -93,13 +97,14 @@ func init() {
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
-		"path to config file (default location: $HOME/.datarobot/drconfig.yaml)")
+		"path to config file (default location: $HOME/.config/datarobot/drconfig.yaml)")
 	RootCmd.PersistentFlags().BoolP("version", "V", false, "display the version")
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
+	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -107,15 +112,13 @@ func init() {
 	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 
-	setLogLevelFromConfig()
-
-	// Add command groups
+	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
 		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},
 		&cobra.Group{ID: "self", Title: tui.BaseTextStyle.Render("Self Commands:")},
 		&cobra.Group{ID: "advanced", Title: tui.BaseTextStyle.Render("Advanced Commands:")},
-		&cobra.Group{ID: "plugin", Title: tui.BaseTextStyle.Render("Plugin Commands:")},
 	)
 
 	// Add commands here to ensure that they are available to users.
@@ -131,7 +134,11 @@ func init() {
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
+		plugin.Cmd(),
 	)
+
+	// Discover and register plugin commands
+	registerPluginCommands()
 
 	// Override the default help command to add --all-commands flag
 	defaultHelpFunc := RootCmd.HelpFunc()
@@ -195,16 +202,92 @@ func initializeConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-func setLogLevel(level log.Level) {
-	log.SetLevel(level)
+// registerPluginCommands discovers and registers plugin commands
+func registerPluginCommands() {
+	timeout := viper.GetDuration("plugin-discovery-timeout")
+	if timeout <= 0 {
+		log.Debug("Plugin discovery disabled", "timeout", timeout)
+		return
+	}
+
+	// Get list of builtin command names FIRST (before adding plugins)
+	builtinNames := make(map[string]bool)
+	for _, cmd := range RootCmd.Commands() {
+		builtinNames[cmd.Name()] = true
+	}
+
+	type pluginDiscoveryResult struct {
+		plugins []internalPlugin.DiscoveredPlugin
+		err     error
+	}
+
+	resultCh := make(chan pluginDiscoveryResult, 1)
+
+	go func() {
+		plugins, err := internalPlugin.GetPlugins()
+		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
+	}()
+
+	var plugins []internalPlugin.DiscoveredPlugin
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil {
+			log.Debug("Plugin discovery failed", "error", r.err)
+			return
+		}
+
+		plugins = r.plugins
+	case <-time.After(timeout):
+		log.Info("Plugin discovery timed out", "timeout", timeout)
+		log.Info("Consider increasing timeout using --plugin-discovery-timeout flag")
+
+		return
+	}
+
+	if len(plugins) == 0 {
+		// No plugins found, don't add empty group header
+		return
+	}
+
+	// Only add plugin group if we have plugins to show
+	RootCmd.AddGroup(&cobra.Group{
+		ID:    "plugin",
+		Title: tui.BaseTextStyle.Render("Plugin Commands:"),
+	})
+
+	for _, p := range plugins {
+		// Skip if conflicts with builtin command
+		if builtinNames[p.Manifest.Name] {
+			// TODO: Consider logging at Info level since this affects user-visible behavior
+			log.Debug("Plugin name conflicts with builtin command",
+				"plugin", p.Manifest.Name,
+				"path", p.Executable)
+
+			continue
+		}
+
+		RootCmd.AddCommand(createPluginCommand(p))
+	}
 }
 
-func setLogLevelFromConfig() {
-	if viper.GetBool("debug") {
-		log.SetLevel(log.DebugLevel)
-	} else if viper.GetBool("verbose") {
-		log.SetLevel(log.InfoLevel)
-	} else {
-		log.SetLevel(log.WarnLevel)
+func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
+	executable := p.Executable // Capture for closure
+	manifest := p.Manifest     // Capture for closure
+	pluginName := p.Manifest.Name
+
+	return &cobra.Command{
+		Use:                p.Manifest.Name,
+		Short:              p.Manifest.Description,
+		GroupID:            "plugin",
+		DisableFlagParsing: true, // Pass all args to plugin
+		DisableSuggestions: true,
+		Run: func(_ *cobra.Command, args []string) {
+			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
+			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
+
+			exitCode := internalPlugin.ExecutePlugin(manifest, executable, args)
+			os.Exit(exitCode)
+		},
 	}
 }

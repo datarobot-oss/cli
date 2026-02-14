@@ -302,17 +302,15 @@ The CLI discovers prompts in this order:
 `backend/.datarobot/prompts.yaml`:
 
 ```yaml
-prompts:
+backend:
   - key: "api_port"
     env: "API_PORT"
     help: "Backend API port"
     default: "8000"
-    section: "backend"
 
   - key: "database_url"
     env: "DATABASE_URL"
     help: "Database connection string"
-    section: "backend"
 ```
 
 ### Example: frontend prompts
@@ -320,18 +318,16 @@ prompts:
 `frontend/.datarobot/prompts.yaml`:
 
 ```yaml
-prompts:
+frontend:
   - key: "ui_port"
     env: "UI_PORT"
     help: "Frontend UI port"
     default: "3000"
-    section: "frontend"
 
   - key: "api_endpoint"
     env: "API_ENDPOINT"
     help: "Backend API endpoint"
     default: "http://localhost:8000"
-    section: "frontend"
 ```
 
 ## Template lifecycle
@@ -358,11 +354,8 @@ Available templates:
 Clone a template to your local machine:
 
 ```bash
-# Clone a specific template
-dr templates clone python-streamlit
-
-# Clone to a custom directory
-dr templates clone python-streamlit my-app
+# Set up a template (clones and configures interactively)
+dr templates setup
 ```
 
 This:
@@ -497,9 +490,8 @@ Include a clear README.
 
 ## Quick start
 
-1. Clone: `dr templates clone my-template`
-2. Configure: `dr templates setup`
-3. Run: `dr run dev`
+1. Set up: `dr templates setup`
+2. Run: `dr run dev`
 
 ## Available tasks
 
@@ -542,19 +534,6 @@ src/
 ```
 
 ## Template updates
-
-### Checking for updates
-
-```bash
-# Check current template status
-dr templates status
-
-# Shows:
-# - Current version
-# - Latest available version
-# - Modified files
-# - Available updates
-```
 
 ### Updating templates
 

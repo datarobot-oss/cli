@@ -214,7 +214,7 @@ dr <Tab>
 
 # Type 'dr auth' and press Tab to see subcommands
 dr auth <Tab>
-# Shows: login, logout, set-url
+# Shows: check, login, logout, set-url
 
 # Type 'dr templates' and press Tab
 dr templates <Tab>
@@ -238,8 +238,8 @@ dr run --par<Tab>
 For commands that support it:
 
 ```bash
-# Template names when using clone
-dr templates clone <Tab>
+# Template names when using setup
+dr templates setup <Tab>
 # Shows available template names from DataRobot
 
 # Task names when using run (if in a template directory)

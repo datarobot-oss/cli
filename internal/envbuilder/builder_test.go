@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package envbuilder
 
@@ -187,4 +193,139 @@ root:
 	// Verify that our multiline string has a newline in it
 	suite.Equal("A string type.\nWith a multiline help string.", prompts[0].Help)
 	suite.Equal("A secret string type", prompts[1].Help)
+}
+
+func (suite *BuilderTestSuite) TestAlwaysPromptYAMLParsing() {
+	yamlContent := `
+root:
+  - env: PORT
+    type: string
+    default: "8080"
+    help: Application port
+    always_prompt: true
+  - env: DEBUG
+    type: string
+    default: "false"
+    help: Enable debug mode
+  - env: LOG_LEVEL
+    type: string
+    default: "info"
+    help: Log level
+    always_prompt: false
+`
+
+	// Create a temporary YAML file
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_always_prompt.yaml")
+	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
+	suite.Require().NoError(err)
+
+	// Parse the file
+	prompts, err := filePrompts(tmpFile)
+	suite.Require().NoError(err)
+	suite.Require().Len(prompts, 3, "Expected 3 prompts")
+
+	// Verify always_prompt is correctly parsed
+	suite.Equal("PORT", prompts[0].Env)
+	suite.True(prompts[0].AlwaysPrompt, "PORT should have always_prompt=true")
+	suite.Equal("8080", prompts[0].Default)
+
+	suite.Equal("DEBUG", prompts[1].Env)
+	suite.False(prompts[1].AlwaysPrompt, "DEBUG should have always_prompt=false (default)")
+
+	suite.Equal("LOG_LEVEL", prompts[2].Env)
+	suite.False(prompts[2].AlwaysPrompt, "LOG_LEVEL should have always_prompt=false (explicit)")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ActiveAndNotHidden() {
+	prompt := UserPrompt{Active: true, Hidden: false}
+	suite.True(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_NotActive() {
+	prompt := UserPrompt{Active: false, Hidden: false}
+	suite.False(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_Hidden() {
+	prompt := UserPrompt{Active: true, Hidden: true}
+	suite.False(prompt.ShouldAsk(false))
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsPromptWithDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value"}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt when value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithModifiedValue() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "user_modified"}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when value differs from default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithoutDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "", Value: ""}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when no default is set")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_AlwaysPromptOverridesDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value", AlwaysPrompt: true}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt when always_prompt is true even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowAllOverridesDefault() {
+	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value"}
+	suite.True(prompt.ShouldAsk(true), "Should show prompt when showAll is true even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowAllDoesNotOverrideHidden() {
+	prompt := UserPrompt{Active: true, Hidden: true, Default: "default_value", Value: "default_value"}
+	suite.False(prompt.ShouldAsk(true), "Should not show hidden prompts even when showAll is true")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_RequiresOptionsAlwaysShown() {
+	prompt := UserPrompt{
+		Active:  true,
+		Hidden:  false,
+		Default: "option1",
+		Value:   "option1",
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2", Requires: "extra_config"},
+		},
+	}
+	suite.True(prompt.ShouldAsk(false), "Should show prompt with requires options even if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_OptionsWithoutRequiresCanBeSkipped() {
+	prompt := UserPrompt{
+		Active:  true,
+		Hidden:  false,
+		Default: "option1",
+		Value:   "option1",
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2"},
+		},
+	}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt with options but no requires if value equals default")
+}
+
+func (suite *BuilderTestSuite) TestHasRequiresOptions() {
+	promptWithRequires := UserPrompt{
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2", Requires: "extra_config"},
+		},
+	}
+	suite.True(promptWithRequires.HasRequiresOptions())
+
+	promptWithoutRequires := UserPrompt{
+		Options: []PromptOption{
+			{Name: "Option 1", Value: "option1"},
+			{Name: "Option 2", Value: "option2"},
+		},
+	}
+	suite.False(promptWithoutRequires.HasRequiresOptions())
+
+	promptNoOptions := UserPrompt{}
+	suite.False(promptNoOptions.HasRequiresOptions())
 }

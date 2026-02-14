@@ -70,7 +70,7 @@ The following commands use `PreRunE` to ensure authentication:
 
 - `dr dotenv update`: Automatically ensures authentication before updating environment variables.
 - `dr templates list`: Requires authentication to fetch templates from the API.
-- `dr templates clone`: Requires authentication to fetch template details.
+- `dr templates setup`: Requires authentication to fetch template details.
 
 ## Skip authentication
 

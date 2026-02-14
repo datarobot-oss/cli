@@ -1,23 +1,25 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package drapi
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 )
 
@@ -120,48 +122,28 @@ func (tl TemplateList) SortByName() TemplateList {
 }
 
 func GetTemplates() (*TemplateList, error) {
-	datarobotEndpoint, err := config.GetEndpointURL("/api/v2/applicationTemplates/")
+	url, err := config.GetEndpointURL("/api/v2/applicationTemplates/?limit=100")
 	if err != nil {
 		return nil, err
-	}
-
-	log.Info("Fetching templates from " + datarobotEndpoint)
-
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"?limit=100", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := config.GetAPIKey()
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Authorization", "Bearer "+token)
-	req.Header.Add("User-Agent", config.GetUserAgentHeader())
-
-	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Response status code is " + resp.Status + ".")
 	}
 
 	var templateList TemplateList
 
-	err = json.NewDecoder(resp.Body).Decode(&templateList)
-	if err != nil {
-		return nil, err
+	var templates []Template
+
+	for url != "" {
+		templateList = TemplateList{}
+
+		err = GetJSON(url, "templates", &templateList)
+		if err != nil {
+			return nil, err
+		}
+
+		templates = append(templates, templateList.Templates...)
+		url = templateList.Next
 	}
+
+	templateList.Templates = templates
 
 	return &templateList, nil
 }

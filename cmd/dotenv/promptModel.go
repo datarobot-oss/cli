@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package dotenv
 
@@ -18,6 +24,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 )
@@ -86,6 +93,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	if prompt.Type == "llmgw_catalog" {
+		return newLLMListPrompt(prompt, successCmd)
+	}
+
 	if len(prompt.Options) == 0 {
 		return newTextInputPrompt(prompt, successCmd)
 	}
@@ -162,6 +173,25 @@ func newListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMode
 		list:       l,
 		successCmd: successCmd,
 	}, cmd
+}
+
+func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	llms, err := drapi.GetLLMs()
+	if err != nil {
+		return promptModel{}, nil
+	}
+
+	for _, llm := range llms.LLMs {
+		prompt.Options = append(prompt.Options, envbuilder.PromptOption{
+			Blank:    false,
+			Checked:  false,
+			Name:     fmt.Sprintf("%s (%s)", llm.Name, llm.Provider),
+			Value:    llm.LlmID,
+			Requires: "",
+		})
+	}
+
+	return newListPrompt(prompt, successCmd)
 }
 
 func (pm promptModel) GetValues() []string {

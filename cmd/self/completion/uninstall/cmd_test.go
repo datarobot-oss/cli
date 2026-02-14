@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package uninstall
 
@@ -16,6 +22,7 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
+	"github.com/datarobot/cli/internal/testutil"
 )
 
 func TestFindExistingCompletions(t *testing.T) {
@@ -27,12 +34,7 @@ func TestFindExistingCompletions(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	// Save original HOME
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
-	// Set HOME to temp directory
-	os.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	tests := []struct {
 		name          string
@@ -81,7 +83,7 @@ func TestFindExistingCompletions(t *testing.T) {
 				t.Fatalf("failed to create temp dir: %v", err)
 			}
 
-			os.Setenv("HOME", tmpDir)
+			testutil.SetTestHomeDir(t, tmpDir)
 
 			// Create test files
 			for _, filePath := range tt.setupFiles {
@@ -129,12 +131,8 @@ func TestUninstallCmd(t *testing.T) {
 }
 
 func TestGetUninstallPaths(t *testing.T) {
-	// Save original HOME
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
 	testHome := "/test/home"
-	os.Setenv("HOME", testHome)
+	testutil.SetTestHomeDir(t, testHome)
 
 	tests := []struct {
 		name          string
@@ -267,10 +265,7 @@ func TestPerformUninstall(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
-	os.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -301,10 +296,7 @@ func TestUninstallZsh(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
-	os.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	// Test with no files
 	removed := uninstallZsh()
@@ -346,10 +338,7 @@ func TestUninstallBash(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
-	os.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	// Test with no files
 	removed := uninstallBash()
@@ -391,10 +380,7 @@ func TestUninstallFish(t *testing.T) {
 
 	defer os.RemoveAll(tmpDir)
 
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
-
-	os.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	// Test with no files
 	removed := uninstallFish()

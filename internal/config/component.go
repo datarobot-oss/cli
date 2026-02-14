@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package config
 
@@ -85,15 +91,20 @@ func LoadComponentDefaults(explicitPath string) (*ComponentDefaults, error) {
 func findComponentDefaultsPath() string {
 	// 1. Check repo root .datarobot folder
 	repoRoot, err := repo.FindRepoRoot()
-	if err == nil && repoRoot != "" {
+	if err == nil {
 		repoPath := filepath.Join(repoRoot, ".datarobot", ComponentDefaultsFileName)
 		if _, err := os.Stat(repoPath); err == nil {
 			return repoPath
 		}
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
 	// 2. Check home directory .config/datarobot
-	homeConfigDir := filepath.Join(os.Getenv("HOME"), configFileDir)
+	homeConfigDir := filepath.Join(homeDir, configFileDir)
 
 	homePath := filepath.Join(homeConfigDir, ComponentDefaultsFileName)
 	if _, err := os.Stat(homePath); err == nil {

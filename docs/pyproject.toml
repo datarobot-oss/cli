@@ -1,0 +1,9 @@
+[project]
+name = "datarobot-cli-docs"
+version = "0.1.0"
+description = "Documentation for DataRobot CLI"
+requires-python = ">=3.9"
+dependencies = [
+    "mkdocs-material>=9.5.0",
+    "mkdocs-same-dir>=0.1.3",
+]

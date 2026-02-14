@@ -231,4 +231,4 @@ git push origin v0.2.0
 
 - [Setup Guide](setup.md): Outlines development environment setup.
 - [Building Guide](building.md): Provides detailed build information.
-- [Contributing](../../CONTRIBUTING.md): Contribution guidelines.
+- [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;contribution guidelines.

@@ -152,6 +152,16 @@ tasks:
     cmds:
       - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
 
+  docs-serve:
+    silent: true
+    desc: "Serve documentation site locally"
+    dir: docs
+    cmds:
+      - echo "📚 Starting documentation server…"
+      - uv sync
+      - echo "🌐 Open http://localhost:8000 in your browser"
+      - uv run mkdocs serve
+
   copyright:
     silent: true
     desc: "Apply copyrights to all files"

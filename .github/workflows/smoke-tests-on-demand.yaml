@@ -77,7 +77,7 @@ jobs:
     if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.build-windows.yaml
     with:
-      go-version: '1.25.5'
+      go-version: '1.25.7'
       artifact-name: 'dr-windows'
     secrets: inherit
 
@@ -86,7 +86,7 @@ jobs:
     if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
-      go-version: '1.25.5'
+      go-version: '1.25.7'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 

@@ -1,10 +1,17 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package dotenv
 
 import (
@@ -163,8 +170,9 @@ func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 
 func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	tm := suite.NewTestModel(Model{
-		screen:     wizardScreen,
-		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		ShowAllPrompts: true,
 	})
 
 	// Set default pulumi passphrase to 123
@@ -208,8 +216,9 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 
 func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	tm := suite.NewTestModel(Model{
-		screen:     wizardScreen,
-		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		ShowAllPrompts: true,
 	})
 
 	// Set default pulumi passphrase to 123
@@ -264,8 +273,9 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 
 func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	tm := suite.NewTestModel(Model{
-		screen:     wizardScreen,
-		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		ShowAllPrompts: true,
 	})
 
 	// Set default pulumi passphrase to 123
@@ -334,8 +344,9 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 	suite.T().Setenv("DATAROBOT_DEFAULT_USE_CASE", "existing_use_case")
 	suite.T().Setenv("PULUMI_CONFIG_PASSPHRASE", "existing_passphrase")
 	tm := suite.NewTestModel(Model{
-		screen:     wizardScreen,
-		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		ShowAllPrompts: true,
 	})
 
 	suite.WaitFor(tm, "Default: 123")
@@ -400,4 +411,47 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
+}
+
+func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
+	// This test validates that prompts with default values are skipped
+	// The first prompt (PULUMI_CONFIG_PASSPHRASE) has default: 123, so it should be skipped
+	// The wizard should start directly at DATAROBOT_DEFAULT_USE_CASE
+	tm := suite.NewTestModel(Model{
+		screen:         wizardScreen,
+		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
+		ShowAllPrompts: false, // Default behavior - skip prompts with defaults
+	})
+
+	// Should skip PULUMI_CONFIG_PASSPHRASE and start at DATAROBOT_DEFAULT_USE_CASE
+	suite.WaitFor(tm, "The default use case for this application")
+	suite.Send(tm, "my_use_case", "enter")
+
+	// Leave data source blank
+	suite.WaitFor(tm, "The data source to use for this application")
+	suite.Send(tm, "enter")
+
+	suite.WaitFor(tm, "Select the type of LLM integration to enable.")
+	suite.Send(tm, "down")
+	suite.WaitFor(tm, "> LLM Gateway")
+	suite.Send(tm, "enter")
+
+	// Wait for the file write to complete and return to list screen
+	suite.WaitFor(tm, "Variables found in")
+
+	// Exit list screen
+	suite.Send(tm, "enter")
+
+	fm := suite.FinalModel(tm)
+
+	actualContents, err := os.ReadFile(fm.DotenvFile)
+	suite.Require().NoError(err, "Expected to read .env file")
+
+	actualContentsStr := string(actualContents)
+
+	// PULUMI_CONFIG_PASSPHRASE should still have the default value written
+	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=\"123\"\n", "Expected env file to contain the default passphrase")
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"my_use_case\"\n", "Expected env file to contain the entered use case")
+
+	os.Remove(fm.DotenvFile)
 }

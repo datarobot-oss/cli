@@ -287,8 +287,7 @@ The wizard supports multiple input types defined in `.datarobot/prompts.yaml`:
 
 ```yaml
 prompts:
-  - key: "app_name"
-    env: "APP_NAME"
+  - env: "APP_NAME"
     help: "Enter your application name"
 ```
 
@@ -296,8 +295,7 @@ prompts:
 
 ```yaml
 prompts:
-  - key: "api_key"
-    env: "API_KEY"
+  - env: "API_KEY"
     type: "secret_string"
     help: "Enter your API key"
     generate: true  # Auto-generate a random secret
@@ -307,8 +305,7 @@ prompts:
 
 ```yaml
 prompts:
-  - key: "environment"
-    env: "ENVIRONMENT"
+  - env: "ENVIRONMENT"
     help: "Select deployment environment"
     options:
       - name: "Development"
@@ -321,13 +318,22 @@ prompts:
 
 ```yaml
 prompts:
-  - key: "features"
-    env: "ENABLED_FEATURES"
+  - env: "ENABLED_FEATURES"
     help: "Select features to enable"
     multiple: true
     options:
       - name: "Analytics"
       - name: "Monitoring"
+```
+
+**LLM from LLM gateway:**
+
+```yaml
+prompts:
+  - env: "LLM_GATEWAY_MODEL"
+    type: "llmgw_catalog"
+    optional: false
+    help: "Choose LLM from LLM Gateway catalog."
 ```
 
 ### Conditional prompts
@@ -343,9 +349,8 @@ prompts:
         requires: "database_config"
       - name: "No"
 
-  - key: "database_url"
-    section: "database_config"
-    env: "DATABASE_URL"
+database_config:
+  - env: "DATABASE_URL"
     help: "Database connection string"
 ```
 
@@ -467,8 +472,7 @@ Secret strings with `generate: true` are automatically generated:
 
 ```yaml
 prompts:
-  - key: "session_secret"
-    env: "SESSION_SECRET"
+  - env: "SESSION_SECRET"
     type: "secret_string"
     generate: true
     help: "Session encryption key"

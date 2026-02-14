@@ -153,7 +153,8 @@ func init() {
 
 ### TUI models
 
-TUI components use the Bubble Tea framework and are executed using the `tui.Run` wrapper, which handles `Ctrl-C` signals and debug logging:
+TUI components use the Bubble Tea framework and are executed using the `tui.Run` wrapper,
+which handles `Ctrl-C` signals and pauses stderr logging (but not `.dr-tui-debug.log`) while program is running:
 
 ```go
 // cmd/example/model.go
@@ -230,4 +231,4 @@ Generated files and artifacts:
 
 - [Setup guide](setup.md): setting up your development environment
 - [Build guide](building.md): Detailed build information and architecture
-- [Contributions](../../CONTRIBUTING.md): Contribution guidelines
+- [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;contribution guidelines.

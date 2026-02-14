@@ -103,7 +103,49 @@ $ dr auth logout
 >
 > - Log in again with `dr auth login` to re-authenticate
 > - Switch to a different DataRobot instance with `dr auth set-url` followed by `dr auth login`
-> - Verify authentication status with `dr templates list` (will prompt for login if not authenticated)
+> - Verify authentication status with `dr auth check`
+
+### `check`
+
+Verify that your DataRobot credentials are properly configured and valid without triggering the login flow.
+
+```bash
+dr auth check
+```
+
+**What it checks (in order):**
+
+1. **Project `.env` file** (if in a repository with `.env`):
+   - Validates `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` in `.env`
+
+2. **Environment variables**:
+   - Checks `DATAROBOT_ENDPOINT` (or `DATAROBOT_API_ENDPOINT` fallback)
+   - Checks `DATAROBOT_API_TOKEN`
+
+3. **CLI config file**:
+   - Falls back to `~/.config/datarobot/drconfig.yaml`
+
+**Example output:**
+
+```bash
+# Valid environment credentials
+$ dr auth check
+✅ Environment variable authentication is valid.
+
+# Valid .env credentials (in a project directory)
+$ dr auth check
+✅ '.env' credentials are valid.
+
+# Invalid or missing credentials
+$ dr auth check
+❌ No DataRobot URL configured.
+Run dr auth set-url to configure your DataRobot URL.
+❌ No valid API key found in CLI config.
+Run dr auth login to authenticate.
+```
+
+> [!TIP]
+> Use `dr auth check` in CI/CD pipelines to verify credentials before running other commands.
 
 ### `set-url`
 
@@ -136,7 +178,7 @@ Choose your DataRobot environment:
 
 🔗 Don't know which one? Check your DataRobot login page URL.
 
-Enter your choice: 
+Enter your choice:
 ```
 
 **Quick selection:**

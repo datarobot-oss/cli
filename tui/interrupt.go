@@ -1,14 +1,9 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
-
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/log"
+)
 
 // InterruptibleModel wraps any Bubble Tea model to ensure Ctrl-C always works.
 // This wrapper intercepts ALL messages before they reach the underlying model,
@@ -39,6 +34,8 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// screen state, or what the underlying model does
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "ctrl+c" {
+			// Log the interrupt for debugging purposes
+			log.Info("Ctrl-C detected, quitting...")
 			return m, tea.Quit
 		}
 	}

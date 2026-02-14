@@ -16,7 +16,7 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 
 ### Prerequisites
 
-- [Go 1.25.5+](https://golang.org/dl/)
+- [Go 1.25.7+](https://golang.org/dl/)
 - Git version control
 - [Task](https://taskfile.dev/installation/) (The task runner)
 
@@ -328,7 +328,7 @@ func good() {
 
 Consider the following when building terminal user interfaces.
 
-1. **Always use the `tui.Run` wrapper to execute TUI models**. This ensures global `Ctrl-C` handling and sets up debug logging to `dr-tui-debug.log` when the `--debug` flag is enabled.
+1. **Always use the `tui.Run` wrapper to execute TUI models**. This ensures global `Ctrl-C` handling and sets up logging to `.dr-tui-debug.log`.
 
    ```go
    import "github.com/datarobot/cli/tui"
@@ -539,6 +539,22 @@ go test -run TestLogin ./cmd/auth
 
 **Note**: `task test` automatically runs tests with race detection and coverage enabled.
 
+### Go version requirements for race detection
+
+The `-race` flag requires the race runtime library to match your Go compiler version exactly. If you see an error like:
+
+```text
+compile: version "go1.X.Y" does not match go tool version "go1.X.Z"
+```
+
+This means your installed Go version doesn't match the version specified in `go.mod`. Go's `GOTOOLCHAIN=auto` setting (the default) automatically downloads the required toolchain, but the race runtime comes from your local `GOROOT` installation.
+
+**To resolve:**
+
+- **Upgrade Go** to match `go.mod`: `brew upgrade go` (macOS)
+- **Or downgrade `go.mod`**: `go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version)
+- **Or force the downloaded toolchain**: `export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`)
+
 ### Run smoke tests using GitHub Actions
 
 DataRobot has smoke tests that are not currently run on Pull Requests. However you can use PR comments to trigger them.
@@ -581,13 +597,18 @@ task build
 
 When you enable debug mode, the CLI:
 
-- Prints detailed log messages to stderr.
-- Creates a `dr-tui-debug.log` file in the current directory for TUI-related debug information.
+- Prints detailed log messages to stderr and `.dr-tui-debug.log` file in the home directory.
+
+When adding new debug output:
+
+- Never log user-provided input (including prompt responses), and avoid logging secrets (tokens, passwords, etc.).
 
 ### Add debug statements
 
 ```go
-import "github.com/charmbracelet/log"
+import (
+	"github.com/datarobot/cli/internal/log"
+)
 
 // Debug logging
 log.Debug("Variable value", "key", value)
@@ -598,7 +619,7 @@ log.Error("Operation failed", "error", err)
 
 ## Release process
 
-See [Release documentation](../../README.md#release) for a detailed overview of the release process.
+See [Releasing documentation](releasing.md) for a detailed overview of the release process.
 
 ### Quick release
 
@@ -616,6 +637,6 @@ git push --tags
 
 ## See also
 
-- [Contributing Guide](../../CONTRIBUTING.md)
+- [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)
 - [Project structure](structure.md)&mdash;code organization and design
 - [Release process](releasing.md)&mdash;how releases are created and published

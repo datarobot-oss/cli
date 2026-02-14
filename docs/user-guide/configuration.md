@@ -113,6 +113,9 @@ dr templates list --verbose
 
 # Enable debug logging
 dr templates list --debug
+
+# Timeout for plugin discovery (0s disables discovery)
+dr --plugin-discovery-timeout 2s --help
 ```
 
 > [!WARNING]
@@ -122,10 +125,10 @@ dr templates list --debug
 
 When the CLI needs configuration settings, it looks for them in this order (highest to lowest priority):
 
-1. **Command-line flags** (e.g., `--config <path>`) - Overrides everything
-2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`) - Overrides config files
-3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`) - Default location
-4. **Built-in defaults** - Fallback values
+1. **Command-line flags** (e.g., `--config <path>`)&mdash;overrides everything.
+2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`)&mdash;overrides config files.
+3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default location.
+4. **Built-in defaults**&mdash;fallback values.
 
 This means if you set an environment variable, it will take precedence over what's in your config file. This is useful for temporarily overriding settings without editing files.
 
@@ -210,7 +213,7 @@ dr --debug templates list
 
 When you enable debug mode, the CLI:
 - Prints detailed log messages to stderr.
-- Creates a `dr-tui-debug.log` file in the current directory for terminal UI debug information.
+- Creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
 
 ## Configuration examples
 
@@ -446,7 +449,7 @@ The CLI maintains state information about your interactions with repositories to
 
 The CLI stores state locally within each repository:
 
-- `.datarobot/cli/state.yaml` in the current working directory
+- `.datarobot/cli/state.yaml` in template directory
 
 ### Tracked information
 

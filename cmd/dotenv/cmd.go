@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package dotenv
 
@@ -15,9 +21,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
@@ -97,9 +103,7 @@ This wizard will help you:
   4️⃣  Validate your configuration
 
 💡 Perfect for first-time setup or when adding new integrations.`,
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE(cmd.Context())
-	},
+	PreRunE: auth.EnsureAuthenticatedE,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
@@ -137,12 +141,15 @@ This wizard will help you:
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
+		showAllPrompts, _ := cmd.Flags().GetBool("all")
+
 		m := Model{
-			initialScreen: wizardScreen,
-			DotenvFile:    dotenvFile,
-			variables:     variables,
-			contents:      contents,
-			SuccessCmd:    tea.Quit,
+			initialScreen:  wizardScreen,
+			DotenvFile:     dotenvFile,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+			ShowAllPrompts: showAllPrompts,
 		}
 		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
@@ -150,7 +157,7 @@ This wizard will help you:
 		}
 
 		// Update state after successful completion
-		_ = state.UpdateAfterDotenvSetup()
+		_ = state.UpdateAfterDotenvSetup(repositoryRoot)
 
 		return nil
 	},
@@ -158,6 +165,7 @@ This wizard will help you:
 
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
+	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
@@ -193,9 +201,7 @@ This command will:
   • Preserve your existing custom settings
 
 💡 Use this when your credentials expire or you need to refresh your connection.`,
-	PreRunE: func(cmd *cobra.Command, _ []string) error {
-		return auth.EnsureAuthenticatedE(cmd.Context())
-	},
+	PreRunE: auth.EnsureAuthenticatedE,
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {

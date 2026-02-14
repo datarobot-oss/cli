@@ -134,13 +134,13 @@ If you'd like to install a specific version, you can do so by passing the versio
 #### macOS/Linux
 
 ```bash
-curl  https://cli.datarobot.com/install | sh -s -- v0.1.0
+curl  https://cli.datarobot.com/install | sh -s -- v0.2.37
 ```
 
 #### Windows (PowerShell)
 
 ```powershell
-$env:VERSION = "v0.1.0"; irm https://cli.datarobot.com/winstall | iex
+$env:VERSION = "v0.2.37"; irm https://cli.datarobot.com/winstall | iex
 ```
 
 ### Build and install from source
@@ -149,7 +149,7 @@ If you would like to build and install from source, you can do so by following t
 
 #### Prerequisites
 
-- Go 1.25.5 or later (for building from source)
+- Go 1.25.7 or later (for building from source)
 - Git
 - [Task](https://taskfile.dev/) (for development and task running)
 
@@ -201,7 +201,7 @@ dr --version
 You should see output similar to:
 
 ```text
-DataRobot CLI (version v0.2.9)
+DataRobot CLI version: v0.2.37
 ```
 
 ### Updating the CLI
@@ -330,13 +330,13 @@ At the subsequent prompt, specify the desired directory name for the template an
 # 1. List available templates.
 dr templates list
 
-# 2. Clone a specific template.
-dr templates clone TEMPLATE_NAME
+# 2. Set up a template (this clones and configures it).
+dr templates setup
 
 # 3. Navigate to the template directory.
 cd TEMPLATE_NAME
 
-# 4. Configure environment variables.
+# 4. Configure environment variables (if not done during setup).
 dr dotenv setup
 ```
 
@@ -374,9 +374,12 @@ dr start
 This command will:
 
 - Check prerequisites and validate your environment.
-- Prompt you to update the CLI if the template requires a newer version.
-- Execute a template-specific quickstart script if available.
-- Fall back to the setup wizard if no script exists.
+- Verify your CLI version meets the template's minimum requirements.
+- Check if you're in a DataRobot repository (if not, launches template setup).
+- Execute a start command in this order:
+  1. `task start` from the Taskfile (if available)
+  2. A quickstart script from `.datarobot/cli/bin/` (if available)
+  3. Fall back to the setup wizard if neither exists.
 
 > [!TIP]
 > You can use the `--yes` flag to skip all prompts and execute immediately. This is useful in scripts or CI/CD pipelines.
@@ -493,7 +496,7 @@ dr --verbose templates list
 # Enable debug output for detailed information
 dr --debug templates list
 
-When you enable debug mode, the CLI creates a `dr-tui-debug.log` file in the current directory for terminal UI debug information.
+When you enable debug mode, the CLI creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
 
 ## Contributing
 

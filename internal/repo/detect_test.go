@@ -1,10 +1,16 @@
 // Copyright 2025 DataRobot, Inc. and its affiliates.
-// All rights reserved.
-// DataRobot, Inc. Confidential.
-// This is unpublished proprietary source code of DataRobot, Inc.
-// and its affiliates.
-// The copyright notice above does not evidence any actual or intended
-// publication of such source code.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package repo_test
 
@@ -51,14 +57,43 @@ func (suite *DetectTestSuite) TearDownTest() {
 	}
 }
 
-func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
-	err := os.MkdirAll(datarobotCLIPath, 0o755)
+func (suite *DetectTestSuite) createAnswersDir() {
+	// Create .datarobot/answers directory
+	err := os.MkdirAll(filepath.Join(suite.tempDir, ".datarobot", "answers"), 0o755)
 	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliDir() {
+	// Create .datarobot/cli directory
+	err := os.MkdirAll(filepath.Join(suite.tempDir, ".datarobot", "cli"), 0o755)
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliVersionsYaml() {
+	suite.createCliDir()
+	// Create .datarobot/cli/versions.yaml file
+	versionsFile := filepath.Join(suite.tempDir, ".datarobot", "cli", "versions.yaml")
+	file, err := os.OpenFile(versionsFile, os.O_RDONLY|os.O_CREATE, 0o644)
+	suite.Require().NoError(err)
+	err = file.Close()
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) createCliStateYaml() {
+	suite.createCliDir()
+	// Create .datarobot/cli/state.yaml file
+	stateFile := filepath.Join(suite.tempDir, ".datarobot", "cli", "state.yaml")
+	file, err := os.OpenFile(stateFile, os.O_RDONLY|os.O_CREATE, 0o644)
+	suite.Require().NoError(err)
+	err = file.Close()
+	suite.Require().NoError(err)
+}
+
+func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
+	suite.createAnswersDir()
 
 	// Change to temp directory
-	err = os.Chdir(suite.tempDir)
+	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
 	// Should find the repo root
@@ -76,14 +111,11 @@ func (suite *DetectTestSuite) TestFindRepoRootFindsDataRobotCLI() {
 }
 
 func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
-	err := os.MkdirAll(datarobotCLIPath, 0o755)
-	suite.Require().NoError(err)
+	suite.createAnswersDir()
 
 	// Create nested directory structure
 	nestedPath := filepath.Join(suite.tempDir, "src", "components", "deep")
-	err = os.MkdirAll(nestedPath, 0o755)
+	err := os.MkdirAll(nestedPath, 0o755)
 	suite.Require().NoError(err)
 
 	// Change to nested directory
@@ -104,41 +136,46 @@ func (suite *DetectTestSuite) TestFindRepoRootFromNestedDirectory() {
 	suite.Equal(expectedPath, actualPath)
 }
 
-func (suite *DetectTestSuite) TestFindRepoRootStopsAtGitFolder() {
-	// Create a .git directory (simulating a git repo boundary)
-	gitPath := filepath.Join(suite.tempDir, ".git")
-	err := os.MkdirAll(gitPath, 0o755)
-	suite.Require().NoError(err)
-
-	// Don't create .datarobot/cli, so it's a git repo but not a DataRobot repo
-	err = os.Chdir(suite.tempDir)
-	suite.Require().NoError(err)
-
-	// Should not find a repo root
-	repoRoot, err := repo.FindRepoRoot()
-	suite.Require().NoError(err)
-	suite.Empty(repoRoot)
-}
-
 func (suite *DetectTestSuite) TestFindRepoRootNotInRepo() {
-	// Don't create .datarobot/cli directory
+	// Don't create .datarobot/answers directory
 	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
 	// Should not find a repo root
 	repoRoot, err := repo.FindRepoRoot()
-	suite.Require().NoError(err)
+	suite.Require().Error(err)
 	suite.Empty(repoRoot)
 }
 
-func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
-	// Create .datarobot/cli directory
-	datarobotCLIPath := filepath.Join(suite.tempDir, ".datarobot", "cli")
-	err := os.MkdirAll(datarobotCLIPath, 0o755)
-	suite.Require().NoError(err)
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoAnswers() {
+	suite.createAnswersDir()
 
 	// Change to temp directory
-	err = os.Chdir(suite.tempDir)
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return true
+	suite.True(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoVersions() {
+	suite.createCliVersionsYaml()
+
+	// Change to temp directory
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return true
+	suite.True(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepoAll() {
+	suite.createAnswersDir()
+	suite.createCliVersionsYaml()
+	suite.createCliStateYaml()
+
+	// Change to temp directory
+	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
 	// Should return true
@@ -146,7 +183,18 @@ func (suite *DetectTestSuite) TestIsInRepoReturnsTrueWhenInRepo() {
 }
 
 func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenNotInRepo() {
-	// Don't create .datarobot/cli directory
+	// Don't create .datarobot/answers directory
+	err := os.Chdir(suite.tempDir)
+	suite.Require().NoError(err)
+
+	// Should return false
+	suite.False(repo.IsInRepo())
+}
+
+func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenOnlyStateYaml() {
+	suite.createCliStateYaml()
+
+	// Change to temp directory
 	err := os.Chdir(suite.tempDir)
 	suite.Require().NoError(err)
 
