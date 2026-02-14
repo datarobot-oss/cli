@@ -42,7 +42,7 @@ func (pt PromptType) String() string {
 // directory of a given template.
 type UserPrompt struct {
 	Section string
-	Root bool
+	Root    bool
 	// Active indicates if this prompt should be processed (based on conditional logic).
 	Active bool
 	// Commented indicates if the variable should be commented out in the .env file. This
