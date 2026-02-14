@@ -24,9 +24,9 @@ task lint
 echo "🔨 Building CLI binary..."
 task build
 
-# Run tests with race detection and coverage
+# Run tests with race detection (without coverage to avoid covdata tool requirement)
 echo "✅ Running tests..."
-task test
+task test-no-coverage
 
 echo "✨ Cloud Template setup complete!"
 echo "📝 To verify the setup, you can run:"

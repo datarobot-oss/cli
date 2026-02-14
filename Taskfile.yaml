@@ -120,6 +120,12 @@ tasks:
     cmds:
       - go test -count=1 -race -shuffle=on -coverprofile=coverage.txt ./...
 
+  test-no-coverage:
+    silent: true
+    desc: "Run tests without coverage"
+    cmds:
+      - go test -count=1 -race -shuffle=on ./...
+
   test-coverage:
     silent: true
     desc: "Run tests with coverage rendered in HTML"
