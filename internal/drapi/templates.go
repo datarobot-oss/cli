@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/log"
 )
 
 type Template struct {
