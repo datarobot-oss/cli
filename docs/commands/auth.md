@@ -142,6 +142,12 @@ $ dr auth check
 Run dr auth set-url to configure your DataRobot URL.
 ❌ No valid API key found in CLI config.
 Run dr auth login to authenticate.
+
+# Invalid environment token
+$ dr auth check
+❌ DATAROBOT_API_TOKEN environment variable is invalid or expired.
+Unset it and try again:
+  unset DATAROBOT_API_TOKEN (or Remove-Item Env:\DATAROBOT_API_TOKEN on Windows)
 ```
 
 > [!TIP]
