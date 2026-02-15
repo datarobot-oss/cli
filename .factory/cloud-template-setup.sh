@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🚀 Setting up DataRobot CLI Cloud Template..."
+
+# Install task runner if not already available
+if ! command -v task &> /dev/null; then
+    echo "📦 Installing Task runner..."
+    TASK_INSTALL_DIR="${TASK_INSTALL_DIR:-.local/bin}"
+    mkdir -p "$TASK_INSTALL_DIR"
+    sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b "$TASK_INSTALL_DIR"
+    export PATH="$TASK_INSTALL_DIR:$PATH"
+fi
+
+# Initialize development environment and install tools
+echo "🔧 Initializing development environment..."
+task dev-init
+
+# Run linting to ensure code quality
+echo "🧹 Running linters and formatters..."
+task lint
+
+# Build the CLI binary
+echo "🔨 Building CLI binary..."
+task build
+
+# Run tests with race detection (without coverage to avoid covdata tool requirement)
+echo "✅ Running tests..."
+task test-no-coverage
+
+echo "✨ Cloud Template setup complete!"
+echo "📝 To verify the setup, you can run:"
+echo "   - task run          (run the CLI)"
+echo "   - task build        (rebuild the binary)"
+echo "   - task test         (run tests)"
+echo "   - task lint         (run linters)"
