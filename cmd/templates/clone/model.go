@@ -120,7 +120,7 @@ func (m Model) pullRepository() tea.Cmd {
 			}
 		}
 
-		out, err := gitClone(m.template.Repository.URL, m.Dir)
+		out, err := gitClone(m.template.Repository.URL, m.Dir, m.template.Repository.Tag)
 		if err != nil {
 			return cloneErrorMsg{out: err.Error()}
 		}
