@@ -55,10 +55,7 @@ func checkCLICredentials() bool {
 
 		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
 		fmt.Println(tui.BaseTextStyle.Render("Unset it and try again:"))
-		fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
-		fmt.Print(tui.BaseTextStyle.Render(" (or "))
-		fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-		fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+		auth.PrintUnsetTokenInstructions()
 
 		return false
 	}
