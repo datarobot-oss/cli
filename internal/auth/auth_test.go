@@ -303,7 +303,8 @@ func TestVerifyEnvCredentials(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
-		assert.NotNil(t, creds)
+		assert.Empty(t, creds.Endpoint)
+		assert.Empty(t, creds.Token)
 	})
 
 	t.Run("returns error when only endpoint set", func(t *testing.T) {
@@ -315,6 +316,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
 		assert.Equal(t, "https://example.com", creds.Endpoint)
+		assert.Empty(t, creds.Token)
 	})
 
 	t.Run("returns error when only token set", func(t *testing.T) {
@@ -326,6 +328,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
+		assert.Empty(t, creds.Endpoint)
 		assert.Equal(t, "some-token", creds.Token)
 	})
 
