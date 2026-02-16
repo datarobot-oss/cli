@@ -110,7 +110,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().StringVar(&updateFlags.VcsRef, "vcs-ref", "", "Git reference to checkout in `template_src`.")
 	cmd.Flags().BoolVarP(&updateFlags.Quiet, "quiet", "q", false, "Suppress status output.")
 	cmd.Flags().BoolVarP(&updateFlags.Overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
-	cmd.Flags().BoolVar(&updateFlags.Trust, "trust", false, "Trust the template repository")
+	cmd.Flags().BoolVar(&updateFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
 
 	return cmd
 }

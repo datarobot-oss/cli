@@ -156,7 +156,7 @@ func Cmd() *cobra.Command {
 
 	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
 	cmd.Flags().StringVar(&addFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
-	cmd.Flags().BoolVar(&addFlags.Trust, "trust", false, "Trust the template repository")
+	cmd.Flags().BoolVar(&addFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
 
 	return cmd
 }

@@ -302,3 +302,157 @@ func TestFormatYAMLMap(t *testing.T) {
 		})
 	}
 }
+
+func TestAddTrustFlag(t *testing.T) {
+	tests := []struct {
+		name      string
+		repoURL   string
+		data      map[string]interface{}
+		flags     AddFlags
+		wantTrust bool
+	}{
+		{
+			name:    "trust enabled",
+			repoURL: "https://github.com/example/repo",
+			data:    map[string]interface{}{},
+			flags: AddFlags{
+				Trust: true,
+			},
+			wantTrust: true,
+		},
+		{
+			name:    "trust disabled",
+			repoURL: "https://github.com/example/repo",
+			data:    map[string]interface{}{},
+			flags: AddFlags{
+				Trust: false,
+			},
+			wantTrust: false,
+		},
+		{
+			name:    "trust enabled with data",
+			repoURL: "https://github.com/example/repo",
+			data: map[string]interface{}{
+				"component_name": "test-component",
+			},
+			flags: AddFlags{
+				Trust: true,
+			},
+			wantTrust: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// GIVEN: a repository URL, data, and flags with trust setting
+			repoURL := tt.repoURL
+			data := tt.data
+			flags := tt.flags
+
+			// WHEN: the Add command is built
+			cmd := Add(repoURL, data, flags)
+
+			// THEN: the command should be built correctly with expected trust flag
+			if cmd.Path != "uvx" {
+				t.Errorf("GIVEN repoURL=%s, WHEN Add() is called, THEN command path should be uvx, got %v", repoURL, cmd.Path)
+			}
+
+			hasTrust := containsArg(cmd.Args, "--trust")
+			if hasTrust != tt.wantTrust {
+				t.Errorf("GIVEN Trust=%v, WHEN Add() is called, THEN --trust flag presence should be %v, got %v", flags.Trust, tt.wantTrust, hasTrust)
+			}
+
+			if !containsArg(cmd.Args, "copier") {
+				t.Error("GIVEN valid repo URL, WHEN Add() is called, THEN command should contain 'copier' argument")
+			}
+			if !containsArg(cmd.Args, "copy") {
+				t.Error("GIVEN valid repo URL, WHEN Add() is called, THEN command should contain 'copy' argument")
+			}
+			if !containsArg(cmd.Args, repoURL) {
+				t.Errorf("GIVEN repoURL=%s, WHEN Add() is called, THEN command should contain the repo URL", repoURL)
+			}
+		})
+	}
+}
+
+func TestUpdateTrustFlag(t *testing.T) {
+	tests := []struct {
+		name      string
+		yamlFile  string
+		data      map[string]interface{}
+		flags     UpdateFlags
+		wantTrust bool
+	}{
+		{
+			name:     "trust enabled",
+			yamlFile: ".copier-answers.yml",
+			data:     map[string]interface{}{},
+			flags: UpdateFlags{
+				Trust: true,
+			},
+			wantTrust: true,
+		},
+		{
+			name:     "trust disabled",
+			yamlFile: ".copier-answers.yml",
+			data:     map[string]interface{}{},
+			flags: UpdateFlags{
+				Trust: false,
+			},
+			wantTrust: false,
+		},
+		{
+			name:     "trust enabled with other flags",
+			yamlFile: ".copier-answers.yml",
+			data:     map[string]interface{}{},
+			flags: UpdateFlags{
+				Trust:  true,
+				Quiet:  true,
+				Recopy: true,
+			},
+			wantTrust: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// GIVEN: a yaml file, data, and flags with trust setting
+			yamlFile := tt.yamlFile
+			data := tt.data
+			flags := tt.flags
+
+			// WHEN: the Update command is built
+			cmd := Update(yamlFile, data, flags)
+
+			// THEN: the command should be built correctly with expected trust flag
+			if cmd.Path != "uvx" {
+				t.Errorf("GIVEN yamlFile=%s, WHEN Update() is called, THEN command path should be uvx, got %v", yamlFile, cmd.Path)
+			}
+
+			hasTrust := containsArg(cmd.Args, "--trust")
+			if hasTrust != tt.wantTrust {
+				t.Errorf("GIVEN Trust=%v, WHEN Update() is called, THEN --trust flag presence should be %v, got %v", flags.Trust, tt.wantTrust, hasTrust)
+			}
+
+			if !containsArg(cmd.Args, "copier") {
+				t.Error("GIVEN valid yaml file, WHEN Update() is called, THEN command should contain 'copier' argument")
+			}
+			if !containsArg(cmd.Args, "--answers-file") {
+				t.Error("GIVEN valid yaml file, WHEN Update() is called, THEN command should contain '--answers-file' argument")
+			}
+			if !containsArg(cmd.Args, yamlFile) {
+				t.Errorf("GIVEN yamlFile=%s, WHEN Update() is called, THEN command should contain the yaml file", yamlFile)
+			}
+		})
+	}
+}
+
+// containsArg checks if a string exists in a slice of strings
+func containsArg(args []string, target string) bool {
+	for _, arg := range args {
+		if arg == target {
+			return true
+		}
+	}
+	return false
+}
