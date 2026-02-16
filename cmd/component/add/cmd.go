@@ -130,7 +130,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 		// Merge defaults with CLI data (CLI data takes precedence)
 		mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-		err := copier.ExecAdd(repoURL, mergedData)
+		err := copier.ExecAdd(repoURL, mergedData, addFlags)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
@@ -156,6 +156,7 @@ func Cmd() *cobra.Command {
 
 	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
 	cmd.Flags().StringVar(&addFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
+	cmd.Flags().BoolVar(&addFlags.Trust, "trust", false, "Trust the template repository")
 
 	return cmd
 }

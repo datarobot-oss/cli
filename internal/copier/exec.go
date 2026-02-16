@@ -36,11 +36,16 @@ func cmdRun(cmd *exec.Cmd) error {
 type AddFlags struct {
 	DataArgs []string
 	DataFile string
+	Trust    bool
 }
 
 // Add creates a copier copy command with optional --data arguments
-func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
+func Add(repoURL string, data map[string]interface{}, flags AddFlags) *exec.Cmd {
 	commandParts := []string{"copier", "copy", repoURL, "."}
+
+	if flags.Trust {
+		commandParts = append(commandParts, "--trust")
+	}
 
 	for key, value := range data {
 		commandParts = append(commandParts, "--data", key+"="+formatDataValue(value))
@@ -58,12 +63,12 @@ func Add(repoURL string, data map[string]interface{}) *exec.Cmd {
 }
 
 // ExecAdd executes a copier copy command with optional --data arguments
-func ExecAdd(repoURL string, data map[string]interface{}) error {
+func ExecAdd(repoURL string, data map[string]interface{}, flags AddFlags) error {
 	if repoURL == "" {
 		return errors.New("Repository URL is missing.")
 	}
 
-	return cmdRun(Add(repoURL, data))
+	return cmdRun(Add(repoURL, data, flags))
 }
 
 type UpdateFlags struct {
@@ -73,6 +78,7 @@ type UpdateFlags struct {
 	VcsRef    string
 	Quiet     bool
 	Overwrite bool
+	Trust     bool
 }
 
 // Update creates a copier update command with optional --data arguments
@@ -97,6 +103,10 @@ func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags) *ex
 
 	if flags.Recopy && flags.Overwrite {
 		commandParts = append(commandParts, "--overwrite")
+	}
+
+	if flags.Trust {
+		commandParts = append(commandParts, "--trust")
 	}
 
 	for key, value := range data {
