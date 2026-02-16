@@ -40,6 +40,14 @@ var APIKeyCallbackFunc = WaitForAPIKeyCallback
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
 var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
 
+// PrintUnsetTokenInstructions prints platform-specific instructions for unsetting DATAROBOT_API_TOKEN.
+func PrintUnsetTokenInstructions() {
+	fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
+	fmt.Print(tui.BaseTextStyle.Render(" (or "))
+	fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+	fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+}
+
 // EnvCredentials holds environment variable authentication credentials.
 type EnvCredentials struct {
 	Endpoint string
@@ -133,10 +141,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	} else if creds.Token != "" {
 		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
 		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
-		fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
-		fmt.Print(tui.BaseTextStyle.Render(" (or "))
-		fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-		fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+		PrintUnsetTokenInstructions()
 
 		skipAuthFlow = true
 	}
