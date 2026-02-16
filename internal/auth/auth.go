@@ -62,15 +62,15 @@ func GetEnvCredentials() EnvCredentials {
 
 // VerifyEnvCredentials checks if environment variable credentials are valid.
 // Returns credentials and nil error if valid, credentials and error otherwise.
-func VerifyEnvCredentials() (*EnvCredentials, error) {
+func VerifyEnvCredentials() (EnvCredentials, error) {
 	creds := GetEnvCredentials()
 	if creds.Endpoint == "" || creds.Token == "" {
-		return &creds, ErrEnvCredentialsNotSet
+		return creds, ErrEnvCredentialsNotSet
 	}
 
 	err := config.VerifyToken(creds.Endpoint, creds.Token)
 
-	return &creds, err
+	return creds, err
 }
 
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
