@@ -354,22 +354,22 @@ func TestAddTrustFlag(t *testing.T) {
 
 			// THEN: the command should be built correctly with expected trust flag
 			if cmd.Path != "uvx" {
-				t.Errorf("GIVEN repoURL=%s, WHEN Add() is called, THEN command path should be uvx, got %v", repoURL, cmd.Path)
+				t.Errorf("command path should be uvx, got %v", cmd.Path)
 			}
 
 			hasTrust := containsArg(cmd.Args, "--trust")
 			if hasTrust != tt.wantTrust {
-				t.Errorf("GIVEN Trust=%v, WHEN Add() is called, THEN --trust flag presence should be %v, got %v", flags.Trust, tt.wantTrust, hasTrust)
+				t.Errorf("--trust flag presence should be %v, got %v", tt.wantTrust, hasTrust)
 			}
 
 			if !containsArg(cmd.Args, "copier") {
-				t.Error("GIVEN valid repo URL, WHEN Add() is called, THEN command should contain 'copier' argument")
+				t.Error("command should contain 'copier' argument")
 			}
 			if !containsArg(cmd.Args, "copy") {
-				t.Error("GIVEN valid repo URL, WHEN Add() is called, THEN command should contain 'copy' argument")
+				t.Error("command should contain 'copy' argument")
 			}
 			if !containsArg(cmd.Args, repoURL) {
-				t.Errorf("GIVEN repoURL=%s, WHEN Add() is called, THEN command should contain the repo URL", repoURL)
+				t.Errorf("command should contain repo URL %s", repoURL)
 			}
 		})
 	}
@@ -426,22 +426,22 @@ func TestUpdateTrustFlag(t *testing.T) {
 
 			// THEN: the command should be built correctly with expected trust flag
 			if cmd.Path != "uvx" {
-				t.Errorf("GIVEN yamlFile=%s, WHEN Update() is called, THEN command path should be uvx, got %v", yamlFile, cmd.Path)
+				t.Errorf("command path should be uvx, got %v", cmd.Path)
 			}
 
 			hasTrust := containsArg(cmd.Args, "--trust")
 			if hasTrust != tt.wantTrust {
-				t.Errorf("GIVEN Trust=%v, WHEN Update() is called, THEN --trust flag presence should be %v, got %v", flags.Trust, tt.wantTrust, hasTrust)
+				t.Errorf("--trust flag presence should be %v, got %v", tt.wantTrust, hasTrust)
 			}
 
 			if !containsArg(cmd.Args, "copier") {
-				t.Error("GIVEN valid yaml file, WHEN Update() is called, THEN command should contain 'copier' argument")
+				t.Error("command should contain 'copier' argument")
 			}
 			if !containsArg(cmd.Args, "--answers-file") {
-				t.Error("GIVEN valid yaml file, WHEN Update() is called, THEN command should contain '--answers-file' argument")
+				t.Error("command should contain '--answers-file' argument")
 			}
 			if !containsArg(cmd.Args, yamlFile) {
-				t.Errorf("GIVEN yamlFile=%s, WHEN Update() is called, THEN command should contain the yaml file", yamlFile)
+				t.Errorf("command should contain yaml file %s", yamlFile)
 			}
 		})
 	}
