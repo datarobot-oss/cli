@@ -365,9 +365,11 @@ func TestAddTrustFlag(t *testing.T) {
 			if !containsArg(cmd.Args, "copier") {
 				t.Error("command should contain 'copier' argument")
 			}
+
 			if !containsArg(cmd.Args, "copy") {
 				t.Error("command should contain 'copy' argument")
 			}
+
 			if !containsArg(cmd.Args, repoURL) {
 				t.Errorf("command should contain repo URL %s", repoURL)
 			}
@@ -437,9 +439,11 @@ func TestUpdateTrustFlag(t *testing.T) {
 			if !containsArg(cmd.Args, "copier") {
 				t.Error("command should contain 'copier' argument")
 			}
+
 			if !containsArg(cmd.Args, "--answers-file") {
 				t.Error("command should contain '--answers-file' argument")
 			}
+
 			if !containsArg(cmd.Args, yamlFile) {
 				t.Errorf("command should contain yaml file %s", yamlFile)
 			}
@@ -454,5 +458,6 @@ func containsArg(args []string, target string) bool {
 			return true
 		}
 	}
+
 	return false
 }
