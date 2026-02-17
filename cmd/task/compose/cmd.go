@@ -26,10 +26,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	taskfileLong  = "Taskfile.yaml"
+	taskfileShort = "Taskfile.yml"
+)
+
 var templatePath string
 
 func Run(_ *cobra.Command, _ []string) {
-	taskfileName := detectExistingTaskfile()
+	taskfileName, ignoreTaskfile := detectExistingTaskfile()
 	discovery := createDiscovery(taskfileName)
 
 	taskFilePath, err := discovery.Discover(".", 2)
@@ -47,7 +52,7 @@ func Run(_ *cobra.Command, _ []string) {
 	}
 
 	contents := string(contentBytes)
-	taskfileIgnore := "/" + taskfileName
+	taskfileIgnore := "/" + ignoreTaskfile
 
 	// Check if Taskfile.yaml or Taskfile.yml is already in .gitignore
 	if isIgnored(contents, taskfileIgnore) {
@@ -111,19 +116,19 @@ func validateTemplatePath(path string) (string, error) {
 
 // detectExistingTaskfile checks for existing Taskfile.yaml or Taskfile.yml
 // and returns the name of the existing one, or defaults to Taskfile.yaml
-func detectExistingTaskfile() string {
+func detectExistingTaskfile() (inUse, notInUse string) {
 	// Check for Taskfile.yaml first (more common)
-	if _, err := os.Stat("Taskfile.yaml"); err == nil {
-		return "Taskfile.yaml"
+	if _, err := os.Stat(taskfileLong); err == nil {
+		return taskfileLong, taskfileShort
 	}
 
 	// Check for Taskfile.yml
-	if _, err := os.Stat("Taskfile.yml"); err == nil {
-		return "Taskfile.yml"
+	if _, err := os.Stat(taskfileShort); err == nil {
+		return taskfileShort, taskfileLong
 	}
 
 	// Default to Taskfile.yaml if neither exists
-	return "Taskfile.yaml"
+	return taskfileLong, taskfileShort
 }
 
 // isIgnored checks if a pattern is already in .gitignore content
