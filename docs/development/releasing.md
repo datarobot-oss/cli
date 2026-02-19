@@ -181,25 +181,30 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
 
 ## Best practices
 
-1. Always test before releasing.
+1. Never tag the same commit twice.
+   - Each semver tag must point to a unique commit.
+   - If you need to release a new version, ensure the commit differs from any previously tagged commit (e.g., bump the changelog or add a fixup commit before tagging).
+   - Creating two tags on the same commit causes ambiguous version resolution and should be avoided regardless of whether the tags are stable or pre-release.
+
+2. Always test before releasing.
    - Run full test suite: `task test`
    - Run linters: `task lint`
    - Build locally: `task build`
 
-2. Use meaningful commit messages.
+3. Use meaningful commit messages.
    - Commit messages are used to generate release notes
    - Follow the conventional commit format when possible
 
-3. Update `CHANGELOG.md`.
+4. Update `CHANGELOG.md`.
    - Document significant changes
    - Include migration notes for breaking changes
 
-4. Communicate breaking changes.
+5. Communicate breaking changes.
    - Update documentation
    - Add prominent notes in the release description
    - Consider a major version bump
 
-5. Test the installation.
+6. Test the installation.
    - Test the install script after the release
    - Verify that binaries work on target platforms
 
