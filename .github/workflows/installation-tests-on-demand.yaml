@@ -1,0 +1,17 @@
+name: On-Demand Installation Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Specific version to install (e.g., v0.2.49). If empty, installs latest.'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  installation-tests:
+    uses: ./.github/workflows/.installation-tests-matrix.yaml
+    with:
+      version: ${{ inputs.version }}
+    secrets: inherit

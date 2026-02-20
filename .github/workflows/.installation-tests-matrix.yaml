@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+      version:
+        description: 'Specific version to install (e.g., v1.0.0). If empty, installs latest via cli.datarobot.com'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   installation-tests:
@@ -17,19 +22,34 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Installation Test (${{ matrix.os }})
     steps:
-      - name: Install for Linux and macOS
-        if: matrix.os != 'windows-latest'
+      - name: Install for Linux and macOS (latest)
+        if: matrix.os != 'windows-latest' && inputs.version == ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL https://cli.datarobot.com/install | sh
 
-      - name: Install for Windows
-        if: matrix.os == 'windows-latest'
+      - name: Install for Linux and macOS (specific version)
+        if: matrix.os != 'windows-latest' && inputs.version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- ${{ inputs.version }}
+
+      - name: Install for Windows (latest)
+        if: matrix.os == 'windows-latest' && inputs.version == ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           irm https://cli.datarobot.com/winstall | iex
+
+      - name: Install for Windows (specific version)
+        if: matrix.os == 'windows-latest' && inputs.version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $script = irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1
+          & ([scriptblock]::Create($script)) -Version ${{ inputs.version }}
 
       - name: Check DR runs without errors (Linux and macOS)
         if: matrix.os != 'windows-latest'

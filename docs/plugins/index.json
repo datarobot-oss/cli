@@ -12,6 +12,12 @@
           "releaseDate": "2026-02-20"
         },
         {
+          "version": "0.1.9",
+          "url": "assist/assist-0.1.9.tar.xz",
+          "sha256": "b9f01ccb3c8792b06e0743ea222c8b58ba5ddab39131f256ea04fe69f4294e96",
+          "releaseDate": "2026-02-20"
+        },
+        {
           "version": "0.1.8",
           "url": "assist/assist-0.1.8.tar.xz",
           "sha256": "f4ae3e1a66e8e2b94867f45ded78541782d0bf06bd8a610cadeda14bceddb636",
