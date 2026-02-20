@@ -23,9 +23,12 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 ### Quick build
 
 ```bash
-# Clone repository
-git clone https://github.com/datarobot-oss/cli.git
+# Fork the repository on GitHub first, then clone your fork
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote
+git remote add upstream https://github.com/datarobot-oss/cli.git
 
 # Install development tools
 task dev-init
@@ -394,15 +397,26 @@ go test
 ### 1. Set up the development environment
 
 ```bash
-# Clone and setup
-git clone https://github.com/datarobot-oss/cli.git
+# Fork on GitHub, clone your fork, and setup
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote
+git remote add upstream https://github.com/datarobot-oss/cli.git
+
+# Setup development environment
 task dev-init
 ```
 
 ### 2. Create a feature branch
 
 ```bash
+# Sync with upstream first
+git checkout main
+git pull upstream main
+git push origin main
+
+# Create feature branch
 git checkout -b feature/my-feature
 ```
 
@@ -626,7 +640,7 @@ See [Releasing documentation](releasing.md) for a detailed overview of the relea
 ```bash
 # Tag version
 git tag v1.0.0
-git push --tags
+git push upstream --tags
 
 # GitHub Actions will:
 # 1. Build for all platforms

@@ -37,8 +37,15 @@ choco install go-task
 ### Clone the repository
 
 ```bash
-git clone https://github.com/datarobot-oss/cli.git
+# Fork the repository on GitHub first, then clone your fork
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote
+git remote add upstream https://github.com/datarobot-oss/cli.git
+
+# Verify remotes
+git remote -v
 ```
 
 ### Install development tools

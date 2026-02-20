@@ -156,9 +156,12 @@ If you would like to build and install from source, you can do so by following t
 #### Build and install from source
 
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
+# Fork the repository on GitHub first, then clone your fork
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote for staying in sync
+git remote add upstream https://github.com/datarobot-oss/cli.git
 
 # Install Task (if not already installed)
 go install github.com/go-task/task/v3/cmd/task@latest
@@ -174,9 +177,12 @@ sudo mv ./dist/dr /usr/local/bin/dr
 #### Windows (install a specific version)
 
 ```powershell
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
+# Fork the repository on GitHub first, then clone your fork
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote for staying in sync
+git remote add upstream https://github.com/datarobot-oss/cli.git
 
 # Install Task (if not already installed)
 go install github.com/go-task/task/v3/cmd/task@latest
