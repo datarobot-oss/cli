@@ -40,7 +40,7 @@ choco install go-task
 
 ```bash
 # Fork and clone in one command
-gh repo fork datarobot-oss/cli --clone
+gh repo fork datarobot-oss/cli --clone --default-branch-only
 cd cli
 ```
 
@@ -52,7 +52,7 @@ task dev-init
 
 This will install all necessary development tools including linters and code formatters.
 
-### Build the binary
+### Build the CLI
 
 ```bash
 task build
