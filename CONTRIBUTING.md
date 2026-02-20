@@ -70,7 +70,8 @@ External contributors should work from a fork of the repository:
 
 ```bash
 # Fork and clone in one command (sets up origin → your fork, upstream → main repo)
-gh repo fork datarobot-oss/cli --clone
+gh repo fork datarobot-oss/cli --clone --default-branch-only
+# --fork-name <your-fork-name> can be used to specify a custom fork name, i.e. --fork-name drcli
 ```
 
 > **Note**: If you prefer manual fork management, fork the repository on GitHub, then clone your fork and add the upstream remote manually.
@@ -79,7 +80,7 @@ gh repo fork datarobot-oss/cli --clone
 
 ```bash
 # Fork and clone the repository
-gh repo fork datarobot-oss/cli --clone
+gh repo fork datarobot-oss/cli --clone --default-branch-only
 cd cli
 
 # Setup development environment
