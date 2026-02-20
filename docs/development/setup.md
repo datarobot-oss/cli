@@ -52,7 +52,7 @@ task dev-init
 
 This will install all necessary development tools including linters and code formatters.
 
-### Build the CLI
+### Build the binary
 
 ```bash
 task build
@@ -77,7 +77,7 @@ task --list
 ### Common tasks
 
 | Task | Description |
-|------|-------------|
+| ------ | ------------- |
 | `task build` | Build the CLI binary. |
 | `task test` | Run all tests. |
 | `task test-coverage` | Run tests with a coverage report. |

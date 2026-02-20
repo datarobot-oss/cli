@@ -615,7 +615,7 @@ When adding new debug output:
 
 ```go
 import (
-	"github.com/datarobot/cli/internal/log"
+    "github.com/datarobot/cli/internal/log"
 )
 
 // Debug logging

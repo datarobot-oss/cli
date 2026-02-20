@@ -168,12 +168,12 @@ When opening an issue:
 After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
 
 1. **Create the pull request**:
-   
+
    ```bash
    # Create PR from your current branch
    gh pr create
    ```
-   
+
    This opens an interactive prompt to set the title, description, and target branch.
 
 2. **Ensure your PR**:
