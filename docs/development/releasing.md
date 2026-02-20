@@ -8,9 +8,12 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases. 
 
 ## Prerequisites
 
-- Write access to the repository.
+- Write access to the upstream repository (datarobot-oss/cli). This is typically restricted to DataRobot maintainers.
 - All changes are merged to the `main` branch.
 - Familiarity with [semantic versioning](https://semver.org/).
+- For contributors using forks: `upstream` remote configured to point to `datarobot-oss/cli`.
+
+**Note for external contributors**: This document describes how DataRobot maintainers manage the release process. While external contributors cannot create releases, this information helps you understand the project's release workflow.
 
 ## Versioning
 
@@ -41,14 +44,29 @@ Use **PATCH** version when making backward-compatible bug fixes, including:
 
 ## Create a release
 
-### 1. Ensure the main branch is ready
+### 1. Configure remotes (if using a fork)
+
+If you're working from a fork of the repository, ensure your remotes are configured correctly:
+
+```bash
+# Add upstream remote if not already configured
+git remote add upstream https://github.com/datarobot-oss/cli.git
+
+# Verify your remotes
+git remote -v
+# Should show:
+# origin    https://github.com/YOUR_USERNAME/cli.git (fetch/push)
+# upstream  https://github.com/datarobot-oss/cli.git (fetch/push)
+```
+
+### 2. Ensure the main branch is ready
 
 ```bash
 # Switch to the main branch
 git checkout main
 
-# Pull the latest changes
-git pull origin main
+# Pull the latest changes from upstream
+git pull upstream main
 
 # Verify that all tests pass
 task test
@@ -57,11 +75,11 @@ task test
 task lint
 ```
 
-### 2. Determine the next version
+### 3. Determine the next version
 
 Review any recent changes and decide on the next version number based on the [semantic versioning](#versioning) guidelines.
 
-### 3. Create and push a tag
+### 4. Create and push a tag
 
 When creating a tag, note that it must start with `v` (e.g., `v1.0.0`, not `1.0.0`).
 
@@ -69,11 +87,11 @@ When creating a tag, note that it must start with `v` (e.g., `v1.0.0`, not `1.0.
 # Create a new version tag
 git tag v0.2.0
 
-# Push the tag to trigger the release
-git push origin v0.2.0
+# Push the tag to upstream to trigger the release
+git push upstream v0.2.0
 ```
 
-### 4. Monitor the release process
+### 5. Monitor the release process
 
 1. Go to the [Actions tab](https://github.com/datarobot-oss/cli/actions) in GitHub.
 2. Watch the release workflow run.
@@ -84,7 +102,7 @@ git push origin v0.2.0
    - Create a GitHub release
    - Upload artifacts
 
-### 5. Verify the release
+### 6. Verify the release
 
 Once the workflow completes:
 
@@ -95,7 +113,7 @@ Once the workflow completes:
    - Binary artifacts for all platforms
    - A checksums file
 
-### 6. Update release notes
+### 7. Update release notes
 
 Optional. Edit the release notes on GitHub to:
 
@@ -112,8 +130,8 @@ To test releases before making them generally available, use the following comma
 # Create a pre-release tag
 git tag v0.2.0-rc.1
 
-# Push the tag
-git push origin v0.2.0-rc.1
+# Push the tag to upstream
+git push upstream v0.2.0-rc.1
 ```
 
 Pre-release versions are marked as "Pre-release" on GitHub and can be used for testing.
@@ -140,8 +158,8 @@ If a release has issues, the following actions are available.
 # Delete a local tag
 git tag -d v0.2.0
 
-# Delete a remote tag
-git push origin :refs/tags/v0.2.0
+# Delete a remote tag from upstream
+git push upstream :refs/tags/v0.2.0
 ```
 
 ### Delete the GitHub release
@@ -170,7 +188,7 @@ goreleaser check
 
 ## Automated release workflow
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
+The GitHub Actions workflow (`.github/workflows/release.yaml`) automatically:
 
 1. Triggers on tag push matching `v*`
 2. Checks out the code
@@ -221,9 +239,9 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
 ```bash
 # Delete and recreate the tag if needed
 git tag -d v0.2.0
-git push origin :refs/tags/v0.2.0
+git push upstream :refs/tags/v0.2.0
 git tag v0.2.0
-git push origin v0.2.0
+git push upstream v0.2.0
 ```
 
 ### Missing artifacts

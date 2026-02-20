@@ -50,12 +50,29 @@ Then open `http://localhost:8000` in your browser. The preview will auto-reload 
 
 ## Development Workflow
 
+### Fork the Repository
+
+External contributors should work from a fork of the repository:
+
+1. **Fork the repository on GitHub** by clicking the "Fork" button at [https://github.com/datarobot-oss/cli](https://github.com/datarobot-oss/cli)
+2. **Clone your fork** to your local machine
+3. **Configure the upstream remote** to track the main repository
+
 ### Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
+# Clone your fork (replace YOUR_USERNAME with your GitHub username)
+git clone https://github.com/YOUR_USERNAME/cli.git
 cd cli
+
+# Add upstream remote to track the main repository
+git remote add upstream https://github.com/datarobot-oss/cli.git
+
+# Verify your remotes are configured correctly
+git remote -v
+# Should show:
+# origin    https://github.com/YOUR_USERNAME/cli.git (fetch/push)
+# upstream  https://github.com/datarobot-oss/cli.git (fetch/push)
 
 # Setup development environment
 task dev-init
@@ -72,25 +89,34 @@ task lint
 
 ### Making Changes
 
-1. **Create a feature branch**
+1. **Sync with upstream before starting work**
+
+   ```bash
+   # Ensure you have the latest changes from upstream
+   git checkout main
+   git pull upstream main
+   git push origin main
+   ```
+
+2. **Create a feature branch**
 
    ```bash
    git checkout -b feature/your-feature-name
    ```
 
-2. **Make your changes**
+3. **Make your changes**
    - Follow the coding standards in [building.md](docs/development/building.md)
    - Write tests for new functionality
    - Update documentation as needed
 
-3. **Test your changes**
+4. **Test your changes**
 
    ```bash
    task test
    task lint
    ```
 
-4. **Commit your changes**
+5. **Commit your changes**
 
    ```bash
    git commit -m "Brief description of your changes"
@@ -98,7 +124,7 @@ task lint
 
    Use clear, descriptive commit messages. Consider using [Conventional Commits](https://www.conventionalcommits.org/) format.
 
-5. **Push to your fork**
+6. **Push to your fork**
 
    ```bash
    git push origin feature/your-feature-name
@@ -133,20 +159,28 @@ When opening an issue:
 
 ### Pull Request Process
 
-1. **Ensure your PR**:
+After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
+
+1. **Create the pull request**:
+   - Go to your fork on GitHub
+   - Click "Pull Request" or "Compare & pull request"
+   - Ensure the base repository is `datarobot-oss/cli` and base branch is `main`
+   - Ensure the head repository is your fork and compare branch is your feature branch
+
+2. **Ensure your PR**:
    - Has a clear title and description
    - References any related issues (e.g., "Fixes #123")
    - Passes all tests (`task test`)
    - Passes all linters (`task lint`)
    - Includes documentation updates if needed
 
-2. **PR Description should include**:
+3. **PR Description should include**:
    - What changes were made and why
    - How to test the changes
    - Any breaking changes or migration notes
    - Screenshots for UI changes (if applicable)
 
-3. **Review Process**:
+4. **Review Process**:
    - Maintainers will review your PR
    - Address any feedback or requested changes
    - Once approved, a maintainer will merge your PR
