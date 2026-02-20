@@ -20,6 +20,7 @@ This project follows the DataRobot Code of Conduct. Please be respectful and con
 DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples in this guide use `gh` commands, which streamline the fork, clone, and pull request workflow.
 
 **Install GitHub CLI:**
+
 - **macOS**: `brew install gh`
 - **Linux**: See [installation guide](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
 - **Windows**: `winget install --id GitHub.cli` or `choco install gh`
@@ -78,7 +79,7 @@ gh repo fork datarobot-oss/cli --clone
 
 ```bash
 # Fork and clone the repository
-gh repo fork datarobot-oss/cli --clone --default-branch-only
+gh repo fork datarobot-oss/cli --clone
 cd cli
 
 # Setup development environment
