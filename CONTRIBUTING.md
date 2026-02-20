@@ -175,7 +175,7 @@ After pushing your changes to your fork, create a pull request from your fork to
    gh pr create
    ```
 
-   This opens an interactive prompt to set the title, description, and target branch.
+   This opens an interactive prompt to set the title, description, and target branch. Pass `-w` to open the PR in your web browser.
 
 2. **Ensure your PR**:
    - Has a clear title and description
