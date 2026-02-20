@@ -563,14 +563,31 @@ This means your installed Go version doesn't match the version specified in `go.
 - **Or downgrade `go.mod`**: `go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version)
 - **Or force the downloaded toolchain**: `export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`)
 
-### Run smoke tests using GitHub Actions
+### Run smoke tests
 
-DataRobot has smoke tests that are not currently run on Pull Requests. However you can use PR comments to trigger them.
+Smoke tests verify the CLI works end-to-end with a real DataRobot environment.
 
-These are the appropriate comments to trigger respective tests:
+**Run locally:**
+
+```bash
+# Set your DataRobot API token
+export DR_API_TOKEN=your-token
+
+# Run smoke tests
+task smoke-test
+
+# Windows
+task smoke-test-windows
+```
+
+**Run via GitHub Actions:**
+
+Smoke tests are not automatically run on Pull Requests. You can trigger them using PR comments:
 
 - `/trigger-smoke-test` or `/trigger-test-smoke`: Run smoke tests on a PR.
 - `/trigger-install-test` or `/trigger-test-install`: Run installation tests on a PR.
+
+Daily automated smoke tests also run in CI.
 
 ## Debugging
 

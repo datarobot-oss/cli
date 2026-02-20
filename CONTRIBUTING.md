@@ -119,8 +119,15 @@ task lint
 4. **Test your changes**
 
    ```bash
+   # Run unit tests
    task test
+
+   # Run linters
    task lint
+
+   # Run smoke tests (optional, requires DR_API_TOKEN)
+   export DR_API_TOKEN=your-token
+   task smoke-test
    ```
 
 5. **Commit your changes**

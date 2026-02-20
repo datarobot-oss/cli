@@ -83,7 +83,21 @@ task lint
 
 Review any recent changes and decide on the next version number based on the [semantic versioning](#versioning) guidelines.
 
-### 4. Create and push a tag
+### 4. Run smoke tests (recommended)
+
+Before creating a release tag, run smoke tests to verify the CLI works end-to-end:
+
+```bash
+# Set your DataRobot API token
+export DR_API_TOKEN=your-token
+
+# Run smoke tests
+task smoke-test
+```
+
+Alternatively, on PRs you can trigger smoke tests via GitHub Actions by commenting `/trigger-smoke-test` on the pull request. Daily automated smoke tests also run in CI.
+
+### 5. Create and push a tag
 
 When creating a tag, note that it must start with `v` (e.g., `v1.0.0`, not `1.0.0`).
 
@@ -95,7 +109,7 @@ git tag v0.2.0
 git push upstream v0.2.0
 ```
 
-### 5. Monitor the release process
+### 6. Monitor the release process
 
 1. Go to the [Actions tab](https://github.com/datarobot-oss/cli/actions) in GitHub.
 2. Watch the release workflow run.
@@ -106,7 +120,7 @@ git push upstream v0.2.0
    - Create a GitHub release
    - Upload artifacts
 
-### 6. Verify the release
+### 7. Verify the release
 
 Once the workflow completes:
 
@@ -117,7 +131,7 @@ Once the workflow completes:
    - Binary artifacts for all platforms
    - A checksums file
 
-### 7. Update release notes
+### 8. Update release notes
 
 Optional. Edit the release notes on GitHub to:
 
