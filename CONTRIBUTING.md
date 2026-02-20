@@ -15,6 +15,19 @@ Thank you for your interest in contributing to the DataRobot CLI! This document 
 
 This project follows the DataRobot Code of Conduct. Please be respectful and constructive in all interactions.
 
+## GitHub CLI Recommendation
+
+DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples in this guide use `gh` commands, which streamline the fork, clone, and pull request workflow.
+
+**Install GitHub CLI:**
+- **macOS**: `brew install gh`
+- **Linux**: See [installation guide](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
+- **Windows**: `winget install --id GitHub.cli` or `choco install gh`
+
+After installation, authenticate with: `gh auth login`
+
+**Manual Git workflow**: If you prefer not to use `gh`, you can manually fork on GitHub, clone your fork, and configure remotes. The `gh` commands shown can be replaced with equivalent `git` commands.
+
 ## Getting Started
 
 ### Development Setup
@@ -54,25 +67,19 @@ Then open `http://localhost:8000` in your browser. The preview will auto-reload 
 
 External contributors should work from a fork of the repository:
 
-1. **Fork the repository on GitHub** by clicking the "Fork" button at [https://github.com/datarobot-oss/cli](https://github.com/datarobot-oss/cli)
-2. **Clone your fork** to your local machine
-3. **Configure the upstream remote** to track the main repository
+```bash
+# Fork and clone in one command (sets up origin → your fork, upstream → main repo)
+gh repo fork datarobot-oss/cli --clone
+```
+
+> **Note**: If you prefer manual fork management, fork the repository on GitHub, then clone your fork and add the upstream remote manually.
 
 ### Quick Start
 
 ```bash
-# Clone your fork (replace YOUR_USERNAME with your GitHub username)
-git clone https://github.com/YOUR_USERNAME/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone --default-branch-only
 cd cli
-
-# Add upstream remote to track the main repository
-git remote add upstream https://github.com/datarobot-oss/cli.git
-
-# Verify your remotes are configured correctly
-git remote -v
-# Should show:
-# origin    https://github.com/YOUR_USERNAME/cli.git (fetch/push)
-# upstream  https://github.com/datarobot-oss/cli.git (fetch/push)
 
 # Setup development environment
 task dev-init
@@ -92,10 +99,8 @@ task lint
 1. **Sync with upstream before starting work**
 
    ```bash
-   # Ensure you have the latest changes from upstream
-   git checkout main
-   git pull upstream main
-   git push origin main
+   # Sync your fork with upstream
+   gh repo sync
    ```
 
 2. **Create a feature branch**
@@ -162,10 +167,13 @@ When opening an issue:
 After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
 
 1. **Create the pull request**:
-   - Go to your fork on GitHub
-   - Click "Pull Request" or "Compare & pull request"
-   - Ensure the base repository is `datarobot-oss/cli` and base branch is `main`
-   - Ensure the head repository is your fork and compare branch is your feature branch
+   
+   ```bash
+   # Create PR from your current branch
+   gh pr create
+   ```
+   
+   This opens an interactive prompt to set the title, description, and target branch.
 
 2. **Ensure your PR**:
    - Has a clear title and description

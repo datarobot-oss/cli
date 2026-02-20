@@ -46,17 +46,21 @@ Use **PATCH** version when making backward-compatible bug fixes, including:
 
 ### 1. Configure remotes (if using a fork)
 
-If you're working from a fork of the repository, ensure your remotes are configured correctly:
+If you used `gh repo fork --clone` to set up your repository (recommended), your remotes are already configured correctly.
+
+Verify your remotes:
 
 ```bash
-# Add upstream remote if not already configured
-git remote add upstream https://github.com/datarobot-oss/cli.git
-
-# Verify your remotes
 git remote -v
 # Should show:
 # origin    https://github.com/YOUR_USERNAME/cli.git (fetch/push)
 # upstream  https://github.com/datarobot-oss/cli.git (fetch/push)
+```
+
+If you cloned manually and need to add the upstream remote:
+
+```bash
+git remote add upstream https://github.com/datarobot-oss/cli.git
 ```
 
 ### 2. Ensure the main branch is ready

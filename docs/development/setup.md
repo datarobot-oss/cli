@@ -2,6 +2,8 @@
 
 This page outlines how to set up your development environment to build and develop with the DataRobot CLI.
 
+> **GitHub CLI Recommendation**: DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples use `gh` commands. See the [GitHub CLI installation guide](https://github.com/cli/cli#installation) if needed. If you prefer manual git workflow, you can replace `gh` commands with equivalent `git` operations.
+
 ## Prerequisites
 
 - [Go 1.25.7](https://golang.org/dl/)
@@ -37,15 +39,9 @@ choco install go-task
 ### Clone the repository
 
 ```bash
-# Fork the repository on GitHub first, then clone your fork
-git clone https://github.com/YOUR_USERNAME/cli.git
+# Fork and clone in one command
+gh repo fork datarobot-oss/cli --clone
 cd cli
-
-# Add upstream remote
-git remote add upstream https://github.com/datarobot-oss/cli.git
-
-# Verify remotes
-git remote -v
 ```
 
 ### Install development tools

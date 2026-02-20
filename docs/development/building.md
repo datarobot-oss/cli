@@ -2,6 +2,8 @@
 
 This guide outlines how to build, test, and develop with the DataRobot CLI.
 
+> **GitHub CLI Recommendation**: DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples use `gh` commands. See the [GitHub CLI installation guide](https://github.com/cli/cli#installation) if needed. If you prefer manual git workflow, you can replace `gh` commands with equivalent `git` operations.
+
 ## Table of contents
 
 - [Build from source](#build-from-source)
@@ -23,12 +25,9 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 ### Quick build
 
 ```bash
-# Fork the repository on GitHub first, then clone your fork
-git clone https://github.com/YOUR_USERNAME/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone
 cd cli
-
-# Add upstream remote
-git remote add upstream https://github.com/datarobot-oss/cli.git
 
 # Install development tools
 task dev-init
@@ -397,12 +396,9 @@ go test
 ### 1. Set up the development environment
 
 ```bash
-# Fork on GitHub, clone your fork, and setup
-git clone https://github.com/YOUR_USERNAME/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone
 cd cli
-
-# Add upstream remote
-git remote add upstream https://github.com/datarobot-oss/cli.git
 
 # Setup development environment
 task dev-init
@@ -412,9 +408,7 @@ task dev-init
 
 ```bash
 # Sync with upstream first
-git checkout main
-git pull upstream main
-git push origin main
+gh repo sync
 
 # Create feature branch
 git checkout -b feature/my-feature
