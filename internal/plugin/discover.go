@@ -162,6 +162,21 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 		return nil, nil
 	}
 
+	compatible, err := compatibleCLIVersion(version.Version, manifest.CLIVersion)
+	if err != nil {
+		log.Warn("Cannot parse cli version constraint for plugin",
+			"name", manifest.Name,
+			"installed", version.Version,
+			"constraint", manifest.CLIVersion)
+	} else if !compatible {
+		log.Warn("Plugin is incompatible with DataRobot CLI version",
+			"name", manifest.Name,
+			"installed", version.Version,
+			"constraint", manifest.CLIVersion)
+
+		return nil, nil
+	}
+
 	executable, err := resolvePlatformExecutable(pluginDir, &manifest)
 	if err != nil {
 		return nil, err
