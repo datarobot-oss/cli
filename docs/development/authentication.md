@@ -113,8 +113,15 @@ You can still manually run `dr auth login` to refresh credentials or change acco
 
 ## Internal APIs
 
-The auth package writes configuration through Viper.
+The auth package provides the following functions for authentication management:
+
+### Configuration management
 
 - `WriteConfigFileSilent()`&mdash;writes the config file and returns an error.
 - `WriteConfigFile()`&mdash;writes the config file, prints a success message, and returns an error.
 - `SetURLAction()`&mdash;prompts for a DataRobot URL, optionally overwrites an existing value, and returns a boolean indicating whether the URL changed.
+
+### Credential verification
+
+- `GetEnvCredentials() EnvCredentials`&mdash;reads `DATAROBOT_ENDPOINT` (or `DATAROBOT_API_ENDPOINT` fallback) and `DATAROBOT_API_TOKEN` from environment variables. Returns an `EnvCredentials` struct by value containing the endpoint and token (may be empty strings if not set).
+- `VerifyEnvCredentials() (EnvCredentials, error)`&mdash;checks if environment variable credentials are valid by calling `GetEnvCredentials()` and verifying the token with the DataRobot API. Returns the credentials by value and an error. Returns `ErrEnvCredentialsNotSet` if either endpoint or token is empty.
