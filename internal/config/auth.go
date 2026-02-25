@@ -15,6 +15,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -24,8 +25,25 @@ import (
 	"github.com/spf13/viper"
 )
 
+type contextKey string
+
+const userAgentKey contextKey = "userAgent"
+
+// WithUserAgent adds a custom User-Agent to the context
+func WithUserAgent(ctx context.Context, userAgent string) context.Context {
+	return context.WithValue(ctx, userAgentKey, userAgent)
+}
+
+func getUserAgent(ctx context.Context) string {
+	if ua, ok := ctx.Value(userAgentKey).(string); ok && ua != "" {
+		return ua
+	}
+
+	return GetUserAgentHeader()
+}
+
 // VerifyToken verifies if the datarobot endpoint + api key pair correspond to a valid pair.
-func VerifyToken(datarobotEndpoint, token string) error {
+func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	_, err := url.Parse(datarobotEndpoint)
 	if err != nil {
 		return err
@@ -42,7 +60,7 @@ func VerifyToken(datarobotEndpoint, token string) error {
 
 	bearer := "Bearer " + token
 	req.Header.Add("Authorization", bearer)
-	req.Header.Add("User-Agent", GetUserAgentHeader())
+	req.Header.Add("User-Agent", getUserAgent(ctx))
 
 	log.Debug("Request Info: \n" + RedactedReqInfo(req))
 
@@ -64,12 +82,12 @@ func VerifyToken(datarobotEndpoint, token string) error {
 	return nil
 }
 
-func GetAPIKey() (string, error) {
+func GetAPIKey(ctx context.Context) (string, error) {
 	viperEndpoint := viper.GetString(DataRobotURL)
 	viperToken := viper.GetString(DataRobotAPIKey)
 
 	// Returns valid API key if there is one, otherwise returns an empty string
-	err := VerifyToken(viperEndpoint, viperToken)
+	err := VerifyToken(ctx, viperEndpoint, viperToken)
 	if err != nil {
 		return "", err
 	}

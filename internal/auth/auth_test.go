@@ -117,7 +117,7 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	viper.Set(config.DataRobotAPIKey, "expired-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	apiKey, _ := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey(context.Background())
 	assert.Empty(t, apiKey, "Expected GetAPIKey to return empty string for expired token")
 
 	// Mock the callback to simulate failure to refresh expired credentials.
@@ -136,7 +136,7 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	viper.Set(config.DataRobotAPIKey, "valid-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	apiKey, _ := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey(context.Background())
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token")
 
 	result := EnsureAuthenticated(context.Background())
@@ -150,13 +150,13 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 	os.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
 	os.Setenv("DATAROBOT_API_TOKEN", "valid-token")
 
-	apiKey, _ := config.GetAPIKey()
+	apiKey, _ := config.GetAPIKey(context.Background())
 	assert.Empty(t, apiKey, "Expected GetAPIKey before EnsureAuthenticated to return empty string")
 
 	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid environment credentials")
 
-	apiKey, _ = config.GetAPIKey()
+	apiKey, _ = config.GetAPIKey(context.Background())
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey after EnsureAuthenticated to return valid token")
 }
 
@@ -185,6 +185,30 @@ func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 
 	result = EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via environment variable")
+}
+
+func TestEnsureAuthenticated_DefaultUserAgent(t *testing.T) {
+	var capturedUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/version/" {
+			capturedUserAgent = r.Header.Get("User-Agent")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"version":"10.0.0"}`))
+		}
+	}))
+	defer server.Close()
+
+	viper.Reset()
+	viper.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viper.Set(config.DataRobotAPIKey, "valid-token")
+
+	result := EnsureAuthenticated(context.Background())
+	assert.True(t, result)
+
+	expectedUserAgent := "DataRobot CLI version: dev"
+	assert.Equal(t, expectedUserAgent, capturedUserAgent,
+		"Expected default User-Agent for normal CLI authentication")
 }
 
 func TestEnsureAuthenticated_NoURL(t *testing.T) {
@@ -299,7 +323,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		t.Setenv("DATAROBOT_API_ENDPOINT", "")
 		t.Setenv("DATAROBOT_API_TOKEN", "")
 
-		creds, err := VerifyEnvCredentials()
+		creds, err := VerifyEnvCredentials(context.Background())
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
@@ -310,7 +334,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		t.Setenv("DATAROBOT_ENDPOINT", "https://example.com")
 		t.Setenv("DATAROBOT_API_TOKEN", "")
 
-		creds, err := VerifyEnvCredentials()
+		creds, err := VerifyEnvCredentials(context.Background())
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
@@ -322,7 +346,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		t.Setenv("DATAROBOT_API_ENDPOINT", "")
 		t.Setenv("DATAROBOT_API_TOKEN", "some-token")
 
-		creds, err := VerifyEnvCredentials()
+		creds, err := VerifyEnvCredentials(context.Background())
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrEnvCredentialsNotSet)
@@ -336,7 +360,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
 		t.Setenv("DATAROBOT_API_TOKEN", "invalid-token")
 
-		creds, err := VerifyEnvCredentials()
+		creds, err := VerifyEnvCredentials(context.Background())
 
 		require.Error(t, err)
 		require.NotErrorIs(t, err, ErrEnvCredentialsNotSet)
@@ -350,7 +374,7 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
 		t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
 
-		creds, err := VerifyEnvCredentials()
+		creds, err := VerifyEnvCredentials(context.Background())
 
 		require.NoError(t, err)
 		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
