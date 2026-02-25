@@ -173,6 +173,9 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	viper.Set(config.DataRobotURL, server.URL)
 	viper.Set(config.DataRobotAPIKey, "test-token")
 
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
 	scriptPath := filepath.Join(t.TempDir(), "test.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 

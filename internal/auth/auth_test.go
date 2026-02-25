@@ -204,6 +204,9 @@ func TestEnsureAuthenticated_DefaultUserAgent(t *testing.T) {
 	viper.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viper.Set(config.DataRobotAPIKey, "valid-token")
 
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
 	result := EnsureAuthenticated(context.Background())
 	assert.True(t, result)
 
