@@ -35,7 +35,7 @@ import (
 func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
 	// Check authentication if required by the plugin
 	if manifest.Authentication {
-		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s version %s", manifest.Name, manifest.Version)
+		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
 		ctx := config.WithUserAgent(context.Background(), userAgent)
 
 		if !auth.EnsureAuthenticated(ctx) {

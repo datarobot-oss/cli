@@ -182,5 +182,5 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 
 	ExecutePlugin(manifest, scriptPath, []string{})
 
-	assert.Equal(t, "DataRobot CLI plugin: test-plugin version 1.2.3", capturedUserAgent)
+	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
