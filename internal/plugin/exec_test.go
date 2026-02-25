@@ -15,7 +15,6 @@
 package plugin
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +22,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -166,6 +164,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUserAgent = r.Header.Get("User-Agent")
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -177,7 +176,9 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	scriptPath := filepath.Join(t.TempDir(), "test.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
-	manifest := PluginManifest{BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true}}
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
+	}
 
 	ExecutePlugin(manifest, scriptPath, []string{})
 

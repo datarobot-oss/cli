@@ -193,6 +193,7 @@ func TestEnsureAuthenticated_DefaultUserAgent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/version/" {
 			capturedUserAgent = r.Header.Get("User-Agent")
+
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"version":"10.0.0"}`))
 		}
