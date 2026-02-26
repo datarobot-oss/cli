@@ -122,6 +122,7 @@ type RunOpts struct {
 	Silent      bool
 	ExitCode    bool
 	Concurrency int
+	TaskArgs    []string // Additional arguments to pass to the task command
 }
 
 func (o *RunOpts) RunArgs() []string {
@@ -161,6 +162,12 @@ func (r *Runner) Run(tasks []string, opts RunOpts) error {
 
 	args = append(args, opts.RunArgs()...)
 	args = append(args, tasks...)
+
+	// Append additional task arguments after -- separator
+	if len(opts.TaskArgs) > 0 {
+		args = append(args, "--")
+		args = append(args, opts.TaskArgs...)
+	}
 
 	cmd := exec.Command(r.opts.BinaryName, args...)
 

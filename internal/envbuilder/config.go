@@ -15,6 +15,8 @@
 package envbuilder
 
 import (
+	"context"
+
 	"github.com/datarobot/cli/internal/config"
 )
 
@@ -27,10 +29,12 @@ func knownVariables(allValues map[string]string) map[string]variableConfig {
 	datarobotEndpoint := allValues["DATAROBOT_ENDPOINT"]
 	token := allValues["DATAROBOT_API_TOKEN"]
 
-	err := config.VerifyToken(datarobotEndpoint, token)
+	ctx := context.Background()
+
+	err := config.VerifyToken(ctx, datarobotEndpoint, token)
 	if err != nil {
 		datarobotEndpoint, _ = config.GetEndpointURL("/api/v2")
-		token, _ = config.GetAPIKey()
+		token, _ = config.GetAPIKey(ctx)
 	}
 
 	return map[string]variableConfig{

@@ -170,7 +170,7 @@ goreleaser check
 
 ## Automated release workflow
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
+The GitHub Actions workflow (`.github/workflows/release.yaml`) automatically:
 
 1. Triggers on tag push matching `v*`
 2. Checks out the code
@@ -178,6 +178,35 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) automatically:
 4. Runs GoReleaser
 5. Creates GitHub release
 6. Uploads all artifacts
+7. Verifies installation on all platforms (Linux, macOS, Windows)
+8. Sends Slack notification on success
+
+### Post-release verification
+
+After GoReleaser creates the release, the workflow follows a "verify before promoting" approach:
+
+1. **Mark as pre-release**: The release is immediately marked as a pre-release after creation
+2. **Verify installation**: The workflow tests installation on all supported platforms (Linux, macOS, Windows)
+3. **Promote on success**: If verification passes, stable releases are recreated without pre-release status and a success Slack notification is sent
+4. **Stay as pre-release on failure**: If verification fails, the release remains marked as a pre-release and a warning Slack notification is sent
+
+This approach ensures users installing "latest" never get a broken release. Semantic pre-releases (e.g., `v1.0.0-rc.1`) remain as pre-releases even after successful verification.
+
+To fix a failed release:
+1. Investigate the installation failure in the workflow logs
+2. Fix the underlying issue (usually missing or corrupted binaries)
+3. Either re-upload the binaries and manually remove pre-release status via GitHub UI, or delete and recreate the release
+
+### Testing installation manually
+
+Use the **Installation Tests (On Demand)** workflow to test installation without creating a release:
+
+1. Go to **Actions** > **Installation Tests (On Demand)**
+2. Click **Run workflow**
+3. Enter a version (e.g., `v0.2.49`) or leave empty for latest
+4. Click **Run workflow**
+
+This is useful for verifying installation scripts work correctly before or after releases.
 
 ## Best practices
 

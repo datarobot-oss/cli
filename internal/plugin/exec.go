@@ -17,6 +17,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -33,8 +34,13 @@ import (
 // If the plugin manifest requires authentication, it will check/prompt for auth first
 func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
 	// Check authentication if required by the plugin
-	if manifest.Authentication && !auth.EnsureAuthenticated(context.Background()) {
-		return 1
+	if manifest.Authentication {
+		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
+		ctx := config.WithUserAgent(context.Background(), userAgent)
+
+		if !auth.EnsureAuthenticated(ctx) {
+			return 1
+		}
 	}
 
 	return executePluginCommand(executable, args, manifest.Authentication)
