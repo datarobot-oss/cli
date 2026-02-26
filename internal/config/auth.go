@@ -53,7 +53,7 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 		return errors.New("empty token")
 	}
 
-	req, err := http.NewRequest(http.MethodGet, datarobotEndpoint+"/version/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, datarobotEndpoint+"/version/", nil)
 	if err != nil {
 		return err
 	}
