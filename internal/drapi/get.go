@@ -15,6 +15,7 @@
 package drapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -31,7 +32,7 @@ func Get(url, info string) (*http.Response, error) {
 
 	// memoize token to avoid extra VerifyToken() calls
 	if token == "" {
-		token, err = config.GetAPIKey()
+		token, err = config.GetAPIKey(context.Background())
 		if err != nil {
 			return nil, err
 		}

@@ -16,10 +16,15 @@ package plugin
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -151,4 +156,34 @@ exit %d
 			require.Equal(t, tt.expectedCode, result)
 		})
 	}
+}
+
+// TestExecutePluginCustomUserAgent verifies that plugins use custom User-Agent during authentication
+func TestExecutePluginCustomUserAgent(t *testing.T) {
+	var capturedUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedUserAgent = r.Header.Get("User-Agent")
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	viper.Reset()
+	viper.Set(config.DataRobotURL, server.URL)
+	viper.Set(config.DataRobotAPIKey, "test-token")
+
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := filepath.Join(t.TempDir(), "test.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
+	}
+
+	ExecutePlugin(manifest, scriptPath, []string{})
+
+	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }

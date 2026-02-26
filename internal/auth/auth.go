@@ -70,13 +70,13 @@ func GetEnvCredentials() EnvCredentials {
 
 // VerifyEnvCredentials checks if environment variable credentials are valid.
 // Returns credentials and nil error if valid, credentials and error otherwise.
-func VerifyEnvCredentials() (*EnvCredentials, error) {
+func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 	creds := GetEnvCredentials()
 	if creds.Endpoint == "" || creds.Token == "" {
 		return &creds, ErrEnvCredentialsNotSet
 	}
 
-	err := config.VerifyToken(creds.Endpoint, creds.Token)
+	err := config.VerifyToken(ctx, creds.Endpoint, creds.Token)
 
 	return &creds, err
 }
@@ -103,7 +103,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	}
 
 	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
-	creds, envErr := VerifyEnvCredentials()
+	creds, envErr := VerifyEnvCredentials(ctx)
 	if envErr == nil {
 		// Now map other environment variables to config keys
 		// such as those used by the DataRobot platform or other SDKs
@@ -121,7 +121,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return false
 	}
 
-	_, viperErr := config.GetAPIKey()
+	_, viperErr := config.GetAPIKey(ctx)
 	if viperErr == nil {
 		// Valid token exists in viper config file
 		return true
