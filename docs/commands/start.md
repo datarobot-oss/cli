@@ -37,7 +37,7 @@ The command streamlines the process of getting your DataRobot application up and
    - **Executable quickstart script**&mdash;if an executable script in `.datarobot/cli/bin/` matches `quickstart*`, you're prompted to run it (unless `--yes` is used), then it executes.
    - **Neither found**&mdash;if you're already in a repository but no start command or script exists, the command shows a message and exits. It does not launch the setup wizard in this case.
 
-This command is designed to work intelligently with your template's structure. If you're not in a DataRobot repository, it launches template setup; once in a repository, it runs `task start` or a quickstart script when available.
+This command is designed to work intelligently with your template's structure. If you're not in a DataRobot application template repository, it launches template setup; once in a repository, it runs `task start` or a quickstart script when available.
 
 ## Aliases
 
@@ -60,13 +60,13 @@ All [global flags](README.md#global-flags) are also available.
 The `dr start` command looks for a start command in the following order:
 
 1. **`task start` command** (highest priority)&mdash;If your template's Taskfile defines a `start` task, it will be executed automatically.
-2. **Quickstart scripts**&mdash;If no `task start` is found, the command searches for quickstart scripts.
+2. **Executable quickstart scripts**&mdash;If no `task start` is found, the command searches for executable quickstart scripts.
 
 ## Quickstart scripts
 
 ### Location
 
-Quickstart scripts must be placed in:
+Executable quickstart scripts must be placed in:
 
 ```text
 .datarobot/cli/bin/
@@ -74,7 +74,7 @@ Quickstart scripts must be placed in:
 
 ### Naming convention
 
-Scripts must start with `quickstart` (case-sensitive):
+Executable quickstart scripts must start with `quickstart` (case-sensitive):
 
 - ✅ `quickstart`
 - ✅ `quickstart.sh`
