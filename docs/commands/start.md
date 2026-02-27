@@ -34,7 +34,7 @@ The command streamlines the process of getting your DataRobot application up and
 4. **Checking repository setup**&mdash;verifies you're in a DataRobot repository (contains `.datarobot/`). If not, the command launches the interactive `dr templates setup` wizard; after setup completes, `dr start` runs again in the cloned directory.
 5. **Finding and executing start command**&mdash;searches for a start command in this order:
    - **`task start`**&mdash;if the Taskfile defines a `start` task, it runs immediately (no confirmation).
-   - **Quickstart script**&mdash;if a script in `.datarobot/cli/bin/` matches `quickstart*`, you're prompted to run it (unless `--yes` is used), then it executes.
+   - **Executable quickstart script**&mdash;if an executable script in `.datarobot/cli/bin/` matches `quickstart*`, you're prompted to run it (unless `--yes` is used), then it executes.
    - **Neither found**&mdash;if you're already in a repository but no start command or script exists, the command shows a message and exits. It does not launch the setup wizard in this case.
 
 This command is designed to work intelligently with your template's structure. If you're not in a DataRobot repository, it launches template setup; once in a repository, it runs `task start` or a quickstart script when available.

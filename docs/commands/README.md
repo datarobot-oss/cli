@@ -16,7 +16,7 @@ These flags are available for all commands:
       --skip-auth                Skip authentication checks (for advanced users)
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
-      --plugin-discovery-timeout Timeout for plugin discovery (default: 2s; 0s disables)
+      --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
   -h, --help                     Show help information
 ```
 
