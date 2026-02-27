@@ -116,11 +116,6 @@ When `authentication` is enabled:
 - If no valid credentials exist, the user is automatically prompted to log in via `dr auth login`.
 - Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
 - Your plugin will receive a clean environment with authentication already validated
-2. Executes the plugin binary.
-3. Passes all remaining arguments to the plugin verbatim.
-4. Exits with the same exit code as the plugin.
-
-Because plugin commands are registered as top-level commands, a plugin cannot conflict with an existing built-in command name.
 
 ## Developing a plugin
 
