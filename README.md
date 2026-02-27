@@ -171,7 +171,7 @@ task build
 sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
-#### Windows (install a specific version)
+#### Windows
 
 ```powershell
 # Clone the repository
@@ -311,9 +311,7 @@ When you clone and configure a template, it becomes your **application**&mdash;a
 dr templates setup
 ```
 
-After a few moments, the setup wizard displays the application templates available:
-
-<img src="./images/templates-list.png" alt="Templates list" width="500px"/>
+After a few moments, the setup wizard displays the application templates available.
 
 > [!NOTE]
 > You can navigate through the list of templates using the arrow keys, or filter by pressing the `/` key and entering a search term. The setup wizard will only display templates that are available to you.
@@ -403,7 +401,7 @@ dr run test
 ## Next steps
 
 From here, refer to the repository of the template you selected to start customizing it.
-Refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+Refer to the [Docs](docs/) section of this repository for more details on using the DataRobot CLI.
 See the links below for specific details:
 
 - **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
@@ -492,8 +490,9 @@ dr --verbose templates list
 
 # Enable debug output for detailed information
 dr --debug templates list
+```
 
-When you enable debug mode, the CLI creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
+When you enable debug mode, the CLI creates a `.dr-tui-debug.log` file in your home directory for terminal UI debug information.
 
 ## Contributing
 
@@ -508,8 +507,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 ## Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
-- 💬 [Discussions](https://github.com/datarobot/cli/discussions)
+- 🐛 [Issue Tracker](https://github.com/datarobot-oss/cli/issues)
+- 💬 [Discussions](https://github.com/datarobot-oss/cli/discussions)
 - 📧 Email: <oss-community-management@datarobot.com>
 
 ## Acknowledgments

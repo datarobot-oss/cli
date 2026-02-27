@@ -53,7 +53,7 @@ This command is designed to work intelligently with your template's structure. I
 
 ### Global options
 
-All [global options](README.md#global-options) are also available.
+All [global flags](README.md#global-flags) are also available.
 
 ## Start command detection
 
