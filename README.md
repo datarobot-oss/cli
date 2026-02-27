@@ -373,13 +373,10 @@ dr start
 
 This command will:
 
-- Check prerequisites and validate your environment.
-- Verify your CLI version meets the template's minimum requirements.
-- Check if you're in a DataRobot repository (if not, launches template setup).
-- Execute a start command in this order:
-  1. `task start` from the Taskfile (if available)
-  2. A quickstart script from `.datarobot/cli/bin/` (if available)
-  3. Fall back to the setup wizard if neither exists.
+- Verify your CLI version meets the template's minimum requirements (and prompt to update if needed).
+- Check template prerequisites (required tools such as Task, Git).
+- Check if you're in a DataRobot repository (if not, launches the template setup wizard, then runs `dr start` again in the cloned directory).
+- Find and run a start command: `task start` from the Taskfile if available (runs immediately), or a quickstart script from `.datarobot/cli/bin/` if available (prompts to run unless you use `--yes`). If you're in a repository but neither exists, it shows a message and exits.
 
 > [!TIP]
 > You can use the `--yes` flag to skip all prompts and execute immediately. This is useful in scripts or CI/CD pipelines.
