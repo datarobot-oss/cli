@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/log"
 	"gopkg.in/yaml.v3"
@@ -205,6 +206,8 @@ func (up UserPrompt) ShouldAsk(showAll bool) bool {
 }
 
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
+	start := time.Now()
+
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to discover task yaml files: %w", err)
@@ -229,6 +232,14 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 
 	allPrompts = promptsWithValues(allPrompts, variables)
 	allPrompts = DetermineRequiredSections(allPrompts)
+
+	timingf(
+		"GatherUserPrompts root=%s files=%d prompts=%d duration=%s",
+		rootDir,
+		len(yamlFiles),
+		len(allPrompts),
+		time.Since(start),
+	)
 
 	return allPrompts, nil
 }
