@@ -7,6 +7,10 @@
 #   3. brew install latest → dr self update → should use brew upgrade path
 #   4. (stretch) template minimum version met → dr self update → no-op
 #   5. (stretch) template minimum version met → dr self update -f → force update to latest
+#
+# NOTE: All tests run from isolated temp directories to prevent interference from
+# .datarobot/cli directories that may exist anywhere up the directory tree, which
+# would cause FindRepoRoot() to detect a template context and alter update behavior.
 
 set -e
 
@@ -32,6 +36,12 @@ get_latest_version() {
         | sed -E 's/.*"([^"]+)".*/\1/'
 }
 
+# Create an isolated temp directory under /tmp so FindRepoRoot() won't find any
+# .datarobot/cli ancestors. Returns the path via stdout.
+make_isolated_dir() {
+    mktemp -d /tmp/dr-smoke-test.XXXXXX
+}
+
 # ──────────────────────────────────────────────────────────────
 # Test 1: curl install latest → dr self update (no-op)
 # ──────────────────────────────────────────────────────────────
@@ -49,17 +59,24 @@ test_curl_latest_self_update() {
     version_before=$(get_installed_version)
     echo "Version after curl install: $version_before"
 
-    echo "Running dr self update..."
-    update_output=$("$DR_BIN" self update 2>&1 || true)
+    # Run from isolated temp dir to avoid .datarobot detection
+    local work_dir
+    work_dir=$(make_isolated_dir)
+
+    echo "Running dr self update from isolated dir ($work_dir)..."
+    update_output=$(cd "$work_dir" && "$DR_BIN" self update 2>&1 || true)
     echo "Output: $update_output"
 
     version_after=$(get_installed_version)
     echo "Version after self update: $version_after"
 
+    rm -rf "$work_dir"
+
     if [[ "$version_before" == "$version_after" ]]; then
         echo "✅ TEST 1 PASSED: Version unchanged after self update on latest ($version_after)."
     else
         echo "❌ TEST 1 FAILED: Version changed from $version_before to $version_after (expected no change)."
+        cleanup_curl_install
         exit 1
     fi
 
@@ -86,21 +103,42 @@ test_curl_old_version_self_update() {
     latest_version=$(get_latest_version)
     echo "Latest release version: $latest_version"
 
-    echo "Running dr self update..."
-    update_output=$("$DR_BIN" self update 2>&1 || true)
+    # Run from isolated temp dir to avoid .datarobot detection
+    local work_dir
+    work_dir=$(make_isolated_dir)
+
+    echo "Running dr self update from isolated dir ($work_dir)..."
+    update_output=$(cd "$work_dir" && "$DR_BIN" self update 2>&1 || true)
     echo "Output: $update_output"
 
     version_after=$(get_installed_version)
     echo "Version after self update: $version_after"
 
-    # Strip leading 'v' for comparison
     version_after_stripped="${version_after#v}"
     version_before_stripped="${version_before#v}"
+
+    # Older binaries (e.g. v0.2.40) have a bug where SufficientSelfVersion("")
+    # returns true, causing `self update` to skip even without a version constraint.
+    # If that happens, retry with -f to still validate the update mechanism works.
+    if [[ "$version_after_stripped" == "$version_before_stripped" ]]; then
+        if echo "$update_output" | grep -qi "Skipping update"; then
+            echo "  ⚠️  Old binary skipped update (known bug). Retrying with -f..."
+            force_output=$(cd "$work_dir" && "$DR_BIN" self update -f 2>&1 || true)
+            echo "  Force output: $force_output"
+
+            version_after=$(get_installed_version)
+            version_after_stripped="${version_after#v}"
+            echo "  Version after force update: $version_after"
+        fi
+    fi
+
+    rm -rf "$work_dir"
 
     if [[ "$version_after_stripped" != "$version_before_stripped" ]]; then
         echo "✅ TEST 2 PASSED: Version upgraded from $version_before to $version_after."
     else
         echo "❌ TEST 2 FAILED: Version did not change from $version_before (expected upgrade to latest)."
+        cleanup_curl_install
         exit 1
     fi
 
@@ -134,22 +172,40 @@ test_brew_self_update() {
     brew tap datarobot-oss/taps 2>/dev/null || true
     brew install --cask dr-cli 2>/dev/null || brew upgrade --cask dr-cli 2>/dev/null || true
 
-    # Find brew-installed binary
-    brew_dr=$(command -v dr 2>/dev/null || echo "")
-    if [[ -z "$brew_dr" ]]; then
+    # Find the brew-installed binary (cask installs to a predictable location)
+    brew_dr=$(brew --prefix 2>/dev/null)/bin/dr
+    if [[ ! -x "$brew_dr" ]]; then
+        # Fall back to whatever is on PATH
+        brew_dr=$(command -v dr 2>/dev/null || echo "")
+    fi
+
+    if [[ -z "$brew_dr" || ! -x "$brew_dr" ]]; then
         echo "❌ TEST 3 FAILED: dr not found after brew install."
         exit 1
     fi
 
-    version_before=$(dr self version --format=json | grep '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    # Verify this is actually the DataRobot CLI (not some other 'dr' binary)
+    if ! "$brew_dr" self version --format=json 2>/dev/null | grep -q '"version"'; then
+        echo "⏭️  TEST 3 SKIPPED: brew-installed dr does not appear to be the DataRobot CLI."
+        brew uninstall --cask dr-cli 2>/dev/null || true
+        return 0
+    fi
+
+    version_before=$("$brew_dr" self version --format=json | grep '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
     echo "Version after brew install: $version_before"
 
-    echo "Running dr self update..."
-    update_output=$(dr self update 2>&1 || true)
+    # Run from isolated temp dir to avoid .datarobot detection
+    local work_dir
+    work_dir=$(make_isolated_dir)
+
+    echo "Running dr self update from isolated dir ($work_dir)..."
+    update_output=$(cd "$work_dir" && "$brew_dr" self update 2>&1 || true)
     echo "Output: $update_output"
 
-    version_after=$(dr self version --format=json | grep '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    version_after=$("$brew_dr" self version --format=json | grep '"version"' | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
     echo "Version after self update: $version_after"
+
+    rm -rf "$work_dir"
 
     # Brew path: version should stay the same (already latest) or we just confirm no errors
     echo "✅ TEST 3 PASSED: brew-based self update completed without errors (version: $version_after)."
@@ -176,8 +232,9 @@ test_template_min_version_noop() {
     version_installed=$(get_installed_version)
     echo "Installed version: $version_installed"
 
-    # Create a fake template directory with versions.yaml requiring the installed version
-    template_dir=$(mktemp -d)
+    # Create a fake template directory under /tmp so FindRepoRoot() won't find
+    # .datarobot/cli ancestors from the user's real home directory
+    template_dir=$(mktemp -d /tmp/dr-smoke-template.XXXXXX)
     mkdir -p "$template_dir/.datarobot/cli"
 
     cat > "$template_dir/.datarobot/cli/versions.yaml" <<EOF
@@ -228,8 +285,9 @@ test_template_min_version_force_update() {
     version_before=$(get_installed_version)
     echo "Installed version: $version_before"
 
-    # Create a fake template directory with versions.yaml requiring the installed version
-    template_dir=$(mktemp -d)
+    # Create a fake template directory under /tmp so FindRepoRoot() won't find
+    # .datarobot/cli ancestors from the user's real home directory
+    template_dir=$(mktemp -d /tmp/dr-smoke-template.XXXXXX)
     mkdir -p "$template_dir/.datarobot/cli"
 
     cat > "$template_dir/.datarobot/cli/versions.yaml" <<EOF
@@ -286,7 +344,7 @@ EOF
 # ──────────────────────────────────────────────────────────────
 main() {
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║        dr self update — Smoke Tests                    ║"
+    echo "║        dr self update — Smoke Tests                      ║"
     echo "╚══════════════════════════════════════════════════════════╝"
 
     # Ensure INSTALL_DIR exists and is on PATH
@@ -301,7 +359,7 @@ main() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║        All self-update smoke tests passed! ✅           ║"
+    echo "║        All self-update smoke tests passed!               ║"
     echo "╚══════════════════════════════════════════════════════════╝"
 }
 
