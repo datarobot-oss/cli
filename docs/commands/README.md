@@ -9,14 +9,15 @@ This document provides a comprehensive overview of all available commands, their
 These flags are available for all commands:
 
 ```bash
-  -V, --version           Display version information
-  -v, --verbose           Enable verbose output (info level logging)
-      --debug             Enable debug output (debug level logging)
-      --config string     Path to config file (default: $HOME/.config/datarobot/drconfig.yaml)
-      --skip-auth         Skip authentication checks (for advanced users)
-      --force-interactive Force the setup wizard to run even if already completed
-      --all-commands      Display all available commands and their flags in tree format
-  -h, --help              Show help information
+  -V, --version                   Display version information
+  -v, --verbose                  Enable verbose output (info level logging)
+      --debug                    Enable debug output (debug level logging)
+      --config string            Path to config file (default: $HOME/.config/datarobot/drconfig.yaml)
+      --skip-auth                Skip authentication checks (for advanced users)
+      --force-interactive        Force the setup wizard to run even if already completed
+      --all-commands             Display all available commands and their flags in tree format
+      --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
+  -h, --help                     Show help information
 ```
 
 > [!WARNING]
@@ -29,17 +30,18 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command               | Description                                         |
-|-----------------------|-----------------------------------------------------|
-| [`auth`](auth.md)     | Authenticate with DataRobot.                        |
-| `component`           | Manage template components.                         |
-| `templates`           | Manage application templates.                       |
-| [`start`](start.md)   | Run the application quickstart process.             |
-| [`run`](run.md)       | Execute application tasks.                          |
-| [`task`](task.md)     | Manage Taskfile composition and task execution.     |
-| [`dotenv`](dotenv.md) | Manage environment variables.                       |
-| [`self`](self.md)     | CLI utility commands (update, version, completion). |
-| [`plugin`](plugins.md) | Inspect and manage CLI plugins.                    |
+| Command                 | Description                                         |
+|-------------------------|-----------------------------------------------------|
+| [`auth`](auth.md)       | Authenticate with DataRobot.                        |
+| `component`             | Manage template components.                         |
+| `templates`             | Manage application templates.                       |
+| [`start`](start.md)     | Run the application quickstart process.             |
+| [`run`](run.md)         | Execute application tasks.                          |
+| [`task`](task.md)       | Manage Taskfile composition and task execution.     |
+| [`dotenv`](dotenv.md)   | Manage environment variables.                       |
+| [`self`](self.md)       | CLI utility commands (update, version, completion, plugin). |
+| [`plugin`](plugins.md)  | Inspect and manage CLI plugins.                     |
+| `dependencies`         | Check template dependencies (advanced).            |
 
 ### Command tree
 
@@ -50,27 +52,37 @@ dr
 │   ├── login          Log in to DataRobot
 │   ├── logout         Log out from DataRobot
 │   └── set-url        Set DataRobot URL
-├── component          Component management
+├── component          Component management (alias: c)
 │   ├── add            Add a component to your template
 │   ├── list           List installed components
 │   └── update         Update a component
-├── templates          Template management
+├── templates          Template management (alias: template)
 │   ├── list           List available templates
 │   └── setup          Interactive setup wizard
 ├── start              Run quickstart process (alias: quickstart)
-├── run                Task execution
+├── run                Task execution (alias: r)
 ├── task               Taskfile composition and execution
 │   ├── compose        Compose unified Taskfile
 │   ├── list           List available tasks
 │   └── run            Execute tasks
 ├── dotenv             Environment configuration
+├── dependencies       Template dependencies (advanced)
+│   └── check          Check template dependencies
+├── plugin             Inspect and manage CLI plugins (alias: plugins)
+│   ├── list           List installed plugins
+│   ├── install        Install a plugin
+│   ├── uninstall      Uninstall a plugin
+│   └── update         Update plugins
 └── self               CLI utility commands
     ├── completion     Shell completion
-    │   ├── bash       Generate bash completion
-    │   ├── zsh        Generate zsh completion
-    │   ├── fish       Generate fish completion
-    │   └── powershell Generate PowerShell completion
+    │   ├── install    Install completions interactively
+    │   ├── uninstall  Uninstall completions
+    │   └── <shell>    Generate script (bash|zsh|fish|powershell)
     ├── config         Display configuration settings
+    ├── plugin         Plugin packaging and development tools
+    │   ├── add        Add a packaged plugin version to a registry file
+    │   ├── publish    Package and publish a plugin in one step
+    │   └── package    Package a plugin directory into a .tar.xz archive
     ├── update         Update CLI to latest version
     └── version        Version information
 ```
@@ -210,10 +222,16 @@ For detailed documentation on each command, see:
   - Variable validation.
 
 - **[self](self.md)**&mdash;CLI utility commands.
-  - `completion`&mdash;shell completions (Bash, Zsh, Fish, PowerShell).
+  - `completion`&mdash;shell completions: use `install`/`uninstall` or pass a shell (bash, zsh, fish, powershell) to generate a script.
   - `config`&mdash;display configuration settings.
+  - `plugin`&mdash;plugin packaging and development: `add`, `publish`, `package`.
   - `update`&mdash;update CLI to latest version.
   - `version`&mdash;show CLI version and build information.
+
+- **dependencies**&mdash;template dependency checks (advanced).
+  - `check`&mdash;verify that required tools (e.g. Task, Git) are installed.
+
+- **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
 ## Getting help
 
@@ -239,11 +257,12 @@ Global environment variables that affect all commands:
 
 ```bash
 # Configuration
-DATAROBOT_ENDPOINT             # DataRobot URL
-DATAROBOT_API_TOKEN            # API token (not recommended)
-DATAROBOT_CLI_CONFIG           # Path to config file
-VISUAL                         # External editor for file editing
-EDITOR                         # External editor for file editing (fallback)
+DATAROBOT_ENDPOINT                  # DataRobot URL
+DATAROBOT_API_TOKEN                 # API token (not recommended)
+DATAROBOT_CLI_CONFIG                # Path to config file
+DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT  # Timeout for plugin discovery (e.g. 2s; 0s disables)
+VISUAL                              # External editor for file editing
+EDITOR                              # External editor for file editing (fallback)
 ```
 
 ## Exit codes

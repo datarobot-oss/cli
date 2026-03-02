@@ -119,6 +119,11 @@ Generated file saved to: Taskfile.yaml
 Added /Taskfile.yaml line to .gitignore
 ```
 
+This creates a `Taskfile.yaml` suitable for use with the native `task` command (e.g. `task dev`).
+
+> [!NOTE]
+> The `dr run` command uses a separate, automatically generated `Taskfile.gen.yaml` to ensure it always uses the latest configuration without modifying your `Taskfile.yaml`. `dr task compose` is useful when you want to inspect the generated tasks or use the native `task` binary directly.
+
 This creates a `Taskfile.yaml` with:
 - Environment configuration
 - Includes for all discovered components
