@@ -58,7 +58,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return nil
 	}
 
-	token, err := config.GetAPIKey()
+	token, err := config.GetAPIKey(context.Background())
 	if errors.Is(err, context.DeadlineExceeded) {
 		log.Errorf("Connection to %s timed out. Check your network and try again.", datarobotHost)
 		os.Exit(1)

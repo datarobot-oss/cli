@@ -30,7 +30,7 @@ dr self <command>
 
 ## Description
 
-The `self` command provides utility functions for managing the CLI tool itself, including updating to the latest version, checking version information, and setting up shell completion.
+The `self` command provides utility functions for managing the CLI tool itself, including updating to the latest version, checking version information, setting up shell completion, and (for plugin authors) packaging and publishing plugins.
 
 ## Subcommands
 
@@ -98,6 +98,18 @@ Configuration initialized. Using config file: /Users/username/.config/datarobot/
 - Check that environment variables are being recognized
 - Debug configuration issues
 - Confirm API endpoint and settings before deployment
+
+### `plugin`
+
+Plugin packaging and development tools for creating and publishing CLI plugins. These subcommands are for plugin authors and registry maintainers.
+
+| Subcommand | Description |
+|------------|-------------|
+| `add <path-to-index.json>` | Add a packaged plugin version to a registry file (index.json). |
+| `publish <plugin-dir>` | Package and publish a plugin in one step (package, copy to plugins dir, update index). |
+| `package <plugin-dir>` | Package a plugin directory into a distributable .tar.xz archive. |
+
+See the [Plugin development](../development/plugins.md) guide for details. For installing and managing plugins as a user, use the top-level [`dr plugin`](plugins.md) command.
 
 ### `update`
 
@@ -214,4 +226,6 @@ $ dr self version --format json
 
 - [Shell completions guide](../user-guide/shell-completions.md)&mdash;detailed completion setup
 - [Completion command](completion.md)&mdash;completion command reference
+- [Plugins command](plugins.md)&mdash;install and manage plugins (user-facing)
+- [Plugin development](../development/plugins.md)&mdash;creating and publishing plugins
 - [Quick start](../../README.md#quick-start)&mdash;initial CLI setup

@@ -15,6 +15,20 @@ Thank you for your interest in contributing to the DataRobot CLI! This document 
 
 This project follows the DataRobot Code of Conduct. Please be respectful and constructive in all interactions.
 
+## GitHub CLI Recommendation
+
+DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples in this guide use `gh` commands, which streamline the fork, clone, and pull request workflow.
+
+**Install GitHub CLI:**
+
+- **macOS**: `brew install gh`
+- **Linux**: See [installation guide](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
+- **Windows**: `winget install --id GitHub.cli` or `choco install gh`
+
+After installation, authenticate with: `gh auth login`
+
+**Manual Git workflow**: If you prefer not to use `gh`, you can manually fork on GitHub, clone your fork, and configure remotes. The `gh` commands shown can be replaced with equivalent `git` commands.
+
 ## Getting Started
 
 ### Development Setup
@@ -50,11 +64,23 @@ Then open `http://localhost:8000` in your browser. The preview will auto-reload 
 
 ## Development Workflow
 
+### Fork the Repository
+
+External contributors should work from a fork of the repository:
+
+```bash
+# Fork and clone in one command (sets up origin → your fork, upstream → main repo)
+gh repo fork datarobot-oss/cli --clone --default-branch-only
+# --fork-name <your-fork-name> can be used to specify a custom fork name, i.e. --fork-name drcli
+```
+
+> **Note**: If you prefer manual fork management, fork the repository on GitHub, then clone your fork and add the upstream remote manually.
+
 ### Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/datarobot-oss/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone --default-branch-only
 cd cli
 
 # Setup development environment
@@ -72,25 +98,39 @@ task lint
 
 ### Making Changes
 
-1. **Create a feature branch**
+1. **Sync with upstream before starting work**
+
+   ```bash
+   # Sync your fork with upstream
+   gh repo sync
+   ```
+
+2. **Create a feature branch**
 
    ```bash
    git checkout -b feature/your-feature-name
    ```
 
-2. **Make your changes**
+3. **Make your changes**
    - Follow the coding standards in [building.md](docs/development/building.md)
    - Write tests for new functionality
    - Update documentation as needed
 
-3. **Test your changes**
+4. **Test your changes**
 
    ```bash
+   # Run unit tests
    task test
+
+   # Run linters
    task lint
+
+   # Run smoke tests (optional, requires DR_API_TOKEN)
+   export DR_API_TOKEN=your-token
+   task smoke-test
    ```
 
-4. **Commit your changes**
+5. **Commit your changes**
 
    ```bash
    git commit -m "Brief description of your changes"
@@ -98,7 +138,7 @@ task lint
 
    Use clear, descriptive commit messages. Consider using [Conventional Commits](https://www.conventionalcommits.org/) format.
 
-5. **Push to your fork**
+6. **Push to your fork**
 
    ```bash
    git push origin feature/your-feature-name
@@ -133,20 +173,31 @@ When opening an issue:
 
 ### Pull Request Process
 
-1. **Ensure your PR**:
+After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
+
+1. **Create the pull request**:
+
+   ```bash
+   # Create PR from your current branch
+   gh pr create
+   ```
+
+   This opens an interactive prompt to set the title, description, and target branch. Pass `-w` to open the PR in your web browser.
+
+2. **Ensure your PR**:
    - Has a clear title and description
    - References any related issues (e.g., "Fixes #123")
    - Passes all tests (`task test`)
    - Passes all linters (`task lint`)
    - Includes documentation updates if needed
 
-2. **PR Description should include**:
+3. **PR Description should include**:
    - What changes were made and why
    - How to test the changes
    - Any breaking changes or migration notes
    - Screenshots for UI changes (if applicable)
 
-3. **Review Process**:
+4. **Review Process**:
    - Maintainers will review your PR
    - Address any feedback or requested changes
    - Once approved, a maintainer will merge your PR

@@ -48,10 +48,11 @@ Detailed documentation for each command:
 - [run](commands/run.md)&mdash;task execution with automatic Taskfile discovery and parallel execution support.
 - [task](commands/task.md)&mdash;Taskfile composition and management, including task listing and execution.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management with interactive wizard and validation.
-- [completion](commands/completion.md)&mdash;shell completion setup for various shells.
-- [self](commands/self.md)&mdash;CLI utility commands including version information and self-update.
+- [completion](commands/completion.md)&mdash;shell completion setup (install/uninstall or generate for bash, zsh, fish, PowerShell).
+- [self](commands/self.md)&mdash;CLI utility commands (version, update, config, completion, and plugin authoring: add, publish, package).
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
+- [Command reference index](commands/README.md)&mdash;full command tree including `dependencies check` and global flags.
 
 For template operations (list, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
 
@@ -95,12 +96,13 @@ If you can't find what you're looking for:
 - Interactive configuration deep-dive
 - Environment variables management
 - auth, start, task, dotenv, completion, self, plugins, component commands
+- Command reference index with full tree (including dependencies, self plugin, completion install/uninstall)
 - Building from source guide
 
 #### 📝 To be added (Future)
 
 - User guide: authentication details, working with templates, FAQ
-- Command reference: templates, version
+- Command reference: dedicated page for `dr templates` (use `dr templates --help` and [Template system](template-system/) in the meantime)
 - Development: architecture details, testing guide
 
 ### Documentation principles

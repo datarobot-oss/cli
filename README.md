@@ -171,7 +171,7 @@ task build
 sudo mv ./dist/dr /usr/local/bin/dr
 ```
 
-#### Windows (install a specific version)
+#### Windows
 
 ```powershell
 # Clone the repository
@@ -311,9 +311,7 @@ When you clone and configure a template, it becomes your **application**&mdash;a
 dr templates setup
 ```
 
-After a few moments, the setup wizard displays the application templates available:
-
-<img src="./images/templates-list.png" alt="Templates list" width="500px"/>
+After a few moments, the setup wizard displays the application templates available.
 
 > [!NOTE]
 > You can navigate through the list of templates using the arrow keys, or filter by pressing the `/` key and entering a search term. The setup wizard will only display templates that are available to you.
@@ -373,13 +371,10 @@ dr start
 
 This command will:
 
-- Check prerequisites and validate your environment.
-- Verify your CLI version meets the template's minimum requirements.
-- Check if you're in a DataRobot repository (if not, launches template setup).
-- Execute a start command in this order:
-  1. `task start` from the Taskfile (if available)
-  2. A quickstart script from `.datarobot/cli/bin/` (if available)
-  3. Fall back to the setup wizard if neither exists.
+- Verify your CLI version meets the template's minimum requirements (and prompt to update if needed).
+- Check template prerequisites (required tools such as Task, Git).
+- Check if you're in a DataRobot repository (if not, launches the template setup wizard, then runs `dr start` again in the cloned directory).
+- Find and run a start command: `task start` from the Taskfile if available (runs immediately), or a quickstart script from `.datarobot/cli/bin/` if available (prompts to run unless you use `--yes`). If you're in a repository but neither exists, it shows a message and exits.
 
 > [!TIP]
 > You can use the `--yes` flag to skip all prompts and execute immediately. This is useful in scripts or CI/CD pipelines.
@@ -406,7 +401,7 @@ dr run test
 ## Next steps
 
 From here, refer to the repository of the template you selected to start customizing it.
-Refer to the [Docs](/docs/) section of this repository for more details on using the DataRobot CLI.
+Refer to the [Docs](docs/) section of this repository for more details on using the DataRobot CLI.
 See the links below for specific details:
 
 - **[User guide](docs/user-guide/README.md)**&mdash;complete usage guide covering installation, authentication, working with templates, configuration management, and shell completions.
@@ -495,8 +490,9 @@ dr --verbose templates list
 
 # Enable debug output for detailed information
 dr --debug templates list
+```
 
-When you enable debug mode, the CLI creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
+When you enable debug mode, the CLI creates a `.dr-tui-debug.log` file in your home directory for terminal UI debug information.
 
 ## Contributing
 
@@ -511,8 +507,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 ## Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issue Tracker](https://github.com/datarobot/cli/issues)
-- 💬 [Discussions](https://github.com/datarobot/cli/discussions)
+- 🐛 [Issue Tracker](https://github.com/datarobot-oss/cli/issues)
+- 💬 [Discussions](https://github.com/datarobot-oss/cli/discussions)
 - 📧 Email: <oss-community-management@datarobot.com>
 
 ## Acknowledgments

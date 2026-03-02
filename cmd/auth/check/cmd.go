@@ -34,7 +34,7 @@ func checkCLICredentials() bool {
 	allValid := true
 
 	// Check environment variables first (same pattern as EnsureAuthenticated)
-	creds, err := auth.VerifyEnvCredentials()
+	creds, err := auth.VerifyEnvCredentials(context.Background())
 	if err == nil {
 		fmt.Println(tui.BaseTextStyle.Render("✅ Environment variable authentication is valid."))
 
@@ -71,7 +71,7 @@ func checkCLICredentials() bool {
 		allValid = false
 	}
 
-	_, err = config.GetAPIKey()
+	_, err = config.GetAPIKey(context.Background())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
@@ -159,7 +159,7 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 		return false
 	}
 
-	err = config.VerifyToken(dotenvEndpoint, dotenvToken)
+	err = config.VerifyToken(context.Background(), dotenvEndpoint, dotenvToken)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))

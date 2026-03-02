@@ -26,12 +26,19 @@ After installation, reload your shell to activate completions.
 ## Synopsis
 
 ```bash
+# Generate script for a shell (redirect to install)
 dr self completion <shell>
+
+# Interactive install or uninstall
+dr self completion install [shell]
+dr self completion uninstall [shell]
 ```
+
+Supported shells: `bash`, `zsh`, `fish`, `powershell`.
 
 ## Description
 
-The `self completion` command generates shell completion scripts that enable auto-completion for the DataRobot CLI. Completions provide command, subcommand, and flag suggestions when you press Tab.
+The `self completion` command generates shell completion scripts that enable auto-completion for the DataRobot CLI. You can either pass a shell name to output a script (then redirect to a file or pipe as needed), or use the `install` and `uninstall` subcommands for interactive setup. Completions provide command, subcommand, and flag suggestions when you press Tab.
 
 ## Supported shells
 
@@ -39,6 +46,15 @@ The `self completion` command generates shell completion scripts that enable aut
 - `zsh`&mdash;Z Shell.
 - `fish`&mdash;Friendly Interactive Shell.
 - `powershell`&mdash;PowerShell.
+
+## Install and uninstall subcommands
+
+For interactive setup without manually choosing paths:
+
+- **`dr self completion install [shell]`**&mdash;detects your shell (or use optional `bash`, `zsh`, `fish`, `powershell`), generates the script, and writes it to the appropriate location for your OS. Use `--force` to overwrite existing files.
+- **`dr self completion uninstall [shell]`**&mdash;removes previously installed completion files.
+
+See the [Shell completions guide](../user-guide/shell-completions.md) for step-by-step instructions.
 
 ## Usage
 
@@ -204,7 +220,7 @@ $ dr auth <Tab>
 check      login      logout     set-url
 
 $ dr templates <Tab>
-clone      list       setup      status
+list       setup
 ```
 
 ### Flag completion
