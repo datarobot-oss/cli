@@ -38,8 +38,11 @@ jobs:
   installs-smoke-test:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
 
+  self-update-smoke-test:
+    uses: ./.github/workflows/.self-update-tests-matrix.yaml
+
   notify-failure:
-    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test]
+    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test]
     if: failure()
     runs-on: ubuntu-latest
     name: Notify Slack on Failure
