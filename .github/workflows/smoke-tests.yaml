@@ -47,6 +47,32 @@ jobs:
     runs-on: ubuntu-latest
     name: Notify Slack on Failure
     steps:
+      - name: Build failed jobs summary
+        id: summary
+        run: |
+          failed=""
+          if [[ "${{ needs.build-windows.result }}" == "failure" ]]; then
+            failed="${failed}• Build Windows\n"
+          fi
+          if [[ "${{ needs.smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}• Smoke Tests\n"
+          fi
+          if [[ "${{ needs.windows-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}• Windows Smoke Tests\n"
+          fi
+          if [[ "${{ needs.installs-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}• Installation Tests\n"
+          fi
+          if [[ "${{ needs.self-update-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}• Self-Update Tests\n"
+          fi
+          if [[ -z "$failed" ]]; then
+            failed="• (unknown — check workflow run)"
+          fi
+          echo "failed_jobs<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$failed" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Notify Slack
         uses: slackapi/slack-github-action@v1.27.0
         with:
@@ -86,6 +112,13 @@ jobs:
                       "text": "*Commit:*\n<${{ github.event.repository.html_url }}/commit/${{ github.sha }}|${{ github.sha }}>"
                     }
                   ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Failed Jobs:*\n${{ steps.summary.outputs.failed_jobs }}"
+                  }
                 },
                 {
                   "type": "section",
