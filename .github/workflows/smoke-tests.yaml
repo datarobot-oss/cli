@@ -52,26 +52,26 @@ jobs:
         run: |
           failed=""
           if [[ "${{ needs.build-windows.result }}" == "failure" ]]; then
-            failed="${failed}• Build Windows\n"
+            failed="${failed}Build Windows, "
           fi
           if [[ "${{ needs.smoke-test.result }}" == "failure" ]]; then
-            failed="${failed}• Smoke Tests\n"
+            failed="${failed}Smoke Tests, "
           fi
           if [[ "${{ needs.windows-smoke-test.result }}" == "failure" ]]; then
-            failed="${failed}• Windows Smoke Tests\n"
+            failed="${failed}Windows Smoke Tests, "
           fi
           if [[ "${{ needs.installs-smoke-test.result }}" == "failure" ]]; then
-            failed="${failed}• Installation Tests\n"
+            failed="${failed}Installation Tests, "
           fi
           if [[ "${{ needs.self-update-smoke-test.result }}" == "failure" ]]; then
-            failed="${failed}• Self-Update Tests\n"
+            failed="${failed}Self-Update Tests, "
           fi
+          # Trim trailing comma+space
+          failed="${failed%, }"
           if [[ -z "$failed" ]]; then
-            failed="• (unknown — check workflow run)"
+            failed="(unknown — check workflow run)"
           fi
-          echo "failed_jobs<<EOF" >> "$GITHUB_OUTPUT"
-          echo -e "$failed" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "failed_jobs=${failed}" >> "$GITHUB_OUTPUT"
 
       - name: Notify Slack
         uses: slackapi/slack-github-action@v1.27.0

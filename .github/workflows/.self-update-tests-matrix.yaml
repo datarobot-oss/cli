@@ -2,12 +2,6 @@ name: Self-Update Smoke Tests Matrix
 
 on:
   workflow_call:
-    inputs:
-      os-matrix:
-        description: 'OS matrix for self-update tests'
-        required: false
-        type: string
-        default: '["ubuntu-latest", "macos-latest"]'
 
 jobs:
   self-update-tests:
