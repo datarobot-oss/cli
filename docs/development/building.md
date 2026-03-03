@@ -2,6 +2,8 @@
 
 This guide outlines how to build, test, and develop with the DataRobot CLI.
 
+> **GitHub CLI Recommendation**: DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples use `gh` commands. See the [GitHub CLI installation guide](https://github.com/cli/cli#installation) if needed. If you prefer manual git workflow, you can replace `gh` commands with equivalent `git` operations.
+
 ## Table of contents
 
 - [Build from source](#build-from-source)
@@ -23,8 +25,8 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 ### Quick build
 
 ```bash
-# Clone repository
-git clone https://github.com/datarobot-oss/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone
 cd cli
 
 # Install development tools
@@ -394,15 +396,21 @@ go test
 ### 1. Set up the development environment
 
 ```bash
-# Clone and setup
-git clone https://github.com/datarobot-oss/cli.git
+# Fork and clone the repository
+gh repo fork datarobot-oss/cli --clone
 cd cli
+
+# Setup development environment
 task dev-init
 ```
 
 ### 2. Create a feature branch
 
 ```bash
+# Sync with upstream first
+gh repo sync
+
+# Create feature branch
 git checkout -b feature/my-feature
 ```
 
@@ -555,14 +563,31 @@ This means your installed Go version doesn't match the version specified in `go.
 - **Or downgrade `go.mod`**: `go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version)
 - **Or force the downloaded toolchain**: `export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`)
 
-### Run smoke tests using GitHub Actions
+### Run smoke tests
 
-DataRobot has smoke tests that are not currently run on Pull Requests. However you can use PR comments to trigger them.
+Smoke tests verify the CLI works end-to-end with a real DataRobot environment.
 
-These are the appropriate comments to trigger respective tests:
+**Run locally:**
+
+```bash
+# Set your DataRobot API token
+export DR_API_TOKEN=your-token
+
+# Run smoke tests
+task smoke-test
+
+# Windows
+task smoke-test-windows
+```
+
+**Run via GitHub Actions:**
+
+Smoke tests are not automatically run on Pull Requests. You can trigger them using PR comments:
 
 - `/trigger-smoke-test` or `/trigger-test-smoke`: Run smoke tests on a PR.
 - `/trigger-install-test` or `/trigger-test-install`: Run installation tests on a PR.
+
+Daily automated smoke tests also run in CI.
 
 ## Debugging
 
@@ -607,7 +632,7 @@ When adding new debug output:
 
 ```go
 import (
-	"github.com/datarobot/cli/internal/log"
+    "github.com/datarobot/cli/internal/log"
 )
 
 // Debug logging
@@ -626,7 +651,7 @@ See [Releasing documentation](releasing.md) for a detailed overview of the relea
 ```bash
 # Tag version
 git tag v1.0.0
-git push --tags
+git push upstream --tags
 
 # GitHub Actions will:
 # 1. Build for all platforms
