@@ -24,8 +24,6 @@ import (
 )
 
 func TestCheckSelfVersion_EmptyDirectory(t *testing.T) {
-	t.Parallel()
-
 	tmpDir, err := os.MkdirTemp("", "dr-test-*")
 	require.NoError(t, err)
 
@@ -47,13 +45,10 @@ func TestCheckSelfVersion_EmptyDirectory(t *testing.T) {
 }
 
 func TestCheckSelfVersion_WithVersionRequirement(t *testing.T) {
-	t.Parallel()
-
 	// Note: This test verifies the logic when a version requirement exists,
 	// but during development (version.Version == "dev"), SufficientSelfVersion
 	// always returns true, so we expect no update prompt.
 	// This test ensures the code path works correctly in dev mode.
-
 	tmpDir, err := os.MkdirTemp("", "dr-test-*")
 	require.NoError(t, err)
 
