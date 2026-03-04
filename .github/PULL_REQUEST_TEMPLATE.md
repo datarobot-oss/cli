@@ -22,6 +22,8 @@ the review may happen while you are asleep / otherwise not able to respond quick
 > **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment requesting maintainer review if you need smoke tests to run.
 
 
+<!-- Review guideline: https://datarobot.atlassian.net/wiki/spaces/BUZOK/pages/7305920528/REVIEW+BEFORE+COMMIT+Working+with+agentic+starter+application+and+its+components -->
+
 <!-- Recommended Additional Sections:
 ## SCREENSHOTS
 ## TODO
