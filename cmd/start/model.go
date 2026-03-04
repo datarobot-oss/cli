@@ -56,6 +56,7 @@ type Model struct {
 	waitingToExecute     bool   // Whether to wait for user input before proceeding
 	needTemplateSetup    bool   // Whether we need to run template setup after quitting
 	repoRoot             string
+	pulumiLoginModel     *pulumiLoginModel // Sub-model for Pulumi login flow
 }
 
 type stepCompleteMsg struct {
@@ -67,6 +68,7 @@ type stepCompleteMsg struct {
 	selfUpdate           bool   // Whether to ask for self update
 	executeScript        bool   // Whether to execute the script immediately
 	needTemplateSetup    bool   // Whether we need to run template setup
+	needPulumiLogin      bool   // Whether we need to enter Pulumi login flow
 }
 
 type startScriptCompleteMsg struct{ err error }
@@ -97,6 +99,7 @@ func NewStartModel(opts Options) Model {
 			// TODO Implement validateEnvironment
 			// {description: "Validating environment...", fn: validateEnvironment},
 			{description: "Checking repository setup...", fn: checkRepository},
+			{description: "Checking Pulumi state backend...", fn: checkPulumiState},
 			{description: "Finding and executing start command...", fn: findAndExecuteStart},
 		},
 		opts:     opts,
@@ -186,6 +189,11 @@ func (m Model) execSelfUpdate() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If Pulumi login sub-model is active, delegate to it
+	if m.pulumiLoginModel != nil {
+		return m.handlePulumiLoginUpdate(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -218,6 +226,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) handlePulumiLoginUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case pulumiLoginCompleteMsg:
+		// Pulumi login completed, clear sub-model and continue
+		m.pulumiLoginModel = nil
+		return m.executeNextStep()
+
+	case pulumiLoginErrorMsg:
+		// Pulumi login failed
+		m.err = msg.err
+		return m, tea.Quit
+
+	default:
+		// Delegate to sub-model
+		subModel, cmd := m.pulumiLoginModel.Update(msg)
+		if plm, ok := subModel.(pulumiLoginModel); ok {
+			m.pulumiLoginModel = &plm
+		}
+
+		return m, cmd
+	}
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -289,29 +320,17 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 		"execute_script", msg.executeScript,
 		"quickstart_script_path", msg.quickstartScriptPath,
 		"need_template_setup", msg.needTemplateSetup,
+		"need_pulumi_login", msg.needPulumiLogin,
 	)
 
-	// Store any message from the completed step
-	if msg.message != "" {
-		m.stepCompleteMessage = msg.message
-	}
+	m.updateFromStepComplete(msg)
 
-	if msg.hideMenu {
-		m.hideMenu = msg.hideMenu
-	}
+	// If we need to enter Pulumi login flow
+	if msg.needPulumiLogin {
+		plm := newPulumiLoginModel()
+		m.pulumiLoginModel = &plm
 
-	if msg.selfUpdate {
-		m.selfUpdate = msg.selfUpdate
-	}
-
-	// Store quickstart script path if provided
-	if msg.quickstartScriptPath != "" {
-		m.quickstartScriptPath = msg.quickstartScriptPath
-	}
-
-	// Store whether we need template setup
-	if msg.needTemplateSetup {
-		m.needTemplateSetup = true
+		return m, plm.Init()
 	}
 
 	// If this step requires executing a script, do it now
@@ -336,8 +355,56 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 	return m.executeNextStep()
 }
 
+func (m *Model) updateFromStepComplete(msg stepCompleteMsg) {
+	// Store any message from the completed step
+	if msg.message != "" {
+		m.stepCompleteMessage = msg.message
+	}
+
+	if msg.hideMenu {
+		m.hideMenu = msg.hideMenu
+	}
+
+	if msg.selfUpdate {
+		m.selfUpdate = msg.selfUpdate
+	}
+
+	// Store quickstart script path if provided
+	if msg.quickstartScriptPath != "" {
+		m.quickstartScriptPath = msg.quickstartScriptPath
+	}
+
+	// Store whether we need template setup
+	if msg.needTemplateSetup {
+		m.needTemplateSetup = true
+	}
+}
+
 func (m Model) View() string { //nolint: cyclop
 	var sb strings.Builder
+
+	// If Pulumi login sub-model is active, show it
+	if m.pulumiLoginModel != nil {
+		sb.WriteString("\n")
+		sb.WriteString(tui.WelcomeStyle.Render("🚀 DataRobot AI Application Quickstart"))
+		sb.WriteString("\n\n")
+
+		// Show progress through steps
+		for i, step := range m.steps {
+			if i < m.current {
+				sb.WriteString(fmt.Sprintf("  %s %s\n", checkMark, tui.DimStyle.Render(step.description)))
+			} else if i == m.current {
+				sb.WriteString(fmt.Sprintf("  %s %s\n", arrow, step.description))
+			} else {
+				sb.WriteString(fmt.Sprintf("    %s\n", tui.DimStyle.Render(step.description)))
+			}
+		}
+
+		sb.WriteString("\n")
+		sb.WriteString(m.pulumiLoginModel.View())
+
+		return sb.String()
+	}
 
 	if !m.hideMenu {
 		sb.WriteString("\n")

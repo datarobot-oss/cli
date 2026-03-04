@@ -22,6 +22,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	// Clear DataRobot environment variables that might leak from the host environment
+	// into tests, ensuring tests have a clean isolated environment.
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	os.Exit(m.Run())
+}
+
 func TestShouldSkipSetup(t *testing.T) {
 	t.Run("should skip when .env exists and validation passes", func(t *testing.T) {
 		tmpDir := t.TempDir()
