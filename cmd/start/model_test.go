@@ -20,21 +20,24 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCheckSelfVersion_EmptyDirectory(t *testing.T) {
+	t.Parallel()
+
 	tmpDir, err := os.MkdirTemp("", "dr-test-*")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	defer os.RemoveAll(tmpDir)
 
 	originalDir, err := os.Getwd()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	err = os.Chdir(tmpDir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	msg := checkSelfVersion(nil)
 
@@ -44,40 +47,42 @@ func TestCheckSelfVersion_EmptyDirectory(t *testing.T) {
 }
 
 func TestCheckSelfVersion_WithVersionRequirement(t *testing.T) {
+	t.Parallel()
+
 	// Note: This test verifies the logic when a version requirement exists,
 	// but during development (version.Version == "dev"), SufficientSelfVersion
 	// always returns true, so we expect no update prompt.
 	// This test ensures the code path works correctly in dev mode.
 
 	tmpDir, err := os.MkdirTemp("", "dr-test-*")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	defer os.RemoveAll(tmpDir)
 
 	// Create .datarobot/cli for versions.yaml
 	drDir := filepath.Join(tmpDir, ".datarobot", "cli")
-	err = os.MkdirAll(drDir, 0755)
-	assert.NoError(t, err)
+	err = os.MkdirAll(drDir, 0o755)
+	require.NoError(t, err)
 
 	// Create .datarobot/answers so FindRepoRoot recognizes it as a repo
 	answersDir := filepath.Join(tmpDir, ".datarobot", "answers")
-	err = os.MkdirAll(answersDir, 0755)
-	assert.NoError(t, err)
+	err = os.MkdirAll(answersDir, 0o755)
+	require.NoError(t, err)
 
 	versionsYaml := `dr:
   name: DataRobot CLI
   minimum-version: "999.999.999"
 `
-	err = os.WriteFile(filepath.Join(drDir, "versions.yaml"), []byte(versionsYaml), 0644)
-	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(drDir, "versions.yaml"), []byte(versionsYaml), 0o644)
+	require.NoError(t, err)
 
 	originalDir, err := os.Getwd()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	defer os.Chdir(originalDir)
+	defer func() { _ = os.Chdir(originalDir) }()
 
 	err = os.Chdir(tmpDir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	msg := checkSelfVersion(nil)
 
