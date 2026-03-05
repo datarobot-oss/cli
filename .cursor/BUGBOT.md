@@ -34,7 +34,7 @@ This document outlines common guidelines which should be applied when making cha
 | PRODUCT | @dr-nate-daly-pm | |
 | TECHLEAD | @tsdaemon | |
 | DOC | @smagee-robot @jendavies | |
-| APPS-Customer Engineering | @carsongee @Luke Shulman @zingbretsen | |
+| APPS-Customer Engineering | @carsongee | |
 
 ## A. Critical areas
 
