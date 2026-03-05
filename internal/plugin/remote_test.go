@@ -109,7 +109,7 @@ func TestPluginManifestSchema(t *testing.T) {
 				"name":"test",
 				"version":"1.0.0",
 				"description":"Test plugin",
-				"minCLIVersion":"0.2.0",
+				"cliVersion":"0.2.0",
 				"authentication":true,
 				"scripts":{
 					"posix":"scripts/test.sh",
@@ -120,7 +120,7 @@ func TestPluginManifestSchema(t *testing.T) {
 				assert.Equal(t, "test", m.Name)
 				assert.Equal(t, "1.0.0", m.Version)
 				assert.Equal(t, "Test plugin", m.Description)
-				assert.Equal(t, "0.2.0", m.MinCLIVersion)
+				assert.Equal(t, "0.2.0", m.CLIVersion)
 				assert.True(t, m.Authentication)
 				require.NotNil(t, m.Scripts)
 				assert.Equal(t, "scripts/test.sh", m.Scripts.Posix)

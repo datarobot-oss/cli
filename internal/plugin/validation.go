@@ -29,7 +29,7 @@ import (
 )
 
 // ValidatePluginScript validates that a plugin script outputs a manifest matching the expected manifest.
-// All fields must match exactly, including Scripts and MinCLIVersion for managed plugins.
+// All fields must match exactly, including Scripts and CLIVersion for managed plugins.
 func ValidatePluginScript(pluginDir string, expectedManifest PluginManifest) error {
 	if err := ValidateLicense(pluginDir); err != nil {
 		return err
@@ -70,9 +70,9 @@ func ValidateLicense(pluginDir string) error {
 // validateManifests compares two manifests and returns an error if they differ.
 func validateManifests(expected, actual PluginManifest) error {
 	opts := cmp.Options{
-		// Ignore Scripts and MinCLIVersion - they're optional managed plugin fields
+		// Ignore Scripts and CLIVersion - they're optional managed plugin fields
 		cmp.FilterPath(func(p cmp.Path) bool {
-			return p.String() == "Scripts" || p.String() == "MinCLIVersion"
+			return p.String() == "Scripts" || p.String() == "CLIVersion"
 		}, cmp.Ignore()),
 	}
 
