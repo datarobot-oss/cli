@@ -31,10 +31,10 @@ This document outlines common guidelines which should be applied when making cha
 
 | Stakeholder | Person | Approval |
 |---|---|---|
-| PRODUCT | @Nate Daly | |
-| TECHLEAD | @Anatolii Stehnii | |
-| DOC | @Shawn Magee @Jen Davies | |
-| APPS-Customer Engineering | @Carson Gee @Luke Shulman @Zach Ingbretsen | |
+| PRODUCT | @dr-nate-daly-pm | |
+| TECHLEAD | @tsdaemon | |
+| DOC | @smagee-robot @jendavies | |
+| APPS-Customer Engineering | @carsongee @Luke Shulman @zingbretsen | |
 
 ## A. Critical areas
 
@@ -52,14 +52,14 @@ See Backward compatibility of agentic application templates for more context.
 
 ### A10. Changes to dr start
 
-Requires: PRODUCT and @Carson Gee sign-off, DOC ticket
+Requires: PRODUCT and @carsongee sign-off, DOC ticket
 
-dr start is the key part of UX of agentic starter application, and any changes to it have to be reviewed by PRODUCT ( @Nate Daly ). This includes direct changes to task start, and indirect changes:
+dr start is the key part of UX of agentic starter application, and any changes to it have to be reviewed by PRODUCT ( @dr-nate-daly-pm ). This includes direct changes to task start, and indirect changes:
 
 - new configuration options in agent or mcp (see Message from Anatolii Stehnii in #agentic-flow-dev for example)
 - Change to dr start logic in CLI itself
 
-Tired waiting review from @Carson Gee ? Try splitting your PR, and deliver critical changes separately!
+Tired waiting review from @carsongee ? Try splitting your PR, and deliver critical changes separately!
 
 We SHOULD BE mindful about the number of questions we are asking from users in components configuration, and try reducing them as much as possible. Related initiatives:
 
@@ -68,7 +68,7 @@ We SHOULD BE mindful about the number of questions we are asking from users in c
 
 ### A11. Adding or removing tasks in all components
 
-Requires: @Carson Gee sign-off, DOC review
+Requires: @carsongee sign-off, DOC review
 
 task is essentially our TUI, and we should be mindful adding or removing them as this may be just as disruptive as adding or removing GUI elements.
 
