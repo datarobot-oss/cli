@@ -15,22 +15,18 @@
 package plugin
 
 import (
-	"os"
 	"path/filepath"
+
+	"github.com/datarobot/cli/internal/config"
 )
 
 // ManagedPluginsDir returns the user-global managed plugins directory.
 // It respects XDG_CONFIG_HOME if set, otherwise falls back to ~/.config/datarobot/plugins/
 func ManagedPluginsDir() (string, error) {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-
-		configHome = filepath.Join(homeDir, ".config")
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return "", err
 	}
 
-	return filepath.Join(configHome, "datarobot", "plugins"), nil
+	return filepath.Join(configDir, "plugins"), nil
 }

@@ -27,9 +27,9 @@ import (
 
 var configFileName = "drconfig.yaml"
 
-// getConfigDir returns the config directory, respecting XDG_CONFIG_HOME if set.
+// GetConfigDir returns the config directory, respecting XDG_CONFIG_HOME if set.
 // Falls back to ~/.config/datarobot if XDG_CONFIG_HOME is not set.
-func getConfigDir() (string, error) {
+func GetConfigDir() (string, error) {
 	configHome := os.Getenv("XDG_CONFIG_HOME")
 	if configHome == "" {
 		homeDir, err := os.UserHomeDir()
@@ -44,7 +44,7 @@ func getConfigDir() (string, error) {
 }
 
 func CreateConfigFileDirIfNotExists() error {
-	defaultConfigFileDir, err := getConfigDir()
+	defaultConfigFileDir, err := GetConfigDir()
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func CreateConfigFileDirIfNotExists() error {
 }
 
 func ReadConfigFile(filePath string) error {
-	defaultConfigFileDir, err := getConfigDir()
+	defaultConfigFileDir, err := GetConfigDir()
 	if err != nil {
 		return err
 	}

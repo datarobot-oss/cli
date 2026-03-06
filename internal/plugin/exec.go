@@ -99,29 +99,35 @@ func buildPluginCommand(executable string, args []string, requireAuth bool) *exe
 		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
 
 		cmd := exec.Command("powershell.exe", psArgs...)
-		cmd.Env = buildPluginEnv(requireAuth)
+		cmd.Env = buildPluginEnv(executable, requireAuth)
 
 		return cmd
 	}
 
 	cmd := exec.Command(executable, args...)
-	cmd.Env = buildPluginEnv(requireAuth)
+	cmd.Env = buildPluginEnv(executable, requireAuth)
 
 	return cmd
 }
 
-func buildPluginEnv(requireAuth bool) []string {
+func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 	env := os.Environ()
 
 	// Always set plugin mode flag so plugins can detect they were invoked by dr CLI
 	env = append(env, "DR_PLUGIN_MODE=1")
 
-	if !requireAuth {
-		return env
+	// Set the path to the plugin executable
+	if pluginPath != "" {
+		env = append(env, "DR_PLUGIN_PATH="+pluginPath)
 	}
 
+	// Set config path for all plugins
 	if configPath := viper.ConfigFileUsed(); configPath != "" {
 		env = append(env, "DATAROBOT_CONFIG="+configPath)
+	}
+
+	if !requireAuth {
+		return env
 	}
 
 	if endpoint := viper.GetString(config.DataRobotURL); endpoint != "" {

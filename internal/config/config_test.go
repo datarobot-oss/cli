@@ -37,6 +37,7 @@ func (suite *ConfigTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
+	suite.T().Setenv("XDG_CONFIG_HOME", "")
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {

@@ -99,7 +99,7 @@ func findComponentDefaultsPath() string {
 	}
 
 	// 2. Check home directory .config/datarobot
-	homeConfigDir, err := getConfigDir()
+	homeConfigDir, err := GetConfigDir()
 	if err != nil {
 		return ""
 	}
