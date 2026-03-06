@@ -1,0 +1,26 @@
+name: Self-Update Smoke Tests Matrix
+
+on:
+  workflow_call:
+
+jobs:
+  self-update-tests:
+    strategy:
+      matrix:
+        sys:
+          - { os: ubuntu-latest, shell: bash }
+          - { os: macos-latest, shell: "zsh {0}" }
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+    runs-on: ${{ matrix.sys.os }}
+    name: Self-Update Smoke Tests (${{ matrix.sys.os }})
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run self-update smoke tests
+        run: |
+          ./smoke_test_scripts/run_self_update_smoke_test.sh

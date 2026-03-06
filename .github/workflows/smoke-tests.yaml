@@ -38,12 +38,41 @@ jobs:
   installs-smoke-test:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
 
+  self-update-smoke-test:
+    uses: ./.github/workflows/.self-update-tests-matrix.yaml
+
   notify-failure:
-    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test]
+    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test]
     if: failure()
     runs-on: ubuntu-latest
     name: Notify Slack on Failure
     steps:
+      - name: Build failed jobs summary
+        id: summary
+        run: |
+          failed=""
+          if [[ "${{ needs.build-windows.result }}" == "failure" ]]; then
+            failed="${failed}Build Windows, "
+          fi
+          if [[ "${{ needs.smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}Smoke Tests, "
+          fi
+          if [[ "${{ needs.windows-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}Windows Smoke Tests, "
+          fi
+          if [[ "${{ needs.installs-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}Installation Tests, "
+          fi
+          if [[ "${{ needs.self-update-smoke-test.result }}" == "failure" ]]; then
+            failed="${failed}Self-Update Tests, "
+          fi
+          # Trim trailing comma+space
+          failed="${failed%, }"
+          if [[ -z "$failed" ]]; then
+            failed="(unknown — check workflow run)"
+          fi
+          echo "failed_jobs=${failed}" >> "$GITHUB_OUTPUT"
+
       - name: Notify Slack
         uses: slackapi/slack-github-action@v1.27.0
         with:
@@ -83,6 +112,13 @@ jobs:
                       "text": "*Commit:*\n<${{ github.event.repository.html_url }}/commit/${{ github.sha }}|${{ github.sha }}>"
                     }
                   ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Failed Jobs:*\n${{ steps.summary.outputs.failed_jobs }}"
+                  }
                 },
                 {
                   "type": "section",

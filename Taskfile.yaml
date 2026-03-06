@@ -147,6 +147,11 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_smoke_test.sh {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$DR_API_TOKEN{{end}}
 
+  smoke-test-self-update:
+    desc: "Run self-update smoke tests"
+    cmds:
+      - ./smoke_test_scripts/run_self_update_smoke_test.sh
+
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
     cmds:
