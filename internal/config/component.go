@@ -98,13 +98,11 @@ func findComponentDefaultsPath() string {
 		}
 	}
 
-	homeDir, err := os.UserHomeDir()
+	// 2. Check home directory .config/datarobot
+	homeConfigDir, err := GetConfigDir()
 	if err != nil {
 		return ""
 	}
-
-	// 2. Check home directory .config/datarobot
-	homeConfigDir := filepath.Join(homeDir, configFileDir)
 
 	homePath := filepath.Join(homeConfigDir, ComponentDefaultsFileName)
 	if _, err := os.Stat(homePath); err == nil {

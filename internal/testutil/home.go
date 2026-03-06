@@ -18,8 +18,10 @@ import "testing"
 
 // SetTestHomeDir sets the home directory for tests to work cross-platform.
 // Both HOME (Unix) and USERPROFILE (Windows) are set so os.UserHomeDir() works everywhere.
+// XDG_CONFIG_HOME is unset to ensure tests use the HOME/.config fallback path.
 func SetTestHomeDir(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
+	t.Setenv("XDG_CONFIG_HOME", "")
 }

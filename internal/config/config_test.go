@@ -37,6 +37,7 @@ func (suite *ConfigTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
+	suite.T().Setenv("XDG_CONFIG_HOME", "")
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {
@@ -80,4 +81,21 @@ func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
 
 	token := viper.GetString("token")
 	suite.Equal(token, readYamlData["token"], "Expected config file to have the same token")
+}
+
+func (suite *ConfigTestSuite) TestCreateConfigFileDirWithXDGConfigHome() {
+	xdgConfigDir := filepath.Join(suite.tempDir, "custom-config")
+	suite.T().Setenv("XDG_CONFIG_HOME", xdgConfigDir)
+
+	err := CreateConfigFileDirIfNotExists()
+	suite.Require().NoError(err)
+
+	expectedDir := filepath.Join(xdgConfigDir, "datarobot")
+
+	// Check if the directory was created
+	suite.DirExists(expectedDir, "Expected config directory to be created in XDG_CONFIG_HOME")
+
+	// Check if the file was created
+	expectedFileName := "/drconfig.yaml"
+	suite.FileExists(filepath.Join(expectedDir, expectedFileName), "Expected config file to be created in XDG_CONFIG_HOME")
 }
