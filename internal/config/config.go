@@ -25,19 +25,30 @@ import (
 	"github.com/spf13/viper"
 )
 
-var (
-	configFileDir  = filepath.Join(".config", "datarobot") // Can we also support XDG_CONFIG_HOME?
-	configFileName = "drconfig.yaml"
-)
+var configFileName = "drconfig.yaml"
 
-func CreateConfigFileDirIfNotExists() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+// getConfigDir returns the config directory, respecting XDG_CONFIG_HOME if set.
+// Falls back to ~/.config/datarobot if XDG_CONFIG_HOME is not set.
+func getConfigDir() (string, error) {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+
+		configHome = filepath.Join(homeDir, ".config")
 	}
 
-	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := filepath.Join(homeDir, configFileDir)
+	return filepath.Join(configHome, "datarobot"), nil
+}
+
+func CreateConfigFileDirIfNotExists() error {
+	defaultConfigFileDir, err := getConfigDir()
+	if err != nil {
+		return err
+	}
+
 	defaultConfigFilePath := filepath.Join(defaultConfigFileDir, configFileName)
 
 	_, err = os.Stat(defaultConfigFilePath)
@@ -66,13 +77,10 @@ func CreateConfigFileDirIfNotExists() error {
 }
 
 func ReadConfigFile(filePath string) error {
-	homeDir, err := os.UserHomeDir()
+	defaultConfigFileDir, err := getConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
-
-	// Set the default config file directory here to aid in testing
-	defaultConfigFileDir := filepath.Join(homeDir, configFileDir)
 
 	viper.SetConfigType("yaml")
 
