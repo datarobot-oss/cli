@@ -23,5 +23,5 @@ func SetTestHomeDir(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	t.Unsetenv("XDG_CONFIG_HOME")
+	t.Setenv("XDG_CONFIG_HOME", "")
 }
