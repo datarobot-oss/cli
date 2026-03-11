@@ -43,7 +43,7 @@ func (suite *LoginModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
-	suite.T().Setenv("XDG_CONFIG_HOME", "")
+	suite.T().Unsetenv("XDG_CONFIG_HOME")
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
 	err := config.ReadConfigFile("")
