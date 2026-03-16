@@ -19,7 +19,6 @@ builds:
 
       ldflags:
         - >
-          -s -w
           -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
           -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
           -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
