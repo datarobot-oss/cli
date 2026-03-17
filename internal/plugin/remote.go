@@ -49,6 +49,12 @@ func FetchRegistry(registryURL string) (*PluginRegistry, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), registryFetchTimeout)
 	defer cancel()
 
+	return FetchRegistryWithContext(ctx, registryURL)
+}
+
+// FetchRegistryWithContext is like FetchRegistry but uses the provided context
+// for cancellation and timeout control.
+func FetchRegistryWithContext(ctx context.Context, registryURL string) (*PluginRegistry, string, error) {
 	client := &http.Client{}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, nil)

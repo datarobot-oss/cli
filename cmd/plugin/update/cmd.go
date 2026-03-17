@@ -20,6 +20,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -122,6 +123,10 @@ func updatePlugins(toUpdate []plugin.InstalledPlugin, registry *plugin.PluginReg
 }
 
 func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistry, baseURL string) bool {
+	// Reset the update-check cooldown regardless of outcome, so the
+	// automatic pre-run check doesn't nag the user right after a manual update.
+	defer state.SetLastPluginCheck(p.Name)
+
 	pluginEntry, ok := registry.Plugins[p.Name]
 	if !ok {
 		fmt.Printf("⚠ Plugin %s not found in registry, skipping\n", p.Name)
