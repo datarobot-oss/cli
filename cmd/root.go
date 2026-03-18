@@ -325,7 +325,7 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	fmt.Println(tui.InfoStyle.Render(
 		fmt.Sprintf("Plugin %q update available: v%s → v%s",
 			result.PluginName, result.InstalledVersion, result.LatestVersion.Version)))
-	fmt.Print(tui.DimStyle.Render("Do you want to update? [y/N] "))
+	fmt.Print(tui.DimStyle.Render("Do you want to update? [Y/n] "))
 
 	if !askYesNo() {
 		// User declined — reset cooldown so they are not nagged again
@@ -358,16 +358,17 @@ func isManagedPlugin(pluginPath string) bool {
 	return !strings.HasPrefix(rel, "..")
 }
 
-// askYesNo reads a single line from stdin and returns true for y/Y/yes.
+// askYesNo reads a single line from stdin and returns true unless the user explicitly declines.
+// Default is yes (empty input / just pressing Enter returns true).
 func askYesNo() bool {
 	scanner := bufio.NewScanner(os.Stdin)
 	if !scanner.Scan() {
-		return false
+		return true
 	}
 
 	answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
 
-	return answer == "y" || answer == "yes"
+	return answer != "n" && answer != "no"
 }
 
 // performPluginUpdate runs the backup → install → validate cycle for a plugin update.
