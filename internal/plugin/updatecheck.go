@@ -146,5 +146,3 @@ func isNewerVersion(installedStr, latestStr string) bool {
 
 	return latest.GreaterThan(installed)
 }
-
-
