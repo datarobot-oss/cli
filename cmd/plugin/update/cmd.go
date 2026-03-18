@@ -21,7 +21,6 @@ import (
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/state"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -149,41 +148,10 @@ func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistr
 
 	fmt.Printf("Updating %s from %s to %s...\n", p.Name, p.Version, latestVersion.Version)
 
-	backupPath, err := plugin.BackupPlugin(p.Name)
-	if err != nil {
-		fmt.Printf("✗ Failed to backup %s: %v\n", p.Name, err)
-
-		return false
-	}
-	defer plugin.CleanupBackup(backupPath)
-
-	if err := plugin.InstallPlugin(pluginEntry, *latestVersion, baseURL); err != nil {
-		fmt.Printf("✗ Failed to update %s: %v\n", p.Name, err)
-		fmt.Printf("Rolling back to previous version...\n")
-
-		if restoreErr := plugin.RestorePlugin(p.Name, backupPath); restoreErr != nil {
-			fmt.Printf("✗ Failed to restore backup: %v\n", restoreErr)
-		} else {
-			fmt.Printf("✓ Restored previous version\n")
-		}
-
+	if !shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL) {
 		return false
 	}
 
-	if err := plugin.ValidatePlugin(p.Name); err != nil {
-		fmt.Printf("✗ Plugin validation failed: %v\n", err)
-		fmt.Printf("Rolling back to previous version...\n")
-
-		if restoreErr := plugin.RestorePlugin(p.Name, backupPath); restoreErr != nil {
-			fmt.Printf("✗ Failed to restore backup: %v\n", restoreErr)
-		} else {
-			fmt.Printf("✓ Restored previous version\n")
-		}
-
-		return false
-	}
-
-	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + p.Name + " to " + latestVersion.Version))
 	fmt.Println()
 
 	return true

@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/muesli/cancelreader"
@@ -54,4 +55,16 @@ func ReadString() (string, error) {
 	}
 
 	return str, err
+}
+
+// AskYesNo prints nothing itself — the caller is expected to have already
+// prompted the user. It reads one line from stdin and returns true unless
+// the user explicitly types "n" or "no" (case-insensitive).
+// An empty input (just pressing Enter) is treated as yes.
+func AskYesNo() bool {
+	line, _ := ReadString()
+
+	answer := strings.TrimSpace(strings.ToLower(line))
+
+	return answer != "n" && answer != "no"
 }

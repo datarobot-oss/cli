@@ -63,7 +63,7 @@ func CheckForUpdate(pluginName, installedVersion, registryURL string) *UpdateChe
 	ctx, cancel := context.WithTimeout(context.Background(), updateCheckRegistryTimeout)
 	defer cancel()
 
-	registry, baseURL, err := fetchRegistryWithContext(ctx, registryURL)
+	registry, baseURL, err := FetchRegistryWithContext(ctx, registryURL)
 	if err != nil {
 		// Network errors are non-fatal: no internet, DNS failure, timeout, registry down, etc.
 		log.Debug("Plugin update check: registry fetch failed (skipping)", "plugin", pluginName, "error", err)
@@ -147,7 +147,4 @@ func isNewerVersion(installedStr, latestStr string) bool {
 	return latest.GreaterThan(installed)
 }
 
-// fetchRegistryWithContext is like FetchRegistry but honours the given context for cancellation/timeout.
-func fetchRegistryWithContext(ctx context.Context, registryURL string) (*PluginRegistry, string, error) {
-	return FetchRegistryWithContext(ctx, registryURL)
-}
+

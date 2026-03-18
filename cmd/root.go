@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -34,8 +33,10 @@ import (
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
+	sharedPlugin "github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/state"
 	internalVersion "github.com/datarobot/cli/internal/version"
@@ -108,7 +109,7 @@ func init() {
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
 	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
-	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", 24*time.Hour, "cooldown between plugin update checks (0s disables)")
+	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 
 	// Make some of these flags available via Viper
@@ -361,53 +362,16 @@ func isManagedPlugin(pluginPath string) bool {
 // askYesNo reads a single line from stdin and returns true unless the user explicitly declines.
 // Default is yes (empty input / just pressing Enter returns true).
 func askYesNo() bool {
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return true
-	}
-
-	answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-
-	return answer != "n" && answer != "no"
+	return reader.AskYesNo()
 }
 
 // performPluginUpdate runs the backup → install → validate cycle for a plugin update.
 func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
-	fmt.Printf("Updating %s to v%s...\n", result.PluginName, result.LatestVersion.Version)
-
-	backupPath, err := internalPlugin.BackupPlugin(result.PluginName)
-	if err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to backup %s: %v", result.PluginName, err)))
-
-		return
-	}
-	defer internalPlugin.CleanupBackup(backupPath)
-
-	if err := internalPlugin.InstallPlugin(result.RegistryPlugin, *result.LatestVersion, result.BaseURL); err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", result.PluginName, err)))
-		fmt.Println("Rolling back to previous version...")
-
-		if restoreErr := internalPlugin.RestorePlugin(result.PluginName, backupPath); restoreErr != nil {
-			fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to restore backup: %v", restoreErr)))
-		} else {
-			fmt.Println(tui.SuccessStyle.Render("✓ Restored previous version"))
-		}
-
-		return
-	}
-
-	if err := internalPlugin.ValidatePlugin(result.PluginName); err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Plugin validation failed: %v", result.PluginName)))
-		fmt.Println("Rolling back to previous version...")
-
-		if restoreErr := internalPlugin.RestorePlugin(result.PluginName, backupPath); restoreErr != nil {
-			fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to restore backup: %v", restoreErr)))
-		} else {
-			fmt.Println(tui.SuccessStyle.Render("✓ Restored previous version"))
-		}
-
-		return
-	}
-
-	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + result.PluginName + " to v" + result.LatestVersion.Version))
+	sharedPlugin.RunPluginUpdate(
+		result.PluginName,
+		result.InstalledVersion,
+		result.RegistryPlugin,
+		*result.LatestVersion,
+		result.BaseURL,
+	)
 }
