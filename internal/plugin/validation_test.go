@@ -33,7 +33,7 @@ func TestValidateManifests_Matching(t *testing.T) {
 			Description:    "Test plugin",
 			Authentication: true,
 		},
-		MinCLIVersion: "1.0.0",
+		CLIVersion: "1.0.0",
 	}
 
 	err := validateManifests(manifest, manifest)
@@ -49,7 +49,7 @@ func TestValidateManifests_Mismatch(t *testing.T) {
 			Description:    "Test plugin",
 			Authentication: true,
 		},
-		MinCLIVersion: "1.0.0",
+		CLIVersion: "1.0.0",
 	}
 
 	actual := PluginManifest{
@@ -59,7 +59,7 @@ func TestValidateManifests_Mismatch(t *testing.T) {
 			Description:    "Different description",
 			Authentication: false,
 		},
-		MinCLIVersion: "1.0.0",
+		CLIVersion: "1.0.0",
 	}
 
 	err := validateManifests(expected, actual)
@@ -83,7 +83,7 @@ func TestValidateManifests_ManagedPlugin(t *testing.T) {
 			Posix:   "dr-apps.sh",
 			Windows: "dr-apps.ps1",
 		},
-		MinCLIVersion: "0.2.0",
+		CLIVersion: "0.2.0",
 	}
 
 	err := validateManifests(manifest, manifest)
@@ -92,7 +92,7 @@ func TestValidateManifests_ManagedPlugin(t *testing.T) {
 }
 
 func TestValidateManifests_MissingScripts(t *testing.T) {
-	// Scripts and MinCLIVersion are now ignored in validation
+	// Scripts and CLIVersion are now ignored in validation
 	// This allows managed plugins to work as PATH plugins
 	expected := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{
@@ -105,7 +105,7 @@ func TestValidateManifests_MissingScripts(t *testing.T) {
 			Posix:   "dr-apps.sh",
 			Windows: "dr-apps.ps1",
 		},
-		MinCLIVersion: "0.2.0",
+		CLIVersion: "0.2.0",
 	}
 
 	actual := PluginManifest{
@@ -115,13 +115,13 @@ func TestValidateManifests_MissingScripts(t *testing.T) {
 			Description:    "Host custom applications in DataRobot",
 			Authentication: true,
 		},
-		Scripts:       nil, // Different but ignored
-		MinCLIVersion: "",  // Different but ignored
+		Scripts:    nil, // Different but ignored
+		CLIVersion: "",  // Different but ignored
 	}
 
 	err := validateManifests(expected, actual)
 
-	assert.NoError(t, err, "Scripts and MinCLIVersion differences should be ignored")
+	assert.NoError(t, err, "Scripts and CLIVersion differences should be ignored")
 }
 
 func TestValidateManifests_AllowExtraFields(t *testing.T) {
@@ -147,7 +147,7 @@ func TestValidateManifests_AllowExtraFields(t *testing.T) {
 			Posix:   "dr-apps.sh",
 			Windows: "dr-apps.ps1",
 		},
-		MinCLIVersion: "0.2.0",
+		CLIVersion: "0.2.0",
 	}
 
 	// Should pass - actual can have more fields than expected
@@ -246,7 +246,7 @@ func TestExecPluginManifest(t *testing.T) {
 			Description:    "Test plugin",
 			Authentication: true,
 		},
-		MinCLIVersion: "1.0.0",
+		CLIVersion: "1.0.0",
 	}
 
 	scriptPath := createTestScript(t, tempDir, expected)

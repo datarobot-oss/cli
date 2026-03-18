@@ -115,7 +115,7 @@ dr templates list --verbose
 dr templates list --debug
 
 # Timeout for plugin discovery (0s disables discovery)
-dr --plugin-discovery-timeout 2s --help
+dr --plugin-discovery-timeout 3s --help
 ```
 
 > [!WARNING]

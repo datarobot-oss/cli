@@ -88,9 +88,9 @@ func TestLivePluginManifests(t *testing.T) {
 			// Validate version format
 			assert.Regexp(t, `^v?\d+\.\d+\.\d+`, manifest.Version, "Manifest %s version must be semver", manifestPath)
 
-			// Validate minCLIVersion format if present
-			if manifest.MinCLIVersion != "" {
-				assert.Regexp(t, `^v?\d+\.\d+\.\d+`, manifest.MinCLIVersion, "Manifest %s minCLIVersion must be semver", manifestPath)
+			// Validate CLIVersion format if present
+			if manifest.CLIVersion != "" {
+				assert.Regexp(t, `^v?\d+\.\d+\.\d+`, manifest.CLIVersion, "Manifest %s CLIVersion must be semver", manifestPath)
 			}
 		})
 	}
