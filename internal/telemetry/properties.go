@@ -15,18 +15,15 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/viper"
@@ -37,7 +34,7 @@ import (
 // events in that session.
 type CommonProperties struct {
 	SessionID         string // UUID v4, unique per process invocation
-	UserID            string // DataRobot user ID from /api/v2/userinfo/
+	UserID            string // Placeholder for future user ID implementation
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
 	OSInfo            string // runtime.GOOS/runtime.GOARCH
@@ -71,14 +68,9 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	// Fetch user ID with short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	if userID, err := drapi.GetUserID(ctx); err == nil {
+	// Get user ID (currently returns placeholder value)
+	if userID, err := drapi.GetUserID(context.Background()); err == nil {
 		props.UserID = userID
-	} else {
-		log.Debug("Failed to fetch user ID for telemetry", "error", err)
 	}
 
 	// Get template name from repo
