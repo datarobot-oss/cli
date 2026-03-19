@@ -35,6 +35,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -42,6 +43,9 @@ import (
 )
 
 var configFilePath string
+
+// telemetryClientKey is used to store the telemetry client in context
+type telemetryClientKey struct{}
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
@@ -71,9 +75,26 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 		log.Start()
 
-		return initializeConfig(cmd)
+		err := initializeConfig(cmd)
+		if err != nil {
+			return err
+		}
+
+		// Initialize telemetry client
+		props := telemetry.CollectCommonProperties()
+		client := telemetry.NewClient(props)
+
+		// Store telemetry client in context for use by commands
+		cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
+
+		return nil
 	},
-	PersistentPostRun: func(_ *cobra.Command, _ []string) {
+	PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+		// Flush telemetry events before exit
+		if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
+			client.Flush(3 * time.Second)
+		}
+
 		log.Stop()
 	},
 }
@@ -105,6 +126,7 @@ func init() {
 	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
 	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
+	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -113,6 +135,7 @@ func init() {
 	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
+	_ = viper.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
