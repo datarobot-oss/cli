@@ -41,7 +41,7 @@ var InstallMethod string = "source"
 // Client wraps the Amplitude SDK client. When telemetry is disabled or the
 // API key is empty, all methods are safe no-ops that log to the debug logger.
 type Client struct {
-	amp   types.Client
+	amp   amplitude.Client
 	props *CommonProperties
 }
 
