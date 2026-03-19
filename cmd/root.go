@@ -89,13 +89,15 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 		return nil
 	},
-	PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
 		// Flush telemetry events before exit
 		if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
 			client.Flush(3 * time.Second)
 		}
 
 		log.Stop()
+
+		return nil
 	},
 }
 

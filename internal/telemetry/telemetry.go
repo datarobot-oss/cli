@@ -98,7 +98,7 @@ func (c *Client) Track(event types.Event) {
 
 // Flush sends all queued events and blocks until delivery completes or the
 // timeout elapses. Should be called once at process exit (typically in
-// PersistentPostRun). Safe to call on a no-op client.
+// PersistentPostRunE). Safe to call on a no-op client.
 func (c *Client) Flush(timeout time.Duration) {
 	if c.amp == nil {
 		return
