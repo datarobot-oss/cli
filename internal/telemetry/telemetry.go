@@ -76,7 +76,8 @@ func NewClient(props *CommonProperties) *Client {
 
 // Track queues an event for delivery to Amplitude. Common properties from the
 // client's CommonProperties are merged into the event's EventProperties before
-// sending. This call is non-blocking. When the client is a no-op (dev builds),
+// sending. UserID is set as a top-level event field (required by Amplitude).
+// This call is non-blocking. When the client is a no-op (dev builds),
 // the event is logged via log.Debug instead.
 func (c *Client) Track(event types.Event) {
 	if c.amp == nil {
@@ -91,6 +92,9 @@ func (c *Client) Track(event types.Event) {
 			commonMap[k] = v
 		}
 		event.EventProperties = commonMap
+
+		// Set UserID as top-level field (required by Amplitude)
+		event.UserID = c.props.UserID
 	}
 
 	c.amp.Track(event)
