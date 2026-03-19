@@ -15,12 +15,14 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
@@ -33,7 +35,9 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
+	// TODO CFX-5206 figure out proper SessionID
 	SessionID         string // UUID v4, unique per process invocation
+	// TODO CFX-5206 figure out proper UserID
 	UserID            string // Placeholder for future user ID implementation
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
@@ -45,8 +49,9 @@ type CommonProperties struct {
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
-// current environment. Network calls (e.g. fetching user ID) use short
-// timeouts and fail silently — missing properties are left as empty strings.
+// current environment. There are currently no network calls here, but we
+// may want to add some in the future (e.g., to get user ID from DR API),
+// so this function returns an error if any property collection step fails.
 func CollectCommonProperties() *CommonProperties {
 	props := &CommonProperties{
 		SessionID:     generateSessionID(),
@@ -114,6 +119,8 @@ func generateSessionID() string {
 
 // deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)
 // from the endpoint URL.
+// TODO Is this really necessary? Can we remove this and just report
+// the base URL?
 func deriveEnvironment(baseURL string) string {
 	switch {
 	case strings.Contains(baseURL, "app.datarobot.com"):
@@ -129,6 +136,7 @@ func deriveEnvironment(baseURL string) string {
 
 // getTemplateName attempts to extract the template name from the .datarobot/answers directory.
 // Returns empty string if not in a DataRobot repo.
+// TODO I think this could be moved to internal/repo and more robustly implemented.
 func getTemplateName() (string, error) {
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
