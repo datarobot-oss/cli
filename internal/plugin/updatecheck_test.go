@@ -196,9 +196,27 @@ func TestCheckForUpdate(t *testing.T) {
 		assert.Nil(t, result)
 	})
 
-	t.Run("returns nil when registry returns HTTP error", func(t *testing.T) {
+	t.Run("sets cooldown after successful registry fetch even when already up-to-date", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
+
+		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viper.Set("plugin-update-check-interval", nil)
+
+		registry := newTestRegistry("assist", "0.1.13")
+		srv := serveRegistry(t, registry)
+
+		// Confirm cooldown not yet set
+		assert.True(t, state.GetLastPluginCheck("assist").IsZero())
+
+		result := CheckForUpdate("assist", "0.1.13", srv.URL+"/index.json")
+
+		assert.Nil(t, result)
+		// Cooldown must be recorded so the next invocation skips the network call
+		assert.False(t, state.GetLastPluginCheck("assist").IsZero())
+	})
+
+	t.Run("returns nil when registry returns HTTP error", func(t *testing.T) {
 
 		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
 		defer viper.Set("plugin-update-check-interval", nil)

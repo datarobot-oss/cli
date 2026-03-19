@@ -50,8 +50,9 @@ type UpdateCheckResult struct {
 //   - The network is unreachable or the registry fetch fails
 //   - The installed version is already the latest
 //
-// When the check is actually performed (cooldown elapsed, registry fetched),
-// the caller is responsible for calling state.SetLastPluginCheck() to reset the cooldown.
+// The cooldown timestamp is always recorded after a successful registry fetch,
+// regardless of whether an update is found. Callers may call state.SetLastPluginCheck
+// again afterwards (e.g. after a user interaction) to refresh the timestamp.
 func CheckForUpdate(pluginName, installedVersion, registryURL string) *UpdateCheckResult {
 	if shouldSkipCheck(pluginName) {
 		return nil
@@ -70,6 +71,11 @@ func CheckForUpdate(pluginName, installedVersion, registryURL string) *UpdateChe
 
 		return nil
 	}
+
+	// Record the cooldown now that we have successfully contacted the registry.
+	// This prevents a redundant network request on every subsequent invocation
+	// when the plugin is already up-to-date.
+	state.SetLastPluginCheck(pluginName)
 
 	return compareVersions(pluginName, installedVersion, registry, baseURL)
 }
