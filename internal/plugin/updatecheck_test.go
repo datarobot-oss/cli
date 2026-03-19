@@ -217,7 +217,6 @@ func TestCheckForUpdate(t *testing.T) {
 	})
 
 	t.Run("returns nil when registry returns HTTP error", func(t *testing.T) {
-
 		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
 		defer viper.Set("plugin-update-check-interval", nil)
 
