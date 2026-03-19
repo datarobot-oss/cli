@@ -69,6 +69,63 @@ func Get(url, info string) (*http.Response, error) {
 	return resp, err
 }
 
+// userInfoResponse represents the response from /api/v2/userinfo/
+type userInfoResponse struct {
+	UID string `json:"uid"`
+}
+
+// GetUserID fetches the current user's ID from the DataRobot API.
+// It calls GET /api/v2/userinfo/ and extracts the uid field.
+// Returns an empty string and error if the request fails or times out.
+func GetUserID(ctx context.Context) (string, error) {
+	url, err := config.GetEndpointURL("/api/v2/userinfo/")
+	if err != nil {
+		return "", err
+	}
+
+	// Create request with provided context
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	var currentToken string
+
+	if token != "" {
+		currentToken = token
+	} else {
+		currentToken, err = config.GetAPIKey(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	req.Header.Add("Authorization", "Bearer "+currentToken)
+	req.Header.Add("User-Agent", config.GetUserAgentHeader())
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New("failed to get user info: status " + resp.Status)
+	}
+
+	var userInfo userInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		return "", err
+	}
+
+	return userInfo.UID, nil
+}
+
 func GetJSON(url, info string, v any) error {
 	resp, err := Get(url, info)
 	if err != nil {
