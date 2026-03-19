@@ -61,8 +61,12 @@ func ReadString() (string, error) {
 // prompted the user. It reads one line from stdin and returns true unless
 // the user explicitly types "n" or "no" (case-insensitive).
 // An empty input (just pressing Enter) is treated as yes.
+// Any read error (including Ctrl+C / SIGINT cancellation) is treated as no.
 func AskYesNo() bool {
-	line, _ := ReadString()
+	line, err := ReadString()
+	if err != nil {
+		return false
+	}
 
 	answer := strings.TrimSpace(strings.ToLower(line))
 

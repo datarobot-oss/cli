@@ -146,8 +146,6 @@ func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistr
 		return false
 	}
 
-	fmt.Printf("Updating %s from %s to %s...\n", p.Name, p.Version, latestVersion.Version)
-
 	if !shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL) {
 		return false
 	}
