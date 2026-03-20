@@ -186,7 +186,7 @@ func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptM
 			Blank:    false,
 			Checked:  false,
 			Name:     fmt.Sprintf("%s (%s)", llm.Name, llm.Provider),
-			Value:    llm.Name,
+			Value:    llm.Model,
 			Requires: "",
 		})
 	}
