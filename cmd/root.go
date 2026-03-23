@@ -81,7 +81,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		}
 
 		// Initialize telemetry client
-		// Check if enabled first to avoid expensive filesystem and network I/O.
+		// Check if enabled first to avoid unnecessary filesystem and network I/O.
 		var props *telemetry.CommonProperties
 		if telemetry.IsEnabled() {
 			props = telemetry.CollectCommonProperties()
