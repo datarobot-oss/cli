@@ -81,9 +81,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		}
 
 		// Initialize telemetry client
-		// Check if enabled first to avoid expensive filesystem I/O
-		// (repo.FindRepoRoot + os.ReadDir) when telemetry is disabled.
-		// Saves 5-50ms per invocation for dev builds and opted-out users.
+		// Check if enabled first to avoid expensive filesystem and network I/O.
 		var props *telemetry.CommonProperties
 		if telemetry.IsEnabled() {
 			props = telemetry.CollectCommonProperties()
