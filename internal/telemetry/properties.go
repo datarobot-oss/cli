@@ -36,7 +36,7 @@ import (
 // events in that session.
 type CommonProperties struct {
 	// TODO CFX-5206 figure out proper SessionID
-	SessionID         string // UUID v4, unique per process invocation
+	SessionID string // UUID v4, unique per process invocation
 	// TODO CFX-5206 figure out proper UserID
 	UserID            string // Placeholder for future user ID implementation
 	CLIVersion        string // CLI version from version.Version (ldflags)
