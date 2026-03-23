@@ -1,0 +1,72 @@
+#!/usr/local/bin/expect -f
+# Spawns `dr <plugin>`, waits for the auto-update prompt, and accepts it.
+# Waits for the update to complete successfully, then closes the session
+# (terminating the plugin before it runs so the test stays self-contained).
+
+set env(TERM) dumb
+
+# Allow up to 2 minutes: registry fetch + archive download + install
+set timeout 120
+set plugin_name [lindex $argv 0]
+
+if {$plugin_name == ""} {
+    puts "ERROR: Usage: expect_plugin_update_accept.exp <plugin-name>"
+    exit 1
+}
+
+spawn dr $plugin_name
+
+# ── Wait for the "update available" announcement ──────────────────────────────
+expect {
+    "update available" {
+        puts "\n ✓ Saw update-available message"
+    }
+    timeout {
+        puts "\n ERROR: Timeout waiting for update-available message"
+        exit 1
+    }
+    eof {
+        puts "\n ERROR: Unexpected EOF before update-available message"
+        exit 1
+    }
+}
+
+# ── Wait for the Y/n prompt ───────────────────────────────────────────────────
+expect {
+    "want to update" {
+        puts " ✓ Saw update prompt"
+    }
+    timeout {
+        puts "\n ERROR: Timeout waiting for update prompt"
+        exit 1
+    }
+}
+
+# ── Accept (Enter = default Y) ────────────────────────────────────────────────
+send -- "\r"
+
+# ── Wait for the update to finish ─────────────────────────────────────────────
+expect {
+    "Updated" {
+        puts " ✓ Plugin updated successfully"
+    }
+    "Failed" {
+        puts "\n ERROR: Plugin update reported a failure"
+        exit 1
+    }
+    timeout {
+        puts "\n ERROR: Timeout waiting for update to complete"
+        exit 1
+    }
+    eof {
+        puts "\n ERROR: Unexpected EOF during update"
+        exit 1
+    }
+}
+
+# ── Terminate before the plugin itself starts running ─────────────────────────
+# Send Ctrl+C then forcibly close the session
+send -- "\x03"
+set timeout 5
+close
+catch {wait}

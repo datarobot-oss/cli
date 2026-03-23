@@ -1,0 +1,64 @@
+#!/usr/local/bin/expect -f
+# Spawns `dr <plugin>`, waits for the auto-update prompt, declines it, and
+# confirms the plugin is about to run (proving the decline was processed).
+# The plugin process is forcibly closed afterward so the script exits clean.
+
+set env(TERM) dumb
+
+set timeout 30
+set plugin_name [lindex $argv 0]
+
+if {$plugin_name == ""} {
+    puts "ERROR: Usage: expect_plugin_update_decline.exp <plugin-name>"
+    exit 1
+}
+
+spawn dr $plugin_name
+
+# ── Wait for the "update available" announcement ──────────────────────────────
+expect {
+    "update available" {
+        puts "\n ✓ Saw update-available message"
+    }
+    timeout {
+        puts "\n ERROR: Timeout waiting for update-available message"
+        exit 1
+    }
+    eof {
+        puts "\n ERROR: Unexpected EOF before update-available message"
+        exit 1
+    }
+}
+
+# ── Wait for the Y/n prompt ───────────────────────────────────────────────────
+expect {
+    "want to update" {
+        puts " ✓ Saw update prompt"
+    }
+    timeout {
+        puts "\n ERROR: Timeout waiting for update prompt"
+        exit 1
+    }
+}
+
+# ── Decline ───────────────────────────────────────────────────────────────────
+send -- "n\r"
+
+# ── Confirm the update was skipped and the plugin is executing ────────────────
+expect {
+    "Running plugin" {
+        puts " ✓ Update declined — plugin is starting"
+    }
+    timeout {
+        puts "\n ERROR: Timeout after declining update"
+        exit 1
+    }
+    eof {
+        # Plugin exited immediately (e.g. no-args usage print) — that's fine
+        puts " ✓ Update declined — plugin exited"
+    }
+}
+
+# Forcibly close so the test script doesn't wait on the plugin
+close
+catch {wait}

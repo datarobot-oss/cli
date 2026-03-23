@@ -152,6 +152,12 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_self_update_smoke_test.sh
 
+  smoke-test-plugin-update:
+    desc: "Run plugin auto-update-check smoke tests (requires internet, no API token needed)"
+    deps: [build]
+    cmds:
+      - ./smoke_test_scripts/run_plugin_update_smoke_test.sh
+
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
     cmds:
