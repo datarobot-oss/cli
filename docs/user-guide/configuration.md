@@ -15,9 +15,14 @@ The CLI automatically stores configuration files in a standard location based on
 | macOS    | `~/.config/datarobot/drconfig.yaml`             |
 | Windows  | `%USERPROFILE%\.config\datarobot\drconfig.yaml` |
 
+> [!NOTE]
+> The CLI also writes a **state file** (`state.yaml`) in the same directory. This file stores
+> runtime state such as plugin update-check timestamps. You do not normally need to edit it,
+> but you can delete it to reset all stored state (e.g. to force an immediate update check).
+
 ## Configuration structure
 
-### Main configuration file
+### Main configuration file (`drconfig.yaml`)
 
 The main configuration file (`drconfig.yaml`) stores your DataRobot connection settings and authentication token. Here's what it looks like:
 
@@ -34,6 +39,41 @@ token: API_KEY_HERE
 
 > [!NOTE]
 > You typically don't need to edit this file manually. The CLI manages it automatically when you use `dr auth set-url` and `dr auth login`.
+
+### State file (`state.yaml`)
+
+The CLI maintains a separate state file alongside `drconfig.yaml`:
+
+```
+~/.config/datarobot/state.yaml
+```
+
+This file tracks runtime state that persists between CLI invocations:
+
+| Key | Description |
+|---|---|
+| `plugin_update_checks` | Map of plugin name → timestamp of the last update check |
+
+Example `state.yaml`:
+
+```yaml
+plugin_update_checks:
+  assist: 2026-03-23T14:00:00Z
+```
+
+**You do not need to edit this file manually.** The CLI manages it automatically. Common reasons to interact with it:
+
+```bash
+# Reset the update-check cooldown for all plugins (force an immediate check next run)
+rm ~/.config/datarobot/state.yaml
+
+# Reset the cooldown for a single plugin only
+# (edit the file and remove the relevant line, or use yq)
+yq -i 'del(.plugin_update_checks.assist)' ~/.config/datarobot/state.yaml
+```
+
+The state file respects `XDG_CONFIG_HOME`. If that variable is set, the file is written to
+`$XDG_CONFIG_HOME/datarobot/state.yaml` rather than `~/.config/datarobot/state.yaml`.
 
 ### Environment-specific configs
 

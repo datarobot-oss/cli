@@ -104,6 +104,62 @@ dr plugin update --all
 dr plugin update assist --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
 ```
 
+## Automatic update check
+
+When you invoke a managed plugin (one installed via `dr plugin install`), the CLI automatically
+checks for a newer version in the background before running the plugin. If an update is
+available you will be prompted:
+
+```
+ Plugin "assist" update available: v0.1.15 → v0.2.0
+ Do you want to update? [Y/n]
+```
+
+- Press **Enter** or type **y** to update immediately (backup → install → validate → rollback on failure).
+- Type **n** to skip and continue running the current version.
+
+Either way, the check is not repeated until the configured cooldown interval has elapsed.
+
+### Update check behavior
+
+| Situation | Behavior |
+|---|---|
+| No internet / registry unreachable | Silently skipped — plugin runs normally |
+| Plugin is already up to date | No prompt — plugin runs normally |
+| PATH-based or project-local plugin | Skipped — only managed plugins are checked |
+| Cooldown period has not elapsed | Skipped — plugin runs normally |
+
+### Configuring the update check
+
+```bash
+# Change the cooldown interval (default 24h)
+# Accepts Go duration strings: 30m, 6h, 48h, 0s
+dr --plugin-update-check-interval 6h assist
+
+# Disable the automatic check entirely for one invocation
+dr --skip-plugin-update-check assist
+```
+
+To permanently disable the check, set the flag via your shell profile:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+alias dr='dr --skip-plugin-update-check'
+```
+
+### Resetting the cooldown
+
+The cooldown is stored in `~/.config/datarobot/state.yaml`. Delete the file (or the relevant
+entry) to force an immediate check on next run:
+
+```bash
+# Reset all plugin cooldowns
+rm ~/.config/datarobot/state.yaml
+
+# Reset a single plugin's cooldown
+yq -i 'del(.plugin_update_checks.assist)' ~/.config/datarobot/state.yaml
+```
+
 ## dr plugin list
 
 ```bash

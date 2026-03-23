@@ -26,7 +26,7 @@ import (
 
 const (
 	// DefaultUpdateCheckInterval is the default cooldown between update checks for a given plugin.
-	DefaultUpdateCheckInterval = 24 * time.Hour
+	DefaultUpdateCheckInterval = 1 * time.Hour
 
 	// updateCheckRegistryTimeout is a short timeout for fetching the registry during update checks.
 	// We keep this short so plugin startup isn't noticeably delayed when the network is slow.
