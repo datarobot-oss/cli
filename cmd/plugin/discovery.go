@@ -25,7 +25,6 @@ import (
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
-	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -128,9 +127,11 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 }
 
 // checkAndPromptPluginUpdate checks if an update is available for a managed plugin.
-// If one is found it prompts the user to upgrade. The cooldown is reset regardless
-// of the user's answer so they are not asked again until the configured interval elapses.
+// If one is found it prompts the user to upgrade.
 // Non-managed plugins (PATH-based, project-local) are silently skipped.
+// Cooldown tracking is handled entirely inside CheckForUpdate: the timestamp is
+// recorded only after a successful registry fetch, so skipped (cooldown-active)
+// invocations never push the timestamp forward.
 func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string) {
 	if viper.GetBool("skip-plugin-update-check") {
 		return
@@ -143,12 +144,18 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 		return
 	}
 
-	// Always refresh the cooldown once we've committed to checking, regardless of
-	// the outcome (up-to-date, update declined, update applied, or update failed).
-	defer state.SetLastPluginCheck(pluginName)
-
 	result := internalPlugin.CheckForUpdate(pluginName, installedVersion, internalPlugin.PluginRegistryURL)
 	if result == nil {
+		return
+	}
+
+	// Don't prompt when stdin is not a terminal (piped input, CI, scripts).
+	// Consuming stdin here would corrupt the data the plugin is about to read.
+	if !reader.IsStdinTerminal() {
+		log.Debug("Plugin update available but stdin is not a terminal — skipping prompt",
+			"plugin", pluginName,
+			"available", result.LatestVersion.Version)
+
 		return
 	}
 

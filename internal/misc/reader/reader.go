@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"github.com/muesli/cancelreader"
+	"golang.org/x/term"
 )
 
 func ReadString() (string, error) {
@@ -71,4 +72,10 @@ func AskYesNo() bool {
 	answer := strings.TrimSpace(strings.ToLower(line))
 
 	return answer != "n" && answer != "no"
+}
+
+// IsStdinTerminal reports whether stdin is connected to an interactive terminal.
+// Returns false when stdin is a pipe, a file redirect, or otherwise non-interactive.
+func IsStdinTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
