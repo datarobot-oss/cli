@@ -314,8 +314,14 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 
 	// Only check managed plugins (those under ~/.config/datarobot/plugins/)
 	if !isManagedPlugin(pluginPath) {
+		log.Debug("Plugin update check skipped (not a managed plugin)", "plugin", pluginName, "path", pluginPath)
+
 		return
 	}
+
+	// Always refresh the cooldown once we've committed to checking, regardless of
+	// the outcome (up-to-date, update declined, update applied, or update failed).
+	defer state.SetLastPluginCheck(pluginName)
 
 	result := internalPlugin.CheckForUpdate(pluginName, installedVersion, internalPlugin.PluginRegistryURL)
 	if result == nil {
@@ -329,8 +335,7 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	fmt.Print(tui.DimStyle.Render("Do you want to update? [Y/n] "))
 
 	if !askYesNo() {
-		// User declined — reset cooldown so they are not nagged again
-		state.SetLastPluginCheck(pluginName)
+		log.Debug("Plugin update declined by user", "plugin", pluginName)
 		fmt.Println()
 
 		return
@@ -338,8 +343,6 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 
 	performPluginUpdate(result)
 
-	// Reset cooldown after update (success or failure)
-	state.SetLastPluginCheck(pluginName)
 	fmt.Println()
 }
 
