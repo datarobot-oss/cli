@@ -24,7 +24,7 @@ type LLM struct {
 	Provider string `json:"provider"`
 	IsActive bool   `json:"isActive"`
 	Model    string `json:"model"`
-	
+
 	//Version              string   `json:"version"`
 	//Description          string   `json:"description"`
 	//Creator              string   `json:"creator"`

@@ -17,4 +17,5 @@ package config
 const (
 	DataRobotURL    = "endpoint"
 	DataRobotAPIKey = "token"
+	DataRobotLocale = "locale"
 )
