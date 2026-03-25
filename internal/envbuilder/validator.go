@@ -130,18 +130,15 @@ func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
 	}
 
 	for p, prompt := range prompts {
-		// Skip if already processed (like PULUMI_CONFIG_PASSPHRASE above)
-		if prompt.Value != "" {
-			continue
-		}
-
-		// Capture existing env var values
+		// Capture existing env var values (highest priority)
 		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
 			prompt.Value = existingEnvValue
 		} else if v, found := variables.find(prompt); found {
+			// .env file value overrides viper config
 			prompt.Value = v.Value
 			prompt.Commented = v.Commented
-		} else {
+		} else if prompt.Value == "" {
+			// Only fall back to default if nothing else (including viper config) set a value
 			prompt.Value = prompt.Default
 		}
 

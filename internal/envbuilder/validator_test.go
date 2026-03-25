@@ -202,6 +202,43 @@ func TestPromptsWithValues(t *testing.T) {
 			t.Errorf("Expected PULUMI_CONFIG_PASSPHRASE to be empty (for validation), got '%s'", result[0].Value)
 		}
 	})
+
+	t.Run(".env value overrides viper config for PULUMI_CONFIG_PASSPHRASE", func(t *testing.T) {
+		// Simulate viper having a config value by pre-populating the prompt Value
+		// (which is what the first loop in promptsWithValues does when viper is set)
+		prompts := []UserPrompt{
+			{Env: "PULUMI_CONFIG_PASSPHRASE", Value: "from-viper"},
+		}
+		variables := Variables{
+			{Name: "PULUMI_CONFIG_PASSPHRASE", Value: "from-dotenv"},
+		}
+
+		result := promptsWithValues(prompts, variables)
+
+		if result[0].Value != "from-dotenv" {
+			t.Errorf("Expected .env value 'from-dotenv' to override viper config, got '%s'", result[0].Value)
+		}
+	})
+
+	t.Run("env var overrides viper config for PULUMI_CONFIG_PASSPHRASE", func(t *testing.T) {
+		os.Setenv("PULUMI_CONFIG_PASSPHRASE", "from-env")
+		defer os.Unsetenv("PULUMI_CONFIG_PASSPHRASE")
+
+		// The first loop won't set a viper value since the env var is present,
+		// so Value remains "". The second loop should pick up the env var.
+		prompts := []UserPrompt{
+			{Env: "PULUMI_CONFIG_PASSPHRASE"},
+		}
+		variables := Variables{
+			{Name: "PULUMI_CONFIG_PASSPHRASE", Value: "from-dotenv"},
+		}
+
+		result := promptsWithValues(prompts, variables)
+
+		if result[0].Value != "from-env" {
+			t.Errorf("Expected env var 'from-env' to take highest priority, got '%s'", result[0].Value)
+		}
+	})
 }
 
 func TestIsOptionSelected(t *testing.T) {
