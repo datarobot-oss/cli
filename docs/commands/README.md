@@ -16,6 +16,7 @@ These flags are available for all commands:
       --skip-auth                Skip authentication checks (for advanced users)
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
+      --locale string            Locale for plugins (e.g., en, ja)
       --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
   -h, --help                     Show help information
 ```
@@ -260,6 +261,7 @@ Global environment variables that affect all commands:
 DATAROBOT_ENDPOINT                  # DataRobot URL
 DATAROBOT_API_TOKEN                 # API token (not recommended)
 DATAROBOT_CLI_CONFIG                # Path to config file
+DATAROBOT_CLI_LOCALE                    # Locale for plugins (e.g., en, ja)
 DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT  # Timeout for plugin discovery (e.g. 2s; 0s disables)
 VISUAL                              # External editor for file editing
 EDITOR                              # External editor for file editing (fallback)
