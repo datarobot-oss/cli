@@ -126,6 +126,11 @@ func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 		env = append(env, "DATAROBOT_CONFIG="+configPath)
 	}
 
+	// Propagate locale setting to plugins when explicitly configured
+	if locale := viper.GetString(config.DataRobotLocale); locale != "" {
+		env = append(env, "DR_LOCALE="+locale)
+	}
+
 	if !requireAuth {
 		return env
 	}

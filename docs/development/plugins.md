@@ -117,6 +117,10 @@ When `authentication` is enabled:
 - Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
 - Your plugin will receive a clean environment with authentication already validated
 
+### Locale
+
+When the user configures a locale via `drconfig.yaml`, the `--locale` flag, or the `DATAROBOT_CLI_LOCALE` environment variable, the CLI passes it to plugins as the `DR_LOCALE` environment variable. Plugins can use this as the highest-priority locale source, falling back to their own detection logic when `DR_LOCALE` is not set.
+
 ## Developing a plugin
 
 Minimum requirements:

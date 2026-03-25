@@ -30,12 +30,16 @@ The main configuration file (`drconfig.yaml`) stores your DataRobot connection s
 # DataRobot Connection
 endpoint: DATA_ROBOT_ENDPOINT_URL # e.g. https://app.datarobot.com
 token: API_KEY_HERE
+
+# Optional: locale for plugins (e.g., en, ja)
+# locale: ja
 ```
 
 **Configuration fields:**
 
 - `endpoint`: Your DataRobot instance URL (e.g., `https://app.datarobot.com`)
 - `token`: Your API authentication token (automatically stored after `dr auth login`)
+- `locale`: Locale for plugins (e.g., `en`, `ja`). When set, passed to plugins as `DR_LOCALE` environment variable.
 
 > [!NOTE]
 > You typically don't need to edit this file manually. The CLI manages it automatically when you use `dr auth set-url` and `dr auth login`.

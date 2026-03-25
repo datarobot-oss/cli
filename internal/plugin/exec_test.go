@@ -187,3 +187,74 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
+
+func TestBuildPluginEnvLocale(t *testing.T) {
+	tests := []struct {
+		name        string
+		locale      string
+		expectEnv   bool
+		expectedVal string
+	}{
+		{"locale set to ja", "ja", true, "ja"},
+		{"locale set to en", "en", true, "en"},
+		{"locale set to ja_JP", "ja_JP", true, "ja_JP"},
+		{"locale not set", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+
+			if tt.locale != "" {
+				viper.Set(config.DataRobotLocale, tt.locale)
+			}
+
+			env := buildPluginEnv("/path/to/plugin", false)
+
+			found := false
+
+			for _, e := range env {
+				if len(e) > 10 && e[:10] == "DR_LOCALE=" {
+					found = true
+
+					assert.Equal(t, "DR_LOCALE="+tt.expectedVal, e)
+				}
+			}
+
+			assert.Equal(t, tt.expectEnv, found,
+				"DR_LOCALE presence mismatch: expected=%v, found=%v", tt.expectEnv, found)
+		})
+	}
+}
+
+func TestBuildPluginEnvAlwaysSetsPluginMode(t *testing.T) {
+	viper.Reset()
+
+	env := buildPluginEnv("/path/to/plugin", false)
+
+	found := false
+
+	for _, e := range env {
+		if e == "DR_PLUGIN_MODE=1" {
+			found = true
+		}
+	}
+
+	assert.True(t, found, "DR_PLUGIN_MODE=1 should always be set")
+}
+
+func TestBuildPluginEnvSetsPluginPath(t *testing.T) {
+	viper.Reset()
+
+	env := buildPluginEnv("/path/to/my-plugin", false)
+
+	found := false
+
+	for _, e := range env {
+		if e == "DR_PLUGIN_PATH=/path/to/my-plugin" {
+			found = true
+		}
+	}
+
+	assert.True(t, found, "DR_PLUGIN_PATH should be set to the plugin path")
+}
