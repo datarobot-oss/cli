@@ -39,44 +39,44 @@ send -- "talk\n"
 
 sleep 1
 expect "Talk to My Docs"
-send -- "\r"
+send -- "\r\n"
 
 sleep 1
 expect "talk-to-my-docs-agents"
-send -- "\r"
+send -- "\r\n"
 
 expect "AGENT_RETRIEVAL_AGENT_ENDPOINT"
-send -- "\r"
+send -- "\r\n"
 
 expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
-send -- "\r"
+send -- "\r\n"
 
 expect "PULUMI_CONFIG_PASSPHRASE"
-send -- "\r"
+send -- "\r\n"
 
 expect "DATAROBOT_DEFAULT_USE_CASE"
-send -- "\r"
+send -- "\r\n"
 
 expect "INFRA_ENABLE_LLM"
-send -- "\r"
+send -- "\r\n"
 
 expect "LLM_DEFAULT_MODEL"
-send -- "\r"
+send -- "\r\n"
 
 expect "LLM_DEFAULT_LLM_ID"
-send -- "\r"
+send -- "\r\n"
 
 expect "SESSION_SECRET_KEY"
-send -- "\r"
+send -- "\r\n"
 
 expect "DATABASE_URI"
-send -- "\r"
+send -- "\r\n"
 
 expect "None (leave blank)"
-send -- "\r"
+send -- "\r\n"
 
 expect "Environment Variables Menu"
-send -- "\r"
+send -- "\r\n"
 
 # # Component selection screen - press space to select first component, then enter
 # expect "Available Components"
