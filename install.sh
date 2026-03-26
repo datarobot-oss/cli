@@ -513,8 +513,15 @@ EOF
 
     check_requirements
     detect_platform
-    get_version
-    check_existing_installation
+
+    # Skip version fetch for local binary installs (e.g., CI)
+    if [ -z "$LOCAL_BINARY" ]; then
+        get_version
+        check_existing_installation
+    else
+        VERSION="local"
+        step "Installing from local binary: $LOCAL_BINARY"
+    fi
 
     echo ""
     info "Downloading and installing..."

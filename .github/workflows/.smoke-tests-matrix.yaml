@@ -67,6 +67,7 @@ jobs:
 
       - name: Build and Install the DR CLI Binary
         run: |
+          set -e
           task build
           LOCAL_BINARY=./dist/dr sh install.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
