@@ -11,6 +11,7 @@ jobs:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       pull-requests: write
       issues: write
     steps:

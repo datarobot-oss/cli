@@ -132,7 +132,7 @@ jobs:
 
   notify-results:
     needs: [resolve-pr, security-scan, notify-start, linux-smoke-tests, windows-smoke-tests]
-    if: always()
+    if: always() && needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
