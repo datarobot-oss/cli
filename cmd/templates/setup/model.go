@@ -429,6 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.loadingMessage = ""
 		m.screen = dotenvScreen
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
+		m.dotenv.ShowAllPrompts = true
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
@@ -437,6 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.screen = dotenvScreen
 		m.list.Template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
+		m.dotenv.ShowAllPrompts = true
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()

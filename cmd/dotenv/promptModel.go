@@ -294,7 +294,11 @@ func (pm promptModel) submitList() (promptModel, tea.Cmd) {
 func (pm promptModel) submitInput() (promptModel, tea.Cmd) {
 	pm.Values = pm.GetValues()
 
-	return pm, pm.successCmd
+	if pm.prompt.Optional || len(pm.Values[0]) > 0 {
+		return pm, pm.successCmd
+	}
+
+	return pm, nil
 }
 
 func (pm promptModel) View() string {
