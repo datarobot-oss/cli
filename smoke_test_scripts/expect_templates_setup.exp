@@ -46,29 +46,32 @@ expect "talk-to-my-docs-agents"
 send -- "\r\n"
 
 # Loop through all environment variable prompts, accepting defaults.
-# Each prompt shows "Variable: <NAME>". We keep pressing Enter until
-# we reach the "None (leave blank)" option or the menu.
+# Two kinds of prompts appear:
+#   1) Text input  — shows "Variable: <NAME>" with a ">" input line
+#   2) Multi-select — shows "Variable: <NAME>" then a list with "space to toggle"
+# We press Enter on each and break when "Environment Variables Menu" appears.
 set done 0
 while {!$done} {
     expect {
-        "None (leave blank)" {
-            # Last env-var option — accept and move on
+        "Environment Variables Menu" {
+            # Done with all variables — confirm and exit loop
             send -- "\r\n"
             set done 1
         }
+        "space to toggle" {
+            # Multi-select list fully rendered — press Enter to accept defaults
+            send -- "\r\n"
+        }
         "Variable:" {
-            # Another env-var prompt — accept the default value
+            # Text input prompt — press Enter to accept the default value
             send -- "\r\n"
         }
         timeout {
-            puts "ERROR: Timeout waiting for next variable prompt"
+            puts "ERROR: Timeout waiting for next variable prompt or menu"
             exit 1
         }
     }
 }
-
-expect "Environment Variables Menu"
-send -- "\r\n"
 
 # # Component selection screen - press space to select first component, then enter
 # expect "Available Components"
