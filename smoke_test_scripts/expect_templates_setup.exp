@@ -39,43 +39,36 @@ send -- "talk\n"
 
 sleep 1
 expect "Talk to My Docs"
-send -- "\r"
+send -- "\r\n"
 
 sleep 1
 expect "talk-to-my-docs-agents"
-send -- "\r"
+send -- "\r\n"
 
-expect "AGENT_RETRIEVAL_AGENT_ENDPOINT"
-send -- "\r"
-
-expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
-send -- "\r"
-
-expect "PULUMI_CONFIG_PASSPHRASE"
-send -- "\r"
-
-expect "DATAROBOT_DEFAULT_USE_CASE"
-send -- "\r"
-
-expect "INFRA_ENABLE_LLM"
-send -- "\r"
-
-expect "LLM_DEFAULT_MODEL"
-send -- "\r"
-
-expect "LLM_DEFAULT_LLM_ID"
-send -- "\r"
-
-# SESSION_SECRET_KEY is skipped because it has a default value (generate: true)
-
-expect "DATABASE_URI"
-send -- "\r"
-
-expect "None (leave blank)"
-send -- "\r"
+# Loop through all environment variable prompts, accepting defaults.
+# Each prompt shows "Variable: <NAME>". We keep pressing Enter until
+# we reach the "None (leave blank)" option or the menu.
+set done 0
+while {!$done} {
+    expect {
+        "None (leave blank)" {
+            # Last env-var option — accept and move on
+            send -- "\r\n"
+            set done 1
+        }
+        "Variable:" {
+            # Another env-var prompt — accept the default value
+            send -- "\r\n"
+        }
+        timeout {
+            puts "ERROR: Timeout waiting for next variable prompt"
+            exit 1
+        }
+    }
+}
 
 expect "Environment Variables Menu"
-send -- "\r"
+send -- "\r\n"
 
 # # Component selection screen - press space to select first component, then enter
 # expect "Available Components"
