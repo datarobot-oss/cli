@@ -191,6 +191,12 @@ check_existing_installation() {
             info "DataRobot CLI $VERSION is already installed"
             step "Installation location: $INSTALL_DIR/$BINARY_NAME"
 
+            # Ensure datarobot alias symlink exists
+            if [ ! -L "$INSTALL_DIR/datarobot" ]; then
+                step "Creating missing 'datarobot' alias..."
+                ln -sf "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/datarobot"
+            fi
+
             if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
                 warn "$INSTALL_DIR is not in your PATH"
                 show_path_instructions
@@ -301,7 +307,7 @@ download_and_install() {
 
     # Create datarobot alias
     step "Creating 'datarobot' alias..."
-    ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
+    ln -sf "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/datarobot"
 }
 
 # Show PATH configuration instructions

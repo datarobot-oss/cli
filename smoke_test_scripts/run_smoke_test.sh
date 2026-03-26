@@ -36,6 +36,8 @@ if command -v datarobot >/dev/null 2>&1 || [ -x "$HOME/.local/bin/datarobot" ]; 
     echo "✅ 'datarobot' alias is available."
 else
     echo "❌ 'datarobot' alias not found - expected symlink at $HOME/.local/bin/datarobot"
+    echo "   Debug: Contents of $HOME/.local/bin/:"
+    ls -la "$HOME/.local/bin/" 2>&1 || echo "   Directory does not exist"
     exit 1
 fi
 
