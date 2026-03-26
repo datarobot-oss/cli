@@ -17,6 +17,11 @@ set -e
 REPO="datarobot-oss/cli"
 BINARY_NAME="dr"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+# Resolve to absolute path so symlinks and PATH checks work reliably
+case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$(cd "$(dirname "$INSTALL_DIR")" 2>/dev/null && pwd)/$(basename "$INSTALL_DIR")" ;;
+esac
 VERSION="${1:-latest}"
 
 # Colors for output
@@ -194,7 +199,7 @@ check_existing_installation() {
             # Ensure datarobot alias symlink exists
             if [ ! -L "$INSTALL_DIR/datarobot" ]; then
                 step "Creating missing 'datarobot' alias..."
-                ln -sf "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/datarobot"
+                ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
             fi
 
             if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
@@ -307,7 +312,7 @@ download_and_install() {
 
     # Create datarobot alias
     step "Creating 'datarobot' alias..."
-    ln -sf "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/datarobot"
+    ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
 }
 
 # Show PATH configuration instructions
