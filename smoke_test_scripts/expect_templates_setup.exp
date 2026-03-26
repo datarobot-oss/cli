@@ -45,26 +45,45 @@ sleep 1
 expect "talk-to-my-docs-agents"
 send -- "\r\n"
 
-# Loop through all environment variable prompts, accepting defaults.
-# Two kinds of prompts appear:
-#   1) Text input  — shows "Variable: <NAME>" with a ">" input line
-#   2) Multi-select — shows "Variable: <NAME>" then a list with "space to toggle"
-# We press Enter on each and break when "Environment Variables Menu" appears.
+# The dotenv model briefly flashes the "Environment Variables Menu" list screen
+# while it asynchronously loads prompts. We must NOT match that transient screen,
+# otherwise we'd exit before the wizard runs and the .env file is never written.
+#
+# Phase 1: Wait for the wizard to actually start ("Variable:" is wizard-only text)
+#   or for the wizard to auto-complete all prompts ("Skipped" only appears after
+#   moveToNextPrompt sets skippedPrompts > 0, never on the initial flash).
+expect {
+    "Variable:" {
+        # First wizard prompt appeared — accept default
+        send -- "\r\n"
+    }
+    "Skipped" {
+        # All prompts had defaults and were auto-skipped — wizard is done
+    }
+    timeout {
+        puts "ERROR: Timeout waiting for wizard to start"
+        exit 1
+    }
+}
+
+# Phase 2: Handle remaining wizard prompts, then exit the menu.
+# "enter to finish" only appears on the list screen AFTER the wizard completes
+# and the .env file has been saved.
 set done 0
 while {!$done} {
     expect {
-        "Environment Variables Menu" {
-            # Done with all variables — confirm and exit loop
-            send -- "\r\n"
-            set done 1
-        }
         "space to toggle" {
             # Multi-select list fully rendered — press Enter to accept defaults
             send -- "\r\n"
         }
         "Variable:" {
-            # Text input prompt — press Enter to accept the default value
+            # Next wizard prompt — press Enter to accept default
             send -- "\r\n"
+        }
+        "enter to finish" {
+            # Back on the menu after wizard — press Enter to finish
+            send -- "\r\n"
+            set done 1
         }
         timeout {
             puts "ERROR: Timeout waiting for next variable prompt or menu"

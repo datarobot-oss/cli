@@ -145,7 +145,6 @@ if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
   stop_timer
 else
-  cat .env
   expect ./smoke_test_scripts/expect_templates_setup.exp
   DIRECTORY="./talk-to-my-docs-agents"
   if [ -d "$DIRECTORY" ]; then
