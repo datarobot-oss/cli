@@ -165,7 +165,14 @@ func (m Model) loadPrompts() tea.Cmd {
 	return func() tea.Msg {
 		currentDir := filepath.Dir(m.DotenvFile)
 
-		userPrompts, err := envbuilder.GatherUserPrompts(currentDir, m.variables)
+		variables := m.variables
+		if len(variables) == 0 {
+			// Read from .env file (falls back to default template when file doesn't exist)
+			// so that promptsWithValues can apply defaults and env var values correctly.
+			variables, _, _ = readDotenvFileVariables(m.DotenvFile)
+		}
+
+		userPrompts, err := envbuilder.GatherUserPrompts(currentDir, variables)
 		if err != nil {
 			return errMsg{err}
 		}
