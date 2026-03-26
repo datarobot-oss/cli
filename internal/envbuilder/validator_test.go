@@ -222,6 +222,7 @@ func TestPromptsWithValues(t *testing.T) {
 
 	t.Run("env var overrides viper config for PULUMI_CONFIG_PASSPHRASE", func(t *testing.T) {
 		os.Setenv("PULUMI_CONFIG_PASSPHRASE", "from-env")
+
 		defer os.Unsetenv("PULUMI_CONFIG_PASSPHRASE")
 
 		// The first loop won't set a viper value since the env var is present,

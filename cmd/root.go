@@ -204,5 +204,3 @@ func initializeConfig(cmd *cobra.Command) error {
 
 	return nil
 }
-
-
