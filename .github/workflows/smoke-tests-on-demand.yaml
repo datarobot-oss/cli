@@ -37,8 +37,8 @@ jobs:
               issue_number: context.issue.number,
               body: '⚠️ **Smoke tests cannot be triggered on forked PRs using this label.**\n\n' +
                     'For security reasons, only maintainers can run smoke tests on forked PRs.\n\n' +
-                    '**If you are a maintainer:** Apply the `approved-for-smoke-tests` label after reviewing the code.\n\n' +
-                    '**If you are an external contributor:** Please comment on this PR requesting a maintainer review, and a maintainer will trigger the tests after security review.\n\n' +
+                    '**If you are a maintainer:** Use the "Fork PR Smoke Tests" workflow_dispatch from the Actions tab, providing this PR number.\n\n' +
+                    '**If you are an external contributor:** Please comment on this PR requesting a maintainer review, and a maintainer will trigger the tests manually.\n\n' +
                     'See the [workflows documentation](.github/workflows/README.md) for more details.'
             });
 

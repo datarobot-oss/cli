@@ -19,7 +19,7 @@ the review may happen while you are asleep / otherwise not able to respond quick
 - `run-smoke-tests` or `go` - Run smoke tests on demand (only works for non-forked PRs)
 
 > [!IMPORTANT]
-> **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment requesting maintainer review if you need smoke tests to run.
+> **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. A maintainer must manually trigger the "Fork PR Smoke Tests" workflow from the Actions tab, providing your PR number. Please comment requesting a maintainer review if you need smoke tests to run.
 
 
 <!-- Recommended Additional Sections:
