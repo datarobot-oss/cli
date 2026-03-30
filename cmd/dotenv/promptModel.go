@@ -175,14 +175,11 @@ func newListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMode
 	}, cmd
 }
 
-func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
-	llms, err := drapi.GetLLMs()
-	if err != nil {
-		return promptModel{}, nil
-	}
+func llmsToPromptOptions(llms []drapi.LLM) []envbuilder.PromptOption {
+	options := make([]envbuilder.PromptOption, 0, len(llms))
 
-	for _, llm := range llms.LLMs {
-		prompt.Options = append(prompt.Options, envbuilder.PromptOption{
+	for _, llm := range llms {
+		options = append(options, envbuilder.PromptOption{
 			Blank:    false,
 			Checked:  false,
 			Name:     fmt.Sprintf("%s (%s)", llm.Name, llm.Provider),
@@ -190,6 +187,17 @@ func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptM
 			Requires: "",
 		})
 	}
+
+	return options
+}
+
+func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	llms, err := drapi.GetLLMs()
+	if err != nil {
+		return promptModel{}, nil
+	}
+
+	prompt.Options = append(prompt.Options, llmsToPromptOptions(llms.LLMs)...)
 
 	return newListPrompt(prompt, successCmd)
 }
