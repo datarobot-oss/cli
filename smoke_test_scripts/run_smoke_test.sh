@@ -10,6 +10,23 @@ fi
 
 export TERM="dumb"
 
+# Timing helpers
+SCRIPT_START=$(date +%s)
+TEST_TIMINGS=""
+
+start_timer() {
+    TEST_NAME="$1"
+    TEST_START=$(date +%s)
+    echo ""
+    echo "▶ $TEST_NAME"
+}
+
+stop_timer() {
+    local elapsed=$(( $(date +%s) - TEST_START ))
+    echo "  ⏱  ${TEST_NAME}: ${elapsed}s"
+    TEST_TIMINGS="${TEST_TIMINGS}  ${elapsed}s\t${TEST_NAME}\n"
+}
+
 # Used throughout testing
 testing_url="https://app.datarobot.com"
 
@@ -31,15 +48,18 @@ cat "$(pwd)/smoke_test_scripts/assets/example_config.yaml" > "$DATAROBOT_CLI_CON
 # Set API token in our ephemeral config file
 yq -i ".token = \"$DR_API_TOKEN\"" "$DATAROBOT_CLI_CONFIG"
 
-# Check that the datarobot alias exists and works
+start_timer "Check datarobot alias"
 if command -v datarobot >/dev/null 2>&1 || [ -x "$HOME/.local/bin/datarobot" ]; then
     echo "✅ 'datarobot' alias is available."
 else
     echo "❌ 'datarobot' alias not found - expected symlink at $HOME/.local/bin/datarobot"
+    echo "   Debug: Contents of $HOME/.local/bin/:"
+    ls -la "$HOME/.local/bin/" 2>&1 || echo "   Directory does not exist"
     exit 1
 fi
+stop_timer
 
-# Check we have expected help output (checking for header content)
+start_timer "dr help output"
 header_copy="Build AI Applications Faster"
 has_header=$(dr help | grep "${header_copy}")
 if [[ -n "$has_header" ]]; then
@@ -48,8 +68,9 @@ else
     echo "❌ Help command did not return expected content - missing header copy: ${header_copy}"
     exit 1
 fi
+stop_timer
 
-# Check that datarobot alias produces identical output to dr
+start_timer "datarobot alias help output"
 has_header_alias=$(datarobot help | grep "${header_copy}" 2>/dev/null || "$HOME/.local/bin/datarobot" help | grep "${header_copy}")
 if [[ -n "$has_header_alias" ]]; then
     echo "✅ 'datarobot' alias returned expected content."
@@ -57,8 +78,9 @@ else
     echo "❌ 'datarobot' alias did not return expected content."
     exit 1
 fi
+stop_timer
 
-# Check that JSON output of version command has expected `version` key
+start_timer "dr self version --format=json"
 has_version_key=$(dr self version --format=json | yq eval 'has("version")')
 if [[ "$has_version_key" == "true" ]]; then
     echo "✅ Version command returned expected 'version' key in json output."
@@ -66,33 +88,31 @@ else
     echo "❌ Version command did not return expected 'version' key in json output."
     exit 1
 fi
+stop_timer
 
+start_timer "dr self completion bash"
 dr self completion bash > completion_bash.sh
-# Check if we have the file with expected __start_dr() function
 function_check=$(cat completion_bash.sh | grep __start_dr\()
 if [[ -n "$function_check" ]]; then
   echo "✅ Assertion passed: We have expected completion_bash.sh file."
-  # Remove created bash file - especially helpful when running smoke tests locally
   rm completion_bash.sh
 else
   echo "❌ Assertion failed: We don't have expected completion_bash.sh file w/ expected function: __start_dr()."
-  # Print completion_bash.sh (if it exists) to aid in debugging if needed
   cat completion_bash.sh
   exit 1
 fi
+stop_timer
 
-# Test completion install/uninstall interactively
-echo "Testing completion install/uninstall..."
+start_timer "Completion install/uninstall (expect)"
 expect ./smoke_test_scripts/expect_completion.exp
+stop_timer
 
-# Check we have expected usage message output
+start_timer "dr run usage message"
 if [ -f ".env" ]; then
     usage_message="No Taskfiles found in child directories."
 else
     usage_message="You don't seem to be in a DataRobot Template directory."
 fi
-echo "Testing dr run command..."
-# Use 2>&1 to stderr to stdout
 has_message=$(dr run 2>&1 | grep "${usage_message}")
 if [[ -n "$has_message" ]]; then
     echo "✅ Run command returned expected content."
@@ -100,34 +120,31 @@ else
     echo "❌ Run command did not return expected content - missing informative message: ${usage_message}"
     exit 1
 fi
+stop_timer
 
-# Use expect to run commands as user and we expect to update auth URL config value using `dr auth setURL`
-# The expect script "hits" the `y` key for "yes", then `https://app.datarobot.com`
+start_timer "dr auth setURL (expect)"
 expect ./smoke_test_scripts/expect_auth_setURL.exp "$DATAROBOT_CLI_CONFIG"
-
-# Check if we have the auth URL correctly set
 auth_endpoint_check=$(cat "$DATAROBOT_CLI_CONFIG" | grep endpoint | grep "${testing_url}/api/v2")
 if [[ -n "$auth_endpoint_check" ]]; then
   echo "✅ Assertion passed: We have expected expected 'endpoint' auth URL value in config."
   echo "Value: $auth_endpoint_check"
 else
   echo "❌ Assertion failed: We don't have expected 'endpoint' auth URL value."
-  # Print ~/.config/datarobot/drconfig.yaml (if it exists) to aid in debugging if needed
   echo "${DATAROBOT_CLI_CONFIG} contents:"
   cat "$DATAROBOT_CLI_CONFIG"
   exit 1
 fi
+stop_timer
 
-# Test `dr auth login` and we should have the value shown in output:
-# `https://app.datarobot.com/account/developer-tools?cliRedirect=true`
-echo "Testing dr auth login..."
+start_timer "dr auth login (expect)"
 expect ./smoke_test_scripts/expect_auth_login.exp
+stop_timer
 
-# Test templates - Confirm expect script has cloned TTMDocs and that .env has expected value
+start_timer "dr templates setup + dotenv"
 if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."
+  stop_timer
 else
-  echo "Testing dr templates setup..."
   expect ./smoke_test_scripts/expect_templates_setup.exp
   DIRECTORY="./talk-to-my-docs-agents"
   if [ -d "$DIRECTORY" ]; then
@@ -173,4 +190,16 @@ else
   # Now delete directory to clean up
   cd ..
   rm -rf "$DIRECTORY"
+  stop_timer
 fi
+
+# Print timing summary
+TOTAL_ELAPSED=$(( $(date +%s) - SCRIPT_START ))
+echo ""
+echo "══════════════════════════════════════"
+echo "  Smoke Test Timing Summary"
+echo "══════════════════════════════════════"
+printf "$TEST_TIMINGS"
+echo "──────────────────────────────────────"
+echo "  Total: ${TOTAL_ELAPSED}s"
+echo "══════════════════════════════════════"

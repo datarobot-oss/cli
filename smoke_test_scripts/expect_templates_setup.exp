@@ -45,37 +45,52 @@ sleep 1
 expect "talk-to-my-docs-agents"
 send -- "\r\n"
 
-expect "AGENT_RETRIEVAL_AGENT_ENDPOINT"
-send -- "\r\n"
+# The dotenv model briefly flashes the "Environment Variables Menu" list screen
+# while it asynchronously loads prompts. We must NOT match that transient screen,
+# otherwise we'd exit before the wizard runs and the .env file is never written.
+#
+# Phase 1: Wait for the wizard to actually start ("Variable:" is wizard-only text)
+#   or for the wizard to auto-complete all prompts ("Skipped" only appears after
+#   moveToNextPrompt sets skippedPrompts > 0, never on the initial flash).
+expect {
+    "Variable:" {
+        # First wizard prompt appeared — accept default
+        send -- "\r\n"
+    }
+    "Skipped" {
+        # All prompts had defaults and were auto-skipped — wizard is done
+    }
+    timeout {
+        puts "ERROR: Timeout waiting for wizard to start"
+        exit 1
+    }
+}
 
-expect "DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT"
-send -- "\r\n"
-
-expect "PULUMI_CONFIG_PASSPHRASE"
-send -- "\r\n"
-
-expect "DATAROBOT_DEFAULT_USE_CASE"
-send -- "\r\n"
-
-expect "INFRA_ENABLE_LLM"
-send -- "\r\n"
-
-expect "LLM_DEFAULT_MODEL"
-send -- "\r\n"
-
-expect "LLM_DEFAULT_LLM_ID"
-send -- "\r\n"
-
-# SESSION_SECRET_KEY is skipped because it has a default value
-
-expect "DATABASE_URI"
-send -- "\r\n"
-
-expect "None (leave blank)"
-send -- "\r\n"
-
-expect "Environment Variables Menu"
-send -- "\r\n"
+# Phase 2: Handle remaining wizard prompts, then exit the menu.
+# "enter to finish" only appears on the list screen AFTER the wizard completes
+# and the .env file has been saved.
+set done 0
+while {!$done} {
+    expect {
+        "space to toggle" {
+            # Multi-select list fully rendered — press Enter to accept defaults
+            send -- "\r\n"
+        }
+        "Variable:" {
+            # Next wizard prompt — press Enter to accept default
+            send -- "\r\n"
+        }
+        "enter to finish" {
+            # Back on the menu after wizard — press Enter to finish
+            send -- "\r\n"
+            set done 1
+        }
+        timeout {
+            puts "ERROR: Timeout waiting for next variable prompt or menu"
+            exit 1
+        }
+    }
+}
 
 # # Component selection screen - press space to select first component, then enter
 # expect "Available Components"

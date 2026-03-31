@@ -1,24 +1,59 @@
-name: Fork PR Smoke Tests (Manual Approval)
+name: Fork PR Smoke Tests (Manual Dispatch)
 
-# This workflow allows fork PRs to run smoke tests after maintainer approval
-# Uses pull_request_target to access secrets safely with manual approval gate
+# This workflow allows maintainers to run smoke tests for fork PRs safely.
+# Uses workflow_dispatch instead of pull_request_target to avoid secrets leakage.
+# A maintainer triggers this manually from the Actions tab, providing the PR number.
 on:
-  pull_request_target:
-    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to test'
+        required: true
+        type: number
+      commit_sha:
+        description: 'Exact commit SHA from the fork PR to test (leave empty to use PR head)'
+        required: false
+        type: string
 
 jobs:
+  resolve-pr:
+    runs-on: ubuntu-latest
+    name: Resolve PR Details
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      is_fork: ${{ steps.resolve.outputs.is_fork }}
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Resolve PR commit SHA
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ inputs.pr_number }}
+            });
+
+            const isFork = pr.data.head.repo.full_name !== pr.data.base.repo.full_name;
+            core.setOutput('is_fork', isFork.toString());
+
+            const sha = '${{ inputs.commit_sha }}' || pr.data.head.sha;
+            console.log(`PR #${{ inputs.pr_number }} — fork: ${isFork}, sha: ${sha}`);
+            core.setOutput('sha', sha);
+
   # Security check before running tests with secrets
   security-scan:
-    if: |
-      github.event.label.name == 'approved-for-smoke-tests' &&
-      github.event.pull_request.head.repo.full_name != github.repository
+    needs: resolve-pr
+    if: needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
     name: Security Scan
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.resolve-pr.outputs.sha }}
           fetch-depth: 0
 
       - name: Run Trivy vulnerability scanner
@@ -49,63 +84,55 @@ jobs:
         run: |
           gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
 
-
   build-windows:
-    needs: security-scan
+    needs: [resolve-pr, security-scan]
     uses: ./.github/workflows/.build-windows.yaml
     with:
       go-version: '1.25.8'
       artifact-name: 'dr-windows-fork'
-      ref: ${{ github.event.pull_request.head.sha }}
+      ref: ${{ needs.resolve-pr.outputs.sha }}
     secrets: inherit
 
-  notify-approval-needed:
-    if: |
-      github.event.label.name == 'approved-for-smoke-tests' &&
-      github.event.pull_request.head.repo.full_name != github.repository
+  notify-start:
+    needs: [resolve-pr, security-scan]
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       issues: write
     steps:
-      - name: Notify awaiting approval
+      - name: Notify smoke tests started
         uses: actions/github-script@v7
         with:
           script: |
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: '🔐 **Smoke tests approved by maintainer**\n\n' +
-                    '⏳ Running security scans before executing smoke tests with secrets...\n\n' +
-                    '_A maintainer has approved this fork PR to run smoke tests. Security scans will run first._'
+              issue_number: ${{ inputs.pr_number }},
+              body: '🔐 **Fork smoke tests started by maintainer**\n\n' +
+                    '⏳ Security scans passed. Running smoke tests...\n\n' +
+                    `Commit: \`${{ needs.resolve-pr.outputs.sha }}\`\n` +
+                    `[View run](${context.payload.repository.html_url}/actions/runs/${context.runId})`
             });
 
   linux-smoke-tests:
-    needs: security-scan
+    needs: [resolve-pr, security-scan]
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
       go-version: '1.25.8'
-      ref: ${{ github.event.pull_request.head.sha }}
+      ref: ${{ needs.resolve-pr.outputs.sha }}
     secrets: inherit
-    # Require manual approval via GitHub environment
-    # Note: environment can't be passed to reusable workflows,
-    # so we gate on the security-scan instead
 
   windows-smoke-tests:
-    needs: [security-scan, build-windows]
+    needs: [resolve-pr, security-scan, build-windows]
     uses: ./.github/workflows/.windows-smoke-test.yaml
     with:
       artifact-name: 'dr-windows-fork'
-      ref: ${{ github.event.pull_request.head.sha }}
+      ref: ${{ needs.resolve-pr.outputs.sha }}
     secrets: inherit
 
   notify-results:
-    needs: [security-scan, notify-approval-needed, linux-smoke-tests, windows-smoke-tests]
-    if: |
-      always() &&
-      github.event.label.name == 'approved-for-smoke-tests' &&
-      github.event.pull_request.head.repo.full_name != github.repository
+    needs: [resolve-pr, security-scan, notify-start, linux-smoke-tests, windows-smoke-tests]
+    if: always() && needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -135,7 +162,7 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: ${{ inputs.pr_number }},
               body: `${overallEmoji} **${overallMessage}** (Fork PR)\n\n` +
                     `${securityEmoji} Security Scan: ${securityStatus}\n` +
                     `${linuxEmoji} Linux: ${linuxStatus}\n` +
@@ -143,19 +170,3 @@ jobs:
                     `[View run details](${context.payload.repository.html_url}/actions/runs/${context.runId})` +
                     failureNote
             });
-
-      - name: Remove approved-for-smoke-tests label
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                name: 'approved-for-smoke-tests'
-              });
-              console.log('Removed label: approved-for-smoke-tests');
-            } catch (error) {
-              console.log('Label approved-for-smoke-tests already removed or does not exist');
-            }

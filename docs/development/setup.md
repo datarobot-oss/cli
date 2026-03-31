@@ -63,7 +63,7 @@ The binary will be available at `./dist/dr`.
 ### Verify the build
 
 ```bash
-./dist/dr version
+./dist/dr self version
 ```
 
 ## Available development tasks

@@ -36,7 +36,7 @@ task dev-init
 task build
 
 # Binary is at ./dist/dr
-./dist/dr version
+./dist/dr self version
 ```
 
 ### Available tasks

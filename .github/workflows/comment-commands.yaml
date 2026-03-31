@@ -11,6 +11,7 @@ jobs:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       pull-requests: write
       issues: write
     steps:
@@ -103,12 +104,15 @@ jobs:
               content: 'eyes'
             });
 
-            // Add label to trigger fork smoke tests
-            await github.rest.issues.addLabels({
+            // Trigger the fork smoke tests workflow via workflow_dispatch
+            await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: ['approved-for-smoke-tests']
+              workflow_id: 'fork-smoke-tests.yaml',
+              ref: 'main',
+              inputs: {
+                pr_number: context.issue.number.toString(),
+              }
             });
 
             // Add comment explaining what happens next
@@ -116,14 +120,13 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '🔐 **Fork PR approved for smoke tests by @' + context.actor + '**\n\n' +
+              body: '🔐 **Fork PR smoke tests triggered by @' + context.actor + '**\n\n' +
                     '⚠️ **Security Notice**: This will run tests with access to repository secrets.\n\n' +
                     '**What happens next:**\n' +
-                    '1. Security scans will run automatically (Trivy, gosec, govulncheck)\n' +
-                    '2. If security scans pass, smoke tests will await manual approval\n' +
-                    '3. Review the security scan results before final approval\n' +
-                    '4. Approve the workflow run in the Actions tab to execute smoke tests\n\n' +
-                    '⚠️ **Important**: Review the PR code carefully before final approval!'
+                    '1. Security scans will run automatically (Trivy, gosec)\n' +
+                    '2. If security scans pass, smoke tests will run\n' +
+                    '3. Results will be posted as PR comments\n\n' +
+                    '⚠️ **Important**: Review the PR code carefully before approving!'
             });
 
       - name: Handle unauthorized fork smoke test attempt

@@ -148,11 +148,12 @@ Triggered by PR labels (`run-smoke-tests` or `go`):
 - **Note:** Does NOT run installation tests (those run only on main/schedule to avoid testing unreleased code)
 
 ### `fork-smoke-tests.yaml`
-Runs on fork PRs when labeled with `approved-for-smoke-tests`:
+Triggered manually via `workflow_dispatch` by a maintainer (from the Actions tab):
+- Accepts a PR number and optional commit SHA as inputs
 - Performs security scans (Trivy, gosec)
 - Builds Windows binary from fork PR code
-- Runs smoke tests on Linux and Windows with manual approval
-- Posts results and removes label
+- Runs smoke tests on Linux and Windows
+- Posts results as PR comments
 
 ### `release.yaml`
 Triggered by version tags (`v*.*.*`):
@@ -203,26 +204,18 @@ Apply labels to PRs to trigger workflows:
   - Auto-removes label after completion
   - **Note:** This only works for PRs from the main repository, not forked PRs
 
-### Labels for Forked PRs
+### Forked PRs (Manual Dispatch)
 
-Forked PRs require maintainer approval due to security considerations:
-
-- `approved-for-smoke-tests` - Triggers `fork-smoke-tests.yaml`
-  - Performs security scans (Trivy, gosec)
-  - Builds Windows binary from fork PR code
-  - Runs smoke tests on Linux and Windows with manual approval
-  - Posts results as PR comments
-  - Removes label after completion
+Forked PRs require maintainer approval due to security considerations. The `fork-smoke-tests.yaml` workflow uses `workflow_dispatch` (not `pull_request_target`) to avoid secrets leakage:
 
 **Process for Forked PRs:**
 1. External contributor opens a PR from their fork
 2. Maintainer reviews the code changes for security concerns
-3. Maintainer applies `approved-for-smoke-tests` label to trigger testing
+3. Maintainer goes to **Actions → Fork PR Smoke Tests → Run workflow**, enters the PR number (and optionally a commit SHA)
 4. Workflow runs security scans and smoke tests
 5. Results are posted as PR comments
-6. Label is automatically removed after completion
 
-**Important:** If you're an external contributor and apply `run-smoke-tests` label yourself, it won't trigger any workflows. Only maintainers can trigger smoke tests on forked PRs by applying the `approved-for-smoke-tests` label after security review. Please comment on the PR requesting a maintainer review if you need smoke tests to run.
+**Important:** If you're an external contributor, the `run-smoke-tests` label won't work on fork PRs. Please comment on the PR requesting a maintainer review if you need smoke tests to run.
 
 ## Benefits of Reusable Workflows
 

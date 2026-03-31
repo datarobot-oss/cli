@@ -175,14 +175,14 @@ All `dr` global options are available:
 $ dr self update
 Downloading latest version...
 Installing DataRobot CLI...
-✓ Successfully updated to version 1.1.0
+✓ Successfully updated to v0.2.55
 ```
 
 ### Check CLI version
 
 ```bash
 $ dr self version
-DataRobot CLI version: 1.0.0
+DataRobot CLI version: v0.2.55
 ```
 
 ### View current configuration
@@ -216,9 +216,9 @@ $ dr self completion bash | sudo tee /etc/bash_completion.d/dr
 ```bash
 $ dr self version --format json
 {
-  "version": "1.0.0",
-  "commit": "abc123",
-  "buildDate": "2025-11-10T12:00:00Z"
+  "version": "v0.2.55",
+  "commit": "abc1234def5678",
+  "build_date": "2025-03-30T12:00:00Z"
 }
 ```
 
