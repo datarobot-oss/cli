@@ -15,18 +15,18 @@
 package dotenv
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -36,6 +36,7 @@ const (
 	generatedPassphraseLength = 32
 	pulumiConfigPassphraseKey = "pulumi_config_passphrase"
 	pulumiDocsURL             = "https://www.pulumi.com/docs/iac/concepts/state-and-backends/"
+	pulumiWhoamiTimeout       = 10 * time.Second
 )
 
 var pulumiArrow = lipgloss.NewStyle().Foreground(tui.DrPurple).SetString("→")
@@ -223,7 +224,7 @@ func (m pulumiLoginModel) handlePassphrasePromptKey(msg tea.KeyMsg) (tea.Model, 
 }
 
 func (m pulumiLoginModel) handlePassphraseAccepted() (tea.Model, tea.Cmd) {
-	passphrase, err := generateRandomPassphrase(generatedPassphraseLength)
+	passphrase, err := generateRandomSecret(generatedPassphraseLength)
 	if err != nil {
 		m.err = fmt.Errorf("failed to generate passphrase: %w", err)
 
@@ -240,12 +241,10 @@ func (m pulumiLoginModel) handlePassphraseAccepted() (tea.Model, tea.Cmd) {
 }
 
 func (m pulumiLoginModel) savePassphraseToConfig() error {
-	homeDir, err := os.UserHomeDir()
+	configDir, err := config.GetConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return fmt.Errorf("failed to get config directory: %w", err)
 	}
-
-	configDir := filepath.Join(homeDir, ".config", "datarobot")
 
 	if err := os.MkdirAll(configDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -352,17 +351,6 @@ func (m pulumiLoginModel) View() string {
 	return sb.String()
 }
 
-func generateRandomPassphrase(length int) (string, error) {
-	bytes := make([]byte, length)
-
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-
-	return base64.URLEncoding.EncodeToString(bytes)[:length], nil
-}
-
 // needsPulumiSetup returns true when the template requires Pulumi (has an active,
 // non-hidden PULUMI_CONFIG_PASSPHRASE prompt), Pulumi is installed, and the user
 // is either not logged in or has no passphrase configured.
@@ -382,7 +370,10 @@ func needsPulumiSetup(prompts []envbuilder.UserPrompt, loggedIn, passphraseSet b
 
 // isPulumiLoggedIn returns true if `pulumi whoami` succeeds (user is logged in).
 func isPulumiLoggedIn() bool {
-	err := exec.Command("pulumi", "whoami", "--non-interactive").Run()
+	ctx, cancel := context.WithTimeout(context.Background(), pulumiWhoamiTimeout)
+	defer cancel()
+
+	err := exec.CommandContext(ctx, "pulumi", "whoami", "--non-interactive").Run()
 
 	return err == nil
 }

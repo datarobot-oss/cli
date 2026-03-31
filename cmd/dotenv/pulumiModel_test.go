@@ -229,11 +229,11 @@ func TestPulumiLoginModel_PassphraseScreen_Esc_Completes(t *testing.T) {
 // --- Passphrase generation ---
 
 func TestGenerateRandomPassphrase(t *testing.T) {
-	passphrase, err := generateRandomPassphrase(32)
+	passphrase, err := generateRandomSecret(32)
 	require.NoError(t, err)
 	assert.Len(t, passphrase, 32)
 
-	passphrase2, err := generateRandomPassphrase(32)
+	passphrase2, err := generateRandomSecret(32)
 	require.NoError(t, err)
 	assert.NotEqual(t, passphrase, passphrase2, "generated passphrases must be unique")
 }
