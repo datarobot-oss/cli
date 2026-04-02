@@ -24,7 +24,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "✔️ Check template dependencies",
+		Short: "✅ Check template dependencies",
 		RunE:  RunE,
 	}
 
