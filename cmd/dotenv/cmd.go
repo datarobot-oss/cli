@@ -34,7 +34,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "dotenv",
 		GroupID: "core",
-		Short:   "🔧 Environment configuration commands.",
+		Short:   "🔧 Environment configuration commands",
 		Long: `Environment configuration commands for managing your application settings.
 
 Manage your '.env' file and application configuration:

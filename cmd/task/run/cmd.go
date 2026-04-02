@@ -72,7 +72,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "run [task1, task2, ...] [flags] [-- task-args...]",
 		Aliases: []string{"r"},
-		Short:   "🚀 Run application tasks",
+		Short:   "🚀 Run application tasks (alias for task run)",
 		Long: `Run tasks defined in your application template.
 
 Common tasks include:

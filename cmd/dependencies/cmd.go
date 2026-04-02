@@ -23,7 +23,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "dependencies",
 		GroupID: "advanced",
-		Short:   "Commands related to template dependencies.",
+		Short:   "📦 Commands related to template dependencies",
 	}
 
 	cmd.AddCommand(
