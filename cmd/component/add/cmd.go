@@ -149,7 +149,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     fmt.Sprintf("add [%s or component_url]", names),
-		Short:   "Add a component.",
+		Short:   "➕ Add a component",
 		PreRunE: PreRunE,
 		RunE:    RunE,
 	}

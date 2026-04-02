@@ -45,7 +45,7 @@ func RunE(_ *cobra.Command, _ []string) error {
 func Cmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List installed components.",
+		Short: "📋 List installed components",
 		RunE:  RunE,
 	}
 }

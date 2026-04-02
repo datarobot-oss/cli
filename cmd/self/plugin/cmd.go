@@ -24,7 +24,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Plugin packaging and development tools",
+		Short: "📦 Plugin packaging and development tools",
 	}
 
 	cmd.AddCommand(

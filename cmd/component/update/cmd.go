@@ -99,7 +99,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update [answers_file]",
-		Short:   "Update installed component.",
+		Short:   "🔄 Update installed component",
 		PreRunE: PreRunE,
 		RunE:    RunE,
 	}

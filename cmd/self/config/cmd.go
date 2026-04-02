@@ -22,7 +22,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Display current configuration settings",
+		Short: "⚙️ Display current configuration settings",
 		Long:  "Display all configuration settings from config file and environment variables, with sensitive data redacted.",
 		RunE:  RunE,
 	}

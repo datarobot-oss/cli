@@ -242,7 +242,7 @@ func Run(_ *cobra.Command, _ []string) {
 func Cmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "check",
-		Short: "Check if DataRobot credentials are valid.",
+		Short: "✔️ Check if DataRobot credentials are valid",
 		Long: `Verify that your DataRobot credentials are properly configured and valid.
 
 If you're in a project directory with a '.env' file, this will check those credentials.`,

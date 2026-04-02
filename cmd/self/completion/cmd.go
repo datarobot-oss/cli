@@ -30,7 +30,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("completion [%s]", strings.Join(internalShell.SupportedShells(), "|")),
-		Short: "Generate or manage shell completion scripts.",
+		Short: "🔧 Generate or manage shell completion scripts",
 		Long: `Generate shell completion script for supported shells. This will be output
 		to stdout so it can be redirected to the appropriate location.
 

@@ -37,7 +37,7 @@ func Run(_ *cobra.Command, _ []string) {
 func Cmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Log out from DataRobot.",
+		Short: "🚪 Log out from DataRobot",
 		Long:  `Log out from DataRobot and clear the stored API key.`,
 		Run:   Run,
 	}

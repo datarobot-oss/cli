@@ -35,7 +35,7 @@ func Cmd() *cobra.Command { //nolint:cyclop
 
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Update DataRobot CLI",
+		Short: "📦 Update DataRobot CLI",
 		Long: `Updates the DataRobot CLI to latest version. This will use Homebrew
 to update if it detects the installed cask;  otherwise it will use an OS-appropriate script
 with your default shell.
