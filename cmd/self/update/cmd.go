@@ -40,6 +40,7 @@ func Cmd() *cobra.Command { //nolint:cyclop
 to update if it detects the installed cask;  otherwise it will use an OS-appropriate script
 with your default shell.
 `,
+
 		RunE: func(_ *cobra.Command, _ []string) error {
 			requirement, err := tools.GetSelfRequirement()
 			if err != nil {

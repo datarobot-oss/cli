@@ -275,6 +275,7 @@ func Cmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"l"},
 		Short:   "📋 List tasks",
+
 		Run: func(_ *cobra.Command, _ []string) {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
