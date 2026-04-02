@@ -28,7 +28,7 @@ import (
 func Cmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List discovered plugins",
+		Short: "📋 List discovered plugins",
 		Long:  "List all discovered plugins with their paths and versions. Uses cached results from CLI startup.",
 		RunE:  runList,
 	}

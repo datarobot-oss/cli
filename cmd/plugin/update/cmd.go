@@ -32,7 +32,7 @@ var (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [plugin-name]",
-		Short: "Update a plugin to the latest version",
+		Short: "🔄 Update a plugin to the latest version",
 		Long: `Update an installed plugin to the latest available version.
 
 If no plugin name is provided with --all, checks all installed plugins for updates.`,

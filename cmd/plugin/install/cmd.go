@@ -34,7 +34,7 @@ var (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install <plugin-name>",
-		Short: "Install a plugin from the remote registry",
+		Short: "⬇️ Install a plugin from the remote registry",
 		Long: `Install a plugin from the remote plugin registry.
 
 The plugin name should match an entry in the plugin registry.
