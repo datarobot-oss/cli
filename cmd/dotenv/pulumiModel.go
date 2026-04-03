@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -241,13 +240,8 @@ func (m pulumiLoginModel) handlePassphraseAccepted() (tea.Model, tea.Cmd) {
 }
 
 func (m pulumiLoginModel) savePassphraseToConfig() error {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return fmt.Errorf("failed to get config directory: %w", err)
-	}
-
-	if err := os.MkdirAll(configDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+	if err := config.CreateConfigFileDirIfNotExists(); err != nil {
+		return fmt.Errorf("failed to create config: %w", err)
 	}
 
 	viper.Set(pulumiConfigPassphraseKey, m.generatedPassphrase)
