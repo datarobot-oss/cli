@@ -26,9 +26,11 @@ import (
 func TestNewClient_DisabledWhenAPIKeyEmpty(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
+
 	viper.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
@@ -40,9 +42,11 @@ func TestNewClient_DisabledWhenAPIKeyEmpty(t *testing.T) {
 func TestNewClient_DisabledWhenFlagSet(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = "test-key"
+
 	viper.Set("disable-telemetry", true)
 
 	client := NewClient(nil)
@@ -57,9 +61,11 @@ func TestNewClient_DisabledWhenFlagSet(t *testing.T) {
 func TestNewClient_EnabledWhenAPIKeySetAndNotDisabled(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = "test-key"
+
 	viper.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
@@ -73,6 +79,7 @@ func TestNewClient_EnabledWhenAPIKeySetAndNotDisabled(t *testing.T) {
 func TestNewClient_StoresProperties(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
@@ -89,9 +96,11 @@ func TestNewClient_StoresProperties(t *testing.T) {
 func TestTrack_NoOpWhenDisabled(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
+
 	viper.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
@@ -109,6 +118,7 @@ func TestTrack_NoOpWhenDisabled(t *testing.T) {
 func TestTrack_MergesCommonProperties(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
@@ -133,6 +143,7 @@ func TestTrack_MergesCommonProperties(t *testing.T) {
 func TestFlush_NoOpWhenDisabled(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
@@ -145,9 +156,11 @@ func TestFlush_NoOpWhenDisabled(t *testing.T) {
 func TestIsEnabled_FalseWhenAPIKeyEmpty(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = ""
+
 	viper.Set("disable-telemetry", false)
 
 	assert.False(t, IsEnabled())
@@ -156,9 +169,11 @@ func TestIsEnabled_FalseWhenAPIKeyEmpty(t *testing.T) {
 func TestIsEnabled_FalseWhenDisableFlagSet(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = "test-key"
+
 	viper.Set("disable-telemetry", true)
 
 	assert.False(t, IsEnabled())
@@ -170,9 +185,11 @@ func TestIsEnabled_FalseWhenDisableFlagSet(t *testing.T) {
 func TestIsEnabled_TrueWhenAPIKeySetAndNotDisabled(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
+
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
 
 	AmplitudeAPIKey = "test-key"
+
 	viper.Set("disable-telemetry", false)
 
 	assert.True(t, IsEnabled())
