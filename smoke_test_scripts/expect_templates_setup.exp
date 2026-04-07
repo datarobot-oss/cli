@@ -49,9 +49,6 @@ send -- "\r\n"
 # The Pulumi State Backend Selection screen may appear before the wizard if the
 # template includes PULUMI_CONFIG_PASSPHRASE and Pulumi is installed but not
 # logged in on the runner.
-# Note that git clone can take 60+ seconds or more on slower macOS runners,
-# plus CheckPulumiSetup adds up to 10s more.
-set timeout 180
 expect {
     "Pulumi State Backend Selection" {
         puts "Pulumi setup screen detected - selecting Login locally"
