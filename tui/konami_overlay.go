@@ -1,99 +1,21 @@
 package tui
 
-// Easter egg: entering the Konami code triggers a rocket animation.
+// Easter egg: the Konami code (↑ ↑ ↓ ↓ ← → ← → B A) triggers the rocket animation.
 // To remove: delete konami_overlay.go, konami.go, rocket.go, konami_test.go,
 // and the wrapWithKonamiOverlay call in program.go.
+// sequence_overlay.go can stay — it is general-purpose infrastructure.
 
-import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/datarobot/cli/internal/log"
-)
+import tea "github.com/charmbracelet/bubbletea"
 
-type konamiOverlay struct {
-	inner      tea.Model
-	konami     konamiDetector
-	rocket     *RocketModel
-	termWidth  int
-	termHeight int
-}
-
+// wrapWithKonamiOverlay wraps m in a sequenceOverlay that fires the rocket
+// animation when the Konami code is entered. To swap the animation for
+// something else, replace newRocketModel with a different overlayFactory.
+// To add more sequences, pass additional overlayTrigger values.
 func wrapWithKonamiOverlay(m tea.Model) tea.Model {
-	return &konamiOverlay{inner: m}
-}
-
-func (m *konamiOverlay) Init() tea.Cmd {
-	return m.inner.Init()
-}
-
-func (m *konamiOverlay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
-		m.termWidth = sizeMsg.Width
-		m.termHeight = sizeMsg.Height
-	}
-
-	if m.rocket != nil {
-		return m.updateRocket(msg)
-	}
-
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if cmd := m.handleKonami(keyMsg); cmd != nil {
-			return m, cmd
-		}
-	}
-
-	updated, cmd := m.inner.Update(msg)
-	m.inner = updated
-
-	return m, cmd
-}
-
-func (m *konamiOverlay) updateRocket(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Key presses are consumed by the overlay and not forwarded to the inner
-	// model. Any key dismisses the animation immediately.
-	if _, ok := msg.(tea.KeyMsg); ok {
-		m.rocket = nil
-
-		return m, nil
-	}
-
-	// Forward non-key messages to the inner model so background operations
-	// (e.g. network fetches, spinner ticks) continue during the animation.
-	innerUpdated, innerCmd := m.inner.Update(msg)
-	m.inner = innerUpdated
-
-	if _, ok := msg.(RocketDoneMsg); ok {
-		m.rocket = nil
-
-		return m, innerCmd
-	}
-
-	rocketUpdated, rocketCmd := m.rocket.Update(msg)
-	rocket := rocketUpdated.(RocketModel)
-	m.rocket = &rocket
-
-	return m, tea.Batch(rocketCmd, innerCmd)
-}
-
-func (m *konamiOverlay) handleKonami(keyMsg tea.KeyMsg) tea.Cmd {
-	if !m.konami.Feed(keyMsg) {
-		return nil
-	}
-
-	log.Info("Konami code activated!")
-
-	w := max(m.termWidth, 80)
-	h := max(m.termHeight, 24)
-
-	rocket := newRocketModel(w, h)
-	m.rocket = &rocket
-
-	return rocket.Init()
-}
-
-func (m *konamiOverlay) View() string {
-	if m.rocket != nil {
-		return m.rocket.View()
-	}
-
-	return m.inner.View()
+	return newSequenceOverlay(m, overlayTrigger{
+		detector: &konamiDetector{},
+		create: func(w, h int) tea.Model {
+			return newRocketModel(w, h)
+		},
+	})
 }
