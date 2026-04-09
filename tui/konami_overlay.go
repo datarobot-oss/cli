@@ -1,15 +1,15 @@
 package tui
 
 // Easter egg: entering the Konami code triggers a rocket animation.
-// To remove: delete easter_egg.go, konami.go, rocket.go, konami_test.go,
-// and the wrapWithEasterEgg call in program.go.
+// To remove: delete konami_overlay.go, konami.go, rocket.go, konami_test.go,
+// and the wrapWithKonamiOverlay call in program.go.
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/log"
 )
 
-type easterEggModel struct {
+type konamiOverlay struct {
 	inner      tea.Model
 	konami     konamiDetector
 	rocket     *RocketModel
@@ -17,15 +17,15 @@ type easterEggModel struct {
 	termHeight int
 }
 
-func wrapWithEasterEgg(m tea.Model) tea.Model {
-	return &easterEggModel{inner: m}
+func wrapWithKonamiOverlay(m tea.Model) tea.Model {
+	return &konamiOverlay{inner: m}
 }
 
-func (m *easterEggModel) Init() tea.Cmd {
+func (m *konamiOverlay) Init() tea.Cmd {
 	return m.inner.Init()
 }
 
-func (m *easterEggModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *konamiOverlay) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.termWidth = sizeMsg.Width
 		m.termHeight = sizeMsg.Height
@@ -47,9 +47,9 @@ func (m *easterEggModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *easterEggModel) updateRocket(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Key presses are consumed by the easter egg and not forwarded to the inner
-	// model. Enter (or any key) dismisses the animation immediately.
+func (m *konamiOverlay) updateRocket(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Key presses are consumed by the overlay and not forwarded to the inner
+	// model. Any key dismisses the animation immediately.
 	if _, ok := msg.(tea.KeyMsg); ok {
 		m.rocket = nil
 
@@ -74,7 +74,7 @@ func (m *easterEggModel) updateRocket(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(rocketCmd, innerCmd)
 }
 
-func (m *easterEggModel) handleKonami(keyMsg tea.KeyMsg) tea.Cmd {
+func (m *konamiOverlay) handleKonami(keyMsg tea.KeyMsg) tea.Cmd {
 	if !m.konami.Feed(keyMsg) {
 		return nil
 	}
@@ -90,7 +90,7 @@ func (m *easterEggModel) handleKonami(keyMsg tea.KeyMsg) tea.Cmd {
 	return rocket.Init()
 }
 
-func (m *easterEggModel) View() string {
+func (m *konamiOverlay) View() string {
 	if m.rocket != nil {
 		return m.rocket.View()
 	}
