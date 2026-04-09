@@ -48,7 +48,15 @@ func (m *easterEggModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *easterEggModel) updateRocket(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Always forward messages to the inner model so background operations
+	// Key presses are consumed by the easter egg and not forwarded to the inner
+	// model. Enter (or any key) dismisses the animation immediately.
+	if _, ok := msg.(tea.KeyMsg); ok {
+		m.rocket = nil
+
+		return m, nil
+	}
+
+	// Forward non-key messages to the inner model so background operations
 	// (e.g. network fetches, spinner ticks) continue during the animation.
 	innerUpdated, innerCmd := m.inner.Update(msg)
 	m.inner = innerUpdated
