@@ -106,8 +106,8 @@ func (m RocketModel) flyingView() string {
 	}
 
 	placeAt(m.row, "🚀")
-	placeAt(m.row+1, " ✨")
-	placeAt(m.row+2, "  ·")
+	placeAt(m.row+1, "✨")
+	placeAt(m.row+2, " ·")
 
 	return strings.Join(lines, "\n")
 }
