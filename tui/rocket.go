@@ -33,7 +33,6 @@ type RocketModel struct {
 	height int
 	row    int
 	phase  rocketPhase
-	done   bool
 }
 
 // RocketDoneMsg is sent when the rocket animation finishes, so the parent can resume.
@@ -72,8 +71,6 @@ func (m RocketModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case rocketDoneMsg:
-		m.done = true
-
 		return m, func() tea.Msg { return RocketDoneMsg{} }
 	}
 
