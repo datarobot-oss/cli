@@ -113,15 +113,17 @@ func (m RocketModel) flyingView() string {
 }
 
 func (m RocketModel) messageView() string {
-	msg := "Godspeed, Artemis II!"
+	msg1 := "The crew of Artemis II now bound for the moon."
+	msg2 := "Humanity's next great voyage begins."
 
 	style := lipgloss.NewStyle().
 		Foreground(GetAdaptiveColor(DrGreen, DrGreenDark)).
 		Bold(true)
 
-	rendered := style.Render(msg)
+	rendered := style.Render(msg1)
+	rendered += "\n\n" + style.Render(msg2)
 
-	pad := strings.Repeat(" ", max(0, (m.width-len(msg))/2))
+	pad := strings.Repeat(" ", max(0, (m.width-len(msg1))/2))
 	verticalPad := strings.Repeat("\n", max(0, m.height/2-1))
 
 	return verticalPad + pad + rendered
