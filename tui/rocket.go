@@ -136,9 +136,7 @@ func tickRocket() tea.Cmd {
 }
 
 func showMessageThenDone() tea.Cmd {
-	return func() tea.Msg {
-		<-time.After(rocketMessageDelay)
-
+	return tea.Tick(rocketMessageDelay, func(_ time.Time) tea.Msg {
 		return rocketDoneMsg{}
-	}
+	})
 }
