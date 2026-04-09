@@ -10,7 +10,7 @@ import (
 
 const (
 	rocketTickInterval = 60 * time.Millisecond
-	rocketMessageDelay = 1500 * time.Millisecond
+	rocketMessageDelay = 4000 * time.Millisecond
 )
 
 type (
@@ -120,13 +120,15 @@ func (m RocketModel) messageView() string {
 		Foreground(GetAdaptiveColor(DrGreen, DrGreenDark)).
 		Bold(true)
 
-	rendered := style.Render(msg1)
-	rendered += "\n\n" + style.Render(msg2)
+	center := func(s string) string {
+		pad := strings.Repeat(" ", max(0, (m.width-len(s))/2))
 
-	pad := strings.Repeat(" ", max(0, (m.width-len(msg1))/2))
+		return pad + style.Render(s)
+	}
+
 	verticalPad := strings.Repeat("\n", max(0, m.height/2-1))
 
-	return verticalPad + pad + rendered
+	return verticalPad + center(msg1) + "\n\n" + center(msg2)
 }
 
 func tickRocket() tea.Cmd {
