@@ -24,7 +24,11 @@ import (
 // checking for Ctrl-C and immediately quitting if detected. This guarantees
 // users can never get stuck in the program, regardless of what the model does.
 type InterruptibleModel struct {
-	Model tea.Model
+	Model      tea.Model
+	konami     konamiDetector
+	rocket     *RocketModel
+	termWidth  int
+	termHeight int
 }
 
 // NewInterruptibleModel wraps a model to ensure Ctrl-C always works everywhere.
@@ -43,6 +47,12 @@ func (m InterruptibleModel) Init() tea.Cmd {
 }
 
 func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Track terminal size for rocket animation
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.termWidth = sizeMsg.Width
+		m.termHeight = sizeMsg.Height
+	}
+
 	// Universal Ctrl-C handling - ALWAYS checked FIRST before any model logic
 	// This ensures users can always interrupt, regardless of nested components,
 	// screen state, or what the underlying model does
@@ -50,7 +60,30 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg.String() == "ctrl+c" {
 			// Log the interrupt for debugging purposes
 			log.Info("Ctrl-C detected, quitting...")
+
 			return m, tea.Quit
+		}
+	}
+
+	// When the rocket animation is running, route messages to it
+	if m.rocket != nil {
+		if _, ok := msg.(RocketDoneMsg); ok {
+			m.rocket = nil
+
+			return m, nil
+		}
+
+		updated, cmd := m.rocket.Update(msg)
+		rocket := updated.(RocketModel)
+		m.rocket = &rocket
+
+		return m, cmd
+	}
+
+	// Check for Konami code on key presses
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if cmd := m.handleKonami(keyMsg); cmd != nil {
+			return m, cmd
 		}
 	}
 
@@ -63,6 +96,26 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *InterruptibleModel) handleKonami(keyMsg tea.KeyMsg) tea.Cmd {
+	if !m.konami.Feed(keyMsg) {
+		return nil
+	}
+
+	log.Info("Konami code activated!")
+
+	w := max(m.termWidth, 80)
+	h := max(m.termHeight, 24)
+
+	rocket := newRocketModel(w, h)
+	m.rocket = &rocket
+
+	return rocket.Init()
+}
+
 func (m InterruptibleModel) View() string {
+	if m.rocket != nil {
+		return m.rocket.View()
+	}
+
 	return m.Model.View()
 }
