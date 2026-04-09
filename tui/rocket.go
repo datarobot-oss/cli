@@ -118,9 +118,10 @@ func (m RocketModel) messageView() string {
 		Bold(true)
 
 	center := func(s string) string {
-		pad := strings.Repeat(" ", max(0, (m.width-len(s))/2))
+		rendered := style.Render(s)
+		pad := strings.Repeat(" ", max(0, (m.width-lipgloss.Width(rendered))/2))
 
-		return pad + style.Render(s)
+		return pad + rendered
 	}
 
 	verticalPad := strings.Repeat("\n", max(0, m.height/2-1))
