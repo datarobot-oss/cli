@@ -35,9 +35,6 @@ type RocketModel struct {
 	phase  rocketPhase
 }
 
-// RocketDoneMsg is sent when the rocket animation finishes, so the parent can resume.
-type RocketDoneMsg struct{}
-
 func newRocketModel(width, height int) RocketModel {
 	return RocketModel{
 		width:  width,
@@ -71,7 +68,7 @@ func (m RocketModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case rocketDoneMsg:
-		return m, func() tea.Msg { return RocketDoneMsg{} }
+		return m, func() tea.Msg { return OverlayDoneMsg{} }
 	}
 
 	return m, nil
