@@ -88,7 +88,7 @@ func (m RocketModel) View() string {
 func (m RocketModel) flyingView() string {
 	lines := make([]string, m.height)
 
-	rocketCol := m.width/2 - 1
+	rocketCol := (m.width - 2) / 2
 
 	for i := range lines {
 		lines[i] = ""
