@@ -47,7 +47,7 @@ func Get(url, info string) (*http.Response, error) {
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
 	if config.IsAPIConsumerTrackingEnabled() {
-		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetUserAgentHeader())
+		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
 	}
 
 	if info != "" {

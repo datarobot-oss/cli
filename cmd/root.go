@@ -90,6 +90,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		// Store telemetry client in context for use by commands
 		cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
 
+		config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
+
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {

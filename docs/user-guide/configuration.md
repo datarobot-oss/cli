@@ -139,6 +139,8 @@ export DATAROBOT_CLI_FORCE_INTERACTIVE=true
 # API consumer tracking (default: true)
 # Set to false to disable the X-DataRobot-Api-Consumer-Trace header on API requests.
 # Matches the Python SDK's DATAROBOT_API_CONSUMER_TRACKING_ENABLED behavior.
+# When enabled, the header value identifies the command being run using dot-notation:
+#   datarobot.cli.<command>.<subcommand>  (e.g. datarobot.cli.templates.setup)
 export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 ```
 
