@@ -69,6 +69,13 @@ func GetUserAgentHeader() string {
 	return version.GetAppNameVersionText()
 }
 
+// IsAPIConsumerTrackingEnabled returns true if the X-DataRobot-Api-Consumer-Trace
+// header should be sent with API requests. Controlled by the
+// DATAROBOT_API_CONSUMER_TRACKING_ENABLED environment variable (default: true).
+func IsAPIConsumerTrackingEnabled() bool {
+	return viper.GetBool(APIConsumerTrackingEnabled)
+}
+
 func RedactedReqInfo(req *http.Request) string {
 	// Dump the request to a byte slice after cloning and removing Auth header
 	dumpReq := req.Clone(req.Context())

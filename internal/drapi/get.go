@@ -46,6 +46,10 @@ func Get(url, info string) (*http.Response, error) {
 	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
+	if config.IsAPIConsumerTrackingEnabled() {
+		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetUserAgentHeader())
+	}
+
 	if info != "" {
 		log.Infof("Fetching %s from: %s", info, url)
 	}

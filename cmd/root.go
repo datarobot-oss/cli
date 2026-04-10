@@ -211,6 +211,13 @@ func initializeConfig(cmd *cobra.Command) error {
 
 	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
 
+	// API consumer tracking is enabled by default.
+	// Set DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false to opt out,
+	// matching the Python SDK convention.
+	viper.SetDefault(config.APIConsumerTrackingEnabled, true)
+
+	_ = viper.BindEnv(config.APIConsumerTrackingEnabled, "DATAROBOT_API_CONSUMER_TRACKING_ENABLED")
+
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
 	// use the environment variable value
 	if configFilePath == "" {

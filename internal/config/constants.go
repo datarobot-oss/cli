@@ -17,4 +17,6 @@ package config
 const (
 	DataRobotURL    = "endpoint"
 	DataRobotAPIKey = "token"
+
+	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
 )

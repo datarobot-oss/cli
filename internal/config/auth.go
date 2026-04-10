@@ -62,6 +62,10 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	req.Header.Add("Authorization", bearer)
 	req.Header.Add("User-Agent", getUserAgent(ctx))
 
+	if IsAPIConsumerTrackingEnabled() {
+		req.Header.Add("X-DataRobot-Api-Consumer-Trace", getUserAgent(ctx))
+	}
+
 	log.Debug("Request Info: \n" + RedactedReqInfo(req))
 
 	client := &http.Client{

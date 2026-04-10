@@ -135,6 +135,11 @@ export EDITOR=nano
 
 # Force setup wizard to run even if already completed
 export DATAROBOT_CLI_FORCE_INTERACTIVE=true
+
+# API consumer tracking (default: true)
+# Set to false to disable the X-DataRobot-Api-Consumer-Trace header on API requests.
+# Matches the Python SDK's DATAROBOT_API_CONSUMER_TRACKING_ENABLED behavior.
+export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 ```
 
 ### Advanced flags
