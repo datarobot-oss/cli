@@ -61,10 +61,8 @@ func NewClient(props *CommonProperties) *Client {
 		return &Client{amp: nil, props: props}
 	}
 
-	config := types.Config{
-		APIKey: AmplitudeAPIKey,
-		Logger: &amplitudeLogger{},
-	}
+	config := amplitude.NewConfig(AmplitudeAPIKey)
+	config.Logger = &amplitudeLogger{}
 
 	client := amplitude.NewClient(config)
 
