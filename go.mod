@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
-	github.com/amplitude/analytics-go v1.3.0
+	github.com/amplitude/analytics-go v1.3.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
