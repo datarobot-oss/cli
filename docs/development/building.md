@@ -18,7 +18,7 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 
 ### Prerequisites
 
-- [Go 1.26.1+](https://golang.org/dl/)
+- [Go 1.26.2+](https://golang.org/dl/)
 - Git version control
 - [Task](https://taskfile.dev/installation/) (The task runner)
 
