@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
@@ -168,4 +169,52 @@ func (suite *APITestSuite) TestIsAPIConsumerTrackingEnabled() {
 
 	viper.Set(APIConsumerTrackingEnabled, false)
 	suite.False(IsAPIConsumerTrackingEnabled())
+}
+
+// TestCommandPathToTraceWithAliases verifies that cobra always resolves
+// command aliases to their canonical Use name before CommandPath() is called.
+// This means CommandPathToTrace never receives an alias string — cobra
+// normalises it first — so the trace always uses the canonical command name.
+func (suite *APITestSuite) TestCommandPathToTraceWithAliases() {
+	// Build a small cobra command tree that mirrors real CLI aliases:
+	//   root (Use: "dr")
+	//   └─ run (Use: "run", Aliases: ["r"])      → like dr run / dr r
+	//   └─ start (Use: "start", Aliases: ["quickstart"]) → like dr start / dr quickstart
+	//   └─ templates (Use: "templates", Aliases: ["template"])
+	//      └─ list (Use: "list")
+	root := &cobra.Command{Use: "dr"}
+
+	run := &cobra.Command{Use: "run [tasks]", Aliases: []string{"r"}}
+	start := &cobra.Command{Use: "start", Aliases: []string{"quickstart"}}
+	templates := &cobra.Command{Use: "templates", Aliases: []string{"template"}}
+	list := &cobra.Command{Use: "list"}
+
+	templates.AddCommand(list)
+	root.AddCommand(run, start, templates)
+
+	tests := []struct {
+		name          string
+		args          []string
+		expectedTrace string
+	}{
+		// Canonical invocations
+		{"canonical: dr run", []string{"run"}, "datarobot.cli.run"},
+		{"canonical: dr start", []string{"start"}, "datarobot.cli.start"},
+		{"canonical: dr templates list", []string{"templates", "list"}, "datarobot.cli.templates.list"},
+		// Cobra command aliases — CommandPath() must return the canonical name
+		{"alias: dr r → dr run", []string{"r"}, "datarobot.cli.run"},
+		{"alias: dr quickstart → dr start", []string{"quickstart"}, "datarobot.cli.start"},
+		{"alias: dr template list → dr templates list", []string{"template", "list"}, "datarobot.cli.templates.list"},
+	}
+
+	for _, tc := range tests {
+		suite.Run(tc.name, func() {
+			cmd, _, err := root.Find(tc.args)
+			suite.Require().NoError(err)
+			suite.Require().NotNil(cmd)
+
+			trace := CommandPathToTrace(cmd.CommandPath())
+			suite.Equal(tc.expectedTrace, trace)
+		})
+	}
 }
