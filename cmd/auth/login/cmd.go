@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	}
 
 	if url != "" {
-		err := config.SaveURLToConfig(url)
+		err := config.SetURLToConfig(url)
 		if err != nil {
 			log.Error(err.Error())
 		}

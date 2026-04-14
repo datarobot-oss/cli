@@ -69,6 +69,13 @@ func Get(url, info string) (*http.Response, error) {
 	return resp, err
 }
 
+// GetUserID returns a dummy user ID for telemetry.
+// TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
+// and the appropriate way to fetch the user ID for telemetry.
+func GetUserID(ctx context.Context) (string, error) {
+	return "unknown", nil
+}
+
 func GetJSON(url, info string, v any) error {
 	resp, err := Get(url, info)
 	if err != nil {

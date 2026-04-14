@@ -49,7 +49,6 @@ send -- "\r\n"
 # The Pulumi State Backend Selection screen may appear before the wizard if the
 # template includes PULUMI_CONFIG_PASSPHRASE and Pulumi is installed but not
 # logged in on the runner.
-set timeout 30
 expect {
     "Pulumi State Backend Selection" {
         puts "Pulumi setup screen detected - selecting Login locally"

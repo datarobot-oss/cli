@@ -40,7 +40,7 @@ This command helps you choose the correct DataRobot environment:
 			}
 
 			if url != "" {
-				err := config.SaveURLToConfig(url)
+				err := config.SetURLToConfig(url)
 				if err == nil {
 					_ = auth.EnsureAuthenticatedE(cmd, args)
 

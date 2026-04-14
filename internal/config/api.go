@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import (
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/viper"
 )
+
+const DRAPIURLSuffix = "/api/v2"
 
 var ErrInvalidURL = errors.New("Invalid URL.")
 
@@ -82,6 +84,8 @@ func RedactedReqInfo(req *http.Request) string {
 	return string(requestDump)
 }
 
+// TODO: I believe we want to delete this function as there is SetURLToConfig function
+// But it is used in cmd/templates/setup/model.go
 func SaveURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {
@@ -101,9 +105,23 @@ func SaveURLToConfig(newURL string) error {
 		return viper.WriteConfig()
 	}
 
-	viper.Set(DataRobotURL, newURL+"/api/v2")
+	viper.Set(DataRobotURL, newURL+DRAPIURLSuffix)
 
 	return viper.WriteConfig()
+}
+
+// SetURLToConfig is a helper function that sets the DataRobot URL with the DRAPIURLSuffix in the config object.
+// It is used by both cmd/auth/set-url and cmd/auth/login to ensure consistent URL formatting.
+// It does NOT write to the config file, in order not to break drconfig.yaml file once URL is not valid or some issues with API key.
+func SetURLToConfig(newURL string) error {
+	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
+	if err != nil {
+		return err
+	}
+
+	viper.Set(DataRobotURL, newURL+DRAPIURLSuffix)
+
+	return nil
 }
 
 func urlFromShortcut(selectedOption string) string {

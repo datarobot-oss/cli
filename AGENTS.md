@@ -11,7 +11,8 @@ Use Taskfile tasks rather than raw Go commands:
 | Command         | Description                                 |
 | --------------- | ------------------------------------------- |
 | `task build`    | Build the CLI binary (outputs to ./dist/dr) |
-| `task lint`     | Lint and format all code                    |
+| `task lint`     | Check for lint issues (read-only)           |
+| `task delint`   | Fix lint and formatting issues              |
 | `task test`     | Run tests with race detection and coverage  |
 | `task dev-init` | Initialize development environment          |
 | `task run`      | Run CLI directly via `go run`               |
@@ -66,15 +67,20 @@ func example() {
 
 ## Quality Tools
 
-All code must pass these tools without errors:
+**`task lint`** (check-only, non-modifying):
+- `go mod tidy -diff` - checks if go.mod/go.sum need updates
+- `gofumpt -l -d` - lists formatting issues and shows diffs
+- `go vet` - checks for suspicious constructs
+- `golangci-lint run` - comprehensive linting checks (includes wsl, revive, staticcheck)
+- `goreleaser check` - validates release configuration
 
-- `go mod tidy` - dependency management
-- `go fmt` - basic formatting
-- `go vet` - suspicious constructs
-- `golangci-lint` - comprehensive linting (includes wsl, revive, staticcheck)
-- `goreleaser check` - release configuration validation
+**`task delint`** (auto-fixes):
+- `go mod tidy` - fixes go.mod/go.sum
+- `go fmt` - fixes basic formatting
+- `gofumpt -l -w` - fixes aggressive Go formatting
+- `golangci-lint run --fix` - fixes linting issues where possible
 
-**Before submitting code, mentally verify it follows wsl (whitespace) rules.**
+All code must pass `task lint` before submitting.
 
 ### Updating golangci-lint
 
@@ -83,7 +89,7 @@ When upgrading the Go version in `go.mod`, you may need to update golangci-lint 
 1. Check the [golangci-lint releases](https://github.com/golangci/golangci-lint/releases) for a version that supports your target Go version
 2. Update the `GOLANGCI_LINT_VERSION` variable in `Taskfile.yaml`
 3. Run `task install-tools` to download the pre-built binary
-4. Run `task lint` to verify compatibility
+4. Run `task delint` to auto-fix any issues, then `task lint` to verify compatibility
 
 The `GOLANGCI_LINT_VERSION` is pinned to ensure reproducible builds across all development environments. The binary is installed as a standalone pre-built artifact, not via `go install`, so version mismatches between your project's Go version and golangci-lint's internal Go version are handled automatically.
 

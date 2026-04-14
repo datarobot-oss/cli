@@ -22,6 +22,8 @@ builds:
           -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
           -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
           -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
+          -X "github.com/datarobot/cli/internal/telemetry.AmplitudeAPIKey={{ if index .Env "AMPLITUDE_API_KEY" }}{{ .Env.AMPLITUDE_API_KEY }}{{ end }}"
+          -X "github.com/datarobot/cli/internal/telemetry.InstallMethod=release"
 
       goarch:
         - amd64

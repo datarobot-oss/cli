@@ -52,7 +52,7 @@ tasks:
   dev-init:
     silent: true
     desc: "Initialize development environment"
-    deps: [lint]
+    deps: [delint]
     cmds:
       - |
         export GOBIN={{.BIN_DIR}}
@@ -64,7 +64,23 @@ tasks:
 
   lint:
     silent: true
-    desc: "Lint the source code"
+    desc: "Check for lint issues (does not modify files)"
+    deps: [install-tools]
+    cmds:
+      - echo "🧹 Checking go.mod…"
+      - go mod tidy -diff
+      - echo "🧹 Checking formatting…"
+      - "{{.BIN_DIR}}/gofumpt -l -d ."
+      - echo "🧹 Vetting…"
+      - go vet ./...
+      - echo "🧹 Linting…"
+      - "{{.BIN_DIR}}/golangci-lint run ./..."
+      - echo "🧹 Checking GoReleaser config…"
+      - "{{.BIN_DIR}}/goreleaser check"
+
+  delint:
+    silent: true
+    desc: "Fix lint and formatting issues"
     deps: [install-tools]
     cmds:
       - echo "🧹 Cleaning go.mod…"
@@ -72,12 +88,8 @@ tasks:
       - echo "🧹 Formatting files…"
       - go fmt ./...
       - "{{.BIN_DIR}}/gofumpt -l -w ."
-      - echo "🧹 Vetting go.mod…"
-      - go vet ./...
-      - echo "🧹 GoCI Lint…"
-      - "{{.BIN_DIR}}/golangci-lint run ./..."
-      - echo "🧹 Check GoReleaser…"
-      - "{{.BIN_DIR}}/goreleaser check"
+      - echo "🧹 Fixing lint issues…"
+      - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
 
   run:
     silent: true

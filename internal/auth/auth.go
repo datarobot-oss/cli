@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -256,6 +256,11 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 }
 
 func WriteConfigFileSilent() error {
+	// Ensure the config directory and file exist before writing the config file
+	if err := config.CreateConfigFileDirIfNotExists(); err != nil {
+		return err
+	}
+
 	err := viper.WriteConfig()
 	if err != nil {
 		log.Error(err)
@@ -320,7 +325,7 @@ func SetURLAction() bool {
 				break
 			}
 
-			err = config.SaveURLToConfig(url)
+			err = config.SetURLToConfig(url)
 			if err != nil {
 				if errors.Is(err, config.ErrInvalidURL) {
 					fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
@@ -332,7 +337,7 @@ func SetURLAction() bool {
 				break
 			}
 
-			fmt.Println("Environment URL configured successfully!")
+			fmt.Println("Thank you for providing the URL. Validating it and retrieving your API key...")
 
 			return true
 		}

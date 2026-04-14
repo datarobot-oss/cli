@@ -34,6 +34,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -41,6 +42,9 @@ import (
 )
 
 var configFilePath string
+
+// telemetryClientKey is used to store the telemetry client in context
+type telemetryClientKey struct{}
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
@@ -69,10 +73,34 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		// before ANY command execution should go here.
 		log.Start()
 
-		return initializeConfig(cmd)
+		err := initializeConfig(cmd)
+		if err != nil {
+			return err
+		}
+
+		// Initialize telemetry client
+		// Check if enabled first to avoid unnecessary filesystem and network I/O.
+		var props *telemetry.CommonProperties
+		if telemetry.IsEnabled() {
+			props = telemetry.CollectCommonProperties()
+		}
+
+		client := telemetry.NewClient(props)
+
+		// Store telemetry client in context for use by commands
+		cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
+
+		return nil
 	},
-	PersistentPostRun: func(_ *cobra.Command, _ []string) {
+	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+		// Flush telemetry events before exit
+		if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
+			client.Flush(3 * time.Second)
+		}
+
 		log.Stop()
+
+		return nil
 	},
 }
 
@@ -105,6 +133,7 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
+	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 
 	// Make some of these flags available via Viper
 	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -115,6 +144,7 @@ func init() {
 	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 	_ = viper.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
 	_ = viper.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
+	_ = viper.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
