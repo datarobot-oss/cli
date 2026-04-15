@@ -185,7 +185,7 @@ test_brew_self_update() {
 
     echo "Installing dr-cli via brew..."
     brew tap datarobot-oss/taps 2>/dev/null || true
-    brew install --cask dr-cli 2>/dev/null || brew upgrade --cask dr-cli 2>/dev/null || true
+    brew install --cask dr-cli 2>/dev/null || brew reinstall --cask dr-cli 2>/dev/null || true
 
     # Find the brew-installed binary (cask installs to a predictable location)
     brew_dr=$(brew --prefix 2>/dev/null)/bin/dr
