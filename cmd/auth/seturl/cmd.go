@@ -42,6 +42,7 @@ This command helps you choose the correct DataRobot environment:
 			if url != "" {
 				err := config.SetURLToConfig(url)
 				if err == nil {
+					_ = auth.WriteConfigFileSilent()
 					_ = auth.EnsureAuthenticatedE(cmd, args)
 
 					return
@@ -51,6 +52,7 @@ This command helps you choose the correct DataRobot environment:
 			urlChanged := auth.SetURLAction()
 
 			if urlChanged {
+				_ = auth.WriteConfigFileSilent()
 				_ = auth.EnsureAuthenticatedE(cmd, args)
 			}
 		},
