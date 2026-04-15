@@ -187,8 +187,7 @@ test_brew_self_update() {
     brew tap datarobot-oss/taps 2>/dev/null || true
     # Uninstall any existing installation first to avoid same-version no-op behavior
     brew uninstall --cask dr-cli 2>/dev/null || true
-    # Use --no-quarantine to avoid Gatekeeper issues in CI environments
-    if ! brew install --cask dr-cli --no-quarantine; then
+    if ! brew install --cask dr-cli; then
         echo "⏭️  TEST 3 SKIPPED: brew install dr-cli failed (incompatible CI environment)."
         return 0
     fi
