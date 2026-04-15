@@ -2,6 +2,11 @@ name: Self-Update Smoke Tests Matrix
 
 on:
   workflow_call:
+    inputs:
+      debug_brew:
+        description: 'Enable verbose brew debug step on macOS'
+        type: boolean
+        default: false
 
 jobs:
   self-update-tests:
@@ -22,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Debug brew environment (macOS only)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && inputs.debug_brew
         run: |
           echo "=== Homebrew version ==="
           brew --version
