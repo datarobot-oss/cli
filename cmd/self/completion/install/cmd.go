@@ -311,33 +311,37 @@ func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 		// Check if bash-completion is available
 		if !isBashCompletionAvailable() {
 			fmt.Println()
-			fmt.Printf("%s Bash completion framework not detected.\n", warnStyle.Render("⚠"))
+			fmt.Printf("%s Shell completions were not installed.\n", warnStyle.Render("⚠  Skipped:"))
 			fmt.Println()
-			fmt.Println("Bash completions require the bash-completion package.")
-			fmt.Println()
-			fmt.Println("To install:")
+			fmt.Println("Bash completions require the " + infoStyle.Render("bash-completion") + " package, which was not detected.")
 			fmt.Println()
 
 			if runtime.GOOS == "darwin" {
-				fmt.Println(infoStyle.Render("  # macOS (Homebrew)"))
+				fmt.Println("Install it with Homebrew:")
+				fmt.Println()
 				fmt.Println(infoStyle.Render("  brew install bash-completion@2"))
 				fmt.Println()
-				fmt.Println(infoStyle.Render("  # Then add to ~/.bash_profile:"))
+				fmt.Println("Then add the following to your " + infoStyle.Render("~/.bash_profile") + " or " + infoStyle.Render("~/.bashrc") + ":")
+				fmt.Println()
 				fmt.Println(infoStyle.Render(`  export BASH_COMPLETION_COMPAT_DIR="/opt/homebrew/etc/bash_completion.d"`))
 				fmt.Println(infoStyle.Render(`  [[ -r "/opt/homebrew/etc/profile.d/bash_completion.sh" ]] && . "/opt/homebrew/etc/profile.d/bash_completion.sh"`))
 			} else {
+				fmt.Println("Install it with your package manager:")
+				fmt.Println()
 				fmt.Println(infoStyle.Render("  # Ubuntu/Debian"))
 				fmt.Println(infoStyle.Render("  sudo apt-get install bash-completion"))
 				fmt.Println()
-				fmt.Println(infoStyle.Render("  # RHEL/CentOS"))
+				fmt.Println(infoStyle.Render("  # RHEL/CentOS/Fedora"))
 				fmt.Println(infoStyle.Render("  sudo yum install bash-completion"))
 			}
 
 			fmt.Println()
-			fmt.Println("After installing bash-completion, run this command again.")
+			fmt.Printf("Once installed, run %s to set up completions.\n", infoStyle.Render(version.CliName+" self completion install --yes"))
 			fmt.Println()
 
-			return errors.New("Bash-completion not available.")
+			// Not an error — prerequisites just aren't met yet. Exit cleanly so
+			// package managers (e.g. Homebrew cask hooks) don't roll back the install.
+			return nil
 		}
 
 		// Create directory

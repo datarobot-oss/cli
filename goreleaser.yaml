@@ -84,12 +84,12 @@ homebrew_casks:
             system_command "/bin/ln", args: ["-sf", "#{HOMEBREW_PREFIX}/bin/dr", "#{HOMEBREW_PREFIX}/bin/datarobot"]
             system_command "xattr", args: ["-dr", "com.apple.quarantine", "#{HOMEBREW_PREFIX}/bin/datarobot"]
             system_command "xattr", args: ["-dr", "com.apple.quarantine", "#{HOMEBREW_PREFIX}/bin/dr"]
-            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "install", "--yes"]
+            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "install", "--yes"], must_succeed: false
           end
       pre:
         uninstall: |
           if OS.mac?
-            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "uninstall", "--yes"]
+            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "uninstall", "--yes"], must_succeed: false
             symlink = Pathname.new("#{HOMEBREW_PREFIX}/bin/datarobot")
             symlink.delete if symlink.symlink?
           end
