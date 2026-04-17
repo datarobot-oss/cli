@@ -110,6 +110,14 @@ tasks:
       - "{{.BIN_DIR}}/jscpd --version"
       - "{{.BIN_DIR}}/lefthook version"
 
+  format-md-tables:
+    silent: true
+    desc: "Format markdown tables"
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - sh -c 'cd tools/mdformat && go build -o ../../{{.BIN_DIR}}/mdformat main.go'
+      - "{{.BIN_DIR}}/mdformat ."
+
   uninstall-tools:
     silent: true
     desc: "Uninstall static checkers & other binaries"
@@ -156,6 +164,10 @@ tasks:
     desc: "Check for lint issues (does not modify files)"
     deps: [install-tools]
     cmds:
+      - echo "🧹 Checking markdown tables…"
+      - mkdir -p {{.BIN_DIR}}
+      - sh -c 'cd tools/mdformat && go build -o ../../{{.BIN_DIR}}/mdformat main.go'
+      - "{{.BIN_DIR}}/mdformat -check ."
       - echo "🧹 Checking go.mod…"
       - go mod tidy -diff
       - echo "🧹 Checking formatting…"
@@ -171,6 +183,7 @@ tasks:
     desc: "Fix lint and formatting issues"
     deps: [install-tools]
     cmds:
+      - task format-md-tables
       - echo "🧹 Cleaning go.mod…"
       - go mod tidy
       - echo "🧹 Formatting files…"
