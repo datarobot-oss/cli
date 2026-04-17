@@ -114,9 +114,7 @@ tasks:
     silent: true
     desc: "Format markdown tables"
     cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - sh -c 'cd tools/mdformat && go build -o ../../{{.BIN_DIR}}/mdformat main.go'
-      - "{{.BIN_DIR}}/mdformat ."
+      - sh -c 'cd tools/mdformat && go run . ../../..'
 
   uninstall-tools:
     silent: true
