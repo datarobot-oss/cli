@@ -19,7 +19,11 @@ the review may happen while you are asleep / otherwise not able to respond quick
 - `run-smoke-tests` or `go` - Run smoke tests on demand (only works for non-forked PRs)
 
 > [!IMPORTANT]
-> **For Forked PRs:** If you're an external contributor, the `run-smoke-tests` label won't work. A maintainer must manually trigger the "Fork PR Smoke Tests" workflow from the Actions tab, providing your PR number. Please comment requesting a maintainer review if you need smoke tests to run.
+> **For Forked PRs:** The `run-smoke-tests` label won't work. A required **Smoke Tests** check will block merge until a maintainer acts:
+> - A maintainer uses `/approve-smoke-tests` to run smoke tests (results will set the check)
+> - A maintainer uses `/skip-smoke-tests` to bypass the check without running tests
+>
+> Please comment requesting a maintainer review if you need smoke tests to run.
 
 
 <!-- Recommended Additional Sections:

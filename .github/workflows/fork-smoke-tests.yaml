@@ -97,13 +97,35 @@ jobs:
     needs: [resolve-pr, security-scan]
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      pull-requests: read
       issues: write
     steps:
       - name: Notify smoke tests started
         uses: actions/github-script@v7
         with:
           script: |
+            // Check if any changed files are under .github/
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ inputs.pr_number }},
+            });
+            const githubDirChanged = files.some(f => f.filename.startsWith('.github/'));
+
+            let warning = '';
+            if (githubDirChanged) {
+              const changedWorkflows = files
+                .filter(f => f.filename.startsWith('.github/'))
+                .map(f => `  - \`${f.filename}\``)
+                .join('\n');
+              warning = '\n\n> [!WARNING]\n' +
+                        '> **This PR modifies files under `.github/`**, which may alter CI workflows, ' +
+                        'branch protection rules, or secrets handling. Review these changes carefully ' +
+                        'before proceeding — malicious workflow changes could exfiltrate secrets.\n>\n' +
+                        '> Changed files:\n' +
+                        changedWorkflows.split('\n').map(l => '> ' + l).join('\n');
+            }
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -111,7 +133,8 @@ jobs:
               body: '🔐 **Fork smoke tests started by maintainer**\n\n' +
                     '⏳ Security scans passed. Running smoke tests...\n\n' +
                     `Commit: \`${{ needs.resolve-pr.outputs.sha }}\`\n` +
-                    `[View run](${context.payload.repository.html_url}/actions/runs/${context.runId})`
+                    `[View run](${context.payload.repository.html_url}/actions/runs/${context.runId})` +
+                    warning
             });
 
   linux-smoke-tests:
@@ -137,6 +160,7 @@ jobs:
     permissions:
       pull-requests: write
       issues: write
+      statuses: write
     steps:
       - name: Comment on PR with results
         uses: actions/github-script@v7
@@ -169,4 +193,22 @@ jobs:
                     `${windowsEmoji} Windows: ${windowsStatus}\n\n` +
                     `[View run details](${context.payload.repository.html_url}/actions/runs/${context.runId})` +
                     failureNote
+            });
+
+      - name: Update Smoke Tests commit status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const securityStatus = '${{ needs.security-scan.result }}';
+            const linuxStatus = '${{ needs.linux-smoke-tests.result }}';
+            const windowsStatus = '${{ needs.windows-smoke-tests.result }}';
+            const allPassed = securityStatus === 'success' && linuxStatus === 'success' && windowsStatus === 'success';
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.resolve-pr.outputs.sha }}',
+              state: allPassed ? 'success' : 'failure',
+              context: 'Smoke Tests',
+              description: allPassed ? 'All smoke tests passed' : 'Smoke tests failed',
             });
