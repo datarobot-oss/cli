@@ -183,7 +183,6 @@ tasks:
     desc: "Fix lint and formatting issues"
     deps: [install-tools]
     cmds:
-      - task format-md-tables
       - echo "🧹 Cleaning go.mod…"
       - go mod tidy
       - echo "🧹 Formatting files…"
@@ -191,6 +190,7 @@ tasks:
       - task: lint-goos
         vars:
           LINT_ARGS: "--fix"
+      - task: format-md-tables
 
   # CFX-7138: run golangci-lint once per target GOOS so build-constrained files
   # (*_windows.go, //go:build linux, …) are enforced no matter which OS the
