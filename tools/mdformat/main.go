@@ -24,6 +24,8 @@ import (
 	"github.com/fbiville/markdown-table-formatter/pkg/markdown"
 )
 
+// mdformat is a simple CLI tool to format Markdown files, with a focus on aligning tables.
+// It is inspired by Obsidian.
 func main() {
 	checkMode := flag.Bool("check", false, "check mode: exit with code 1 if files need formatting")
 	flag.Parse()
@@ -136,7 +138,7 @@ func formatMarkdown(content string) string {
 		}
 	}
 
-	return strings.TrimSuffix(result.String(), "\n")
+	return result.String()
 }
 
 func isTableLine(line string) bool {
