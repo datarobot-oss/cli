@@ -118,20 +118,20 @@ task --list
 
 ### Common tasks
 
-| Task | Description |
-| ------ | ------------- |
-| `task bootstrap` | Set up complete dev environment (verify Go, tools, hooks, build). |
-| `task build` | Build the CLI binary. |
-| `task test` | Run all tests. |
-| `task test-coverage` | Run tests with a coverage report. |
-| `task lint` | Run linters and code formatters. |
-| `task fmt` | Format code. |
-| `task clean` | Cleanly build artifacts. |
-| `task dev-init` | Set up a development environment. |
-| `task install-tools` | Install development tools. |
-| `task run` | Run the CLI without building (e.g., `task run -- templates list`). |
-| `task dupcheck` | Check for duplicate code (jscpd). |
-| `task precommit` | Run pre-commit checks (format, tidy, vet, lint new changes). |
+| Task                 | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `task bootstrap`     | Set up complete dev environment (verify Go, tools, hooks, build).  |
+| `task build`         | Build the CLI binary.                                              |
+| `task test`          | Run all tests.                                                     |
+| `task test-coverage` | Run tests with a coverage report.                                  |
+| `task lint`          | Run linters and code formatters.                                   |
+| `task fmt`           | Format code.                                                       |
+| `task clean`         | Cleanly build artifacts.                                           |
+| `task dev-init`      | Set up a development environment.                                  |
+| `task install-tools` | Install development tools.                                         |
+| `task run`           | Run the CLI without building (e.g., `task run -- templates list`). |
+| `task dupcheck`      | Check for duplicate code (jscpd).                                  |
+| `task precommit`     | Run pre-commit checks (format, tidy, vet, lint new changes).       |
 
 ## Build the CLI
 
