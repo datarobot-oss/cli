@@ -44,8 +44,9 @@ header:
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
     - 'internal/workload/wapi/drignore.tmpl'
-    - '**.sum'
+    - 'go.sum'
     - 'go.mod'
     - 'tools/mdformat/go.mod'
+    - 'tools/mdformat/go.sum'
 
   comment: on-failure
