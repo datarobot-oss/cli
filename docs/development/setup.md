@@ -76,17 +76,17 @@ task --list
 
 ### Common tasks
 
-| Task | Description |
-| ------ | ------------- |
-| `task build` | Build the CLI binary. |
-| `task test` | Run all tests. |
-| `task test-coverage` | Run tests with a coverage report. |
-| `task lint` | Run linters and code formatters. |
-| `task fmt` | Format code. |
-| `task clean` | Cleanly build artifacts. |
-| `task dev-init` | Set up a development environment. |
-| `task install-tools` | Install development tools. |
-| `task run` | Run the CLI without building (e.g., `task run -- templates list`). |
+| Task                 | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `task build`         | Build the CLI binary.                                              |
+| `task test`          | Run all tests.                                                     |
+| `task test-coverage` | Run tests with a coverage report.                                  |
+| `task lint`          | Run linters and code formatters.                                   |
+| `task fmt`           | Format code.                                                       |
+| `task clean`         | Cleanly build artifacts.                                           |
+| `task dev-init`      | Set up a development environment.                                  |
+| `task install-tools` | Install development tools.                                         |
+| `task run`           | Run the CLI without building (e.g., `task run -- templates list`). |
 
 ## Build the CLI
 

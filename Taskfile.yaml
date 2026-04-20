@@ -41,6 +41,12 @@ tasks:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
 
+  format-md-tables:
+    silent: true
+    desc: "Format markdown tables"
+    cmds:
+      - sh -c 'cd tools/mdformat && go run . ../../..'
+
   uninstall-tools:
     silent: true
     desc: "Uninstall static checkers & other binaries"
@@ -67,6 +73,10 @@ tasks:
     desc: "Check for lint issues (does not modify files)"
     deps: [install-tools]
     cmds:
+      - echo "🧹 Checking markdown tables…"
+      - mkdir -p {{.BIN_DIR}}
+      - sh -c 'cd tools/mdformat && go build -o ../../{{.BIN_DIR}}/mdformat main.go'
+      - "{{.BIN_DIR}}/mdformat -check ."
       - echo "🧹 Checking go.mod…"
       - go mod tidy -diff
       - echo "🧹 Checking formatting…"
@@ -90,6 +100,7 @@ tasks:
       - "{{.BIN_DIR}}/gofumpt -l -w ."
       - echo "🧹 Fixing lint issues…"
       - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
+      - task format-md-tables
 
   run:
     silent: true

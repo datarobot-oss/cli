@@ -527,11 +527,11 @@ Error: required variable DATABASE_URL is not set
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success. |
-| 1 | Error (file not found, validation failed, not in repo). |
-| 130 | Interrupted (Ctrl+C). |
+| Code | Meaning                                                 |
+| ---- | ------------------------------------------------------- |
+| 0    | Success.                                                |
+| 1    | Error (file not found, validation failed, not in repo). |
+| 130  | Interrupted (Ctrl+C).                                   |
 
 ## Examples
 

@@ -42,5 +42,9 @@ header:
   paths-ignore:
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
+    - 'go.sum'
+    - 'go.mod'
+    - 'tools/mdformat/go.mod'
+    - 'tools/mdformat/go.sum'
 
   comment: on-failure

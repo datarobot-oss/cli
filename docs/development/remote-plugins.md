@@ -157,25 +157,25 @@ This pattern:
 
 ## Files created
 
-| File | Purpose |
-|------|---------|
-| `docs/plugins/index.json` | Remote plugin registry |
-| `cmd/plugin/install/cmd.go` | Install command |
-| `cmd/plugin/uninstall/cmd.go` | Uninstall command |
-| `cmd/plugin/update/cmd.go` | Update command |
-| `internal/plugin/remote.go` | Remote fetch & install logic |
-| `internal/plugin/types.go` | Extended type definitions |
-| `cmd/self/plugin/package/cmd.go` | Package command |
-| `cmd/self/plugin/add/cmd.go` | Add to registry command |
+| File                             | Purpose                      |
+| -------------------------------- | ---------------------------- |
+| `docs/plugins/index.json`        | Remote plugin registry       |
+| `cmd/plugin/install/cmd.go`      | Install command              |
+| `cmd/plugin/uninstall/cmd.go`    | Uninstall command            |
+| `cmd/plugin/update/cmd.go`       | Update command               |
+| `internal/plugin/remote.go`      | Remote fetch & install logic |
+| `internal/plugin/types.go`       | Extended type definitions    |
+| `cmd/self/plugin/package/cmd.go` | Package command              |
+| `cmd/self/plugin/add/cmd.go`     | Add to registry command      |
 | `cmd/self/plugin/publish/cmd.go` | Publish command (all-in-one) |
 
 ## Files modified
 
-| File | Changes |
-|------|---------|
-| `cmd/plugin/cmd.go` | Register new subcommands |
+| File                          | Changes                        |
+| ----------------------------- | ------------------------------ |
+| `cmd/plugin/cmd.go`           | Register new subcommands       |
 | `internal/plugin/discover.go` | Scan managed plugins directory |
-| `internal/repo/paths.go` | Added `ManagedPluginsDir()` |
+| `internal/repo/paths.go`      | Added `ManagedPluginsDir()`    |
 
 ## Usage examples
 
