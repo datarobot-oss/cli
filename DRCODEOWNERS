@@ -1,1 +1,3 @@
 * @datarobot/applications
+cmd/workload/ @datarobot/genai-systems
+internal/workload/ @datarobot/genai-systems

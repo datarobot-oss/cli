@@ -12,28 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package artifact
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/internal/features"
+	"github.com/datarobot/cli/cmd/workload/artifact/get"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "workload",
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
-
-Manage and monitor workloads in your deployment infrastructure.`,
+		Use:   "artifact",
+		Short: "Manage workload artifacts",
+		Long:  `Manage workload artifacts in your DataRobot deployment infrastructure.`,
 	}
 
-	features.SetGate(cmd, "workload")
-
 	cmd.AddCommand(
-		artifact.Cmd(),
+		get.Cmd(),
 	)
 
 	return cmd
