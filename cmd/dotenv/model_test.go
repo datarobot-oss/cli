@@ -464,17 +464,17 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
 	os.Remove(fm.DotenvFile)
 }
 
-func (suite *DotenvModelTestSuite) TestDotenvModel_NonInteractive() {
-	// This test validates that when NonInteractive is true:
+func (suite *DotenvModelTestSuite) TestDotenvModel_Yes() {
+	// This test validates that when Yes is true:
 	// 1. The wizard is not shown
 	// 2. All prompts are auto-populated with defaults (or empty strings)
 	// 3. The file is saved automatically
 	// 4. The model exits immediately without waiting for user confirmation
 	tm := suite.NewTestModel(Model{
-		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
-		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
-		NonInteractive: true,
+		screen:        wizardScreen,
+		initialScreen: wizardScreen,
+		DotenvFile:    filepath.Join(suite.tempDir, ".env"),
+		Yes:           true,
 	})
 
 	// Wait a moment for the async save operation to complete before quitting
@@ -500,31 +500,31 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_NonInteractive() {
 	os.Remove(fm.DotenvFile)
 }
 
-func (suite *DotenvModelTestSuite) TestNonInteractive_ViperBinding() {
-	// This test validates that the --non-interactive flag can be controlled
+func (suite *DotenvModelTestSuite) TestYes_ViperBinding() {
+	// This test validates that the --yes flag can be controlled
 	// via the DATAROBOT_CLI_NON_INTERACTIVE environment variable through viper binding.
 
 	// Reset viper and bind the flag to simulate what happens in init()
 	// This mimics the actual command initialization
-	_ = viper.BindEnv("non-interactive", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viper.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	// Test that env var enables the flag
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
 
-	suite.True(viper.GetBool("non-interactive"), "Expected viper to read env var as true")
+	suite.True(viper.GetBool("yes"), "Expected viper to read env var as true")
 
 	// Test that "1" also works
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
 
-	suite.True(viper.GetBool("non-interactive"), "Expected viper to read '1' as true")
+	suite.True(viper.GetBool("yes"), "Expected viper to read '1' as true")
 
 	// Test that it's false when not set
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "")
 
-	suite.False(viper.GetBool("non-interactive"), "Expected viper to read empty as false")
+	suite.False(viper.GetBool("yes"), "Expected viper to read empty as false")
 
 	// Test that "false" works
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "false")
 
-	suite.False(viper.GetBool("non-interactive"), "Expected viper to read 'false' as false")
+	suite.False(viper.GetBool("yes"), "Expected viper to read 'false' as false")
 }

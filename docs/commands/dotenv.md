@@ -55,7 +55,7 @@ dr dotenv setup [--if-needed]
 **Flags:**
 
 - `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
-- `--non-interactive`&mdash;Skip interactive prompts and auto-populate all environment variables with their default values (or empty strings if no default is provided). This is useful for CI/CD pipelines, automated testing, or quick development setup where you want to use all defaults. Variables with `generate: true` will still have random values auto-generated. Can also be enabled via `DATAROBOT_CLI_NON_INTERACTIVE=true` environment variable.
+- `-y, --yes`&mdash;Skip interactive prompts and auto-populate all environment variables with their default values (or empty strings if no default is provided). This is useful for CI/CD pipelines, automated testing, or quick development setup where you want to use all defaults. Variables with `generate: true` will still have random values auto-generated. Can also be enabled via `DATAROBOT_CLI_NON_INTERACTIVE=true` environment variable.
 - `-a, --all`&mdash;Show all prompts in the wizard, including those with default values already set. By default, prompts with defaults are skipped.
 
 **State tracking:**
@@ -91,7 +91,7 @@ dr dotenv setup --if-needed
 Auto-populate with defaults (no interaction):
 ```bash
 cd my-template
-dr dotenv setup --non-interactive
+dr dotenv setup --yes
 # Creates .env file with all defaults (or empty values), skips wizard entirely
 ```
 
@@ -124,16 +124,16 @@ This makes `--if-needed` ideal for:
 - **Onboarding workflows** that intelligently skip already-completed steps.
 - **Idempotent operations** that can be safely run multiple times.
 
-**How `--non-interactive` works:**
+**How `--yes` works:**
 
-When the `--non-interactive` flag is set, the command skips the interactive wizard entirely and auto-populates all environment variables:
+When the `--yes` flag is set, the command skips the interactive wizard entirely and auto-populates all environment variables:
 
 - ✅ **Uses default values** for all prompts that have a `default:` specified in the YAML configuration.
 - ✅ **Sets empty strings** for prompts without defaults (unless they already have values from environment or existing `.env`).
 - ✅ **Auto-generates secrets** for prompts with `generate: true` (e.g., session secrets, encryption keys).
 - ✅ **Preserves existing values** from environment variables or the existing `.env` file.
 
-This makes `--non-interactive` ideal for:
+This makes `--yes` ideal for:
 - **CI/CD pipelines** that need predictable, non-interactive setup.
 - **Development environments** where defaults are sufficient for local testing.
 - **Automated testing** where you want a quick scaffold of all variables.
