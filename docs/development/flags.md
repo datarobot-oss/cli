@@ -166,15 +166,6 @@ cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
 1. Load all plugin metadata from a JSON file (`--from-file`)
 2. Specify all fields manually (requires all five flags together)
 
-### Component update command (cmd/component/update/cmd.go)
-
-```go
-// Different operations
-cmd.MarkFlagsMutuallyExclusive("recopy", "vcs-ref")
-```
-
-**Rationale:** `--recopy` regenerates an existing component, while `--vcs-ref` selects a specific git reference.
-
 ### Dotenv setup command (cmd/dotenv/cmd.go)
 
 ```go
