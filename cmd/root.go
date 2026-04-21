@@ -17,11 +17,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"os"
-
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
@@ -113,9 +113,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			return nil
 		},
-	},
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return cmd.Help()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 	},
 }
 
@@ -273,8 +273,7 @@ func showFirstRunAnimation() {
 
 	m := tui.NewLogoAnimationModel()
 
-	_, _ = tui.Run(m)
+	_, _ = tui.Run(m, tea.WithAltScreen())
 
 	state.MarkAnimationShown()
 }
-

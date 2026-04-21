@@ -13,8 +13,8 @@ func TestNewLogoAnimationModel(t *testing.T) {
 	assert.Len(t, m.bars, len(pictogramLines), "one spring per pictogram line")
 	assert.Equal(t, 0, m.phase)
 	assert.False(t, m.Done)
-	assert.False(t, m.bars[0].fromRight)
-	assert.True(t, m.bars[1].fromRight)
+	assert.False(t, m.bars[0].started)
+	assert.False(t, m.bars[1].started)
 }
 
 func TestLogoAnimationSkipOnKeyPress(t *testing.T) {
@@ -25,7 +25,7 @@ func TestLogoAnimationSkipOnKeyPress(t *testing.T) {
 	result := updated.(LogoAnimationModel)
 
 	assert.True(t, result.Done)
-	assert.Equal(t, 3, result.phase)
+	assert.Equal(t, 4, result.phase)
 	assert.NotNil(t, cmd)
 
 	for _, bar := range result.bars {
@@ -57,33 +57,24 @@ func TestLogoAnimationBarsConverge(t *testing.T) {
 	}
 }
 
-func TestLogoAnimationTextFadePhase(t *testing.T) {
+func TestLogoAnimationTextFadesWithBars(t *testing.T) {
 	m := NewLogoAnimationModel()
-	m.phase = 1
-	m.frame = 200
 
-	for i := range m.bars {
-		m.bars[i].pos = 0
-		m.bars[i].vel = 0
-	}
+	assert.Zero(t, m.textOpacity)
 
-	for i := 0; i < 30; i++ {
+	// Text opacity increases during phase 0 alongside bar animation.
+	for i := 0; i < 10; i++ {
 		updated, _ := m.Update(logoTickMsg{})
-
 		m = updated.(LogoAnimationModel)
-
-		if m.phase >= 2 {
-			break
-		}
 	}
 
-	assert.Equal(t, 2, m.phase)
-	assert.InDelta(t, 1.0, m.textOpacity, 0.001)
+	assert.Greater(t, m.textOpacity, 0.0)
+	assert.Equal(t, 0, m.phase, "still in phase 0 during early ticks")
 }
 
 func TestLogoAnimationDonePhase(t *testing.T) {
 	m := NewLogoAnimationModel()
-	m.phase = 3
+	m.phase = 4
 
 	updated, cmd := m.Update(logoTickMsg{})
 
@@ -97,6 +88,7 @@ func TestLogoAnimationViewShowsPictogram(t *testing.T) {
 	m := NewLogoAnimationModel()
 
 	for i := range m.bars {
+		m.bars[i].started = true
 		m.bars[i].pos = 0
 		m.bars[i].vel = 0
 	}
@@ -128,7 +120,7 @@ func TestLogoAnimationViewShowsTextAndWelcome(t *testing.T) {
 
 func TestLogoAnimationViewNoSkipWhenDone(t *testing.T) {
 	m := NewLogoAnimationModel()
-	m.phase = 3
+	m.phase = 4
 
 	view := m.View()
 

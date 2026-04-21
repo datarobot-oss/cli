@@ -19,8 +19,8 @@ const (
 	animFrameDelay = time.Second / animFPS
 	springFreq     = 5.5
 	springDamping  = 0.35
-	staggerFrames  = 5
-	slideDistance   = 30.0
+	staggerFrames  = 4
+	slideDistance  = 30.0
 	settledThresh  = 0.3
 )
 
@@ -40,9 +40,9 @@ var pictogramLines = []string{
 
 // pictoBar tracks per-line spring animation state.
 type pictoBar struct {
-	fromRight bool
-	pos       float64
-	vel       float64
+	started bool
+	pos     float64
+	vel     float64
 }
 
 // LogoAnimationModel animates a compact DataRobot logo using spring physics.
@@ -50,12 +50,17 @@ type LogoAnimationModel struct {
 	bars   []pictoBar
 	spring harmonica.Spring
 
-	frame       int
-	phase       int     // 0=bars-slide, 1=text-fade, 2=welcome, 3=done
-	textOpacity float64 // 0..1 for "DataRobot" text
-	welcomePos  float64
-	welcomeVel  float64
-	Done        bool
+	width  int
+	height int
+
+	frame        int
+	phase        int     // 0=bars-slide+text-fade, 2=welcome, 3=slide-out, 4=done
+	textOpacity  float64 // 0..1 for "DataRobot" text
+	welcomePos   float64
+	welcomeVel   float64
+	slideOutVPos float64 // 0.5=centre→0.0=top, animated during phase 3
+	slideOutStep float64 // per-frame step, increases each frame (acceleration)
+	Done         bool
 }
 
 // NewLogoAnimationModel creates a new compact logo animation model.
@@ -63,17 +68,17 @@ func NewLogoAnimationModel() LogoAnimationModel {
 	bars := make([]pictoBar, len(pictogramLines))
 
 	for i := range bars {
-		if i%2 == 0 {
-			bars[i] = pictoBar{fromRight: false, pos: -slideDistance}
-		} else {
-			bars[i] = pictoBar{fromRight: true, pos: slideDistance}
-		}
+		bars[i] = pictoBar{started: false, pos: slideDistance}
 	}
 
 	return LogoAnimationModel{
-		bars:       bars,
-		spring:     harmonica.NewSpring(harmonica.FPS(animFPS), springFreq, springDamping),
-		welcomePos: 3.0,
+		bars:         bars,
+		spring:       harmonica.NewSpring(harmonica.FPS(animFPS), springFreq, springDamping),
+		width:        80,
+		height:       24,
+		welcomePos:   3.0,
+		slideOutVPos: 0.5,
+		slideOutStep: 0.008,
 	}
 }
 
@@ -84,8 +89,16 @@ func (m LogoAnimationModel) Init() tea.Cmd {
 }
 
 func (m LogoAnimationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		return m, nil
+
 	case tea.KeyMsg:
+		_ = msg
+
 		m.skipToEnd()
 
 		return m, tea.Quit
@@ -99,9 +112,10 @@ func (m LogoAnimationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *LogoAnimationModel) skipToEnd() {
 	m.Done = true
-	m.phase = 3
+	m.phase = 4
 
 	for i := range m.bars {
+		m.bars[i].started = true
 		m.bars[i].pos = 0
 		m.bars[i].vel = 0
 	}
@@ -123,13 +137,13 @@ func (m LogoAnimationModel) handleTick() (tea.Model, tea.Cmd) {
 
 		return m, nextTick
 
-	case 1:
-		return m.updateTextFade(nextTick)
-
 	case 2:
 		return m.updateWelcome(nextTick)
 
 	case 3:
+		return m.updateSlideOut(nextTick)
+
+	case 4:
 		m.Done = true
 
 		return m, tea.Quit
@@ -143,12 +157,14 @@ func (m *LogoAnimationModel) updateBarsSlide() {
 
 	for i := range m.bars {
 		startFrame := i * staggerFrames
+
 		if m.frame < startFrame {
 			allSettled = false
 
 			continue
 		}
 
+		m.bars[i].started = true
 		m.bars[i].pos, m.bars[i].vel = m.spring.Update(m.bars[i].pos, m.bars[i].vel, 0)
 
 		if math.Abs(m.bars[i].pos) > settledThresh || math.Abs(m.bars[i].vel) > settledThresh {
@@ -156,22 +172,30 @@ func (m *LogoAnimationModel) updateBarsSlide() {
 		}
 	}
 
-	if allSettled {
+	// Fade text in simultaneously with bars sliding in.
+	m.textOpacity = clamp01(m.textOpacity + 0.04)
+
+	if allSettled && m.textOpacity >= 1.0 {
 		for i := range m.bars {
 			m.bars[i].pos = 0
 			m.bars[i].vel = 0
 		}
 
-		m.phase = 1
+		m.phase = 2
 	}
 }
 
-func (m LogoAnimationModel) updateTextFade(nextTick tea.Cmd) (tea.Model, tea.Cmd) {
-	m.textOpacity += 0.06
+func (m LogoAnimationModel) updateSlideOut(nextTick tea.Cmd) (tea.Model, tea.Cmd) {
+	m.slideOutStep += 0.002
+	m.slideOutVPos -= m.slideOutStep
 
-	if m.textOpacity >= 1.0 {
-		m.textOpacity = 1.0
-		m.phase = 2
+	if m.slideOutVPos <= 0 {
+		m.slideOutVPos = 0
+		m.phase = 4
+
+		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+			return logoTickMsg{}
+		})
 	}
 
 	return m, nextTick
@@ -183,7 +207,7 @@ func (m LogoAnimationModel) updateWelcome(nextTick tea.Cmd) (tea.Model, tea.Cmd)
 	if math.Abs(m.welcomePos) < 0.05 {
 		m.phase = 3
 
-		return m, tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg {
+		return m, tea.Tick(1200*time.Millisecond, func(time.Time) tea.Msg {
 			return logoTickMsg{}
 		})
 	}
@@ -205,21 +229,27 @@ func (m LogoAnimationModel) View() string {
 
 	sb.WriteString("\n")
 
-	return sb.String()
+	content := sb.String()
+
+	if m.width > 0 && m.height > 0 {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Position(m.slideOutVPos),
+			content,
+		)
+	}
+
+	return content
 }
 
 func (m LogoAnimationModel) renderLogo(sb *strings.Builder) {
 	pictoBlock := m.buildPictogramBlock()
+	textBlock := m.buildTextBlock()
+	joined := lipgloss.JoinHorizontal(lipgloss.Center, pictoBlock, "   ", textBlock)
 
-	if m.phase >= 1 {
-		textBlock := m.buildTextBlock()
-		joined := lipgloss.JoinHorizontal(lipgloss.Center, pictoBlock, "   ", textBlock)
-
-		sb.WriteString(joined)
-	} else {
-		sb.WriteString(pictoBlock)
-	}
-
+	sb.WriteString(joined)
 	sb.WriteString("\n")
 }
 
@@ -235,6 +265,12 @@ func (m LogoAnimationModel) buildPictogramBlock() string {
 
 		color := lerpColor(DrPurple, DrGreen, progress)
 		style := lipgloss.NewStyle().Foreground(color)
+
+		if !bar.started {
+			lines = append(lines, "")
+
+			continue
+		}
 
 		offset := int(math.Round(bar.pos))
 
