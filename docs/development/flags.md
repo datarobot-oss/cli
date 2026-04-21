@@ -59,6 +59,7 @@ Error: if any flags in the group [list versions version] are set none of the oth
 ```
 
 **Use cases:**
+
 - Different operation modes (e.g., `--list` all vs `--versions` for specific)
 - Conflicting output levels (e.g., `--silent` vs `--verbose`)
 - Incompatible actions (e.g., `--parallel` vs `--watch`)
@@ -123,15 +124,6 @@ See the [Cobra Command documentation](https://pkg.go.dev/github.com/spf13/cobra#
 - **Document defaults** — If a flag has a non-obvious default value, mention it in the description
 
 ## Examples from the codebase
-
-### Root command (cmd/root.go)
-
-```go
-// Mutually exclusive: both control output level
-RootCmd.MarkFlagsMutuallyExclusive("verbose", "debug")
-```
-
-**Rationale:** `--debug` implies verbose output; using both is redundant and confusing.
 
 ### Task run command (cmd/task/run/cmd.go)
 
