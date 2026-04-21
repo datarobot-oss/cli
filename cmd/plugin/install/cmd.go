@@ -58,6 +58,9 @@ Use --version to specify a version constraint:
 	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 
+	// Mark mutually exclusive flags
+	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+
 	return cmd
 }
 

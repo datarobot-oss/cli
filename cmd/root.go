@@ -153,6 +153,9 @@ func init() {
 	_ = viper.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
 	_ = viper.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 
+	// Mark mutually exclusive flags
+	RootCmd.MarkFlagsMutuallyExclusive("verbose", "debug")
+
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
 		&cobra.Group{ID: "core", Title: tui.BaseTextStyle.Render("Core Commands:")},

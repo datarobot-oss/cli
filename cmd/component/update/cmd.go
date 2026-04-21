@@ -112,6 +112,9 @@ func Cmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&updateFlags.Overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
 	cmd.Flags().BoolVar(&updateFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
 
+	// Mark mutually exclusive flags
+	cmd.MarkFlagsMutuallyExclusive("recopy", "vcs-ref")
+
 	return cmd
 }
 

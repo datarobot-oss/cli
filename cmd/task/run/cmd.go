@@ -171,6 +171,9 @@ Examples:
 		return nil, cobra.ShellCompDirectiveFilterDirs
 	})
 
+	// Mark mutually exclusive flags
+	cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
+
 	return cmd
 }
 
