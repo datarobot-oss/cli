@@ -64,6 +64,7 @@ type Model struct {
 	currentPrompt         promptModel
 	hasPrompts            *bool             // Cache whether prompts are available
 	ShowAllPrompts        bool              // When true, show all prompts regardless of defaults
+	NonInteractive        bool              // When true, auto-populate all prompts with defaults (or empty) without showing wizard
 	skippedPrompts        int               // Count of prompts skipped due to having defaults
 	pulumiModel           *pulumiLoginModel // Sub-model for Pulumi login flow, shown before wizard if needed
 	NeedsPulumiLogin      bool              // Set by callers before Init(); true when login or passphrase setup is needed
@@ -245,6 +246,46 @@ func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
 	return m.updateCurrentPrompt()
 }
 
+// autoPopulateAndSave auto-populates all prompts with their default values (or empty strings)
+// and saves the .env file without showing the wizard. This is used when --non-interactive is set.
+func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
+	// Auto-populate all prompts with their defaults or empty values
+	for p := range m.prompts {
+		prompt := &m.prompts[p]
+
+		// Skip if already has a value (e.g., from environment or existing .env)
+		if prompt.Value != "" {
+			continue
+		}
+
+		// Use default if available
+		if prompt.Default != "" {
+			prompt.Value = prompt.Default
+		} else {
+			// Otherwise leave as empty string (which is the zero value)
+			prompt.Value = ""
+		}
+	}
+
+	// Apply generated values for prompts with generate: true
+	var err error
+
+	m.prompts, err = envbuilder.ApplyGeneratedValues(m.prompts)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// Determine required sections based on selected options
+	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
+
+	// Generate .env content from prompts
+	m.contents = envbuilder.DotenvFromPromptsMerged(m.prompts, m.contents)
+
+	// Save the file
+	return m, m.saveEditedFile()
+}
+
 func (m Model) Init() tea.Cmd {
 	if m.initialScreen == editorScreen {
 		return tea.Batch(openEditorCmd, tea.WindowSize())
@@ -305,6 +346,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, m.loadPrompts()
 		}
 
+		// If NonInteractive is true, auto-quit without waiting for user confirmation
+		if m.NonInteractive {
+			return m, m.SuccessCmd
+		}
+
 		return m, nil
 	case promptsLoadedMsg:
 		// Start in the wizard screen
@@ -329,6 +375,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			m.screen = pulumiScreen
 
 			return m, plm.Init()
+		}
+
+		// If NonInteractive is true, auto-populate all values and save without showing wizard
+		if m.NonInteractive {
+			return m.autoPopulateAndSave()
 		}
 
 		return m.moveToNextPrompt()
