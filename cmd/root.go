@@ -76,7 +76,6 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			// but before the command is run. Any logic that needs to happen
 			// before ANY command execution should go here.
 			log.Start()
-			log.Debug("Shell", "name", telemetry.DetectShell())
 
 			err := initializeConfig(cmd)
 			if err != nil {
@@ -98,6 +97,20 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 				} else {
 					props.CommandKind = "core"
 				}
+			}
+			// Log the detected shell only when debug is active. Reuse Shell from
+			// telemetry props (already collected above) when available to avoid
+			// spawning a redundant ps(1) subprocess on macOS.
+			if log.GetLevel() <= log.DebugLevel {
+				var shell string
+
+				if props != nil {
+					shell = props.Shell
+				} else {
+					shell = telemetry.DetectShell()
+				}
+
+				log.Debug("Shell", "name", shell)
 			}
 
 			client := telemetry.NewClient(props)
