@@ -326,6 +326,92 @@ func good() {
 }
 ```
 
+### Flag development standards
+
+When adding flags to commands, follow these standards to ensure consistency and proper validation:
+
+#### 1. Define flags clearly
+
+```go
+// cmd/mycommand/cmd.go
+var (
+    myFlag bool
+    count int
+)
+
+func Cmd() *cobra.Command {
+    cmd := &cobra.Command{
+        Use:   "mycommand",
+        Short: "Description",
+        RunE: func(cmd *cobra.Command, args []string) error {
+            // Implementation
+            return nil
+        },
+    }
+
+    // Define flags (use singular flag names)
+    cmd.Flags().BoolVar(&myFlag, "my-flag", false, "Description")
+    cmd.Flags().IntVar(&count, "count", 0, "Description")
+
+    return cmd
+}
+```
+
+#### 2. Mark flag groups for validation
+
+Use Cobra's flag group markers to enforce constraints on flag combinations. This provides better UX and clearer error messages.
+
+**Mutually exclusive flags** — prevent users from using incompatible flags together:
+
+```go
+// Only one of these flags can be used
+cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+```
+
+When multiple flags are used together, users get a clear error:
+```
+Error: if any flags in the group [list versions version] are set none of the others can be; list version were all set
+```
+
+**Required together** — if any flag in a group is used, all must be used:
+
+```go
+// If --name is used, --version, --url, --sha256, and --release-date must also be used
+cmd.MarkFlagsRequiredTogether("name", "version", "url", "sha256", "release-date")
+```
+
+**One required** — at least one flag from a group must be provided:
+
+```go
+// User must provide either --output or --stdout
+cmd.MarkFlagsOneRequired("output", "stdout")
+```
+
+See the [Cobra Command documentation](https://pkg.go.dev/github.com/spf13/cobra#Command) for `MarkFlagsMutuallyExclusive`, `MarkFlagsRequiredTogether`, and `MarkFlagsOneRequired`.
+
+#### 3. Examples of flag groups in the codebase
+
+```go
+// task/run command: parallel and watch are incompatible
+cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
+
+// plugin/install command: different operation modes
+cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+
+// self/plugin/add command: pick one approach (file or manual)
+cmd.MarkFlagsRequiredTogether("name", "version", "url", "sha256", "release-date")
+cmd.MarkFlagsMutuallyExclusive("from-file", "name")
+cmd.MarkFlagsMutuallyExclusive("from-file", "version")
+// ... etc for each flag
+```
+
+#### 4. Flag naming conventions
+
+- Use **singular names** for flags (e.g., `template`, `dependency`, `plugin`)
+- Use **lowercase with hyphens** (e.g., `--my-flag`, not `--myFlag` or `--my_flag`)
+- Provide both short (`-m`) and long (`--my-flag`) forms when appropriate
+- Add **aliases for backward compatibility** (e.g., `templates` as an alias for `template`)
+
 ### TUI development standards
 
 Consider the following when building terminal user interfaces.
