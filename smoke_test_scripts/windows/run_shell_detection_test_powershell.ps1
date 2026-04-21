@@ -15,11 +15,11 @@ $debug_output = & { dr --debug self version 2>&1 } | Out-String
 if ($debug_output -match 'Shell.*name=powershell') {
     Write-Host "[OK] " -NoNewline -ForegroundColor Green
     Write-Host "Shell detection correctly identified PowerShell"
-    
+
     # Extract and display the shell detection line
     $shell_line = $debug_output -split "`n" | Where-Object { $_ -match 'Shell.*name=' } | Select-Object -First 1
     Write-Host "     $shell_line"
-    
+
     Write-Host ""
     Write-Host "============================== END =============================="
     exit 0
