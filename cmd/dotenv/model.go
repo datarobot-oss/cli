@@ -253,6 +253,9 @@ func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
 	for p := range m.prompts {
 		prompt := &m.prompts[p]
 
+		// Ensure variables are uncommented (consistent with interactive wizard)
+		prompt.Commented = false
+
 		// Skip if already has a value (e.g., from environment or existing .env)
 		if prompt.Value != "" {
 			continue
@@ -363,13 +366,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.hasPrompts = &hasPrompts
 
 		if len(m.prompts) == 0 {
+			// In --yes mode, save immediately and exit even if no prompts exist
+			if m.Yes {
+				return m.autoPopulateAndSave()
+			}
+
 			m.screen = listScreen
 
 			return m, nil
 		}
 
 		// Check if Pulumi login/passphrase setup is needed before the wizard
-		if m.NeedsPulumiLogin {
+		// Skip interactive Pulumi screen in --yes mode (passphrase will be auto-generated if needed)
+		if m.NeedsPulumiLogin && !m.Yes {
 			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase)
 			m.pulumiModel = &plm
 			m.screen = pulumiScreen
