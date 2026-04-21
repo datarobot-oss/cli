@@ -18,7 +18,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,10 +51,68 @@ type CommonProperties struct {
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
 	Language          string // user language from LANG env var (e.g. "en_US")
-	GoVersion         string // Go runtime version (e.g. "go1.26.3")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
+	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+}
+
+// parentProcessName returns the name of the process that launched the CLI
+// (i.e. the running shell). On Linux it reads /proc/{ppid}/comm; on
+// macOS and other Unix systems it falls back to querying ps. Returns an
+// empty string when the name cannot be determined.
+func parentProcessName() string {
+	ppid := os.Getppid()
+
+	// Linux: /proc/{ppid}/comm contains the short process name
+	if data, err := os.ReadFile("/proc/" + strconv.Itoa(ppid) + "/comm"); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+
+	// macOS and other Unix: ask ps for the command name
+	out, err := exec.Command("ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	if err != nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(string(out))
+
+	return filepath.Base(name)
+}
+
+// detectShellFromEnv falls back to environment variables when the parent
+// process name cannot be determined. $SHELL reflects the login shell and
+// may differ from the shell that is currently running the CLI.
+func detectShellFromEnv() string {
+	// Unix/macOS: $SHELL holds the path to the login shell (e.g. "/bin/zsh")
+	if shell := os.Getenv("SHELL"); shell != "" {
+		return filepath.Base(shell)
+	}
+
+	// Windows PowerShell sets $PSModulePath
+	if os.Getenv("PSModulePath") != "" {
+		return "powershell"
+	}
+
+	// Windows cmd.exe sets $ComSpec
+	if os.Getenv("ComSpec") != "" {
+		return "cmd"
+	}
+
+	return "unknown"
+}
+
+// DetectShell returns the name of the shell the CLI is running from.
+// It first inspects the parent process (accurate even after exec sh, exec bash,
+// etc.) and falls back to $SHELL / Windows env vars when that is unavailable.
+// Returns "unknown" if the shell cannot be determined.
+func DetectShell() string {
+	if name := parentProcessName(); name != "" {
+		return name
+	}
+
+	return detectShellFromEnv()
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
@@ -67,6 +129,7 @@ func CollectCommonProperties() *CommonProperties {
 		OSVersion:     detectOSVersion(),
 		Language:      detectLanguage(),
 		GoVersion:     runtime.Version(),
+		Shell:         DetectShell(),
 	}
 
 	// Get DataRobot instance info from config
@@ -95,6 +158,7 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"install_method":     p.InstallMethod,
 		"os_arch":            p.OSArch,
 		"go_version":         p.GoVersion,
+		"shell":              p.Shell,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,

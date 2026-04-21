@@ -76,6 +76,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			// but before the command is run. Any logic that needs to happen
 			// before ANY command execution should go here.
 			log.Start()
+			log.Debug("Shell", "name", telemetry.DetectShell())
 
 			err := initializeConfig(cmd)
 			if err != nil {
