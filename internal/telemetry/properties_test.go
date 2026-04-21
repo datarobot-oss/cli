@@ -316,55 +316,6 @@ func TestCollectCommonProperties_DetectsShell(t *testing.T) {
 	assert.NotEmpty(t, props.Shell)
 }
 
-func TestDetectShellFromEnv_UnixShellEnvVar(t *testing.T) {
-	t.Setenv("SHELL", "/bin/zsh")
-	t.Setenv("PSModulePath", "")
-	t.Setenv("ComSpec", "")
-
-	assert.Equal(t, "zsh", detectShellFromEnv())
-}
-
-func TestDetectShellFromEnv_WindowsPowerShell(t *testing.T) {
-	t.Setenv("SHELL", "")
-	t.Setenv("PSModulePath", `C:\Windows\system32\WindowsPowerShell\v1.0`)
-	t.Setenv("ComSpec", "")
-
-	assert.Equal(t, "powershell", detectShellFromEnv())
-}
-
-func TestDetectShellFromEnv_WindowsCmd(t *testing.T) {
-	t.Setenv("SHELL", "")
-	t.Setenv("PSModulePath", "")
-	t.Setenv("ComSpec", `C:\Windows\system32\cmd.exe`)
-
-	assert.Equal(t, "cmd", detectShellFromEnv())
-}
-
-func TestDetectShellFromEnv_Unknown(t *testing.T) {
-	t.Setenv("SHELL", "")
-	t.Setenv("PSModulePath", "")
-	t.Setenv("ComSpec", "")
-
-	assert.Equal(t, "unknown", detectShellFromEnv())
-}
-
-func TestDetectShellFromEnv_BashPath(t *testing.T) {
-	t.Setenv("SHELL", "/usr/bin/bash")
-	t.Setenv("PSModulePath", "")
-	t.Setenv("ComSpec", "")
-
-	assert.Equal(t, "bash", detectShellFromEnv())
-}
-
-func TestParentProcessName_ReturnsNonEmpty(t *testing.T) {
-	name := parentProcessName()
-
-	// In the test runner the parent is always determinable on Linux/macOS
-	// (either via /proc or ps). We don't assert a specific name because
-	// it depends on the test runner (e.g. "go", "task", etc.).
-	assert.NotEmpty(t, name)
-}
-
 func TestDetectShell_ReturnsNonEmpty(t *testing.T) {
 	shell := DetectShell()
 

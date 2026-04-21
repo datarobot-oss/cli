@@ -18,8 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/datarobot/cli/tui"
 )
@@ -43,18 +46,43 @@ func SupportedShells() []string {
 }
 
 func DetectShell() (string, error) {
-	// Try SHELL environment variable first
-	shellPath := os.Getenv("SHELL")
-	if shellPath != "" {
+	// Prefer the parent process name — accurate even after `exec sh` or similar.
+	if name := parentProcessName(); name != "" {
+		return name, nil
+	}
+
+	// Try SHELL environment variable next.
+	if shellPath := os.Getenv("SHELL"); shellPath != "" {
 		return filepath.Base(shellPath), nil
 	}
 
-	// On Windows, check for PowerShell
+	// On Windows, default to PowerShell.
 	if runtime.GOOS == "windows" {
 		return string(PowerShell), nil
 	}
 
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
+}
+
+// parentProcessName returns the short name of the process that launched the
+// CLI (i.e. the running shell). On Linux it reads /proc/{ppid}/comm; on
+// macOS and other Unix systems it falls back to querying ps. Returns an
+// empty string when the name cannot be determined.
+func parentProcessName() string {
+	ppid := os.Getppid()
+
+	// Linux: /proc/{ppid}/comm contains the short process name.
+	if data, err := os.ReadFile("/proc/" + strconv.Itoa(ppid) + "/comm"); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+
+	// macOS and other Unix: ask ps for the command name.
+	out, err := exec.Command("ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Base(strings.TrimSpace(string(out)))
 }
 
 func ResolveShell(specifiedShell string) (string, error) {
