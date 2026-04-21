@@ -51,29 +51,52 @@ func DetectShell() (string, error) {
 		return name, nil
 	}
 
-	// Try SHELL environment variable next.
+	// Try SHELL environment variable next (Unix/macOS).
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
 		return filepath.Base(shellPath), nil
-	}
-
-	// On Windows, default to PowerShell.
-	if runtime.GOOS == "windows" {
-		return string(PowerShell), nil
 	}
 
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
 }
 
+// parentProcessNameWindows returns the lowercase process name (without .exe)
+// of the given PID on Windows by running tasklist.
+func parentProcessNameWindows(ppid int) string {
+	out, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
+	if err != nil {
+		return ""
+	}
+
+	// Output: "powershell.exe","12345","Console","1","4,000 K"
+	line := strings.TrimSpace(string(out))
+
+	idx := strings.Index(line, ",")
+	if idx <= 0 {
+		return ""
+	}
+
+	name := strings.Trim(line[:idx], `"`)
+	name = strings.ToLower(strings.TrimSuffix(name, ".exe"))
+
+	return name
+}
+
 // parentProcessName returns the short name of the process that launched the
 // CLI (i.e. the running shell). On Linux it reads /proc/{ppid}/comm; on
-// macOS and other Unix systems it falls back to querying ps. Returns an
-// empty string when the name cannot be determined.
+// Windows it queries tasklist; on macOS and other Unix systems it queries ps.
+// Returns an empty string when the name cannot be determined.
 func parentProcessName() string {
 	ppid := os.Getppid()
 
 	// Linux: /proc/{ppid}/comm contains the short process name.
 	if data, err := os.ReadFile("/proc/" + strconv.Itoa(ppid) + "/comm"); err == nil {
 		return strings.TrimSpace(string(data))
+	}
+
+	// Windows: use tasklist to look up the parent by PID.
+	// Output format (CSV): "powershell.exe","12345","Console","1","4,000 K"
+	if runtime.GOOS == "windows" {
+		return parentProcessNameWindows(ppid)
 	}
 
 	// macOS and other Unix: ask ps for the command name.
