@@ -197,7 +197,7 @@ This wizard will help you:
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
-	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation). Can also be set via DATAROBOT_CLI_NON_INTERACTIVE env var.")
+	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
 	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
 }
 
