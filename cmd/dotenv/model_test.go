@@ -505,7 +505,6 @@ func (suite *DotenvModelTestSuite) TestYes_EnvVarHandling() {
 	// Test that the --yes flag logic correctly handles DATAROBOT_CLI_NON_INTERACTIVE
 	// This test validates the actual implementation that uses strconv.ParseBool()
 	// instead of viper to avoid treating empty env vars as true.
-
 	testCases := []struct {
 		name     string
 		envValue string
