@@ -193,6 +193,7 @@ func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
 
 	// Bind flag to viper to enable env var support (DATAROBOT_CLI_NON_INTERACTIVE)
 	_ = viper.BindPFlag("yes", SetupCmd.Flags().Lookup("yes"))
