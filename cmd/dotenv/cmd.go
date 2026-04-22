@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,7 +29,6 @@ import (
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func Cmd() *cobra.Command {
@@ -146,7 +146,12 @@ This wizard will help you:
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
 		showAllPrompts, _ := cmd.Flags().GetBool("all")
-		yes := viper.GetBool("yes")
+
+		// Check --yes flag from command line or DATAROBOT_CLI_NON_INTERACTIVE env var
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			yes, _ = strconv.ParseBool(os.Getenv("DATAROBOT_CLI_NON_INTERACTIVE"))
+		}
 
 		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
 
@@ -192,12 +197,8 @@ This wizard will help you:
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
-	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation). Can also be set via DATAROBOT_CLI_NON_INTERACTIVE env var.")
 	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
-
-	// Bind flag to viper to enable env var support (DATAROBOT_CLI_NON_INTERACTIVE)
-	_ = viper.BindPFlag("yes", SetupCmd.Flags().Lookup("yes"))
-	_ = viper.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
