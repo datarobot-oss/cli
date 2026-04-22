@@ -15,14 +15,10 @@
 package workload
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 type Artifact struct {
@@ -72,43 +68,17 @@ func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 	return codeRef.Datarobot
 }
 
-func GetArtifact(ctx context.Context, baseURL, token, artifactID string) (*Artifact, error) {
-	url := baseURL + "/api/v2/artifacts/" + artifactID + "/"
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func GetArtifact(artifactID string) (*Artifact, error) {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/")
 	if err != nil {
-		return nil, fmt.Errorf("failed to reach DataRobot: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", config.GetUserAgentHeader())
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reach DataRobot: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("artifact %s not found", artifactID)
-	}
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, errors.New("Authentication failed. Check DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN.")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected response: %d", resp.StatusCode)
+		return nil, err
 	}
 
 	var artifact Artifact
 
-	if err := json.NewDecoder(resp.Body).Decode(&artifact); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	err = drapi.GetJSON(url, "artifact", &artifact)
+	if err != nil {
+		return nil, err
 	}
 
 	return &artifact, nil

@@ -20,10 +20,9 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/auth"
-	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 type ArtifactOutput struct {
@@ -41,7 +40,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "get <artifact-id>",
-		Short: "Display details of a workload artifact",
+		Short: "Display details of a workload artifact.",
 		Long: `Display details of a single workload artifact.
 
 This command fetches an artifact by ID and shows:
@@ -61,10 +60,7 @@ Example:
 				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
 			}
 
-			token := viper.GetString(config.DataRobotAPIKey)
-			baseURL := config.GetBaseURL()
-
-			artifact, err := workload.GetArtifact(cmd.Context(), baseURL, token, args[0])
+			artifact, err := workload.GetArtifact(args[0])
 			if err != nil {
 				return err
 			}
@@ -121,11 +117,11 @@ func printHuman(artifact workload.Artifact) {
 		catalog = codeRef.CatalogID
 	}
 
-	fmt.Printf("ID:       %s\n", artifact.ID)
-	fmt.Printf("Name:     %s\n", artifact.Name)
-	fmt.Printf("Status:   %s\n", artifact.Status)
-	fmt.Printf("Version:  %s\n", version)
-	fmt.Printf("Catalog:  %s\n", catalog)
-	fmt.Printf("Created:  %s\n", artifact.CreatedAt.UTC().Format("2006-01-02 15:04 UTC"))
-	fmt.Printf("Updated:  %s\n", artifact.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC"))
+	fmt.Println(tui.BaseTextStyle.Render("ID:       " + artifact.ID))
+	fmt.Println(tui.BaseTextStyle.Render("Name:     " + artifact.Name))
+	fmt.Println(tui.BaseTextStyle.Render("Status:   " + artifact.Status))
+	fmt.Println(tui.BaseTextStyle.Render("Version:  " + version))
+	fmt.Println(tui.BaseTextStyle.Render("Catalog:  " + catalog))
+	fmt.Println(tui.DimStyle.Render("Created:  " + artifact.CreatedAt.UTC().Format("2006-01-02 15:04 UTC")))
+	fmt.Println(tui.DimStyle.Render("Updated:  " + artifact.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC")))
 }
