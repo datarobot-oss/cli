@@ -308,6 +308,7 @@ func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// is picked up before the wizard starts.
 		m.pulumiModel = nil
 		m.NeedsPulumiLogin = false
+		m.NeedsPulumiPassphrase = false
 
 		return m, m.loadPrompts()
 	}
@@ -377,9 +378,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		// Check if Pulumi login/passphrase setup is needed before the wizard
-		// Skip interactive Pulumi screen in --yes mode (passphrase will be auto-generated if needed)
-		if m.NeedsPulumiLogin && !m.Yes {
-			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase)
+		if m.NeedsPulumiLogin || (m.Yes && m.NeedsPulumiPassphrase) {
+			// Use pulumiLoginModel for both interactive and non-interactive modes
+			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase, m.Yes)
 			m.pulumiModel = &plm
 			m.screen = pulumiScreen
 

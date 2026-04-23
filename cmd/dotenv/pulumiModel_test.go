@@ -79,7 +79,7 @@ func TestNeedsPulumiSetup_LoggedIn_PassphraseSet(t *testing.T) {
 // --- Model initial screen ---
 
 func TestPulumiLoginModel_NotLoggedIn_StartsAtBackendSelection(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 
 	assert.Equal(t, pulumiLoginScreenBackendSelection, model.currentScreen)
 	assert.Equal(t, 0, model.selectedOption)
@@ -87,7 +87,7 @@ func TestPulumiLoginModel_NotLoggedIn_StartsAtBackendSelection(t *testing.T) {
 }
 
 func TestPulumiLoginModel_AlreadyLoggedIn_StartsAtPassphraseScreen(t *testing.T) {
-	model := newPulumiLoginModel(true, true)
+	model := newPulumiLoginModel(true, true, false)
 
 	assert.Equal(t, pulumiLoginScreenPassphrasePrompt, model.currentScreen)
 }
@@ -97,7 +97,7 @@ func TestPulumiLoginModel_AlreadyLoggedIn_StartsAtPassphraseScreen(t *testing.T)
 // The passphrase screen must NOT appear before the login command runs.
 
 func TestPulumiLoginModel_NotLoggedIn_NeedsPassphrase_LoginBeforePassphrase(t *testing.T) {
-	model := newPulumiLoginModel(false, true)
+	model := newPulumiLoginModel(false, true, false)
 
 	assert.Equal(t, pulumiLoginScreenBackendSelection, model.currentScreen, "must start at backend selection, not passphrase")
 
@@ -118,7 +118,7 @@ func TestPulumiLoginModel_NotLoggedIn_NeedsPassphrase_LoginBeforePassphrase(t *t
 }
 
 func TestPulumiLoginModel_NotLoggedIn_NoPassphrase_LoginThenComplete(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 
 	// Press enter on local
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -139,7 +139,7 @@ func TestPulumiLoginModel_NotLoggedIn_NoPassphrase_LoginThenComplete(t *testing.
 // --- Backend selection key handling ---
 
 func TestPulumiLoginModel_BackendSelection_NavigateUpDown(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	plm := updated.(pulumiLoginModel)
@@ -156,7 +156,7 @@ func TestPulumiLoginModel_BackendSelection_NavigateUpDown(t *testing.T) {
 }
 
 func TestPulumiLoginModel_BackendSelection_DIY_GoesToDIYURLScreen(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 
 	// Navigate to DIY (option 2)
 	model.selectedOption = 2
@@ -168,7 +168,7 @@ func TestPulumiLoginModel_BackendSelection_DIY_GoesToDIYURLScreen(t *testing.T) 
 }
 
 func TestPulumiLoginModel_DIYURLScreen_Esc_ReturnsToBackendSelection(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 	model.currentScreen = pulumiLoginScreenDIYURL
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -178,7 +178,7 @@ func TestPulumiLoginModel_DIYURLScreen_Esc_ReturnsToBackendSelection(t *testing.
 }
 
 func TestPulumiLoginModel_DIYURLScreen_EmptyURL_DoesNotProceed(t *testing.T) {
-	model := newPulumiLoginModel(false, false)
+	model := newPulumiLoginModel(false, false, false)
 	model.currentScreen = pulumiLoginScreenDIYURL
 	model.diyInput = textinput.New()
 
@@ -194,7 +194,7 @@ func TestPulumiLoginModel_DIYURLScreen_EmptyURL_DoesNotProceed(t *testing.T) {
 // will leave the user stuck on the passphrase screen.
 
 func TestPulumiLoginModel_PassphraseScreen_N_Completes(t *testing.T) {
-	model := newPulumiLoginModel(true, true)
+	model := newPulumiLoginModel(true, true, false)
 
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	require.NotNil(t, cmd)
@@ -205,7 +205,7 @@ func TestPulumiLoginModel_PassphraseScreen_N_Completes(t *testing.T) {
 }
 
 func TestPulumiLoginModel_PassphraseScreen_UpperN_Completes(t *testing.T) {
-	model := newPulumiLoginModel(true, true)
+	model := newPulumiLoginModel(true, true, false)
 
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
 	require.NotNil(t, cmd)
@@ -216,7 +216,7 @@ func TestPulumiLoginModel_PassphraseScreen_UpperN_Completes(t *testing.T) {
 }
 
 func TestPulumiLoginModel_PassphraseScreen_Esc_Completes(t *testing.T) {
-	model := newPulumiLoginModel(true, true)
+	model := newPulumiLoginModel(true, true, false)
 
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	require.NotNil(t, cmd)
@@ -236,4 +236,21 @@ func TestGenerateRandomPassphrase(t *testing.T) {
 	passphrase2, err := envbuilder.GenerateRandomSecret(32)
 	require.NoError(t, err)
 	assert.NotEqual(t, passphrase, passphrase2, "generated passphrases must be unique")
+}
+
+// --- Non-interactive mode tests ---
+
+func TestPulumiLoginModel_NonInteractive_ViewReturnsEmpty(t *testing.T) {
+	model := newPulumiLoginModel(true, true, true)
+
+	view := model.View()
+	assert.Equal(t, "", view, "non-interactive mode should not render anything")
+}
+
+func TestPulumiLoginModel_NonInteractive_ViewReturnsEmptyEvenWithError(t *testing.T) {
+	model := newPulumiLoginModel(true, true, true)
+	model.err = assert.AnError
+
+	view := model.View()
+	assert.Equal(t, "", view, "non-interactive mode should not render anything, even with error")
 }

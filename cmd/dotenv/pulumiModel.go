@@ -53,16 +53,16 @@ const (
 // Login (backend selection → pulumi login) and passphrase setup are independent:
 // login runs first (if needed), then the passphrase prompt appears (if needed).
 type pulumiLoginModel struct {
-	currentScreen       pulumiLoginScreen
-	selectedOption      int
-	options             []string
-	diyInput            textinput.Model
-	diyURL              string
-	generatedPassphrase string
-	err                 error
-	loginOutput         string
-	alreadyLoggedIn     bool // when true, skip backend selection and go straight to passphrase
-	needsPassphrase     bool // when true, show passphrase prompt after login (or immediately if already logged in)
+	currentScreen   pulumiLoginScreen
+	selectedOption  int
+	options         []string
+	diyInput        textinput.Model
+	diyURL          string
+	err             error
+	loginOutput     string
+	alreadyLoggedIn bool // when true, skip backend selection and go straight to passphrase
+	needsPassphrase bool // when true, show passphrase prompt after login (or immediately if already logged in)
+	nonInteractive  bool // when true, auto-generate passphrase without showing prompts (--yes mode)
 }
 
 type (
@@ -71,7 +71,7 @@ type (
 	pulumiLoginSuccessMsg  struct{ output string }
 )
 
-func newPulumiLoginModel(alreadyLoggedIn, needsPassphrase bool) pulumiLoginModel {
+func newPulumiLoginModel(alreadyLoggedIn, needsPassphrase, nonInteractive bool) pulumiLoginModel {
 	ti := textinput.New()
 	ti.Placeholder = "s3://my-pulumi-bucket or azblob://..."
 	ti.Focus()
@@ -90,10 +90,22 @@ func newPulumiLoginModel(alreadyLoggedIn, needsPassphrase bool) pulumiLoginModel
 		diyInput:        ti,
 		alreadyLoggedIn: alreadyLoggedIn,
 		needsPassphrase: needsPassphrase,
+		nonInteractive:  nonInteractive,
 	}
 }
 
 func (m pulumiLoginModel) Init() tea.Cmd {
+	// Non-interactive mode: auto-generate passphrase and complete immediately
+	if m.nonInteractive && m.needsPassphrase {
+		return func() tea.Msg {
+			if err := generateAndSavePulumiPassphrase(); err != nil {
+				return pulumiLoginErrorMsg{err}
+			}
+
+			return pulumiLoginCompleteMsg{}
+		}
+	}
+
 	return textinput.Blink
 }
 
@@ -223,28 +235,28 @@ func (m pulumiLoginModel) handlePassphrasePromptKey(msg tea.KeyMsg) (tea.Model, 
 }
 
 func (m pulumiLoginModel) handlePassphraseAccepted() (tea.Model, tea.Cmd) {
-	passphrase, err := envbuilder.GenerateRandomSecret(generatedPassphraseLength)
-	if err != nil {
-		m.err = fmt.Errorf("failed to generate passphrase: %w", err)
-
-		return m, nil
-	}
-
-	m.generatedPassphrase = passphrase
-
-	if err := m.savePassphraseToConfig(); err != nil {
+	if err := generateAndSavePulumiPassphrase(); err != nil {
 		return m, func() tea.Msg { return pulumiLoginErrorMsg{err} }
 	}
 
 	return m, func() tea.Msg { return pulumiLoginCompleteMsg{} }
 }
 
-func (m pulumiLoginModel) savePassphraseToConfig() error {
+func generateAndSavePulumiPassphrase() error {
+	passphrase, err := envbuilder.GenerateRandomSecret(generatedPassphraseLength)
+	if err != nil {
+		return fmt.Errorf("failed to generate Pulumi passphrase: %w", err)
+	}
+
+	return savePulumiPassphraseToConfig(passphrase)
+}
+
+func savePulumiPassphraseToConfig(passphrase string) error {
 	if err := config.CreateConfigFileDirIfNotExists(); err != nil {
 		return fmt.Errorf("failed to create config: %w", err)
 	}
 
-	viper.Set(pulumiConfigPassphraseKey, m.generatedPassphrase)
+	viper.Set(pulumiConfigPassphraseKey, passphrase)
 
 	if err := viper.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
@@ -282,6 +294,11 @@ func (m pulumiLoginModel) performLogin(loginType, url string) tea.Cmd {
 
 func (m pulumiLoginModel) View() string {
 	var sb strings.Builder
+
+	// Non-interactive mode: don't render anything (passphrase generation happens in Init)
+	if m.nonInteractive {
+		return ""
+	}
 
 	if m.err != nil {
 		sb.WriteString(tui.ErrorStyle.Render("Pulumi Login Failed"))
