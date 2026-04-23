@@ -251,7 +251,7 @@ func (pm promptModel) GetValues() []string {
 	}
 
 	items := pm.list.Items()
-	current := items[pm.list.Index()].(item)
+	current := items[pm.list.GlobalIndex()].(item)
 
 	if pm.prompt.Multiple {
 		values := make([]string, 0, len(items))
