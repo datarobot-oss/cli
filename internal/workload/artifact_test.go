@@ -150,3 +150,101 @@ func TestParseArtifactStatus_Invalid(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid status")
 	assert.Contains(t, err.Error(), "bogus")
 }
+
+const validMinimalSpec = `{
+	"name": "my-agent",
+	"spec": {
+		"containerGroups": [{
+			"containers": [{
+				"imageUri": "nginx:latest",
+				"port": 8080,
+				"resourceRequest": {"cpu": 1, "memory": 536870912}
+			}]
+		}]
+	}
+}`
+
+func TestValidateCreateRequest_MinimalValid(t *testing.T) {
+	require.NoError(t, ValidateCreateRequest([]byte(validMinimalSpec)))
+}
+
+func TestValidateCreateRequest_FullValid(t *testing.T) {
+	spec := `{
+		"name": "my-agent",
+		"description": "demo",
+		"spec": {
+			"containerGroups": [{
+				"containers": [{
+					"imageUri": "nginx:latest",
+					"port": 8080,
+					"resourceRequest": {"cpu": 1, "memory": 536870912},
+					"codeRef": {"datarobot": {"catalogId": "c", "catalogVersionId": "v"}}
+				}]
+			}]
+		}
+	}`
+
+	require.NoError(t, ValidateCreateRequest([]byte(spec)))
+}
+
+func TestValidateCreateRequest_Errors(t *testing.T) {
+	cases := []struct {
+		name    string
+		spec    string
+		wantSub string
+	}{
+		{
+			"missing name",
+			`{"spec":{"containerGroups":[{"containers":[{}]}]}}`,
+			"'name' is missing",
+		},
+		{
+			"empty name",
+			`{"name":"","spec":{"containerGroups":[{"containers":[{}]}]}}`,
+			"'name' is missing",
+		},
+		{
+			"missing spec",
+			`{"name":"x"}`,
+			"'spec.containerGroups'",
+		},
+		{
+			"empty container groups",
+			`{"name":"x","spec":{"containerGroups":[]}}`,
+			"'spec.containerGroups'",
+		},
+		{
+			"empty containers in group",
+			`{"name":"x","spec":{"containerGroups":[{"containers":[]}]}}`,
+			"[0].containers",
+		},
+		{
+			"unknown top-level field",
+			`{"nme":"x","spec":{"containerGroups":[{"containers":[{}]}]}}`,
+			`unknown field "nme"`,
+		},
+		{
+			"unknown nested field",
+			`{"name":"x","spec":{"containerGroups":[{"containers":[{"imageUrl":"x"}]}]}}`,
+			`unknown field "imageUrl"`,
+		},
+		{
+			"wrong type cpu",
+			`{"name":"x","spec":{"containerGroups":[{"containers":[{"resourceRequest":{"cpu":"1","memory":1}}]}]}}`,
+			"invalid spec",
+		},
+		{
+			"not json",
+			`not json`,
+			"invalid spec",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := ValidateCreateRequest([]byte(c.spec))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantSub)
+		})
+	}
+}

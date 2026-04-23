@@ -15,6 +15,9 @@
 package workload
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -139,6 +142,81 @@ type ArtifactList struct {
 	TotalCount int        `json:"totalCount"`
 	Next       string     `json:"next"`
 	Previous   string     `json:"previous"`
+}
+
+type ArtifactCreateRequest struct {
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Spec        ArtifactCreateSpec `json:"spec"`
+}
+
+type ArtifactCreateSpec struct {
+	ContainerGroups []ArtifactCreateContainerGroup `json:"containerGroups"`
+}
+
+type ArtifactCreateContainerGroup struct {
+	Containers []ArtifactCreateContainer `json:"containers"`
+}
+
+type ArtifactCreateContainer struct {
+	ImageURI        string                         `json:"imageUri,omitempty"`
+	Port            int                            `json:"port,omitempty"`
+	ResourceRequest *ArtifactCreateResourceRequest `json:"resourceRequest,omitempty"`
+	CodeRef         *CodeRef                       `json:"codeRef,omitempty"`
+}
+
+type ArtifactCreateResourceRequest struct {
+	CPU    int   `json:"cpu"`
+	Memory int64 `json:"memory"`
+}
+
+// ValidateCreateRequest decodes a user-supplied spec file with DisallowUnknownFields
+// against ArtifactCreateRequest and enforces required-field invariants. The original
+// bytes are still sent verbatim by the caller; the strict struct never reaches the wire.
+func ValidateCreateRequest(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+
+	var req ArtifactCreateRequest
+
+	if err := dec.Decode(&req); err != nil {
+		return fmt.Errorf("invalid spec: %w", err)
+	}
+
+	if req.Name == "" {
+		return errors.New("invalid spec: required field 'name' is missing or empty")
+	}
+
+	if len(req.Spec.ContainerGroups) == 0 {
+		return errors.New("invalid spec: 'spec.containerGroups' must contain at least one entry")
+	}
+
+	for i, group := range req.Spec.ContainerGroups {
+		if len(group.Containers) == 0 {
+			return fmt.Errorf("invalid spec: 'spec.containerGroups[%d].containers' must contain at least one entry", i)
+		}
+	}
+
+	return nil
+}
+
+// CreateArtifact POSTs payload to /api/v2/artifacts/ and returns the parsed artifact.
+// payload is typically a json.RawMessage from the spec file, sent verbatim after
+// ValidateCreateRequest passed.
+func CreateArtifact(payload any) (*Artifact, error) {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/")
+	if err != nil {
+		return nil, err
+	}
+
+	var artifact Artifact
+
+	err = drapi.PostJSON(url, "artifact", payload, &artifact)
+	if err != nil {
+		return nil, err
+	}
+
+	return &artifact, nil
 }
 
 func ListArtifacts(limit int, status string) ([]Artifact, error) {

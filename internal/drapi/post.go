@@ -15,9 +15,9 @@
 package drapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -25,25 +25,9 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// HTTPError is returned by Get and Post when the server responds with a
-// non-success status code. Callers can extract the status code with errors.As
-// to make decisions without string matching.
-type HTTPError struct {
-	StatusCode int
-	URL        string
-}
-
-// Error implements the error interface for HTTPError.
-func (e *HTTPError) Error() string {
-	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
-}
-
-var token string
-
-func Get(url, info string) (*http.Response, error) {
+func Post(url, info string, body any) (*http.Response, error) {
 	var err error
 
-	// memoize token to avoid extra VerifyToken() calls
 	if token == "" {
 		token, err = config.GetAPIKey(context.Background())
 		if err != nil {
@@ -51,23 +35,33 @@ func Get(url, info string) (*http.Response, error) {
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
+	req.Header.Add("Content-Type", "application/json")
 
 	if config.IsAPIConsumerTrackingEnabled() {
 		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
 	}
 
 	if info != "" {
-		log.Infof("Fetching %s from: %s", info, url)
+		log.Infof("Creating %s at: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
+
+	if err := restoreRequestBody(req); err != nil {
+		return nil, err
+	}
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -78,7 +72,7 @@ func Get(url, info string) (*http.Response, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if !isCreateSuccess(resp.StatusCode) {
 		resp.Body.Close()
 
 		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
@@ -87,25 +81,36 @@ func Get(url, info string) (*http.Response, error) {
 	return resp, err
 }
 
-// GetUserID returns a dummy user ID for telemetry.
-// TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
-// and the appropriate way to fetch the user ID for telemetry.
-func GetUserID(ctx context.Context) (string, error) {
-	return "unknown", nil
+func isCreateSuccess(code int) bool {
+	return code == http.StatusOK || code == http.StatusCreated
 }
 
-func GetJSON(url, info string, v any) error {
-	resp, err := Get(url, info)
+// restoreRequestBody re-arms req.Body after RedactedReqInfo (which dumps and
+// consumes it). For *bytes.Reader payloads, http.NewRequest sets req.GetBody
+// automatically; for other body kinds we leave Body alone and rely on the
+// transport reading whatever is left.
+func restoreRequestBody(req *http.Request) error {
+	if req.GetBody == nil {
+		return nil
+	}
+
+	body, err := req.GetBody()
 	if err != nil {
 		return err
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&v)
-	if err != nil {
-		return err
-	}
-
-	resp.Body.Close()
+	req.Body = body
 
 	return nil
+}
+
+func PostJSON(url, info string, body, v any) error {
+	resp, err := Post(url, info, body)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	return json.NewDecoder(resp.Body).Decode(&v)
 }
