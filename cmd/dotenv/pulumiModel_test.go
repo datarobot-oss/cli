@@ -244,7 +244,7 @@ func TestPulumiLoginModel_NonInteractive_ViewReturnsEmpty(t *testing.T) {
 	model := newPulumiLoginModel(true, true, true)
 
 	view := model.View()
-	assert.Equal(t, "", view, "non-interactive mode should not render anything")
+	assert.Empty(t, view, "non-interactive mode should not render anything")
 }
 
 func TestPulumiLoginModel_NonInteractive_ViewReturnsEmptyEvenWithError(t *testing.T) {
@@ -252,5 +252,5 @@ func TestPulumiLoginModel_NonInteractive_ViewReturnsEmptyEvenWithError(t *testin
 	model.err = assert.AnError
 
 	view := model.View()
-	assert.Equal(t, "", view, "non-interactive mode should not render anything, even with error")
+	assert.Empty(t, view, "non-interactive mode should not render anything, even with error")
 }
