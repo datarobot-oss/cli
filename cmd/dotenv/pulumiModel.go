@@ -295,7 +295,7 @@ func (m pulumiLoginModel) performLogin(loginType, url string) tea.Cmd {
 func (m pulumiLoginModel) View() string {
 	var sb strings.Builder
 
-	// Non-interactive mode: don't render anything (passphrase generation happens in Init)
+	// Non-interactive mode: don't render anything
 	if m.nonInteractive {
 		return ""
 	}
