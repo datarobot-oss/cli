@@ -378,7 +378,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		// Check if Pulumi login/passphrase setup is needed before the wizard
-		if m.NeedsPulumiLogin || (m.Yes && m.NeedsPulumiPassphrase) {
+		// Interactive: show Pulumi screen when login or passphrase is needed
+		// --yes mode: only enter when passphrase needs auto-generation (can't do interactive login)
+		if (m.NeedsPulumiLogin && !m.Yes) || (m.Yes && m.NeedsPulumiPassphrase) {
 			// Use pulumiLoginModel for both interactive and non-interactive modes
 			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase, m.Yes)
 			m.pulumiModel = &plm
