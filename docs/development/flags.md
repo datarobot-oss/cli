@@ -54,6 +54,7 @@ cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
 ```
 
 When multiple flags are used together, users get a clear error:
+
 ```
 Error: if any flags in the group [list versions version] are set none of the others can be; list version were all set
 ```
@@ -74,6 +75,7 @@ cmd.MarkFlagsRequiredTogether("name", "version", "url", "sha256", "release-date"
 ```
 
 **Use cases:**
+
 - Flags that form a complete set of parameters (e.g., all fields required for a record)
 - Flags that depend on each other for validity
 
@@ -87,6 +89,7 @@ cmd.MarkFlagsOneRequired("output", "stdout")
 ```
 
 **Use cases:**
+
 - Required operation modes where user must choose one
 - Output destination selection
 
@@ -105,6 +108,7 @@ cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
 ```
 
 This pattern means:
+
 - Either use `--from-file` alone
 - Or use all five manual flags together
 - But never mix them
@@ -117,9 +121,11 @@ See the [Cobra Command documentation](https://pkg.go.dev/github.com/spf13/cobra#
   - Plural aliases are acceptable for backward compatibility
 - **Use lowercase with hyphens** — `--my-flag` (not `--myFlag` or `--my_flag`)
 - **Provide both short and long forms** when appropriate:
+
   ```go
   cmd.Flags().BoolVarP(&force, "force", "f", false, "Force operation")
   ```
+
 - **Be descriptive** — Flag descriptions should explain the purpose and any side effects
 - **Document defaults** — If a flag has a non-obvious default value, mention it in the description
 
@@ -142,6 +148,7 @@ cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
 ```
 
 **Rationale:**
+
 - `--list` shows all available plugins
 - `--versions` shows available versions for one plugin
 - `--version` specifies an exact version to install
@@ -163,21 +170,14 @@ cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
 ```
 
 **Rationale:** Users can either:
+
 1. Load all plugin metadata from a JSON file (`--from-file`)
 2. Specify all fields manually (requires all five flags together)
-
-### Dotenv setup command (cmd/dotenv/cmd.go)
-
-```go
-// Conflicting intent
-SetupCmd.MarkFlagsMutuallyExclusive("if-needed", "all")
-```
-
-**Rationale:** `--if-needed` skips setup if already configured; `--all` shows every prompt. These are opposing behaviors.
 
 ## Best practices
 
 1. **Add constraints at flag definition time** — Mark flag groups before returning the command:
+
    ```go
    func Cmd() *cobra.Command {
        cmd := &cobra.Command{ /* ... */ }
@@ -196,12 +196,14 @@ SetupCmd.MarkFlagsMutuallyExclusive("if-needed", "all")
 2. **Consider shell completion** — Cobra automatically hides mutually exclusive flags from completion once one is selected, improving UX.
 
 3. **Write clear descriptions** — Help users understand why flags are incompatible:
+
    ```go
    cmd.Flags().BoolVar(&parallel, "parallel", false, "Run tasks in parallel (cannot be used with --watch)")
    cmd.Flags().BoolVar(&watch, "watch", false, "Watch files and re-run (cannot be used with --parallel)")
    ```
 
 4. **Test flag combinations** — Verify that your constraints work as expected:
+
    ```bash
    # Should error: incompatible flags
    dr mycommand --flag1 --flag2
