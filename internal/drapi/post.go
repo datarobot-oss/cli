@@ -59,6 +59,8 @@ func Post(url, info string, body any) (*http.Response, error) {
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
+	// RedactedReqInfo above drains req.Body for logging, so re-arm it before client.Do
+	// or the server receives an empty payload.
 	if err := restoreRequestBody(req); err != nil {
 		return nil, err
 	}

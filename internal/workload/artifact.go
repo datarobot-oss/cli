@@ -219,11 +219,11 @@ func CreateArtifact(payload any) (*Artifact, error) {
 	return &artifact, nil
 }
 
-func ListArtifacts(limit int, status string) ([]Artifact, error) {
+func ListArtifacts(limit int, status Status) ([]Artifact, error) {
 	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit)
 
 	if status != "" {
-		endpoint += "&status=" + status
+		endpoint += "&status=" + string(status)
 	}
 
 	pageURL, err := config.GetEndpointURL(endpoint)

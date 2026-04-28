@@ -22,12 +22,11 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/workload"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat string
+	var outputFormat workload.OutputFormat
 
 	var specFile string
 
@@ -39,7 +38,7 @@ func Cmd() *cobra.Command {
 This command reads a JSON spec from a file and POSTs it to the Workload API.
 The created artifact is returned and shown.
 
-By default, output is human-readable. Use --output json for machine-parseable output.
+By default, output is human-readable. Use --output-format json for machine-parseable output.
 
 Spec file format (minimal valid example):
 
@@ -63,18 +62,10 @@ rejected before the request is sent.
 
 Example:
   dr workload artifact create --spec-file spec.json
-  dr workload artifact create --spec-file spec.json --output json`,
+  dr workload artifact create --spec-file spec.json --output-format json`,
 		Args:    cobra.NoArgs,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
-			if specFile == "" {
-				return errors.New("--spec-file is required")
-			}
-
 			payload, err := readSpecFile(specFile)
 			if err != nil {
 				return err
@@ -89,18 +80,13 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return printJSON(*artifact)
-			}
-
-			printHuman(*artifact)
-
-			return nil
+			return workload.RenderArtifact(outputFormat, *artifact)
 		},
 	}
 
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	workload.AddOutputFlag(cmd, &outputFormat)
 	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON spec file (required)")
+	_ = cmd.MarkFlagRequired("spec-file")
 
 	return cmd
 }
@@ -115,42 +101,5 @@ func readSpecFile(path string) (json.RawMessage, error) {
 		return nil, err
 	}
 
-	var probe map[string]any
-
-	if err := json.Unmarshal(data, &probe); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-
 	return json.RawMessage(data), nil
-}
-
-func printJSON(artifact workload.Artifact) error {
-	data, err := json.MarshalIndent(workload.NewArtifactOutput(artifact), "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
-}
-
-func printHuman(artifact workload.Artifact) {
-	codeRef := workload.ExtractCodeRef(artifact)
-
-	catalogID := "\u2014"
-	versionID := "\u2014"
-
-	if codeRef != nil {
-		catalogID = codeRef.CatalogID
-		versionID = codeRef.CatalogVersionID
-	}
-
-	fmt.Println(tui.BaseTextStyle.Render("ID:          " + artifact.ID))
-	fmt.Println(tui.BaseTextStyle.Render("Name:        " + artifact.Name))
-	fmt.Println(tui.BaseTextStyle.Render("Status:      " + artifact.Status))
-	fmt.Println(tui.BaseTextStyle.Render("Catalog ID:  " + catalogID))
-	fmt.Println(tui.BaseTextStyle.Render("Version ID:  " + versionID))
-	fmt.Println(tui.DimStyle.Render("Created:     " + artifact.CreatedAt.UTC().Format("2006-01-02 15:04 UTC")))
-	fmt.Println(tui.DimStyle.Render("Updated:     " + artifact.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC")))
 }
