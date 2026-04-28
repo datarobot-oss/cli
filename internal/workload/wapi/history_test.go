@@ -105,13 +105,13 @@ func TestAppendHistory_RotatesAtThreshold(t *testing.T) {
 	initWapiDir(t, tmp)
 
 	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, HistoryBackupFile)
+	backup := filepath.Join(tmp, DirName, historyBackupFile)
 
 	// Seed the log at exactly the rotation threshold. Truncate creates a
 	// sparse file on APFS/ext4, so no 1 MB of zeros is actually written.
 	err := os.WriteFile(path, nil, 0o644)
 	require.NoError(t, err)
-	err = os.Truncate(path, HistoryRotateBytes)
+	err = os.Truncate(path, historyRotateBytes)
 	require.NoError(t, err)
 
 	err = AppendHistory(tmp, HistoryEntry{"op": "sync"})
@@ -130,19 +130,19 @@ func TestAppendHistory_RotationKeepsOneBackup(t *testing.T) {
 	initWapiDir(t, tmp)
 
 	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, HistoryBackupFile)
+	backup := filepath.Join(tmp, DirName, historyBackupFile)
 	secondBackup := filepath.Join(tmp, DirName, "history.log.2")
 
 	// First rotation (sparse via Truncate, see TestAppendHistory_RotatesAtThreshold).
 	err := os.WriteFile(path, nil, 0o644)
 	require.NoError(t, err)
-	err = os.Truncate(path, HistoryRotateBytes)
+	err = os.Truncate(path, historyRotateBytes)
 	require.NoError(t, err)
 	err = AppendHistory(tmp, HistoryEntry{"op": "first"})
 	require.NoError(t, err)
 
 	// Force a second rotation by re-inflating the fresh log.
-	err = os.Truncate(path, HistoryRotateBytes)
+	err = os.Truncate(path, historyRotateBytes)
 	require.NoError(t, err)
 	err = AppendHistory(tmp, HistoryEntry{"op": "second"})
 	require.NoError(t, err)
@@ -167,11 +167,11 @@ func TestAppendHistory_RotationRenameFailureSurfaces(t *testing.T) {
 	initWapiDir(t, tmp)
 
 	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, HistoryBackupFile)
+	backup := filepath.Join(tmp, DirName, historyBackupFile)
 
 	err := os.WriteFile(path, nil, 0o644)
 	require.NoError(t, err)
-	err = os.Truncate(path, HistoryRotateBytes)
+	err = os.Truncate(path, historyRotateBytes)
 	require.NoError(t, err)
 
 	// Make the backup target a non-empty directory so Rename fails.

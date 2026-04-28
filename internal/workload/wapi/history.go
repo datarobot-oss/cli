@@ -22,28 +22,20 @@ import (
 )
 
 // HistoryEntry is one JSONL record in .wapi/history.log. It is deliberately
-// open-schema: the sync engine (RAPTOR-16924) owns the per-op field shape.
-// Callers SHOULD populate at least "ts" (RFC3339 UTC timestamp) and "op".
+// open-schema: each operation type owns its own field shape. Callers SHOULD
+// populate at least "ts" (RFC3339 UTC timestamp) and "op".
 type HistoryEntry map[string]any
 
 // AppendHistory writes entry as a single JSON object followed by "\n" to
-// .wapi/history.log. If the existing log has grown to HistoryRotateBytes or
+// .wapi/history.log. If the existing log has grown to historyRotateBytes or
 // more, it is renamed to history.log.1 first (overwriting any prior .1 —
-// the design keeps exactly one backup; see spec §7.2).
+// only one backup is retained).
 //
 // Returns ErrNotInitialized if .wapi/ does not exist. Unlike SaveConfig /
 // SaveManifest, appends use O_APPEND rather than an atomic rename (which
 // would lose prior entries). The caller is responsible for serializing
-// concurrent writers via an external lock (the single-writer assumption of
-// the v1 POC).
+// concurrent writers via an external lock.
 func AppendHistory(projectDir string, entry HistoryEntry) error {
-	return appendHistory(projectDir, entry)
-}
-
-// appendHistory performs the append. Shared by AppendHistory (the public
-// entry point) and by Initialize (which calls it immediately after mkdir'ing
-// .wapi/ — the ErrNotExist path below can't fire from that call site).
-func appendHistory(projectDir string, entry HistoryEntry) error {
 	path := historyPath(projectDir)
 
 	if err := rotateIfNeeded(path, historyBackupPath(projectDir)); err != nil {
@@ -78,7 +70,7 @@ func appendHistory(projectDir string, entry HistoryEntry) error {
 }
 
 // rotateIfNeeded renames path to backup when path's size meets or exceeds
-// HistoryRotateBytes. A missing log file is a no-op (first append).
+// historyRotateBytes. A missing log file is a no-op (first append).
 func rotateIfNeeded(path, backup string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -89,7 +81,7 @@ func rotateIfNeeded(path, backup string) error {
 		return fmt.Errorf("stat history log %s: %w", path, err)
 	}
 
-	if info.Size() < HistoryRotateBytes {
+	if info.Size() < historyRotateBytes {
 		return nil
 	}
 

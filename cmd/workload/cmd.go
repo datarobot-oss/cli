@@ -16,6 +16,7 @@ package workload
 
 import (
 	"github.com/datarobot/cli/cmd/workload/artifact"
+	"github.com/datarobot/cli/cmd/workload/code"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -34,6 +35,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 
 	cmd.AddCommand(
 		artifact.Cmd(),
+		code.Cmd(),
 	)
 
 	return cmd

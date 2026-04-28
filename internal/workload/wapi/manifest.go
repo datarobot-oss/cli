@@ -35,8 +35,9 @@ type FileMeta struct {
 // synced." Written by Initialize (empty) and by the sync engine.
 //
 // SyncedAt and SyncedVersionID use pointer semantics so that a freshly-init'd
-// empty manifest round-trips with explicit JSON null values (see design spec
-// §3.1 — redundant with config.json for corruption recovery).
+// empty manifest round-trips with explicit JSON null values; the manifest is
+// redundant with config.json so corruption of one is recoverable from the
+// other.
 type Manifest struct {
 	Version         int                 `json:"version"`
 	SyncedAt        *time.Time          `json:"syncedAt"`
@@ -73,7 +74,7 @@ func LoadManifest(projectDir string) (Manifest, error) {
 	return m, nil
 }
 
-// SaveManifest atomically writes m to .wapi/manifest.json. Returns
+// SaveManifest atomically writes the manifest to .wapi/manifest.json. Returns
 // ErrNotInitialized if .wapi/ does not exist.
 func SaveManifest(projectDir string, m Manifest) error {
 	if err := writeManifest(projectDir, m); err != nil {
@@ -87,7 +88,7 @@ func SaveManifest(projectDir string, m Manifest) error {
 	return nil
 }
 
-// writeManifest writes m to .wapi/manifest.json. Shared by SaveManifest
+// writeManifest writes the manifest to .wapi/manifest.json. Shared by SaveManifest
 // (which maps os.ErrNotExist → ErrNotInitialized) and by Initialize.
 func writeManifest(projectDir string, m Manifest) error {
 	// Ensure JSON emits "files": {} rather than "files": null.

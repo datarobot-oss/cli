@@ -20,8 +20,6 @@ import (
 	"path/filepath"
 )
 
-// atomicFileMode is the permission we always write .wapi/ state files
-// with — and also the root-level .wapiignore template drop in Initialize.
 const atomicFileMode os.FileMode = 0o644
 
 // atomicWriteFile writes data to a sibling temp file in the same directory as

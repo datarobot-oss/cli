@@ -36,12 +36,10 @@ type CorruptedError struct {
 	Err  error
 }
 
-// Error implements the error interface.
 func (e *CorruptedError) Error() string {
 	return fmt.Sprintf(".wapi/ file is corrupted at %s: %v", e.Path, e.Err)
 }
 
-// Unwrap exposes the underlying error for errors.Is / errors.As.
 func (e *CorruptedError) Unwrap() error {
 	return e.Err
 }

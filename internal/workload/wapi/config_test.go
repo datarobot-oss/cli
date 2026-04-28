@@ -68,7 +68,7 @@ func TestConfig_SaveLoadRoundTrip_NullsForEmptyOptionals(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, ConfigFile))
+	raw, err := os.ReadFile(filepath.Join(tmp, DirName, configFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any
@@ -104,7 +104,7 @@ func TestConfig_LoadCorrupted_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, ConfigFile)
+	path := filepath.Join(tmp, DirName, configFile)
 	err := os.WriteFile(path, []byte("not json {"), 0o644)
 	require.NoError(t, err)
 
@@ -122,7 +122,7 @@ func TestConfig_LoadCorrupted_WrongType(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, ConfigFile)
+	path := filepath.Join(tmp, DirName, configFile)
 	err := os.WriteFile(path, []byte(`{"createdAt": 42}`), 0o644)
 	require.NoError(t, err)
 

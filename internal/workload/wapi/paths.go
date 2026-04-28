@@ -20,38 +20,39 @@ import (
 	"github.com/datarobot/cli/internal/fsutil"
 )
 
-// Filenames and directory layout for the .wapi/ state directory.
+// Exported names used by external callers (tests, future c2w commands).
 const (
-	DirName           = ".wapi"
-	ConfigFile        = "config.json"
-	ManifestFile      = "manifest.json"
-	HistoryFile       = "history.log"
-	HistoryBackupFile = "history.log.1"
-	GitignoreFile     = ".gitignore"
-	WapiignoreFile    = ".wapiignore"
+	DirName         = ".wapi"
+	HistoryFile     = "history.log"
+	ManifestVersion = 1
 )
 
-// Inline-literal constants kept at package scope so their meaning is obvious
-// to readers (and so no one has to guess at the meaning of `"*\n"`).
-const gitignoreContents = "*\n"
+// Internal layout constants. Stay private so consumers go through the
+// helpers below rather than reconstructing paths by hand.
+const (
+	configFile        = "config.json"
+	manifestFile      = "manifest.json"
+	historyBackupFile = "history.log.1"
+	gitignoreFile     = ".gitignore"
+	wapiignoreFile    = ".wapiignore"
 
-// ManifestVersion is the current schema version written into manifest.json.
-const ManifestVersion = 1
+	gitignoreContents = "*\n"
 
-// HistoryRotateBytes is the size threshold at which history.log is rotated
-// to history.log.1 (keeping a single backup). See design spec §7.1.
-const HistoryRotateBytes int64 = 1 << 20
+	// Size threshold at which history.log rotates to history.log.1
+	// (only one backup is retained).
+	historyRotateBytes int64 = 1 << 20
+)
 
 func wapiDir(projectDir string) string {
 	return filepath.Join(projectDir, DirName)
 }
 
 func configPath(projectDir string) string {
-	return filepath.Join(wapiDir(projectDir), ConfigFile)
+	return filepath.Join(wapiDir(projectDir), configFile)
 }
 
 func manifestPath(projectDir string) string {
-	return filepath.Join(wapiDir(projectDir), ManifestFile)
+	return filepath.Join(wapiDir(projectDir), manifestFile)
 }
 
 func historyPath(projectDir string) string {
@@ -59,18 +60,17 @@ func historyPath(projectDir string) string {
 }
 
 func historyBackupPath(projectDir string) string {
-	return filepath.Join(wapiDir(projectDir), HistoryBackupFile)
+	return filepath.Join(wapiDir(projectDir), historyBackupFile)
 }
 
 func gitignorePath(projectDir string) string {
-	return filepath.Join(wapiDir(projectDir), GitignoreFile)
+	return filepath.Join(wapiDir(projectDir), gitignoreFile)
 }
 
-// wapiignorePath returns the path of the project-root .wapiignore, which
-// lives alongside the user's code rather than inside .wapi/ (see design
-// spec §6.4).
+// .wapiignore lives at the project root (not inside .wapi/) so it is visible
+// in the IDE and version-controllable, the same convention as .gitignore.
 func wapiignorePath(projectDir string) string {
-	return filepath.Join(projectDir, WapiignoreFile)
+	return filepath.Join(projectDir, wapiignoreFile)
 }
 
 // Exists reports whether the project directory contains a .wapi/ directory.

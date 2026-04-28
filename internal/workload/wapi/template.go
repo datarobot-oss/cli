@@ -16,10 +16,8 @@ package wapi
 
 import _ "embed"
 
-// WapiignoreTemplate is the verbatim .wapiignore template (design spec §3.2)
-// written at project root by Initialize when the user has no .wapiignore yet.
-// Callers MUST NOT mutate the returned slice (it is backed by the binary's
-// read-only segment and mutation will panic at runtime).
+// wapiignoreTemplate is the .wapiignore content dropped at the project root
+// on first init. Embedded so we don't depend on file lookups at runtime.
 //
 //go:embed wapiignore.tmpl
-var WapiignoreTemplate []byte
+var wapiignoreTemplate []byte

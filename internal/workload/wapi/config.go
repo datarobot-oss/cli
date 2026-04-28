@@ -26,7 +26,7 @@ import (
 // sync-state pointer for the project directory.
 //
 // CatalogID and LastSyncedVersionID use pointer semantics so that an empty
-// value round-trips as JSON null rather than "" (see design spec §3.1).
+// value round-trips as JSON null rather than "".
 type Config struct {
 	ArtifactID          string    `json:"artifactId"`
 	CatalogID           *string   `json:"catalogId"`
@@ -59,7 +59,7 @@ func LoadConfig(projectDir string) (Config, error) {
 	return cfg, nil
 }
 
-// SaveConfig atomically writes c to .wapi/config.json. Returns
+// SaveConfig atomically writes the config to .wapi/config.json. Returns
 // ErrNotInitialized if .wapi/ does not exist.
 func SaveConfig(projectDir string, c Config) error {
 	if err := writeConfig(projectDir, c); err != nil {
@@ -73,7 +73,7 @@ func SaveConfig(projectDir string, c Config) error {
 	return nil
 }
 
-// writeConfig writes c to .wapi/config.json. Shared by SaveConfig (which
+// writeConfig writes the config to .wapi/config.json. Shared by SaveConfig (which
 // maps os.ErrNotExist → ErrNotInitialized) and by Initialize (which has
 // just mkdir'd .wapi/, so that error can't occur).
 func writeConfig(projectDir string, c Config) error {
@@ -85,9 +85,8 @@ func writeConfig(projectDir string, c Config) error {
 	return atomicWriteFile(configPath(projectDir), data)
 }
 
-// stringPtr returns a pointer to v, or nil if v is empty. Lets callers
-// construct Config values where optional fields serialize as JSON null when
-// unset.
+// stringPtr lets callers express "absent" as nil so optional Config fields
+// serialize as JSON null rather than "".
 func stringPtr(v string) *string {
 	if v == "" {
 		return nil

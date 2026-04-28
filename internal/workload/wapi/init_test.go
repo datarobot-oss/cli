@@ -34,7 +34,6 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 		ArtifactID:          "art-abc-123",
 		CatalogID:           "cat-xyz-789",
 		LastSyncedVersionID: "fedcba0987654321fedcba09",
-		Branch:              BranchExistingCode,
 	})
 	after := time.Now().UTC()
 
@@ -49,17 +48,17 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 		names = append(names, e.Name())
 	}
 
-	assert.ElementsMatch(t, []string{GitignoreFile, ConfigFile, HistoryFile, ManifestFile}, names)
+	assert.ElementsMatch(t, []string{gitignoreFile, configFile, HistoryFile, manifestFile}, names)
 
 	// .wapi/.gitignore is "*\n".
-	gi, err := os.ReadFile(filepath.Join(tmp, DirName, GitignoreFile))
+	gi, err := os.ReadFile(filepath.Join(tmp, DirName, gitignoreFile))
 	require.NoError(t, err)
 	assert.Equal(t, "*\n", string(gi))
 
 	// .wapiignore at project root matches the embedded template.
-	rootIgnore, err := os.ReadFile(filepath.Join(tmp, WapiignoreFile))
+	rootIgnore, err := os.ReadFile(filepath.Join(tmp, wapiignoreFile))
 	require.NoError(t, err)
-	assert.Equal(t, WapiignoreTemplate, rootIgnore)
+	assert.Equal(t, wapiignoreTemplate, rootIgnore)
 
 	// config.json round-trips cleanly.
 	cfg, err := LoadConfig(tmp)
@@ -74,7 +73,7 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 	assert.False(t, cfg.CreatedAt.After(after), "CreatedAt should be <= after")
 
 	// manifest.json is empty BASE with explicit null sync pointers.
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, ManifestFile))
+	raw, err := os.ReadFile(filepath.Join(tmp, DirName, manifestFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any
@@ -93,10 +92,7 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 func TestInitialize_WritesInitHistoryEntry(t *testing.T) {
 	tmp := t.TempDir()
 
-	err := Initialize(tmp, InitOptions{
-		ArtifactID: "art-abc-123",
-		Branch:     BranchEmpty,
-	})
+	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc-123"})
 	require.NoError(t, err)
 
 	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
@@ -105,21 +101,45 @@ func TestInitialize_WritesInitHistoryEntry(t *testing.T) {
 	e := entries[0]
 	assert.Equal(t, "init", e["op"])
 	assert.Equal(t, "art-abc-123", e["artifact"])
-	assert.Equal(t, "empty", e["branch"])
 	assert.EqualValues(t, 0, e["baseFiles"])
 	assert.NotEmpty(t, e["ts"])
+	assert.Nil(t, e["catalog"], "empty-artifact init must record catalog as JSON null")
 
 	_, err = time.Parse(time.RFC3339, e["ts"].(string))
 	assert.NoError(t, err, "ts should parse as RFC3339")
 }
 
+func TestInitialize_HistoryCatalogPresentForExistingCode(t *testing.T) {
+	tmp := t.TempDir()
+
+	err := Initialize(tmp, InitOptions{
+		ArtifactID: "art-abc-123",
+		CatalogID:  "cat-xyz-789",
+	})
+	require.NoError(t, err)
+
+	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "cat-xyz-789", entries[0]["catalog"])
+}
+
+func TestInitialize_CreatesMissingProjectDir(t *testing.T) {
+	parent := t.TempDir()
+	nested := filepath.Join(parent, "a", "b", "c")
+
+	err := Initialize(nested, InitOptions{ArtifactID: "art-abc"})
+	require.NoError(t, err)
+
+	assert.True(t, Exists(nested), "project dir + .wapi/ must be created end-to-end")
+}
+
 func TestInitialize_AlreadyLinked(t *testing.T) {
 	tmp := t.TempDir()
 
-	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc", Branch: BranchEmpty})
+	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	err = Initialize(tmp, InitOptions{ArtifactID: "art-def", Branch: BranchEmpty})
+	err = Initialize(tmp, InitOptions{ArtifactID: "art-def"})
 	assert.ErrorIs(t, err, ErrAlreadyLinked)
 }
 
@@ -127,13 +147,13 @@ func TestInitialize_PreservesUserWapiignore(t *testing.T) {
 	tmp := t.TempDir()
 
 	custom := []byte("# my custom ignore\nsecret/\n")
-	err := os.WriteFile(filepath.Join(tmp, WapiignoreFile), custom, 0o644)
+	err := os.WriteFile(filepath.Join(tmp, wapiignoreFile), custom, 0o644)
 	require.NoError(t, err)
 
-	err = Initialize(tmp, InitOptions{ArtifactID: "art-abc", Branch: BranchEmpty})
+	err = Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	got, err := os.ReadFile(filepath.Join(tmp, WapiignoreFile))
+	got, err := os.ReadFile(filepath.Join(tmp, wapiignoreFile))
 	require.NoError(t, err)
 	assert.Equal(t, custom, got, "existing .wapiignore must not be overwritten")
 }
@@ -141,13 +161,10 @@ func TestInitialize_PreservesUserWapiignore(t *testing.T) {
 func TestInitialize_NullsForEmptyOptionals(t *testing.T) {
 	tmp := t.TempDir()
 
-	err := Initialize(tmp, InitOptions{
-		ArtifactID: "art-abc",
-		Branch:     BranchEmpty,
-	})
+	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, ConfigFile))
+	raw, err := os.ReadFile(filepath.Join(tmp, DirName, configFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any
@@ -161,7 +178,7 @@ func TestInitialize_NullsForEmptyOptionals(t *testing.T) {
 func TestInitialize_WritesCLIVersion(t *testing.T) {
 	tmp := t.TempDir()
 
-	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc", Branch: BranchEmpty})
+	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
 	cfg, err := LoadConfig(tmp)
