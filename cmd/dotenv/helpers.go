@@ -160,9 +160,9 @@ func applyDefaultsToPrompts(prompts []envbuilder.UserPrompt) ([]envbuilder.UserP
 		// Otherwise leave as empty string (which is the zero value)
 	}
 
-	// Apply generated values for prompts with generate: true
 	var err error
 
+	// Apply generated values for prompts with generate: true
 	prompts, err = envbuilder.ApplyGeneratedValues(prompts)
 	if err != nil {
 		return nil, err
