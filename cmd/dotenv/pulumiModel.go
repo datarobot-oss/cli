@@ -26,6 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/viper"
@@ -249,9 +250,9 @@ func savePulumiPassphraseToConfig(passphrase string) error {
 		return fmt.Errorf("failed to create config: %w", err)
 	}
 
-	viper.Set(pulumiConfigPassphraseKey, passphrase)
+	viperx.Set(pulumiConfigPassphraseKey, passphrase)
 
-	if err := viper.WriteConfig(); err != nil {
+	if err := config.UpdateConfigFile(pulumiConfigPassphraseKey); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -392,7 +393,7 @@ func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, 
 	}
 
 	loggedIn := isPulumiLoggedIn()
-	passphraseSet := viper.GetString(pulumiConfigPassphraseKey) != ""
+	passphraseSet := viperx.GetString(pulumiConfigPassphraseKey) != ""
 
 	return needsPulumiSetup(prompts, loggedIn, passphraseSet), loggedIn, !passphraseSet
 }

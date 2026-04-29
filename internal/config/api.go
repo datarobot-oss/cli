@@ -142,12 +142,12 @@ func SaveURLToConfig(newURL string) error {
 		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
 
-		return viper.WriteConfig()
+		return UpdateConfigFile(DataRobotURL, DataRobotAPIKey)
 	}
 
 	viper.Set(DataRobotURL, newURL+DRAPIURLSuffix)
 
-	return viper.WriteConfig()
+	return UpdateConfigFile(DataRobotURL)
 }
 
 // SetURLToConfig is a helper function that sets the DataRobot URL with the DRAPIURLSuffix in the config object.

@@ -24,10 +24,11 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/testutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // setupTestEnvironment creates a temporary environment for testing authentication.
@@ -47,7 +48,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	// Save original callback function.
 	originalCallback := APIKeyCallbackFunc
 
-	viper.Reset()
+	viperx.Reset()
 
 	// Create mock DataRobot API server.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +74,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	viper.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
 	err = config.CreateConfigFileDirIfNotExists()
 	require.NoError(t, err)
@@ -81,7 +82,7 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	cleanup := func() {
 		server.Close()
 		os.RemoveAll(tempDir)
-		viper.Reset()
+		viperx.Reset()
 
 		APIKeyCallbackFunc = originalCallback
 	}
@@ -93,7 +94,7 @@ func TestEnsureAuthenticated_MissingCredentials(t *testing.T) {
 	server, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	viper.Set(config.DataRobotAPIKey, "")
+	viperx.Set(config.DataRobotAPIKey, "")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	// Mock the callback to simulate failure to retrieve API key.
@@ -114,7 +115,7 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	viper.Set(config.DataRobotAPIKey, "expired-token")
+	viperx.Set(config.DataRobotAPIKey, "expired-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	apiKey, _ := config.GetAPIKey(context.Background())
@@ -133,7 +134,7 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	viper.Set(config.DataRobotAPIKey, "valid-token")
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	apiKey, _ := config.GetAPIKey(context.Background())
@@ -165,10 +166,10 @@ func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 	defer cleanup()
 
 	// Set skip_auth flag to true
-	viper.Set("skip_auth", true)
+	viperx.Set("skip_auth", true)
 
 	// Don't set any credentials
-	viper.Set(config.DataRobotAPIKey, "")
+	viperx.Set(config.DataRobotAPIKey, "")
 
 	existingToken := os.Getenv("DATAROBOT_API_TOKEN")
 
@@ -200,9 +201,9 @@ func TestEnsureAuthenticated_DefaultUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	viper.Reset()
-	viper.Set(config.DataRobotURL, server.URL+"/api/v2")
-	viper.Set(config.DataRobotAPIKey, "valid-token")
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
 
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
@@ -224,11 +225,11 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 
 	testutil.SetTestHomeDir(t, tempDir)
 
-	viper.Reset()
+	viperx.Reset()
 
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
-	viper.Set(config.DataRobotURL, "")
+	viperx.Set(config.DataRobotURL, "")
 
 	baseURL := config.GetBaseURL()
 	assert.Empty(t, baseURL, "Expected GetBaseURL to return empty string")
@@ -244,26 +245,27 @@ func TestConfig_WriteAndRead(t *testing.T) {
 	homeDir, err := os.UserHomeDir()
 	require.NoError(t, err)
 
-	configFilePath := filepath.Join(homeDir, ".config", "datarobot", "drconfig.yaml")
-	viper.SetConfigFile(configFilePath)
+	configDir := filepath.Join(homeDir, ".config", "datarobot")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
 
-	viper.Set(config.DataRobotAPIKey, "test-token")
+	configFilePath := filepath.Join(configDir, "drconfig.yaml")
 
-	// SafeWriteConfig creates the file if it doesn't exist.
-	err = viper.SafeWriteConfig()
-	if err != nil {
-		// File might already exist, try WriteConfig.
-		err = viper.WriteConfig()
-		require.NoError(t, err)
-	}
+	// Write the config file directly rather than going through viper's
+	// (forbidden) WriteConfig. The production code path persists via
+	// config.UpdateConfigFile; this test only needs a seeded fixture.
+	fixture := map[string]any{config.DataRobotAPIKey: "test-token"}
 
-	viper.Reset()
-	viper.SetConfigFile(configFilePath)
+	data, err := yaml.Marshal(fixture)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configFilePath, data, 0o600))
 
-	err = viper.ReadInConfig()
+	viperx.Reset()
+	viperx.SetConfigFile(configFilePath)
+
+	err = viperx.ReadInConfig()
 	require.NoError(t, err)
 
-	token := viper.GetString(config.DataRobotAPIKey)
+	token := viperx.GetString(config.DataRobotAPIKey)
 	assert.Equal(t, "test-token", token, "Expected token to be persisted and read back")
 }
 
@@ -275,7 +277,7 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 
 	testutil.SetTestHomeDir(t, tempDir)
 
-	viper.Reset()
+	viperx.Reset()
 
 	err = config.CreateConfigFileDirIfNotExists()
 	require.NoError(t, err)

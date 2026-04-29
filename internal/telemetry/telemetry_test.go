@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/amplitude/analytics-go/amplitude/types"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,7 +31,7 @@ func TestNewClient_DisabledWhenAPIKeyEmpty(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
 
@@ -47,7 +47,7 @@ func TestNewClient_DisabledWhenFlagSet(t *testing.T) {
 
 	AmplitudeAPIKey = "test-key"
 
-	viper.Set("disable-telemetry", true)
+	viperx.Set("disable-telemetry", true)
 
 	client := NewClient(nil)
 
@@ -55,7 +55,7 @@ func TestNewClient_DisabledWhenFlagSet(t *testing.T) {
 	assert.Nil(t, client.amp)
 
 	// Cleanup
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 }
 
 func TestNewClient_EnabledWhenAPIKeySetAndNotDisabled(t *testing.T) {
@@ -66,7 +66,7 @@ func TestNewClient_EnabledWhenAPIKeySetAndNotDisabled(t *testing.T) {
 
 	AmplitudeAPIKey = "test-key"
 
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
 
@@ -101,7 +101,7 @@ func TestTrack_NoOpWhenDisabled(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 
 	client := NewClient(nil)
 	event := types.Event{
@@ -161,7 +161,7 @@ func TestIsEnabled_FalseWhenAPIKeyEmpty(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 
 	assert.False(t, IsEnabled())
 }
@@ -174,12 +174,12 @@ func TestIsEnabled_FalseWhenDisableFlagSet(t *testing.T) {
 
 	AmplitudeAPIKey = "test-key"
 
-	viper.Set("disable-telemetry", true)
+	viperx.Set("disable-telemetry", true)
 
 	assert.False(t, IsEnabled())
 
 	// Cleanup
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 }
 
 func TestIsEnabled_TrueWhenAPIKeySetAndNotDisabled(t *testing.T) {
@@ -190,7 +190,7 @@ func TestIsEnabled_TrueWhenAPIKeySetAndNotDisabled(t *testing.T) {
 
 	AmplitudeAPIKey = "test-key"
 
-	viper.Set("disable-telemetry", false)
+	viperx.Set("disable-telemetry", false)
 
 	assert.True(t, IsEnabled())
 }

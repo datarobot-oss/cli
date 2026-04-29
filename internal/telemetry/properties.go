@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/version"
-	"github.com/spf13/viper"
 )
 
 // CommonProperties holds the set of properties attached to every telemetry
@@ -60,7 +60,7 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Get DataRobot instance info from config
-	if endpoint := viper.GetString(config.DataRobotURL); endpoint != "" {
+	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
 		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
 			props.DataRobotInstance = baseURL
 			props.Environment = deriveEnvironment(baseURL)

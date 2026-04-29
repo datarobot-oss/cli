@@ -23,9 +23,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -118,7 +118,7 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 	// TODO we may want to refactor this in the future to
 	// use a separate viper instance for better testability
 	// rather than the global one.
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	return exec.Command(editor, m.DotenvFile)
 }
@@ -493,7 +493,7 @@ func (m Model) View() string {
 }
 
 func (m Model) viewListScreen() string {
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	var sb strings.Builder
 

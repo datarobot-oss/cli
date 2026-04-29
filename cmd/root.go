@@ -34,13 +34,13 @@ import (
 	"github.com/datarobot/cli/cmd/workload"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var configFilePath string
@@ -143,15 +143,15 @@ func init() {
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 
 	// Make some of these flags available via Viper
-	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
-	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
-	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
-	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
-	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
-	_ = viper.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
-	_ = viper.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
-	_ = viper.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
+	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
+	_ = viperx.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viperx.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+	_ = viperx.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viperx.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viperx.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
+	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
+	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
+	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
@@ -204,33 +204,33 @@ func init() {
 
 // initializeConfig initializes the configuration by reading from
 // various sources such as environment variables and config files.
-func initializeConfig(cmd *cobra.Command) error {
+func initializeConfig(_ *cobra.Command) error {
 	var err error
 
 	// Set up Viper to process environment variables
 	// First automatically map any environment variables
 	// that are prefixed with DATAROBOT_CLI_ to config keys
-	viper.SetEnvPrefix("DATAROBOT_CLI")
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viperx.SetEnvPrefix("DATAROBOT_CLI")
+	viperx.AutomaticEnv()
+	viperx.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
 	// map VISUAL and EDITOR to external-editor config key,
 	// but set a default value
-	viper.SetDefault("external-editor", "vi")
+	viperx.SetDefault("external-editor", "vi")
 
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	// API consumer tracking is enabled by default.
 	// Set DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false to opt out,
 	// matching the Python SDK convention.
-	viper.SetDefault(config.APIConsumerTrackingEnabled, true)
+	viperx.SetDefault(config.APIConsumerTrackingEnabled, true)
 
-	_ = viper.BindEnv(config.APIConsumerTrackingEnabled, "DATAROBOT_API_CONSUMER_TRACKING_ENABLED")
+	_ = viperx.BindEnv(config.APIConsumerTrackingEnabled, "DATAROBOT_API_CONSUMER_TRACKING_ENABLED")
 
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
 	// use the environment variable value
 	if configFilePath == "" {
-		if envConfigPath := viper.GetString("config"); envConfigPath != "" {
+		if envConfigPath := viperx.GetString("config"); envConfigPath != "" {
 			configFilePath = envConfigPath
 		}
 	}
@@ -239,12 +239,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	err = config.ReadConfigFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("Failed to read config file: %w", err)
-	}
-
-	// Bind Cobra flags to Viper
-	err = viper.BindPFlags(cmd.Flags())
-	if err != nil {
-		return err
 	}
 
 	return nil

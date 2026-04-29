@@ -24,8 +24,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -104,7 +104,7 @@ type DotenvModelTestSuite struct {
 
 func (suite *DotenvModelTestSuite) SetupTest() {
 	// Reset viper to prevent user's drconfig.yaml values from leaking into tests.
-	viper.Reset()
+	viperx.Reset()
 
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
@@ -389,7 +389,7 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	suite.T().Setenv("VISUAL", "nano")
 	suite.T().Setenv("EDITOR", "vim")
 	// Bind the env vars to viper
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd := m.externalEditorCmd()
 	suite.Contains(cmd.Path, "nano", "Expected VISUAL to take precedence")
@@ -398,7 +398,7 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// Test EDITOR fallback
 	suite.T().Setenv("VISUAL", "")
 	// Bind the env vars to viper
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vim", "Expected EDITOR as fallback")
@@ -406,15 +406,15 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 	// Test when neither is set
 	suite.T().Setenv("EDITOR", "")
 	// Bind the env vars to viper
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "", "Expected empty editor when none is set")
 
 	// Test default value
-	viper.SetDefault("external-editor", "vi")
+	viperx.SetDefault("external-editor", "vi")
 	// Bind the env vars to viper; this should not override the default
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
 	cmd = m.externalEditorCmd()
 	suite.Contains(cmd.Path, "vi", "Expected vi as default fallback")
@@ -506,25 +506,25 @@ func (suite *DotenvModelTestSuite) TestYes_ViperBinding() {
 
 	// Reset viper and bind the flag to simulate what happens in init()
 	// This mimics the actual command initialization
-	_ = viper.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	// Test that env var enables the flag
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
 
-	suite.True(viper.GetBool("yes"), "Expected viper to read env var as true")
+	suite.True(viperx.GetBool("yes"), "Expected viper to read env var as true")
 
 	// Test that "1" also works
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
 
-	suite.True(viper.GetBool("yes"), "Expected viper to read '1' as true")
+	suite.True(viperx.GetBool("yes"), "Expected viper to read '1' as true")
 
 	// Test that it's false when not set
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "")
 
-	suite.False(viper.GetBool("yes"), "Expected viper to read empty as false")
+	suite.False(viperx.GetBool("yes"), "Expected viper to read empty as false")
 
 	// Test that "false" works
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "false")
 
-	suite.False(viper.GetBool("yes"), "Expected viper to read 'false' as false")
+	suite.False(viperx.GetBool("yes"), "Expected viper to read 'false' as false")
 }

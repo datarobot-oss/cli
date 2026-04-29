@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -197,17 +197,17 @@ func TestDotenvSetupTracking(t *testing.T) {
 		assert.True(t, HasCompletedDotenvSetup(tmpDir))
 
 		// Set force-interactive flag
-		oldValue := viper.GetBool("force-interactive")
+		oldValue := viperx.GetBool("force-interactive")
 
-		viper.Set("force-interactive", true)
+		viperx.Set("force-interactive", true)
 
-		defer viper.Set("force-interactive", oldValue)
+		defer viperx.Set("force-interactive", oldValue)
 
 		// Now should return false even though state file exists
 		assert.False(t, HasCompletedDotenvSetup(tmpDir))
 
 		// Reset flag
-		viper.Set("force-interactive", oldValue)
+		viperx.Set("force-interactive", oldValue)
 
 		// Should return true again
 		assert.True(t, HasCompletedDotenvSetup(tmpDir))

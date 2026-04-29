@@ -19,7 +19,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 )
 
 // ValidationResult represents the validation status of a single variable.
@@ -118,7 +118,7 @@ func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
 			// Check if already set in environment
 			if _, ok := os.LookupEnv(prompts[p].Env); !ok {
 				// Not in environment, check viper config
-				if configValue := viper.GetString("pulumi_config_passphrase"); configValue != "" {
+				if configValue := viperx.GetString("pulumi_config_passphrase"); configValue != "" {
 					prompts[p].Value = configValue
 				}
 			}

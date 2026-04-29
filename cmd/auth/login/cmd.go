@@ -22,16 +22,16 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
-	if viper.GetBool("skip_auth") {
+	if viperx.GetBool("skip_auth") {
 		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
 		log.Error(err)
 
@@ -76,7 +76,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	log.Info("💡 To change your DataRobot URL, run 'dr auth set-url'.")
 
 	// Clear existing token and get new one
-	viper.Set(config.DataRobotAPIKey, "")
+	viperx.Set(config.DataRobotAPIKey, "")
 
 	key, err := auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
 	if err != nil {
@@ -91,7 +91,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return nil
 	}
 
-	viper.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
+	viperx.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
 	err = auth.WriteConfigFile()
 	if err != nil {

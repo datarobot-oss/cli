@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -169,9 +169,9 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	viper.Reset()
-	viper.Set(config.DataRobotURL, server.URL)
-	viper.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, server.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
 
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")

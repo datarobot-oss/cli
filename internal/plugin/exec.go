@@ -27,7 +27,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 )
 
 // ExecutePlugin runs a plugin and returns its exit code
@@ -122,7 +122,7 @@ func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 	}
 
 	// Set config path for all plugins
-	if configPath := viper.ConfigFileUsed(); configPath != "" {
+	if configPath := viperx.ConfigFileUsed(); configPath != "" {
 		env = append(env, "DATAROBOT_CONFIG="+configPath)
 	}
 
@@ -130,11 +130,11 @@ func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 		return env
 	}
 
-	if endpoint := viper.GetString(config.DataRobotURL); endpoint != "" {
+	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
 		env = append(env, "DATAROBOT_ENDPOINT="+endpoint)
 	}
 
-	if token := viper.GetString(config.DataRobotAPIKey); token != "" {
+	if token := viperx.GetString(config.DataRobotAPIKey); token != "" {
 		env = append(env, "DATAROBOT_API_TOKEN="+token)
 	}
 

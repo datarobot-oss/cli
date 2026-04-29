@@ -22,9 +22,9 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/envbuilder"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,12 +50,12 @@ func setupLLMTestServer(t *testing.T, catalogStatus int, catalogBody any) {
 		}
 	}))
 
-	viper.Set(config.DataRobotURL, srv.URL+"/api/v2")
-	viper.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.DataRobotURL, srv.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
 
 	t.Cleanup(func() {
 		srv.Close()
-		viper.Reset()
+		viperx.Reset()
 	})
 }
 
