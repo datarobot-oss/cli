@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/tui"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -162,6 +163,11 @@ func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 	}
 
 	finalModel := tm.FinalModel(suite.T())
+
+	// The model is wrapped in InterruptibleModel, so we need to unwrap it
+	if wrappedModel, ok := finalModel.(tui.InterruptibleModel); ok {
+		finalModel = wrappedModel.Model
+	}
 
 	fm, ok := finalModel.(Model)
 	if !ok {
