@@ -29,7 +29,6 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -403,7 +402,7 @@ func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, 
 // This is called during 'dr dotenv setup --yes' to ensure passphrase is configured.
 func handlePulumiPassphraseNonInteractive(repositoryRoot string, variables []envbuilder.Variable) error {
 	loggedIn := isPulumiLoggedIn()
-	passphraseSet := viper.GetString(pulumiConfigPassphraseKey) != ""
+	passphraseSet := viperx.GetString(pulumiConfigPassphraseKey) != ""
 
 	// Gather prompts to check if template requires Pulumi
 	prompts, err := envbuilder.GatherUserPrompts(repositoryRoot, variables)
