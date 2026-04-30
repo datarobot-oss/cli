@@ -35,6 +35,8 @@ type state struct {
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
+	// LastDepsInstall is an ISO8601-compliant timestamp of the last successful `dr dependencies install` run
+	LastDepsInstall *time.Time `yaml:"last_deps_install,omitempty"`
 }
 
 // getStatePath determines the appropriate location for the state file.
@@ -140,6 +142,19 @@ func UpdateAfterTemplatesSetup(repoRoot string) error {
 
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
+
+	return existingState.update()
+}
+
+// UpdateAfterDepsInstall updates the state file after a successful `dr dependencies install` run.
+func UpdateAfterDepsInstall(repoRoot string) error {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	existingState.LastDepsInstall = &now
 
 	return existingState.update()
 }

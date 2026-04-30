@@ -15,10 +15,12 @@
 package tools
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/version"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSufficientVersionTrue(t *testing.T) {
@@ -115,4 +117,211 @@ func TestSufficientSelfVersion(t *testing.T) {
 			assert.Equal(t, tt.expected, result, "version=%s minimal=%s", tt.versionValue, tt.minimalVersion)
 		})
 	}
+}
+
+func TestPrerequisitesMsg_BothEmpty(t *testing.T) {
+	out := PrerequisitesMsg(nil, nil)
+
+	assert.Equal(t, "\n", out)
+}
+
+func TestPrerequisitesMsg_MissingOnly(t *testing.T) {
+	out := PrerequisitesMsg([]string{"uv 0.4.0 (https://example.com)"}, nil)
+
+	assert.Contains(t, out, "Missing required tools")
+	assert.Contains(t, out, "uv 0.4.0")
+	assert.NotContains(t, out, "Wrong versions")
+}
+
+func TestPrerequisitesMsg_WrongVersionOnly(t *testing.T) {
+	out := PrerequisitesMsg(nil, []string{"task (minimal: v3.35.0, installed: v3.32.0)"})
+
+	assert.Contains(t, out, "Wrong versions of tools")
+	assert.Contains(t, out, "task (minimal: v3.35.0")
+	assert.NotContains(t, out, "Missing required")
+}
+
+func TestPrerequisitesMsg_Both(t *testing.T) {
+	out := PrerequisitesMsg(
+		[]string{"uv 0.4.0 (https://example.com)"},
+		[]string{"task (minimal: v3.35.0, installed: v3.32.0)"},
+	)
+
+	assert.Contains(t, out, "Missing required tools")
+	assert.Contains(t, out, "uv 0.4.0")
+	assert.Contains(t, out, "Wrong versions of tools")
+	assert.Contains(t, out, "task (minimal: v3.35.0")
+}
+
+func TestPrerequisitesMsg_MultipleEntries(t *testing.T) {
+	out := PrerequisitesMsg([]string{"uv", "pulumi"}, []string{"task"})
+
+	assert.Contains(t, out, "\t- uv")
+	assert.Contains(t, out, "\t- pulumi")
+	assert.Contains(t, out, "\t- task")
+}
+
+func TestPrerequisitesMsg_EndsWithNewline(t *testing.T) {
+	out := PrerequisitesMsg([]string{"uv"}, nil)
+
+	assert.True(t, len(out) > 0 && out[len(out)-1] == '\n')
+}
+
+func TestMissingPrerequisites_AllSatisfied(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	RequiredTools = []Prerequisite{
+		{Name: "sh", Command: "sh"},
+	}
+
+	assert.Empty(t, MissingPrerequisites())
+}
+
+func TestMissingPrerequisites_MissingTool(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	RequiredTools = []Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", URL: "https://example.com"},
+	}
+
+	out := MissingPrerequisites()
+
+	assert.NotEmpty(t, out)
+	assert.Contains(t, out, "FakeTool")
+}
+
+func TestMissingPrerequisites_WrongVersion(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	RequiredTools = []Prerequisite{
+		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0"},
+	}
+
+	out := MissingPrerequisites()
+
+	assert.NotEmpty(t, out)
+	assert.Contains(t, out, "Echo")
+}
+
+func TestCheckPrerequisites_AllSatisfied(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	// "sh" is always present and has no version constraint.
+	RequiredTools = []Prerequisite{
+		{Name: "sh", Command: "sh"},
+	}
+
+	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+
+	assert.Empty(t, missing)
+	assert.Empty(t, wrongVer)
+	assert.Empty(t, missingMsgs)
+	assert.Empty(t, wrongVerMsgs)
+}
+
+func TestCheckPrerequisites_MissingTool(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	RequiredTools = []Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", URL: "https://example.com"},
+	}
+
+	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+
+	require.Len(t, missing, 1)
+	assert.Equal(t, "FakeTool", missing[0].Name)
+	assert.Empty(t, wrongVer)
+	assert.Len(t, missingMsgs, 1)
+	assert.Contains(t, missingMsgs[0], "FakeTool")
+	assert.Contains(t, missingMsgs[0], "https://example.com")
+	assert.Empty(t, wrongVerMsgs)
+}
+
+func TestCheckPrerequisites_WrongVersion(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	// "echo 1.0.0" is always installed; its output "1.0.0" is insufficient vs "2.0.0".
+	RequiredTools = []Prerequisite{
+		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0", URL: "https://example.com"},
+	}
+
+	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+
+	assert.Empty(t, missing)
+	assert.Empty(t, missingMsgs)
+	require.Len(t, wrongVer, 1)
+	assert.Equal(t, "Echo", wrongVer[0].Name)
+	assert.Len(t, wrongVerMsgs, 1)
+	assert.Contains(t, wrongVerMsgs[0], "Echo")
+}
+
+func TestCheckPrerequisites_Mixed(t *testing.T) {
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	RequiredTools = []Prerequisite{
+		{Name: "sh", Command: "sh"},
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz"},
+		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0"},
+	}
+
+	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+
+	require.Len(t, missing, 1)
+	assert.Equal(t, "FakeTool", missing[0].Name)
+	require.Len(t, wrongVer, 1)
+	assert.Equal(t, "Echo", wrongVer[0].Name)
+	assert.Len(t, missingMsgs, 1)
+	assert.Len(t, wrongVerMsgs, 1)
+}
+
+func TestPlatformInstallCommand_CurrentPlatform(t *testing.T) {
+	p := Prerequisite{
+		Name: "uv",
+		Install: InstallCommands{
+			MacOS:   "brew install uv",
+			Linux:   "curl -Ls https://astral.sh/uv/install.sh | sh",
+			Windows: "powershell install uv",
+		},
+	}
+
+	var expected string
+
+	switch runtime.GOOS {
+	case "darwin":
+		expected = p.Install.MacOS
+	case "linux":
+		expected = p.Install.Linux
+	case "windows":
+		expected = p.Install.Windows
+	default:
+		t.Skipf("unsupported platform %q", runtime.GOOS)
+	}
+
+	cmd, err := p.PlatformInstallCommand()
+
+	require.NoError(t, err)
+	assert.Equal(t, expected, cmd)
+}
+
+func TestPlatformInstallCommand_EmptyCommandReturnsError(t *testing.T) {
+	p := Prerequisite{Name: "uv"} // all install commands are zero-value empty strings
+
+	_, err := p.PlatformInstallCommand()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "uv")
 }

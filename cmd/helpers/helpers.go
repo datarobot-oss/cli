@@ -12,35 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package check
+package helpers
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
-
-	"github.com/datarobot/cli/internal/tools"
-	"github.com/spf13/cobra"
+	"io"
+	"strings"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "check",
-		Short: "✅ Check template dependencies",
-		RunE:  RunE,
+func Confirm(w io.Writer, r io.Reader, msg string) (bool, error) {
+	fmt.Fprint(w, msg)
+
+	scanner := bufio.NewScanner(r)
+	if !scanner.Scan() {
+		return false, errors.New("failed to read user input")
 	}
 
-	return cmd
-}
+	answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
 
-func RunE(cmd *cobra.Command, _ []string) error {
-	missing := tools.MissingPrerequisites()
-
-	if missing != "" {
-		cmd.SilenceUsage = true
-		return errors.New(missing)
+	if answer != "y" && answer != "yes" {
+		return false, nil
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
-
-	return nil
+	return true, nil
 }
