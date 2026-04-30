@@ -109,8 +109,6 @@ dr dotenv setup --output /path/to/config
 # Creates .env file at /path/to/config/.env (directory created if needed)
 ```
 
-**Use cases:** Writing to a specific deployment directory, managing multiple environment configurations (dev/staging/prod), or generating config files outside the repository.
-
 The wizard guides you through:
 
 1. DataRobot credentials (auto-populated if authenticated).
