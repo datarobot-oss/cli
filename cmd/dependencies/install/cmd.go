@@ -20,8 +20,8 @@ import (
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/tools"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 type Options struct {
@@ -39,8 +39,8 @@ func Cmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, `Assume "yes" as answer to the install prompt.`)
 
 	// Bind flag to viper to enable env var support (DATAROBOT_CLI_NON_INTERACTIVE)
-	_ = viper.BindPFlag("yes", cmd.Flags().Lookup("yes"))
-	_ = viper.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindPFlag("yes", cmd.Flags().Lookup("yes"))
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	return cmd
 }
@@ -56,7 +56,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 	prerequisites := append(missingTools, wrongVersionTools...)
 
-	if !viper.GetBool("yes") {
+	if !viperx.GetBool("yes") {
 		yes, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "\nInstall now? (y/n): ")
 		if err != nil {
 			cmd.SilenceUsage = true
