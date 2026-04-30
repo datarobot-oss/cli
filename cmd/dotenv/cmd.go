@@ -109,12 +109,20 @@ This wizard will help you:
 	PreRunE: auth.EnsureAuthenticatedE,
 
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		outputDir, _ := cmd.Flags().GetString("output")
+
 		repositoryRoot, err := ensureInRepo()
 		if err != nil {
 			return err
 		}
 
-		dotenvFile := filepath.Join(repositoryRoot, ".env")
+		var dotenvFile string
+
+		if outputDir != "" {
+			dotenvFile = filepath.Join(outputDir, ".env")
+		} else {
+			dotenvFile = filepath.Join(repositoryRoot, ".env")
+		}
 
 		// Check if we should skip when .env exists and all required variables are set
 		flagIfNeededSet, _ := cmd.Flags().GetBool("if-needed")
@@ -212,6 +220,7 @@ func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.Flags().StringP("output", "o", "", "Directory where the .env file should be written (defaults to repository root).")
 	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.

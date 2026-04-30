@@ -231,6 +231,12 @@ func writeContents(cleanContents, dotenvFile string) error {
 		}
 	}
 
+	// Ensure the directory exists
+	dir := filepath.Dir(dotenvFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
 	f, err := os.Create(dotenvFile)
 	if err != nil {
 		return err
