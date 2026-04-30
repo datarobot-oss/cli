@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/tools"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
 )
 
