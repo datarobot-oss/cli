@@ -26,9 +26,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -240,13 +240,18 @@ func (m pulumiLoginModel) handlePassphraseAccepted() (tea.Model, tea.Cmd) {
 }
 
 func (m pulumiLoginModel) savePassphraseToConfig() error {
+	return savePulumiPassphraseToConfig(m.generatedPassphrase)
+}
+
+// savePulumiPassphraseToConfig saves the given passphrase to drconfig.yaml.
+func savePulumiPassphraseToConfig(passphrase string) error {
 	if err := config.CreateConfigFileDirIfNotExists(); err != nil {
 		return fmt.Errorf("failed to create config: %w", err)
 	}
 
-	viper.Set(pulumiConfigPassphraseKey, m.generatedPassphrase)
+	viperx.Set(pulumiConfigPassphraseKey, passphrase)
 
-	if err := viper.WriteConfig(); err != nil {
+	if err := config.UpdateConfigFile(pulumiConfigPassphraseKey); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -387,7 +392,34 @@ func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, 
 	}
 
 	loggedIn := isPulumiLoggedIn()
-	passphraseSet := viper.GetString(pulumiConfigPassphraseKey) != ""
+	passphraseSet := viperx.GetString(pulumiConfigPassphraseKey) != ""
 
 	return needsPulumiSetup(prompts, loggedIn, passphraseSet), loggedIn, !passphraseSet
+}
+
+// handlePulumiPassphraseNonInteractive checks if Pulumi passphrase needs to be
+// generated in non-interactive mode and saves it to drconfig.yaml if needed.
+// This is called during 'dr dotenv setup --yes' to ensure passphrase is configured.
+func handlePulumiPassphraseNonInteractive(repositoryRoot string, variables []envbuilder.Variable) error {
+	loggedIn := isPulumiLoggedIn()
+	passphraseSet := viperx.GetString(pulumiConfigPassphraseKey) != ""
+
+	// Gather prompts to check if template requires Pulumi
+	prompts, err := envbuilder.GatherUserPrompts(repositoryRoot, variables)
+	if err != nil {
+		return fmt.Errorf("failed to gather prompts: %w", err)
+	}
+
+	// Use same logic as interactive mode to check if setup is needed
+	if !needsPulumiSetup(prompts, loggedIn, passphraseSet) || passphraseSet {
+		return nil
+	}
+
+	// Generate and save passphrase
+	passphrase, err := envbuilder.GenerateRandomSecret(generatedPassphraseLength)
+	if err != nil {
+		return fmt.Errorf("failed to generate passphrase: %w", err)
+	}
+
+	return savePulumiPassphraseToConfig(passphrase)
 }

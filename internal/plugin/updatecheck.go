@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/state"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -83,7 +83,7 @@ func CheckForUpdate(pluginName, installedVersion, registryURL string) *UpdateChe
 // shouldSkipCheck returns true when the update check should be skipped
 // because it is disabled or the cooldown has not elapsed.
 func shouldSkipCheck(pluginName string) bool {
-	interval := viper.GetDuration("plugin-update-check-interval")
+	interval := viperx.GetDuration("plugin-update-check-interval")
 	if interval <= 0 {
 		log.Debug("Plugin update check disabled via config", "plugin", pluginName)
 

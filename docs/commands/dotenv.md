@@ -57,6 +57,7 @@ dr dotenv setup [--if-needed]
 - `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
 - `-y, --yes`&mdash;Skip interactive prompts and auto-populate all environment variables with their default values (or empty strings if no default is provided). This is useful for CI/CD pipelines, automated testing, or quick development setup where you want to use all defaults. Variables with `generate: true` will still have random values auto-generated. Can also be enabled via `DATAROBOT_CLI_NON_INTERACTIVE=true` environment variable.
 - `-a, --all`&mdash;Show all prompts in the wizard, including those with default values already set. By default, prompts with defaults are skipped.
+- `-o, --output <directory>`&mdash;Specify a custom directory where the `.env` file should be written. By default, the `.env` file is written to the repository root. The directory will be created automatically if it doesn't exist. This is useful for managing multiple environment configurations or writing to a specific deployment directory.
 
 **State tracking:**
 
@@ -99,6 +100,13 @@ Or using environment variable:
 ```bash
 cd my-template
 DATAROBOT_CLI_NON_INTERACTIVE=true dr dotenv setup
+```
+
+Custom output directory:
+```bash
+cd my-template
+dr dotenv setup --output /path/to/config
+# Creates .env file at /path/to/config/.env (directory created if needed)
 ```
 
 The wizard guides you through:

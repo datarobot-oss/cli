@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/log"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 )
 
 const logLevelWidth = 5
@@ -49,9 +49,9 @@ var (
 // Start sets up and starts both stderr and file loggers
 func Start() {
 	// Debug takes precedence
-	if viper.GetBool("debug") {
+	if viperx.GetBool("debug") {
 		level = log.DebugLevel
-	} else if viper.GetBool("verbose") {
+	} else if viperx.GetBool("verbose") {
 		level = log.InfoLevel
 	} else {
 		level = log.Default().GetLevel()

@@ -7,6 +7,7 @@ linters:
     - bodyclose
     - contextcheck
     - cyclop
+    - depguard
     - dupword
     - errname
     - exhaustive
@@ -23,6 +24,24 @@ linters:
     - usestdlibvars
     - wsl_v5
   settings:
+    depguard:
+      rules:
+        no-raw-viper:
+          # Production and test code outside internal/config/** must not
+          # import viper directly. Use internal/config/viperx instead,
+          # which exposes only the safe subset of viper's API (no
+          # WriteConfig / SafeWriteConfig / BindPFlags). See
+          # docs/development/configuration.md for the full contract.
+          list-mode: lax
+          files:
+            - "!**/internal/config/**"
+          deny:
+            - pkg: github.com/spf13/viper
+              desc: >-
+                Import internal/config/viperx instead of github.com/spf13/viper.
+                The wrapper omits WriteConfig, SafeWriteConfig, and BindPFlags
+                by design so transient flag state cannot leak into
+                drconfig.yaml. See docs/development/configuration.md.
     revive:
       rules:
         # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#error-strings

@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
-	"github.com/spf13/viper"
 )
 
 // PluginRegistryTerminology is the user-facing term for the plugin registry
@@ -269,8 +269,8 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 func getManifest(executable string) (*PluginManifest, error) {
 	// Default timeout if not configured
 	timeout := 500 * time.Millisecond
-	if viper.IsSet("plugin.manifest_timeout_ms") {
-		timeout = time.Duration(viper.GetInt("plugin.manifest_timeout_ms")) * time.Millisecond
+	if viperx.IsSet("plugin.manifest_timeout_ms") {
+		timeout = time.Duration(viperx.GetInt("plugin.manifest_timeout_ms")) * time.Millisecond
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

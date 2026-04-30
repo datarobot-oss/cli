@@ -15,7 +15,9 @@
 package artifact
 
 import (
+	"github.com/datarobot/cli/cmd/workload/artifact/create"
 	"github.com/datarobot/cli/cmd/workload/artifact/get"
+	"github.com/datarobot/cli/cmd/workload/artifact/list"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +29,9 @@ func Cmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
+		create.Cmd(),
 		get.Cmd(),
+		list.Cmd(),
 	)
 
 	return cmd

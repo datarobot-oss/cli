@@ -23,9 +23,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -118,7 +118,7 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 	// TODO we may want to refactor this in the future to
 	// use a separate viper instance for better testability
 	// rather than the global one.
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	return exec.Command(editor, m.DotenvFile)
 }
@@ -249,38 +249,14 @@ func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
 // autoPopulateAndSave auto-populates all prompts with their default values (or empty strings)
 // and saves the .env file without showing the wizard. This is used when --yes is set.
 func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
-	// Auto-populate all prompts with their defaults or empty values
-	for p := range m.prompts {
-		prompt := &m.prompts[p]
-
-		// Ensure variables are uncommented (consistent with interactive wizard)
-		prompt.Commented = false
-
-		// Skip if already has a value (e.g., from environment or existing .env)
-		if prompt.Value != "" {
-			continue
-		}
-
-		// Use default if available
-		if prompt.Default != "" {
-			prompt.Value = prompt.Default
-		} else {
-			// Otherwise leave as empty string (which is the zero value)
-			prompt.Value = ""
-		}
-	}
-
-	// Apply generated values for prompts with generate: true
+	// Apply defaults and process prompts (shared logic with non-interactive setup)
 	var err error
 
-	m.prompts, err = envbuilder.ApplyGeneratedValues(m.prompts)
+	m.prompts, err = applyDefaultsToPrompts(m.prompts)
 	if err != nil {
 		m.err = err
 		return m, nil
 	}
-
-	// Determine required sections based on selected options
-	m.prompts = envbuilder.DetermineRequiredSections(m.prompts)
 
 	// Generate .env content from prompts
 	m.contents = envbuilder.DotenvFromPromptsMerged(m.prompts, m.contents)
@@ -517,7 +493,7 @@ func (m Model) View() string {
 }
 
 func (m Model) viewListScreen() string {
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	var sb strings.Builder
 

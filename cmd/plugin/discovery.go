@@ -22,18 +22,18 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
 // on rootCmd. The plugin group is only added when at least one plugin is found.
 func RegisterPluginCommands(rootCmd *cobra.Command) {
-	timeout := viper.GetDuration("plugin-discovery-timeout")
+	timeout := viperx.GetDuration("plugin-discovery-timeout")
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
 
@@ -133,7 +133,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 // recorded only after a successful registry fetch, so skipped (cooldown-active)
 // invocations never push the timestamp forward.
 func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string) {
-	if viper.GetBool("skip-plugin-update-check") {
+	if viperx.GetBool("skip-plugin-update-check") {
 		return
 	}
 

@@ -25,8 +25,9 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// HTTPError is returned by Get when the server responds with a non-200 status code.
-// Callers can extract the status code with errors.As to make decisions without string matching.
+// HTTPError is returned by Get and Post when the server responds with a
+// non-success status code. Callers can extract the status code with errors.As
+// to make decisions without string matching.
 type HTTPError struct {
 	StatusCode int
 	URL        string

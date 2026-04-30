@@ -17,6 +17,7 @@ If you're new to developing the CLI, start here:
 - **[Project structure](structure.md)**&mdash;understand the codebase organization, command structure, internal packages, and key design patterns.
 - **[Building](building.md)**&mdash;detailed guide on building the CLI, available tasks, and build configuration.
 - **[Authentication](authentication.md)**&mdash;learn about the OAuth authentication implementation, token management, and API integration.
+- **[Configuration](configuration.md)**&mdash;how viper, `drconfig.yaml`, flags, and env vars compose; the `internal/config/viperx` wrapper; rules for adding new flags or persisted keys.
 
 ### Advanced topics
 

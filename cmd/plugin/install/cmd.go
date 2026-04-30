@@ -18,10 +18,10 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -58,12 +58,15 @@ Use --version to specify a version constraint:
 	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 
+	// Mark mutually exclusive flags
+	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+
 	return cmd
 }
 
 func runInstall(_ *cobra.Command, args []string) error {
 	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
-	if viper.GetBool("verbose") {
+	if viperx.GetBool("verbose") {
 		fmt.Printf("Fetching plugin registry from %s...\n", finalRegistryURL)
 	}
 

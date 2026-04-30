@@ -27,8 +27,8 @@ import (
 
 	"github.com/amplitude/analytics-go/amplitude"
 	"github.com/amplitude/analytics-go/amplitude/types"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/spf13/viper"
 )
 
 // AmplitudeAPIKey is set at build time via ldflags. Dev builds have an empty value,
@@ -128,7 +128,7 @@ func (c *Client) Flush(timeout time.Duration) {
 // opted out via the disable-telemetry flag/env var/config key.
 func IsEnabled() bool {
 	// Check if telemetry is explicitly disabled
-	if viper.GetBool("disable-telemetry") {
+	if viperx.GetBool("disable-telemetry") {
 		return false
 	}
 

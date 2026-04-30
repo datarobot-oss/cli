@@ -6,6 +6,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.20",
+          "url": "assist/assist-0.1.20.tar.xz",
+          "sha256": "36311fbea982ae7482ed36c63542066b305075125772cd3a5c2c3fa1acc4e024",
+          "releaseDate": "2026-04-27"
+        },
+        {
           "version": "0.1.19",
           "url": "assist/assist-0.1.19.tar.xz",
           "sha256": "8bbb0ded53db02e422cf166456903c808edba74fef99f66dc8dda69aa1720a26",

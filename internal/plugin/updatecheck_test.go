@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/testutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,8 +64,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", time.Duration(0))
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", time.Duration(0))
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		result := CheckForUpdate("assist", "0.1.0", "http://localhost/index.json")
 
@@ -76,8 +76,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 24*time.Hour)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 24*time.Hour)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		// Set a recent check timestamp
 		state.SetLastPluginCheck("assist")
@@ -91,8 +91,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		// Use a URL that will fail immediately
 		result := CheckForUpdate("assist", "0.1.0", "http://192.0.2.1:1/index.json")
@@ -104,8 +104,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.1.13")
 		srv := serveRegistry(t, registry)
@@ -119,8 +119,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.2.0")
 		srv := serveRegistry(t, registry)
@@ -137,8 +137,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("other-plugin", "1.0.0")
 		srv := serveRegistry(t, registry)
@@ -152,8 +152,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.1.0")
 		srv := serveRegistry(t, registry)
@@ -167,8 +167,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.2.0")
 		srv := serveRegistry(t, registry)
@@ -184,8 +184,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.2.0")
 		srv := serveRegistry(t, registry)
@@ -200,8 +200,8 @@ func TestCheckForUpdate(t *testing.T) {
 		tmpDir := t.TempDir()
 		testutil.SetTestHomeDir(t, tmpDir)
 
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		registry := newTestRegistry("assist", "0.1.13")
 		srv := serveRegistry(t, registry)
@@ -217,8 +217,8 @@ func TestCheckForUpdate(t *testing.T) {
 	})
 
 	t.Run("returns nil when registry returns HTTP error", func(t *testing.T) {
-		viper.Set("plugin-update-check-interval", 1*time.Millisecond)
-		defer viper.Set("plugin-update-check-interval", nil)
+		viperx.Set("plugin-update-check-interval", 1*time.Millisecond)
+		defer viperx.Set("plugin-update-check-interval", nil)
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)

@@ -135,3 +135,79 @@ func ValidateAndEditIfNeeded() error {
 
 	return nil
 }
+
+// applyDefaultsToPrompts auto-populates prompts with their default values,
+// applies generated values, and determines required sections. This is the
+// core logic shared between interactive and non-interactive setup flows.
+// Modifies the prompts slice in place and returns it (or error if generation fails).
+func applyDefaultsToPrompts(prompts []envbuilder.UserPrompt) ([]envbuilder.UserPrompt, error) {
+	// Auto-populate all prompts with their default values (or empty strings)
+	for i := range prompts {
+		prompt := &prompts[i]
+
+		// Ensure variables are uncommented (consistent with interactive wizard)
+		prompt.Commented = false
+
+		// Skip if already has a value (e.g., from environment or existing .env)
+		if prompt.Value != "" {
+			continue
+		}
+
+		// Use default if available
+		if prompt.Default != "" {
+			prompt.Value = prompt.Default
+		}
+		// Otherwise leave as empty string (which is the zero value)
+	}
+
+	var err error
+
+	// Apply generated values for prompts with field: `generate: true`
+	prompts, err = envbuilder.ApplyGeneratedValues(prompts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine required sections based on selected options
+	prompts = envbuilder.DetermineRequiredSections(prompts)
+
+	return prompts, nil
+}
+
+// setupNonInteractive performs non-interactive dotenv setup without launching the TUI.
+// It auto-populates all prompts with their default values (or empty strings) and saves
+// the .env file. This is used when --yes flag is set or DATAROBOT_CLI_NON_INTERACTIVE=true.
+func setupNonInteractive(repositoryRoot, dotenvFile string) error {
+	// Read existing .env file or use default template
+	dotenvFileLines, contents := readDotenvFile(dotenvFile)
+	variables, _ := envbuilder.VariablesFromLines(dotenvFileLines)
+
+	// Check if Pulumi passphrase setup is needed and handle it before gathering prompts
+	// (this will save the passphrase to drconfig.yaml if needed)
+	if err := handlePulumiPassphraseNonInteractive(repositoryRoot, variables); err != nil {
+		return fmt.Errorf("failed to setup Pulumi passphrase: %w", err)
+	}
+
+	// Gather user prompts from template configuration
+	// (if passphrase was just saved, it will be picked up from drconfig.yaml via viper)
+	prompts, err := envbuilder.GatherUserPrompts(repositoryRoot, variables)
+	if err != nil {
+		return fmt.Errorf("failed to gather prompts: %w", err)
+	}
+
+	// Apply defaults and process prompts (shared logic with TUI)
+	prompts, err = applyDefaultsToPrompts(prompts)
+	if err != nil {
+		return fmt.Errorf("failed to process prompts: %w", err)
+	}
+
+	// Generate .env content from prompts merged with existing contents
+	newContents := envbuilder.DotenvFromPromptsMerged(prompts, contents)
+
+	// Save the file
+	if err := writeContents(newContents, dotenvFile); err != nil {
+		return fmt.Errorf("failed to write .env file: %w", err)
+	}
+
+	return nil
+}
