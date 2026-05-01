@@ -37,6 +37,7 @@ import (
 type CommonProperties struct {
 	// TODO CFX-5206 figure out proper SessionID
 	SessionID string // UUID v4, unique per process invocation
+	DeviceID  string // UUID v4, stable per installation, persisted to disk
 	// TODO CFX-5206 figure out proper UserID
 	UserID            string // Placeholder for future user ID implementation
 	CLIVersion        string // CLI version from version.Version (ldflags)
@@ -54,6 +55,7 @@ type CommonProperties struct {
 func CollectCommonProperties() *CommonProperties {
 	props := &CommonProperties{
 		SessionID:     generateSessionID(),
+		DeviceID:      getOrCreateDeviceID(),
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
 		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
@@ -125,6 +127,43 @@ func deriveEnvironment(baseURL string) string {
 	default:
 		return "custom"
 	}
+}
+
+const deviceIDFileName = "device_id"
+
+// getOrCreateDeviceID returns a stable device identifier. It first attempts to
+// use an OS-provided machine ID (hashed for privacy). If that is unavailable,
+// it falls back to a randomly generated UUID that is persisted to the config
+// directory so it remains stable across invocations. If the file cannot be
+// read or written, a fresh UUID is returned for this session only.
+func getOrCreateDeviceID() string {
+	if id := getMachineID(); id != "" {
+		return id
+	}
+
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return generateSessionID()
+	}
+
+	deviceIDPath := filepath.Join(configDir, deviceIDFileName)
+
+	data, err := os.ReadFile(deviceIDPath)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+
+		if id != "" {
+			return id
+		}
+	}
+
+	id := generateSessionID()
+
+	if mkErr := os.MkdirAll(configDir, 0o700); mkErr == nil {
+		_ = os.WriteFile(deviceIDPath, []byte(id), 0o600)
+	}
+
+	return id
 }
 
 // getTemplateName attempts to extract the template name from the .datarobot/answers directory.

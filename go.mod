@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20250818131617-61d774aefe53
 	github.com/codeclysm/extract/v4 v4.0.0
+	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/gitsight/go-vcsurl v1.0.1
 	github.com/google/go-cmp v0.7.0
 	github.com/joho/godotenv v1.5.1

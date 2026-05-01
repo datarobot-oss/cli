@@ -15,11 +15,14 @@
 package telemetry
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateSessionID_ReturnsValidUUID(t *testing.T) {
@@ -41,6 +44,7 @@ func TestGenerateSessionID_UniqueSessions(t *testing.T) {
 func TestCommonPropertiesAsMap(t *testing.T) {
 	props := &CommonProperties{
 		SessionID:         "session-123",
+		DeviceID:          "device-789",
 		UserID:            "user-456",
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
@@ -53,7 +57,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
-	assert.Equal(t, "user-456", m["user_id"])
 	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "darwin/arm64", m["os_info"])
@@ -62,6 +65,68 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "base", m["template_name"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
+}
+
+func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	id1 := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id1)
+
+	// Second call should return the same ID
+	id2 := getOrCreateDeviceID()
+
+	assert.Equal(t, id1, id2)
+
+	// File should exist
+	deviceIDPath := filepath.Join(tmpDir, "datarobot", deviceIDFileName)
+	data, err := os.ReadFile(deviceIDPath)
+
+	require.NoError(t, err)
+	assert.Equal(t, id1, string(data))
+}
+
+func TestGetOrCreateDeviceID_ReadsExistingID(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	existingID := "abcdef1234567890abcdef1234567890"
+
+	err = os.WriteFile(filepath.Join(configDir, deviceIDFileName), []byte(existingID), 0o600)
+
+	require.NoError(t, err)
+
+	id := getOrCreateDeviceID()
+
+	assert.Equal(t, existingID, id)
+}
+
+func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	props := CollectCommonProperties()
+
+	assert.NotEmpty(t, props.DeviceID)
 }
 
 func TestDeriveEnvironment_US(t *testing.T) {
