@@ -102,7 +102,7 @@ func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to timestamp-based ID if crypto fails
-		return time.Now().Format("20060102150405") + "-fallback"
+		return time.Now().UTC().Format(time.RFC3339) + "-fallback"
 	}
 
 	// Set version (4) and variant (RFC 4122) bits
