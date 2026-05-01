@@ -91,7 +91,7 @@ func Get(url, info string) (*http.Response, error) {
 // TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
 // and the appropriate way to fetch the user ID for telemetry.
 func GetUserID(ctx context.Context) (string, error) {
-	return "unknown", nil
+	return "dummy", nil
 }
 
 func GetJSON(url, info string, v any) error {
