@@ -97,7 +97,10 @@ func (p *CommonProperties) AsMap() map[string]interface{} {
 	}
 }
 
-// generateSessionID creates a UUID v4 for the session.
+// generateSessionID generates a UUID v4 for the current CLI session.
+// This value is not persisted and will be different on each invocation.
+// The default implementation uses crypto/rand, but if that fails, then
+// fallback to a timestamp-based ID with a "-fallback" suffix to indicate it's not a true UUID.
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -131,34 +134,43 @@ func deriveEnvironment(baseURL string) string {
 
 const deviceIDFileName = "device_id"
 
-// getOrCreateDeviceID returns a stable device identifier. It first attempts to
-// use an OS-provided machine ID (hashed for privacy). If that is unavailable,
-// it falls back to a randomly generated UUID that is persisted to the config
-// directory so it remains stable across invocations. If the file cannot be
-// read or written, a fresh UUID is returned for this session only.
+// getOrCreateDeviceID returns a stable device identifier.
 func getOrCreateDeviceID() string {
+	// First try to get machine ID from OS
 	if id := getMachineID(); id != "" {
 		return id
 	}
 
+	// Try to read existing device ID from file in the config directory
 	configDir, err := config.GetConfigDir()
 	if err != nil {
+		// If we can't get the config directory, we won't be able to persist a device ID,
+		// so we just generate a new one for this session. These IDs will be suffixed with
+		// "-fallback".
 		return generateSessionID()
 	}
 
+	// Try to read existing device ID from file
 	deviceIDPath := filepath.Join(configDir, deviceIDFileName)
 
 	data, err := os.ReadFile(deviceIDPath)
 	if err == nil {
+		// If we successfully read a device ID from the file, use it (after trimming whitespace).
 		id := strings.TrimSpace(string(data))
 
 		if id != "" {
+			// If the ID is not empty, return it. Otherwise, we'll generate a new one below.
 			return id
 		}
 	}
 
+	// If we couldn't get a machine ID or read an existing device ID, generate a new one
+	// and save it for future sessions. NOTE: Ignore errors at this point, since we can
+	// still function without p
 	id := generateSessionID()
 
+	// At this point, ignore any errors we might have with persisting the session ID, as
+	// telemetry will stil function without it, it will just be less stable.
 	if mkErr := os.MkdirAll(configDir, 0o700); mkErr == nil {
 		_ = os.WriteFile(deviceIDPath, []byte(id), 0o600)
 	}
