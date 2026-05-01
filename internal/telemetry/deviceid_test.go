@@ -27,6 +27,22 @@ func TestGetMachineID_IsStable(t *testing.T) {
 	assert.Equal(t, id1, id2, "machine ID should be stable across calls")
 }
 
+func TestGetMachineID_ReturnsNonEmpty(t *testing.T) {
+	id := getMachineID()
+
+	assert.NotEmpty(t, id, "expected a machine ID on this platform")
+}
+
+// machineid.ProtectedID returns a HMAC-SHA256 hex string: 32 bytes = 64 hex chars.
+func TestGetMachineID_IsHexString(t *testing.T) {
+	id := getMachineID()
+	if id == "" {
+		t.Skip("machine ID not available on this platform")
+	}
+
+	assert.Regexp(t, `^[0-9a-f]{64}$`, id, "machine ID should be 64-char lowercase hex")
+}
+
 func TestGetOrCreateDeviceID_IsStable(t *testing.T) {
 	id1 := getOrCreateDeviceID()
 	id2 := getOrCreateDeviceID()

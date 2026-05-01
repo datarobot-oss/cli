@@ -57,6 +57,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
+	assert.Equal(t, "user-456", m["user_id"])
 	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "darwin/arm64", m["os_info"])
@@ -117,6 +118,47 @@ func TestGetOrCreateDeviceID_ReadsExistingID(t *testing.T) {
 	id := getOrCreateDeviceID()
 
 	assert.Equal(t, existingID, id)
+}
+
+func TestGetOrCreateDeviceID_IgnoresBlankFile(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	// Write a blank file — should be treated as absent and regenerated
+	err = os.WriteFile(filepath.Join(configDir, deviceIDFileName), []byte("   "), 0o600)
+
+	require.NoError(t, err)
+
+	id := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id)
+	assert.Contains(t, id, "fallback-", "blank file should trigger fallback ID generation")
+}
+
+func TestGetOrCreateDeviceID_FallbackIDHasPrefix(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	id := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id)
+	assert.Contains(t, id, "fallback-")
 }
 
 func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
