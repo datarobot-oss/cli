@@ -134,8 +134,8 @@ func deriveEnvironment(baseURL string) string {
 }
 
 const (
-	deviceIDFileName = "device_id"
-	deviceIDFallbackPrefix   = "fallback-"
+	deviceIDFileName       = "device_id"
+	deviceIDFallbackPrefix = "fallback-"
 )
 
 // getOrCreateDeviceID returns a stable device identifier.
