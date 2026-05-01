@@ -100,13 +100,13 @@ func (p *CommonProperties) AsMap() map[string]interface{} {
 // generateSessionID generates a UUID v4 for the current CLI session.
 // This value is not persisted and will be different on each invocation.
 // The default implementation uses crypto/rand, but if that fails, then
-// fallback to a timestamp-based ID with a "-fallback" suffix to
+// fallback to a timestamp-based ID with a "fallback-" prefix to
 // indicate it's not a true UUID.
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to timestamp-based ID if crypto random generation fails
-		return time.Now().UTC().Format(time.RFC3339) + "-fallback"
+		return "fallback-" + time.Now().UTC().Format(time.RFC3339)
 	}
 
 	// Set version (4) and variant (RFC 4122) bits
