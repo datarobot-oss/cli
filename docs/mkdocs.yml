@@ -74,6 +74,7 @@ nav:
       - Authentication: development/authentication.md
       - Releasing: development/releasing.md
       - Plugins: development/plugins.md
+      - Telemetry: development/telemetry.md
 
 # Exclude patterns to avoid processing non-documentation files
 exclude_docs: |
