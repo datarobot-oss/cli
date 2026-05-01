@@ -106,7 +106,7 @@ func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to timestamp-based ID if crypto random generation fails
-		return "fallback-" + time.Now().UTC().Format(time.RFC3339)
+		return deviceIDFallbackPrefix + time.Now().UTC().Format(time.RFC3339)
 	}
 
 	// Set version (4) and variant (RFC 4122) bits
@@ -133,7 +133,10 @@ func deriveEnvironment(baseURL string) string {
 	}
 }
 
-const deviceIDFileName = "device_id"
+const (
+	deviceIDFileName = "device_id"
+	deviceIDFallbackPrefix   = "fallback-"
+)
 
 // getOrCreateDeviceID returns a stable device identifier.
 func getOrCreateDeviceID() string {
@@ -147,8 +150,8 @@ func getOrCreateDeviceID() string {
 	if err != nil {
 		// If we can't get the config directory, we won't be able to persist a device ID,
 		// so we just generate a new one for this session. These IDs will be prefixed with
-		// "fallback-" to indicate it is not a true device ID.
-		return "fallback-" + generateSessionID()
+		// deviceIDFallbackPrefix to indicate it is not a true device ID.
+		return deviceIDFallbackPrefix + generateSessionID()
 	}
 
 	// Try to read existing device ID from file
@@ -168,7 +171,7 @@ func getOrCreateDeviceID() string {
 	// If we couldn't get a machine ID or read an existing device ID, generate a new one
 	// and save it for future sessions. NOTE: Ignore errors at this point, since we can
 	// still function without persisting.
-	id := "fallback-" + generateSessionID()
+	id := deviceIDFallbackPrefix + generateSessionID()
 
 	// At this point, ignore any errors we might have with persisting the device ID, as
 	// telemetry will still function without it, it will just be less stable.
