@@ -16,6 +16,7 @@ package dependencies
 
 import (
 	"github.com/datarobot/cli/cmd/dependencies/check"
+	"github.com/datarobot/cli/cmd/dependencies/install"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +30,7 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		check.Cmd(),
+		install.Cmd(),
 	)
 
 	return cmd
