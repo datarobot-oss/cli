@@ -18,10 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 
+	"github.com/datarobot/cli/cmd/workload/code/internal/dirprompt"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
@@ -31,6 +31,11 @@ import (
 
 // Test seam: cmd_test.go reassigns this to stub the HTTP call.
 var getArtifactFn = workload.GetArtifact
+
+func init() {
+	// --yes is read directly from cobra; only the env var binds to viper
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+}
 
 func Cmd() *cobra.Command {
 	var outputFormat workload.OutputFormat
@@ -74,21 +79,12 @@ Example:
 }
 
 func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputFormat) error {
-	yes, _ := cmd.Flags().GetBool("yes")
-
-	if !yes {
-		if v, ok := os.LookupEnv("DATAROBOT_CLI_NON_INTERACTIVE"); ok {
-			if parsed, err := strconv.ParseBool(v); err == nil {
-				yes = parsed
-			}
-		}
-	}
-
+	yesFlag, _ := cmd.Flags().GetBool("yes")
+	yes := yesFlag || viperx.GetBool("yes")
 	tty := reader.IsStdinTerminal()
-
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
-	dir, err := resolveDir(dirFlag, yes, tty, askWithDefault)
+	dir, err := dirprompt.ResolveDir(dirFlag, yes, tty, dirprompt.AskWithDefault)
 	if err != nil {
 		return err
 	}
@@ -97,7 +93,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputForm
 		return reportAlreadyLinked(dir)
 	}
 
-	artifactID, err := resolveArtifactID(args, yes, tty, ask)
+	artifactID, err := dirprompt.ResolveArtifactID(args, yes, tty, dirprompt.Ask)
 	if err != nil {
 		return err
 	}

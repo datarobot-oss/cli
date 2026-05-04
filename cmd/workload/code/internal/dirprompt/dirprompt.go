@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package initcmd
+package dirprompt
 
 import (
 	"errors"
@@ -23,7 +23,12 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 )
 
-func resolveDir(dirFlag string, yes, isTTY bool, prompt func(label, defaultVal string) (string, error)) (string, error) {
+type (
+	PromptFunc          func(label, defaultVal string) (string, error)
+	PromptNoDefaultFunc func(label string) (string, error)
+)
+
+func ResolveDir(dirFlag string, yes, isTTY bool, prompt PromptFunc) (string, error) {
 	if dirFlag != "" {
 		return dirFlag, nil
 	}
@@ -35,7 +40,7 @@ func resolveDir(dirFlag string, yes, isTTY bool, prompt func(label, defaultVal s
 	return prompt("Initialize directory", ".")
 }
 
-func resolveArtifactID(args []string, yes, isTTY bool, prompt func(label string) (string, error)) (string, error) {
+func ResolveArtifactID(args []string, yes, isTTY bool, prompt PromptNoDefaultFunc) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
 	}
@@ -51,8 +56,7 @@ func resolveArtifactID(args []string, yes, isTTY bool, prompt func(label string)
 	return prompt("Artifact ID")
 }
 
-// Prompts go to stderr so they don't pollute stdout when it's piped.
-func ask(label string) (string, error) {
+func Ask(label string) (string, error) {
 	fmt.Fprintf(os.Stderr, "%s: ", label)
 
 	s, err := reader.ReadString()
@@ -68,7 +72,7 @@ func ask(label string) (string, error) {
 	return s, nil
 }
 
-func askWithDefault(label, defaultVal string) (string, error) {
+func AskWithDefault(label, defaultVal string) (string, error) {
 	fmt.Fprintf(os.Stderr, "%s [%s]: ", label, defaultVal)
 
 	s, err := reader.ReadString()

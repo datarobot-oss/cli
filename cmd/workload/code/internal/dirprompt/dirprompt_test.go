@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package initcmd
+package dirprompt
 
 import (
 	"errors"
@@ -54,7 +54,7 @@ func TestResolveDir(t *testing.T) {
 				return tc.promptReturns, tc.promptErr
 			}
 
-			got, err := resolveDir(tc.flag, tc.yes, tc.tty, prompt)
+			got, err := ResolveDir(tc.flag, tc.yes, tc.tty, prompt)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantDir, got)
 			assert.Equal(t, tc.wantPromptCalled, called)
@@ -67,7 +67,7 @@ func TestResolveDir_PromptError(t *testing.T) {
 		return "", errors.New("read failed")
 	}
 
-	got, err := resolveDir("", false, true, prompt)
+	got, err := ResolveDir("", false, true, prompt)
 	require.Error(t, err)
 	assert.Empty(t, got)
 }
@@ -102,7 +102,7 @@ func TestResolveArtifactID(t *testing.T) {
 				return tc.promptReturns, nil
 			}
 
-			got, err := resolveArtifactID(tc.args, tc.yes, tc.tty, prompt)
+			got, err := ResolveArtifactID(tc.args, tc.yes, tc.tty, prompt)
 
 			if tc.wantErrSubstring != "" {
 				require.Error(t, err)
