@@ -45,15 +45,27 @@ func SupportedShells() []string {
 	}
 }
 
+// normalizeShellName maps well-known shell name variants to the canonical
+// constant used by the rest of the CLI. For example, PowerShell Core reports
+// its process name as "pwsh" (or "pwsh.exe" on Windows), but the CLI uses the
+// constant "powershell" for all PowerShell variants.
+func normalizeShellName(name string) string {
+	if name == "pwsh" {
+		return string(PowerShell)
+	}
+
+	return name
+}
+
 func DetectShell() (string, error) {
 	// Prefer the parent process name — accurate even after `exec sh` or similar.
 	if name := parentProcessName(); name != "" {
-		return name, nil
+		return normalizeShellName(name), nil
 	}
 
 	// Try SHELL environment variable next (Unix/macOS).
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
-		return filepath.Base(shellPath), nil
+		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
 
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")

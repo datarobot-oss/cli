@@ -37,6 +37,25 @@ func TestDetectShell_ReturnsNonEmpty(t *testing.T) {
 	assert.NotEmpty(t, name)
 }
 
+func TestNormalizeShellName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "pwsh", expected: "powershell"},
+		{input: "powershell", expected: "powershell"},
+		{input: "bash", expected: "bash"},
+		{input: "zsh", expected: "zsh"},
+		{input: "fish", expected: "fish"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, normalizeShellName(tt.input))
+		})
+	}
+}
+
 func TestDetectShell_EnvVarFallback(t *testing.T) {
 	// Verify that $SHELL is used when set (simulates the env var fallback path).
 	t.Setenv("SHELL", "/usr/bin/fish")
