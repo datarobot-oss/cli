@@ -5,6 +5,11 @@ repo_url: https://github.com/datarobot-oss/cli
 repo_name: datarobot-oss/cli
 edit_uri: edit/main/docs/
 
+extra:
+  analytics:
+    provider: google
+    property: G-MTV90FWR73
+
 theme:
   name: material
   features:
