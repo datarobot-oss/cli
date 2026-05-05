@@ -60,7 +60,7 @@ func (l *amplitudeLogger) Debugf(msg string, args ...any) {
 }
 
 func (l *amplitudeLogger) Infof(msg string, args ...any) {
-	if log.GetLevel() <= log.InfoLevel {
+	if log.IsVerbose() {
 		log.Infof(amplitudeLogPrefix+msg, args...)
 	} else {
 		log.Debugf(amplitudeLogPrefix+msg, args...)
