@@ -12,31 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package wapi
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/cmd/workload/code"
-	"github.com/datarobot/cli/internal/features"
-	"github.com/spf13/cobra"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "workload",
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
+// initWapiDir creates an empty .wapi/ directory inside projectDir so that
+// Load* / Save* / AppendHistory operations bypass their ErrNotInitialized
+// short-circuit. Used by config, manifest, and history tests that only care
+// about the read/write behaviour, not the Exists precondition.
+func initWapiDir(t *testing.T, projectDir string) {
+	t.Helper()
 
-Manage and monitor workloads in your deployment infrastructure.`,
-	}
-
-	features.SetGate(cmd, "workload")
-
-	cmd.AddCommand(
-		artifact.Cmd(),
-		code.Cmd(),
-	)
-
-	return cmd
+	err := os.MkdirAll(filepath.Join(projectDir, DirName), 0o755)
+	require.NoError(t, err)
 }

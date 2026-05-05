@@ -12,31 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package wapi
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/cmd/workload/code"
-	"github.com/datarobot/cli/internal/features"
-	"github.com/spf13/cobra"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "workload",
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
+func TestExists_Missing(t *testing.T) {
+	tmp := t.TempDir()
 
-Manage and monitor workloads in your deployment infrastructure.`,
-	}
+	assert.False(t, Exists(tmp))
+}
 
-	features.SetGate(cmd, "workload")
+func TestExists_PresentDir(t *testing.T) {
+	tmp := t.TempDir()
 
-	cmd.AddCommand(
-		artifact.Cmd(),
-		code.Cmd(),
-	)
+	err := os.Mkdir(filepath.Join(tmp, DirName), 0o755)
+	require.NoError(t, err)
 
-	return cmd
+	assert.True(t, Exists(tmp))
+}
+
+func TestExists_IsFileNotDir(t *testing.T) {
+	tmp := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(tmp, DirName), []byte("oops"), 0o644)
+	require.NoError(t, err)
+
+	assert.False(t, Exists(tmp))
 }

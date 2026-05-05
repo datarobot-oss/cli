@@ -151,6 +151,29 @@ func TestParseArtifactStatus_Invalid(t *testing.T) {
 	assert.Contains(t, err.Error(), "bogus")
 }
 
+// TestIsLocked guards the case-insensitive comparison so the locked-artifact
+// guard cannot regress: the API wire format is uppercase ("LOCKED"), but the
+// constant is lowercase, so a plain == check would silently let locked
+// artifacts through.
+func TestIsLocked(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"LOCKED", true},
+		{"locked", true},
+		{"Locked", true},
+		{"DRAFT", false},
+		{"draft", false},
+		{"", false},
+	}
+
+	for _, c := range cases {
+		a := &Artifact{Status: c.status}
+		assert.Equal(t, c.want, a.IsLocked(), "status %q", c.status)
+	}
+}
+
 const validMinimalSpec = `{
 	"name": "my-agent",
 	"spec": {

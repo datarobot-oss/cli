@@ -42,5 +42,6 @@ header:
   paths-ignore:
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
+    - 'internal/workload/wapi/wapiignore.tmpl'
 
   comment: on-failure

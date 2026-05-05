@@ -103,6 +103,10 @@ func NewArtifactOutput(a Artifact) ArtifactOutput {
 	return out
 }
 
+func (a *Artifact) IsLocked() bool {
+	return strings.EqualFold(a.Status, ArtifactStatusLocked)
+}
+
 func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 	if len(artifact.Spec.ContainerGroups) == 0 {
 		return nil

@@ -12,31 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package wapi
 
-import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/cmd/workload/code"
-	"github.com/datarobot/cli/internal/features"
-	"github.com/spf13/cobra"
-)
+import _ "embed"
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "workload",
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
-
-Manage and monitor workloads in your deployment infrastructure.`,
-	}
-
-	features.SetGate(cmd, "workload")
-
-	cmd.AddCommand(
-		artifact.Cmd(),
-		code.Cmd(),
-	)
-
-	return cmd
-}
+// wapiignoreTemplate is the .wapiignore content dropped at the project root
+// on first init. Embedded so we don't depend on file lookups at runtime.
+//
+//go:embed wapiignore.tmpl
+var wapiignoreTemplate []byte
