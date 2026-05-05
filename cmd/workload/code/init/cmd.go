@@ -32,11 +32,6 @@ import (
 // Test seam: cmd_test.go reassigns this to stub the HTTP call.
 var getArtifactFn = workload.GetArtifact
 
-func init() {
-	// --yes is read directly from cobra; only the env var binds to viper
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
-}
-
 func Cmd() *cobra.Command {
 	var outputFormat workload.OutputFormat
 
@@ -72,6 +67,11 @@ Example:
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; use defaults.")
+
+	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
+	// flag itself is read directly from cmd.Flags() in runInit so an explicit
+	// --yes does not leak into viper.AllSettings() and persist to drconfig.yaml.
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	workload.AddOutputFlag(c, &outputFormat)
 

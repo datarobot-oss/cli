@@ -103,5 +103,5 @@ func DeleteJSON(url, info string, body, v any) error {
 		return nil
 	}
 
-	return json.NewDecoder(resp.Body).Decode(&v)
+	return json.NewDecoder(resp.Body).Decode(v)
 }

@@ -189,6 +189,39 @@ func TestExtractCodeRef_FindsPrimaryAcrossGroups(t *testing.T) {
 	assert.Equal(t, "cat-2", codeRef.CatalogID)
 }
 
+// TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil locks in the
+// commit-to-primary semantics: once a container is identified as
+// primary, missing codeRef must return nil rather than falling through
+// to a sidecar's stale data.
+func TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil(t *testing.T) {
+	primary := true
+	notPrimary := false
+
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{
+					Containers: []Container{
+						{
+							Primary: &notPrimary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
+							}},
+						},
+						{
+							Primary: &primary,
+							CodeRef: nil,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assert.Nil(t, ExtractCodeRef(artifact),
+		"primary container with nil codeRef must return nil, not the sidecar's coderef")
+}
+
 // TestExtractCodeRef_PrimaryFalseDoesNotMatch confirms the *bool primary
 // flag is interpreted strictly: a container with `primary: false` set
 // explicitly is treated as a sidecar, not a candidate.
@@ -450,23 +483,38 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 		require.Contains(t, primary, "codeRef")
 	})
 
-	t.Run("ErrorsWhenNoPrimary", func(t *testing.T) {
+	t.Run("FallsBackToFirstContainerWhenNoPrimary", func(t *testing.T) {
+		// Legacy artifact: server doesn't emit `primary` on any
+		// container. Mirror ExtractCodeRef's read-side fallback by
+		// updating containerGroups[0].containers[0] so sync against
+		// older deployments keeps working.
 		raw := map[string]any{
 			"spec": map[string]any{
 				"containerGroups": []any{
 					map[string]any{
 						"containers": []any{
-							map[string]any{"primary": false},
-							map[string]any{}, // no primary field at all
+							map[string]any{
+								"imageUri": "first-image",
+							},
+							map[string]any{
+								"imageUri": "second-image",
+							},
 						},
 					},
 				},
 			},
 		}
 
-		err := setPrimaryCodeRefInRawArtifact(raw, "cat", "ver")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no primary container")
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "new-cat", "new-ver"))
+
+		containers := raw["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)["containers"].([]any)
+		first := containers[0].(map[string]any)
+		second := containers[1].(map[string]any)
+
+		dr := first["codeRef"].(map[string]any)["datarobot"].(map[string]any)
+		assert.Equal(t, "new-cat", dr["catalogId"])
+		assert.Equal(t, "new-ver", dr["catalogVersionId"])
+		assert.NotContains(t, second, "codeRef", "second container must be untouched")
 	})
 
 	cases := []struct {

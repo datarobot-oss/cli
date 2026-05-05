@@ -116,6 +116,10 @@ func (a *Artifact) IsLocked() bool {
 // setPrimaryCodeRefInRawArtifact. If no container is flagged primary
 // (legacy server responses that don't emit the field), falls back to
 // containerGroups[0].containers[0] so older deployments keep working.
+//
+// Once a primary container is found, this function commits to it: a
+// primary with no codeRef returns nil rather than falling through to a
+// sidecar, otherwise display would silently surface stale catalog info.
 func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 	for _, group := range artifact.Spec.ContainerGroups {
 		for _, container := range group.Containers {
@@ -124,7 +128,7 @@ func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 			}
 
 			if container.CodeRef == nil {
-				continue
+				return nil
 			}
 
 			return container.CodeRef.Datarobot
@@ -287,6 +291,18 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 		},
 	}
 
+	if found := assignToPrimaryContainer(groups, codeRef); found {
+		return nil
+	}
+
+	// Legacy fallback: server didn't emit `primary` on any container.
+	// Mirror ExtractCodeRef's read-side fallback to containers[0][0] so
+	// sync against older deployments still updates the first container
+	// instead of returning an opaque "no primary container" error.
+	return assignToFirstContainer(groups, codeRef)
+}
+
+func assignToPrimaryContainer(groups []any, codeRef map[string]any) bool {
 	for _, g := range groups {
 		group, ok := g.(map[string]any)
 		if !ok {
@@ -307,12 +323,33 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 			if isPrimaryContainer(container) {
 				container["codeRef"] = codeRef
 
-				return nil
+				return true
 			}
 		}
 	}
 
-	return errors.New("artifact: no primary container found in spec.containerGroups")
+	return false
+}
+
+func assignToFirstContainer(groups []any, codeRef map[string]any) error {
+	firstGroup, ok := groups[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
+	}
+
+	containers, ok := firstGroup["containers"].([]any)
+	if !ok || len(containers) == 0 {
+		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
+	}
+
+	firstContainer, ok := containers[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
+	}
+
+	firstContainer["codeRef"] = codeRef
+
+	return nil
 }
 
 func isPrimaryContainer(container map[string]any) bool {
