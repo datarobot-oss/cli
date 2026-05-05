@@ -167,7 +167,8 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	// An update is available — prompt the user
 	fmt.Println(tui.InfoStyle.Render(
 		fmt.Sprintf("Plugin %q update available: v%s → v%s",
-			result.PluginName, result.InstalledVersion, result.LatestVersion.Version)))
+			result.PluginName, result.InstalledVersion, result.LatestVersion.Version),
+	))
 	fmt.Print(tui.DimStyle.Render("Do you want to update? [Y/n] "))
 
 	if !askYesNo() {

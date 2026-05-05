@@ -56,7 +56,8 @@ func RenderStatusBar(width int, s spinner.Model, message string, isLoading bool)
 		Width(width - w(statusKey) - 2).
 		Render(message)
 
-	bar := lipgloss.JoinHorizontal(lipgloss.Top,
+	bar := lipgloss.JoinHorizontal(
+		lipgloss.Top,
 		statusKey,
 		statusMsg,
 	)
