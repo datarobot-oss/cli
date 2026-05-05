@@ -97,7 +97,7 @@ func NewClient(props *CommonProperties) *Client {
 // the event is logged via log.Debug instead.
 func (c *Client) Track(event types.Event) {
 	if c.amp == nil {
-		log.Debug("Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		log.Debug("[amplitude] Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
 		return
 	}
 
