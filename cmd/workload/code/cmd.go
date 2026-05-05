@@ -17,6 +17,7 @@ package code
 import (
 	"github.com/datarobot/cli/cmd/workload/code/checkout"
 	initcmd "github.com/datarobot/cli/cmd/workload/code/init"
+	syncc "github.com/datarobot/cli/cmd/workload/code/sync"
 	"github.com/datarobot/cli/cmd/workload/code/versions"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +38,7 @@ last-synced state used to detect drift on each operation.
 Subcommands:
   init       Link a directory to an existing artifact and lay down the
              '.wapi/' state. Required before any other 'code' command.
-  sync       Push local edits and pull remote changes (coming soon).
+  sync       Push local edits and pull remote changes.
   versions   List catalog versions for the linked artifact.
   checkout   Download a prior version into '.wapi/.checkouts/' for
              read-only inspection.
@@ -48,10 +49,13 @@ manage the *code* of an artifact, not its lifecycle.
 
 Example:
   dr workload code init art-abc-123
-  dr workload code init art-abc-123 --dir ./service`,
+  dr workload code init art-abc-123 --dir ./service
+  dr workload code sync
+  dr workload code sync --dry-run`,
 	}
 
 	cmd.AddCommand(initcmd.Cmd())
+	cmd.AddCommand(syncc.Cmd())
 	cmd.AddCommand(versions.Cmd())
 	cmd.AddCommand(checkout.Cmd())
 
