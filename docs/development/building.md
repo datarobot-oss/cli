@@ -623,27 +623,9 @@ dlv debug main.go -- templates list
 
 ### Debug logging
 
-Enable debug logging to see detailed execution information:
+See the [user guide](../user-guide/configuration.md#logging) for how `--verbose` and `--debug` flags work and where log files are written.
 
-```bash
-# Enable debug mode (use task run)
-task run -- --debug templates list
-
-# Or with built binary
-task build
-./dist/dr --debug templates list
-```
-
-When you enable debug mode, the CLI:
-
-- Prints detailed log messages to stderr and `.dr-tui-debug.log` file in the home directory.
-- Third-party SDK logs (for example, `[amplitude]` prefixed messages from the telemetry HTTP client) also appear. See [Telemetry SDK log routing](telemetry.md#sdk-log-routing) for how these are level-routed.
-
-When adding new debug output:
-
-- Never log user-provided input (including prompt responses), and avoid logging secrets (tokens, passwords, etc.).
-
-### Add debug statements
+### Adding debug output
 
 ```go
 import (
@@ -656,6 +638,9 @@ log.Info("Processing started")
 log.Warn("Unexpected condition")
 log.Error("Operation failed", "error", err)
 ```
+
+> [!WARNING]
+> Never log user-provided input (including prompt responses), and avoid logging secrets (tokens, passwords, etc.).
 
 ## Release process
 

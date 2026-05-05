@@ -178,11 +178,11 @@ dr foo --debug
 
 The Amplitude SDK emits its own internal logs (HTTP responses, client lifecycle, etc.) via a custom logger adapter in `amplitudeLogger`. All Amplitude SDK log entries are prefixed with `[amplitude]` for traceability in debug log files.
 
-The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file.
+The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file (see [Logging](../../user-guide/configuration.md#logging)).
 
 | CLI flags | Amplitude INFO appears as | Visible on stderr? |
 |---|---|---|
-| *(default)* | DEBUG | No (only in `.dr-tui-debug.log`) |
+| *(default)* | DEBUG | No |
 | `--verbose` | INFO | Yes |
 | `--debug` | INFO | Yes |
 
