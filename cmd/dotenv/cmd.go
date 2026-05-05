@@ -231,7 +231,7 @@ func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
-	SetupCmd.Flags().StringP("output", "o", "", "Directory where the .env file should be written (defaults to repository root).")
+	SetupCmd.Flags().StringP("output", "o", "", "Directory where the '.env' file should be written (defaults to repository root). This option skips the logic of finding the repository root.")
 	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.
