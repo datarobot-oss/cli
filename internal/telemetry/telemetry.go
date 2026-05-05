@@ -51,6 +51,9 @@ type amplitudeLogger struct{}
 
 func (l *amplitudeLogger) Debugf(msg string, args ...any) { log.Debugf(msg, args...) }
 func (l *amplitudeLogger) Infof(msg string, args ...any) {
+	// Routes Amplitude's INFO logs to DEBUG by default, or to INFO if --verbose is set.
+	// TODO consider adding a separate --amplitude-verbose flag to avoid coupling this
+	// to the CLI's global verbosity settings
 	if viperx.GetBool("verbose") || viperx.GetBool("debug") {
 		log.Infof(msg, args...)
 	} else {
