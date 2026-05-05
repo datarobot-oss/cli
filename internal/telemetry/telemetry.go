@@ -45,6 +45,10 @@ type Client struct {
 	props *CommonProperties
 }
 
+// amplitudeLogPrefix is applied to all Amplitude SDK log entries for
+// traceability in debug log files.
+const amplitudeLogPrefix = "[amplitude] "
+
 // amplitudeLogger adapts the internal log package to Amplitude's Logger interface.
 // Amplitude's INFO logs (HTTP responses, variable additions) are demoted to DEBUG
 // when the app's log level is above INFO, keeping stderr clean by default.
@@ -52,23 +56,23 @@ type Client struct {
 type amplitudeLogger struct{}
 
 func (l *amplitudeLogger) Debugf(msg string, args ...any) {
-	log.Debugf("[amplitude] "+msg, args...)
+	log.Debugf(amplitudeLogPrefix+msg, args...)
 }
 
 func (l *amplitudeLogger) Infof(msg string, args ...any) {
 	if log.GetLevel() <= log.InfoLevel {
-		log.Infof("[amplitude] "+msg, args...)
+		log.Infof(amplitudeLogPrefix+msg, args...)
 	} else {
-		log.Debugf("[amplitude] "+msg, args...)
+		log.Debugf(amplitudeLogPrefix+msg, args...)
 	}
 }
 
 func (l *amplitudeLogger) Warnf(msg string, args ...any) {
-	log.Warnf("[amplitude] "+msg, args...)
+	log.Warnf(amplitudeLogPrefix+msg, args...)
 }
 
 func (l *amplitudeLogger) Errorf(msg string, args ...any) {
-	log.Errorf("[amplitude] "+msg, args...)
+	log.Errorf(amplitudeLogPrefix+msg, args...)
 }
 
 // NewClient creates a telemetry client. If IsEnabled() returns true, it initializes
@@ -97,7 +101,7 @@ func NewClient(props *CommonProperties) *Client {
 // the event is logged via log.Debug instead.
 func (c *Client) Track(event types.Event) {
 	if c.amp == nil {
-		log.Debug("[amplitude] Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
 		return
 	}
 
