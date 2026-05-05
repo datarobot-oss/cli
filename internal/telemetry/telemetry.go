@@ -46,10 +46,17 @@ type Client struct {
 }
 
 // amplitudeLogger adapts the internal log package to Amplitude's Logger interface.
+// Routes Amplitude's INFO logs to DEBUG by default, or to INFO if --verbose is set.
 type amplitudeLogger struct{}
 
 func (l *amplitudeLogger) Debugf(msg string, args ...any) { log.Debugf(msg, args...) }
-func (l *amplitudeLogger) Infof(msg string, args ...any)  { log.Infof(msg, args...) }
+func (l *amplitudeLogger) Infof(msg string, args ...any) {
+	if viperx.GetBool("verbose") || viperx.GetBool("debug") {
+		log.Infof(msg, args...)
+	} else {
+		log.Debugf(msg, args...)
+	}
+}
 func (l *amplitudeLogger) Warnf(msg string, args ...any)  { log.Warnf(msg, args...) }
 func (l *amplitudeLogger) Errorf(msg string, args ...any) { log.Errorf(msg, args...) }
 
