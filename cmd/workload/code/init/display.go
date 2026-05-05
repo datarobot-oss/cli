@@ -72,19 +72,22 @@ func renderInitResult(format workload.OutputFormat, result initResult) error {
 
 func printLinkedExistingCode(name, artifactID, verShort string) {
 	fmt.Println(tui.SuccessStyle.Render(
-		fmt.Sprintf("Linked to %s (%s) at version %s.", name, artifactID, verShort)))
+		fmt.Sprintf("Linked to %s (%s) at version %s.", name, artifactID, verShort),
+	))
 	fmt.Println(tui.DimStyle.Render("Run 'dr workload code sync' to reconcile any local changes."))
 }
 
 func printLinkedEmptyArtifact(name, artifactID string) {
 	fmt.Println(tui.SuccessStyle.Render(
-		fmt.Sprintf("Linked to empty artifact %s (%s).", name, artifactID)))
+		fmt.Sprintf("Linked to empty artifact %s (%s).", name, artifactID),
+	))
 	fmt.Println(tui.DimStyle.Render("Run 'dr workload code sync' to upload your files."))
 }
 
 func printAlreadyLinked(artifactID, dir string) {
 	fmt.Println(tui.ErrorStyle.Render(
-		fmt.Sprintf("Already linked to artifact %s; .wapi/ exists at %s.", artifactID, dir)))
+		fmt.Sprintf("Already linked to artifact %s; .wapi/ exists at %s.", artifactID, dir),
+	))
 	fmt.Println(tui.DimStyle.Render("Delete .wapi/ to re-init."))
 }
 

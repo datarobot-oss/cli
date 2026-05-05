@@ -273,13 +273,16 @@ func (m Model) View() string {
 	if m.exists {
 		if m.repoURL == m.template.Repository.URL {
 			sb.WriteString(tui.InfoStyle.Render(fmt.Sprintf(
-				"\n💡 Directory '%s' exists and will be updated from origin\n", m.Dir)))
+				"\n💡 Directory '%s' exists and will be updated from origin\n", m.Dir,
+			)))
 		} else if m.repoURL != "" {
 			sb.WriteString(tui.ErrorStyle.Render(fmt.Sprintf(
-				"\n⚠️ Directory '%s' contains a different repository: '%s'\n", m.Dir, m.repoURL)))
+				"\n⚠️ Directory '%s' contains a different repository: '%s'\n", m.Dir, m.repoURL,
+			)))
 		} else {
 			sb.WriteString(tui.ErrorStyle.Render(fmt.Sprintf(
-				"\n⚠️ Directory '%s' already exists\n", m.Dir)))
+				"\n⚠️ Directory '%s' already exists\n", m.Dir,
+			)))
 		}
 	}
 

@@ -112,18 +112,24 @@ This wizard will help you:
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		outputDir, _ := cmd.Flags().GetString("output")
 
-		repositoryRoot, err := ensureInRepo()
-		if err != nil {
-			return err
-		}
+		var repositoryRoot string
 
-		var dotenvFile string
+		var err error
 
+		var isCustomOutput bool
+
+		// If --output is provided, use it as the repository root without walking up the directory tree
 		if outputDir != "" {
-			dotenvFile = filepath.Join(outputDir, ".env")
+			repositoryRoot = outputDir
+			isCustomOutput = true
 		} else {
-			dotenvFile = filepath.Join(repositoryRoot, ".env")
+			repositoryRoot, err = ensureInRepo()
+			if err != nil {
+				return err
+			}
 		}
+
+		dotenvFile := filepath.Join(repositoryRoot, ".env")
 
 		// Check if we should skip when .env exists and all required variables are set
 		flagIfNeededSet, _ := cmd.Flags().GetBool("if-needed")
@@ -154,8 +160,10 @@ This wizard will help you:
 				return err
 			}
 
-			// Update state after successful completion
-			_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+			// Update state after successful completion (skip if custom output directory)
+			if !isCustomOutput {
+				_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+			}
 
 			return nil
 		}
@@ -210,8 +218,10 @@ This wizard will help you:
 			}
 		}
 
-		// Update state after successful completion
-		_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+		// Update state after successful completion (skip if custom output directory)
+		if !isCustomOutput {
+			_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+		}
 
 		return nil
 	},
@@ -221,7 +231,7 @@ func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
 	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
-	SetupCmd.Flags().StringP("output", "o", "", "Directory where the .env file should be written (defaults to repository root).")
+	SetupCmd.Flags().StringP("output", "o", "", "Directory where the '.env' file should be written (defaults to repository root). This option skips the logic of finding the repository root.")
 	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.
