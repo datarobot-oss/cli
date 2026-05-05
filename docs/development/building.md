@@ -637,6 +637,7 @@ task build
 When you enable debug mode, the CLI:
 
 - Prints detailed log messages to stderr and `.dr-tui-debug.log` file in the home directory.
+- Third-party SDK logs (for example, `[amplitude]` prefixed messages from the telemetry HTTP client) also appear. See [Telemetry SDK log routing](telemetry.md#sdk-log-routing) for how these are level-routed.
 
 When adding new debug output:
 
