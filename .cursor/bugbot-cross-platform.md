@@ -200,29 +200,36 @@ fd, _ := unix.Open(path, unix.O_RDONLY, 0)
 
 ## Tracked Stubs for Incomplete Platforms
 
-**Rule**: Incomplete platform implementations must have JIRA tickets and be documented in CLI help. Don't silently degrade functionality.
+**Rule**: Incomplete platform implementations must be tracked internally (JIRA) and documented in CLI help. User-facing errors should NOT expose internal issue numbers.
 
 **Scope**: Stub functions that return "not implemented" errors
 
 **What to flag**:
-- `return errors.New("not implemented on Windows")` without JIRA ticket
+- `return errors.New("not implemented on Windows")` without internal tracking
 - No documentation in CLI help text
 - Silent feature degradation without user visibility
+- JIRA tickets exposed in user-facing error messages (privileged info)
 
-**Fix**: Link to JIRA ticket and document clearly
+**Fix**: Track internally with JIRA, document user-facing message clearly (no ticket numbers)
 ```go
-// Windows: https://jira.internal/DATAROBOT-12345
+// Code comments (internal): track with JIRA ticket
+// Windows implementation: https://jira.internal/DATAROBOT-12345
 // This feature requires Windows registry access; implementation pending
 func GetSystemInfo(ctx context.Context) (Info, error) {
-    return Info{}, fmt.Errorf("system info not yet implemented on Windows (see DATAROBOT-12345)")
+    // User-facing error: explain what's missing, don't expose ticket
+    return Info{}, fmt.Errorf("system info is not available on Windows")
 }
 ```
 
-Also add to CLI help:
+Also add to CLI help (user-friendly, no ticket numbers):
 ```go
 // In command struct:
-Help: "Get system information (not available on Windows; see DATAROBOT-12345 for tracking)"
+Help: "Get system information (not available on Windows)"
+// or
+Help: "Get system information (Windows support coming soon)"
 ```
+
+**Principle**: JIRA tickets are internal project tracking (privileged). Users should see clear, actionable messages without seeing internal ticket numbers.
 
 ---
 
