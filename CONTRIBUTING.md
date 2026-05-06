@@ -198,7 +198,9 @@ After pushing your changes to your fork, create a pull request from your fork to
    - Screenshots for UI changes (if applicable)
 
 4. **Review Process**:
-   - Maintainers will review your PR
+   - Automated bugbot reviews will provide architectural feedback on PRs. Authors **should address these reviews** to maintain code quality and consistency; see [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for the architectural patterns we enforce
+   - Maintainers will review your PR, provide feedback, and request changes if necessary
+   - Maintainers have final say on whether bugbot feedback must be addressed or can be waived
    - Address any feedback or requested changes
    - Once approved, a maintainer will merge your PR
 
