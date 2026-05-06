@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -25,7 +24,7 @@ import (
 // phase2Manifests builds the LOCAL manifest by walking + hashing the
 // project, and either fetches REMOTE from FilesAPI (when drifted) or
 // copies it from BASE (the solo-developer fast path).
-func phase2Manifests(_ context.Context, e *Engine) error {
+func phase2Manifests(e *Engine) error {
 	matcher, err := ignore.New(e.projectDir)
 	if err != nil {
 		return fmt.Errorf("load .wapiignore: %w", err)

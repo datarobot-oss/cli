@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -26,7 +25,7 @@ import (
 // rollback dir, conflict copies, downloads + local-side deletes, remote
 // deletes, uploads. Any error after the rollback dir is created triggers
 // a Restore to pre-sync state.
-func phase5Execute(ctx context.Context, e *Engine) error {
+func phase5Execute(e *Engine) error {
 	if e.plan == nil || e.plan.IsEmpty() {
 		return nil
 	}
@@ -44,7 +43,7 @@ func phase5Execute(ctx context.Context, e *Engine) error {
 		return err
 	}
 
-	if err := executePlan(ctx, e, rb); err != nil {
+	if err := executePlan(e, rb); err != nil {
 		_ = rb.Restore()
 		return err
 	}
@@ -56,14 +55,14 @@ func phase5Execute(ctx context.Context, e *Engine) error {
 	return nil
 }
 
-func executePlan(ctx context.Context, e *Engine, rb *Rollback) error {
+func executePlan(e *Engine, rb *Rollback) error {
 	if err := applyConflictCopies(e, rb); err != nil {
 		return fmt.Errorf("conflict copies: %w", err)
 	}
 
 	codeRef := codeRefOrEmpty(e)
 
-	if err := applyDownloads(ctx, e, rb, codeRef); err != nil {
+	if err := applyDownloads(e, rb, codeRef); err != nil {
 		return fmt.Errorf("downloads: %w", err)
 	}
 
@@ -71,7 +70,7 @@ func executePlan(ctx context.Context, e *Engine, rb *Rollback) error {
 		return fmt.Errorf("local deletes: %w", err)
 	}
 
-	newCatalogID, newVersionID, err := applyRemoteDeletesAndUploads(ctx, e, codeRef)
+	newCatalogID, newVersionID, err := applyRemoteDeletesAndUploads(e, codeRef)
 	if err != nil {
 		return err
 	}
@@ -114,7 +113,7 @@ func applyConflictCopies(e *Engine, rb *Rollback) error {
 // applyDownloads runs the download list plus the conflict-copy follow-up
 // downloads (remote wins, so remote bytes land at the original path).
 // REMOTE_DELETED files are removed locally instead.
-func applyDownloads(ctx context.Context, e *Engine, rb *Rollback, codeRef codeRefRef) error {
+func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
 	if codeRef.CatalogID == "" || codeRef.CatalogVersionID == "" {
 		return nil
 	}
@@ -128,7 +127,7 @@ func applyDownloads(ctx context.Context, e *Engine, rb *Rollback, codeRef codeRe
 	}
 
 	pulls := pullList(e.plan)
-	if err := downloadFiles(ctx, e, codeRef.CatalogID, codeRef.CatalogVersionID, pulls); err != nil {
+	if err := downloadFiles(e, codeRef.CatalogID, codeRef.CatalogVersionID, pulls); err != nil {
 		return err
 	}
 
@@ -205,7 +204,7 @@ func applyLocalDeletes(_ *Engine, _ *Rollback) error {
 // applyRemoteDeletesAndUploads sends LOCAL_DELETED paths to FilesAPI,
 // runs the chosen Uploader for LOCAL_MODIFIED + LOCAL_ADDED, and PATCHes
 // the artifact's codeRef so the workload picks up the new version.
-func applyRemoteDeletesAndUploads(ctx context.Context, e *Engine, codeRef codeRefRef) (string, string, error) {
+func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string, error) {
 	catalogID := codeRef.CatalogID
 	newCatalogID := catalogID
 	newVersionID := codeRef.CatalogVersionID
@@ -219,7 +218,7 @@ func applyRemoteDeletesAndUploads(ctx context.Context, e *Engine, codeRef codeRe
 	if len(e.plan.Uploads) > 0 {
 		uploader := ChooseUploader(e.plan)
 
-		cid, vid, err := uploader.ApplyUploads(ctx, e, e.plan.Uploads)
+		cid, vid, err := uploader.ApplyUploads(e, e.plan.Uploads)
 		if err != nil {
 			return "", "", err
 		}

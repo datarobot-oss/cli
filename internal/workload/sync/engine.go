@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -106,10 +105,11 @@ func (e *Engine) SetNowFn(fn func() time.Time) { e.nowFn = fn }
 
 // Plan runs phases 0-4 and returns the SyncPlan. The lock acquired in
 // Phase 0 is held until Close, Execute, or Run releases it.
-func (e *Engine) Plan(ctx context.Context) (*SyncPlan, error) {
+func (e *Engine) Plan() (*SyncPlan, error) {
 	e.startedAt = e.nowFn()
 
-	err := runPhases(ctx, e,
+	err := runPhases(
+		e,
 		phase{name: "preflight", run: phase0Preflight},
 		phase{name: "gather", run: phase1Gather},
 		phase{name: "manifests", run: phase2Manifests},
@@ -127,7 +127,7 @@ func (e *Engine) Plan(ctx context.Context) (*SyncPlan, error) {
 
 // Execute runs phases 5-6 against the plan returned by Plan. The lock
 // is released on completion (success or error).
-func (e *Engine) Execute(ctx context.Context, plan *SyncPlan) (*Result, error) {
+func (e *Engine) Execute(plan *SyncPlan) (*Result, error) {
 	if e.plan == nil || plan == nil {
 		_ = e.releaseLock()
 
@@ -142,7 +142,8 @@ func (e *Engine) Execute(ctx context.Context, plan *SyncPlan) (*Result, error) {
 
 	defer func() { _ = e.releaseLock() }()
 
-	if err := runPhases(ctx, e,
+	if err := runPhases(
+		e,
 		phase{name: "execute", run: phase5Execute},
 		phase{name: "state", run: phase6State},
 	); err != nil {
@@ -153,8 +154,8 @@ func (e *Engine) Execute(ctx context.Context, plan *SyncPlan) (*Result, error) {
 }
 
 // Run is Plan + Execute. With DryRun or ShowDiffs it stops after Plan.
-func (e *Engine) Run(ctx context.Context) (*Result, error) {
-	plan, err := e.Plan(ctx)
+func (e *Engine) Run() (*Result, error) {
+	plan, err := e.Plan()
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +169,7 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 		}, nil
 	}
 
-	return e.Execute(ctx, plan)
+	return e.Execute(plan)
 }
 
 // Close releases the project lock. Idempotent.

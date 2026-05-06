@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -27,13 +26,18 @@ import (
 
 // downloadFiles pulls files in parallel up to DownloadConcurrency. Each
 // download streams to disk and computes SHA-256 in the same pass so
-// post-download verification is free.
-func downloadFiles(ctx context.Context, e *Engine, catalogID, versionID string, files []FileAction) error {
+// post-download verification is free. The first error closes done to
+// stop other workers from picking up the next file.
+func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) error {
 	if len(files) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	var cancelOnce sync.Once
+
+	cancel := func() { cancelOnce.Do(func() { close(done) }) }
 	defer cancel()
 
 	sem := make(chan struct{}, DownloadConcurrency)
@@ -51,7 +55,7 @@ func downloadFiles(ctx context.Context, e *Engine, catalogID, versionID string, 
 
 			select {
 			case sem <- struct{}{}:
-			case <-ctx.Done():
+			case <-done:
 				return
 			}
 

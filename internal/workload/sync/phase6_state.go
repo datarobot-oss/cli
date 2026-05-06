@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -25,7 +24,7 @@ import (
 // phase6State writes the new BASE manifest, config, history entry, and
 // discards the rollback. Failures here do NOT roll back Phase 5 since
 // the remote has already advanced; the next sync will reconcile.
-func phase6State(_ context.Context, e *Engine) error {
+func phase6State(e *Engine) error {
 	if e.plan == nil {
 		return nil
 	}

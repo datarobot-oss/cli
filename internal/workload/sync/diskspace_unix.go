@@ -31,5 +31,5 @@ func realAvailableBytes(path string) (int64, error) {
 	}
 
 	//nolint:gosec // Bavail * Bsize fits in int64 on every supported FS.
-	return int64(st.Bavail) * int64(st.Bsize), nil
+	return int64(st.Bavail * uint64(st.Bsize)), nil
 }

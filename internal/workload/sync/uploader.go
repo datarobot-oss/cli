@@ -14,13 +14,11 @@
 
 package sync
 
-import "context"
-
 // Uploader pushes a SyncPlan's Uploads and returns the resulting
 // (catalogID, newVersionID). When catalogID is empty (first-sync against
 // an empty artifact) the implementation creates a new catalog.
 type Uploader interface {
-	ApplyUploads(ctx context.Context, e *Engine, files []FileAction) (catalogID, versionID string, err error)
+	ApplyUploads(e *Engine, files []FileAction) (catalogID, versionID string, err error)
 }
 
 // ChooseUploader picks stage for small change sets (tight error semantics)

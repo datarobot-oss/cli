@@ -14,28 +14,21 @@
 
 package sync
 
-import (
-	"context"
-	"fmt"
-)
+import "fmt"
 
 // phase is a named step in the sync pipeline so runPhases can attach
 // the phase name to wrapped errors.
 type phase struct {
 	name string
-	run  func(ctx context.Context, e *Engine) error
+	run  func(e *Engine) error
 }
 
 // runPhases executes phases sequentially. The first error stops the
 // pipeline; the engine releases the lock on failure via deferred
 // releaseLock.
-func runPhases(ctx context.Context, e *Engine, phases ...phase) error {
+func runPhases(e *Engine, phases ...phase) error {
 	for _, p := range phases {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("phase %s: %w", p.name, err)
-		}
-
-		if err := p.run(ctx, e); err != nil {
+		if err := p.run(e); err != nil {
 			return fmt.Errorf("phase %s: %w", p.name, err)
 		}
 	}

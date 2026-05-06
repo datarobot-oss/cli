@@ -14,11 +14,9 @@
 
 package sync
 
-import "context"
-
 // phase4Preview sorts the plan so display and Phase 5 see the same
 // deterministic ordering.
-func phase4Preview(_ context.Context, e *Engine) error {
+func phase4Preview(e *Engine) error {
 	if e.plan == nil {
 		return nil
 	}

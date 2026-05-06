@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -25,7 +24,7 @@ import (
 
 // phase1Gather loads on-disk state, fetches the artifact, and computes
 // the drift flag that decides whether Phase 2 calls allFiles or fast-paths.
-func phase1Gather(_ context.Context, e *Engine) error {
+func phase1Gather(e *Engine) error {
 	cfg, err := wapi.LoadConfig(e.projectDir)
 	if err != nil {
 		return fmt.Errorf("read .wapi/config.json: %w", err)

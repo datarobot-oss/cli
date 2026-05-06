@@ -16,7 +16,6 @@ package sync
 
 import (
 	"archive/zip"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +31,7 @@ import (
 type ZipUploader struct{}
 
 // ApplyUploads zips the files, POSTs, and polls until done.
-func (ZipUploader) ApplyUploads(ctx context.Context, e *Engine, files []FileAction) (string, string, error) {
+func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (string, string, error) {
 	zipPath, err := buildZip(e.projectDir, files)
 	if err != nil {
 		return "", "", err
@@ -60,7 +59,7 @@ func (ZipUploader) ApplyUploads(ctx context.Context, e *Engine, files []FileActi
 	// Small archives complete inline (201, no statusId); larger ones
 	// come back 202 with a statusId we then poll.
 	if resp.StatusID != "" {
-		if err := waitForCompletion(ctx, e, resp.StatusID); err != nil {
+		if err := waitForCompletion(e, resp.StatusID); err != nil {
 			return "", "", err
 		}
 	}
@@ -133,7 +132,7 @@ func postZip(e *Engine, body io.Reader, size int64) (*filesapi.FromFileResp, err
 
 // waitForCompletion polls until terminal status or ZipPollTimeoutSecs
 // elapses.
-func waitForCompletion(ctx context.Context, e *Engine, statusID string) error {
+func waitForCompletion(e *Engine, statusID string) error {
 	deadline := time.Now().Add(time.Duration(ZipPollTimeoutSecs) * time.Second)
 
 	for {
@@ -154,10 +153,6 @@ func waitForCompletion(ctx context.Context, e *Engine, statusID string) error {
 			return nil
 		}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Duration(ZipPollIntervalMS) * time.Millisecond):
-		}
+		time.Sleep(time.Duration(ZipPollIntervalMS) * time.Millisecond)
 	}
 }

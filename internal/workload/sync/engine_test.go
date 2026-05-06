@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -166,7 +165,7 @@ func TestEngine_Plan_FirstSyncEmptyArtifact(t *testing.T) {
 	})
 	e.SetFilesClient(&fakeFilesClient{})
 
-	plan, err := e.Plan(context.Background())
+	plan, err := e.Plan()
 	require.NoError(t, err)
 
 	uploadPaths := make([]string, 0, len(plan.Uploads))
@@ -221,7 +220,7 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 		allFilesCalled:  &calledAllFiles,
 	})
 
-	plan, err := e.Plan(context.Background())
+	plan, err := e.Plan()
 	require.NoError(t, err)
 	assert.True(t, plan.IsEmpty(), "plan should be empty when local == base == remote: %+v", plan)
 	assert.False(t, calledAllFiles, "AllFiles must not be called when not drifted")
@@ -240,7 +239,7 @@ func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 	})
 	e.SetFilesClient(&fakeFilesClient{})
 
-	_, err = e.Plan(context.Background())
+	_, err = e.Plan()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "locked")
 }
@@ -251,7 +250,7 @@ func TestEngine_Plan_NotLinked(t *testing.T) {
 	e, err := New(dir, Options{})
 	require.NoError(t, err)
 
-	_, err = e.Plan(context.Background())
+	_, err = e.Plan()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not linked")
 }
@@ -284,7 +283,7 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 		return nil
 	})
 
-	result, err := e.Run(context.Background())
+	result, err := e.Run()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 

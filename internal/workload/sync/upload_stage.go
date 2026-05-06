@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ import (
 type StageUploader struct{}
 
 // ApplyUploads pushes files via the stage workflow.
-func (StageUploader) ApplyUploads(ctx context.Context, e *Engine, files []FileAction) (string, string, error) {
+func (StageUploader) ApplyUploads(e *Engine, files []FileAction) (string, string, error) {
 	catalogID, err := ensureCatalog(e)
 	if err != nil {
 		return "", "", err
@@ -40,7 +39,7 @@ func (StageUploader) ApplyUploads(ctx context.Context, e *Engine, files []FileAc
 		return "", "", fmt.Errorf("create stage: %w", err)
 	}
 
-	if err := uploadFilesParallel(ctx, e, catalogID, stage.StageID, files); err != nil {
+	if err := uploadFilesParallel(e, catalogID, stage.StageID, files); err != nil {
 		return "", "", err
 	}
 
@@ -68,14 +67,18 @@ func ensureCatalog(e *Engine) (string, error) {
 }
 
 // uploadFilesParallel uploads files up to UploadConcurrency. The first
-// error cancels the context; the function still waits for all workers
-// to return to avoid leaking goroutines past Phase 5.
-func uploadFilesParallel(ctx context.Context, e *Engine, catalogID, stageID string, files []FileAction) error {
+// error closes done to stop other workers from starting; in-flight
+// workers still finish their current upload before the function returns.
+func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileAction) error {
 	if len(files) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	var cancelOnce sync.Once
+
+	cancel := func() { cancelOnce.Do(func() { close(done) }) }
 	defer cancel()
 
 	sem := make(chan struct{}, UploadConcurrency)
@@ -93,7 +96,7 @@ func uploadFilesParallel(ctx context.Context, e *Engine, catalogID, stageID stri
 
 			select {
 			case sem <- struct{}{}:
-			case <-ctx.Done():
+			case <-done:
 				return
 			}
 

@@ -15,7 +15,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -25,7 +24,7 @@ import (
 // phase0Preflight does stale-rollback recovery, .wapi/ presence check,
 // and acquires the project lock. Recovery runs before the lock so a
 // crashed-mid-sync process gets cleaned up by whoever runs next.
-func phase0Preflight(_ context.Context, e *Engine) error {
+func phase0Preflight(e *Engine) error {
 	restored, err := RestoreStaleIfPresent(e.projectDir)
 	if err != nil {
 		return fmt.Errorf("recover stale rollback: %w", err)
