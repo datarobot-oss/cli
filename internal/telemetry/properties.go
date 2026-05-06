@@ -34,7 +34,7 @@ import (
 // events in that session.
 type CommonProperties struct {
 	SessionID         string // UUID v4, unique per process invocation
-	DeviceID          string // UUID v4, stable per installation, persisted to disk
+	DeviceID          string // UUID v4, stable per installation, cached to disk
 	UserID            string // DataRobot uid from GET /api/v2/account/info/, cached to disk
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
