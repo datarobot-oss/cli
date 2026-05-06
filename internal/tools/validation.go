@@ -91,8 +91,9 @@ func (s YAMLSchema) Validate(data versionsYaml) {
 	}
 }
 
+// validate checks that install commands are provided
+// according to the InstallCommandsSchema rules, with special attention to the current platform.
 func (s InstallCommandsSchema) validate(key string, ic InstallCommands) {
-	// log.Warnf("InstallCommands for %s : \n %#v", key, ic)
 	if ic.MacOS == "" && ic.Linux == "" && ic.Windows == "" {
 		log.Warnf("versions.yaml [%s]: 'install' is not defined", key)
 
@@ -104,6 +105,7 @@ func (s InstallCommandsSchema) validate(key string, ic InstallCommands) {
 	s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows")
 }
 
+// validatePlatform logs Error if the install command for the current platform is missing and it's required, otherwise logs a warning.
 func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) {
 	if !rule.Required || value != "" {
 		return
