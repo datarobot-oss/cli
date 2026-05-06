@@ -15,12 +15,16 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,6 +187,49 @@ func TestCollectCommonProperties_UserIDEmptyWhenUnauthenticated(t *testing.T) {
 	props := CollectCommonProperties()
 
 	assert.Empty(t, props.UserID)
+}
+
+func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, "https://test.datarobot.com/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	// Pre-seed the cache file with a valid entry matching the configured endpoint and token
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	token := "test-token"
+	hash := sha256.Sum256([]byte(token))
+	fingerprint := hex.EncodeToString(hash[:])
+
+	cache := cachedUserID{
+		UID:              "cross-test-uid",
+		Endpoint:         "https://test.datarobot.com",
+		TokenFingerprint: fingerprint,
+	}
+	data, err := json.Marshal(cache)
+
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, userIDFileName), data, 0o600)
+
+	require.NoError(t, err)
+
+	props := CollectCommonProperties()
+
+	assert.Equal(t, "cross-test-uid", props.UserID)
+
+	m := props.AsMap()
+
+	assert.NotContains(t, m, "user_id")
 }
 
 func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
