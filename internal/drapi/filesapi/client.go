@@ -15,14 +15,7 @@
 package filesapi
 
 import (
-	"context"
-	"fmt"
 	"io"
-	"net/http"
-	"net/url"
-
-	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/drapi"
 )
 
 type Client interface {
@@ -38,50 +31,8 @@ type Client interface {
 	DeleteFiles(catalogID string, paths []string) (*DeleteFilesResp, error)
 }
 
-func NewClient() Client {
+func New() Client {
 	return &httpClient{}
 }
 
 type httpClient struct{}
-
-func endpointURL(path string, query url.Values) (string, error) {
-	full, err := config.GetEndpointURL("/api/v2" + path)
-	if err != nil {
-		return "", err
-	}
-
-	if len(query) == 0 {
-		return full, nil
-	}
-
-	return full + "?" + query.Encode(), nil
-}
-
-func errFromResp(resp *http.Response, requestURL string) error {
-	defer func() { _ = resp.Body.Close() }()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if len(body) > 0 {
-		return fmt.Errorf("%w: body=%s", &drapi.HTTPError{StatusCode: resp.StatusCode, URL: requestURL}, body)
-	}
-
-	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: requestURL}
-}
-
-// decorateAuthHeaders adds the same auth/telemetry headers drapi applies,
-// for the multipart paths that build their own requests.
-func decorateAuthHeaders(req *http.Request) error {
-	token, err := config.GetAPIKey(context.Background())
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", config.GetUserAgentHeader())
-
-	if config.IsAPIConsumerTrackingEnabled() {
-		req.Header.Set("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
-	}
-
-	return nil
-}

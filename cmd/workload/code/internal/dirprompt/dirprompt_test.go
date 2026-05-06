@@ -27,18 +27,16 @@ func TestResolveDir(t *testing.T) {
 		name             string
 		flag             string
 		yes              bool
-		tty              bool
 		promptReturns    string
 		promptErr        error
 		wantDir          string
 		wantPromptCalled bool
 	}{
-		{name: "FlagWins", flag: "/tmp/x", yes: false, tty: true, wantDir: "/tmp/x"},
-		{name: "FlagWinsEvenWithYes", flag: "/tmp/x", yes: true, tty: false, wantDir: "/tmp/x"},
-		{name: "YesUsesDot", flag: "", yes: true, tty: true, wantDir: "."},
-		{name: "NonTTYUsesDot", flag: "", yes: false, tty: false, wantDir: "."},
-		{name: "TTYPromptDefault", flag: "", yes: false, tty: true, promptReturns: ".", wantDir: ".", wantPromptCalled: true},
-		{name: "TTYPromptCustom", flag: "", yes: false, tty: true, promptReturns: "./svc", wantDir: "./svc", wantPromptCalled: true},
+		{name: "FlagWins", flag: "/tmp/x", yes: false, wantDir: "/tmp/x"},
+		{name: "FlagWinsEvenWithYes", flag: "/tmp/x", yes: true, wantDir: "/tmp/x"},
+		{name: "YesUsesDot", flag: "", yes: true, wantDir: "."},
+		{name: "PromptDefault", flag: "", yes: false, promptReturns: ".", wantDir: ".", wantPromptCalled: true},
+		{name: "PromptCustom", flag: "", yes: false, promptReturns: "./svc", wantDir: "./svc", wantPromptCalled: true},
 	}
 
 	for _, tc := range cases {
@@ -54,7 +52,7 @@ func TestResolveDir(t *testing.T) {
 				return tc.promptReturns, tc.promptErr
 			}
 
-			got, err := ResolveDir(tc.flag, tc.yes, tc.tty, prompt)
+			got, err := ResolveDir(tc.flag, tc.yes, prompt)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantDir, got)
 			assert.Equal(t, tc.wantPromptCalled, called)
@@ -67,7 +65,7 @@ func TestResolveDir_PromptError(t *testing.T) {
 		return "", errors.New("read failed")
 	}
 
-	got, err := ResolveDir("", false, true, prompt)
+	got, err := ResolveDir("", false, prompt)
 	require.Error(t, err)
 	assert.Empty(t, got)
 }
@@ -77,7 +75,6 @@ func TestResolveArtifactID(t *testing.T) {
 		name             string
 		args             []string
 		yes              bool
-		tty              bool
 		promptReturns    string
 		wantID           string
 		wantErrSubstring string
@@ -85,9 +82,8 @@ func TestResolveArtifactID(t *testing.T) {
 	}{
 		{name: "Positional", args: []string{"art-abc-123"}, wantID: "art-abc-123"},
 		{name: "PositionalEvenWithYes", args: []string{"art-abc-123"}, yes: true, wantID: "art-abc-123"},
-		{name: "YesNoIDErrors", args: []string{}, yes: true, tty: true, wantErrSubstring: "artifact ID is required when using --yes"},
-		{name: "NonTTYNoIDErrors", args: []string{}, yes: false, tty: false, wantErrSubstring: "artifact ID is required (no TTY for prompting)"},
-		{name: "TTYPrompts", args: []string{}, yes: false, tty: true, promptReturns: "art-xyz-789", wantID: "art-xyz-789", wantPromptCalled: true},
+		{name: "YesNoIDErrors", args: []string{}, yes: true, wantErrSubstring: "artifact ID is required when using --yes"},
+		{name: "Prompts", args: []string{}, yes: false, promptReturns: "art-xyz-789", wantID: "art-xyz-789", wantPromptCalled: true},
 	}
 
 	for _, tc := range cases {
@@ -102,7 +98,7 @@ func TestResolveArtifactID(t *testing.T) {
 				return tc.promptReturns, nil
 			}
 
-			got, err := ResolveArtifactID(tc.args, tc.yes, tc.tty, prompt)
+			got, err := ResolveArtifactID(tc.args, tc.yes, prompt)
 
 			if tc.wantErrSubstring != "" {
 				require.Error(t, err)

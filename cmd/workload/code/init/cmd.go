@@ -23,7 +23,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -81,10 +80,9 @@ Example:
 func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputFormat) error {
 	yesFlag, _ := cmd.Flags().GetBool("yes")
 	yes := yesFlag || viperx.GetBool("yes")
-	tty := reader.IsStdinTerminal()
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
-	dir, err := dirprompt.ResolveDir(dirFlag, yes, tty, dirprompt.AskWithDefault)
+	dir, err := dirprompt.ResolveDir(dirFlag, yes, dirprompt.AskWithDefault)
 	if err != nil {
 		return err
 	}
@@ -93,7 +91,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputForm
 		return reportAlreadyLinked(dir)
 	}
 
-	artifactID, err := dirprompt.ResolveArtifactID(args, yes, tty, dirprompt.Ask)
+	artifactID, err := dirprompt.ResolveArtifactID(args, yes, dirprompt.Ask)
 	if err != nil {
 		return err
 	}

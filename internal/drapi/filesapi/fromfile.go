@@ -21,13 +21,15 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 func (c *httpClient) UploadFromZipNew(name string, size int64, body io.Reader) (*FromFileResp, error) {
 	q := url.Values{}
 	q.Set("useArchiveContents", "true")
 
-	requestURL, err := endpointURL("/files/fromFile/", q)
+	requestURL, err := drapi.EndpointURL("/files/fromFile/", q)
 	if err != nil {
 		return nil, fmt.Errorf("build files url: %w", err)
 	}
@@ -44,7 +46,7 @@ func (c *httpClient) UploadFromZipExisting(catalogID, name, overwrite string, si
 	q.Set("useArchiveContents", "true")
 	q.Set("overwrite", overwrite)
 
-	requestURL, err := endpointURL("/files/"+catalogID+"/fromFile/", q)
+	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/fromFile/", q)
 	if err != nil {
 		return nil, fmt.Errorf("build fromFile url: %w", err)
 	}
@@ -69,7 +71,7 @@ func uploadZipMultipart(requestURL, name string, size int64, body io.Reader) (*F
 
 	// 202 async, 201 sync (small archives), 200 occasionally.
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, errFromResp(resp, requestURL)
+		return nil, drapi.ErrFromResp(resp, requestURL)
 	}
 
 	var out FromFileResp
@@ -82,7 +84,7 @@ func uploadZipMultipart(requestURL, name string, size int64, body io.Reader) (*F
 }
 
 func (c *httpClient) PollStatus(statusID string) (*StatusResp, error) {
-	requestURL, err := endpointURL("/status/"+statusID+"/", nil)
+	requestURL, err := drapi.EndpointURL("/status/"+statusID+"/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build status url: %w", err)
 	}
@@ -114,7 +116,7 @@ func getAcceptingRedirect(requestURL string) (*http.Response, error) {
 		return nil, fmt.Errorf("build status request: %w", err)
 	}
 
-	if err := decorateAuthHeaders(req); err != nil {
+	if err := drapi.SetAuthHeaders(req); err != nil {
 		return nil, err
 	}
 
@@ -131,7 +133,7 @@ func getAcceptingRedirect(requestURL string) (*http.Response, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
-		return nil, errFromResp(resp, requestURL)
+		return nil, drapi.ErrFromResp(resp, requestURL)
 	}
 
 	return resp, nil

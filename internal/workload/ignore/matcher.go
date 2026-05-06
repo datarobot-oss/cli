@@ -27,7 +27,7 @@ import (
 const wapiignoreFile = ".wapiignore"
 
 // systemExcludes are always-ignored paths, not overridable by .wapiignore.
-var systemExcludes = []string{".wapi", ".git"}
+var systemExcludes = []string{".wapi", ".git", ".gitignore"}
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.

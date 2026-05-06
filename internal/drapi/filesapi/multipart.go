@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 // multipartFormField is the form field name every upload uses.
@@ -67,7 +69,7 @@ func newStreamingMultipartRequest(
 		req.ContentLength = int64(len(prologue)) + size + int64(len(epilogue))
 	}
 
-	if err := decorateAuthHeaders(req); err != nil {
+	if err := drapi.SetAuthHeaders(req); err != nil {
 		_ = pr.Close()
 
 		return nil, err

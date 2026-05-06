@@ -71,7 +71,7 @@ func TestCreateCatalog(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 	got, err := c.CreateCatalog()
 
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestCreateStage_ApplyStage(t *testing.T) {
 
 	startServer(t, mux)
 
-	c := NewClient()
+	c := New()
 
 	stage, err := c.CreateStage("cid-1")
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestUploadToStage_Multipart(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 	body := strings.NewReader("print('hi')\n")
 	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), body)
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestUploadToStage_AdvertisesContentLength(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 	body := strings.NewReader(payload)
 	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), body))
 
@@ -217,7 +217,7 @@ func TestAllFiles_Pagination(t *testing.T) {
 
 	startServer(t, mux)
 
-	c := NewClient()
+	c := New()
 
 	got, err := c.AllFiles("cid-1", "v1")
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestAllFiles_RejectsCrossHostNext(t *testing.T) {
 
 	startServer(t, mux)
 
-	c := NewClient()
+	c := New()
 
 	got, err := c.AllFiles("cid-1", "v1")
 	require.Error(t, err)
@@ -271,7 +271,7 @@ func TestAllFiles_RejectsHostilePath(t *testing.T) {
 
 	startServer(t, mux)
 
-	c := NewClient()
+	c := New()
 
 	got, err := c.AllFiles("cid-1", "v1")
 	require.Error(t, err)
@@ -286,7 +286,7 @@ func TestDownloadFile_RejectsHostilePath(t *testing.T) {
 		t.Fatal("DownloadFile should reject hostile paths before reaching the server")
 	}))
 
-	c := NewClient()
+	c := New()
 
 	cases := []struct {
 		name    string
@@ -322,7 +322,7 @@ func TestDeleteFiles(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v2","numFiles":1,"results":[{"path":"old.py","numFilesDeleted":1}]}`))
 	}))
 
-	c := NewClient()
+	c := New()
 	got, err := c.DeleteFiles("cid-1", []string{"old.py"})
 	require.NoError(t, err)
 	assert.Equal(t, "v2", got.CatalogVersionID)
@@ -330,7 +330,7 @@ func TestDeleteFiles(t *testing.T) {
 }
 
 func TestDeleteFiles_EmptyIsNoop(t *testing.T) {
-	c := NewClient()
+	c := New()
 	got, err := c.DeleteFiles("cid-1", nil)
 	require.NoError(t, err)
 	assert.Nil(t, got)
@@ -343,7 +343,7 @@ func TestPollStatus_RunningJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"RUNNING_TO_WORKERS","statusId":"sid-1"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 	resp, err := c.PollStatus("sid-1")
 	require.NoError(t, err)
 	assert.Equal(t, StatusRunningToWorkers, resp.Status)
@@ -357,7 +357,7 @@ func TestPollStatus_CompletedRedirect(t *testing.T) {
 		w.WriteHeader(http.StatusSeeOther)
 	}))
 
-	c := NewClient()
+	c := New()
 	resp, err := c.PollStatus("sid-2")
 	require.NoError(t, err)
 	assert.Equal(t, StatusCompleted, resp.Status)
@@ -388,7 +388,7 @@ func TestUploadFromZipExisting(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 
 	zipBody := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
 	resp, err := c.UploadFromZipExisting("cid-1", "changes.zip", "", int64(zipBody.Len()), zipBody)
@@ -425,7 +425,7 @@ func TestUploadFromZipNew_HitsFromFileEndpoint(t *testing.T) {
 		_, _ = w.Write([]byte(`{"catalogId":"new-cid","catalogVersionId":"new-ver","statusId":"sid-new"}`))
 	}))
 
-	c := NewClient()
+	c := New()
 
 	zipBody := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
 	resp, err := c.UploadFromZipNew("wapi-sync.zip", int64(zipBody.Len()), zipBody)

@@ -101,3 +101,14 @@ func TestHashReader(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(want[:]), gotHash)
 	assert.Equal(t, int64(len(body)), gotSize)
 }
+
+func TestHashReader_ExceedsMaxSize(t *testing.T) {
+	// Avoid streaming a 5 GiB fixture by calling the unexported hashReader
+	// directly with a tiny ceiling; production HashReader always uses
+	// MaxFileSizeBytes.
+	body := strings.Repeat("a", 100)
+
+	_, n, err := hashReader(strings.NewReader(body), 50)
+	require.ErrorIs(t, err, ErrFileTooLarge)
+	assert.Equal(t, int64(51), n)
+}

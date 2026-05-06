@@ -28,29 +28,25 @@ type (
 	PromptNoDefaultFunc func(label string) (string, error)
 )
 
-func ResolveDir(dirFlag string, yes, isTTY bool, prompt PromptFunc) (string, error) {
+func ResolveDir(dirFlag string, yes bool, prompt PromptFunc) (string, error) {
 	if dirFlag != "" {
 		return dirFlag, nil
 	}
 
-	if yes || !isTTY {
+	if yes {
 		return ".", nil
 	}
 
 	return prompt("Initialize directory", ".")
 }
 
-func ResolveArtifactID(args []string, yes, isTTY bool, prompt PromptNoDefaultFunc) (string, error) {
+func ResolveArtifactID(args []string, yes bool, prompt PromptNoDefaultFunc) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
 	}
 
 	if yes {
 		return "", errors.New("artifact ID is required when using --yes")
-	}
-
-	if !isTTY {
-		return "", errors.New("artifact ID is required (no TTY for prompting)")
 	}
 
 	return prompt("Artifact ID")

@@ -62,12 +62,22 @@ func hashFile(path string, maxBytes int64) (string, int64, error) {
 }
 
 func HashReader(r io.Reader) (string, int64, error) {
+	return hashReader(r, MaxFileSizeBytes)
+}
+
+func hashReader(r io.Reader, maxBytes int64) (string, int64, error) {
 	h := sha256.New()
 	buf := make([]byte, HashChunkSizeBytes)
 
-	n, err := io.CopyBuffer(h, r, buf)
+	// Read maxBytes+1 so we can detect overflow rather than silently truncating
+	// (io.LimitReader returns EOF at its cap with no error).
+	n, err := io.CopyBuffer(h, io.LimitReader(r, maxBytes+1), buf)
 	if err != nil {
 		return "", n, fmt.Errorf("hash reader: %w", err)
+	}
+
+	if n > maxBytes {
+		return "", n, fmt.Errorf("%w: stream (%d+ bytes)", ErrFileTooLarge, n)
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), n, nil

@@ -34,6 +34,7 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		{".wapi/config.json", true},
 		{".git", true},
 		{".git/HEAD", true},
+		{".gitignore", true},
 		{"agent.py", false},
 		{".wapiignore", false}, // user-editable, lives at root
 	}
