@@ -15,6 +15,7 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/version"
 )
 
@@ -33,10 +35,9 @@ import (
 // events in that session.
 type CommonProperties struct {
 	// TODO CFX-5206 figure out proper SessionID
-	SessionID string // UUID v4, unique per process invocation
-	DeviceID  string // UUID v4, stable per installation, persisted to disk
-	// TODO CFX-5206 figure out proper UserID
-	UserID            string // Placeholder for future user ID implementation
+	SessionID         string // UUID v4, unique per process invocation
+	DeviceID          string // UUID v4, stable per installation, persisted to disk
+	UserID            string // DataRobot uid from GET /api/v2/account/info/, cached to disk
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
 	OSInfo            string // runtime.GOOS/runtime.GOARCH
@@ -66,14 +67,8 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	// Get user ID (currently returns placeholder value)
-	// TODO CFX-5206 implement proper user ID retrieval and consider privacy implications
-	// Additionally, Amplitude strongly suggests not setting user ID until we
-	// absolutely need it, and to not set the same user ID for anon users.
-
-	// if userID, err := drapi.GetUserID(context.Background()); err == nil {
-	// 	props.UserID = userID
-	// }
+	rawUserID, _ := drapi.GetUserID(context.Background())
+	props.UserID = getOrCreateUserID(rawUserID)
 
 	return props
 }

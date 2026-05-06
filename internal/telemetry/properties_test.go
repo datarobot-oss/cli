@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,6 +66,8 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "core", m["command_kind"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
+	// user_id is a top-level Amplitude field, not an event property
+	assert.NotContains(t, m, "user_id")
 }
 
 func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
@@ -168,6 +171,18 @@ func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
 	props := CollectCommonProperties()
 
 	assert.NotEmpty(t, props.DeviceID)
+}
+
+func TestCollectCommonProperties_UserIDEmptyWhenUnauthenticated(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	defer viperx.Reset()
+
+	props := CollectCommonProperties()
+
+	assert.Empty(t, props.UserID)
 }
 
 func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
