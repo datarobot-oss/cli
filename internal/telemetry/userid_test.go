@@ -346,7 +346,9 @@ func TestGetUserID_NetworkError(t *testing.T) {
 
 func resetTokenForTest(t *testing.T, token string) func() {
 	original := drapi.GetToken()
+
 	drapi.SetToken(token)
+
 	return func() {
 		drapi.SetToken(original)
 	}
