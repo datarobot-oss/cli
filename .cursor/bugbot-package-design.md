@@ -2,129 +2,92 @@
 
 Applies to: Package documentation, public APIs, foundational packages, inter-package contracts
 
-## doc.go for Package-Level Intent
+## doc.go for Package Intent
 
-**Rule**: Foundational packages should have clear `doc.go` explaining purpose, boundaries, and typical usage patterns.
+Each new package should have a `doc.go` explaining:
+- What the package does
+- Boundaries (what it doesn't do)
+- Security considerations (if any)
+- Common usage pattern
 
-**Scope**: New packages in `internal/`, especially foundational packages
-
-**What to flag**:
-- No `doc.go` in new packages
-- `doc.go` exists but doesn't explain purpose or boundaries
-- No clear description of what the package does
-
-**Fix**: Create `doc.go` with clear intent
+**Example**:
 ```go
 // Package ignore implements .wapiignore pattern matching for the workload sync engine.
 //
 // The effective ignore set is the union of:
-//   1. System excludes (hardcoded, non-overridable): .wapi, .git, __pycache__, etc.
+//   1. System excludes (hardcoded, non-overridable): .wapi, .git, __pycache__
 //   2. User patterns from .wapiignore files (override-able)
 //
 // System excludes cannot be bypassed by user patterns. This prevents syncing
-// authentication tokens (.wapi/), private repository metadata (.git/), or cache
-// directories (__pycache__/) that would compromise security or break the remote system.
+// authentication tokens or cache directories.
 //
 // Usage:
-//
 //	m := ignore.NewMatcher(wapiIgnoreContent)
 //	if m.Match("some/path") {
-//	    // Path should be ignored during sync
+//	    // Path should be ignored
 //	}
-//
-// See the individual type and function documentation for details.
 package ignore
 ```
 
-**Include**:
-- What the package does
-- What it doesn't do (boundaries)
-- Security considerations (if any)
-- Common usage pattern
-- Link to relevant files or packages
+**What to flag**: No `doc.go`, empty documentation, missing boundaries or security notes.
 
 ---
 
 ## Contracts Between Packages
 
-**Rule**: Document the contract (expected input format, assumptions, error behavior) when one package calls another. Contracts must be verified in integration tests.
+**Rule**: Document the contract when one package calls another. Contracts must be verified in integration tests.
 
-**Scope**: Public APIs between internal packages
+**Contract documentation includes**:
+- Input format requirements (types, ranges, formats)
+- Return value semantics
+- When errors occur
+- Performance characteristics
 
-**What to flag**:
-- No contract documentation for public functions
-- Implicit assumptions about caller behavior
-- Missing error documentation
-- No integration tests verifying the contract
-
-**Fix**: Document the contract
+**Example**:
 ```go
-// Match returns true if path should be ignored per the ignore rules.
+// Match returns true if path should be ignored.
 //
 // Contract (required input format):
 //   - path must be relative (no leading /)
 //   - path must use forward slashes (not \)
 //   - path must be Unicode-normalized (NFC)
 //
-// If the caller's paths don't meet this contract, call NormalizePath() first.
-// Example:
-//
-//   userPath := somethingFromWeb
-//   normalized, err := NormalizePath(userPath)
-//   if err != nil { ... }
-//   if m.Match(normalized) { ... }
+// If paths don't meet this contract, call NormalizePath() first.
 //
 // Returns:
-//   - true if path is excluded (matches ignore patterns or is system exclude)
+//   - true if path is excluded
 //   - false if path should be included
 //
 // Errors: Never returns error (patterns are pre-validated)
 func (m *Matcher) Match(path string) bool
 ```
 
-**Include in contract documentation**:
-- Input format requirements (types, ranges, formats)
-- What to do if input doesn't meet requirements
-- Return value semantics
-- When errors occur (if any)
-- Performance characteristics (O(n) vs O(log n))
-
 **Integration test example**:
 ```go
 func TestIntegration_WalkCallsIgnore(t *testing.T) {
     ignoreCalls := []string{}
-    
-    mockIgnore := func(path string) bool {
-        ignoreCalls = append(ignoreCalls, path)
+    walker := NewWalker(fileops.WithIgnore(func(p string) bool {
+        ignoreCalls = append(ignoreCalls, p)
         return false
-    }
-    
-    walker := NewWalker(fileops.WithIgnore(mockIgnore))
+    }))
     walker.Walk("test_dir")
     
-    // Verify all passed paths met the contract
+    // Verify all passed paths were normalized
     for _, path := range ignoreCalls {
-        if !isNormalized(path) {
-            t.Errorf("Walk passed non-normalized path to Ignore: %q", path)
-        }
+        assert.True(t, isNormalized(path), "Walk passed non-normalized path: %q", path)
     }
 }
 ```
 
+**What to flag**: No contract documentation, implicit assumptions, missing integration tests.
+
 ---
 
-## Clarify Empty vs Nil Returns
+## Nil/Empty Returns
 
-**Rule**: When a function returns nil/empty as a valid state (no .wapiignore file = nil user patterns), document this explicitly in code comments, not just in tests.
+Document when a function returns nil/empty as a valid state (vs error).
 
-**Scope**: Public functions with nullable/empty results
-
-**What to flag**:
-- Function returns `nil` or empty with no explanation
-- Tests are only documentation for when `nil` is valid
-- Comment missing: "Returns nil if file not found (not an error)"
-
-**Fix**: Document with code comments
+**Pattern**:
 ```go
 // LoadPatterns reads .wapiignore and returns ignore patterns.
 //
@@ -132,16 +95,6 @@ func TestIntegration_WalkCallsIgnore(t *testing.T) {
 //   - patterns and no error if .wapiignore exists
 //   - nil patterns and no error if .wapiignore does NOT exist (valid state)
 //   - nil patterns and error if .wapiignore exists but cannot be read (I/O error)
-//
-// Callers should distinguish:
-//   patterns, err := LoadPatterns(path)
-//   if err != nil {
-//       return err  // I/O error, should be reported
-//   }
-//   if patterns == nil {
-//       // .wapiignore doesn't exist, use defaults
-//       patterns = DefaultPatterns()
-//   }
 func LoadPatterns(path string) ([]string, error) {
     data, err := os.ReadFile(path)
     if os.IsNotExist(err) {
@@ -152,111 +105,90 @@ func LoadPatterns(path string) ([]string, error) {
     }
     return parsePatterns(string(data))
 }
+
+// Caller must distinguish:
+patterns, err := LoadPatterns(path)
+if err != nil {
+    return err  // I/O error
+}
+if patterns == nil {
+    patterns = DefaultPatterns()  // File doesn't exist
+}
 ```
+
+**What to flag**: Nil returns with no explanation, tests being only documentation.
 
 ---
 
-## Document Failure Modes
+## Failure Modes
 
-**Rule**: Document how a function fails, especially for streaming operations, long-running processes, and resource-intensive operations. Include timeouts, resource limits, and partial failure modes.
+Document how functions fail, especially streaming, long-running, and resource-intensive operations.
 
-**Scope**: Public APIs with non-obvious failure modes
-
-**What to flag**:
-- Streaming operations with no failure documentation
-- Long-running processes that could hang or timeout
-- Resource limits not documented
-- Silent degradation or partial failure modes
-
-**Fix**: Document failure modes in comments
-```go
-// HashReader computes SHA256 hash while streaming data from body.
-//
-// Failure modes:
-//   - If body is not valid UTF-8: returns error (hash is incomplete)
-//   - If body exceeds available memory: blocks indefinitely (no size check)
-//   - If body stream is interrupted: hash is incomplete, caller must retry entire upload
-//   - If context is canceled: returns context.Err(), hash is discarded
-//
-// Important: This function BLOCKS until the entire body is read.
-// Set a timeout on the context to prevent indefinite hangs:
-//
-//   ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-//   defer cancel()
-//
-// See also: CopyBuffer for streaming without hashing.
-func HashReader(ctx context.Context, body io.Reader) (string, error)
-```
-
-**Include**:
+**Failure modes to document**:
 - What errors can be returned and why
 - When the function might block or hang
 - Timeout requirements
 - Resource consumption (memory, disk)
-- Partial failure modes (some data hashed, some not)
+- Partial failure modes
+
+**Example**:
+```go
+// HashReader computes SHA256 hash while streaming data from body.
+//
+// Failure modes:
+//   - If body exceeds available memory: blocks indefinitely (no size check)
+//   - If body stream is interrupted: hash is incomplete, caller must retry
+//   - If context is canceled: returns context.Err()
+//
+// BLOCKS until the entire body is read. Set a timeout on the context:
+//   ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+//   defer cancel()
+func HashReader(ctx context.Context, body io.Reader) (string, error)
+```
 
 ---
 
-## Document Limitations and Future Work
+## Limitations and Future Work
 
-**Rule**: If a feature has intentional limitations or known gaps, document them with JIRA tickets for tracking.
+Document intentional limitations with JIRA tickets for tracking.
 
-**Scope**: Public APIs, especially foundational packages
-
-**What to flag**:
-- Features with documented limitations but no tracking
-- Stubs or incomplete implementations without tickets
-- Comments like "TODO" or "FIXME" without ticket references
-
-**Fix**: Document with tracking
+**Pattern**:
 ```go
 // LoadPatterns loads patterns from a .wapiignore file.
 //
-// Limitations:
-//   - Only reads from a single .wapiignore file (no traversal up directory tree)
-//     See DATAROBOT-12345 for supporting nested .wapiignore files
-//   - Pattern syntax matches gitignore, not including negation priorities
-//     See DATAROBOT-12346 for implementing gitignore negation priority rules
-//   - No support for include patterns (!) yet
-//     See DATAROBOT-12347 for feature request
-//
-// These limitations are intentional for the MVP. Please file an issue
-// if your use case requires any of these features.
+// Limitations (see DATAROBOT ticket for status):
+//   - Only reads from a single .wapiignore file (no traversal up tree) [DATAROBOT-12345]
+//   - No negation priority rules like gitignore [DATAROBOT-12346]
+//   - No include patterns (!) yet [DATAROBOT-12347]
 func LoadPatterns(path string) ([]string, error)
 ```
+
+**What to flag**: Limitations without JIRA tickets, "TODO"/"FIXME" without tracking.
 
 ---
 
 ## README for Complex Packages
 
-**Rule**: For complex foundational packages, provide a `README.md` explaining architecture, design decisions, and examples.
-
-**Scope**: New foundational packages (fileops, filesapi, ignore)
-
-**File location**: `internal/<package>/README.md`
-
-**Include**:
+For foundational packages, create `internal/<package>/README.md` with:
 - What the package does
-- Why design decisions were made
-- Example usage patterns
+- Design decisions and rationale
+- Usage examples
+- Common pitfalls
 - Links to test files for more examples
-- Common pitfalls or gotchas
 
 **Example structure**:
 ```markdown
 # filesapi Package
 
 ## Overview
-filesapi provides the HTTP API client for DataRobot Workload FilesAPI.
+HTTP API client for DataRobot Workload FilesAPI.
 
 ## Design
-- **Streaming uploads**: Uses multipart/form-data with io.Pipe to avoid buffering
-- **Error handling**: Wraps HTTP errors with operation context (upload, download, list)
-- **Pagination**: Provides SafePaginate helper to prevent host boundary crossing
+- **Streaming uploads**: Uses multipart/form-data with io.Pipe (no buffering)
+- **Error handling**: Wraps HTTP errors with operation context
+- **Pagination**: Provides SafePaginate helper (prevents host boundary crossing)
 
 ## Usage
-
-### Upload a file
 ```go
 client := New(baseURL, token)
 reader := os.Open("myfile.txt")
@@ -264,8 +196,8 @@ resp, err := client.Upload(ctx, "workspaceID", reader)
 ```
 
 ## Limitations
-- No retries; caller must implement retry logic if desired
-- Streaming uploads can't be retried mid-stream (incomplete hash)
+- No retries; caller must implement retry logic
+- Streaming uploads can't be retried mid-stream
 
 ## See Also
 - fileops.Walk: Traverses local filesystem
