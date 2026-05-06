@@ -10,6 +10,7 @@ This directory contains architecture and code review guidelines for the DataRobo
 - **bugbot-platform.md** — Platform-specific code, build tags, syscalls, cross-platform testing
 - **bugbot-cmd.md** — Command structure, table rendering, output formatting, TUI patterns
 - **bugbot-internal.md** — Code organization, single responsibility, dependency injection, file I/O
+- **bugbot-validation.md** — Validation logic, struct tags, error messages, test coverage
 - **bugbot-testing.md** — Race detector, error paths, platform testing, test seams
 
 ## Overview
