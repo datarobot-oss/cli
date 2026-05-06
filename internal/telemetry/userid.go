@@ -20,8 +20,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -74,21 +72,9 @@ func getOrCreateUserID(apiUserID string) string {
 		return apiUserID
 	}
 
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return ""
-	}
-
-	cachePath := filepath.Join(configDir, userIDFileName)
-
-	data, err := os.ReadFile(cachePath)
-	if err != nil {
-		return ""
-	}
-
 	var cached cachedUserID
 
-	if err := json.Unmarshal(data, &cached); err != nil {
+	if err := readJSONCacheFile(userIDFileName, &cached); err != nil {
 		return ""
 	}
 
@@ -110,23 +96,7 @@ func persistUserID(uid string) {
 		TokenFingerprint: tokenFingerprint(),
 	}
 
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return
-	}
-
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return
-	}
-
-	cachePath := filepath.Join(configDir, userIDFileName)
-
-	if mkErr := os.MkdirAll(configDir, 0o700); mkErr != nil {
-		return
-	}
-
-	_ = os.WriteFile(cachePath, data, 0o600)
+	writeJSONCacheFile(userIDFileName, cache)
 }
 
 func currentEndpoint() string {
