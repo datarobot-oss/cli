@@ -18,8 +18,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -134,27 +132,9 @@ func getOrCreateDeviceID() string {
 		return id
 	}
 
-	// Try to read existing device ID from file in the config directory
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		// If we can't get the config directory, we won't be able to persist a device ID,
-		// so we just generate a new one for this session. These IDs will be prefixed with
-		// deviceIDFallbackPrefix to indicate it is not a true device ID.
-		return deviceIDFallbackPrefix + generateSessionID()
-	}
-
-	// Try to read existing device ID from file
-	deviceIDPath := filepath.Join(configDir, deviceIDFileName)
-
-	data, err := os.ReadFile(deviceIDPath)
-	if err == nil {
-		// If we successfully read a device ID from the file, use it (after trimming whitespace).
-		id := strings.TrimSpace(string(data))
-
-		if id != "" {
-			// If the ID is not empty, return it. Otherwise, we'll generate a new one below.
-			return id
-		}
+	// Try to read existing device ID from cache file
+	if id := readTextCacheFile(deviceIDFileName); id != "" {
+		return id
 	}
 
 	// If we couldn't get a machine ID or read an existing device ID, generate a new one
@@ -162,11 +142,7 @@ func getOrCreateDeviceID() string {
 	// still function without persisting.
 	id := deviceIDFallbackPrefix + generateSessionID()
 
-	// At this point, ignore any errors we might have with persisting the device ID, as
-	// telemetry will still function without it, it will just be less stable.
-	if mkErr := os.MkdirAll(configDir, 0o700); mkErr == nil {
-		_ = os.WriteFile(deviceIDPath, []byte(id), 0o600)
-	}
+	writeTextCacheFile(deviceIDFileName, id)
 
 	return id
 }
