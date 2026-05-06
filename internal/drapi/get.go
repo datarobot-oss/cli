@@ -17,6 +17,7 @@ package drapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -93,11 +94,37 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	return resp, err
 }
 
-// GetUserID returns a dummy user ID for telemetry.
-// TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
-// and the appropriate way to fetch the user ID for telemetry.
+// AccountInfo represents the response from GET /api/v2/account/info/.
+type AccountInfo struct {
+	UID       string `json:"uid"`
+	Email     string `json:"email"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	TenantID  string `json:"tenantId"`
+	OrgID     string `json:"orgId"`
+}
+
+// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
+// It returns the uid string on success, or ("", error) on non-200 status,
+// empty uid, or network failure.
 func GetUserID(ctx context.Context) (string, error) {
-	return "dummy", nil
+	url, err := config.GetEndpointURL("/api/v2/account/info/")
+	if err != nil {
+		return "", err
+	}
+
+	var info AccountInfo
+
+	//nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
+	if err := GetJSON(url, "", &info); err != nil {
+		return "", err
+	}
+
+	if info.UID == "" {
+		return "", errors.New("empty uid in account info response")
+	}
+
+	return info.UID, nil
 }
 
 func GetJSON(url, info string, v any, timeoutSecs ...int) error {
