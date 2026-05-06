@@ -134,7 +134,7 @@ When working with goroutines and channels:
 - **Channel closure** — Only the sender should close channels, and only after all goroutines have finished writing
 - **Error handling** — Multiple concurrent errors should be logged; don't hide errors by returning only the first one
 
-Detailed patterns and red flags are in [BUGBOT.md](BUGBOT.md).
+Detailed patterns and Cursor bugbot rules are in [.cursor/BUGBOT.md](.cursor/BUGBOT.md).
 
 ## Error Handling Best Practices
 
