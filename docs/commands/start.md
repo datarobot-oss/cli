@@ -249,12 +249,20 @@ dr:
   minimum-version: 0.2.0
   command: dr self version
   url: https://github.com/datarobot-oss/cli
+  install:
+    macos: brew install datarobot-cli
+    linux: curl -fsSL https://get.datarobot.com/cli | sh
 uv:
   name: uv Python package manager
   minimum-version: 1.7.0
   command: uv self version
   url: https://docs.astral.sh/uv/getting-started/installation/
+  install:
+    macos: brew install uv
+    linux: curl -Ls https://astral.sh/uv/install.sh | sh
 ```
+
+For the full schema reference, required fields, and validation behavior, see [`dr dependencies`](dependencies.md#versionsyaml-schema).
 
 The repository check runs before start-command detection. If the current directory is not within a DataRobot repository (no `.datarobot/` directory), the command launches the template setup wizard instead of continuing to look for a start command.
 
