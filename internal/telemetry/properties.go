@@ -122,6 +122,7 @@ func deriveEnvironment(baseURL string) string {
 }
 
 const (
+	userIDFileName         = "user_id"
 	deviceIDFileName       = "device_id"
 	deviceIDFallbackPrefix = "fallback-"
 )

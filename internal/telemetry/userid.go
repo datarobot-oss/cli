@@ -28,8 +28,6 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-const userIDFileName = "user_id"
-
 // AccountInfo represents the response from GET /api/v2/account/info/.
 type AccountInfo struct {
 	UID       string `json:"uid"`
