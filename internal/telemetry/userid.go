@@ -15,22 +15,58 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 const userIDFileName = "user_id"
+
+// AccountInfo represents the response from GET /api/v2/account/info/.
+type AccountInfo struct {
+	UID       string `json:"uid"`
+	Email     string `json:"email"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	TenantID  string `json:"tenantId"`
+	OrgID     string `json:"orgId"`
+}
 
 type cachedUserID struct {
 	UID              string `json:"uid"`
 	Endpoint         string `json:"endpoint"`
 	TokenFingerprint string `json:"token_fingerprint"`
+}
+
+// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
+// It returns the uid string on success, or ("", error) on non-200 status,
+// empty uid, or network failure.
+func GetUserID(ctx context.Context) (string, error) {
+	url, err := config.GetEndpointURL("/api/v2/account/info/")
+	if err != nil {
+		return "", err
+	}
+
+	var info AccountInfo
+
+	//nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
+	if err := drapi.GetJSON(url, "", &info); err != nil {
+		return "", err
+	}
+
+	if info.UID == "" {
+		return "", errors.New("empty uid in account info response")
+	}
+
+	return info.UID, nil
 }
 
 func getOrCreateUserID(apiUserID string) string {

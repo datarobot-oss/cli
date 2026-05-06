@@ -15,15 +15,19 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -269,4 +273,81 @@ func TestGetOrCreateUserID_FreshAPIUID_UpdatesExistingCache(t *testing.T) {
 	assert.Equal(t, "new-uid", updated.UID)
 	assert.Equal(t, "https://test.example.com", updated.Endpoint)
 	assert.Equal(t, sha256Fingerprint("test-token"), updated.TokenFingerprint)
+}
+
+func TestGetUserID_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/account/info/", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"test-uid-123","email":"user@example.com"}`))
+	}))
+	defer server.Close()
+
+	defer resetTokenForTest(t, "test-token")()
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+
+	uid, err := GetUserID(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "test-uid-123", uid)
+}
+
+func TestGetUserID_Unauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	defer resetTokenForTest(t, "test-token")()
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+
+	uid, err := GetUserID(context.Background())
+	require.Error(t, err)
+	assert.Empty(t, uid)
+}
+
+func TestGetUserID_EmptyUID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/account/info/", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"","email":"user@example.com"}`))
+	}))
+	defer server.Close()
+
+	defer resetTokenForTest(t, "test-token")()
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+
+	uid, err := GetUserID(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty uid")
+	assert.Empty(t, uid)
+}
+
+func TestGetUserID_NetworkError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		// Should never be called because we close the server before making the request.
+	}))
+	server.Close()
+
+	defer resetTokenForTest(t, "test-token")()
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+
+	uid, err := GetUserID(context.Background())
+	require.Error(t, err)
+	assert.Empty(t, uid)
+}
+
+func resetTokenForTest(t *testing.T, token string) func() {
+	original := drapi.GetToken()
+	drapi.SetToken(token)
+	return func() {
+		drapi.SetToken(original)
+	}
 }

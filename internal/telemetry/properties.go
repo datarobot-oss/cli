@@ -26,7 +26,6 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/userid"
 	"github.com/datarobot/cli/internal/version"
 )
 
@@ -66,7 +65,7 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	rawUserID, _ := userid.GetUserID(context.Background())
+	rawUserID, _ := GetUserID(context.Background())
 	props.UserID = getOrCreateUserID(rawUserID)
 
 	return props
