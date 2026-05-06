@@ -41,6 +41,7 @@ func init() {
 
 var (
 	level        log.Level
+	verbose      bool
 	fileWriter   io.WriteCloser
 	stderrLogger *log.Logger
 	fileLogger   *log.Logger
@@ -51,10 +52,13 @@ func Start() {
 	// Debug takes precedence
 	if viperx.GetBool("debug") {
 		level = log.DebugLevel
+		verbose = true
 	} else if viperx.GetBool("verbose") {
 		level = log.InfoLevel
+		verbose = true
 	} else {
 		level = log.Default().GetLevel()
+		verbose = false
 	}
 
 	StartStderr()

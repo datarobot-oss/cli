@@ -45,23 +45,35 @@ type Client struct {
 	props *CommonProperties
 }
 
+// amplitudeLogPrefix is applied to all Amplitude SDK log entries for
+// traceability in debug log files.
+const amplitudeLogPrefix = "[amplitude] "
+
 // amplitudeLogger adapts the internal log package to Amplitude's Logger interface.
-// Routes Amplitude's INFO logs to DEBUG by default, or to INFO if --verbose is set.
+// Amplitude's INFO logs (HTTP responses, variable additions) are demoted to DEBUG
+// when the app's log level is above INFO, keeping stderr clean by default.
+// All messages are prefixed with [amplitude] for traceability in debug log files.
 type amplitudeLogger struct{}
 
-func (l *amplitudeLogger) Debugf(msg string, args ...any) { log.Debugf(msg, args...) }
+func (l *amplitudeLogger) Debugf(msg string, args ...any) {
+	log.Debugf(amplitudeLogPrefix+msg, args...)
+}
+
 func (l *amplitudeLogger) Infof(msg string, args ...any) {
-	// Routes Amplitude's INFO logs to DEBUG by default, or to INFO if --verbose is set.
-	// TODO consider adding a separate --amplitude-verbose flag to avoid coupling this
-	// to the CLI's global verbosity settings
-	if viperx.GetBool("verbose") || viperx.GetBool("debug") {
-		log.Infof(msg, args...)
+	if log.IsVerbose() {
+		log.Infof(amplitudeLogPrefix+msg, args...)
 	} else {
-		log.Debugf(msg, args...)
+		log.Debugf(amplitudeLogPrefix+msg, args...)
 	}
 }
-func (l *amplitudeLogger) Warnf(msg string, args ...any)  { log.Warnf(msg, args...) }
-func (l *amplitudeLogger) Errorf(msg string, args ...any) { log.Errorf(msg, args...) }
+
+func (l *amplitudeLogger) Warnf(msg string, args ...any) {
+	log.Warnf(amplitudeLogPrefix+msg, args...)
+}
+
+func (l *amplitudeLogger) Errorf(msg string, args ...any) {
+	log.Errorf(amplitudeLogPrefix+msg, args...)
+}
 
 // NewClient creates a telemetry client. If IsEnabled() returns true, it initializes
 // a real Amplitude client. Otherwise, it returns a no-op client that logs
@@ -103,7 +115,7 @@ func (c *Client) Track(event types.Event) {
 	}
 
 	if c.amp == nil {
-		log.Debug("Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
 		return
 	}
 

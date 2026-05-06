@@ -35,6 +35,11 @@ func GetLevel() log.Level {
 	return level
 }
 
+// IsVerbose reports whether the user explicitly enabled verbose or debug output.
+func IsVerbose() bool {
+	return verbose
+}
+
 func Debug(msg interface{}, keyvals ...interface{}) {
 	Log(DebugLevel, msg, keyvals...)
 }
