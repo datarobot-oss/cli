@@ -57,7 +57,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
-	assert.Equal(t, "user-456", m["user_id"])
 	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "darwin/arm64", m["os_info"])

@@ -83,11 +83,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			}
 
 			// Initialize telemetry client
-			// Check if enabled first to avoid unnecessary filesystem and network I/O.
-			var props *telemetry.CommonProperties
-			if telemetry.IsEnabled() {
-				props = telemetry.CollectCommonProperties()
-			}
+			// Always collect common properties for logging (even in dry-run mode),
+			// but only send to Amplitude if enabled.
+			props := telemetry.CollectCommonProperties()
 
 			// Stamp the command_kind common property based on whether
 			// the dispatched command was registered via TrackPlugin.
