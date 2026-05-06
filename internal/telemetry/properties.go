@@ -34,7 +34,6 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
-	// TODO CFX-5206 figure out proper SessionID
 	SessionID         string // UUID v4, unique per process invocation
 	DeviceID          string // UUID v4, stable per installation, persisted to disk
 	UserID            string // DataRobot uid from GET /api/v2/account/info/, cached to disk
