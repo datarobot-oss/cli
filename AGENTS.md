@@ -123,59 +123,36 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
-## Concurrency Patterns
+## Code Review Guidelines
 
-When working with goroutines and channels:
+All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
 
-- **Goroutine panics** — Always recover from panics in goroutines; silent panics cause data corruption
-- **Error channels** — Buffer only for the expected number of errors; over-buffering wastes memory
-- **Loop variable capture** — Use the `fa := fa` pattern before passing loop variables to goroutines
-- **WaitGroup pairing** — Verify every `wg.Add()` has a corresponding `defer wg.Done()` and all writers finish before `wg.Wait()`
-- **Channel closure** — Only the sender should close channels, and only after all goroutines have finished writing
-- **Error handling** — Multiple concurrent errors should be logged; don't hide errors by returning only the first one
+**High-Risk** (catches silent failures, data corruption, poor error handling):
+- **Concurrency** — Goroutine panic recovery, loop variable capture, WaitGroup pairing, channel closure
+- **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
+- **Security** — Input validation, security boundaries, threat models
+- **Testing** — Race detector, error path coverage, test seams
 
-Detailed patterns and Cursor bugbot rules are in [.cursor/BUGBOT.md](.cursor/BUGBOT.md).
+**Resource & Operations** (prevents hangs, leaks, platform bugs):
+- **Resources** — Lock lifecycle, timeouts, cleanup, disk space checks
+- **Paths** — Validation, normalization, Unicode, symlinks
+- **Cross-Platform** — Build tags, case sensitivity, line endings, symlink handling
 
-## Error Handling Best Practices
+**Design** (prevents tight coupling, premature abstraction):
+- **Architecture** — Code organization, separation of concerns, dependency injection, phase orchestration
+- **Package APIs** — Contracts between packages, documentation, limitations
 
-- **Wrap user-facing errors** — Always provide context ("timeout after 300s" not "context deadline exceeded")
-- **Log before returning** — Orchestrators should log errors before returning them to maintain debugging visibility
-- **Don't ignore errors** — Never use `_ = someFunc()` silently; log or handle every error path
-- **Specialize error messages** — Distinguish error types (404 → "artifact X not found" vs generic "API error")
-- **Multiple error scenarios** — If multiple errors can occur, be explicit: return first error, collect all, or fail-fast? Document the choice.
+**Quality** (consistency and maintainability):
+- **Testing** — Test coverage, mocking, pagination tests
+- **Commands** — Table rendering, file organization, output formatting
 
-## Command Structure
+**When working on code**, apply these quick principles:
+- **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
+- **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
+- **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
+- **Platforms**: Add build tags, match signatures, test on target platforms
 
-### File Organization for Interactive Commands
-
-- **Interactive models** use `model.go` (implements `tea.Model` from bubbletea)
-- **Sub-models** for complex UIs use `<specific>Model.go` naming (e.g., `promptModel.go`, `hostModel.go`)
-- **Non-interactive render logic** stays in `cmd.go` or splits to `render.go` if needed
-- **Don't invent conventions** — Review existing patterns first before creating new file names (`cmd/plugin/list`, `cmd/task/list`, `cmd/templates/list/model.go`)
-- **Size check** — If cmd + render logic > 350 lines, consider consolidating or splitting thoughtfully
-
-### Table Rendering for List Commands
-
-- **Use `charmbracelet/lipgloss/table`** for non-interactive list output (not `text/tabwriter`)
-- **Add borders** — `.Border(lipgloss.RoundedBorder())` and use `tui.TableBorderStyle` for consistency
-- **Adaptive colors** — Use `StyleFunc` with colors from `tui/styles.go` (supports light/dark themes via `tui.GetAdaptiveColor()`)
-- **Reference existing patterns** — See `cmd/plugin/list`, `cmd/task/list`, `cmd/templates/list/model.go` for examples
-- **Interactive selection** — If the table needs user interaction, use bubbletea; otherwise use lipgloss for display-only rendering
-
-### Output Formatting
-
-- **Use tui design system** — Apply `tui.SubTitleStyle`, `tui.BaseTextStyle`, `tui.DimStyle`, etc. for consistency
-- **Adaptive dark mode** — Use `tui.GetAdaptiveColor(light, dark)` to support both light and dark terminal themes
-- **Test actual formatting** — Text output tests should verify rendered formatting, not just string presence
-
-## Platform-Specific Code
-
-- **Build tags** — Files like `*_unix.go`, `*_windows.go` must have `//go:build` comments at the top
-- **Identical signatures** — All platform implementations must have matching function signatures
-- **Test thoroughly** — Don't assume `_unix.go` works on darwin; test on all platforms explicitly
-- **Use stdlib portably** — Use `golang.org/x/sys/unix` instead of raw syscalls for better portability
-- **Track stubs** — Windows stubs should have corresponding JIRA tickets and be documented in CLI help (not silent)
-- **Make assumptions explicit** — If code has platform-specific behavior, it should be obvious to users, not hidden
+Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 
 ## Feature Gates
 
