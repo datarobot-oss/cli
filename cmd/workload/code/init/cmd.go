@@ -18,12 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 
+	"github.com/datarobot/cli/cmd/workload/code/internal/dirprompt"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -68,27 +67,22 @@ Example:
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; use defaults.")
 
+	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
+	// flag itself is read directly from cmd.Flags() in runInit so an explicit
+	// --yes does not leak into viper.AllSettings() and persist to drconfig.yaml.
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+
 	workload.AddOutputFlag(c, &outputFormat)
 
 	return c
 }
 
 func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputFormat) error {
-	yes, _ := cmd.Flags().GetBool("yes")
-
-	if !yes {
-		if v, ok := os.LookupEnv("DATAROBOT_CLI_NON_INTERACTIVE"); ok {
-			if parsed, err := strconv.ParseBool(v); err == nil {
-				yes = parsed
-			}
-		}
-	}
-
-	tty := reader.IsStdinTerminal()
-
+	yesFlag, _ := cmd.Flags().GetBool("yes")
+	yes := yesFlag || viperx.GetBool("yes")
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
-	dir, err := resolveDir(dirFlag, yes, tty, askWithDefault)
+	dir, err := dirprompt.ResolveDir(dirFlag, yes, dirprompt.AskWithDefault)
 	if err != nil {
 		return err
 	}
@@ -97,7 +91,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat workload.OutputForm
 		return reportAlreadyLinked(dir)
 	}
 
-	artifactID, err := resolveArtifactID(args, yes, tty, ask)
+	artifactID, err := dirprompt.ResolveArtifactID(args, yes, dirprompt.Ask)
 	if err != nil {
 		return err
 	}

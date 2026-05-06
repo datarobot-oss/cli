@@ -20,7 +20,7 @@ import (
 	"github.com/datarobot/cli/internal/fsutil"
 )
 
-// Exported names used by external callers (tests, future c2w commands).
+// Exported names used by external callers (tests, sync commands).
 const (
 	DirName         = ".wapi"
 	HistoryFile     = "history.log"
