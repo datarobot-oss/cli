@@ -49,10 +49,7 @@ func GetRequirements() ([]Prerequisite, error) {
 		return nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
 	}
 
-	if err = versionsYamlSchema.Validate(fileParsed); err != nil {
-		fmt.Errorf("Versions yaml file %s failed schema validation: %w", yamlFile, err)
-		return nil, fmt.Errorf("Failed to validate versions yaml file %s: %w", yamlFile, err)
-	}
+	versionsYamlSchema.Validate(fileParsed)
 
 	versions := make([]Prerequisite, 0, len(fileParsed))
 

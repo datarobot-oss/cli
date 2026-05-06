@@ -15,10 +15,7 @@
 package tools
 
 import (
-	"fmt"
 	"runtime"
-	"slices"
-	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
 
@@ -40,29 +37,6 @@ type InstallCommandsSchema struct {
 	Windows FieldRule
 }
 
-func (s InstallCommandsSchema) validate(key string, ic InstallCommands) []string {
-	return slices.Concat(
-		s.validatePlatform(key, "install.macos", ic.MacOS, s.MacOS, "darwin"),
-		s.validatePlatform(key, "install.linux", ic.Linux, s.Linux, "linux"),
-		s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows"),
-	)
-}
-
-func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) []string {
-	err := rule.validate(fieldName, value)
-	if err == nil {
-		return nil
-	}
-
-	if runtime.GOOS == goos {
-		return []string{fmt.Sprintf("[%s]: %s", key, err.Error())}
-	}
-
-	log.Warnf("versions.yaml [%s]: %s", key, err.Error())
-
-	return nil
-}
-
 // YAMLSchema defines the expected structure and constraints for versions.yaml entries.
 type YAMLSchema struct {
 	Name           FieldRule
@@ -72,76 +46,75 @@ type YAMLSchema struct {
 	Install        InstallCommandsSchema
 }
 
-var InstallCommandsSchemaRequired = InstallCommandsSchema{
-	MacOS:   FieldRule{},
-	Linux:   FieldRule{},
-	Windows: FieldRule{},
+// installCommandsSchema is the authoritative schema for InstallCommands in versions.yaml.
+// As for Milestone 1, we decided to make Windows install command optional .
+// We can always add a warning in validation if Windows command is not provided, but it won't be a hard requirement.
+var installCommandsSchema = InstallCommandsSchema{
+	MacOS: FieldRule{Required: true},
+	Linux: FieldRule{Required: true},
+	// InstallCommands for Windows is optional for now.
+	Windows: FieldRule{Required: false},
 }
 
 // versionsYamlSchema is the authoritative schema for versions.yaml.
 var versionsYamlSchema = YAMLSchema{
 	Name:           FieldRule{Required: true},
-	MinimumVersion: FieldRule{Format: formatSemver},
+	MinimumVersion: FieldRule{Required: true, Format: formatSemver},
 	Command:        FieldRule{Required: true},
-	URL:            FieldRule{},
-	Install:        InstallCommandsSchema{},
+	URL:            FieldRule{Required: true},
+	Install:        installCommandsSchema,
 }
 
-func (r FieldRule) validate(fieldName, value string) error {
+// validate logs a warning if value violates the field rule.
+func (r FieldRule) validate(key, fieldName, value string) {
 	if r.Required && value == "" {
-		return fmt.Errorf("'%s' is required", fieldName)
+		log.Warnf("versions.yaml [%s]: '%s' is required", key, fieldName)
+
+		return
 	}
 
 	if r.Format == formatSemver && value != "" {
 		if _, err := semver.NewVersion(value); err != nil {
-			return fmt.Errorf("'%s' %q is not a valid semantic version", fieldName, value)
+			log.Warnf("versions.yaml [%s]: '%s' %q is not a valid semantic version", key, fieldName, value)
 		}
 	}
-
-	return nil
 }
 
-// Validate checks every entry in the parsed versions.yaml against this schema.
-func (s YAMLSchema) Validate(data versionsYaml) error {
-	var errs []string
-
+// Validate checks every entry in the parsed versions.yaml and logs warnings for violations.
+func (s YAMLSchema) Validate(data versionsYaml) {
 	for key, p := range data {
-		entryErrs := s.validateEntry(key, p)
-
-		errs = append(errs, entryErrs...)
+		s.Name.validate(key, "name", p.Name)
+		s.MinimumVersion.validate(key, "minimum-version", p.MinimumVersion)
+		s.Command.validate(key, "command", p.Command)
+		s.URL.validate(key, "url", p.URL)
+		s.Install.validate(key, p.Install)
 	}
-
-	if len(errs) == 0 {
-		log.Warnf("versions.yaml passed validation with schema: %+v", s)
-		return fmt.Errorf("versions.yaml passed validation with schema: %+v", s)
-		// return nil
-	}
-
-	slices.Sort(errs)
-
-	return fmt.Errorf("validation errors:\n%s", strings.Join(errs, "\n"))
 }
 
-func (s YAMLSchema) validateEntry(key string, p Prerequisite) []string {
-	var issues []string
+func (s InstallCommandsSchema) validate(key string, ic InstallCommands) {
+	// log.Warnf("InstallCommands for %s : \n %#v", key, ic)
+	if ic.MacOS == "" && ic.Linux == "" && ic.Windows == "" {
+		log.Warnf("versions.yaml [%s]: 'install' is not defined", key)
 
-	if err := s.Name.validate("name", p.Name); err != nil {
-		issues = append(issues, fmt.Sprintf("[%s]: %s", key, err.Error()))
+		return
 	}
 
-	if err := s.MinimumVersion.validate("minimum-version", p.MinimumVersion); err != nil {
-		issues = append(issues, fmt.Sprintf("[%s]: %s", key, err.Error()))
+	s.validatePlatform(key, "install.macos", ic.MacOS, s.MacOS, "darwin")
+	s.validatePlatform(key, "install.linux", ic.Linux, s.Linux, "linux")
+	s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows")
+}
+
+func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) {
+	if !rule.Required || value != "" {
+		return
 	}
 
-	if err := s.Command.validate("command", p.Command); err != nil {
-		issues = append(issues, fmt.Sprintf("[%s]: %s", key, err.Error()))
+	// For now it's only warning if the install command for the current platform is missing
+	if runtime.GOOS == goos {
+		log.Errorf("versions.yaml [%s]: '%s' is required for the current platform", key, fieldName)
+
+		return
 	}
 
-	if err := s.URL.validate("url", p.URL); err != nil {
-		issues = append(issues, fmt.Sprintf("[%s]: %s", key, err.Error()))
-	}
-
-	issues = append(issues, s.Install.validate(key, p.Install)...)
-
-	return issues
+	log.Warnf("versions.yaml [%s]: '%s' is required", key, fieldName)
 }
