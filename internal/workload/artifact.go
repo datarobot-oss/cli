@@ -65,6 +65,10 @@ type ContainerGroup struct {
 
 type Container struct {
 	CodeRef *CodeRef `json:"codeRef"`
+	// Primary is *bool so absent (legacy responses) round-trips as nil
+	// rather than `false` — `omitempty` then drops it on marshal so the
+	// CLI never re-asserts an unknown value back to the server.
+	Primary *bool `json:"primary,omitempty"`
 }
 
 type CodeRef struct {
@@ -107,7 +111,30 @@ func (a *Artifact) IsLocked() bool {
 	return strings.EqualFold(a.Status, ArtifactStatusLocked)
 }
 
+// ExtractCodeRef returns the codeRef of the container marked
+// primary=true, mirroring the write-side selection in
+// setPrimaryCodeRefInRawArtifact. If no container is flagged primary
+// (legacy server responses that don't emit the field), falls back to
+// containerGroups[0].containers[0] so older deployments keep working.
+//
+// Once a primary container is found, this function commits to it: a
+// primary with no codeRef returns nil rather than falling through to a
+// sidecar, otherwise display would silently surface stale catalog info.
 func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
+	for _, group := range artifact.Spec.ContainerGroups {
+		for _, container := range group.Containers {
+			if container.Primary == nil || !*container.Primary {
+				continue
+			}
+
+			if container.CodeRef == nil {
+				return nil
+			}
+
+			return container.CodeRef.Datarobot
+		}
+	}
+
 	if len(artifact.Spec.ContainerGroups) == 0 {
 		return nil
 	}
@@ -221,6 +248,114 @@ func CreateArtifact(payload any) (*Artifact, error) {
 	}
 
 	return &artifact, nil
+}
+
+func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/")
+	if err != nil {
+		return err
+	}
+
+	var raw map[string]any
+
+	if err := drapi.GetJSON(url, "artifact", &raw); err != nil {
+		return fmt.Errorf("fetch artifact for codeRef update: %w", err)
+	}
+
+	if err := setPrimaryCodeRefInRawArtifact(raw, catalogID, catalogVersionID); err != nil {
+		return err
+	}
+
+	body := map[string]any{"spec": raw["spec"]}
+
+	return drapi.PatchJSON(url, "artifact", body, nil)
+}
+
+func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersionID string) error {
+	spec, ok := raw["spec"].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec missing or wrong type")
+	}
+
+	groups, ok := spec["containerGroups"].([]any)
+	if !ok || len(groups) == 0 {
+		return errors.New("artifact: spec.containerGroups missing or empty")
+	}
+
+	codeRef := map[string]any{
+		"type":     "datarobot",
+		"provider": "datarobot",
+		"datarobot": map[string]any{
+			"catalogId":        catalogID,
+			"catalogVersionId": catalogVersionID,
+		},
+	}
+
+	if found := assignToPrimaryContainer(groups, codeRef); found {
+		return nil
+	}
+
+	// Legacy fallback: server didn't emit `primary` on any container.
+	// Mirror ExtractCodeRef's read-side fallback to containers[0][0] so
+	// sync against older deployments still updates the first container
+	// instead of returning an opaque "no primary container" error.
+	return assignToFirstContainer(groups, codeRef)
+}
+
+func assignToPrimaryContainer(groups []any, codeRef map[string]any) bool {
+	for _, g := range groups {
+		group, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		containers, ok := group["containers"].([]any)
+		if !ok {
+			continue
+		}
+
+		for _, c := range containers {
+			container, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			if isPrimaryContainer(container) {
+				container["codeRef"] = codeRef
+
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func assignToFirstContainer(groups []any, codeRef map[string]any) error {
+	firstGroup, ok := groups[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
+	}
+
+	containers, ok := firstGroup["containers"].([]any)
+	if !ok || len(containers) == 0 {
+		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
+	}
+
+	firstContainer, ok := containers[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
+	}
+
+	firstContainer["codeRef"] = codeRef
+
+	return nil
+}
+
+func isPrimaryContainer(container map[string]any) bool {
+	primary, ok := container["primary"].(bool)
+
+	return ok && primary
 }
 
 func ListArtifacts(limit int, status Status) ([]Artifact, error) {

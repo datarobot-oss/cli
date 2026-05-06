@@ -41,7 +41,7 @@ These flags are available for all commands:
 | [`dotenv`](dotenv.md)   | Manage environment variables.                       |
 | [`self`](self.md)       | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)  | Inspect and manage CLI plugins.                     |
-| `dependencies`         | Check template dependencies (advanced).            |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced). |
 
 ### Command tree
 
@@ -67,7 +67,8 @@ dr
 │   └── run            Execute tasks
 ├── dotenv             Environment configuration
 ├── dependencies       Template dependencies (advanced)
-│   └── check          Check template dependencies
+│   ├── check          Check template dependencies
+│   └── install        Install missing template dependencies
 ├── plugin             Inspect and manage CLI plugins (alias: plugins)
 │   ├── list           List installed plugins
 │   ├── install        Install a plugin
@@ -228,8 +229,9 @@ For detailed documentation on each command, see:
   - `update`&mdash;update CLI to latest version.
   - `version`&mdash;show CLI version and build information.
 
-- **dependencies**&mdash;template dependency checks (advanced).
-  - `check`&mdash;verify that required tools (e.g. Task, Git) are installed.
+- **[dependencies](dependencies.md)**&mdash;template dependency management (advanced).
+  - `check`&mdash;verify that required tools are installed and meet minimum version requirements.
+  - `install`&mdash;install missing or out-of-date tools; supports `--yes`/`-y` and `DATAROBOT_CLI_NON_INTERACTIVE` for non-interactive use.
 
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
