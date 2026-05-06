@@ -123,29 +123,59 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
-## Configuration & Flag Binding
+## Concurrency Patterns
 
-The CLI persists user configuration to `drconfig.yaml` via viper. To prevent
-transient command flags from leaking into the config file, follow these rules.
-For full details, see [docs/development/configuration.md](docs/development/configuration.md).
+When working with goroutines and channels:
 
-**Quick reference:**
+- **Goroutine panics** — Always recover from panics in goroutines; silent panics cause data corruption
+- **Error channels** — Buffer only for the expected number of errors; over-buffering wastes memory
+- **Loop variable capture** — Use the `fa := fa` pattern before passing loop variables to goroutines
+- **WaitGroup pairing** — Verify every `wg.Add()` has a corresponding `defer wg.Done()` and all writers finish before `wg.Wait()`
+- **Channel closure** — Only the sender should close channels, and only after all goroutines have finished writing
+- **Error handling** — Multiple concurrent errors should be logged; don't hide errors by returning only the first one
 
-- **Outside `internal/config/`, do not import `github.com/spf13/viper` directly.**
-  Use `internal/config/viperx`. Direct imports are blocked by `depguard`.
-- **Never call `viper.WriteConfig()` directly** (and `viperx` does not expose it).
-  Use `config.UpdateConfigFile(keys ...string)`, which only writes keys listed
-  in `config.PersistableKeys` (`internal/config/write.go`).
-- **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
-  `BindPFlags`. Bind only specific persistent flags explicitly via
-  `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
-  Do not bind them with `viperx.BindPFlag`.
-- **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
-- **To make a key persistable**, add it to `config.PersistableKeys` and have the
-  write site call `config.UpdateConfigFile("my-key")`.
+Detailed patterns and red flags are in [BUGBOT.md](BUGBOT.md).
+
+## Error Handling Best Practices
+
+- **Wrap user-facing errors** — Always provide context ("timeout after 300s" not "context deadline exceeded")
+- **Log before returning** — Orchestrators should log errors before returning them to maintain debugging visibility
+- **Don't ignore errors** — Never use `_ = someFunc()` silently; log or handle every error path
+- **Specialize error messages** — Distinguish error types (404 → "artifact X not found" vs generic "API error")
+- **Multiple error scenarios** — If multiple errors can occur, be explicit: return first error, collect all, or fail-fast? Document the choice.
+
+## Command Structure
+
+### File Organization for Interactive Commands
+
+- **Interactive models** use `model.go` (implements `tea.Model` from bubbletea)
+- **Sub-models** for complex UIs use `<specific>Model.go` naming (e.g., `promptModel.go`, `hostModel.go`)
+- **Non-interactive render logic** stays in `cmd.go` or splits to `render.go` if needed
+- **Don't invent conventions** — Review existing patterns first before creating new file names (`cmd/plugin/list`, `cmd/task/list`, `cmd/templates/list/model.go`)
+- **Size check** — If cmd + render logic > 350 lines, consider consolidating or splitting thoughtfully
+
+### Table Rendering for List Commands
+
+- **Use `charmbracelet/lipgloss/table`** for non-interactive list output (not `text/tabwriter`)
+- **Add borders** — `.Border(lipgloss.RoundedBorder())` and use `tui.TableBorderStyle` for consistency
+- **Adaptive colors** — Use `StyleFunc` with colors from `tui/styles.go` (supports light/dark themes via `tui.GetAdaptiveColor()`)
+- **Reference existing patterns** — See `cmd/plugin/list`, `cmd/task/list`, `cmd/templates/list/model.go` for examples
+- **Interactive selection** — If the table needs user interaction, use bubbletea; otherwise use lipgloss for display-only rendering
+
+### Output Formatting
+
+- **Use tui design system** — Apply `tui.SubTitleStyle`, `tui.BaseTextStyle`, `tui.DimStyle`, etc. for consistency
+- **Adaptive dark mode** — Use `tui.GetAdaptiveColor(light, dark)` to support both light and dark terminal themes
+- **Test actual formatting** — Text output tests should verify rendered formatting, not just string presence
+
+## Platform-Specific Code
+
+- **Build tags** — Files like `*_unix.go`, `*_windows.go` must have `//go:build` comments at the top
+- **Identical signatures** — All platform implementations must have matching function signatures
+- **Test thoroughly** — Don't assume `_unix.go` works on darwin; test on all platforms explicitly
+- **Use stdlib portably** — Use `golang.org/x/sys/unix` instead of raw syscalls for better portability
+- **Track stubs** — Windows stubs should have corresponding JIRA tickets and be documented in CLI help (not silent)
+- **Make assumptions explicit** — If code has platform-specific behavior, it should be obvious to users, not hidden
 
 ## Feature Gates
 
