@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@ package seturl
 import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "set-url [url]",
 		Short: "🌐 Configure your DataRobot environment URL.",
 		Long: `Configure your DataRobot environment URL with an interactive selection.
@@ -42,6 +43,7 @@ This command helps you choose the correct DataRobot environment:
 			if url != "" {
 				err := config.SetURLToConfig(url)
 				if err == nil {
+					_ = auth.WriteConfigFileSilent()
 					_ = auth.EnsureAuthenticatedE(cmd, args)
 
 					return
@@ -51,8 +53,17 @@ This command helps you choose the correct DataRobot environment:
 			urlChanged := auth.SetURLAction()
 
 			if urlChanged {
+				_ = auth.WriteConfigFileSilent()
 				_ = auth.EnsureAuthenticatedE(cmd, args)
 			}
 		},
 	}
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"url": telemetry.FirstArg(args),
+		}
+	})
+
+	return cmd
 }

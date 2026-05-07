@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "templates",
-		Aliases: []string{"template"},
+		Use:     "template",
+		Aliases: []string{"templates"},
 		GroupID: "core",
 		Short:   "📚 DataRobot application templates commands",
 		Long: `Application templates commands for ` + version.AppName + `.

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -229,11 +229,11 @@ func TestPulumiLoginModel_PassphraseScreen_Esc_Completes(t *testing.T) {
 // --- Passphrase generation ---
 
 func TestGenerateRandomPassphrase(t *testing.T) {
-	passphrase, err := generateRandomSecret(32)
+	passphrase, err := envbuilder.GenerateRandomSecret(32)
 	require.NoError(t, err)
 	assert.Len(t, passphrase, 32)
 
-	passphrase2, err := generateRandomSecret(32)
+	passphrase2, err := envbuilder.GenerateRandomSecret(32)
 	require.NoError(t, err)
 	assert.NotEqual(t, passphrase, passphrase2, "generated passphrases must be unique")
 }

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,6 +61,10 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	bearer := "Bearer " + token
 	req.Header.Add("Authorization", bearer)
 	req.Header.Add("User-Agent", getUserAgent(ctx))
+
+	if IsAPIConsumerTrackingEnabled() {
+		req.Header.Add("X-DataRobot-Api-Consumer-Trace", "datarobot.cli.auth.verify")
+	}
 
 	log.Debug("Request Info: \n" + RedactedReqInfo(req))
 

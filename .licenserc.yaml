@@ -36,10 +36,12 @@ header:
     - 'internal/'
     - 'testutils/'
     - 'tools/'
+    - 'tui/'
     - 'main.go'
 
   paths-ignore:
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
+    - 'internal/workload/wapi/wapiignore.tmpl'
 
   comment: on-failure

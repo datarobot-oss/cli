@@ -147,6 +147,11 @@ Triggered by PR labels (`run-smoke-tests` or `go`):
 - Auto-removes `run-smoke-tests` label after completion
 - **Note:** Does NOT run installation tests (those run only on main/schedule to avoid testing unreleased code)
 
+### `smoke-tests-gate.yaml`
+Runs on all PRs targeting `main` to set the required **Smoke Tests** commit status:
+- **Non-fork PRs**: auto-sets status to `success` (smoke tests are optional, run via labels/commands)
+- **Fork PRs**: skips status creation (read-only token). The missing required check blocks merge until a maintainer runs (`/approve-smoke-tests`) or skips (`/skip-smoke-tests`) the tests
+
 ### `fork-smoke-tests.yaml`
 Triggered manually via `workflow_dispatch` by a maintainer (from the Actions tab):
 - Accepts a PR number and optional commit SHA as inputs
@@ -154,6 +159,7 @@ Triggered manually via `workflow_dispatch` by a maintainer (from the Actions tab
 - Builds Windows binary from fork PR code
 - Runs smoke tests on Linux and Windows
 - Posts results as PR comments
+- Updates the **Smoke Tests** commit status to `success` or `failure`
 
 ### `release.yaml`
 Triggered by version tags (`v*.*.*`):
@@ -188,10 +194,10 @@ This repository supports automation for PRs using comment-commands (slash comman
 
 Trigger workflows by commenting on a PR:
 
-- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR
-- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR
-
-These commands work on regular PRs from the main repository.
+- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR (non-fork PRs only)
+- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR (non-fork PRs only)
+- `/approve-smoke-tests` or `/approve-fork-tests` - Run smoke tests for a fork PR (maintainers only)
+- `/skip-smoke-tests` - Mark the **Smoke Tests** required check as passed without running tests (maintainers only)
 
 ### Labels for Regular PRs
 
@@ -204,18 +210,19 @@ Apply labels to PRs to trigger workflows:
   - Auto-removes label after completion
   - **Note:** This only works for PRs from the main repository, not forked PRs
 
-### Forked PRs (Manual Dispatch)
+### Forked PRs
 
-Forked PRs require maintainer approval due to security considerations. The `fork-smoke-tests.yaml` workflow uses `workflow_dispatch` (not `pull_request_target`) to avoid secrets leakage:
+Forked PRs block merge via a required **Smoke Tests** commit status that is never auto-set. The `fork-smoke-tests.yaml` workflow uses `workflow_dispatch` (not `pull_request_target`) to avoid secrets leakage:
 
 **Process for Forked PRs:**
 1. External contributor opens a PR from their fork
-2. Maintainer reviews the code changes for security concerns
-3. Maintainer goes to **Actions → Fork PR Smoke Tests → Run workflow**, enters the PR number (and optionally a commit SHA)
-4. Workflow runs security scans and smoke tests
-5. Results are posted as PR comments
+2. The **Smoke Tests** required check appears as "Expected — Waiting for status to be reported", blocking merge
+3. Maintainer reviews the code changes for security concerns, then either:
+   - Comments `/approve-smoke-tests` to trigger security scans + smoke tests (results auto-update the check)
+   - Comments `/skip-smoke-tests` to bypass the check without running tests
+4. Results are posted as PR comments and the commit status is updated
 
-**Important:** If you're an external contributor, the `run-smoke-tests` label won't work on fork PRs. Please comment on the PR requesting a maintainer review if you need smoke tests to run.
+**For external contributors:** the `run-smoke-tests` label and `/trigger-smoke-test` command won't work on fork PRs. Please comment requesting a maintainer review.
 
 ## Benefits of Reusable Workflows
 

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func Run(_ *cobra.Command, _ []string) {
-	viper.Set(config.DataRobotAPIKey, "")
+	viperx.Set(config.DataRobotAPIKey, "")
 
 	err := auth.WriteConfigFile()
 	if err != nil {

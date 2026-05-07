@@ -11,6 +11,8 @@ on:
 
 jobs:
 
+  # This job detects what types of files were changed in the PR and sets outputs
+  # that other jobs can use to conditionally run only when relevant files were changed.
   detect-changes:
     runs-on: ubuntu-latest
     name: Detect Changes
@@ -30,7 +32,8 @@ jobs:
         with:
           filters: |
             completion:
-              - 'cmd/completion/**'
+              - 'cmd/self/completion/**'
+              - 'goreleaser.yaml'  # Homebrew post-install hook runs `dr self completion install`
             dotenv:
               - 'cmd/dotenv/**'
             templates:
@@ -171,7 +174,8 @@ jobs:
   build:
     needs: detect-changes
     name: Build Binaries
-    if: needs.detect-changes.outputs.go_code == 'true'
+    # Completion-tests is dependent on Build, so we need to build binaries if either code or completion-related files changed.
+    if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
     uses: ./.github/workflows/.build-matrix.yaml
     with:
       go-version: '1.26.2'

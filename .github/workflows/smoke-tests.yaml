@@ -11,6 +11,11 @@ on:
   schedule:
     - cron: '0 */4 * * 1-5'
   workflow_dispatch: # Allow manual trigger
+    inputs:
+      debug_brew:
+        description: 'Enable verbose brew debug step on macOS (self-update tests)'
+        type: boolean
+        default: false
 
 jobs:
   build-windows:
@@ -40,6 +45,8 @@ jobs:
 
   self-update-smoke-test:
     uses: ./.github/workflows/.self-update-tests-matrix.yaml
+    with:
+      debug_brew: ${{ inputs.debug_brew || false }}
 
   notify-failure:
     needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test]

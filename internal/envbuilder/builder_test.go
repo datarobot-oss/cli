@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -309,6 +309,89 @@ func (suite *BuilderTestSuite) TestShouldAsk_OptionsWithoutRequiresCanBeSkipped(
 	suite.False(prompt.ShouldAsk(false), "Should skip prompt with options but no requires if value equals default")
 }
 
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsPromptWithGenerate() {
+	prompt := UserPrompt{Active: true, Hidden: false, Generate: true}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt when generate is true")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_GenerateWithValueSkipped() {
+	prompt := UserPrompt{Active: true, Hidden: false, Generate: true, Value: "some_generated_value"}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt when generate is true even if value is set")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_GenerateAlwaysPromptShowAll() {
+	prompt := UserPrompt{Active: true, Hidden: false, Generate: true}
+	suite.True(prompt.ShouldAsk(true), "Should show prompt when generate is true but showAll is true")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_GenerateWithSecretType() {
+	prompt := UserPrompt{
+		Active:   true,
+		Hidden:   false,
+		Generate: true,
+		Type:     PromptTypeSecret,
+		Help:     "Auto-generated secret",
+	}
+	suite.False(prompt.ShouldAsk(false), "Should skip secret_string prompt when generate is true")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_GenerateWithDefault() {
+	prompt := UserPrompt{
+		Active:   true,
+		Hidden:   false,
+		Generate: true,
+		Default:  "default_secret",
+		Value:    "default_secret",
+	}
+	suite.False(prompt.ShouldAsk(false), "Should skip prompt when generate is true, even if default is set")
+}
+
+func (suite *BuilderTestSuite) TestGenerateYAMLParsing() {
+	yamlContent := `
+root:
+  - env: SESSION_SECRET
+    type: secret_string
+    generate: true
+    help: Session encryption key (auto-generated)
+    optional: false
+  - env: API_KEY
+    type: secret_string
+    generate: false
+    help: Enter your API key
+    optional: false
+  - env: JWT_SECRET
+    type: secret_string
+    generate: true
+    help: JWT signing key
+    optional: false
+    always_prompt: true
+`
+
+	// Create a temporary YAML file
+	tmpFile := filepath.Join(suite.tempDir, ".datarobot", "test_generate.yaml")
+	err := os.WriteFile(tmpFile, []byte(yamlContent), 0o600)
+	suite.Require().NoError(err)
+
+	// Parse the file
+	prompts, err := filePrompts(tmpFile)
+	suite.Require().NoError(err)
+	suite.Require().Len(prompts, 3, "Expected 3 prompts")
+
+	// Verify generate is correctly parsed
+	suite.Equal("SESSION_SECRET", prompts[0].Env)
+	suite.True(prompts[0].Generate, "SESSION_SECRET should have generate=true")
+	suite.Equal(PromptTypeSecret, prompts[0].Type, "SESSION_SECRET should be secret_string type")
+	suite.False(prompts[0].AlwaysPrompt, "SESSION_SECRET should have always_prompt=false (default)")
+
+	suite.Equal("API_KEY", prompts[1].Env)
+	suite.False(prompts[1].Generate, "API_KEY should have generate=false (explicit)")
+	suite.Equal(PromptTypeSecret, prompts[1].Type, "API_KEY should be secret_string type")
+
+	suite.Equal("JWT_SECRET", prompts[2].Env)
+	suite.True(prompts[2].Generate, "JWT_SECRET should have generate=true")
+	suite.True(prompts[2].AlwaysPrompt, "JWT_SECRET should have always_prompt=true")
+}
+
 func (suite *BuilderTestSuite) TestHasRequiresOptions() {
 	promptWithRequires := UserPrompt{
 		Options: []PromptOption{
@@ -328,4 +411,95 @@ func (suite *BuilderTestSuite) TestHasRequiresOptions() {
 
 	promptNoOptions := UserPrompt{}
 	suite.False(promptNoOptions.HasRequiresOptions())
+}
+
+func (suite *BuilderTestSuite) TestApplyGeneratedValues_GeneratesValue() {
+	prompts := []UserPrompt{
+		{
+			Env:      "SESSION_SECRET",
+			Type:     PromptTypeSecret,
+			Generate: true,
+			Value:    "",
+		},
+	}
+
+	result, err := ApplyGeneratedValues(prompts)
+	suite.Require().NoError(err)
+	suite.NotEmpty(result[0].Value, "Should generate a value for secret_string with generate: true")
+	suite.Len(result[0].Value, GeneratedSecretLength, "Generated value should match expected length")
+}
+
+func (suite *BuilderTestSuite) TestApplyGeneratedValues_DoesNotOverwriteExistingValue() {
+	prompts := []UserPrompt{
+		{
+			Env:      "SESSION_SECRET",
+			Type:     PromptTypeSecret,
+			Generate: true,
+			Value:    "existing_value",
+		},
+	}
+
+	result, err := ApplyGeneratedValues(prompts)
+	suite.Require().NoError(err)
+	suite.Equal("existing_value", result[0].Value, "Should not overwrite existing value")
+}
+
+func (suite *BuilderTestSuite) TestApplyGeneratedValues_IgnoresNonGeneratePrompts() {
+	prompts := []UserPrompt{
+		{
+			Env:      "API_KEY",
+			Type:     PromptTypeSecret,
+			Generate: false,
+			Value:    "",
+		},
+	}
+
+	result, err := ApplyGeneratedValues(prompts)
+	suite.Require().NoError(err)
+	suite.Empty(result[0].Value, "Should not generate value for prompts with generate: false")
+}
+
+func (suite *BuilderTestSuite) TestApplyGeneratedValues_IgnoresNonSecretTypes() {
+	prompts := []UserPrompt{
+		{
+			Env:      "SOME_VAR",
+			Type:     PromptTypeString,
+			Generate: true,
+			Value:    "",
+		},
+	}
+
+	result, err := ApplyGeneratedValues(prompts)
+	suite.Require().NoError(err)
+	suite.Empty(result[0].Value, "Should not generate value for non-secret_string types")
+}
+
+func (suite *BuilderTestSuite) TestApplyGeneratedValues_MultiplePrompts() {
+	prompts := []UserPrompt{
+		{
+			Env:      "SESSION_SECRET",
+			Type:     PromptTypeSecret,
+			Generate: true,
+			Value:    "",
+		},
+		{
+			Env:      "EXISTING_SECRET",
+			Type:     PromptTypeSecret,
+			Generate: true,
+			Value:    "already_set",
+		},
+		{
+			Env:      "API_KEY",
+			Type:     PromptTypeSecret,
+			Generate: false,
+			Value:    "",
+		},
+	}
+
+	result, err := ApplyGeneratedValues(prompts)
+	suite.Require().NoError(err)
+
+	suite.NotEmpty(result[0].Value, "First secret should be generated")
+	suite.Equal("already_set", result[1].Value, "Second secret should not be overwritten")
+	suite.Empty(result[2].Value, "Third secret should not be generated (generate: false)")
 }

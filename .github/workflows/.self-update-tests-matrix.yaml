@@ -2,6 +2,11 @@ name: Self-Update Smoke Tests Matrix
 
 on:
   workflow_call:
+    inputs:
+      debug_brew:
+        description: 'Enable verbose brew debug step on macOS'
+        type: boolean
+        default: false
 
 jobs:
   self-update-tests:
@@ -20,6 +25,36 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Debug brew environment (macOS only)
+        if: runner.os == 'macOS' && inputs.debug_brew
+        run: |
+          echo "=== Homebrew version ==="
+          brew --version
+          echo "=== Homebrew prefix ==="
+          brew --prefix
+          echo "=== brew tap list ==="
+          brew tap list
+          echo "=== brew list (casks) ==="
+          brew list --cask 2>/dev/null || true
+          echo "=== PATH ==="
+          echo "$PATH"
+          echo "=== Shell ==="
+          echo "$SHELL"
+          echo "=== uname ==="
+          uname -a
+          echo ""
+          echo "=== Attempting brew tap + install dr-cli (verbose) ==="
+          brew tap datarobot-oss/taps || true
+          brew install --cask dr-cli --verbose 2>&1 || true
+          echo ""
+          echo "=== Checking binary locations after install ==="
+          ls -la "$(brew --prefix)/bin/dr" 2>/dev/null || echo "$(brew --prefix)/bin/dr not found"
+          ls -la "$(brew --prefix)/bin/datarobot" 2>/dev/null || echo "$(brew --prefix)/bin/datarobot not found"
+          which dr 2>/dev/null || echo "dr not on PATH"
+          echo ""
+          echo "=== brew info dr-cli ==="
+          brew info --cask dr-cli 2>&1 || true
 
       - name: Run self-update smoke tests
         run: |

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,18 +22,19 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
 // on rootCmd. The plugin group is only added when at least one plugin is found.
 func RegisterPluginCommands(rootCmd *cobra.Command) {
-	timeout := viper.GetDuration("plugin-discovery-timeout")
+	timeout := viperx.GetDuration("plugin-discovery-timeout")
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
 
@@ -108,7 +109,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	pluginName := p.Manifest.Name
 	pluginPath := p.Executable // Used to determine if managed
 
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                p.Manifest.Name,
 		Short:              p.Manifest.Description,
 		GroupID:            "plugin",
@@ -124,6 +125,10 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			os.Exit(exitCode)
 		},
 	}
+
+	telemetry.TrackPlugin(cmd, manifest.Version)
+
+	return cmd
 }
 
 // checkAndPromptPluginUpdate checks if an update is available for a managed plugin.
@@ -133,7 +138,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 // recorded only after a successful registry fetch, so skipped (cooldown-active)
 // invocations never push the timestamp forward.
 func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string) {
-	if viper.GetBool("skip-plugin-update-check") {
+	if viperx.GetBool("skip-plugin-update-check") {
 		return
 	}
 
@@ -162,7 +167,8 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	// An update is available — prompt the user
 	fmt.Println(tui.InfoStyle.Render(
 		fmt.Sprintf("Plugin %q update available: v%s → v%s",
-			result.PluginName, result.InstalledVersion, result.LatestVersion.Version)))
+			result.PluginName, result.InstalledVersion, result.LatestVersion.Version),
+	))
 	fmt.Print(tui.DimStyle.Render("Do you want to update? [Y/n] "))
 
 	if !askYesNo() {

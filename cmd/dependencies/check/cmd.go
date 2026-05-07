@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package check
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -38,6 +39,8 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		cmd.SilenceUsage = true
 		return errors.New(missing)
 	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
 
 	return nil
 }

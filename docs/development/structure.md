@@ -18,14 +18,17 @@ cli/
 │   └── templates/           # Template management
 ├── internal/                # Private application code
 │   ├── assets/              # Embedded assets
+│   ├── cli/                 # CLI infrastructure (GatedCommand, etc.)
 │   ├── config/              # Configuration management
 │   ├── copier/              # Template copying utilities
 │   ├── drapi/               # DataRobot API client
 │   ├── envbuilder/          # Environment builder
+│   ├── features/            # Feature flag system
 │   ├── misc/                # Miscellaneous utilities
 │   ├── repo/                # Repository detection
 │   ├── shell/               # Shell utilities
 │   ├── task/                # Task discovery and execution
+│   ├── telemetry/           # Anonymous usage analytics (Amplitude)
 │   ├── tools/               # Tool prerequisites
 │   └── version/             # Version information
 ├── tui/                     # Terminal UI components
@@ -92,6 +95,22 @@ An environment configuration builder that:
 - Generates `.env` files
 - Provides interactive prompts
 
+#### cli/
+
+CLI infrastructure and utilities:
+
+- `CommandAdder`: Wraps a `cobra.Command` and overrides `AddCommand` to skip children with a disabled feature gate annotation
+- Used by the root command (and any parent command with gated children) to filter commands at registration time
+
+#### features/
+
+Feature flag system:
+
+- `SetGate`: Marks a command with a feature gate annotation
+- `Enabled`: Checks if a feature is enabled via environment variables
+- `AnnotationKey`: The key used for feature gate annotations
+- Environment variable format: `DATAROBOT_CLI_FEATURE_<NAME>` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD=true`)
+
 #### task/
 
 Task discovery and execution:
@@ -124,6 +143,8 @@ Documentation organized by audience:
 ### Command structure
 
 Each command follows this pattern:
+
+**Note:** All top-level commands use singular names (e.g., `template`, `dependency`, `plugin`) for consistency. Plural aliases are available for backward compatibility and should be added when renaming existing commands.
 
 ```go
 // cmd/example/cmd.go

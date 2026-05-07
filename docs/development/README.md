@@ -17,12 +17,14 @@ If you're new to developing the CLI, start here:
 - **[Project structure](structure.md)**&mdash;understand the codebase organization, command structure, internal packages, and key design patterns.
 - **[Building](building.md)**&mdash;detailed guide on building the CLI, available tasks, and build configuration.
 - **[Authentication](authentication.md)**&mdash;learn about the OAuth authentication implementation, token management, and API integration.
+- **[Configuration](configuration.md)**&mdash;how viper, `drconfig.yaml`, flags, and env vars compose; the `internal/config/viperx` wrapper; rules for adding new flags or persisted keys.
 
 ### Advanced topics
 
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
+- **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
 
 ## Quick reference
 
@@ -106,6 +108,20 @@ All code must:
 - Use the Taskfile for build operations
 
 See [Building](building.md#coding-standards) for detailed requirements.
+
+## Command naming conventions
+
+All CLI commands must use **singular names** for consistency (e.g., `template`, `dependency`, `plugin`).
+Plural aliases should be added to commands that are renamed from plural to singular for backward compatibility.
+
+Example:
+```go
+cmd := &cobra.Command{
+    Use:     "template",                    // Singular primary name
+    Aliases: []string{"templates"},         // Plural as alias
+    // ...
+}
+```
 
 ## Testing
 

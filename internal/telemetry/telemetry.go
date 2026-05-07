@@ -27,8 +27,8 @@ import (
 
 	"github.com/amplitude/analytics-go/amplitude"
 	"github.com/amplitude/analytics-go/amplitude/types"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/spf13/viper"
 )
 
 // AmplitudeAPIKey is set at build time via ldflags. Dev builds have an empty value,
@@ -45,13 +45,35 @@ type Client struct {
 	props *CommonProperties
 }
 
+// amplitudeLogPrefix is applied to all Amplitude SDK log entries for
+// traceability in debug log files.
+const amplitudeLogPrefix = "[amplitude] "
+
 // amplitudeLogger adapts the internal log package to Amplitude's Logger interface.
+// Amplitude's INFO logs (HTTP responses, variable additions) are demoted to DEBUG
+// when the app's log level is above INFO, keeping stderr clean by default.
+// All messages are prefixed with [amplitude] for traceability in debug log files.
 type amplitudeLogger struct{}
 
-func (l *amplitudeLogger) Debugf(msg string, args ...any) { log.Debugf(msg, args...) }
-func (l *amplitudeLogger) Infof(msg string, args ...any)  { log.Infof(msg, args...) }
-func (l *amplitudeLogger) Warnf(msg string, args ...any)  { log.Warnf(msg, args...) }
-func (l *amplitudeLogger) Errorf(msg string, args ...any) { log.Errorf(msg, args...) }
+func (l *amplitudeLogger) Debugf(msg string, args ...any) {
+	log.Debugf(amplitudeLogPrefix+msg, args...)
+}
+
+func (l *amplitudeLogger) Infof(msg string, args ...any) {
+	if log.IsVerbose() {
+		log.Infof(amplitudeLogPrefix+msg, args...)
+	} else {
+		log.Debugf(amplitudeLogPrefix+msg, args...)
+	}
+}
+
+func (l *amplitudeLogger) Warnf(msg string, args ...any) {
+	log.Warnf(amplitudeLogPrefix+msg, args...)
+}
+
+func (l *amplitudeLogger) Errorf(msg string, args ...any) {
+	log.Errorf(amplitudeLogPrefix+msg, args...)
+}
 
 // NewClient creates a telemetry client. If IsEnabled() returns true, it initializes
 // a real Amplitude client. Otherwise, it returns a no-op client that logs
@@ -78,11 +100,6 @@ func NewClient(props *CommonProperties) *Client {
 // This call is non-blocking. When the client is a no-op (dev builds),
 // the event is logged via log.Debug instead.
 func (c *Client) Track(event types.Event) {
-	if c.amp == nil {
-		log.Debug("Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
-		return
-	}
-
 	// Merge common properties into event properties
 	if c.props != nil {
 		commonMap := c.props.AsMap()
@@ -92,8 +109,14 @@ func (c *Client) Track(event types.Event) {
 
 		event.EventProperties = commonMap
 
-		// Set UserID as top-level field (required by Amplitude)
+		// Set UserID and DeviceID as top-level fields (required by Amplitude)
 		event.UserID = c.props.UserID
+		event.DeviceID = c.props.DeviceID
+	}
+
+	if c.amp == nil {
+		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		return
 	}
 
 	c.amp.Track(event)
@@ -128,7 +151,7 @@ func (c *Client) Flush(timeout time.Duration) {
 // opted out via the disable-telemetry flag/env var/config key.
 func IsEnabled() bool {
 	// Check if telemetry is explicitly disabled
-	if viper.GetBool("disable-telemetry") {
+	if viperx.GetBool("disable-telemetry") {
 		return false
 	}
 

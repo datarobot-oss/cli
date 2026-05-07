@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,17 +17,36 @@ package drapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 )
+
+// HTTPError is returned by Get when the server responds with a non-200 status code.
+// Callers can extract the status code with errors.As to make decisions without string matching.
+type HTTPError struct {
+	StatusCode int
+	URL        string
+}
+
+// Error implements the error interface for HTTPError.
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
+}
 
 var token string
 
-func Get(url, info string) (*http.Response, error) {
+const DefaultGetTimeoutSecs = 30
+
+func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
+	timeout := DefaultGetTimeoutSecs
+	if len(timeoutSecs) > 0 {
+		timeout = timeoutSecs[0]
+	}
+
 	var err error
 
 	// memoize token to avoid extra VerifyToken() calls
@@ -46,6 +65,10 @@ func Get(url, info string) (*http.Response, error) {
 	req.Header.Add("Authorization", "Bearer "+token)
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
+	if config.IsAPIConsumerTrackingEnabled() {
+		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
+	}
+
 	if info != "" {
 		log.Infof("Fetching %s from: %s", info, url)
 	}
@@ -53,7 +76,7 @@ func Get(url, info string) (*http.Response, error) {
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: time.Duration(timeout) * time.Second,
 	}
 
 	resp, err := client.Do(req)
@@ -63,7 +86,8 @@ func Get(url, info string) (*http.Response, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, errors.New("Response status code is " + resp.Status + ".")
+
+		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
 	}
 
 	return resp, err
@@ -73,11 +97,11 @@ func Get(url, info string) (*http.Response, error) {
 // TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
 // and the appropriate way to fetch the user ID for telemetry.
 func GetUserID(ctx context.Context) (string, error) {
-	return "unknown", nil
+	return "dummy", nil
 }
 
-func GetJSON(url, info string, v any) error {
-	resp, err := Get(url, info)
+func GetJSON(url, info string, v any, timeoutSecs ...int) error {
+	resp, err := Get(url, info, timeoutSecs...)
 	if err != nil {
 		return err
 	}

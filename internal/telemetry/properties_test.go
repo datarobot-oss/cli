@@ -15,11 +15,14 @@
 package telemetry
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateSessionID_ReturnsValidUUID(t *testing.T) {
@@ -41,27 +44,141 @@ func TestGenerateSessionID_UniqueSessions(t *testing.T) {
 func TestCommonPropertiesAsMap(t *testing.T) {
 	props := &CommonProperties{
 		SessionID:         "session-123",
+		DeviceID:          "device-789",
 		UserID:            "user-456",
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
 		OSInfo:            "darwin/arm64",
 		Environment:       "US",
 		DataRobotInstance: "https://app.datarobot.com",
-		TemplateName:      "base",
+		CommandKind:       "core",
 	}
 
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
-	assert.Equal(t, "user-456", m["user_id"])
 	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "darwin/arm64", m["os_info"])
 	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
-	assert.Equal(t, "base", m["template_name"])
+	assert.Equal(t, "core", m["command_kind"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
+}
+
+func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	id1 := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id1)
+
+	// Second call should return the same ID
+	id2 := getOrCreateDeviceID()
+
+	assert.Equal(t, id1, id2)
+
+	// File should exist
+	deviceIDPath := filepath.Join(tmpDir, "datarobot", deviceIDFileName)
+	data, err := os.ReadFile(deviceIDPath)
+
+	require.NoError(t, err)
+	assert.Equal(t, id1, string(data))
+}
+
+func TestGetOrCreateDeviceID_ReadsExistingID(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	existingID := "abcdef1234567890abcdef1234567890"
+
+	err = os.WriteFile(filepath.Join(configDir, deviceIDFileName), []byte(existingID), 0o600)
+
+	require.NoError(t, err)
+
+	id := getOrCreateDeviceID()
+
+	assert.Equal(t, existingID, id)
+}
+
+func TestGetOrCreateDeviceID_IgnoresBlankFile(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	// Write a blank file — should be treated as absent and regenerated
+	err = os.WriteFile(filepath.Join(configDir, deviceIDFileName), []byte("   "), 0o600)
+
+	require.NoError(t, err)
+
+	id := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id)
+	assert.Contains(t, id, "fallback-", "blank file should trigger fallback ID generation")
+}
+
+func TestGetOrCreateDeviceID_FallbackIDHasPrefix(t *testing.T) {
+	if getMachineID() != "" {
+		t.Skip("OS machine ID available; file fallback not exercised")
+	}
+
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	id := getOrCreateDeviceID()
+
+	assert.NotEmpty(t, id)
+	assert.Contains(t, id, "fallback-")
+}
+
+func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	props := CollectCommonProperties()
+
+	assert.NotEmpty(t, props.DeviceID)
+}
+
+func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
+	props := &CommonProperties{}
+
+	m := props.AsMap()
+
+	// CommandKind is set by the root command after dispatch; the freshly
+	// collected properties default to an empty string.
+	assert.Empty(t, m["command_kind"])
+	assert.Contains(t, m, "command_kind")
 }
 
 func TestDeriveEnvironment_US(t *testing.T) {
@@ -107,4 +224,13 @@ func TestCollectCommonProperties_SetsCLIVersion(t *testing.T) {
 
 	// Should be populated from version package
 	assert.NotEmpty(t, props.CLIVersion)
+}
+
+func TestCollectCommonProperties_DefaultCommandKindIsEmpty(t *testing.T) {
+	props := CollectCommonProperties()
+
+	// CommandKind is intentionally not populated by CollectCommonProperties;
+	// the root command sets it once it knows whether the dispatched command
+	// is a core or plugin command.
+	assert.Empty(t, props.CommandKind)
 }

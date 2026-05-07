@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v3"
 )
@@ -97,7 +97,7 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 	suite.T().Setenv("XDG_CONFIG_HOME", "")
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
-	viper.Reset()
+	viperx.Reset()
 }
 
 func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {

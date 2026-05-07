@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -209,7 +209,7 @@ func (s *ManifestTestSuite) SetupTest() {
 	s.Require().NoError(err)
 
 	// Reset viper state for each test
-	viper.Reset()
+	viperx.Reset()
 }
 
 func (s *ManifestTestSuite) TearDownTest() {
@@ -217,7 +217,7 @@ func (s *ManifestTestSuite) TearDownTest() {
 		_ = os.RemoveAll(s.tempDir)
 	}
 
-	viper.Reset()
+	viperx.Reset()
 }
 
 func (s *ManifestTestSuite) TestGetManifestValid() {
@@ -247,7 +247,7 @@ func (s *ManifestTestSuite) TestGetManifestNonExistent() {
 
 func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
 	// Set a custom timeout via viper
-	viper.Set("plugin.manifest_timeout_ms", 1000)
+	viperx.Set("plugin.manifest_timeout_ms", 1000)
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 

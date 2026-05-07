@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,6 +33,11 @@ const (
 
 func GetLevel() log.Level {
 	return level
+}
+
+// IsVerbose reports whether the user explicitly enabled verbose or debug output.
+func IsVerbose() bool {
+	return verbose
 }
 
 func Debug(msg interface{}, keyvals ...interface{}) {

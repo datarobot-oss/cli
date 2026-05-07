@@ -135,6 +135,13 @@ export EDITOR=nano
 
 # Force setup wizard to run even if already completed
 export DATAROBOT_CLI_FORCE_INTERACTIVE=true
+
+# API consumer tracking (default: true)
+# Set to false to disable the X-DataRobot-Api-Consumer-Trace header on API requests.
+# Matches the Python SDK's DATAROBOT_API_CONSUMER_TRACKING_ENABLED behavior.
+# When enabled, the header value identifies the command being run using dot-notation:
+#   datarobot.cli.<command>.<subcommand>  (e.g. datarobot.cli.templates.setup)
+export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 ```
 
 ### Advanced flags
@@ -237,23 +244,33 @@ Or via environment:
 export DR_TEMPLATES_DIR=~/workspace/datarobot
 ```
 
-### Debugging configuration
+### Logging
 
-Enable debug logging to see detailed execution information:
+The CLI supports two verbosity levels controlled by global flags or config keys:
+
+| Flag | Config key | Level | Use for |
+|---|---|---|---|
+| `--verbose` | `verbose: true` | INFO | Operational detail (e.g., HTTP request summary, progress) |
+| `--debug` | `debug: true` | DEBUG | Full execution tracing (e.g., request/response bodies, internal state) |
+
+Set permanently in your config file:
 
 ```yaml
+verbose: true
 debug: true
 ```
 
-Or temporarily enable it with the `--debug` flag:
+Or enable per-invocation:
 
 ```bash
+dr --verbose templates list
 dr --debug templates list
 ```
 
-When you enable debug mode, the CLI:
-- Prints detailed log messages to stderr.
-- Creates a `.dr-tui-debug.log` file in the home directory for terminal UI debug information.
+When debug mode is enabled, the CLI writes a `.dr-tui-debug.log` file in your home directory alongside stderr output. This file captures all DEBUG-level messages including third-party SDK logs (for example, `[amplitude]` prefixed telemetry HTTP traces).
+
+> [!WARNING]
+> Debug output may contain sensitive data. Never share debug logs publicly without reviewing them first. The CLI redacts known sensitive config keys (tokens, passwords) from debug output, but command output and API responses may still expose project data.
 
 ## Configuration examples
 

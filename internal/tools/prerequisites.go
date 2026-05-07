@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,27 +18,83 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/version"
 )
 
+// InstallCommands holds platform-specific install commands for a dependency.
+type InstallCommands struct {
+	MacOS   string `yaml:"macos"`
+	Linux   string `yaml:"linux"`
+	Windows string `yaml:"windows"`
+}
+
 // Prerequisite represents a required tool
 type Prerequisite struct {
 	Key            string
-	Name           string `yaml:"name"`
-	MinimumVersion string `yaml:"minimum-version"`
-	Command        string `yaml:"command"`
-	URL            string `yaml:"url"`
+	Name           string          `yaml:"name"`
+	MinimumVersion string          `yaml:"minimum-version"`
+	Command        string          `yaml:"command"`
+	URL            string          `yaml:"url"`
+	Install        InstallCommands `yaml:"install"`
+}
+
+// PlatformInstallCommand returns the install command for the current OS.
+// Returns an error if no command is defined for this platform.
+func (p Prerequisite) PlatformInstallCommand() (string, error) {
+	var cmd string
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = p.Install.MacOS
+	case "linux":
+		cmd = p.Install.Linux
+	case "windows":
+		cmd = p.Install.Windows
+	default:
+		return "", fmt.Errorf("unsupported platform %q", runtime.GOOS)
+	}
+
+	if cmd == "" {
+		return "", fmt.Errorf("no install command defined for %q on %s", p.Name, runtime.GOOS)
+	}
+
+	return cmd, nil
+}
+
+var pythonInstallCmd = InstallCommands{
+	MacOS: "brew install python",
+	Linux: "sudo apt-get install python3",
+	// Windows: "Download and install Python from https://www.python.org/downloads/windows/",
+}
+
+var uvInstallCmd = InstallCommands{
+	MacOS: "brew install uv",
+	Linux: "curl -Ls https://astral.sh/uv/install.sh | sh",
+	// Windows: "iwr -useb https://astral.sh/uv/install.ps1 | iex",
+}
+
+var taskInstallCmd = InstallCommands{
+	MacOS: "brew install go-task/tap/go-task",
+	Linux: "curl -sL https://taskfile.dev/install.sh | sh",
+	// Windows: "iwr -useb https://taskfile.dev/install.ps1 | iex",
+}
+
+var pulumiInstallCmd = InstallCommands{
+	MacOS: "brew install pulumi",
+	Linux: "curl -fsSL https://get.pulumi.com | sh",
+	// Windows: "iwr -useb https://get.pulumi.com/windows-installer.exe -OutFile pulumi-installer.exe; Start-Process -FilePath pulumi-installer.exe -Wait",
 }
 
 // RequiredTools lists all tools required for the quickstart process
 var RequiredTools = []Prerequisite{
-	{Name: "Python", Command: "python3", URL: "https://www.python.org/downloads/"},
-	{Name: "uv", Command: "uv", URL: "https://docs.astral.sh/uv/getting-started/installation/"},
-	{Name: "task", Command: "task", URL: "https://taskfile.dev/docs/installation"},
-	{Name: "pulumi", Command: "pulumi", URL: "https://www.pulumi.com/docs/get-started/download-install/"},
+	{Name: "Python", Command: "python3", URL: "https://www.python.org/downloads/", Install: pythonInstallCmd},
+	{Name: "uv", Command: "uv", URL: "https://docs.astral.sh/uv/getting-started/installation/", Install: uvInstallCmd},
+	{Name: "task", Command: "task", URL: "https://taskfile.dev/docs/installation", Install: taskInstallCmd},
+	{Name: "pulumi", Command: "pulumi", URL: "https://www.pulumi.com/docs/get-started/download-install/", Install: pulumiInstallCmd},
 }
 
 func CheckPrerequisite(name string) error {
@@ -53,41 +109,64 @@ func CheckPrerequisite(name string) error {
 	return nil
 }
 
-// MissingPrerequisites verifies that all required tools are installed
-func MissingPrerequisites() string {
+// CheckPrerequisites returns lists of missing prerequisites, wrongVersion prerequisites, and error messages to display to the user.
+func CheckPrerequisites() ([]Prerequisite, []Prerequisite, []string, []string) {
 	prerequisites, err := GetRequirements()
 	if err == nil {
 		RequiredTools = prerequisites
 	}
 
 	var (
-		missing      []string
-		wrongVersion []string
+		missingTools      []Prerequisite
+		wrongVersionTools []Prerequisite
+		missingMsgs       []string
+		wrongVersionMsgs  []string
 	)
 
 	for _, tool := range RequiredTools {
 		if !isInstalled(tool.Command) {
-			missing = append(missing, tool.Name)
+			missingTools = append(missingTools, tool)
+			missingMsgs = append(missingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))
 		} else if ver, ok := isVersionInstalled(tool); !ok {
-			wrongVersion = append(wrongVersion, ver)
+			wrongVersionTools = append(wrongVersionTools, tool)
+			wrongVersionMsgs = append(wrongVersionMsgs, ver)
 		}
 	}
 
-	if len(missing) == 0 && len(wrongVersion) == 0 {
-		return ""
-	}
+	return missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs
+}
 
+// PrerequisitesMsg formats the message to display to the user about missing/wrong-version prerequisites.
+func PrerequisitesMsg(missingMsgs []string, wrongVersionMsgs []string) string {
 	result := make([]string, 0)
 
-	if len(missing) > 0 {
-		result = append(result, "Missing required tools:\n\n"+strings.Join(missing, "\n"))
+	if len(missingMsgs) > 0 {
+		result = append(result, "\n ❌ Missing required tools:\n")
+
+		for _, msg := range missingMsgs {
+			result = append(result, "\t- "+msg)
+		}
 	}
 
-	if len(wrongVersion) > 0 {
-		result = append(result, "Wrong versions of tools:\n\n"+strings.Join(wrongVersion, "\n"))
+	if len(wrongVersionMsgs) > 0 {
+		result = append(result, "\n ⚠️ Wrong versions of tools:\n")
+
+		for _, msg := range wrongVersionMsgs {
+			result = append(result, "\t- "+msg)
+		}
 	}
 
-	return strings.Join(result, "\n")
+	return strings.Join(result, "\n") + "\n"
+}
+
+// MissingPrerequisites returns a message describing missing prerequisites, or an empty string if all prerequisites are satisfied.
+func MissingPrerequisites() string {
+	_, _, missingMsgs, wrongVersionMsgs := CheckPrerequisites()
+	if len(missingMsgs) > 0 || len(wrongVersionMsgs) > 0 {
+		return PrerequisitesMsg(missingMsgs, wrongVersionMsgs)
+	}
+
+	return ""
 }
 
 func commandArgs(fullCommand string) (string, []string) {

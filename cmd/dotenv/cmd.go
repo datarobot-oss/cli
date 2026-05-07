@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,10 +22,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -108,9 +110,23 @@ This wizard will help you:
 	PreRunE: auth.EnsureAuthenticatedE,
 
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		repositoryRoot, err := ensureInRepo()
-		if err != nil {
-			return err
+		outputDir, _ := cmd.Flags().GetString("output")
+
+		var repositoryRoot string
+
+		var err error
+
+		var isCustomOutput bool
+
+		// If --output is provided, use it as the repository root without walking up the directory tree
+		if outputDir != "" {
+			repositoryRoot = outputDir
+			isCustomOutput = true
+		} else {
+			repositoryRoot, err = ensureInRepo()
+			if err != nil {
+				return err
+			}
 		}
 
 		dotenvFile := filepath.Join(repositoryRoot, ".env")
@@ -129,6 +145,30 @@ This wizard will help you:
 			}
 		}
 
+		showAllPrompts, _ := cmd.Flags().GetBool("all")
+		// Read --yes directly from flags rather than through viper to
+		// avoid the flag value leaking into viper.AllSettings() (and from
+		// there into drconfig.yaml on subsequent writes). The
+		// DATAROBOT_CLI_NON_INTERACTIVE environment variable still flows
+		// through viper via BindEnv below.
+		yesFlag, _ := cmd.Flags().GetBool("yes")
+		yes := yesFlag || viperx.GetBool("yes")
+
+		// When --yes is set, run fully non-interactive setup without TUI
+		if yes {
+			if err := setupNonInteractive(repositoryRoot, dotenvFile); err != nil {
+				return err
+			}
+
+			// Update state after successful completion (skip if custom output directory)
+			if !isCustomOutput {
+				_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+			}
+
+			return nil
+		}
+
+		// Interactive mode: load variables and launch TUI
 		// TODO: There's an inconsistency between validation and wizard variable loading:
 		// - shouldSkipSetup uses ParseVariablesOnly (reads only .env file)
 		// - ValidateEnvironment also checks OS environment variables (os.LookupEnv)
@@ -144,8 +184,6 @@ This wizard will help you:
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
-		showAllPrompts, _ := cmd.Flags().GetBool("all")
-
 		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
 
 		m := Model{
@@ -155,6 +193,7 @@ This wizard will help you:
 			contents:              contents,
 			SuccessCmd:            tea.Quit,
 			ShowAllPrompts:        showAllPrompts,
+			Yes:                   yes,
 			NeedsPulumiLogin:      needsPulumi,
 			PulumiAlreadyLoggedIn: pulumiLoggedIn,
 			NeedsPulumiPassphrase: needsPassphrase,
@@ -179,8 +218,10 @@ This wizard will help you:
 			}
 		}
 
-		// Update state after successful completion
-		_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+		// Update state after successful completion (skip if custom output directory)
+		if !isCustomOutput {
+			_ = state.UpdateAfterDotenvSetup(repositoryRoot)
+		}
 
 		return nil
 	},
@@ -189,6 +230,19 @@ This wizard will help you:
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
+	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.Flags().StringP("output", "o", "", "Directory where the '.env' file should be written (defaults to repository root). This option skips the logic of finding the repository root.")
+	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
+
+	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.
+	// The --yes flag itself is read directly from cmd.Flags() in RunE so
+	// that an explicit --yes does not leak into viper.AllSettings() and
+	// get persisted to drconfig.yaml on subsequent config writes.
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+
+	telemetry.Track(SetupCmd)
+	telemetry.Track(UpdateCmd)
+	telemetry.Track(ValidateCmd)
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.

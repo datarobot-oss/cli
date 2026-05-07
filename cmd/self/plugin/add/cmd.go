@@ -99,6 +99,14 @@ Example with manual flags:
 	cmd.Flags().String("sha256", "", "SHA256 checksum of the archive (required if not using --from-file)")
 	cmd.Flags().String("release-date", "", "Release date in YYYY-MM-DD format (required if not using --from-file)")
 
+	// Mark flag constraints
+	cmd.MarkFlagsRequiredTogether("name", "version", "url", "sha256", "release-date")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "name")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "version")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "url")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "sha256")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
+
 	return cmd
 }
 

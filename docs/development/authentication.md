@@ -113,8 +113,18 @@ You can still manually run `dr auth login` to refresh credentials or change acco
 
 ## Internal APIs
 
-The auth package writes configuration through Viper.
+The auth package writes configuration through the allowlisted writer in
+`internal/config` (`config.UpdateConfigFile`). It does **not** call
+`viper.WriteConfig()` directly, because that would serialize every key in
+`viper.AllSettings()`&mdash;including transient flags such as `--yes`&mdash;
+into `drconfig.yaml`. Outside `internal/config/...`, all viper access
+goes through the `internal/config/viperx` wrapper. See
+[Configuration](configuration.md) for the full contract.
 
-- `WriteConfigFileSilent()`&mdash;writes the config file and returns an error.
-- `WriteConfigFile()`&mdash;writes the config file, prints a success message, and returns an error.
-- `SetURLAction()`&mdash;prompts for a DataRobot URL, optionally overwrites an existing value, and returns a boolean indicating whether the URL changed.
+- `WriteConfigFileSilent()`&mdash;writes only allowlisted keys
+  (`config.PersistableKeys`) back to `drconfig.yaml` and returns an error.
+- `WriteConfigFile()`&mdash;writes the config file, prints a success
+  message, and returns an error.
+- `SetURLAction()`&mdash;prompts for a DataRobot URL, optionally
+  overwrites an existing value, and returns a boolean indicating whether
+  the URL changed.

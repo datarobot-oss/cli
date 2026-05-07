@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,18 +16,21 @@ package dependencies
 
 import (
 	"github.com/datarobot/cli/cmd/dependencies/check"
+	"github.com/datarobot/cli/cmd/dependencies/install"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "dependencies",
+		Use:     "dependency",
 		GroupID: "advanced",
 		Short:   "📦 Commands related to template dependencies",
+		Aliases: []string{"dependencies", "deps"},
 	}
 
 	cmd.AddCommand(
 		check.Cmd(),
+		install.Cmd(),
 	)
 
 	return cmd

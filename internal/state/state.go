@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/version"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +35,8 @@ type state struct {
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
+	// LastDepsInstall is an ISO8601-compliant timestamp of the last successful `dr dependencies install` run
+	LastDepsInstall *time.Time `yaml:"last_deps_install,omitempty"`
 }
 
 // getStatePath determines the appropriate location for the state file.
@@ -144,11 +146,24 @@ func UpdateAfterTemplatesSetup(repoRoot string) error {
 	return existingState.update()
 }
 
+// UpdateAfterDepsInstall updates the state file after a successful `dr dependencies install` run.
+func UpdateAfterDepsInstall(repoRoot string) error {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	existingState.LastDepsInstall = &now
+
+	return existingState.update()
+}
+
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
 // If force-interactive flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup(repoRoot string) bool {
 	// Check if we should force the wizard to run
-	if viper.GetBool("force-interactive") {
+	if viperx.GetBool("force-interactive") {
 		return false
 	}
 

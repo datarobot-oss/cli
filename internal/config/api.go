@@ -69,6 +69,46 @@ func GetUserAgentHeader() string {
 	return version.GetAppNameVersionText()
 }
 
+// apiConsumerTrace holds the dot-notation command path set at startup.
+// Example: "datarobot.cli.templates.setup"
+var apiConsumerTrace string
+
+// SetAPIConsumerTrace stores the dot-notation trace value for the running command.
+// Called once during PersistentPreRunE with the result of CommandPathToTrace.
+func SetAPIConsumerTrace(trace string) {
+	apiConsumerTrace = trace
+}
+
+// GetAPIConsumerTrace returns the dot-notation trace value for the running command.
+// Falls back to "datarobot.cli" if SetAPIConsumerTrace has not been called.
+func GetAPIConsumerTrace() string {
+	if apiConsumerTrace == "" {
+		return "datarobot.cli"
+	}
+
+	return apiConsumerTrace
+}
+
+// CommandPathToTrace converts a cobra command path (e.g. "dr templates setup")
+// to the canonical dot-notation trace format (e.g. "datarobot.cli.templates.setup").
+func CommandPathToTrace(commandPath string) string {
+	parts := strings.Fields(commandPath)
+	if len(parts) == 0 {
+		return "datarobot.cli"
+	}
+
+	parts[0] = "datarobot.cli"
+
+	return strings.Join(parts, ".")
+}
+
+// IsAPIConsumerTrackingEnabled returns true if the X-DataRobot-Api-Consumer-Trace
+// header should be sent with API requests. Controlled by the
+// DATAROBOT_API_CONSUMER_TRACKING_ENABLED environment variable (default: true).
+func IsAPIConsumerTrackingEnabled() bool {
+	return viper.GetBool(APIConsumerTrackingEnabled)
+}
+
 func RedactedReqInfo(req *http.Request) string {
 	// Dump the request to a byte slice after cloning and removing Auth header
 	dumpReq := req.Clone(req.Context())
@@ -102,12 +142,12 @@ func SaveURLToConfig(newURL string) error {
 		viper.Set(DataRobotURL, "")
 		viper.Set(DataRobotAPIKey, "")
 
-		return viper.WriteConfig()
+		return UpdateConfigFile(DataRobotURL, DataRobotAPIKey)
 	}
 
 	viper.Set(DataRobotURL, newURL+DRAPIURLSuffix)
 
-	return viper.WriteConfig()
+	return UpdateConfigFile(DataRobotURL)
 }
 
 // SetURLToConfig is a helper function that sets the DataRobot URL with the DRAPIURLSuffix in the config object.

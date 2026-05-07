@@ -55,6 +55,9 @@ dr dotenv setup [--if-needed]
 **Flags:**
 
 - `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
+- `-y, --yes`&mdash;Skip interactive prompts and auto-populate all environment variables with their default values (or empty strings if no default is provided). This is useful for CI/CD pipelines, automated testing, or quick development setup where you want to use all defaults. Variables with `generate: true` will still have random values auto-generated. Can also be enabled via `DATAROBOT_CLI_NON_INTERACTIVE=true` environment variable.
+- `-a, --all`&mdash;Show all prompts in the wizard, including those with default values already set. By default, prompts with defaults are skipped.
+- `-o, --output <directory>`&mdash;Specify a custom directory where the `.env` file should be written. By default, the `.env` file is written to the repository root. The directory will be created automatically if it doesn't exist. This is useful for managing multiple environment configurations or writing to a specific deployment directory. This option skips the repository check and directory up-walk, allowing setup to run even when not executed from an app directory.
 
 **State tracking:**
 
@@ -86,6 +89,26 @@ dr dotenv setup --if-needed
 # Or: launches wizard (if missing or invalid)
 ```
 
+Auto-populate with defaults (no interaction):
+```bash
+cd my-template
+dr dotenv setup --yes
+# Creates .env file with all defaults (or empty values), skips wizard entirely
+```
+
+Or using environment variable:
+```bash
+cd my-template
+DATAROBOT_CLI_NON_INTERACTIVE=true dr dotenv setup
+```
+
+Custom output directory:
+```bash
+cd my-template
+dr dotenv setup --output /path/to/config
+# Creates .env file at /path/to/config/.env (directory created if needed)
+```
+
 The wizard guides you through:
 
 1. DataRobot credentials (auto-populated if authenticated).
@@ -108,6 +131,21 @@ This makes `--if-needed` ideal for:
 - **CI/CD pipelines** that should only prompt when necessary.
 - **Onboarding workflows** that intelligently skip already-completed steps.
 - **Idempotent operations** that can be safely run multiple times.
+
+**How `--yes` works:**
+
+When the `--yes` flag is set, the command skips the interactive wizard entirely and auto-populates all environment variables:
+
+- ✅ **Uses default values** for all prompts that have a `default:` specified in the YAML configuration.
+- ✅ **Sets empty strings** for prompts without defaults (unless they already have values from environment or existing `.env`).
+- ✅ **Auto-generates secrets** for prompts with `generate: true` (e.g., session secrets, encryption keys).
+- ✅ **Preserves existing values** from environment variables or the existing `.env` file.
+
+This makes `--yes` ideal for:
+- **CI/CD pipelines** that need predictable, non-interactive setup.
+- **Development environments** where defaults are sufficient for local testing.
+- **Automated testing** where you want a quick scaffold of all variables.
+- **Template initialization** in contexts where manual configuration comes later.
 
 ### dr dotenv edit
 

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,10 +27,10 @@ import (
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 type LoginModel struct {
@@ -148,7 +148,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 			return errMsg{errors.New("Interrupt request received.")}
 		}
 
-		viper.Set(config.DataRobotAPIKey, apiKey)
+		viperx.Set(config.DataRobotAPIKey, apiKey)
 
 		err := auth.WriteConfigFileSilent()
 		if err != nil {

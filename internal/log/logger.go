@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/log"
-	"github.com/spf13/viper"
+	"github.com/datarobot/cli/internal/config/viperx"
 )
 
 const logLevelWidth = 5
@@ -41,6 +41,7 @@ func init() {
 
 var (
 	level        log.Level
+	verbose      bool
 	fileWriter   io.WriteCloser
 	stderrLogger *log.Logger
 	fileLogger   *log.Logger
@@ -49,12 +50,15 @@ var (
 // Start sets up and starts both stderr and file loggers
 func Start() {
 	// Debug takes precedence
-	if viper.GetBool("debug") {
+	if viperx.GetBool("debug") {
 		level = log.DebugLevel
-	} else if viper.GetBool("verbose") {
+		verbose = true
+	} else if viperx.GetBool("verbose") {
 		level = log.InfoLevel
+		verbose = true
 	} else {
 		level = log.Default().GetLevel()
+		verbose = false
 	}
 
 	StartStderr()

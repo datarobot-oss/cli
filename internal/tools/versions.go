@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,6 +48,8 @@ func GetRequirements() ([]Prerequisite, error) {
 	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
 		return nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
 	}
+
+	versionsYamlSchema.Validate(fileParsed)
 
 	versions := make([]Prerequisite, 0, len(fileParsed))
 

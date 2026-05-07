@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -104,4 +104,21 @@ func TestVersionFlag(t *testing.T) {
 			assert.NotEmpty(t, output, "Version output should not be empty")
 		})
 	}
+}
+
+func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
+	// Verify that workload command is not present by default (feature not enabled).
+	// The feature gating happens during init(), so this tests the actual state.
+	cmd := RootCmd
+
+	var found bool
+
+	for _, subCmd := range cmd.Commands() {
+		if subCmd.Name() == "workload" {
+			found = true
+			break
+		}
+	}
+
+	assert.False(t, found, "workload command should not be present when feature gate is not enabled")
 }

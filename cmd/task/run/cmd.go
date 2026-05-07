@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -169,6 +170,15 @@ Examples:
 	// Register directory completion for the dir flag
 	_ = cmd.RegisterFlagCompletionFunc("dir", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveFilterDirs
+	})
+
+	// Mark mutually exclusive flags
+	cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"task_name": telemetry.FirstArg(args),
+		}
 	})
 
 	return cmd

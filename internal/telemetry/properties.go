@@ -15,7 +15,6 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
@@ -25,10 +24,8 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/version"
-	"github.com/spf13/viper"
 )
 
 // CommonProperties holds the set of properties attached to every telemetry
@@ -37,6 +34,7 @@ import (
 type CommonProperties struct {
 	// TODO CFX-5206 figure out proper SessionID
 	SessionID string // UUID v4, unique per process invocation
+	DeviceID  string // UUID v4, stable per installation, persisted to disk
 	// TODO CFX-5206 figure out proper UserID
 	UserID            string // Placeholder for future user ID implementation
 	CLIVersion        string // CLI version from version.Version (ldflags)
@@ -44,7 +42,7 @@ type CommonProperties struct {
 	OSInfo            string // runtime.GOOS/runtime.GOARCH
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
-	TemplateName      string // Best-effort from .datarobot/answers/ dir
+	CommandKind       string // "core" or "plugin", set by the root command after dispatch
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
@@ -54,13 +52,14 @@ type CommonProperties struct {
 func CollectCommonProperties() *CommonProperties {
 	props := &CommonProperties{
 		SessionID:     generateSessionID(),
+		DeviceID:      getOrCreateDeviceID(),
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
 		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
 	// Get DataRobot instance info from config
-	if endpoint := viper.GetString(config.DataRobotURL); endpoint != "" {
+	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
 		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
 			props.DataRobotInstance = baseURL
 			props.Environment = deriveEnvironment(baseURL)
@@ -68,14 +67,13 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Get user ID (currently returns placeholder value)
-	if userID, err := drapi.GetUserID(context.Background()); err == nil {
-		props.UserID = userID
-	}
+	// TODO CFX-5206 implement proper user ID retrieval and consider privacy implications
+	// Additionally, Amplitude strongly suggests not setting user ID until we
+	// absolutely need it, and to not set the same user ID for anon users.
 
-	// Get template name from repo
-	if templateName, err := getTemplateName(); err == nil {
-		props.TemplateName = templateName
-	}
+	// if userID, err := drapi.GetUserID(context.Background()); err == nil {
+	// 	props.UserID = userID
+	// }
 
 	return props
 }
@@ -85,22 +83,25 @@ func CollectCommonProperties() *CommonProperties {
 func (p *CommonProperties) AsMap() map[string]interface{} {
 	return map[string]interface{}{
 		"session_id":         p.SessionID,
-		"user_id":            p.UserID,
 		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
 		"os_info":            p.OSInfo,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
-		"template_name":      p.TemplateName,
+		"command_kind":       p.CommandKind,
 	}
 }
 
-// generateSessionID creates a UUID v4 for the session.
+// generateSessionID generates a UUID v4 for the current CLI session.
+// This value is not persisted and will be different on each invocation.
+// The default implementation uses crypto/rand, but if that fails, then
+// fallback to a timestamp-based ID with a "fallback-" prefix to
+// indicate it's not a true UUID.
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based ID if crypto fails
-		return time.Now().Format("20060102150405") + "-fallback"
+		// Fallback to timestamp-based ID if crypto random generation fails
+		return deviceIDFallbackPrefix + time.Now().UTC().Format(time.RFC3339)
 	}
 
 	// Set version (4) and variant (RFC 4122) bits
@@ -127,37 +128,51 @@ func deriveEnvironment(baseURL string) string {
 	}
 }
 
-// getTemplateName attempts to extract the template name from the .datarobot/answers directory.
-// Returns empty string if not in a DataRobot repo.
-// TODO I think this could be moved to internal/repo and more robustly implemented.
-func getTemplateName() (string, error) {
-	repoRoot, err := repo.FindRepoRoot()
+const (
+	deviceIDFileName       = "device_id"
+	deviceIDFallbackPrefix = "fallback-"
+)
+
+// getOrCreateDeviceID returns a stable device identifier.
+func getOrCreateDeviceID() string {
+	// First try to get machine ID from OS
+	if id := getMachineID(); id != "" {
+		return id
+	}
+
+	// Try to read existing device ID from file in the config directory
+	configDir, err := config.GetConfigDir()
 	if err != nil {
-		return "", err
+		// If we can't get the config directory, we won't be able to persist a device ID,
+		// so we just generate a new one for this session. These IDs will be prefixed with
+		// deviceIDFallbackPrefix to indicate it is not a true device ID.
+		return deviceIDFallbackPrefix + generateSessionID()
 	}
 
-	answersDir := filepath.Join(repoRoot, ".datarobot", "answers")
+	// Try to read existing device ID from file
+	deviceIDPath := filepath.Join(configDir, deviceIDFileName)
 
-	entries, err := os.ReadDir(answersDir)
-	if err != nil {
-		return "", err
-	}
+	data, err := os.ReadFile(deviceIDPath)
+	if err == nil {
+		// If we successfully read a device ID from the file, use it (after trimming whitespace).
+		id := strings.TrimSpace(string(data))
 
-	// Try to find the first YAML file that might indicate template name
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
-			// Extract template name from filename (e.g., "base.yml" -> "base")
-			baseName := strings.TrimSuffix(name, filepath.Ext(name))
-			if baseName != "" {
-				return baseName, nil
-			}
+		if id != "" {
+			// If the ID is not empty, return it. Otherwise, we'll generate a new one below.
+			return id
 		}
 	}
 
-	return "", nil
+	// If we couldn't get a machine ID or read an existing device ID, generate a new one
+	// and save it for future sessions. NOTE: Ignore errors at this point, since we can
+	// still function without persisting.
+	id := deviceIDFallbackPrefix + generateSessionID()
+
+	// At this point, ignore any errors we might have with persisting the device ID, as
+	// telemetry will still function without it, it will just be less stable.
+	if mkErr := os.MkdirAll(configDir, 0o700); mkErr == nil {
+		_ = os.WriteFile(deviceIDPath, []byte(id), 0o600)
+	}
+
+	return id
 }

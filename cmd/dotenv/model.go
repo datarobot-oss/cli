@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/tui"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -64,6 +64,7 @@ type Model struct {
 	currentPrompt         promptModel
 	hasPrompts            *bool             // Cache whether prompts are available
 	ShowAllPrompts        bool              // When true, show all prompts regardless of defaults
+	Yes                   bool              // When true, auto-populate all prompts with defaults (or empty) without showing wizard
 	skippedPrompts        int               // Count of prompts skipped due to having defaults
 	pulumiModel           *pulumiLoginModel // Sub-model for Pulumi login flow, shown before wizard if needed
 	NeedsPulumiLogin      bool              // Set by callers before Init(); true when login or passphrase setup is needed
@@ -117,7 +118,7 @@ func (m Model) externalEditorCmd() *exec.Cmd {
 	// TODO we may want to refactor this in the future to
 	// use a separate viper instance for better testability
 	// rather than the global one.
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	return exec.Command(editor, m.DotenvFile)
 }
@@ -245,6 +246,25 @@ func (m Model) moveToPreviousPrompt() (tea.Model, tea.Cmd) {
 	return m.updateCurrentPrompt()
 }
 
+// autoPopulateAndSave auto-populates all prompts with their default values (or empty strings)
+// and saves the .env file without showing the wizard. This is used when --yes is set.
+func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
+	// Apply defaults and process prompts (shared logic with non-interactive setup)
+	var err error
+
+	m.prompts, err = applyDefaultsToPrompts(m.prompts)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// Generate .env content from prompts
+	m.contents = envbuilder.DotenvFromPromptsMerged(m.prompts, m.contents)
+
+	// Save the file
+	return m, m.saveEditedFile()
+}
+
 func (m Model) Init() tea.Cmd {
 	if m.initialScreen == editorScreen {
 		return tea.Batch(openEditorCmd, tea.WindowSize())
@@ -305,6 +325,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, m.loadPrompts()
 		}
 
+		// If Yes is true, auto-quit without waiting for user confirmation
+		if m.Yes {
+			return m, m.SuccessCmd
+		}
+
 		return m, nil
 	case promptsLoadedMsg:
 		// Start in the wizard screen
@@ -317,18 +342,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.hasPrompts = &hasPrompts
 
 		if len(m.prompts) == 0 {
+			// In --yes mode, save immediately and exit even if no prompts exist
+			if m.Yes {
+				return m.autoPopulateAndSave()
+			}
+
 			m.screen = listScreen
 
 			return m, nil
 		}
 
 		// Check if Pulumi login/passphrase setup is needed before the wizard
-		if m.NeedsPulumiLogin {
+		// Skip interactive Pulumi screen in --yes mode (passphrase will be auto-generated if needed)
+		if m.NeedsPulumiLogin && !m.Yes {
 			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase)
 			m.pulumiModel = &plm
 			m.screen = pulumiScreen
 
 			return m, plm.Init()
+		}
+
+		// If Yes is true, auto-populate all values and save without showing wizard
+		if m.Yes {
+			return m.autoPopulateAndSave()
 		}
 
 		return m.moveToNextPrompt()
@@ -457,7 +493,7 @@ func (m Model) View() string {
 }
 
 func (m Model) viewListScreen() string {
-	editor := viper.GetString("external-editor")
+	editor := viperx.GetString("external-editor")
 
 	var sb strings.Builder
 
@@ -477,7 +513,8 @@ func (m Model) viewListScreen() string {
 	if m.skippedPrompts > 0 {
 		sb.WriteString(tui.DimStyle.Render(fmt.Sprintf(
 			"Skipped %d prompt(s) with default values. Use --all to configure them.",
-			m.skippedPrompts)))
+			m.skippedPrompts,
+		)))
 		sb.WriteString("\n\n")
 	}
 

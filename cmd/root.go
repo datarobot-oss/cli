@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,14 +31,16 @@ import (
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
 	"github.com/datarobot/cli/cmd/templates"
+	"github.com/datarobot/cli/cmd/workload"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var configFilePath string
@@ -46,12 +48,14 @@ var configFilePath string
 // telemetryClientKey is used to store the telemetry client in context
 type telemetryClientKey struct{}
 
-// RootCmd represents the base command when called without any subcommands
-var RootCmd = &cobra.Command{
-	Use:     internalVersion.CliName,
-	Version: internalVersion.Version,
-	Short:   "Build AI Applications Faster",
-	Long: `
+// RootCmd represents the base command when called without any subcommands.
+// It uses CommandAdder to intelligently filter child commands based on feature gates.
+var RootCmd = &cli.CommandAdder{
+	Command: &cobra.Command{
+		Use:     internalVersion.CliName,
+		Version: internalVersion.Version,
+		Short:   "Build AI Applications Faster",
+		Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
 
@@ -66,41 +70,59 @@ using pre-built templates. Get from idea to production in minutes, not hours.
   dr --help            # Show all available commands
 
 💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
-	// Show help by default when no subcommands match
-	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		// PersistentPreRunE is a hook called after flags are parsed
-		// but before the command is run. Any logic that needs to happen
-		// before ANY command execution should go here.
-		log.Start()
+		// Show help by default when no subcommands match
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// PersistentPreRunE is a hook called after flags are parsed
+			// but before the command is run. Any logic that needs to happen
+			// before ANY command execution should go here.
+			log.Start()
 
-		err := initializeConfig(cmd)
-		if err != nil {
-			return err
-		}
+			err := initializeConfig(cmd)
+			if err != nil {
+				return err
+			}
 
-		// Initialize telemetry client
-		// Check if enabled first to avoid unnecessary filesystem and network I/O.
-		var props *telemetry.CommonProperties
-		if telemetry.IsEnabled() {
-			props = telemetry.CollectCommonProperties()
-		}
+			// Initialize telemetry client
+			// Always collect common properties for logging (even in dry-run mode),
+			// but only send to Amplitude if enabled.
+			props := telemetry.CollectCommonProperties()
 
-		client := telemetry.NewClient(props)
+			// Stamp the command_kind common property based on whether
+			// the dispatched command was registered via TrackPlugin.
+			// CommonProperties is held by pointer inside Client, so this
+			// late-bound update is visible at Track time.
+			if props != nil {
+				if telemetry.IsPluginCommand(cmd) {
+					props.CommandKind = "plugin"
+				} else {
+					props.CommandKind = "core"
+				}
+			}
 
-		// Store telemetry client in context for use by commands
-		cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
+			client := telemetry.NewClient(props)
 
-		return nil
-	},
-	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-		// Flush telemetry events before exit
-		if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
-			client.Flush(3 * time.Second)
-		}
+			// Store telemetry client in context for use by commands
+			cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
 
-		log.Stop()
+			// Fire telemetry event for this command (safe before RunE which may call os.Exit)
+			if event, ok := telemetry.EventFor(cmd, args); ok {
+				client.Track(event)
+			}
 
-		return nil
+			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
+
+			return nil
+		},
+		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+			// Flush telemetry events before exit
+			if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
+				client.Flush(3 * time.Second)
+			}
+
+			log.Stop()
+
+			return nil
+		},
 	},
 }
 
@@ -136,15 +158,15 @@ func init() {
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 
 	// Make some of these flags available via Viper
-	_ = viper.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
-	_ = viper.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
-	_ = viper.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
-	_ = viper.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
-	_ = viper.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
-	_ = viper.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
-	_ = viper.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
-	_ = viper.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
+	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
+	_ = viperx.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viperx.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+	_ = viperx.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viperx.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
+	_ = viperx.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
+	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
+	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
+	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
@@ -156,6 +178,7 @@ func init() {
 	// Add commands here to ensure that they are available to users.
 	// Be sure to set the command's GroupID field appropriately;
 	// otherwise the command will be added under 'Additional Commands'.
+	// Commands with disabled feature gates are automatically filtered by cli.CommandAdder.
 	RootCmd.AddCommand(
 		auth.Cmd(),
 		component.Cmd(),
@@ -166,11 +189,12 @@ func init() {
 		start.Cmd(),
 		task.Cmd(),
 		templates.Cmd(),
+		workload.Cmd(),
 		plugin.Cmd(),
 	)
 
 	// Discover and register plugin commands
-	plugin.RegisterPluginCommands(RootCmd)
+	plugin.RegisterPluginCommands(RootCmd.Command)
 
 	// Override the default help command to add --all-commands flag
 	defaultHelpFunc := RootCmd.HelpFunc()
@@ -195,26 +219,33 @@ func init() {
 
 // initializeConfig initializes the configuration by reading from
 // various sources such as environment variables and config files.
-func initializeConfig(cmd *cobra.Command) error {
+func initializeConfig(_ *cobra.Command) error {
 	var err error
 
 	// Set up Viper to process environment variables
 	// First automatically map any environment variables
 	// that are prefixed with DATAROBOT_CLI_ to config keys
-	viper.SetEnvPrefix("DATAROBOT_CLI")
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viperx.SetEnvPrefix("DATAROBOT_CLI")
+	viperx.AutomaticEnv()
+	viperx.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 
 	// map VISUAL and EDITOR to external-editor config key,
 	// but set a default value
-	viper.SetDefault("external-editor", "vi")
+	viperx.SetDefault("external-editor", "vi")
 
-	_ = viper.BindEnv("external-editor", "VISUAL", "EDITOR")
+	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
+
+	// API consumer tracking is enabled by default.
+	// Set DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false to opt out,
+	// matching the Python SDK convention.
+	viperx.SetDefault(config.APIConsumerTrackingEnabled, true)
+
+	_ = viperx.BindEnv(config.APIConsumerTrackingEnabled, "DATAROBOT_API_CONSUMER_TRACKING_ENABLED")
 
 	// If DATAROBOT_CLI_CONFIG is set and no explicit --config flag was provided,
 	// use the environment variable value
 	if configFilePath == "" {
-		if envConfigPath := viper.GetString("config"); envConfigPath != "" {
+		if envConfigPath := viperx.GetString("config"); envConfigPath != "" {
 			configFilePath = envConfigPath
 		}
 	}
@@ -223,12 +254,6 @@ func initializeConfig(cmd *cobra.Command) error {
 	err = config.ReadConfigFile(configFilePath)
 	if err != nil {
 		return fmt.Errorf("Failed to read config file: %w", err)
-	}
-
-	// Bind Cobra flags to Viper
-	err = viper.BindPFlags(cmd.Flags())
-	if err != nil {
-		return err
 	}
 
 	return nil

@@ -1,4 +1,4 @@
-// Copyright 2025 DataRobot, Inc. and its affiliates.
+// Copyright 2026 DataRobot, Inc. and its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -229,6 +229,12 @@ func writeContents(cleanContents, dotenvFile string) error {
 		if err := backup(dotenvFile); err != nil {
 			return err
 		}
+	}
+
+	// Ensure the directory exists
+	dir := filepath.Dir(dotenvFile)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
 	f, err := os.Create(dotenvFile)

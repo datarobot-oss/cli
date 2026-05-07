@@ -448,7 +448,8 @@ prompts:
 ```
 
 Shown as:
-```
+
+```log
 Application port
 > 8080█
 
@@ -456,6 +457,7 @@ Default: 8080
 ```
 
 **Note:** Prompts with default values are automatically skipped during the wizard unless:
+
 - The user has modified the value from the default
 - The prompt has `always_prompt: true` set
 - The prompt has options with `requires` fields (which control conditional sections)
@@ -514,12 +516,12 @@ prompts:
     help: "Session encryption key"
 ```
 
-When `generate: true` is set:
-
 - A 32-character cryptographically secure random string is generated if no value exists.
 - Uses base64 URL-safe encoding.
 - Preserves existing values (only generates for empty fields).
 - User can still override with a custom value.
+
+**Note:** Prompts with generated values are automatically skipped during the wizard, following the same rules as prompts with default values.
 
 ### Merge environment variables
 
