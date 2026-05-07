@@ -113,6 +113,7 @@ func (c *Client) Track(event types.Event) {
 		if c.props.UserID != nil {
 			event.UserID = *c.props.UserID
 		}
+
 		event.DeviceID = c.props.DeviceID
 	}
 
