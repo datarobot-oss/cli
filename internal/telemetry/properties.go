@@ -140,6 +140,11 @@ func getOrCreateDeviceID() string {
 	// If we couldn't get a machine ID or read an existing device ID, generate a new one
 	// and save it for future sessions. NOTE: Ignore errors at this point, since we can
 	// still function without persisting.
+	// It might be worth considering supporting a DATAROBOT_CLI_DEVICE_ID environment
+	// variable for environments where filesystem persistence is unreliable or machine
+	// IDs are ephemeral (e.g., certain container orchestration systems). This way we
+	// could intentionally pass in a stable ID. Honestly, though, I think being able
+	// to write out a device_id file is good enough.
 	id := deviceIDFallbackPrefix + generateSessionID()
 
 	writeTextCacheFile(deviceIDFileName, id)
