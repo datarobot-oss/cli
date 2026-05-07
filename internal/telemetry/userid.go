@@ -64,7 +64,7 @@ func GetUserID(ctx context.Context) (string, error) {
 	return info.UID, nil
 }
 
-func getOrCreateUserID(ctx context.Context) string {
+func retrieveUserID(ctx context.Context) string {
 	// Check cache first to avoid making an API call
 	var cached cachedUserID
 

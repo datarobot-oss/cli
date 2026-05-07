@@ -62,7 +62,8 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	props.UserID = getOrCreateUserID(context.Background())
+	// Retrieve the userID
+	props.UserID = retrieveUserID(context.Background())
 
 	return props
 }

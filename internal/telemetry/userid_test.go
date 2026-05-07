@@ -56,7 +56,7 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "fresh-uid", result)
 
@@ -92,7 +92,7 @@ func TestGetOrCreateUserID_FilePermissions(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	getOrCreateUserID(context.Background())
+	retrieveUserID(context.Background())
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	info, err := os.Stat(cachePath)
@@ -131,7 +131,7 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "cached-uid-123", result)
 }
@@ -171,7 +171,7 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "new-uid-456", result)
 }
@@ -211,7 +211,7 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "new-uid-789", result)
 }
@@ -232,7 +232,7 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "api-uid-000", result)
 }
@@ -263,7 +263,7 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "recovery-uid", result)
 }
@@ -304,7 +304,7 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID(context.Background())
+	result := retrieveUserID(context.Background())
 
 	assert.Equal(t, "new-token-uid", result)
 
