@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -120,23 +119,6 @@ func generateSessionID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 
 	return hex.EncodeToString(b)
-}
-
-// detectLanguage returns the user's language tag from environment variables.
-// On Unix systems LANG is typically "en_US.UTF-8"; we strip the encoding suffix
-// to return just the language tag (e.g. "en_US"). Falls back to LANGUAGE.
-// Returns empty string if neither variable is set.
-func detectLanguage() string {
-	lang := os.Getenv("LANG")
-	if lang == "" {
-		lang = os.Getenv("LANGUAGE")
-	}
-
-	if idx := strings.Index(lang, "."); idx != -1 {
-		lang = lang[:idx]
-	}
-
-	return lang
 }
 
 // deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)

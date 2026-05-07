@@ -298,29 +298,29 @@ func TestCollectCommonProperties_SetsOSName(t *testing.T) {
 	assert.NotEmpty(t, props.OSName)
 }
 
-func TestDetectLanguage_StripsEncoding(t *testing.T) {
+func TestLangFromEnv_StripsEncoding(t *testing.T) {
 	t.Setenv("LANG", "en_US.UTF-8")
 	t.Setenv("LANGUAGE", "")
 
-	lang := detectLanguage()
+	lang := langFromEnv()
 
 	assert.Equal(t, "en_US", lang)
 }
 
-func TestDetectLanguage_FallsBackToLANGUAGE(t *testing.T) {
+func TestLangFromEnv_FallsBackToLANGUAGE(t *testing.T) {
 	t.Setenv("LANG", "")
 	t.Setenv("LANGUAGE", "fr_FR")
 
-	lang := detectLanguage()
+	lang := langFromEnv()
 
 	assert.Equal(t, "fr_FR", lang)
 }
 
-func TestDetectLanguage_ReturnsEmptyWhenUnset(t *testing.T) {
+func TestLangFromEnv_ReturnsEmptyWhenUnset(t *testing.T) {
 	t.Setenv("LANG", "")
 	t.Setenv("LANGUAGE", "")
 
-	lang := detectLanguage()
+	lang := langFromEnv()
 
 	assert.Empty(t, lang)
 }
