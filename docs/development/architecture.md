@@ -60,6 +60,25 @@ graph TD
     style FILE fill:#e1f5ff
 ```
 
+## Configuration precedence
+
+```mermaid
+graph TD
+    A["🔝 Environment Variables<br/>(DATAROBOT_CLI_*)"]
+    B["Command-line Flags<br/>(--flag)"]
+    C["Configuration File<br/>(~/.config/datarobot/drconfig.yaml)"]
+    D["🔻 Default Values"]
+    
+    A --> B
+    B --> C
+    C --> D
+    
+    style A fill:#c8e6c9
+    style B fill:#fff9c4
+    style C fill:#b3e5fc
+    style D fill:#f0f0f0
+```
+
 ## Model-View-Cmd pattern for CLI commands
 
 ```mermaid
