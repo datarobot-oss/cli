@@ -27,6 +27,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
@@ -322,7 +323,7 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.depsToInstall = msg.prerequisites
 	m.stepCompleteMessage = msg.message
 
-	if m.opts.AnswerYes {
+	if viperx.GetBool("yes") {
 		return m, m.execInstallDeps()
 	}
 
@@ -586,8 +587,9 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		time.Sleep(preExecutionDelay)
 
 		// Found a quickstart script
-		// If '--yes' flag is set, don't wait for confirmation
-		waitForConfirmation := !m.opts.AnswerYes
+		// Don't wait for confirmation if '--yes' flag is set or
+		// DATAROBOT_CLI_NON_INTERACTIVE env var is true
+		waitForConfirmation := !viperx.GetBool("yes")
 
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),
