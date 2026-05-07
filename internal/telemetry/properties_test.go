@@ -15,15 +15,24 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func ptrString(s string) *string {
+	return &s
+}
 
 func TestGenerateSessionID_ReturnsValidUUID(t *testing.T) {
 	id := generateSessionID()
@@ -45,7 +54,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	props := &CommonProperties{
 		SessionID:         "session-123",
 		DeviceID:          "device-789",
-		UserID:            "user-456",
+		UserID:            ptrString("user-456"),
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
 		OSInfo:            "darwin/arm64",
@@ -65,6 +74,8 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "core", m["command_kind"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
+	// user_id is a top-level Amplitude field, not an event property
+	assert.NotContains(t, m, "user_id")
 }
 
 func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
@@ -168,6 +179,62 @@ func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
 	props := CollectCommonProperties()
 
 	assert.NotEmpty(t, props.DeviceID)
+}
+
+func TestCollectCommonProperties_UserIDNilWhenUnauthenticated(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	defer viperx.Reset()
+
+	props := CollectCommonProperties()
+
+	assert.Nil(t, props.UserID)
+}
+
+func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, "https://test.datarobot.com/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	// Pre-seed the cache file with a valid entry matching the configured endpoint and token
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	token := "test-token"
+	hash := sha256.Sum256([]byte(token))
+	fingerprint := hex.EncodeToString(hash[:])
+
+	cache := cachedUserID{
+		UID:              "cross-test-uid",
+		Endpoint:         "https://test.datarobot.com",
+		TokenFingerprint: fingerprint,
+	}
+	data, err := json.Marshal(cache)
+
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, userIDFileName), data, 0o600)
+
+	require.NoError(t, err)
+
+	props := CollectCommonProperties()
+
+	require.NotNil(t, props.UserID)
+	assert.Equal(t, "cross-test-uid", *props.UserID)
+
+	m := props.AsMap()
+
+	assert.NotContains(t, m, "user_id")
 }
 
 func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {

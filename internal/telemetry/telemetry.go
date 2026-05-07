@@ -110,12 +110,15 @@ func (c *Client) Track(event types.Event) {
 		event.EventProperties = commonMap
 
 		// Set UserID and DeviceID as top-level fields (required by Amplitude)
-		event.UserID = c.props.UserID
+		if c.props.UserID != nil {
+			event.UserID = *c.props.UserID
+		}
+
 		event.DeviceID = c.props.DeviceID
 	}
 
 	if c.amp == nil {
-		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "user_id", event.UserID, "device_id", event.DeviceID, "properties", event.EventProperties)
 		return
 	}
 

@@ -29,6 +29,49 @@ Amplitude requires a `device_id` or `user_id` on every event. The CLI uses a sta
 
 3. **Session-scoped fallback** — if the config directory is also inaccessible, a fresh ID prefixed with `"fallback-"` is generated for that session only.
 
+## User ID
+
+When the user is authenticated, the CLI sends a real DataRobot `uid` as the top-level Amplitude `user_id` field. If the user is unauthenticated (no API token, invalid token, or network failure with no valid cache), the field is left empty and Amplitude falls back to `device_id`-only anonymous tracking.
+
+The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing the user's unique identifier. The `uid` is stable per DataRobot instance and is not PII (email is deliberately excluded from telemetry to avoid transmitting personally identifiable information).
+
+### Caching
+
+To avoid an API call on every CLI invocation, the `uid` is cached to disk alongside `device_id` and `drconfig.yaml`:
+
+- **Cache file**: `$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`)
+- **File permissions**: `0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`
+- **Cache format** (JSON):
+
+  ```json
+  {"uid":"...","endpoint":"https://app.datarobot.com","token_fingerprint":"sha256hex"}
+  ```
+
+  - `uid` — the DataRobot user identifier
+  - `endpoint` — the scheme+host of the DataRobot instance (e.g., `https://app.datarobot.com`)
+  - `token_fingerprint` — SHA-256 hex digest of the current API token
+
+### Cache validation and invalidation
+
+On subsequent invocations, when no fresh API `uid` is available, the cache is validated against both the current endpoint and the current token fingerprint:
+
+- **Endpoint match**: the cached `endpoint` must equal the current `viperx.GetString(config.DataRobotURL)` (scheme+host only)
+- **Token fingerprint match**: the cached `token_fingerprint` must equal the SHA-256 hex of the current API token
+
+If either check fails, the cache is treated as stale and the `user_id` is left empty (anonymous tracking). This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
+
+### Behavior summary
+
+| Scenario | `user_id` behavior |
+|---|---|
+| Authenticated, API succeeds | `uid` from API, cached to disk |
+| Authenticated, cache hit (same endpoint + token) | Cached `uid` (no API call) |
+| Endpoint changed | Re-fetch from API, update cache |
+| Token changed (rotation / new user) | Re-fetch from API, update cache |
+| No API token / invalid token | Empty `user_id`, anonymous tracking |
+| Network error, same endpoint + token | Return cached `uid` |
+| Network error, endpoint/token changed | Empty `user_id`, anonymous tracking |
+
 ## Common Properties
 
 The following are attached to every event:
@@ -37,7 +80,7 @@ The following are attached to every event:
 
 | Field | Source |
 |---|---|
-| `user_id` | DataRobot user ID from the API (empty if unauthenticated) |
+| `user_id` | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty (anonymous) if unauthenticated or cache miss — see [User ID](#user-id) |
 | `device_id` | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above |
 
 ### Event properties
@@ -45,7 +88,6 @@ The following are attached to every event:
 | Property | Source |
 |---|---|
 | `session_id` | UUID v4 generated per process invocation |
-| `user_id` | Same as the top-level `user_id` field |
 | `cli_version` | Set at build time via ldflags |
 | `install_method` | Set at build time via ldflags (`release`, `source`, etc.) |
 | `os_info` | `runtime.GOOS/runtime.GOARCH` |
