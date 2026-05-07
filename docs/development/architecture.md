@@ -92,6 +92,10 @@ graph TD
 
 ```mermaid
 graph LR
+    USER["User invokes<br/>dr &lt;cmd&gt;"]
+    
+    USER --> CMD
+    
     subgraph "Command Layer"
         CMD["cmd.RunE<br/>(entry point)"]
     end
@@ -132,12 +136,14 @@ graph LR
     
     TUI -->|user input| MODEL
     
+    style USER fill:#e0f2f1
     style CMD fill:#fff3e0
     style MODEL fill:#f3e5f5
     style TUI fill:#ede7f6
     style TEXT fill:#e1f5ff
     style API fill:#e8f5e9
     style CONFIG fill:#fce4ec
+    style STATE fill:#fce4ec
 ```
 
 ## Build and release
