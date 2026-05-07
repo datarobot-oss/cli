@@ -42,7 +42,6 @@ type CommonProperties struct {
 	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
-	OSInfo            string // runtime.GOOS/runtime.GOARCH (legacy combined field)
 	OSName            string // human-readable OS name: "macOS", "Linux", "Windows"
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
@@ -61,7 +60,6 @@ func CollectCommonProperties() *CommonProperties {
 		DeviceID:      getOrCreateDeviceID(),
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
-		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
 		OSName:        humanizeOS(runtime.GOOS),
 		OSArch:        runtime.GOARCH,
 		OSVersion:     detectOSVersion(),
@@ -93,7 +91,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"session_id":         p.SessionID,
 		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
-		"os_info":            p.OSInfo,
 		"os_name":            p.OSName,
 		"os_arch":            p.OSArch,
 		"os_version":         p.OSVersion,

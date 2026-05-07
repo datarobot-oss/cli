@@ -57,7 +57,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 		UserID:            ptrString("user-456"),
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
-		OSInfo:            "darwin/arm64",
 		Environment:       "US",
 		DataRobotInstance: "https://app.datarobot.com",
 		CommandKind:       "core",
@@ -68,7 +67,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "session-123", m["session_id"])
 	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
-	assert.Equal(t, "darwin/arm64", m["os_info"])
 	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
 	assert.Equal(t, "core", m["command_kind"])
@@ -262,14 +260,6 @@ func TestDeriveEnvironment_JP(t *testing.T) {
 
 func TestDeriveEnvironment_Custom(t *testing.T) {
 	assert.Equal(t, "custom", deriveEnvironment("https://custom.internal.company.com"))
-}
-
-func TestCollectCommonProperties_ContainsOSInfo(t *testing.T) {
-	props := CollectCommonProperties()
-
-	assert.NotEmpty(t, props.OSInfo)
-	assert.Contains(t, props.OSInfo, runtime.GOOS)
-	assert.Contains(t, props.OSInfo, runtime.GOARCH)
 }
 
 func TestCollectCommonProperties_GeneratesSessionID(t *testing.T) {
