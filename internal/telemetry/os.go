@@ -52,15 +52,6 @@ func readOSVersion() string {
 	}
 }
 
-func darwinVersion() string {
-	out, err := exec.Command("sw_vers", "-productVersion").Output()
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(string(out))
-}
-
 func linuxVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {

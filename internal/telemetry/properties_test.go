@@ -312,7 +312,8 @@ func TestHumanizeOS(t *testing.T) {
 	assert.Equal(t, "macOS", humanizeOS("darwin"))
 	assert.Equal(t, "Linux", humanizeOS("linux"))
 	assert.Equal(t, "Windows", humanizeOS("windows"))
-	assert.Equal(t, "freebsd", humanizeOS("freebsd"))
+	assert.Equal(t, "FreeBSD", humanizeOS("freebsd"))
+	assert.Equal(t, "plan9", humanizeOS("plan9"))
 }
 
 func TestDetectLanguage_StripsEncoding(t *testing.T) {
