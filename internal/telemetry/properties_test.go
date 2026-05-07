@@ -181,7 +181,7 @@ func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
 	assert.NotEmpty(t, props.DeviceID)
 }
 
-func TestCollectCommonProperties_UserIDEmptyWhenUnauthenticated(t *testing.T) {
+func TestCollectCommonProperties_UserIDNilWhenUnauthenticated(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
@@ -190,7 +190,7 @@ func TestCollectCommonProperties_UserIDEmptyWhenUnauthenticated(t *testing.T) {
 
 	props := CollectCommonProperties()
 
-	assert.Empty(t, props.UserID)
+	assert.Nil(t, props.UserID)
 }
 
 func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) {

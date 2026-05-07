@@ -56,10 +56,10 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "fresh-uid", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "fresh-uid", result)
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	data, err := os.ReadFile(cachePath)
@@ -93,7 +93,7 @@ func TestGetOrCreateUserID_FilePermissions(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	retrieveUserID(context.Background())
+	_, _ = retrieveUserID(context.Background())
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	info, err := os.Stat(cachePath)
@@ -132,10 +132,10 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "cached-uid-123", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "cached-uid-123", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
@@ -173,10 +173,10 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "new-uid-456", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "new-uid-456", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
@@ -214,10 +214,10 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "new-uid-789", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "new-uid-789", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
@@ -236,10 +236,10 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "api-uid-000", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "api-uid-000", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
@@ -268,10 +268,10 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "recovery-uid", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "recovery-uid", result)
 }
 
 func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
@@ -310,10 +310,10 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	require.NotNil(t, result)
-	assert.Equal(t, "new-token-uid", *result)
+	require.NoError(t, err)
+	assert.Equal(t, "new-token-uid", result)
 
 	updatedData, err := os.ReadFile(filepath.Join(configDir, userIDFileName))
 
@@ -329,7 +329,7 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 	assert.Equal(t, sha256Fingerprint("new-token"), updated.TokenFingerprint)
 }
 
-func TestRetrieveUserID_APIFailureReturnsNil(t *testing.T) {
+func TestRetrieveUserID_APIFailureReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
@@ -344,9 +344,10 @@ func TestRetrieveUserID_APIFailureReturnsNil(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result := retrieveUserID(context.Background())
+	result, err := retrieveUserID(context.Background())
 
-	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Empty(t, result)
 }
 
 func TestGetUserID_Success(t *testing.T) {

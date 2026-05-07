@@ -32,16 +32,16 @@ import (
 // events in that session.
 type CommonProperties struct {
 	// top-level fields
-	SessionID         string  // UUID v4, unique per process invocation
-	DeviceID          string  // UUID v4, stable per installation, cached to disk
-	UserID            *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	SessionID string  // UUID v4, unique per process invocation
+	DeviceID  string  // UUID v4, stable per installation, cached to disk
+	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
 	// event properties
-	CLIVersion        string  // CLI version from version.Version (ldflags)
-	InstallMethod     string  // Build distribution method (ldflags)
-	OSInfo            string  // runtime.GOOS/runtime.GOARCH
-	Environment       string  // US, EU, JP, or custom — from endpoint URL
-	DataRobotInstance string  // Base URL of configured DataRobot instance
-	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
+	CLIVersion        string // CLI version from version.Version (ldflags)
+	InstallMethod     string // Build distribution method (ldflags)
+	OSInfo            string // runtime.GOOS/runtime.GOARCH
+	Environment       string // US, EU, JP, or custom — from endpoint URL
+	DataRobotInstance string // Base URL of configured DataRobot instance
+	CommandKind       string // "core" or "plugin", set by the root command after dispatch
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
@@ -65,7 +65,10 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Retrieve the userID
-	props.UserID = retrieveUserID(context.Background())
+	uid, err := retrieveUserID(context.Background())
+	if err == nil {
+		props.UserID = &uid
+	}
 
 	return props
 }
