@@ -31,15 +31,15 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
-	SessionID         string // UUID v4, unique per process invocation
-	DeviceID          string // UUID v4, stable per installation, cached to disk
-	UserID            string // DataRobot uid from GET /api/v2/account/info/, cached to disk
-	CLIVersion        string // CLI version from version.Version (ldflags)
-	InstallMethod     string // Build distribution method (ldflags)
-	OSInfo            string // runtime.GOOS/runtime.GOARCH
-	Environment       string // US, EU, JP, or custom — from endpoint URL
-	DataRobotInstance string // Base URL of configured DataRobot instance
-	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+	SessionID         string  // UUID v4, unique per process invocation
+	DeviceID          string  // UUID v4, stable per installation, cached to disk
+	UserID            *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	CLIVersion        string  // CLI version from version.Version (ldflags)
+	InstallMethod     string  // Build distribution method (ldflags)
+	OSInfo            string  // runtime.GOOS/runtime.GOARCH
+	Environment       string  // US, EU, JP, or custom — from endpoint URL
+	DataRobotInstance string  // Base URL of configured DataRobot instance
+	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
@@ -71,7 +71,7 @@ func CollectCommonProperties() *CommonProperties {
 // AsMap returns the properties as a map[string]any suitable for
 // merging into Amplitude event properties.
 func (p *CommonProperties) AsMap() map[string]any {
-	return map[string]any{
+	m := map[string]any{
 		"session_id":         p.SessionID,
 		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
@@ -80,6 +80,12 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
 	}
+
+	if p.UserID != nil {
+		m["user_id"] = *p.UserID
+	}
+
+	return m
 }
 
 // generateSessionID generates a UUID v4 for the current CLI session.

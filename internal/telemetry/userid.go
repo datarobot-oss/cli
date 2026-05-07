@@ -65,13 +65,13 @@ func GetUserID(_ context.Context) (string, error) {
 	return info.UID, nil
 }
 
-func retrieveUserID(ctx context.Context) string {
+func retrieveUserID(ctx context.Context) *string {
 	// Check cache first to avoid making an API call
 	var cached cachedUserID
 
 	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
 		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
-			return cached.UID
+			return &cached.UID
 		}
 	}
 
@@ -79,12 +79,12 @@ func retrieveUserID(ctx context.Context) string {
 	apiUserID, err := GetUserID(ctx)
 	if err != nil {
 		log.Debugf("Failed to retrieve user ID: %v", err)
-		return ""
+		return nil
 	}
 
 	persistUserID(apiUserID)
 
-	return apiUserID
+	return &apiUserID
 }
 
 func persistUserID(uid string) {

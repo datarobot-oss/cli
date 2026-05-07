@@ -58,7 +58,8 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "fresh-uid", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "fresh-uid", *result)
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	data, err := os.ReadFile(cachePath)
@@ -133,7 +134,8 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "cached-uid-123", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "cached-uid-123", *result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
@@ -173,7 +175,8 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "new-uid-456", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "new-uid-456", *result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
@@ -213,7 +216,8 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "new-uid-789", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "new-uid-789", *result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
@@ -234,7 +238,8 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "api-uid-000", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "api-uid-000", *result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
@@ -265,7 +270,8 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "recovery-uid", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "recovery-uid", *result)
 }
 
 func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
@@ -306,7 +312,8 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 
 	result := retrieveUserID(context.Background())
 
-	assert.Equal(t, "new-token-uid", result)
+	require.NotNil(t, result)
+	assert.Equal(t, "new-token-uid", *result)
 
 	updatedData, err := os.ReadFile(filepath.Join(configDir, userIDFileName))
 
@@ -320,6 +327,26 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 	assert.Equal(t, "new-token-uid", updated.UID)
 	assert.Equal(t, server.URL, updated.Endpoint)
 	assert.Equal(t, sha256Fingerprint("new-token"), updated.TokenFingerprint)
+}
+
+func TestRetrieveUserID_APIFailureReturnsNil(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	server.Close()
+
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+
+	result := retrieveUserID(context.Background())
+
+	assert.Nil(t, result)
 }
 
 func TestGetUserID_Success(t *testing.T) {
