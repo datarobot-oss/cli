@@ -14,13 +14,32 @@
 
 package telemetry
 
-import "syscall"
+import (
+	"bufio"
+	"os"
+	"strings"
+)
 
 func osVersion() string {
-	ver, err := syscall.Sysctl("kern.osproductversion")
+	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return ""
 	}
 
-	return ver
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "VERSION_ID=") {
+			val := strings.TrimPrefix(line, "VERSION_ID=")
+			val = strings.Trim(val, `"`)
+
+			return val
+		}
+	}
+
+	return ""
 }

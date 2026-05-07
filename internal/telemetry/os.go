@@ -14,14 +14,7 @@
 
 package telemetry
 
-import (
-	"bufio"
-	"os"
-	"os/exec"
-	"runtime"
-	"strings"
-	"sync"
-)
+import "sync"
 
 var (
 	osVersionOnce  sync.Once
@@ -33,75 +26,13 @@ var (
 // detection fails.
 func detectOSVersion() string {
 	osVersionOnce.Do(func() {
-		osVersionCache = readOSVersion()
+		osVersionCache = osVersion()
 	})
 
 	return osVersionCache
 }
 
-func readOSVersion() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return darwinVersion()
-	case "linux":
-		return linuxVersion()
-	case "windows":
-		return windowsVersion()
-	default:
-		return ""
-	}
-}
-
-func linuxVersion() string {
-	f, err := os.Open("/etc/os-release")
-	if err != nil {
-		return ""
-	}
-
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(line, "VERSION_ID=") {
-			val := strings.TrimPrefix(line, "VERSION_ID=")
-			val = strings.Trim(val, `"`)
-
-			return val
-		}
-	}
-
-	return ""
-}
-
-func windowsVersion() string {
-	out, err := exec.Command("cmd", "/c", "ver").Output()
-	if err != nil {
-		return ""
-	}
-
-	// "ver" output: "Microsoft Windows [Version 10.0.22621.1234]"
-	s := strings.TrimSpace(string(out))
-	start := strings.Index(s, "[Version ")
-
-	if start == -1 {
-		return ""
-	}
-
-	s = s[start+len("[Version "):]
-	end := strings.Index(s, "]")
-
-	if end == -1 {
-		return ""
-	}
-
-	return s[:end]
-}
-
 // humanizeOS maps runtime.GOOS values to platform names users will recognize.
-// This should help with Amplitude event analysis.
 func humanizeOS(goos string) string {
 	switch goos {
 	case "darwin":
@@ -115,7 +46,6 @@ func humanizeOS(goos string) string {
 	case "openbsd":
 		return "OpenBSD"
 	default:
-		// I hope we never get here but if we do, just return the raw GOOS value
 		return goos
 	}
 }

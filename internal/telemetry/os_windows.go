@@ -14,13 +14,31 @@
 
 package telemetry
 
-import "syscall"
+import (
+	"os/exec"
+	"strings"
+)
 
 func osVersion() string {
-	ver, err := syscall.Sysctl("kern.osproductversion")
+	out, err := exec.Command("cmd", "/c", "ver").Output()
 	if err != nil {
 		return ""
 	}
 
-	return ver
+	// "ver" output: "Microsoft Windows [Version 10.0.22621.1234]"
+	s := strings.TrimSpace(string(out))
+	start := strings.Index(s, "[Version ")
+
+	if start == -1 {
+		return ""
+	}
+
+	s = s[start+len("[Version "):]
+	end := strings.Index(s, "]")
+
+	if end == -1 {
+		return ""
+	}
+
+	return s[:end]
 }

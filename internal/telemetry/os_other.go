@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !darwin && !linux && !windows
+
 package telemetry
 
-import "syscall"
-
 func osVersion() string {
-	ver, err := syscall.Sysctl("kern.osproductversion")
-	if err != nil {
-		return ""
-	}
-
-	return ver
+	return ""
 }
