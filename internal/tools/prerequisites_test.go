@@ -15,6 +15,8 @@
 package tools
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -22,6 +24,40 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// setupFakeRepoWithVersions creates a temp dir with the .datarobot/cli structure
+// required by repo.FindRepoRoot() and a custom versions.yaml, then chdirs into it.
+func setupFakeRepoWithVersions(t *testing.T, yamlContent string) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	resolved, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
+	tmpDir = resolved
+
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+
+	err = os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	versionsFile := filepath.Join(localStateDir, "versions.yaml")
+
+	err = os.WriteFile(versionsFile, []byte(yamlContent), 0o644)
+	require.NoError(t, err)
+
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWd))
+	})
+
+	require.NoError(t, os.Chdir(tmpDir))
+
+	return tmpDir
+}
 
 func TestSufficientVersionTrue(t *testing.T) {
 	sufficientCases := []struct{ installed, minimal string }{
@@ -324,4 +360,80 @@ func TestPlatformInstallCommand_EmptyCommandReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uv")
+}
+
+func TestCheckPrerequisites_WritesStateWhenAllDepsSatisfied(t *testing.T) {
+	const versionsYAML = `echo-tool:
+  name: Echo tool
+  minimum-version: "1.0.0"
+  command: "echo 1.0.0"
+  url: https://example.com
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	repoRoot := setupFakeRepoWithVersions(t, versionsYAML)
+
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	_, _, missingMsgs, wrongVersionMsgs := CheckPrerequisites()
+
+	assert.Empty(t, missingMsgs, "dep already present should not appear as missing")
+	assert.Empty(t, wrongVersionMsgs)
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "last_success_deps_check")
+}
+
+func TestLastSuccessDepsCheck_UpdatedByCheckPrerequisites(t *testing.T) {
+	const versionsYAML = `echo-tool:
+  name: Echo tool
+  minimum-version: "1.0.0"
+  command: "echo 1.0.0"
+  url: https://example.com
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	repoRoot := setupFakeRepoWithVersions(t, versionsYAML)
+
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	_, _, missingMsgs, _ := CheckPrerequisites()
+	require.Empty(t, missingMsgs)
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "last_success_deps_check")
+}
+
+func TestCheckPrerequisites_FailureDoesNotWriteState(t *testing.T) {
+	const versionsYAML = `missing-tool:
+  name: Missing tool
+  minimum-version: "1.0.0"
+  command: nonexistent_dr_fake_tool_xyz
+  url: https://example.com
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	repoRoot := setupFakeRepoWithVersions(t, versionsYAML)
+
+	orig := RequiredTools
+
+	defer func() { RequiredTools = orig }()
+
+	_, _, missingMsgs, _ := CheckPrerequisites()
+	require.NotEmpty(t, missingMsgs)
+
+	data, _ := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	assert.NotContains(t, string(data), "last_success_deps_check")
 }

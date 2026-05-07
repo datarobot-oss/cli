@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/misc/regexp2"
+	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/version"
 )
 
@@ -130,6 +132,12 @@ func CheckPrerequisites() ([]Prerequisite, []Prerequisite, []string, []string) {
 		} else if ver, ok := isVersionInstalled(tool); !ok {
 			wrongVersionTools = append(wrongVersionTools, tool)
 			wrongVersionMsgs = append(wrongVersionMsgs, ver)
+		}
+	}
+
+	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {
+		if repoRoot, err := repo.FindRepoRoot(); err == nil {
+			_ = state.UpdateAfterSuccessDepsCheck(repoRoot)
 		}
 	}
 

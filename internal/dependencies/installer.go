@@ -51,15 +51,8 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) error
 
 	// Update state after successful installs.
 	// Executed only after all installs succeed to avoid state inconsistency if an install fails.
-	// This is necessary to avoid prompting the user to install already installed dependencies on the next run.
-	repoRoot, err := repo.FindRepoRoot()
-	if err != nil {
-		return err
-	}
-
-	err = state.UpdateAfterDepsInstall(repoRoot)
-	if err != nil {
-		return err
+	if repoRoot, err := repo.FindRepoRoot(); err == nil {
+		_ = state.UpdateAfterSuccessDepsCheck(repoRoot)
 	}
 
 	return nil
