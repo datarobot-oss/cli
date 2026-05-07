@@ -30,6 +30,63 @@ graph LR
     style P fill:#f1f8e9
 ```
 
+### As a sequence diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Config
+    participant Auth as OAuth/Auth
+    participant TUI as TUI Model
+    participant API as drapi.Client
+    participant EnvBuilder
+    participant FileSystem
+    participant Telemetry
+
+    User->>CLI: dr start
+    CLI->>Config: Load drconfig.yaml
+    Config-->>CLI: Config data
+    
+    CLI->>CLI: Check if authenticated
+    
+    alt Not authenticated
+        CLI->>TUI: Show auth prompt
+        TUI->>User: Request auth
+        User->>TUI: Grant permission
+        TUI->>Auth: OAuth flow
+        Auth-->>TUI: Token
+        TUI->>Config: Save token
+        Config-->>TUI: Saved
+    end
+    
+    CLI->>TUI: Show template selection
+    TUI->>User: Display templates
+    User->>TUI: Select template
+    
+    TUI->>API: Fetch template spec
+    API-->>TUI: Template data
+    
+    TUI->>EnvBuilder: Discover env vars
+    EnvBuilder-->>TUI: Required/optional vars
+    
+    TUI->>User: Prompt for values
+    User->>TUI: Enter values
+    TUI->>EnvBuilder: Validate config
+    EnvBuilder-->>TUI: Validation result
+    
+    TUI->>FileSystem: Copy template files
+    FileSystem-->>TUI: Copied
+    
+    TUI->>FileSystem: Generate .env file
+    FileSystem-->>TUI: Generated
+    
+    TUI->>Telemetry: Track event
+    Telemetry-->>TUI: Ack
+    
+    TUI-->>User: Complete
+```
+
 ## Plugin loading
 
 ```mermaid
