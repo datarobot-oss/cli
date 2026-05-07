@@ -23,6 +23,7 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/amplitude/analytics-go/amplitude"
@@ -126,7 +127,9 @@ func (c *Client) Track(event types.Event) {
 	}
 
 	if c.amp == nil {
-		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "user_id", event.UserID, "device_id", event.DeviceID, "platform", event.Platform, "os_name", event.OSName, "os_version", event.OSVersion, "app_version", event.AppVersion, "language", event.Language, "properties", event.EventProperties)
+		b, _ := json.Marshal(event)
+		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "event", string(b))
+
 		return
 	}
 
