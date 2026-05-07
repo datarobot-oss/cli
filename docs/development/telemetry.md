@@ -90,7 +90,9 @@ The following are attached to every event:
 | `session_id` | UUID v4 generated per process invocation |
 | `cli_version` | Set at build time via ldflags |
 | `install_method` | Set at build time via ldflags (`release`, `source`, etc.) |
-| `os_info` | `runtime.GOOS/runtime.GOARCH` |
+| `os_arch` | CPU architecture from `runtime.GOARCH` |
+| `language` | User locale/language tag (e.g. `en_US`), via `go-locale` |
+| `go_version` | Go runtime version (e.g. `go1.26.2`) from `runtime.Version()` |
 | `environment` | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL |
 | `datarobot_instance` | Base URL of the configured DataRobot instance |
 | `template_name` | Best-effort from `.datarobot/answers/` in the current repo |

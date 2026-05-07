@@ -35,13 +35,15 @@ type CommonProperties struct {
 	// make sure to also add it to:
 	// 1. AsMap() method
 	// 2. CollectCommonProperties() function
+
+	// top-level fields
 	SessionID string  // UUID v4, unique per process invocation
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
 	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
-	OSName            string // human-readable OS name: "macOS", "Linux", "Windows"
+	OSName            string // human-readable OS name from runtime.GOOS
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
 	Language          string // user language from LANG env var (e.g. "en_US")
