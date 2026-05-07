@@ -15,42 +15,25 @@
 package telemetry
 
 import (
-	"os"
-	"strings"
 	"sync"
-)
 
+	golocale "github.com/jeandeaual/go-locale"
+)
 
 var (
 	languageOnce  sync.Once
 	languageCache string
 )
 
-// langFromEnv reads the language tag from LANG or LANGUAGE environment
-// variables, stripping the encoding suffix (e.g. "en_US.UTF-8" → "en_US").
-func langFromEnv() string {
-	lang := os.Getenv("LANG")
-	if lang == "" {
-		lang = os.Getenv("LANGUAGE")
-	}
-
-	if lang == "" {
-		return ""
-	}
-
-	if idx := strings.Index(lang, "."); idx != -1 {
-		lang = lang[:idx]
-	}
-
-	return lang
-}
-
 // detectLanguage returns the user's BCP 47 language tag (e.g. "en_US").
 // The result is computed once and cached for the lifetime of the process.
 // Returns empty string if detection fails.
 func detectLanguage() string {
 	languageOnce.Do(func() {
-		languageCache = osLanguage()
+		lang, err := golocale.GetLocale()
+		if err == nil {
+			languageCache = lang
+		}
 	})
 
 	return languageCache
