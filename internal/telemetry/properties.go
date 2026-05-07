@@ -69,7 +69,8 @@ func CollectCommonProperties() *CommonProperties {
 }
 
 // AsMap returns the properties as a map[string]any suitable for
-// merging into Amplitude event properties.
+// merging into Amplitude event properties. Note: UserID is not included
+// here as it's set as a top-level Amplitude event field, not an event property.
 func (p *CommonProperties) AsMap() map[string]any {
 	m := map[string]any{
 		"session_id":         p.SessionID,
@@ -79,14 +80,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
-	}
-
-	if p.UserID != nil {
-		// We only want to set user_id if we actually
-		// have a value for it. Amplitude tells us to
-		// not set user_id to null/undefined.
-		// Ref: https://amplitude.com/docs/get-started/identify-users#best-practices-for-setting-user-ids
-		m["user_id"] = *p.UserID
 	}
 
 	return m

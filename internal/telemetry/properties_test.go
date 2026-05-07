@@ -229,7 +229,8 @@ func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) 
 
 	props := CollectCommonProperties()
 
-	assert.Equal(t, "cross-test-uid", props.UserID)
+	require.NotNil(t, props.UserID)
+	assert.Equal(t, "cross-test-uid", *props.UserID)
 
 	m := props.AsMap()
 

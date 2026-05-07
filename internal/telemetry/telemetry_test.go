@@ -23,10 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func ptrString(s string) *string {
-	return &s
-}
-
 func TestNewClient_DisabledWhenAPIKeyEmpty(t *testing.T) {
 	// Save original value
 	originalAPIKey := AmplitudeAPIKey
