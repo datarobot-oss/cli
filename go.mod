@@ -15,6 +15,7 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/gitsight/go-vcsurl v1.0.1
 	github.com/google/go-cmp v0.7.0
+	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
 	github.com/joho/godotenv v1.5.1
 	github.com/muesli/cancelreader v0.2.2
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
@@ -55,7 +56,6 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/juju/errors v0.0.0-20181118221551-089d3ea4e4d5 // indirect
 	github.com/juju/loggo v1.0.0 // indirect
 	github.com/klauspost/compress v1.15.13 // indirect

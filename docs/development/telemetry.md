@@ -78,20 +78,26 @@ The following are attached to every event:
 
 ### Top-level event fields
 
+These map to Amplitude's built-in fields and power native segmentation (version filters, OS breakdowns, language charts, etc.).
+
 | Field | Source |
 |---|---|
 | `user_id` | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty (anonymous) if unauthenticated or cache miss — see [User ID](#user-id) |
 | `device_id` | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above |
+| `app_version` | CLI version set at build time via ldflags |
+| `platform` | Always `"CLI"` |
+| `os_name` | OS name (e.g. `"macOS"`) |
+| `os_version` | OS version (e.g. `"15.7.5"`) |
+| `language` | User locale tag (e.g. `"en-US"`), via `go-locale`; Amplitude maps to a display language name |
+| `ip` | Always `"$remote"` — Amplitude resolves location server-side |
 
 ### Event properties
 
 | Property | Source |
-|---|---|
+| --- | --- |
 | `session_id` | UUID v4 generated per process invocation |
-| `cli_version` | Set at build time via ldflags |
 | `install_method` | Set at build time via ldflags (`release`, `source`, etc.) |
 | `os_arch` | CPU architecture from `runtime.GOARCH` |
-| `language` | User locale/language tag (e.g. `en_US`), via `go-locale` |
 | `go_version` | Go runtime version (e.g. `go1.26.2`) from `runtime.Version()` |
 | `environment` | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL |
 | `datarobot_instance` | Base URL of the configured DataRobot instance |
