@@ -65,7 +65,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
-	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
