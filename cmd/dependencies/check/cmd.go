@@ -33,11 +33,9 @@ func Cmd() *cobra.Command {
 }
 
 func RunE(cmd *cobra.Command, _ []string) error {
-	missing := tools.MissingPrerequisites()
-
-	if missing != "" {
-		cmd.SilenceUsage = true
-		return errors.New(missing)
+	_, _, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
+	if len(missingMsgs) > 0 || len(wrongVersionMsgs) > 0 {
+		return errors.New(tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs))
 	}
 
 	fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")

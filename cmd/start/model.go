@@ -15,6 +15,7 @@
 package start
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
@@ -50,11 +52,13 @@ type Model struct {
 	hideMenu             bool
 	quitting             bool
 	err                  error
-	stepCompleteMessage  string // Optional message from the completed step
-	quickstartScriptPath string // Path to the quickstart script to execute
-	selfUpdate           bool   // Whether to ask for self update
-	waitingToExecute     bool   // Whether to wait for user input before proceeding
-	needTemplateSetup    bool   // Whether we need to run template setup after quitting
+	stepCompleteMessage  string               // Optional message from the completed step
+	quickstartScriptPath string               // Path to the quickstart script to execute
+	selfUpdate           bool                 // Whether to ask for self update
+	waitingToExecute     bool                 // Whether to wait for user input before proceeding
+	waitingToInstall     bool                 // Whether to wait for user confirmation before installing deps
+	depsToInstall        []tools.Prerequisite // Deps to install when user confirms
+	needTemplateSetup    bool                 // Whether we need to run template setup after quitting
 	repoRoot             string
 }
 
@@ -73,6 +77,16 @@ type startScriptCompleteMsg struct{ err error }
 
 type stepErrorMsg struct {
 	err error // Error encountered during step execution
+}
+
+type depsMissingMsg struct {
+	prerequisites []tools.Prerequisite
+	message       string
+}
+
+type depsInstallCompleteMsg struct {
+	err    error
+	output string
 }
 
 // err messages used in the start command.
@@ -185,6 +199,16 @@ func (m Model) execSelfUpdate() tea.Cmd {
 	})
 }
 
+func (m Model) execInstallDeps() tea.Cmd {
+	return func() tea.Msg {
+		var buf bytes.Buffer
+
+		err := dependencies.InstallPrerequisites(&buf, m.depsToInstall)
+
+		return depsInstallCompleteMsg{err: err, output: buf.String()}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -215,6 +239,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, tea.Quit
+
+	case depsMissingMsg:
+		return m.handleDepsMissing(msg)
+
+	case depsInstallCompleteMsg:
+		return m.handleDepsInstallComplete(msg)
 	}
 
 	return m, nil
@@ -228,41 +258,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// If we're waiting for user confirmation to install missing deps
+	if m.waitingToInstall {
+		return m.handleInstallConfirmKey(msg)
+	}
+
 	// If we're waiting for user confirmation to execute the script
 	if m.waitingToExecute {
-		switch msg.String() {
-		case "y", "Y", "enter":
-			// Punch it, Chewie!
-			m.waitingToExecute = false
-			m.stepCompleteMessage = ""
-
-			if m.selfUpdate {
-				return m, m.execSelfUpdate()
-			}
-
-			if m.quickstartScriptPath != "" {
-				return m, m.execQuickstartScript()
-			}
-
-			return m.executeNextStep()
-		case "n", "N", "q", "esc":
-			// Just hang on. Hang on, Dak.
-			if m.selfUpdate {
-				m.selfUpdate = false
-				return m.handleStepComplete(stepCompleteMsg{})
-			}
-
-			// User chose to not execute script, so update state and quit
-			if m.repoRoot != "" {
-				_ = state.UpdateAfterSuccessfulRun(m.repoRoot)
-			}
-
-			m.quitting = true
-
-			return m, tea.Quit
-		}
-		// Ignore other keys when waiting
-		return m, nil
+		return m.handleWaitingToExecuteKey(msg)
 	}
 
 	// Normal key handling when not waiting
@@ -313,6 +316,85 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 
 	// Move to next step
 	return m.executeNextStep()
+}
+
+func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
+	m.depsToInstall = msg.prerequisites
+	m.stepCompleteMessage = msg.message
+
+	if m.opts.AnswerYes {
+		return m, m.execInstallDeps()
+	}
+
+	m.waitingToInstall = true
+
+	return m, nil
+}
+
+func (m Model) handleDepsInstallComplete(msg depsInstallCompleteMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.err = msg.err
+
+		return m, tea.Quit
+	}
+
+	m.stepCompleteMessage = msg.output
+
+	return m.executeNextStep()
+}
+
+func (m Model) handleWaitingToExecuteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		// Punch it, Chewie!
+		m.waitingToExecute = false
+		m.stepCompleteMessage = ""
+
+		if m.selfUpdate {
+			return m, m.execSelfUpdate()
+		}
+
+		if m.quickstartScriptPath != "" {
+			return m, m.execQuickstartScript()
+		}
+
+		return m.executeNextStep()
+	case "n", "N", "q", "esc":
+		// Just hang on. Hang on, Dak.
+		if m.selfUpdate {
+			m.selfUpdate = false
+
+			return m.handleStepComplete(stepCompleteMsg{})
+		}
+
+		// User chose to not execute script, so update state and quit
+		if m.repoRoot != "" {
+			_ = state.UpdateAfterSuccessfulRun(m.repoRoot)
+		}
+
+		m.quitting = true
+
+		return m, tea.Quit
+	}
+
+	// Ignore other keys when waiting
+	return m, nil
+}
+
+func (m Model) handleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		m.waitingToInstall = false
+		m.stepCompleteMessage = ""
+
+		return m, m.execInstallDeps()
+	case "n", "N", "q", "esc":
+		m.err = errors.New("Installation cancelled. Run 'dr dependencies install' to install missing dependencies.")
+
+		return m, tea.Quit
+	}
+
+	return m, nil
 }
 
 func (m *Model) updateFromStepComplete(msg stepCompleteMsg) {
@@ -378,7 +460,9 @@ func (m Model) View() string { //nolint: cyclop
 	if !m.done && !m.quitting {
 		sb.WriteString("\n")
 
-		if m.waitingToExecute {
+		if m.waitingToInstall {
+			sb.WriteString(tui.DimStyle.Render("Press 'y' or ENTER to install, 'n' to cancel"))
+		} else if m.waitingToExecute {
 			sb.WriteString(tui.DimStyle.Render("Press 'y' or ENTER to confirm, 'n' to cancel"))
 		} else if !m.selfUpdate {
 			sb.WriteString(tui.Footer())
@@ -422,22 +506,19 @@ func checkSelfVersion(_ *Model) tea.Msg {
 }
 
 func checkPrerequisites(_ *Model) tea.Msg {
-	// Return stepErrorMsg{err} if prerequisites are not met
+	missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
 
-	// Do we have the required tools?
-	missing := tools.MissingPrerequisites()
-
-	if missing != "" {
-		return stepErrorMsg{err: errors.New(missing)}
+	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {
+		return stepCompleteMsg{}
 	}
 
-	// TODO Is template configuration correct?
-	// TODO Do we need to validate the directory structure?
+	prerequisites := append(missingTools, wrongVersionTools...)
+	message := tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs)
 
-	// Are we working hard?
-	// time.Sleep(500 * time.Millisecond) // Simulate work
-
-	return stepCompleteMsg{}
+	return depsMissingMsg{
+		prerequisites: prerequisites,
+		message:       message,
+	}
 }
 
 // func validateEnvironment(m *Model) tea.Msg {
