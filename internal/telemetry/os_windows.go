@@ -15,37 +15,18 @@
 package telemetry
 
 import (
-	"os/exec"
-	"strings"
+	"fmt"
+
+	"golang.org/x/sys/windows"
 )
 
-// osVersion retrieves the Windows OS version by executing the "ver" command and
-// parsing its output. Returns an empty string if detection fails.
-// example:
-// ╰─❯ ver
-// Microsoft Windows [Version 10.0.22621.1234]
+// osVersion retrieves the Windows OS version via RtlGetVersion (ntdll.dll).
+// Returns an empty string if detection fails.
+// example output: "10.0.22621"
 func osVersion() string {
-	out, err := exec.Command("cmd", "/c", "ver").Output()
-	if err != nil {
-		return ""
-	}
+	info := windows.RtlGetVersion()
 
-	// "ver" output: "Microsoft Windows [Version 10.0.22621.1234]"
-	s := strings.TrimSpace(string(out))
-	start := strings.Index(s, "[Version ")
-
-	if start == -1 {
-		return ""
-	}
-
-	s = s[start+len("[Version "):]
-	end := strings.Index(s, "]")
-
-	if end == -1 {
-		return ""
-	}
-
-	return s[:end]
+	return fmt.Sprintf("%d.%d.%d", info.MajorVersion, info.MinorVersion, info.BuildNumber)
 }
 
 // humanizeOS converts the raw OS name from runtime.GOOS into a more
