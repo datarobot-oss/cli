@@ -84,27 +84,20 @@ func (*fakeClient) DeleteFiles(string, []string) (*filesapi.DeleteFilesResp, err
 	panic("unused")
 }
 
-// withSeams installs test doubles for getArtifactFn and newClientFn for
-// the duration of t.
-func withSeams(t *testing.T, art *workload.Artifact, fc *fakeClient) {
-	t.Helper()
-
-	origArt := getArtifactFn
-	origCli := newClientFn
-
-	getArtifactFn = func(_ string) (*workload.Artifact, error) { return art, nil }
-	newClientFn = func() filesapi.Client { return fc }
-
-	t.Cleanup(func() {
-		getArtifactFn = origArt
-		newClientFn = origCli
-	})
+// fakeDeps builds a Deps with simple closures over the given artifact
+// and fake client. Tests that need to vary error returns construct a
+// Deps inline instead.
+func fakeDeps(art *workload.Artifact, fc *fakeClient) Deps {
+	return Deps{
+		GetArtifact: func(_ string) (*workload.Artifact, error) { return art, nil },
+		Files:       fc,
+	}
 }
 
-func newTestCmd(t *testing.T, dir string) (*cobra.Command, *bytes.Buffer) {
+func newTestCmd(t *testing.T, dir string, deps Deps) (*cobra.Command, *bytes.Buffer) {
 	t.Helper()
 
-	cmd := Cmd()
+	cmd := cmdWithDeps(deps)
 	cmd.PreRunE = nil
 
 	var buf bytes.Buffer
@@ -160,7 +153,7 @@ func initLinkedDir(t *testing.T, catalogID, syncedVersion string) string {
 func TestVersions_NotLinked(t *testing.T) {
 	dir := t.TempDir()
 
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, Deps{})
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -172,7 +165,7 @@ func TestVersions_NoCatalog(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "art-abc-123"}))
 
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, Deps{})
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -182,8 +175,7 @@ func TestVersions_NoCatalog(t *testing.T) {
 func TestVersions_TextOutput(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "v2")
 
-	withSeams(
-		t,
+	deps := fakeDeps(
 		draftArtifact("art-abc-123", "my-agent", "v3aaaaaaaaaaaa"),
 		&fakeClient{
 			versions: []filesapi.CatalogVersion{
@@ -194,7 +186,7 @@ func TestVersions_TextOutput(t *testing.T) {
 		},
 	)
 
-	cmd, buf := newTestCmd(t, dir)
+	cmd, buf := newTestCmd(t, dir, deps)
 
 	require.NoError(t, cmd.Execute())
 
@@ -211,14 +203,9 @@ func TestVersions_LimitFlagPropagates(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "")
 
 	fc := &fakeClient{}
+	deps := fakeDeps(draftArtifact("art-abc-123", "my-agent", ""), fc)
 
-	withSeams(
-		t,
-		draftArtifact("art-abc-123", "my-agent", ""),
-		fc,
-	)
-
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, deps)
 	require.NoError(t, cmd.Flags().Set("limit", "5"))
 
 	require.NoError(t, cmd.Execute())
@@ -229,8 +216,7 @@ func TestVersions_LimitFlagPropagates(t *testing.T) {
 func TestVersions_JSONOutput(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "")
 
-	withSeams(
-		t,
+	deps := fakeDeps(
 		draftArtifact("art-abc-123", "my-agent", "v3aaaaaaaaaaaa"),
 		&fakeClient{
 			versions: []filesapi.CatalogVersion{
@@ -240,7 +226,7 @@ func TestVersions_JSONOutput(t *testing.T) {
 		},
 	)
 
-	cmd, buf := newTestCmd(t, dir)
+	cmd, buf := newTestCmd(t, dir, deps)
 	require.NoError(t, cmd.Flags().Set("output-format", "json"))
 
 	require.NoError(t, cmd.Execute())
@@ -258,13 +244,12 @@ func TestVersions_JSONOutput(t *testing.T) {
 func TestVersions_ListVersionsErrorPropagates(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "")
 
-	withSeams(
-		t,
+	deps := fakeDeps(
 		draftArtifact("art-abc-123", "my-agent", ""),
 		&fakeClient{listErr: errors.New("boom")},
 	)
 
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, deps)
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -272,30 +257,35 @@ func TestVersions_ListVersionsErrorPropagates(t *testing.T) {
 	assert.Contains(t, err.Error(), "boom")
 }
 
-func TestVersions_NegativeLimitRejected(t *testing.T) {
-	dir := initLinkedDir(t, "cat-1", "")
+func TestVersions_NonPositiveLimitRejected(t *testing.T) {
+	cases := []string{"-5", "0"}
 
-	cmd, _ := newTestCmd(t, dir)
-	require.NoError(t, cmd.Flags().Set("limit", "-5"))
+	for _, val := range cases {
+		t.Run(val, func(t *testing.T) {
+			dir := initLinkedDir(t, "cat-1", "")
 
-	err := cmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid --limit -5")
-	assert.Contains(t, err.Error(), "0 = unlimited")
+			cmd, _ := newTestCmd(t, dir, Deps{})
+			require.NoError(t, cmd.Flags().Set("limit", val))
+
+			err := cmd.Execute()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid --limit "+val)
+			assert.Contains(t, err.Error(), "must be positive")
+		})
+	}
 }
 
 func TestVersions_ArtifactNotFoundSpecialized(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "")
 
-	origArt := getArtifactFn
-
-	t.Cleanup(func() { getArtifactFn = origArt })
-
-	getArtifactFn = func(_ string) (*workload.Artifact, error) {
-		return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "test"}
+	deps := Deps{
+		GetArtifact: func(_ string) (*workload.Artifact, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "test"}
+		},
+		Files: &fakeClient{},
 	}
 
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, deps)
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -305,13 +295,12 @@ func TestVersions_ArtifactNotFoundSpecialized(t *testing.T) {
 func TestVersions_CatalogNotFoundSpecialized(t *testing.T) {
 	dir := initLinkedDir(t, "cat-1", "")
 
-	withSeams(
-		t,
+	deps := fakeDeps(
 		draftArtifact("art-abc-123", "my-agent", ""),
 		&fakeClient{listErr: &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "test"}},
 	)
 
-	cmd, _ := newTestCmd(t, dir)
+	cmd, _ := newTestCmd(t, dir, deps)
 
 	err := cmd.Execute()
 	require.Error(t, err)

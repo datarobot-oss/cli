@@ -18,12 +18,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 )
 
 const shortVersionLen = 8
@@ -89,8 +92,32 @@ func renderText(out io.Writer, v view) {
 		return
 	}
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "VERSION ID\tFILES\tSIZE\tCREATED AT")
+	markerStyle := tui.BaseTextStyle.
+		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
+		Padding(0, 1)
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+
+	dimStyle := tui.DimStyle.Padding(0, 1)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			switch col {
+			case 0:
+				return markerStyle
+			case 3:
+				return dimStyle
+			default:
+				return cellStyle
+			}
+		}).
+		Headers("VERSION ID", "FILES", "SIZE", "CREATED AT")
 
 	for _, row := range v.Versions {
 		marker := "  "
@@ -98,17 +125,15 @@ func renderText(out io.Writer, v view) {
 			marker = "* "
 		}
 
-		fmt.Fprintf(
-			w, "%s%s\t%d\t%s\t%s\n",
-			marker,
-			row.Short,
-			row.NumFiles,
+		t.Row(
+			marker+row.Short,
+			strconv.Itoa(row.NumFiles),
 			humanBytes(row.TotalSize),
 			formatCreatedAt(row.CreatedAt),
 		)
 	}
 
-	w.Flush()
+	fmt.Fprintln(out, t.Render())
 
 	if v.CurrentVersionID != "" {
 		fmt.Fprintln(out, "\n* = current (artifact codeRef)")

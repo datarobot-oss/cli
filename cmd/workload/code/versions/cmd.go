@@ -29,13 +29,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Test seams.
-var (
-	getArtifactFn = workload.GetArtifact
-	newClientFn   = filesapi.New
-)
+// Deps holds the externally-injected collaborators for the versions
+// command. Tests build a Deps with fakes and pass it to cmdWithDeps;
+// production callers go through Cmd() which uses defaultDeps().
+type Deps struct {
+	GetArtifact func(string) (*workload.Artifact, error)
+	Files       filesapi.Client
+}
+
+func defaultDeps() Deps {
+	return Deps{
+		GetArtifact: workload.GetArtifact,
+		Files:       filesapi.New(),
+	}
+}
 
 func Cmd() *cobra.Command {
+	return cmdWithDeps(defaultDeps())
+}
+
+func cmdWithDeps(deps Deps) *cobra.Command {
 	var outputFormat workload.OutputFormat
 
 	c := &cobra.Command{
@@ -62,24 +75,24 @@ Example:
   dr workload code versions --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runVersions(cmd, outputFormat)
+			return runVersions(cmd, outputFormat, deps)
 		},
 	}
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
-	c.Flags().Int("limit", 0, "Maximum number of versions to show (0 = all).")
+	c.Flags().Int("limit", 100, "Maximum number of versions to return.")
 
 	workload.AddOutputFlag(c, &outputFormat)
 
 	return c
 }
 
-func runVersions(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
+func runVersions(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) error {
 	dirFlag, _ := cmd.Flags().GetString("dir")
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	if limit < 0 {
-		return fmt.Errorf("invalid --limit %d: must be >= 0 (0 = unlimited)", limit)
+	if limit <= 0 {
+		return fmt.Errorf("invalid --limit %d: must be positive", limit)
 	}
 
 	cfg, err := loadProjectConfig(dirFlag)
@@ -87,7 +100,7 @@ func runVersions(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
 		return err
 	}
 
-	v, err := buildView(cfg, limit)
+	v, err := buildView(cfg, limit, deps)
 	if err != nil {
 		return err
 	}
@@ -122,8 +135,8 @@ func loadProjectConfig(dirFlag string) (wapi.Config, error) {
 	return cfg, nil
 }
 
-func buildView(cfg wapi.Config, limit int) (view, error) {
-	art, err := getArtifactFn(cfg.ArtifactID)
+func buildView(cfg wapi.Config, limit int, deps Deps) (view, error) {
+	art, err := deps.GetArtifact(cfg.ArtifactID)
 	if err != nil {
 		var httpErr *drapi.HTTPError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
@@ -133,7 +146,7 @@ func buildView(cfg wapi.Config, limit int) (view, error) {
 		return view{}, fmt.Errorf("fetch artifact %s: %w", cfg.ArtifactID, err)
 	}
 
-	versions, err := newClientFn().ListVersions(*cfg.CatalogID, limit)
+	versions, err := deps.Files.ListVersions(*cfg.CatalogID, limit)
 	if err != nil {
 		var httpErr *drapi.HTTPError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
