@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/datarobot/cli/internal/log"
 )
 
 // downloadFiles pulls files in parallel up to DownloadConcurrency. Each
@@ -52,6 +54,7 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 
 		go func() {
 			defer wg.Done()
+			defer recoverWorkerPanic("downloading "+fa.Path, errCh, cancel)
 
 			select {
 			case sem <- struct{}{}:
@@ -126,4 +129,22 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 	}
 
 	return nil
+}
+
+// recoverWorkerPanic is a deferred handler for parallel-worker goroutines.
+// On panic it logs the value and forwards a synthesized error to errCh so
+// the orchestrator returns a real error instead of silent success.
+func recoverWorkerPanic(label string, errCh chan<- error, cancel func()) {
+	r := recover()
+	if r == nil {
+		return
+	}
+
+	log.Errorf("panic %s: %v", label, r)
+
+	select {
+	case errCh <- fmt.Errorf("panic %s: %v", label, r):
+		cancel()
+	default:
+	}
 }

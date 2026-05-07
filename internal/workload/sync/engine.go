@@ -16,9 +16,11 @@ package sync
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -44,16 +46,49 @@ type Result struct {
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
 
+// artifactStore is the small surface of the workload artifact API the
+// engine depends on. The default implementation delegates to the
+// workload package; tests inject a fake.
+type artifactStore interface {
+	Get(artifactID string) (*workload.Artifact, error)
+	PatchCodeRef(artifactID, catalogID, catalogVersionID string) error
+}
+
+type workloadArtifactStore struct{}
+
+func (workloadArtifactStore) Get(id string) (*workload.Artifact, error) {
+	return workload.GetArtifact(id)
+}
+
+func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID string) error {
+	return workload.PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID)
+}
+
+// Deps are the external dependencies injected into an Engine. Use
+// defaultDeps for production wiring; tests build their own.
+type Deps struct {
+	Files     filesapi.Client
+	Artifacts artifactStore
+	Now       func() time.Time
+}
+
+func defaultDeps() Deps {
+	return Deps{
+		Files:     filesapi.New(),
+		Artifacts: workloadArtifactStore{},
+		Now:       time.Now,
+	}
+}
+
 // Engine wires the sync pipeline. Construct with New, call Plan, Execute,
 // or Run, then Close to release the project lock.
 type Engine struct {
 	projectDir string
 	opts       Options
 
-	files           filesapi.Client
-	getArtifactFn   func(string) (*workload.Artifact, error)
-	patchArtifactFn func(artifactID, catalogID, catalogVersionID string) error
-	nowFn           func() time.Time
+	files     filesapi.Client
+	artifacts artifactStore
+	nowFn     func() time.Time
 
 	config         wapi.Config
 	base           BaseManifest
@@ -73,35 +108,26 @@ type Engine struct {
 	staleNote      bool
 }
 
-// New constructs an Engine bound to projectDir.
+// New constructs an Engine bound to projectDir with production deps.
 func New(projectDir string, opts Options) (*Engine, error) {
+	return newWithDeps(projectDir, opts, defaultDeps())
+}
+
+// newWithDeps is the test seam: callers in this package supply a custom
+// Deps to inject fakes for Files, Artifacts, or Now.
+func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 	if projectDir == "" {
 		return nil, errors.New("sync.New: projectDir is required")
 	}
 
 	return &Engine{
-		projectDir:      projectDir,
-		opts:            opts,
-		files:           filesapi.New(),
-		getArtifactFn:   workload.GetArtifact,
-		patchArtifactFn: workload.PatchArtifactCodeRef,
-		nowFn:           time.Now,
+		projectDir: projectDir,
+		opts:       opts,
+		files:      deps.Files,
+		artifacts:  deps.Artifacts,
+		nowFn:      deps.Now,
 	}, nil
 }
-
-// SetFilesClient swaps the FilesAPI client. Test seam.
-func (e *Engine) SetFilesClient(c filesapi.Client) { e.files = c }
-
-// SetGetArtifactFn swaps the artifact-fetch function. Test seam.
-func (e *Engine) SetGetArtifactFn(fn func(string) (*workload.Artifact, error)) { e.getArtifactFn = fn }
-
-// SetPatchArtifactFn swaps the artifact codeRef patch function. Test seam.
-func (e *Engine) SetPatchArtifactFn(fn func(string, string, string) error) {
-	e.patchArtifactFn = fn
-}
-
-// SetNowFn swaps time.Now for deterministic timestamps. Test seam.
-func (e *Engine) SetNowFn(fn func() time.Time) { e.nowFn = fn }
 
 // Plan runs phases 0-4 and returns the SyncPlan. The lock acquired in
 // Phase 0 is held until Close, Execute, or Run releases it.
@@ -117,21 +143,18 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 		phase{name: "preview", run: phase4Preview},
 	)
 	if err != nil {
-		_ = e.releaseLock()
-
-		return nil, err
+		return nil, e.joinReleaseErr(err)
 	}
 
 	return e.plan, nil
 }
 
 // Execute runs phases 5-6 against the plan returned by Plan. The lock
-// is released on completion (success or error).
-func (e *Engine) Execute(plan *SyncPlan) (*Result, error) {
+// is released on completion (success or error). A failure to release
+// the lock is joined into the returned error so callers see both.
+func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if e.plan == nil || plan == nil {
-		_ = e.releaseLock()
-
-		return nil, ErrNoPlan
+		return nil, e.joinReleaseErr(ErrNoPlan)
 	}
 
 	if plan != e.plan {
@@ -140,7 +163,9 @@ func (e *Engine) Execute(plan *SyncPlan) (*Result, error) {
 		_ = plan
 	}
 
-	defer func() { _ = e.releaseLock() }()
+	defer func() {
+		retErr = e.joinReleaseErr(retErr)
+	}()
 
 	if err := runPhases(
 		e,
@@ -161,7 +186,9 @@ func (e *Engine) Run() (*Result, error) {
 	}
 
 	if e.opts.DryRun || e.opts.ShowDiffs || plan.IsEmpty() {
-		_ = e.releaseLock()
+		if relErr := e.releaseLock(); relErr != nil {
+			return nil, fmt.Errorf("release lock: %w", relErr)
+		}
 
 		return &Result{
 			OldVersion: ptrOrEmpty(e.config.LastSyncedVersionID),
@@ -189,7 +216,23 @@ func (e *Engine) releaseLock() error {
 	err := e.lock.Release()
 	e.lock = nil
 
+	if err != nil {
+		log.Warn("failed to release sync lock", "err", err, "project", e.projectDir)
+	}
+
 	return err
+}
+
+// joinReleaseErr releases the lock and joins any release failure with
+// err. The primary err is preserved; a release failure is reported
+// alongside so callers see both. Returns nil if both are nil.
+func (e *Engine) joinReleaseErr(err error) error {
+	relErr := e.releaseLock()
+	if relErr == nil {
+		return err
+	}
+
+	return errors.Join(err, fmt.Errorf("release lock: %w", relErr))
 }
 
 func ptrOrEmpty(s *string) string {

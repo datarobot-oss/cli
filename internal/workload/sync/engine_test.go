@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	stdsync "sync"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
@@ -29,6 +30,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeArtifactStore is the in-memory artifactStore used by engine tests.
+// Each test sets only the function fields it needs; the rest panic to
+// surface unexpected interactions.
+type fakeArtifactStore struct {
+	GetFn   func(id string) (*workload.Artifact, error)
+	PatchFn func(artifactID, catalogID, catalogVersionID string) error
+}
+
+func (f *fakeArtifactStore) Get(id string) (*workload.Artifact, error) {
+	if f.GetFn == nil {
+		return nil, errors.New("fakeArtifactStore.Get: no GetFn configured")
+	}
+
+	return f.GetFn(id)
+}
+
+func (f *fakeArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID string) error {
+	if f.PatchFn == nil {
+		return nil
+	}
+
+	return f.PatchFn(artifactID, catalogID, catalogVersionID)
+}
 
 // fakeFilesClient is the in-memory FilesAPI fake used by engine tests.
 // Unexpected methods return errors so off-happy-path drift fails loudly.
@@ -113,6 +138,10 @@ func (f *fakeFilesClient) DeleteFiles(_ string, paths []string) (*filesapi.Delet
 	return &filesapi.DeleteFilesResp{}, nil
 }
 
+func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersion, error) {
+	return nil, errors.New("fakeFilesClient: ListVersions not expected")
+}
+
 func initProject(t *testing.T, files map[string]string) string {
 	t.Helper()
 
@@ -155,15 +184,18 @@ func TestEngine_Plan_FirstSyncEmptyArtifact(t *testing.T) {
 		"utils/helper.py": "def help(): pass\n",
 	})
 
-	e, err := New(dir, Options{})
+	e, err := newWithDeps(dir, Options{}, Deps{
+		Files: &fakeFilesClient{},
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+		},
+		Now: time.Now,
+	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = e.Close() })
-
-	e.SetGetArtifactFn(func(id string) (*workload.Artifact, error) {
-		return draftArtifact(id, "", ""), nil
-	})
-	e.SetFilesClient(&fakeFilesClient{})
 
 	plan, err := e.Plan()
 	require.NoError(t, err)
@@ -207,18 +239,21 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 
 	calledAllFiles := false
 
-	e, err := New(dir, Options{})
+	e, err := newWithDeps(dir, Options{}, Deps{
+		Files: &trackingFilesClient{
+			fakeFilesClient: fakeFilesClient{},
+			allFilesCalled:  &calledAllFiles,
+		},
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, cid, ver), nil
+			},
+		},
+		Now: time.Now,
+	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = e.Close() })
-
-	e.SetGetArtifactFn(func(id string) (*workload.Artifact, error) {
-		return draftArtifact(id, cid, ver), nil
-	})
-	e.SetFilesClient(&trackingFilesClient{
-		fakeFilesClient: fakeFilesClient{},
-		allFilesCalled:  &calledAllFiles,
-	})
 
 	plan, err := e.Plan()
 	require.NoError(t, err)
@@ -229,15 +264,18 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 	dir := initProject(t, nil)
 
-	e, err := New(dir, Options{})
+	e, err := newWithDeps(dir, Options{}, Deps{
+		Files: &fakeFilesClient{},
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: "LOCKED"}, nil
+			},
+		},
+		Now: time.Now,
+	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = e.Close() })
-
-	e.SetGetArtifactFn(func(id string) (*workload.Artifact, error) {
-		return &workload.Artifact{ID: id, Status: "LOCKED"}, nil
-	})
-	e.SetFilesClient(&fakeFilesClient{})
 
 	_, err = e.Plan()
 	require.Error(t, err)
@@ -263,25 +301,27 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 
 	fake := &fakeFilesClient{catalogID: "cid-new", stageID: "stage-1", versionID: "ver-1"}
 
-	e, err := New(dir, Options{Yes: true})
+	var patchedArtifactID, patchedCatalogID, patchedVersionID string
+
+	e, err := newWithDeps(dir, Options{Yes: true}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+			PatchFn: func(artifactID, catalogID, catalogVersionID string) error {
+				patchedArtifactID = artifactID
+				patchedCatalogID = catalogID
+				patchedVersionID = catalogVersionID
+
+				return nil
+			},
+		},
+		Now: time.Now,
+	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = e.Close() })
-
-	e.SetGetArtifactFn(func(id string) (*workload.Artifact, error) {
-		return draftArtifact(id, "", ""), nil
-	})
-	e.SetFilesClient(fake)
-
-	var patchedArtifactID, patchedCatalogID, patchedVersionID string
-
-	e.SetPatchArtifactFn(func(artifactID, catalogID, catalogVersionID string) error {
-		patchedArtifactID = artifactID
-		patchedCatalogID = catalogID
-		patchedVersionID = catalogVersionID
-
-		return nil
-	})
 
 	result, err := e.Run()
 	require.NoError(t, err)

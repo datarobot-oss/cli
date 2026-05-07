@@ -43,7 +43,7 @@ func phase1Gather(e *Engine) error {
 
 	e.base = baseFromManifest(manifest)
 
-	art, err := e.getArtifactFn(cfg.ArtifactID)
+	art, err := e.artifacts.Get(cfg.ArtifactID)
 	if err != nil {
 		return fmt.Errorf("fetch artifact %s: %w", cfg.ArtifactID, err)
 	}

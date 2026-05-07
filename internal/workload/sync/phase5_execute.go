@@ -228,7 +228,7 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 	}
 
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {
-		if err := e.patchArtifactFn(e.config.ArtifactID, newCatalogID, newVersionID); err != nil {
+		if err := e.artifacts.PatchCodeRef(e.config.ArtifactID, newCatalogID, newVersionID); err != nil {
 			return "", "", fmt.Errorf("update artifact codeRef: %w", err)
 		}
 	}

@@ -93,6 +93,7 @@ func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileActio
 
 		go func() {
 			defer wg.Done()
+			defer recoverWorkerPanic("uploading "+fa.Path, errCh, cancel)
 
 			select {
 			case sem <- struct{}{}:
