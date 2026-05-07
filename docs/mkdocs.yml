@@ -74,6 +74,7 @@ nav:
   - Development:
       - development/README.md
       - Setup: development/setup.md
+      - Architecture: development/architecture.md
       - Building: development/building.md
       - Structure: development/structure.md
       - Authentication: development/authentication.md
