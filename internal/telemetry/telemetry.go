@@ -120,7 +120,7 @@ func (c *Client) Track(event types.Event) {
 		// Populate Amplitude EventOptions for built-in segmentation
 		event.AppVersion = c.props.CLIVersion
 		event.VersionName = c.props.CLIVersion
-		event.Platform = c.props.OSName
+		event.Platform = "CLI"
 		event.OSName = c.props.OSName
 		event.OSVersion = c.props.OSVersion
 		event.Language = c.props.Language
