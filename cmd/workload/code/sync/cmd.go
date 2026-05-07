@@ -27,6 +27,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
@@ -54,14 +55,26 @@ type realEngine struct{ *sync.Engine }
 
 func (r realEngine) Fetcher() display.ContentFetcher { return r.Engine.Fetcher() }
 
-// newEngine is the constructor seam. Tests reassign it to inject a fake.
-var newEngine = func(dir string, opts sync.Options) (engineRunner, error) {
-	e, err := sync.New(dir, opts)
-	if err != nil {
-		return nil, err
-	}
+// Deps holds the externally-injected collaborators for the sync
+// command. Tests build a Deps with fakes and pass it to cmdWithDeps;
+// production callers go through Cmd() which uses defaultDeps().
+type Deps struct {
+	NewEngine func(dir string, opts sync.Options) (engineRunner, error)
+	ReadLine  func() (string, error)
+}
 
-	return realEngine{e}, nil
+func defaultDeps() Deps {
+	return Deps{
+		NewEngine: func(dir string, opts sync.Options) (engineRunner, error) {
+			e, err := sync.New(dir, opts)
+			if err != nil {
+				return nil, err
+			}
+
+			return realEngine{e}, nil
+		},
+		ReadLine: reader.ReadString,
+	}
 }
 
 func init() {
@@ -71,6 +84,10 @@ func init() {
 
 // Cmd returns the cobra.Command for `dr workload code sync`.
 func Cmd() *cobra.Command {
+	return cmdWithDeps(defaultDeps())
+}
+
+func cmdWithDeps(deps Deps) *cobra.Command {
 	var outputFormat workload.OutputFormat
 
 	c := &cobra.Command{
@@ -100,7 +117,7 @@ Example:
   dr workload code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runSync(cmd, outputFormat)
+			return runSync(cmd, outputFormat, deps)
 		},
 	}
 
@@ -115,7 +132,7 @@ Example:
 	return c
 }
 
-func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
+func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) error {
 	yesFlag, _ := cmd.Flags().GetBool("yes")
 	yes := yesFlag || viperx.GetBool("yes")
 
@@ -132,7 +149,7 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
 		return errors.New("not linked: run 'dr workload code init <artifact-id>' first")
 	}
 
-	engine, err := newEngine(dir, sync.Options{DryRun: dryRun, ShowDiffs: diffFlag, Yes: yes})
+	engine, err := deps.NewEngine(dir, sync.Options{DryRun: dryRun, ShowDiffs: diffFlag, Yes: yes})
 	if err != nil {
 		return err
 	}
@@ -152,13 +169,13 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
 	}
 
-	return finishSync(cmd, engine, plan, outputFormat, dryRun, diffFlag, yes)
+	return finishSync(cmd, engine, plan, outputFormat, dryRun, diffFlag, yes, deps)
 }
 
 // finishSync handles the render → optional prompt → execute → render
 // tail of the command. Pulled out so runSync's early-return paths
 // (auth, lock, plan errors) stay flat.
-func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, dryRun, diffFlag, yes bool) error {
+func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, dryRun, diffFlag, yes bool, deps Deps) error {
 	out := cmd.OutOrStdout()
 
 	if outputFormat == workload.OutputFormatJSON {
@@ -174,7 +191,7 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 	}
 
 	if shouldPromptConflicts(plan, yes) {
-		choice, err := promptConflictMenu(cmd, engine, plan)
+		choice, err := promptConflictMenu(cmd, engine, plan, deps.ReadLine)
 		if err != nil {
 			return err
 		}

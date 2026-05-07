@@ -16,10 +16,8 @@ package syncc
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
 	"github.com/spf13/cobra"
@@ -35,21 +33,24 @@ const (
 	promptQuit                      // user aborted
 )
 
-// promptReadLine is the stdin seam. Tests reassign it to drive the
-// conflict menu deterministically without hijacking os.Stdin.
-var promptReadLine = reader.ReadString
-
 // promptConflictMenu shows the [d] [Enter] [q] menu when conflicts
 // exist and the user has not passed --yes. Loops on [d] so the user
 // can review diffs and then either confirm or abort. Prompts go to
-// stderr to keep stdout clean for piped output.
-func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan) (promptChoice, error) {
-	for {
-		fmt.Fprint(os.Stderr, "  [d] Show diffs  [Enter] Sync  [q] Abort: ")
+// the cobra command's stderr (so cmd.SetErr in tests can capture them
+// and embedded callers can redirect) to keep stdout clean for piped
+// output. readLine is injected so tests can drive input deterministically.
+func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, readLine func() (string, error)) (promptChoice, error) {
+	stderr := cmd.ErrOrStderr()
 
-		raw, err := promptReadLine()
+	for {
+		fmt.Fprint(stderr, "  [d] Show diffs  [Enter] Sync  [q] Abort: ")
+
+		raw, err := readLine()
 		if err != nil {
-			return promptQuit, err
+			// Treat any read error (EOF on Ctrl+D, closed pipe, SIGINT)
+			// as a clean abort, matching the reader.AskYesNo convention
+			// — the user has no way to confirm, so don't proceed.
+			return promptQuit, nil
 		}
 
 		switch strings.TrimSpace(strings.ToLower(raw)) {
@@ -63,7 +64,7 @@ func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 		case "q":
 			return promptQuit, nil
 		default:
-			fmt.Fprintln(os.Stderr, "  (please type 'd', 'q', or press Enter)")
+			fmt.Fprintln(stderr, "  (please type 'd', 'q', or press Enter)")
 		}
 	}
 }

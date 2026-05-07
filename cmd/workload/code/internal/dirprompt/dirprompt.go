@@ -37,7 +37,7 @@ func ResolveDir(dirFlag string, yes bool, prompt PromptFunc) (string, error) {
 		return ".", nil
 	}
 
-	return prompt("Initialize directory", ".")
+	return prompt("Project directory", ".")
 }
 
 func ResolveArtifactID(args []string, yes bool, prompt PromptNoDefaultFunc) (string, error) {

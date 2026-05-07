@@ -63,28 +63,23 @@ func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
-// withFakeEngine installs fe behind newEngine for the duration of the
-// test, restoring the original constructor on cleanup.
-func withFakeEngine(t *testing.T, fe *fakeEngine) {
-	t.Helper()
-
-	orig := newEngine
-	newEngine = func(_ string, _ sync.Options) (engineRunner, error) {
-		return fe, nil
+// fakeEngineDeps returns a Deps that hands fe back from NewEngine and
+// has no reader configured. Tests that need to drive the conflict menu
+// override ReadLine via stubReader.
+func fakeEngineDeps(fe *fakeEngine) Deps {
+	return Deps{
+		NewEngine: func(_ string, _ sync.Options) (engineRunner, error) {
+			return fe, nil
+		},
 	}
-
-	t.Cleanup(func() { newEngine = orig })
 }
 
-// withStubReader replaces promptReadLine so the conflict menu reads
-// deterministic input. After the lines are exhausted, returns io.EOF
-// (which the menu treats as quit).
-func withStubReader(t *testing.T, lines ...string) {
-	t.Helper()
-
-	orig := promptReadLine
+// stubReader returns a ReadLine func that yields the given lines in
+// order, then io.EOF (which the conflict menu treats as quit).
+func stubReader(lines ...string) func() (string, error) {
 	i := 0
-	promptReadLine = func() (string, error) {
+
+	return func() (string, error) {
 		if i >= len(lines) {
 			return "", io.EOF
 		}
@@ -94,8 +89,6 @@ func withStubReader(t *testing.T, lines ...string) {
 
 		return line + "\n", nil
 	}
-
-	t.Cleanup(func() { promptReadLine = orig })
 }
 
 // linkProject seeds a minimal .wapi/ directory so the cmd's
@@ -106,13 +99,13 @@ func linkProject(t *testing.T, dir string) {
 	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "art-test-001"}))
 }
 
-// runWithFlags wires up Cmd() with PreRunE disabled (so tests don't
-// go through auth) and the given flag set. Returns the captured
-// stdout/stderr and the error from cmd.Execute.
-func runWithFlags(t *testing.T, flags map[string]string, extraArgs ...string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer, error) {
+// runWithDeps wires up cmdWithDeps(deps) with PreRunE disabled (so
+// tests don't go through auth) and the given flag set. Returns the
+// captured stdout/stderr and the error from cmd.Execute.
+func runWithDeps(t *testing.T, deps Deps, flags map[string]string, extraArgs ...string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer, error) {
 	t.Helper()
 
-	cmd := Cmd()
+	cmd := cmdWithDeps(deps)
 	cmd.PreRunE = nil
 
 	for k, v := range flags {
@@ -140,7 +133,7 @@ func TestCmd_NotLinked(t *testing.T) {
 
 	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(&fakeEngine{}), flags)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not linked")
 }
@@ -152,7 +145,7 @@ func TestCmd_DryRunDiffMutuallyExclusive(t *testing.T) {
 
 	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "diff": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(&fakeEngine{}), flags)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "[dry-run diff]")
 }
@@ -164,11 +157,10 @@ func TestRunE_EmptyPlan_NoExecute(t *testing.T) {
 	linkProject(t, dir)
 
 	fe := &fakeEngine{plan: &sync.SyncPlan{}}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir, "yes": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.False(t, fe.executed, "Execute must not run on empty plan")
 	assert.True(t, fe.closed, "Close must run via defer")
@@ -183,11 +175,10 @@ func TestRunE_DryRun_NonEmpty_NoExecute(t *testing.T) {
 	fe := &fakeEngine{plan: &sync.SyncPlan{
 		Uploads: []sync.FileAction{{Path: "a.py"}},
 	}}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.False(t, fe.executed)
 }
@@ -198,11 +189,11 @@ func TestRunE_PlanError_Propagates(t *testing.T) {
 	linkProject(t, dir)
 
 	upstream := errors.New("phase-3 boom")
-	withFakeEngine(t, &fakeEngine{planErr: upstream})
+	deps := fakeEngineDeps(&fakeEngine{planErr: upstream})
 
 	flags := map[string]string{"dir": dir, "yes": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, deps, flags)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, upstream)
 }
@@ -216,11 +207,10 @@ func TestRunE_JSONOutput(t *testing.T) {
 	plan := &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}
 	result := &sync.Result{NewVersion: "v2", UploadedCount: 1}
 	fe := &fakeEngine{plan: plan, result: result}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
 
-	_, stdout, _, err := runWithFlags(t, flags)
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed, "non-dry-run JSON path must Execute")
 
@@ -238,14 +228,34 @@ func TestRunE_ConflictPromptQuit(t *testing.T) {
 	fe := &fakeEngine{plan: &sync.SyncPlan{
 		Conflicts: []sync.FileAction{{Path: "x.py"}},
 	}}
-	withFakeEngine(t, fe)
-	withStubReader(t, "q")
+	deps := fakeEngineDeps(fe)
+	deps.ReadLine = stubReader("q")
 
 	flags := map[string]string{"dir": dir}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, deps, flags)
 	require.NoError(t, err)
 	assert.False(t, fe.executed, "user typed q; Execute must not run")
+}
+
+// TestRunE_ConflictPromptEOF: when stdin closes mid-prompt (Ctrl+D
+// or piped input ran out), the menu treats it as a clean quit — no
+// "Error: EOF" surfaces, matching reader.AskYesNo convention.
+func TestRunE_ConflictPromptEOF(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Conflicts: []sync.FileAction{{Path: "x.py"}},
+	}}
+	deps := fakeEngineDeps(fe)
+	deps.ReadLine = stubReader() // no lines → first call returns io.EOF
+
+	flags := map[string]string{"dir": dir}
+
+	_, _, _, err := runWithDeps(t, deps, flags)
+	require.NoError(t, err, "EOF must not surface as a cmd error")
+	assert.False(t, fe.executed, "EOF on prompt = clean quit, no Execute")
 }
 
 // TestRunE_ConflictPromptSync: with conflicts present and no --yes,
@@ -258,12 +268,12 @@ func TestRunE_ConflictPromptSync(t *testing.T) {
 		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
 		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
 	}
-	withFakeEngine(t, fe)
-	withStubReader(t, "")
+	deps := fakeEngineDeps(fe)
+	deps.ReadLine = stubReader("")
 
 	flags := map[string]string{"dir": dir}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, deps, flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed, "user pressed Enter; Execute must run")
 }
@@ -281,11 +291,10 @@ func TestRunE_NonInteractiveEnvVar(t *testing.T) {
 		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
 		result: &sync.Result{NewVersion: "v3"},
 	}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed)
 }
@@ -297,11 +306,10 @@ func TestRunE_StaleRollbackHint(t *testing.T) {
 	linkProject(t, dir)
 
 	fe := &fakeEngine{plan: &sync.SyncPlan{}, stale: true}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
 
-	_, _, stderr, err := runWithFlags(t, flags)
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.Contains(t, stderr.String(), "Recovered from interrupted sync")
 }
@@ -314,11 +322,10 @@ func TestRunE_CloseError_NotSurfaced(t *testing.T) {
 	linkProject(t, dir)
 
 	fe := &fakeEngine{plan: &sync.SyncPlan{}, closeErr: errors.New("lock release failed")}
-	withFakeEngine(t, fe)
 
 	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
 
-	_, _, _, err := runWithFlags(t, flags)
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err, "Close errors must be swallowed at the cmd boundary")
 	assert.True(t, fe.closed)
 }

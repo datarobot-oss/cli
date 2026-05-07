@@ -46,7 +46,7 @@ func TestResolveDir(t *testing.T) {
 			prompt := func(label, def string) (string, error) {
 				called = true
 
-				assert.Equal(t, "Initialize directory", label)
+				assert.Equal(t, "Project directory", label)
 				assert.Equal(t, ".", def)
 
 				return tc.promptReturns, tc.promptErr
