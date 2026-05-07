@@ -118,8 +118,8 @@ func generateSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// humanizeOS maps runtime.GOOS values to human-readable platform names used
-// by Amplitude for OS segmentation.
+// humanizeOS maps runtime.GOOS values to platform names users will recognize.
+// This should help with Amplitude event analysis.
 func humanizeOS(goos string) string {
 	switch goos {
 	case "darwin":
@@ -128,7 +128,12 @@ func humanizeOS(goos string) string {
 		return "Linux"
 	case "windows":
 		return "Windows"
+	case "freebsd":
+		return "FreeBSD"
+	case "openbsd":
+		return "OpenBSD"
 	default:
+		// I hope we never get here but if we do, just return the raw GOOS value
 		return goos
 	}
 }
