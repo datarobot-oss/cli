@@ -43,9 +43,8 @@ type CommonProperties struct {
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
-// current environment. There are currently no network calls here, but we
-// may want to add some in the future (e.g., to get user ID from DR API),
-// so this function returns an error if any property collection step fails.
+// current environment. This function will return an error if any property
+// collection step fails.
 func CollectCommonProperties() *CommonProperties {
 	props := &CommonProperties{
 		SessionID:     generateSessionID(),
@@ -63,8 +62,7 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	rawUserID, _ := GetUserID(context.Background())
-	props.UserID = getOrCreateUserID(rawUserID)
+	props.UserID = getOrCreateUserID(context.Background())
 
 	return props
 }

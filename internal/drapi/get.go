@@ -103,8 +103,6 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	return resp, err
 }
 
-
-
 func GetJSON(url, info string, v any, timeoutSecs ...int) error {
 	resp, err := Get(url, info, timeoutSecs...)
 	if err != nil {

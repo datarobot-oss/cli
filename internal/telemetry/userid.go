@@ -64,28 +64,25 @@ func GetUserID(ctx context.Context) (string, error) {
 	return info.UID, nil
 }
 
-func getOrCreateUserID(apiUserID string) string {
-	if apiUserID != "" {
-		persistUserID(apiUserID)
-
-		return apiUserID
-	}
-
+func getOrCreateUserID(ctx context.Context) string {
+	// Check cache first to avoid making an API call
 	var cached cachedUserID
 
-	if err := readJSONCacheFile(userIDFileName, &cached); err != nil {
+	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
+		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
+			return cached.UID
+		}
+	}
+
+	// Cache miss or invalid; try to fetch from API
+	apiUserID, err := GetUserID(ctx)
+	if err != nil {
 		return ""
 	}
 
-	if cached.Endpoint != currentEndpoint() {
-		return ""
-	}
+	persistUserID(apiUserID)
 
-	if cached.TokenFingerprint != tokenFingerprint() {
-		return ""
-	}
-
-	return cached.UID
+	return apiUserID
 }
 
 func persistUserID(uid string) {
