@@ -32,7 +32,10 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
-	// top-level fields
+	// NOTE: When you add a new property here,
+	// make sure to also add it to:
+	// 1. AsMap() method
+	// 2. CollectCommonProperties() function
 	SessionID string  // UUID v4, unique per process invocation
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
@@ -91,6 +94,10 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
 		"os_info":            p.OSInfo,
+		"os_name":            p.OSName,
+		"os_arch":            p.OSArch,
+		"os_version":         p.OSVersion,
+		"language":           p.Language,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
