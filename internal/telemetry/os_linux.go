@@ -22,12 +22,14 @@ import (
 
 // osVersion retrieves the Linux OS version by reading and parsing the
 // /etc/os-release file. In containerized environments, this will
-// typically return the underlying host OS version rather than the container's base image version. Returns an empty string if detection fails.
+// typically return the underlying host OS version rather than the container's
+// base image version. Returns an empty string if detection fails.
 // example:
 // ╰─❯ cat /etc/os-release content:
-// NAME="Ubuntu"
-// VERSION="22.04.3 LTS (Jammy Jellyfish)"
-// ID=ubuntu
+// NAME="Bazzite"
+// VERSION="43.20260420.0 (Silverblue)"
+// ID=bazzite
+// VERSION_ID=43
 func osVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
