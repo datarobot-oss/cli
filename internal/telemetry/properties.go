@@ -45,6 +45,7 @@ type CommonProperties struct {
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
 	Language          string // user language from LANG env var (e.g. "en_US")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
@@ -63,6 +64,7 @@ func CollectCommonProperties() *CommonProperties {
 		OSArch:        runtime.GOARCH,
 		OSVersion:     detectOSVersion(),
 		Language:      detectLanguage(),
+		GoVersion:     runtime.Version(),
 	}
 
 	// Get DataRobot instance info from config
@@ -94,6 +96,7 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"os_arch":            p.OSArch,
 		"os_version":         p.OSVersion,
 		"language":           p.Language,
+		"go_version":         p.GoVersion,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
