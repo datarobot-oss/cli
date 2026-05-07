@@ -67,10 +67,10 @@ func CollectCommonProperties() *CommonProperties {
 	return props
 }
 
-// AsMap returns the properties as a map[string]interface{} suitable for
+// AsMap returns the properties as a map[string]any suitable for
 // merging into Amplitude event properties.
-func (p *CommonProperties) AsMap() map[string]interface{} {
-	return map[string]interface{}{
+func (p *CommonProperties) AsMap() map[string]any {
+	return map[string]any{
 		"session_id":         p.SessionID,
 		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
