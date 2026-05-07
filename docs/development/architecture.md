@@ -4,6 +4,8 @@ This document provides visual diagrams of the DataRobot CLI's key architectural 
 
 ## Plugin loading
 
+See [Plugins](plugins.md) for development details.
+
 ```mermaid
 sequenceDiagram
     participant CLI as CLI Init
@@ -40,6 +42,8 @@ sequenceDiagram
 
 ## Configuration flow
 
+See [Configuration Management](configuration.md) for detailed flag and config documentation.
+
 ```mermaid
 graph TD
     CMD["Command Layer<br/>(Cobra)"]
@@ -62,6 +66,8 @@ graph TD
 
 ## Configuration precedence
 
+See [Configuration Management](configuration.md) for how to read and persist config values.
+
 ```mermaid
 graph TD
     A["🔝 Environment Variables<br/>(DATAROBOT_CLI_*)"]
@@ -80,6 +86,8 @@ graph TD
 ```
 
 ## Model-View-Cmd pattern for CLI commands
+
+See [Project Structure](structure.md) for command implementation patterns and TUI conventions.
 
 ```mermaid
 graph LR
@@ -138,6 +146,8 @@ graph LR
 ```
 
 ## Build and release
+
+See [Releasing](releasing.md) for the full release process and [Building](building.md) for build details.
 
 ```mermaid
 graph LR
