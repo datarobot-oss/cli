@@ -126,3 +126,21 @@ type DeleteFilesResult struct {
 	Path            string `json:"path"`
 	NumFilesDeleted int    `json:"numFilesDeleted"`
 }
+
+type CatalogVersionsResp struct {
+	Data       []CatalogVersion `json:"data"`
+	Count      int              `json:"count"`
+	TotalCount int              `json:"totalCount"`
+	Next       string           `json:"next"`
+	Previous   string           `json:"previous"`
+}
+
+// CatalogVersion is a single entry in the version-history listing for a
+// catalog. CreatedAt is RFC 3339 with optional microseconds; callers parse
+// it as needed.
+type CatalogVersion struct {
+	ID        string `json:"catalogVersionId"`
+	CreatedAt string `json:"creationDate"`
+	NumFiles  int    `json:"numFiles"`
+	TotalSize int64  `json:"size"`
+}
