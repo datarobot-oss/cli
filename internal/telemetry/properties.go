@@ -125,26 +125,6 @@ func generateSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// humanizeOS maps runtime.GOOS values to platform names users will recognize.
-// This should help with Amplitude event analysis.
-func humanizeOS(goos string) string {
-	switch goos {
-	case "darwin":
-		return "macOS"
-	case "linux":
-		return "Linux"
-	case "windows":
-		return "Windows"
-	case "freebsd":
-		return "FreeBSD"
-	case "openbsd":
-		return "OpenBSD"
-	default:
-		// I hope we never get here but if we do, just return the raw GOOS value
-		return goos
-	}
-}
-
 // detectLanguage returns the user's language tag from environment variables.
 // On Unix systems LANG is typically "en_US.UTF-8"; we strip the encoding suffix
 // to return just the language tag (e.g. "en_US"). Falls back to LANGUAGE.

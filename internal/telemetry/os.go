@@ -108,3 +108,23 @@ func windowsVersion() string {
 
 	return s[:end]
 }
+
+// humanizeOS maps runtime.GOOS values to platform names users will recognize.
+// This should help with Amplitude event analysis.
+func humanizeOS(goos string) string {
+	switch goos {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	case "freebsd":
+		return "FreeBSD"
+	case "openbsd":
+		return "OpenBSD"
+	default:
+		// I hope we never get here but if we do, just return the raw GOOS value
+		return goos
+	}
+}
