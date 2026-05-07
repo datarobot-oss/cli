@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -38,7 +39,11 @@ type CommonProperties struct {
 	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
-	OSInfo            string // runtime.GOOS/runtime.GOARCH
+	OSInfo            string // runtime.GOOS/runtime.GOARCH (legacy combined field)
+	OSName            string // human-readable OS name: "macOS", "Linux", "Windows"
+	OSArch            string // CPU architecture from runtime.GOARCH
+	OSVersion         string // OS release version string, detected at startup
+	Language          string // user language from LANG env var (e.g. "en_US")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
@@ -54,6 +59,10 @@ func CollectCommonProperties() *CommonProperties {
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
 		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
+		OSName:        humanizeOS(runtime.GOOS),
+		OSArch:        runtime.GOARCH,
+		OSVersion:     detectOSVersion(),
+		Language:      detectLanguage(),
 	}
 
 	// Get DataRobot instance info from config
@@ -107,6 +116,38 @@ func generateSessionID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 
 	return hex.EncodeToString(b)
+}
+
+// humanizeOS maps runtime.GOOS values to human-readable platform names used
+// by Amplitude for OS segmentation.
+func humanizeOS(goos string) string {
+	switch goos {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	default:
+		return goos
+	}
+}
+
+// detectLanguage returns the user's language tag from environment variables.
+// On Unix systems LANG is typically "en_US.UTF-8"; we strip the encoding suffix
+// to return just the language tag (e.g. "en_US"). Falls back to LANGUAGE.
+// Returns empty string if neither variable is set.
+func detectLanguage() string {
+	lang := os.Getenv("LANG")
+	if lang == "" {
+		lang = os.Getenv("LANGUAGE")
+	}
+
+	if idx := strings.Index(lang, "."); idx != -1 {
+		lang = lang[:idx]
+	}
+
+	return lang
 }
 
 // deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)

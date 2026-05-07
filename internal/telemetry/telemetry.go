@@ -115,6 +115,14 @@ func (c *Client) Track(event types.Event) {
 		}
 
 		event.DeviceID = c.props.DeviceID
+
+		// Populate Amplitude EventOptions for built-in segmentation
+		event.AppVersion = c.props.CLIVersion
+		event.VersionName = c.props.CLIVersion
+		event.Platform = c.props.OSName
+		event.OSName = c.props.OSName
+		event.OSVersion = c.props.OSVersion
+		event.Language = c.props.Language
 	}
 
 	if c.amp == nil {

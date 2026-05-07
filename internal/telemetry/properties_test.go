@@ -301,3 +301,49 @@ func TestCollectCommonProperties_DefaultCommandKindIsEmpty(t *testing.T) {
 	// is a core or plugin command.
 	assert.Empty(t, props.CommandKind)
 }
+
+func TestCollectCommonProperties_SetsOSName(t *testing.T) {
+	props := CollectCommonProperties()
+
+	assert.NotEmpty(t, props.OSName)
+}
+
+func TestHumanizeOS(t *testing.T) {
+	assert.Equal(t, "macOS", humanizeOS("darwin"))
+	assert.Equal(t, "Linux", humanizeOS("linux"))
+	assert.Equal(t, "Windows", humanizeOS("windows"))
+	assert.Equal(t, "freebsd", humanizeOS("freebsd"))
+}
+
+func TestDetectLanguage_StripsEncoding(t *testing.T) {
+	t.Setenv("LANG", "en_US.UTF-8")
+	t.Setenv("LANGUAGE", "")
+
+	lang := detectLanguage()
+
+	assert.Equal(t, "en_US", lang)
+}
+
+func TestDetectLanguage_FallsBackToLANGUAGE(t *testing.T) {
+	t.Setenv("LANG", "")
+	t.Setenv("LANGUAGE", "fr_FR")
+
+	lang := detectLanguage()
+
+	assert.Equal(t, "fr_FR", lang)
+}
+
+func TestDetectLanguage_ReturnsEmptyWhenUnset(t *testing.T) {
+	t.Setenv("LANG", "")
+	t.Setenv("LANGUAGE", "")
+
+	lang := detectLanguage()
+
+	assert.Empty(t, lang)
+}
+
+func TestCollectCommonProperties_SetsOSArch(t *testing.T) {
+	props := CollectCommonProperties()
+
+	assert.Equal(t, runtime.GOARCH, props.OSArch)
+}
