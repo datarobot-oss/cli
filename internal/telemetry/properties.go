@@ -82,6 +82,10 @@ func (p *CommonProperties) AsMap() map[string]any {
 	}
 
 	if p.UserID != nil {
+		// We only want to set user_id if we actually
+		// have a value for it. Amplitude tells us to
+		// not set user_id to null/undefined.
+		// Ref: https://amplitude.com/docs/get-started/identify-users#best-practices-for-setting-user-ids
 		m["user_id"] = *p.UserID
 	}
 

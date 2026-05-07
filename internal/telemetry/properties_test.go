@@ -30,6 +30,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func ptrString(s string) *string {
+	return &s
+}
+
 func TestGenerateSessionID_ReturnsValidUUID(t *testing.T) {
 	id := generateSessionID()
 
@@ -50,7 +54,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	props := &CommonProperties{
 		SessionID:         "session-123",
 		DeviceID:          "device-789",
-		UserID:            "user-456",
+		UserID:            ptrString("user-456"),
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
 		OSInfo:            "darwin/arm64",
