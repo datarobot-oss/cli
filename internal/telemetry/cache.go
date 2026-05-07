@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // readTextCacheFile reads a text file from the config directory, trimming whitespace.
@@ -75,15 +76,18 @@ func readJSONCacheFile(filename string, v any) error {
 func writeJSONCacheFile(filename string, v any) {
 	configDir, err := config.GetConfigDir()
 	if err != nil {
+		log.Debugf("Failed to get config directory for writing JSON cache file: %v", err)
 		return
 	}
 
 	data, err := json.Marshal(v)
 	if err != nil {
+		log.Debugf("Failed to marshal JSON for cache file %s: %v", filename, err)
 		return
 	}
 
 	if mkErr := os.MkdirAll(configDir, 0o700); mkErr != nil {
+		log.Debugf("Failed to create config directory for JSON cache file %s: %v", filename, mkErr)
 		return
 	}
 
