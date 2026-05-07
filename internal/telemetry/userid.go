@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // AccountInfo represents the response from GET /api/v2/account/info/.
@@ -77,6 +78,7 @@ func retrieveUserID(ctx context.Context) string {
 	// Cache miss or invalid; try to fetch from API
 	apiUserID, err := GetUserID(ctx)
 	if err != nil {
+		log.Debugf("Failed to retrieve user ID: %v", err)
 		return ""
 	}
 
