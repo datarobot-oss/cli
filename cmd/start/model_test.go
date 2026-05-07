@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -181,7 +182,10 @@ func TestHandleDepsMissing_WaitsForConfirmation(t *testing.T) {
 }
 
 func TestHandleDepsMissing_AutoInstallsWhenAnswerYes(t *testing.T) {
-	m := Model{opts: Options{AnswerYes: true}}
+	viperx.Set("yes", true)
+	t.Cleanup(func() { viperx.Set("yes", false) })
+
+	m := Model{}
 
 	msg := depsMissingMsg{
 		prerequisites: []tools.Prerequisite{{Name: "uv"}},
