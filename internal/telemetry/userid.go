@@ -44,7 +44,7 @@ type cachedUserID struct {
 // GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
 // It returns the uid string on success, or ("", error) on non-200 status,
 // empty uid, or network failure.
-func GetUserID(ctx context.Context) (string, error) {
+func GetUserID(_ context.Context) (string, error) {
 	url, err := config.GetEndpointURL("/api/v2/account/info/")
 	if err != nil {
 		return "", err
