@@ -115,6 +115,7 @@ graph LR
     subgraph "External"
         API["drapi.Client<br/>(API calls)"]
         CONFIG["config<br/>(persistence)"]
+        STATE["state.yaml<br/>(state persistence)"]
     end
     
     CMD --> PARSE
@@ -127,6 +128,7 @@ graph LR
     MODEL --> CSV
     MODEL --> API
     MODEL --> CONFIG
+    MODEL --> STATE
     
     TUI -->|user input| MODEL
     
