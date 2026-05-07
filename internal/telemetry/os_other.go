@@ -16,6 +16,12 @@
 
 package telemetry
 
+// osVersion returns an empty string on unsupported platforms.
 func osVersion() string {
 	return ""
+}
+
+// humanizeOS maps runtime.GOOS values to platform names users will recognize.
+func humanizeOS(goos string) string {
+	return goos
 }

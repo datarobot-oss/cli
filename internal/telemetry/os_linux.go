@@ -20,6 +20,14 @@ import (
 	"strings"
 )
 
+// osVersion retrieves the Linux OS version by reading and parsing the
+// /etc/os-release file. In containerized environments, this will
+// typically return the underlying host OS version rather than the container's base image version. Returns an empty string if detection fails.
+// example:
+// ╰─❯ cat /etc/os-release content:
+// NAME="Ubuntu"
+// VERSION="22.04.3 LTS (Jammy Jellyfish)"
+// ID=ubuntu
 func osVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
@@ -42,4 +50,10 @@ func osVersion() string {
 	}
 
 	return ""
+}
+
+// humanizeOS converts the raw OS name from runtime.GOOS into a more
+// user-friendly format for telemetry. On Linux, we always return "Linux".
+func humanizeOS(_ string) string {
+	return "Linux"
 }

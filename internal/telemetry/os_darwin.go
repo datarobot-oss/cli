@@ -16,11 +16,27 @@ package telemetry
 
 import "syscall"
 
+// returns the MacOS marketing version using "kern.osproductversion" sysctl.
+// Returns an empty string if detection fails.
+// example:
+// ╰─❯ sysctl kern.osproductversion
+// kern.osproductversion: 15.7.5
 func osVersion() string {
+	// Note: runtime doesn't provide OSVERSION.
+	// Note: Originally used "sw_vers -productVersion"
+	// ref: https://ss64.com/mac/sw_vers.html
+	// but that requires spawning a subprocess and will
+	// anyway invoke sysctl under the hood.
 	ver, err := syscall.Sysctl("kern.osproductversion")
 	if err != nil {
 		return ""
 	}
 
 	return ver
+}
+
+// humanizeOS converts the raw OS name from runtime.GOOS into a more
+// user-friendly format for telemetry. On Darwin, we always return "macOS".
+func humanizeOS(_ string) string {
+	return "macOS"
 }

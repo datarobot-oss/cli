@@ -31,21 +31,3 @@ func detectOSVersion() string {
 
 	return osVersionCache
 }
-
-// humanizeOS maps runtime.GOOS values to platform names users will recognize.
-func humanizeOS(goos string) string {
-	switch goos {
-	case "darwin":
-		return "macOS"
-	case "linux":
-		return "Linux"
-	case "windows":
-		return "Windows"
-	case "freebsd":
-		return "FreeBSD"
-	case "openbsd":
-		return "OpenBSD"
-	default:
-		return goos
-	}
-}

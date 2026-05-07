@@ -19,6 +19,11 @@ import (
 	"strings"
 )
 
+// osVersion retrieves the Windows OS version by executing the "ver" command and
+// parsing its output. Returns an empty string if detection fails.
+// example:
+// ╰─❯ ver
+// Microsoft Windows [Version 10.0.22621.1234]
 func osVersion() string {
 	out, err := exec.Command("cmd", "/c", "ver").Output()
 	if err != nil {
@@ -41,4 +46,10 @@ func osVersion() string {
 	}
 
 	return s[:end]
+}
+
+// humanizeOS converts the raw OS name from runtime.GOOS into a more
+// user-friendly format for telemetry. On Windows, we always return "Windows".
+func humanizeOS(_ string) string {
+	return "Windows"
 }
