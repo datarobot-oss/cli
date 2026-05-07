@@ -242,6 +242,21 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 	assert.Equal(t, "api-uid-000", result)
 }
 
+func TestRetrieveUserID_NoEndpoint_ReturnsEmptyWithoutError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	defer viperx.Reset()
+
+	viperx.Set(config.DataRobotURL, "")
+
+	result, err := retrieveUserID(context.Background())
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
 func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 

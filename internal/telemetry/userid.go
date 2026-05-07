@@ -66,6 +66,12 @@ func GetUserID(_ context.Context) (string, error) {
 }
 
 func retrieveUserID(ctx context.Context) (string, error) {
+	// Skip silently when no endpoint is configured — no URL means no user to retrieve.
+	// This is expected when the CLI has not been authenticated yet.
+	if currentEndpoint() == "" {
+		return "", nil
+	}
+
 	// Check cache first to avoid making an API call
 	var cached cachedUserID
 
