@@ -119,11 +119,11 @@ func (c *Client) Track(event types.Event) {
 
 		// Populate Amplitude EventOptions for built-in segmentation
 		event.AppVersion = c.props.CLIVersion
-		event.VersionName = c.props.CLIVersion
-		event.Platform = "CLI"
+		event.Platform = "CLI" // Can't differentiate otherwise
 		event.OSName = c.props.OSName
 		event.OSVersion = c.props.OSVersion
 		event.Language = c.props.Language
+		event.IP = "$remote" // Use $remote to let Amplitude determine location from IP, rather than sending it from the client
 	}
 
 	if c.amp == nil {
