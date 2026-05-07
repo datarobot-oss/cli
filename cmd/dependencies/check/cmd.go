@@ -35,6 +35,7 @@ func Cmd() *cobra.Command {
 func RunE(cmd *cobra.Command, _ []string) error {
 	_, _, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
 	if len(missingMsgs) > 0 || len(wrongVersionMsgs) > 0 {
+		cmd.SilenceUsage = true
 		return errors.New(tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs))
 	}
 
