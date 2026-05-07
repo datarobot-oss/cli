@@ -169,6 +169,96 @@ graph LR
     style RELEASE fill:#ffccbc
 ```
 
+## Authentication flow
+
+See [Authentication](authentication.md) for OAuth implementation details.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Browser
+    participant OAuth as OAuth Provider<br/>(DataRobot)
+    participant Config as drconfig.yaml
+
+    User->>CLI: dr auth login
+    CLI->>Browser: Open browser to auth URL
+    Browser->>OAuth: User grants permission
+    OAuth->>Browser: Return auth code
+    Browser->>CLI: Receive code
+    CLI->>OAuth: Exchange code for token
+    OAuth-->>CLI: Access token
+    CLI->>Config: Store token
+    Config-->>CLI: Saved
+    CLI-->>User: Login successful
+    
+    Note over Config: Token persisted for future commands
+    
+    User->>CLI: dr templates list
+    CLI->>Config: Retrieve token
+    Config-->>CLI: Token
+    CLI->>OAuth: API call with token
+    OAuth-->>CLI: Response
+    CLI-->>User: Display results
+```
+
+## Device ID in telemetry
+
+See [Telemetry](telemetry.md) for event tracking and analytics details.
+
+```mermaid
+graph TD
+    A["CLI Startup"]
+    
+    A --> B["Check if<br/>device_id exists<br/>in drconfig.yaml"]
+    
+    B -->|Found| C["Use stored<br/>device_id"]
+    B -->|Not found| D["Generate new<br/>UUID v4"]
+    
+    D --> E["Store in<br/>drconfig.yaml"]
+    
+    C --> F["Include in all<br/>telemetry events"]
+    E --> F
+    
+    F --> G["Events sent to<br/>Amplitude"]
+    G --> H["Anonymous user<br/>tracking across<br/>sessions"]
+    
+    style A fill:#e1f5ff
+    style D fill:#fff9c4
+    style E fill:#fff9c4
+    style H fill:#c8e6c9
+```
+
+```mermaid
+graph TD
+    subgraph "Telemetry Event"
+        DEV["device_id<br/>(UUID)"]
+        COM["command_kind<br/>(core/plugin)"]
+        VER["version"]
+        OS["os_name"]
+    end
+    
+    subgraph "Anonymity"
+        ANON["No user email<br/>No user ID<br/>No IP tracking"]
+    end
+    
+    subgraph "Amplitude"
+        AMP["Events aggregated<br/>by device_id"]
+    end
+    
+    DEV --> AMP
+    COM --> AMP
+    VER --> AMP
+    OS --> AMP
+    
+    ANON -.->|Ensures| AMP
+    
+    style DEV fill:#b3e5fc
+    style COM fill:#b3e5fc
+    style AMP fill:#c8e6c9
+    style ANON fill:#f0f0f0
+```
+
 ## Next steps
 
 - [Project Structure](structure.md) - Detailed directory layout
