@@ -43,12 +43,20 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/account/info/", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"fresh-uid","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	result := getOrCreateUserID("fresh-uid")
+	result := getOrCreateUserID(context.Background())
 
 	assert.Equal(t, "fresh-uid", result)
 
@@ -63,7 +71,7 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "fresh-uid", cached.UID)
-	assert.Equal(t, "https://test.example.com", cached.Endpoint)
+	assert.Equal(t, server.URL, cached.Endpoint)
 	assert.Equal(t, sha256Fingerprint("test-token"), cached.TokenFingerprint)
 }
 
@@ -72,12 +80,19 @@ func TestGetOrCreateUserID_FilePermissions(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"test-uid","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	getOrCreateUserID("test-uid")
+	getOrCreateUserID(context.Background())
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	info, err := os.Stat(cachePath)
@@ -92,6 +107,7 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
@@ -115,7 +131,7 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID("")
+	result := getOrCreateUserID(context.Background())
 
 	assert.Equal(t, "cached-uid-123", result)
 }
@@ -125,10 +141,16 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"new-uid-456","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://new.example.com/api/v2")
-	viperx.Set(config.DataRobotAPIKey, "test-token")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -149,9 +171,9 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID("")
+	result := getOrCreateUserID(context.Background())
 
-	assert.Empty(t, result)
+	assert.Equal(t, "new-uid-456", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
@@ -159,10 +181,16 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"new-uid-789","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
-	viperx.Set(config.DataRobotAPIKey, "new-token")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "new-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -172,7 +200,7 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	cached := cachedUserID{
 		UID:              "cached-uid-123",
-		Endpoint:         "https://test.example.com",
+		Endpoint:         server.URL,
 		TokenFingerprint: sha256Fingerprint("old-token"),
 	}
 	data, err := json.Marshal(cached)
@@ -183,9 +211,9 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID("")
+	result := getOrCreateUserID(context.Background())
 
-	assert.Empty(t, result)
+	assert.Equal(t, "new-uid-789", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
@@ -193,14 +221,20 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"api-uid-000","email":"user@example.com"}`))
+	}))
+	defer server.Close()
+
 	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
-	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result := getOrCreateUserID("")
+	result := getOrCreateUserID(context.Background())
 
-	assert.Empty(t, result)
+	assert.Equal(t, "api-uid-000", result)
 }
 
 func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
@@ -208,10 +242,16 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"recovery-uid","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
-	viperx.Set(config.DataRobotAPIKey, "test-token")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -223,20 +263,27 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID("")
+	result := getOrCreateUserID(context.Background())
 
-	assert.Empty(t, result)
+	assert.Equal(t, "recovery-uid", result)
 }
 
-func TestGetOrCreateUserID_FreshAPIUID_UpdatesExistingCache(t *testing.T) {
+func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	defer viperx.Reset()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"uid":"new-token-uid","email":"user@example.com"}`))
+	}))
+	defer server.Close()
 
-	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
-	viperx.Set(config.DataRobotAPIKey, "test-token")
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "new-token")()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "new-token")
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -246,8 +293,8 @@ func TestGetOrCreateUserID_FreshAPIUID_UpdatesExistingCache(t *testing.T) {
 
 	stale := cachedUserID{
 		UID:              "stale-uid",
-		Endpoint:         "https://test.example.com",
-		TokenFingerprint: sha256Fingerprint("test-token"),
+		Endpoint:         server.URL,
+		TokenFingerprint: sha256Fingerprint("old-token"),
 	}
 	data, err := json.Marshal(stale)
 
@@ -257,9 +304,9 @@ func TestGetOrCreateUserID_FreshAPIUID_UpdatesExistingCache(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result := getOrCreateUserID("new-uid")
+	result := getOrCreateUserID(context.Background())
 
-	assert.Equal(t, "new-uid", result)
+	assert.Equal(t, "new-token-uid", result)
 
 	updatedData, err := os.ReadFile(filepath.Join(configDir, userIDFileName))
 
@@ -270,9 +317,9 @@ func TestGetOrCreateUserID_FreshAPIUID_UpdatesExistingCache(t *testing.T) {
 	err = json.Unmarshal(updatedData, &updated)
 
 	require.NoError(t, err)
-	assert.Equal(t, "new-uid", updated.UID)
-	assert.Equal(t, "https://test.example.com", updated.Endpoint)
-	assert.Equal(t, sha256Fingerprint("test-token"), updated.TokenFingerprint)
+	assert.Equal(t, "new-token-uid", updated.UID)
+	assert.Equal(t, server.URL, updated.Endpoint)
+	assert.Equal(t, sha256Fingerprint("new-token"), updated.TokenFingerprint)
 }
 
 func TestGetUserID_Success(t *testing.T) {
