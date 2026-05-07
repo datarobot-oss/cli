@@ -26,8 +26,10 @@ var (
 )
 
 // detectLanguage returns the user's BCP 47 language tag (e.g. "en_US").
+// Amplitude will automatically map this tag to a more general language name.
 // The result is computed once and cached for the lifetime of the process.
 // Returns empty string if detection fails.
+// Ref: https://amplitude.com/docs/apis/analytics/http-v2#language-field
 func detectLanguage() string {
 	languageOnce.Do(func() {
 		lang, err := golocale.GetLocale()
