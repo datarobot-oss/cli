@@ -107,7 +107,7 @@ graph LR
     
     subgraph "View Layer"
         TUI["TUI interactive model<br/>(Bubble Tea)"]
-        TEXT["Text output<br/>(formatted)"]
+        TEXT["Formatted text output<br/>(Bubble Tea)"]
         JSON["JSON output"]
         CSV["CSV output"]
     end
