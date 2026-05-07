@@ -25,7 +25,7 @@ import (
 // typically return the underlying host OS version rather than the container's
 // base image version. Returns an empty string if detection fails.
 // example:
-// ╰─❯ cat /etc/os-release content:
+// ╰─❯ cat /etc/os-release
 // NAME="Bazzite"
 // VERSION="43.20260420.0 (Silverblue)"
 // ID=bazzite
