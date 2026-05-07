@@ -35,15 +35,19 @@ const (
 	promptQuit                      // user aborted
 )
 
+// promptReadLine is the stdin seam. Tests reassign it to drive the
+// conflict menu deterministically without hijacking os.Stdin.
+var promptReadLine = reader.ReadString
+
 // promptConflictMenu shows the [d] [Enter] [q] menu when conflicts
 // exist and the user has not passed --yes. Loops on [d] so the user
 // can review diffs and then either confirm or abort. Prompts go to
 // stderr to keep stdout clean for piped output.
-func promptConflictMenu(cmd *cobra.Command, engine *sync.Engine, plan *sync.SyncPlan) (promptChoice, error) {
+func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan) (promptChoice, error) {
 	for {
 		fmt.Fprint(os.Stderr, "  [d] Show diffs  [Enter] Sync  [q] Abort: ")
 
-		raw, err := reader.ReadString()
+		raw, err := promptReadLine()
 		if err != nil {
 			return promptQuit, err
 		}

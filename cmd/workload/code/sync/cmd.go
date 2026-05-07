@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/code/internal/dirprompt"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
@@ -33,6 +34,35 @@ import (
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
+
+// engineRunner is the subset of *sync.Engine that the sync command
+// drives. Defined here so cmd_test.go can substitute a fake without
+// piling test seams onto the engine package.
+type engineRunner interface {
+	Plan() (*sync.SyncPlan, error)
+	Execute(*sync.SyncPlan) (*sync.Result, error)
+	Close() error
+	StaleRollbackRestored() bool
+	Fetcher() display.ContentFetcher
+}
+
+// realEngine adapts *sync.Engine to engineRunner. Only Fetcher needs an
+// adapter: *sync.Engine.Fetcher returns its private *engineFetcher,
+// which already implements display.ContentFetcher, but Go interface
+// satisfaction is invariant over return types.
+type realEngine struct{ *sync.Engine }
+
+func (r realEngine) Fetcher() display.ContentFetcher { return r.Engine.Fetcher() }
+
+// newEngine is the constructor seam. Tests reassign it to inject a fake.
+var newEngine = func(dir string, opts sync.Options) (engineRunner, error) {
+	e, err := sync.New(dir, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return realEngine{e}, nil
+}
 
 func init() {
 	// --yes is read directly from cobra; only the env var binds to viper
@@ -102,12 +132,16 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
 		return errors.New("not linked: run 'dr workload code init <artifact-id>' first")
 	}
 
-	engine, err := sync.New(dir, sync.Options{DryRun: dryRun, ShowDiffs: diffFlag, Yes: yes})
+	engine, err := newEngine(dir, sync.Options{DryRun: dryRun, ShowDiffs: diffFlag, Yes: yes})
 	if err != nil {
 		return err
 	}
 
-	defer func() { _ = engine.Close() }()
+	defer func() {
+		if cerr := engine.Close(); cerr != nil {
+			log.Debug("sync engine close returned error", "err", cerr)
+		}
+	}()
 
 	plan, err := engine.Plan()
 	if err != nil {
@@ -124,7 +158,7 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat) error {
 // finishSync handles the render → optional prompt → execute → render
 // tail of the command. Pulled out so runSync's early-return paths
 // (auth, lock, plan errors) stay flat.
-func finishSync(cmd *cobra.Command, engine *sync.Engine, plan *sync.SyncPlan, outputFormat workload.OutputFormat, dryRun, diffFlag, yes bool) error {
+func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, dryRun, diffFlag, yes bool) error {
 	out := cmd.OutOrStdout()
 
 	if outputFormat == workload.OutputFormatJSON {
@@ -159,7 +193,7 @@ func finishSync(cmd *cobra.Command, engine *sync.Engine, plan *sync.SyncPlan, ou
 }
 
 // renderHumanPlan prints the plan and optional per-file diffs.
-func renderHumanPlan(cmd *cobra.Command, engine *sync.Engine, plan *sync.SyncPlan, diffFlag bool) error {
+func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, diffFlag bool) error {
 	out := cmd.OutOrStdout()
 
 	if err := display.PrintPlan(out, plan); err != nil {
@@ -182,7 +216,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // finishJSON is the --output-format=json analogue of finishSync. The
 // plan is always emitted; if neither --dry-run nor --diff is set, an
 // Execute runs and the Result is emitted as a second JSON document.
-func finishJSON(engine *sync.Engine, plan *sync.SyncPlan, out io.Writer, dryRun, diffFlag bool) error {
+func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, dryRun, diffFlag bool) error {
 	if err := display.RenderPlanJSON(out, plan); err != nil {
 		return err
 	}
