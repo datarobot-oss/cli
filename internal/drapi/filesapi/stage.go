@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -64,7 +63,7 @@ func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, 
 		return err
 	}
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: uploadHTTPTimeout}
 
 	resp, err := client.Do(req)
 	if err != nil {

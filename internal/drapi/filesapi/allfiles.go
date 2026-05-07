@@ -106,7 +106,7 @@ func (c *httpClient) DownloadFile(catalogID, versionID, path string, w io.Writer
 		return "", 0, fmt.Errorf("build download url: %w", err)
 	}
 
-	resp, err := drapi.Get(requestURL, "file", 300)
+	resp, err := drapi.Get(requestURL, "file", int(downloadHTTPTimeout.Seconds()))
 	if err != nil {
 		return "", 0, fmt.Errorf("download %s: %w", path, err)
 	}

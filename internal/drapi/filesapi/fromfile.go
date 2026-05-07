@@ -60,7 +60,7 @@ func uploadZipMultipart(requestURL, name string, size int64, body io.Reader) (*F
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: uploadHTTPTimeout}
 
 	resp, err := client.Do(req)
 	if err != nil {
