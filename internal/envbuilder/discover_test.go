@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -167,4 +168,40 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet/yet_another_parakeet.yml")
+}
+
+func TestDepth(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected int
+	}{
+		{
+			name:     "current directory",
+			path:     ".",
+			expected: 0,
+		},
+		{
+			name:     "single level",
+			path:     "dir",
+			expected: 1,
+		},
+		{
+			name:     "two levels",
+			path:     "dir/subdir",
+			expected: 2,
+		},
+		{
+			name:     "three levels",
+			path:     "dir/subdir/nested",
+			expected: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := depth(tt.path)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
