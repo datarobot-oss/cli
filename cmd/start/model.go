@@ -107,10 +107,10 @@ func NewStartModel(opts Options) Model {
 		steps: []step{
 			{description: "Starting application quickstart process...", fn: startQuickstart},
 			{description: "Checking DataRobot CLI version...", fn: checkSelfVersion},
-			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			// TODO Implement validateEnvironment
 			// {description: "Validating environment...", fn: validateEnvironment},
 			{description: "Checking repository setup...", fn: checkRepository},
+			{description: "Checking template prerequisites...", fn: checkPrerequisites},
 			{description: "Finding and executing start command...", fn: findAndExecuteStart},
 		},
 		opts:     opts,
