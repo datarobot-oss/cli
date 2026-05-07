@@ -94,7 +94,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"session_id":         p.SessionID,
 		"install_method":     p.InstallMethod,
 		"os_arch":            p.OSArch,
-		"language":           p.Language,
 		"go_version":         p.GoVersion,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
