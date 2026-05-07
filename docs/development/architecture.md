@@ -64,12 +64,6 @@ sequenceDiagram
     
     PM->>Root: Register as subcommands
     Root-->>CLI: Ready to execute
-
-    style CLI fill:#e1f5ff
-    style Root fill:#fff3e0
-    style PM fill:#f3e5f5
-    style REG fill:#bbdefb
-    style Load fill:#c8e6c9
 ```
 
 ## Configuration flow
