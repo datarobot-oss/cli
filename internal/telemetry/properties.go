@@ -31,9 +31,11 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
+	// top-level fields
 	SessionID         string  // UUID v4, unique per process invocation
 	DeviceID          string  // UUID v4, stable per installation, cached to disk
 	UserID            *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	// event properties
 	CLIVersion        string  // CLI version from version.Version (ldflags)
 	InstallMethod     string  // Build distribution method (ldflags)
 	OSInfo            string  // runtime.GOOS/runtime.GOARCH
