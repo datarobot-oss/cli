@@ -128,7 +128,7 @@ func (c *Client) Track(event types.Event) {
 
 	if c.amp == nil {
 		b, _ := json.Marshal(event)
-		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "event", string(b))
+		log.Debug(amplitudeLogPrefix + "Track event: \n    " + string(b))
 
 		return
 	}
