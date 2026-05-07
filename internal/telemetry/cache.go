@@ -45,14 +45,18 @@ func readTextCacheFile(filename string) string {
 func writeTextCacheFile(filename, value string) {
 	configDir, err := config.GetConfigDir()
 	if err != nil {
+		log.Debugf("Failed to get config directory for writing text cache file: %v", err)
 		return
 	}
 
 	if mkErr := os.MkdirAll(configDir, 0o700); mkErr != nil {
+		log.Debugf("Failed to create config directory for text cache file %s: %v", filename, mkErr)
 		return
 	}
 
-	_ = os.WriteFile(filepath.Join(configDir, filename), []byte(value), 0o600)
+	if err := os.WriteFile(filepath.Join(configDir, filename), []byte(value), 0o600); err != nil {
+		log.Debugf("Failed to write text cache file %s: %v", filename, err)
+	}
 }
 
 // readJSONCacheFile reads and unmarshals a JSON file from the config directory.
@@ -91,5 +95,7 @@ func writeJSONCacheFile(filename string, v any) {
 		return
 	}
 
-	_ = os.WriteFile(filepath.Join(configDir, filename), data, 0o600)
+	if err := os.WriteFile(filepath.Join(configDir, filename), data, 0o600); err != nil {
+		log.Debugf("Failed to write JSON cache file %s: %v", filename, err)
+	}
 }
