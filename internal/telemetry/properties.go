@@ -31,6 +31,11 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
+	// NOTE: When you add a new property here,
+	// make sure to also add it to:
+	// 1. AsMap() method
+	// 2. CollectCommonProperties() function
+
 	// top-level fields
 	SessionID string  // UUID v4, unique per process invocation
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
@@ -38,7 +43,11 @@ type CommonProperties struct {
 	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
-	OSInfo            string // runtime.GOOS/runtime.GOARCH
+	OSName            string // human-readable OS name from runtime.GOOS
+	OSArch            string // CPU architecture from runtime.GOARCH
+	OSVersion         string // OS release version string, detected at startup
+	Language          string // user language from LANG env var (e.g. "en_US")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
@@ -53,7 +62,11 @@ func CollectCommonProperties() *CommonProperties {
 		DeviceID:      getOrCreateDeviceID(),
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
-		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
+		OSName:        humanizeOS(runtime.GOOS),
+		OSArch:        runtime.GOARCH,
+		OSVersion:     detectOSVersion(),
+		Language:      detectLanguage(),
+		GoVersion:     runtime.Version(),
 	}
 
 	// Get DataRobot instance info from config
@@ -79,9 +92,9 @@ func CollectCommonProperties() *CommonProperties {
 func (p *CommonProperties) AsMap() map[string]any {
 	m := map[string]any{
 		"session_id":         p.SessionID,
-		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
-		"os_info":            p.OSInfo,
+		"os_arch":            p.OSArch,
+		"go_version":         p.GoVersion,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,

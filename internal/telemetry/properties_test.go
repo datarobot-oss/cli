@@ -57,7 +57,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 		UserID:            ptrString("user-456"),
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
-		OSInfo:            "darwin/arm64",
 		Environment:       "US",
 		DataRobotInstance: "https://app.datarobot.com",
 		CommandKind:       "core",
@@ -66,9 +65,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	m := props.AsMap()
 
 	assert.Equal(t, "session-123", m["session_id"])
-	assert.Equal(t, "v0.1.0", m["cli_version"])
 	assert.Equal(t, "source", m["install_method"])
-	assert.Equal(t, "darwin/arm64", m["os_info"])
 	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
 	assert.Equal(t, "core", m["command_kind"])
@@ -264,14 +261,6 @@ func TestDeriveEnvironment_Custom(t *testing.T) {
 	assert.Equal(t, "custom", deriveEnvironment("https://custom.internal.company.com"))
 }
 
-func TestCollectCommonProperties_ContainsOSInfo(t *testing.T) {
-	props := CollectCommonProperties()
-
-	assert.NotEmpty(t, props.OSInfo)
-	assert.Contains(t, props.OSInfo, runtime.GOOS)
-	assert.Contains(t, props.OSInfo, runtime.GOARCH)
-}
-
 func TestCollectCommonProperties_GeneratesSessionID(t *testing.T) {
 	props := CollectCommonProperties()
 
@@ -300,4 +289,20 @@ func TestCollectCommonProperties_DefaultCommandKindIsEmpty(t *testing.T) {
 	// the root command sets it once it knows whether the dispatched command
 	// is a core or plugin command.
 	assert.Empty(t, props.CommandKind)
+}
+
+func TestCollectCommonProperties_SetsOSName(t *testing.T) {
+	props := CollectCommonProperties()
+
+	assert.NotEmpty(t, props.OSName)
+}
+
+func TestDetectLanguage_ReturnsNonEmpty(t *testing.T) {
+	assert.NotEmpty(t, detectLanguage())
+}
+
+func TestCollectCommonProperties_SetsOSArch(t *testing.T) {
+	props := CollectCommonProperties()
+
+	assert.Equal(t, runtime.GOARCH, props.OSArch)
 }
