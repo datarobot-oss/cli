@@ -25,7 +25,7 @@ import (
 )
 
 func TestSetAuthHeaders_AuthorizationAndUserAgent(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestSetAuthHeaders_AuthorizationAndUserAgent(t *testing.T) {
 }
 
 func TestSetAuthHeaders_TraceHeaderEnabled(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)
@@ -52,7 +52,7 @@ func TestSetAuthHeaders_TraceHeaderEnabled(t *testing.T) {
 }
 
 func TestSetAuthHeaders_TraceHeaderDisabled(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)
@@ -70,7 +70,7 @@ func TestSetAuthHeaders_TraceHeaderDisabled(t *testing.T) {
 // config.GetAPIKey on subsequent calls — the second SetAuthHeaders call
 // must succeed without contacting config (which would fail in this test env).
 func TestSetAuthHeaders_MemoizesToken(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	for range 2 {
 		req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
@@ -86,7 +86,7 @@ func TestSetAuthHeaders_MemoizesToken(t *testing.T) {
 // test env), the error is returned rather than silently producing a request
 // with an empty bearer.
 func TestSetAuthHeaders_PropagatesTokenError(t *testing.T) {
-	defer resetTokenForTest(t, "")()
+	StubAPIToken(t, "")
 
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)

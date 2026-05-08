@@ -28,7 +28,7 @@ import (
 // io.EOF — making a successful delete look like a failure to callers
 // that pass a non-nil v (e.g. DeleteFiles always passes &resp).
 func TestDeleteJSON_204NoContent(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -45,7 +45,7 @@ func TestDeleteJSON_204NoContent(t *testing.T) {
 }
 
 func TestDeleteJSON_200WithBody(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -63,7 +63,7 @@ func TestDeleteJSON_200WithBody(t *testing.T) {
 }
 
 func TestDeleteJSON_NonSuccess(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
