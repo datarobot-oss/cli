@@ -42,13 +42,8 @@ var (
 	errToken error
 )
 
-// GetAPITokenFunc is the function used to fetch the API token. It is a package-level
-// variable so tests can inject a stub without going through config.GetAPIKey.
-// Production code must never reassign this.
-var GetAPITokenFunc = config.GetAPIKey //nolint:gochecknoglobals
-
-// resolveToken returns the memoized token, calling GetAPITokenFunc at most once per
-// process. Both the token and any auth failure are cached so that a bad or expired
+// resolveToken returns the memoized token, calling config.GetAPITokenFunc at most once
+// per process. Both the token and any auth failure are cached so that a bad or expired
 // credential does not produce a /api/v2/version/ probe on every subsequent API call.
 func resolveToken() (string, error) {
 	if errToken != nil {
@@ -56,7 +51,7 @@ func resolveToken() (string, error) {
 	}
 
 	if token == "" {
-		token, errToken = GetAPITokenFunc(context.Background())
+		token, errToken = config.GetAPITokenFunc(context.Background())
 	}
 
 	return token, errToken

@@ -86,7 +86,10 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	return nil
 }
 
-var GetAPITokenFunc = GetAPIKey
+// GetAPITokenFunc is the function used by drapi to fetch the API token. It is a
+// package-level variable so tests can inject a stub without going through GetAPIKey.
+// Production code must never reassign this.
+var GetAPITokenFunc = GetAPIKey //nolint:gochecknoglobals
 
 func GetAPIKey(ctx context.Context) (string, error) {
 	viperEndpoint := viper.GetString(DataRobotURL)
