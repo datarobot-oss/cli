@@ -71,7 +71,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
 		// Show help by default when no subcommands match
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// PersistentPreRunE is a hook called after flags are parsed
 			// but before the command is run. Any logic that needs to happen
 			// before ANY command execution should go here.
@@ -83,16 +83,31 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			}
 
 			// Initialize telemetry client
-			// Check if enabled first to avoid unnecessary filesystem and network I/O.
-			var props *telemetry.CommonProperties
-			if telemetry.IsEnabled() {
-				props = telemetry.CollectCommonProperties()
+			// Always collect common properties for logging (even in dry-run mode),
+			// but only send to Amplitude if enabled.
+			props := telemetry.CollectCommonProperties()
+
+			// Stamp the command_kind common property based on whether
+			// the dispatched command was registered via TrackPlugin.
+			// CommonProperties is held by pointer inside Client, so this
+			// late-bound update is visible at Track time.
+			if props != nil {
+				if telemetry.IsPluginCommand(cmd) {
+					props.CommandKind = "plugin"
+				} else {
+					props.CommandKind = "core"
+				}
 			}
 
 			client := telemetry.NewClient(props)
 
 			// Store telemetry client in context for use by commands
 			cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
+
+			// Fire telemetry event for this command (safe before RunE which may call os.Exit)
+			if event, ok := telemetry.EventFor(cmd, args); ok {
+				client.Track(event)
+			}
 
 			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
 

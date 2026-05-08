@@ -17,11 +17,12 @@ package seturl
 import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "set-url [url]",
 		Short: "🌐 Configure your DataRobot environment URL.",
 		Long: `Configure your DataRobot environment URL with an interactive selection.
@@ -57,4 +58,12 @@ This command helps you choose the correct DataRobot environment:
 			}
 		},
 	}
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"url": telemetry.FirstArg(args),
+		}
+	})
+
+	return cmd
 }

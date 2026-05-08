@@ -84,7 +84,7 @@ func TestNewClient_StoresProperties(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 	props := &CommonProperties{
-		UserID:     "test-user",
+		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
 	}
 
@@ -123,7 +123,7 @@ func TestTrack_MergesCommonProperties(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 	props := &CommonProperties{
-		UserID:     "test-user",
+		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
 		SessionID:  "session-123",
 	}
@@ -138,6 +138,37 @@ func TestTrack_MergesCommonProperties(t *testing.T) {
 
 	// Should not panic even though amp is nil
 	client.Track(event)
+}
+
+func TestTrack_SetsDeviceIDFromProps(t *testing.T) {
+	originalAPIKey := AmplitudeAPIKey
+
+	defer func() { AmplitudeAPIKey = originalAPIKey }()
+
+	AmplitudeAPIKey = ""
+	props := &CommonProperties{
+		DeviceID:   "test-device-id",
+		UserID:     ptrString("test-user"),
+		CLIVersion: "v0.1.0",
+	}
+
+	client := NewClient(props)
+
+	// Verify the props are stored correctly so Track will use them
+	assert.Equal(t, "test-device-id", client.props.DeviceID)
+}
+
+func TestTrack_DeviceIDNotEmptyAfterCollect(t *testing.T) {
+	originalAPIKey := AmplitudeAPIKey
+
+	defer func() { AmplitudeAPIKey = originalAPIKey }()
+
+	AmplitudeAPIKey = ""
+
+	props := CollectCommonProperties()
+	client := NewClient(props)
+
+	assert.NotEmpty(t, client.props.DeviceID, "DeviceID should be set from OS machine ID or fallback")
 }
 
 func TestFlush_NoOpWhenDisabled(t *testing.T) {

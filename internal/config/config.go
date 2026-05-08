@@ -122,6 +122,17 @@ func ReadConfigFile(filePath string) error {
 	return nil
 }
 
+// This is a list of keys that we want to redact
+// when printing out the viper configuration for
+// debugging. This is not a comprehensive list,
+// but it should cover the most common cases.
+// TODO There has to be a better way of marking sensitive data
+// perhaps with leebenson/conform?
+var sensitiveDebugKeys = map[string]struct{}{
+	"token":                    {},
+	"pulumi_config_passphrase": {},
+}
+
 func DebugViperConfig() (string, error) {
 	var sb strings.Builder
 
@@ -136,8 +147,6 @@ func DebugViperConfig() (string, error) {
 
 	// Print out the viper configuration for debugging
 	// Alphabetically, and redacting sensitive information
-	// TODO There has to be a better way of marking sensitive data
-	// perhaps with leebenson/conform?
 	keys := make([]string, 0, len(viper.AllSettings()))
 	for key := range viper.AllSettings() {
 		keys = append(keys, key)
@@ -148,8 +157,8 @@ func DebugViperConfig() (string, error) {
 	for _, key := range keys {
 		value := viper.Get(key)
 
-		// Skip token because its sensitive
-		if key == "token" {
+		// Redact sensitive keys
+		if _, sensitive := sensitiveDebugKeys[key]; sensitive {
 			fmt.Fprintf(&sb, "  %s: %s\n", key, "****")
 		} else {
 			fmt.Fprintf(&sb, "  %s: %v\n", key, value)

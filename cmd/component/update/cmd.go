@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -111,6 +112,12 @@ func Cmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&updateFlags.Quiet, "quiet", "q", false, "Suppress status output.")
 	cmd.Flags().BoolVarP(&updateFlags.Overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
 	cmd.Flags().BoolVar(&updateFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"component_name": telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }

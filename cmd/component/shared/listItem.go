@@ -28,7 +28,8 @@ type ListItem struct {
 }
 
 func (i ListItem) Title() string {
-	return fmt.Sprintf("%s (%s)",
+	return fmt.Sprintf(
+		"%s (%s)",
 		i.component.ComponentDetails.Name,
 		i.component.FileName,
 	)

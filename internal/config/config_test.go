@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v3"
 )
@@ -98,4 +100,45 @@ func (suite *ConfigTestSuite) TestCreateConfigFileDirWithXDGConfigHome() {
 	// Check if the file was created
 	expectedFileName := "/drconfig.yaml"
 	suite.FileExists(filepath.Join(expectedDir, expectedFileName), "Expected config file to be created in XDG_CONFIG_HOME")
+}
+
+func TestDebugViperConfig_RedactsPulumiConfigPassphrase(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	const secret = "SUPER_SECRET_PASSPHRASE"
+
+	viper.Set("pulumi_config_passphrase", secret)
+
+	output, err := DebugViperConfig()
+	require.NoError(t, err)
+	assert.Contains(t, output, "pulumi_config_passphrase")
+	assert.Contains(t, output, "****")
+	assert.NotContains(t, output, secret)
+}
+
+func TestDebugViperConfig_RedactsToken(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	const secret = "SUPER_SECRET_TOKEN"
+
+	viper.Set("token", secret)
+
+	output, err := DebugViperConfig()
+	require.NoError(t, err)
+	assert.Contains(t, output, "token")
+	assert.Contains(t, output, "****")
+	assert.NotContains(t, output, secret)
+}
+
+func TestDebugViperConfig_DoesNotRedactNonSensitiveKey(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.Set("debug", true)
+
+	output, err := DebugViperConfig()
+	require.NoError(t, err)
+	assert.Contains(t, output, "debug: true")
 }

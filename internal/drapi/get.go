@@ -25,9 +25,8 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// HTTPError is returned by Get and Post when the server responds with a
-// non-success status code. Callers can extract the status code with errors.As
-// to make decisions without string matching.
+// HTTPError is returned by Get when the server responds with a non-200 status code.
+// Callers can extract the status code with errors.As to make decisions without string matching.
 type HTTPError struct {
 	StatusCode int
 	URL        string
@@ -40,7 +39,24 @@ func (e *HTTPError) Error() string {
 
 var token string
 
-func Get(url, info string) (*http.Response, error) {
+// GetToken returns the current cached API token.
+func GetToken() string {
+	return token
+}
+
+// SetToken sets the cached API token.
+func SetToken(value string) {
+	token = value
+}
+
+const DefaultGetTimeoutSecs = 30
+
+func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
+	timeout := DefaultGetTimeoutSecs
+	if len(timeoutSecs) > 0 {
+		timeout = timeoutSecs[0]
+	}
+
 	var err error
 
 	// memoize token to avoid extra VerifyToken() calls
@@ -70,7 +86,7 @@ func Get(url, info string) (*http.Response, error) {
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: time.Duration(timeout) * time.Second,
 	}
 
 	resp, err := client.Do(req)
@@ -87,15 +103,8 @@ func Get(url, info string) (*http.Response, error) {
 	return resp, err
 }
 
-// GetUserID returns a dummy user ID for telemetry.
-// TODO: Discuss with the team whether /api/v2/userinfo/ is a valid endpoint
-// and the appropriate way to fetch the user ID for telemetry.
-func GetUserID(ctx context.Context) (string, error) {
-	return "unknown", nil
-}
-
-func GetJSON(url, info string, v any) error {
-	resp, err := Get(url, info)
+func GetJSON(url, info string, v any, timeoutSecs ...int) error {
+	resp, err := Get(url, info, timeoutSecs...)
 	if err != nil {
 		return err
 	}

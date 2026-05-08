@@ -18,12 +18,13 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "uninstall <plugin-name>",
 		Short:   "🗑️ Uninstall a managed plugin",
 		Long:    "Remove a plugin that was installed via `dr plugin install`.",
@@ -31,6 +32,14 @@ func Cmd() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE:    runUninstall,
 	}
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"plugin_name": telemetry.FirstArg(args),
+		}
+	})
+
+	return cmd
 }
 
 func runUninstall(_ *cobra.Command, args []string) error {

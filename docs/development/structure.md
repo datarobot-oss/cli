@@ -28,6 +28,7 @@ cli/
 │   ├── repo/                # Repository detection
 │   ├── shell/               # Shell utilities
 │   ├── task/                # Task discovery and execution
+│   ├── telemetry/           # Anonymous usage analytics (Amplitude)
 │   ├── tools/               # Tool prerequisites
 │   └── version/             # Version information
 ├── tui/                     # Terminal UI components

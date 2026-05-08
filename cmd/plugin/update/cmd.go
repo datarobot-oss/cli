@@ -21,6 +21,7 @@ import (
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/state"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -44,6 +45,12 @@ If no plugin name is provided with --all, checks all installed plugins for updat
 
 	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
 	cmd.Flags().BoolVar(&checkAll, "all", false, "Update all installed plugins")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"plugin_name": telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }

@@ -24,6 +24,7 @@ If you're new to developing the CLI, start here:
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
+- **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
 
 ## Quick reference
 

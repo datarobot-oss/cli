@@ -159,3 +159,85 @@ func TestSetupCmd_OutputFlagCreatesDirectory(t *testing.T) {
 	_, err = os.Stat(outputDir)
 	require.NoError(t, err, "Expected output directory to be created")
 }
+
+func TestSetupCmd_OutputFlag_SkipsGitRepositorySearch(t *testing.T) {
+	// Reset viper to prevent leaking config
+	viperx.Reset()
+
+	// Create a target DataRobot app directory with proper structure
+	targetAppDir := setupTestRepo(t)
+
+	// Create a completely separate directory that is NOT a DataRobot app
+	nonAppDir := t.TempDir()
+	// Ensure it doesn't have .datarobot structure
+	_, err := os.Stat(filepath.Join(nonAppDir, ".datarobot"))
+	require.Error(t, err, "Non-app directory should not have .datarobot folder")
+
+	// Change to the NON-APP directory
+	originalWd, _ := os.Getwd()
+
+	defer func() {
+		_ = os.Chdir(originalWd)
+	}()
+
+	err = os.Chdir(nonAppDir)
+	require.NoError(t, err)
+
+	// Verify we are indeed in a non-app directory by checking ensureInRepo would fail
+	_, err = ensureInRepo()
+	require.Error(t, err, "ensureInRepo should fail when not in app directory")
+	assert.Contains(t, err.Error(), "Not in git repository")
+
+	// Now test that setupNonInteractive succeeds when using targetAppDir as the repo root
+	// This proves we skipped the directory walk because we're not in an app directory
+	dotenvPath := filepath.Join(targetAppDir, ".env")
+
+	err = setupNonInteractive(targetAppDir, dotenvPath)
+	require.NoError(t, err, "setupNonInteractive should succeed with explicit repo root even when not in app directory")
+
+	// Verify .env file was created in the target directory
+	_, err = os.Stat(dotenvPath)
+	require.NoError(t, err, "Expected .env file to exist in target app directory")
+
+	// Verify contents
+	contents, err := os.ReadFile(dotenvPath)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(contents), "TEST_VAR=\"test_default\"", "Expected .env to contain default value")
+}
+
+func TestSetupCmd_OutputFlag_DoesNotCreateStateFile(t *testing.T) {
+	// Reset viper to prevent leaking config
+	viperx.Reset()
+
+	// Create a target DataRobot app directory
+	targetAppDir := setupTestRepo(t)
+	outputDir := t.TempDir()
+
+	// Change to the app directory
+	originalWd, _ := os.Getwd()
+
+	defer func() {
+		_ = os.Chdir(originalWd)
+	}()
+
+	err := os.Chdir(targetAppDir)
+	require.NoError(t, err)
+
+	// Run setup with --output flag (simulating the behavior)
+	err = setupNonInteractive(outputDir, filepath.Join(outputDir, ".env"))
+	require.NoError(t, err, "setupNonInteractive should succeed")
+
+	// Verify .env file was created in the output directory
+	dotenvPath := filepath.Join(outputDir, ".env")
+
+	_, err = os.Stat(dotenvPath)
+	require.NoError(t, err, "Expected .env file to exist in output directory")
+
+	// Verify state file was NOT created in the output directory (bug fix)
+	statePath := filepath.Join(outputDir, ".datarobot", "cli", "state.yaml")
+
+	_, err = os.Stat(statePath)
+	require.Error(t, err, "State file should NOT be created when using --output flag")
+	assert.True(t, os.IsNotExist(err), "State file should not exist in output directory")
+}

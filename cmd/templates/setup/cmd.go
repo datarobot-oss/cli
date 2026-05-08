@@ -19,6 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +43,10 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return RunTea(cmd.Context(), false)
 	},
+}
+
+func init() {
+	telemetry.Track(Cmd)
 }
 
 // RunTea starts the template setup TUI, optionally from the start command

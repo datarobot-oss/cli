@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -187,5 +188,41 @@ func (suite *DiscoverTestSuite) TestFilePromptsSkipsNonPromptShapedYaml() {
 		prompts, err := filePrompts(path)
 		suite.Require().NoError(err, "non-prompt yaml %s should not surface an error", name)
 		suite.Nil(prompts, "non-prompt yaml %s should yield no prompts", name)
+	}
+}
+
+func TestDepth(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected int
+	}{
+		{
+			name:     "current directory",
+			path:     ".",
+			expected: 0,
+		},
+		{
+			name:     "single level",
+			path:     "dir",
+			expected: 1,
+		},
+		{
+			name:     "two levels",
+			path:     "dir/subdir",
+			expected: 2,
+		},
+		{
+			name:     "three levels",
+			path:     "dir/subdir/nested",
+			expected: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := depth(tt.path)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

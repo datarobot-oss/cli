@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -108,7 +109,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	pluginName := p.Manifest.Name
 	pluginPath := p.Executable // Used to determine if managed
 
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                p.Manifest.Name,
 		Short:              p.Manifest.Description,
 		GroupID:            "plugin",
@@ -124,6 +125,10 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			os.Exit(exitCode)
 		},
 	}
+
+	telemetry.TrackPlugin(cmd, manifest.Version)
+
+	return cmd
 }
 
 // checkAndPromptPluginUpdate checks if an update is available for a managed plugin.
@@ -162,7 +167,8 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	// An update is available — prompt the user
 	fmt.Println(tui.InfoStyle.Render(
 		fmt.Sprintf("Plugin %q update available: v%s → v%s",
-			result.PluginName, result.InstalledVersion, result.LatestVersion.Version)))
+			result.PluginName, result.InstalledVersion, result.LatestVersion.Version),
+	))
 	fmt.Print(tui.DimStyle.Render("Do you want to update? [Y/n] "))
 
 	if !askYesNo() {

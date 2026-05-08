@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/gitsight/go-vcsurl"
 	"github.com/spf13/cobra"
@@ -157,6 +158,12 @@ func Cmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
 	cmd.Flags().StringVar(&addFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 	cmd.Flags().BoolVar(&addFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"component_name": telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }

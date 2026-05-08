@@ -16,6 +16,7 @@ package check
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -38,6 +39,8 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		cmd.SilenceUsage = true
 		return errors.New(missing)
 	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
 
 	return nil
 }

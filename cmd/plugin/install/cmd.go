@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +61,15 @@ Use --version to specify a version constraint:
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+
+	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
+		ver, _ := c.Flags().GetString("version")
+
+		return map[string]any{
+			"plugin_name":    telemetry.FirstArg(args),
+			"plugin_version": ver,
+		}
+	})
 
 	return cmd
 }

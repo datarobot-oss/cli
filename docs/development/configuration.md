@@ -165,6 +165,23 @@ To make a key writable to `drconfig.yaml`:
 Use viper dotted-path notation if the value is nested, e.g.
 `"pulumi.config.passphrase"`. The writer handles nested map creation.
 
+### Marking keys as sensitive
+
+Sensitive keys (credentials, passphrases, tokens) must be redacted in debug output
+to prevent accidental exposure of secrets in logs. To mark a key as sensitive:
+
+1. Add the key to `sensitiveDebugKeys` in `internal/config/config.go`:
+
+   ```go
+   var sensitiveDebugKeys = map[string]struct{}{
+       "token":                    {},
+       "pulumi_config_passphrase": {},
+   }
+   ```
+
+2. When `--debug` is enabled, the key will be redacted as `****` in console output
+   from `DebugViperConfig()`.
+
 ## Common pitfalls
 
 - **Don't import `github.com/spf13/viper` outside `internal/config/`.**

@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -173,6 +174,12 @@ Examples:
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"task_name": telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }

@@ -152,3 +152,51 @@ func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	assert.True(t, loadedState.LastStart.After(beforeUpdate) || loadedState.LastStart.Equal(beforeUpdate))
 	assert.True(t, loadedState.LastStart.Before(afterUpdate) || loadedState.LastStart.Equal(afterUpdate))
 }
+
+func TestUpdateAfterDepsInstall(t *testing.T) {
+	tmpDir := t.TempDir()
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+	err := os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	beforeUpdate := time.Now().UTC()
+
+	err = UpdateAfterDepsInstall(tmpDir)
+	require.NoError(t, err)
+
+	afterUpdate := time.Now().UTC()
+
+	loadedState, err := load(tmpDir)
+	require.NoError(t, err)
+
+	require.NotNil(t, loadedState.LastDepsInstall)
+	assert.NotEmpty(t, loadedState.CLIVersion)
+	assert.True(t, loadedState.LastDepsInstall.After(beforeUpdate) || loadedState.LastDepsInstall.Equal(beforeUpdate))
+	assert.True(t, loadedState.LastDepsInstall.Before(afterUpdate) || loadedState.LastDepsInstall.Equal(afterUpdate))
+}
+
+func TestUpdateAfterDepsInstall_PreservesOtherFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+	err := os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	// Write initial state with a LastStart timestamp.
+	err = UpdateAfterSuccessfulRun(tmpDir)
+	require.NoError(t, err)
+
+	stateBefore, err := load(tmpDir)
+	require.NoError(t, err)
+	require.NotNil(t, stateBefore.LastStart)
+
+	// Now run deps install — LastStart must survive.
+	err = UpdateAfterDepsInstall(tmpDir)
+	require.NoError(t, err)
+
+	stateAfter, err := load(tmpDir)
+	require.NoError(t, err)
+
+	require.NotNil(t, stateAfter.LastDepsInstall)
+	require.NotNil(t, stateAfter.LastStart)
+	assert.Equal(t, stateBefore.LastStart.Unix(), stateAfter.LastStart.Unix())
+}

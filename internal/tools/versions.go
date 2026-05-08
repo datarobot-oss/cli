@@ -49,6 +49,8 @@ func GetRequirements() ([]Prerequisite, error) {
 		return nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
 	}
 
+	versionsYamlSchema.Validate(fileParsed)
+
 	versions := make([]Prerequisite, 0, len(fileParsed))
 
 	for key, version := range fileParsed {

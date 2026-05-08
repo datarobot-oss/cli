@@ -26,12 +26,14 @@ import (
 
 // depth gets our current directory depth by file path
 func depth(path string) int {
-	if path == "." {
+	// Windows uses backslashes, so we normalize to forward slashes
+	normalized := filepath.ToSlash(path)
+	if normalized == "." {
 		return 0
 	}
 
 	// +1 to count the root directory itself
-	return strings.Count(path, "/") + 1
+	return strings.Count(normalized, "/") + 1
 }
 
 func Discover(root string, maxDepth int) ([]string, error) {

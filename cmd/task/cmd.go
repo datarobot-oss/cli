@@ -18,6 +18,7 @@ import (
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/cmd/task/list"
 	"github.com/datarobot/cli/cmd/task/run"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -44,6 +45,12 @@ Manage and execute tasks defined in your project's 'Taskfile':
 		list.Cmd(),
 		run.Cmd(),
 	)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"task_name": telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }

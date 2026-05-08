@@ -125,6 +125,133 @@ func TestExtractCodeRef_NotInResponse(t *testing.T) {
 	assert.Nil(t, ExtractCodeRef(artifact))
 }
 
+// TestExtractCodeRef_PrefersPrimaryWhenSidecarFirst is the regression test
+// for the read/write asymmetry: PatchArtifactCodeRef writes the
+// primary=true container, so reads must follow it too — otherwise a
+// sidecar appearing at index 0 makes display/init show stale catalog
+// info immediately after a sync.
+func TestExtractCodeRef_PrefersPrimaryWhenSidecarFirst(t *testing.T) {
+	primary := true
+	notPrimary := false
+
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{
+					Containers: []Container{
+						{
+							Primary: &notPrimary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
+							}},
+						},
+						{
+							Primary: &primary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "primary-cat", CatalogVersionID: "primary-ver",
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	codeRef := ExtractCodeRef(artifact)
+	require.NotNil(t, codeRef)
+	assert.Equal(t, "primary-cat", codeRef.CatalogID)
+	assert.Equal(t, "primary-ver", codeRef.CatalogVersionID)
+}
+
+func TestExtractCodeRef_FindsPrimaryAcrossGroups(t *testing.T) {
+	primary := true
+
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{Containers: []Container{{}}},
+				{
+					Containers: []Container{
+						{
+							Primary: &primary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "cat-2", CatalogVersionID: "ver-2",
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	codeRef := ExtractCodeRef(artifact)
+	require.NotNil(t, codeRef)
+	assert.Equal(t, "cat-2", codeRef.CatalogID)
+}
+
+// TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil locks in the
+// commit-to-primary semantics: once a container is identified as
+// primary, missing codeRef must return nil rather than falling through
+// to a sidecar's stale data.
+func TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil(t *testing.T) {
+	primary := true
+	notPrimary := false
+
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{
+					Containers: []Container{
+						{
+							Primary: &notPrimary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
+							}},
+						},
+						{
+							Primary: &primary,
+							CodeRef: nil,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assert.Nil(t, ExtractCodeRef(artifact),
+		"primary container with nil codeRef must return nil, not the sidecar's coderef")
+}
+
+// TestExtractCodeRef_PrimaryFalseDoesNotMatch confirms the *bool primary
+// flag is interpreted strictly: a container with `primary: false` set
+// explicitly is treated as a sidecar, not a candidate.
+func TestExtractCodeRef_PrimaryFalseDoesNotMatch(t *testing.T) {
+	notPrimary := false
+
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{
+					Containers: []Container{
+						{
+							Primary: &notPrimary,
+							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+								CatalogID: "first", CatalogVersionID: "v1",
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// No container marked primary → fallback to [0][0], which still
+	// returns "first". Asserts the fallback path remains live.
+	codeRef := ExtractCodeRef(artifact)
+	require.NotNil(t, codeRef)
+	assert.Equal(t, "first", codeRef.CatalogID)
+}
+
 func TestParseArtifactStatus(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -149,6 +276,29 @@ func TestParseArtifactStatus_Invalid(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid status")
 	assert.Contains(t, err.Error(), "bogus")
+}
+
+// TestIsLocked guards the case-insensitive comparison so the locked-artifact
+// guard cannot regress: the API wire format is uppercase ("LOCKED"), but the
+// constant is lowercase, so a plain == check would silently let locked
+// artifacts through.
+func TestIsLocked(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"LOCKED", true},
+		{"locked", true},
+		{"Locked", true},
+		{"DRAFT", false},
+		{"draft", false},
+		{"", false},
+	}
+
+	for _, c := range cases {
+		a := &Artifact{Status: c.status}
+		assert.Equal(t, c.want, a.IsLocked(), "status %q", c.status)
+	}
 }
 
 const validMinimalSpec = `{
@@ -243,6 +393,160 @@ func TestValidateCreateRequest_Errors(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			err := ValidateCreateRequest([]byte(c.spec))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantSub)
+		})
+	}
+}
+
+func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
+	t.Run("OverwritesPrimaryCodeRef_LeavesSidecarsAlone", func(t *testing.T) {
+		// Sidecar at containers[0]; primary at containers[1]. Only the
+		// primary's codeRef should be repointed; the sidecar's codeRef
+		// must survive untouched.
+		raw := map[string]any{
+			"spec": map[string]any{
+				"containerGroups": []any{
+					map[string]any{
+						"containers": []any{
+							map[string]any{
+								"primary": false,
+								"codeRef": map[string]any{
+									"datarobot": map[string]any{
+										"catalogId":        "sidecar-cat",
+										"catalogVersionId": "sidecar-ver",
+									},
+								},
+								"imageUri": "sidecar-image",
+							},
+							map[string]any{
+								"primary": true,
+								"codeRef": map[string]any{
+									"datarobot": map[string]any{
+										"catalogId":        "old-cat",
+										"catalogVersionId": "old-ver",
+									},
+								},
+								"imageUri": "primary-image",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "new-cat", "new-ver"))
+
+		containers := raw["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)["containers"].([]any)
+		sidecar := containers[0].(map[string]any)
+		primary := containers[1].(map[string]any)
+
+		// Primary repointed.
+		primaryRef := primary["codeRef"].(map[string]any)
+		assert.Equal(t, "datarobot", primaryRef["type"])
+		assert.Equal(t, "datarobot", primaryRef["provider"])
+		dr := primaryRef["datarobot"].(map[string]any)
+		assert.Equal(t, "new-cat", dr["catalogId"])
+		assert.Equal(t, "new-ver", dr["catalogVersionId"])
+		assert.Equal(t, "primary-image", primary["imageUri"])
+
+		// Sidecar untouched.
+		sidecarRef := sidecar["codeRef"].(map[string]any)
+		sidecarDR := sidecarRef["datarobot"].(map[string]any)
+		assert.Equal(t, "sidecar-cat", sidecarDR["catalogId"])
+		assert.Equal(t, "sidecar-ver", sidecarDR["catalogVersionId"])
+	})
+
+	t.Run("FindsPrimaryAcrossMultipleGroups", func(t *testing.T) {
+		// Primary lives in containerGroups[1].containers[0]. Iteration must
+		// reach it instead of bailing after the first group.
+		raw := map[string]any{
+			"spec": map[string]any{
+				"containerGroups": []any{
+					map[string]any{
+						"containers": []any{
+							map[string]any{"primary": false},
+						},
+					},
+					map[string]any{
+						"containers": []any{
+							map[string]any{"primary": true},
+						},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "cat-a", "ver-a"))
+
+		primary := raw["spec"].(map[string]any)["containerGroups"].([]any)[1].(map[string]any)["containers"].([]any)[0].(map[string]any)
+		require.Contains(t, primary, "codeRef")
+	})
+
+	t.Run("FallsBackToFirstContainerWhenNoPrimary", func(t *testing.T) {
+		// Legacy artifact: server doesn't emit `primary` on any
+		// container. Mirror ExtractCodeRef's read-side fallback by
+		// updating containerGroups[0].containers[0] so sync against
+		// older deployments keeps working.
+		raw := map[string]any{
+			"spec": map[string]any{
+				"containerGroups": []any{
+					map[string]any{
+						"containers": []any{
+							map[string]any{
+								"imageUri": "first-image",
+							},
+							map[string]any{
+								"imageUri": "second-image",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "new-cat", "new-ver"))
+
+		containers := raw["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)["containers"].([]any)
+		first := containers[0].(map[string]any)
+		second := containers[1].(map[string]any)
+
+		dr := first["codeRef"].(map[string]any)["datarobot"].(map[string]any)
+		assert.Equal(t, "new-cat", dr["catalogId"])
+		assert.Equal(t, "new-ver", dr["catalogVersionId"])
+		assert.NotContains(t, second, "codeRef", "second container must be untouched")
+	})
+
+	cases := []struct {
+		name    string
+		raw     map[string]any
+		wantSub string
+	}{
+		{
+			"missing spec",
+			map[string]any{},
+			"spec missing",
+		},
+		{
+			"spec wrong type",
+			map[string]any{"spec": "not-a-map"},
+			"spec missing",
+		},
+		{
+			"empty containerGroups",
+			map[string]any{"spec": map[string]any{"containerGroups": []any{}}},
+			"containerGroups missing or empty",
+		},
+		{
+			"missing containerGroups",
+			map[string]any{"spec": map[string]any{}},
+			"containerGroups missing or empty",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := setPrimaryCodeRefInRawArtifact(c.raw, "cat", "ver")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), c.wantSub)
 		})
