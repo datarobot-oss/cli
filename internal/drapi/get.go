@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -37,40 +38,38 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
-var token string
-
-// errToken caches the first GetAPIKey failure so subsequent calls within the
-// same process do not retry VerifyToken (and hit /api/v2/version/) on every
-// API call when the configured token is invalid.
-var errToken error
+var (
+	token     string
+	errToken  error
+	tokenOnce sync.Once
+)
 
 // GetToken returns the current cached API token.
 func GetToken() string {
 	return token
 }
 
-// SetToken sets the cached API token.
+// SetToken is a test seam: it seeds the package-level token and resets the
+// sync.Once so tests can inject a known value without going through GetAPIKey.
+// Production code has no reason to call this.
 func SetToken(value string) {
 	token = value
-	errToken = nil // clear any cached auth failure so the new token gets a fresh attempt
+	errToken = nil
+	tokenOnce = sync.Once{}
 }
 
-// resolveToken returns the memoized token, calling GetAPIKey at most once per
-// process. Both the token and any auth failure are cached so that a bad or
-// expired credential does not produce a /api/v2/version/ probe on every API call.
+// resolveToken calls GetAPIKey at most once per process lifetime, caching both
+// the token and any auth failure so a bad or expired credential does not
+// produce a /api/v2/version/ probe on every subsequent API call.
 func resolveToken() (string, error) {
-	if errToken != nil {
-		return "", errToken
-	}
-
-	if token == "" {
-		token, errToken = config.GetAPIKey(context.Background())
-		if errToken != nil {
-			return "", errToken
+	tokenOnce.Do(func() {
+		// Skip fetch if a token was pre-seeded via SetToken (test seam).
+		if token == "" {
+			token, errToken = config.GetAPIKey(context.Background())
 		}
-	}
+	})
 
-	return token, nil
+	return token, errToken
 }
 
 const DefaultGetTimeoutSecs = 30

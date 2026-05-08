@@ -25,22 +25,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// resetTokenForTest seeds the package-level token so verb helpers do not call
-// config.GetAPIKey() (which would require a configured environment), and clears
-// errToken so a cached auth failure from a prior test does not bleed through.
-// Returns a cleanup function the test should defer.
+// resetTokenForTest seeds the package-level token via SetToken (the test seam)
+// so verb helpers do not call config.GetAPIKey() (which requires a configured
+// environment). Returns a cleanup function the test should defer.
 func resetTokenForTest(t *testing.T, value string) func() {
 	t.Helper()
 
-	previousToken := token
-	previousErr := errToken
-	token = value
-	errToken = nil
+	previous := token
 
-	return func() {
-		token = previousToken
-		errToken = previousErr
-	}
+	SetToken(value)
+
+	return func() { SetToken(previous) }
 }
 
 func TestPost_Created(t *testing.T) {
