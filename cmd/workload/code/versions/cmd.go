@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -83,6 +84,15 @@ Example:
 	c.Flags().Int("limit", 100, "Maximum number of versions to return.")
 
 	workload.AddOutputFlag(c, &outputFormat)
+
+	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
+		limit, _ := cmd.Flags().GetInt("limit")
+
+		return map[string]any{
+			"limit":         limit,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return c
 }
