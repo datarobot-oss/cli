@@ -149,8 +149,10 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 **When working on code**, apply these quick principles:
 - **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
 - **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
+- **Caching**: When caching expensive operations, memoize both success and failure
 - **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
 - **Platforms**: Add build tags, match signatures, test on target platforms
+- **sync.Once**: Use for expensive one-time initialization
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 
