@@ -18,7 +18,7 @@ Use type aliases and interfaces to clarify intent and enable testing.
 
 ## Dependency Injection and Testability
 
-Use interfaces for dependencies so they can be mocked; flag constructors with 7+ parameters.
+Use interfaces for dependencies so they can be mocked; flag constructors with 5+ parameters.
 
 ## Function Signature Consistency Across Implementations
 
@@ -30,7 +30,7 @@ File organization must be logical, with related code in the same file or subpack
 
 ## Phase Orchestration Clarity
 
-Phase execution order must be explicit and documented with comments explaining why.
+In orchestrators or controllers, the sequence of operations must be clear and explicit.
 
 ## Library Choices Must Be Justified
 
