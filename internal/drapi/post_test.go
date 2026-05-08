@@ -17,6 +17,7 @@ package drapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +35,14 @@ func resetTokenForTest(t *testing.T, value string) func() {
 
 	prevToken, prevErr, prevFunc := token, errToken, GetAPITokenFunc
 	token, errToken = value, nil
-	GetAPITokenFunc = func(_ context.Context) (string, error) { return value, nil }
+
+	if value == "" {
+		GetAPITokenFunc = func(_ context.Context) (string, error) {
+			return "", errors.New("empty token")
+		}
+	} else {
+		GetAPITokenFunc = func(_ context.Context) (string, error) { return value, nil }
+	}
 
 	return func() {
 		token, errToken, GetAPITokenFunc = prevToken, prevErr, prevFunc
