@@ -18,7 +18,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"text/tabwriter"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/tui"
 )
 
 const (
@@ -102,9 +107,29 @@ func printArtifactsTable(artifacts []Artifact) {
 		return
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
 
-	fmt.Fprintln(w, "ARTIFACT ID\tNAME\tSTATUS\tCATALOG ID\tVERSION ID\tUPDATED")
+	dimStyle := tui.DimStyle.Padding(0, 1)
+
+	headers := []string{"ARTIFACT ID", "NAME", "STATUS", "CATALOG ID", "VERSION ID", "UPDATED"}
+
+	updatedCol := slices.Index(headers, "UPDATED")
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			if col == updatedCol {
+				return dimStyle
+			}
+
+			return cellStyle
+		}).
+		Headers(headers...)
 
 	for _, a := range artifacts {
 		catalogID, versionID := emptyValuePlaceholder, emptyValuePlaceholder
@@ -116,8 +141,8 @@ func printArtifactsTable(artifacts []Artifact) {
 
 		updated := a.UpdatedAt.UTC().Format(timestampFormat)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Status, catalogID, versionID, updated)
+		t.Row(a.ID, a.Name, a.Status, catalogID, versionID, updated)
 	}
 
-	w.Flush()
+	fmt.Fprintln(os.Stdout, t.Render())
 }
