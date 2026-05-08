@@ -53,7 +53,6 @@ func GetUserID(_ context.Context) (string, error) {
 
 	var info AccountInfo
 
-	//nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
 	if err := drapi.GetJSON(url, "", &info); err != nil {
 		return "", err
 	}

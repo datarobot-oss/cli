@@ -20,26 +20,25 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/drapi"
 )
 
-// StubAPIToken replaces config.GetAPITokenFunc for the duration of the test and
-// restores it via t.Cleanup — no defer needed. Pass an empty string to simulate
-// a missing/invalid token (the stub returns an error, matching real behaviour).
-//
-// Tests inside package drapi should use their own StubAPIToken wrapper
-// (drapi/testutil_test.go) which also resets the unexported token cache.
+// StubAPIToken injects a fake token into drapi for the duration of the test,
+// restoring the real GetAPIKey on cleanup. Pass "" to simulate a missing token.
 func StubAPIToken(t *testing.T, tok string) {
 	t.Helper()
 
-	original := config.GetAPITokenFunc
+	var fn func(context.Context) (string, error)
 
 	if tok == "" {
-		config.GetAPITokenFunc = func(_ context.Context) (string, error) {
+		fn = func(_ context.Context) (string, error) {
 			return "", errors.New("empty token")
 		}
 	} else {
-		config.GetAPITokenFunc = func(_ context.Context) (string, error) { return tok, nil }
+		fn = func(_ context.Context) (string, error) { return tok, nil }
 	}
 
-	t.Cleanup(func() { config.GetAPITokenFunc = original })
+	drapi.Init(fn)
+
+	t.Cleanup(func() { drapi.Init(config.GetAPIKey) })
 }

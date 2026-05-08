@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -38,21 +39,28 @@ func (e *HTTPError) Error() string {
 }
 
 var (
-	token    string
-	errToken error
+	tokenOnce sync.Once
+	tokenFunc func(context.Context) (string, error) = config.GetAPIKey
+	token     string
+	errToken  error
 )
 
-// resolveToken returns the memoized token, calling config.GetAPITokenFunc at most once
-// per process. Both the token and any auth failure are cached so that a bad or expired
-// credential does not produce a /api/v2/version/ probe on every subsequent API call.
-func resolveToken() (string, error) {
-	if errToken != nil {
-		return "", errToken
-	}
+// Init sets the function drapi uses to fetch the API token. Must be called once at
+// application startup before any API call is made. Calling Init again (e.g. in tests)
+// resets the memoized cache so the new function is used on the next call.
+func Init(fn func(context.Context) (string, error)) {
+	tokenFunc = fn
+	tokenOnce = sync.Once{}
+	token = ""
+	errToken = nil
+}
 
-	if token == "" {
-		token, errToken = config.GetAPITokenFunc(context.Background())
-	}
+// resolveToken returns the memoized token. tokenOnce guarantees the fetch happens
+// exactly once per Init call, safe for concurrent callers.
+func resolveToken() (string, error) {
+	tokenOnce.Do(func() {
+		token, errToken = tokenFunc(context.Background())
+	})
 
 	return token, errToken
 }

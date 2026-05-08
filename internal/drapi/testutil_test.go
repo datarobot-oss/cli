@@ -15,21 +15,29 @@
 package drapi
 
 import (
+	"context"
+	"errors"
 	"testing"
 
-	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/config"
 )
 
-// StubAPIToken resets the unexported token cache and delegates the
-// config.GetAPITokenFunc swap to testutil.StubAPIToken. Tests outside this
-// package (e.g. internal/telemetry) call testutil.StubAPIToken directly —
-// they cannot access the unexported cache vars.
+// StubAPIToken sets a fake token for the duration of the test and restores
+// the real GetAPIKey on cleanup. Pass "" to simulate a missing token.
 func StubAPIToken(t *testing.T, tok string) {
 	t.Helper()
 
-	token, errToken = tok, nil
+	var fn func(context.Context) (string, error)
 
-	t.Cleanup(func() { token, errToken = "", nil })
+	if tok == "" {
+		fn = func(_ context.Context) (string, error) {
+			return "", errors.New("empty token")
+		}
+	} else {
+		fn = func(_ context.Context) (string, error) { return tok, nil }
+	}
 
-	testutil.StubAPIToken(t, tok)
+	Init(fn)
+
+	t.Cleanup(func() { Init(config.GetAPIKey) })
 }
