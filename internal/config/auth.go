@@ -86,6 +86,8 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	return nil
 }
 
+var GetAPITokenFunc = GetAPIKey
+
 func GetAPIKey(ctx context.Context) (string, error) {
 	viperEndpoint := viper.GetString(DataRobotURL)
 	viperToken := viper.GetString(DataRobotAPIKey)
