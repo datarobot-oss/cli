@@ -28,9 +28,8 @@ import (
 type promptChoice int
 
 const (
-	promptSync  promptChoice = iota // user accepted the plan; proceed to Execute
-	promptDiffs                     // user wants per-file diffs first
-	promptQuit                      // user aborted
+	promptSync promptChoice = iota // user accepted the plan; proceed to Execute
+	promptQuit                     // user aborted
 )
 
 // promptConflictMenu shows the [d] [Enter] [q] menu when conflicts

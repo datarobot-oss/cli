@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
@@ -129,6 +130,20 @@ Example:
 
 	workload.AddOutputFlag(c, &outputFormat)
 
+	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		diff, _ := cmd.Flags().GetBool("diff")
+		yesFlag, _ := cmd.Flags().GetBool("yes")
+		yes := yesFlag || viperx.GetBool("yes")
+
+		return map[string]any{
+			"dry_run":       dryRun,
+			"diff":          diff,
+			"yes":           yes,
+			"output_format": string(outputFormat),
+		}
+	})
+
 	return c
 }
 
@@ -179,7 +194,7 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 	out := cmd.OutOrStdout()
 
 	if outputFormat == workload.OutputFormatJSON {
-		return finishJSON(engine, plan, out, dryRun, diffFlag)
+		return finishJSON(engine, plan, out, dryRun, diffFlag, yes)
 	}
 
 	if err := renderHumanPlan(cmd, engine, plan, diffFlag); err != nil {
@@ -231,14 +246,22 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 }
 
 // finishJSON is the --output-format=json analogue of finishSync. The
-// plan is always emitted; if neither --dry-run nor --diff is set, an
-// Execute runs and the Result is emitted as a second JSON document.
-func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, dryRun, diffFlag bool) error {
+// plan is always emitted; if neither --dry-run nor --diff is set and
+// the plan does not require explicit confirmation, an Execute runs
+// and the Result is emitted as a second JSON document. Conflicts
+// without --yes are treated like the human-path quit branch: the
+// plan is emitted and no Execute is run, so callers can inspect the
+// plan and re-invoke with --yes if they want to proceed.
+func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, dryRun, diffFlag, yes bool) error {
 	if err := display.RenderPlanJSON(out, plan); err != nil {
 		return err
 	}
 
 	if dryRun || diffFlag || plan.IsEmpty() {
+		return nil
+	}
+
+	if shouldPromptConflicts(plan, yes) {
 		return nil
 	}
 

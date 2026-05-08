@@ -219,6 +219,45 @@ func TestRunE_JSONOutput(t *testing.T) {
 	assert.Contains(t, out, `"v2"`)
 }
 
+// TestRunE_JSONOutput_ConflictWithoutYes: with conflicts present and
+// no --yes, the JSON path must emit the plan and stop — it must NOT
+// auto-execute. Mirrors the human-path quit branch and prevents a
+// silent overwrite when scripts pass --output-format json without
+// realising the plan has conflicts.
+func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Conflicts: []sync.FileAction{{Path: "x.py"}},
+	}}
+
+	flags := map[string]string{"dir": dir, "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.False(t, fe.executed, "JSON path must not auto-execute on conflicts without --yes")
+	assert.Contains(t, stdout.String(), `"x.py"`, "plan JSON should still be emitted")
+}
+
+// TestRunE_JSONOutput_ConflictWithYes: --yes opts into auto-execute
+// even on conflicts in JSON mode, matching the human-path Enter branch.
+func TestRunE_JSONOutput_ConflictWithYes(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
+		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "--yes must allow auto-execute on conflicts")
+}
+
 // TestRunE_ConflictPromptQuit: with conflicts present and no --yes,
 // typing 'q' aborts cleanly without calling Execute.
 func TestRunE_ConflictPromptQuit(t *testing.T) {
