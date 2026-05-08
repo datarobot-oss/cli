@@ -53,6 +53,7 @@ func GetUserID(_ context.Context) (string, error) {
 
 	var info AccountInfo
 
+	//nolint:contextcheck // resolveToken inside GetJSON uses context.Background(); ctx threading is a future improvement
 	if err := drapi.GetJSON(url, "", &info); err != nil {
 		return "", err
 	}

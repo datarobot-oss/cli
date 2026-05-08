@@ -15,6 +15,7 @@
 package drapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,17 +26,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// resetTokenForTest seeds the package-level token via SetToken (the test seam)
-// so verb helpers do not call config.GetAPIKey() (which requires a configured
-// environment). Returns a cleanup function the test should defer.
+// resetTokenForTest seeds the package-level token directly (same-package access)
+// and stubs GetAPITokenFunc so verb helpers never call config.GetAPIKey.
+// Returns a cleanup function the test should defer.
 func resetTokenForTest(t *testing.T, value string) func() {
 	t.Helper()
 
-	previous := token
+	prevToken, prevErr, prevFunc := token, errToken, GetAPITokenFunc
+	token, errToken = value, nil
+	GetAPITokenFunc = func(_ context.Context) (string, error) { return value, nil }
 
-	SetToken(value)
-
-	return func() { SetToken(previous) }
+	return func() {
+		token, errToken, GetAPITokenFunc = prevToken, prevErr, prevFunc
+	}
 }
 
 func TestPost_Created(t *testing.T) {

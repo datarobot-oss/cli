@@ -419,12 +419,11 @@ func TestGetUserID_NetworkError(t *testing.T) {
 	assert.Empty(t, uid)
 }
 
-func resetTokenForTest(t *testing.T, token string) func() {
-	original := drapi.GetToken()
+func resetTokenForTest(t *testing.T, tok string) func() {
+	t.Helper()
 
-	drapi.SetToken(token)
+	original := drapi.GetAPITokenFunc
+	drapi.GetAPITokenFunc = func(_ context.Context) (string, error) { return tok, nil }
 
-	return func() {
-		drapi.SetToken(original)
-	}
+	return func() { drapi.GetAPITokenFunc = original }
 }

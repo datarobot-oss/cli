@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -39,35 +38,26 @@ func (e *HTTPError) Error() string {
 }
 
 var (
-	token     string
-	errToken  error
-	tokenOnce sync.Once
+	token    string
+	errToken error
 )
 
-// GetToken returns the current cached API token.
-func GetToken() string {
-	return token
-}
+// GetAPITokenFunc is the function used to fetch the API token. It is a package-level
+// variable so tests can inject a stub without going through config.GetAPIKey.
+// Production code must never reassign this.
+var GetAPITokenFunc = config.GetAPIKey //nolint:gochecknoglobals
 
-// SetToken is a test seam: it seeds the package-level token and resets the
-// sync.Once so tests can inject a known value without going through GetAPIKey.
-// Production code has no reason to call this.
-func SetToken(value string) {
-	token = value
-	errToken = nil
-	tokenOnce = sync.Once{}
-}
-
-// resolveToken calls GetAPIKey at most once per process lifetime, caching both
-// the token and any auth failure so a bad or expired credential does not
-// produce a /api/v2/version/ probe on every subsequent API call.
+// resolveToken returns the memoized token, calling GetAPITokenFunc at most once per
+// process. Both the token and any auth failure are cached so that a bad or expired
+// credential does not produce a /api/v2/version/ probe on every subsequent API call.
 func resolveToken() (string, error) {
-	tokenOnce.Do(func() {
-		// Skip fetch if a token was pre-seeded via SetToken (test seam).
-		if token == "" {
-			token, errToken = config.GetAPIKey(context.Background())
-		}
-	})
+	if errToken != nil {
+		return "", errToken
+	}
+
+	if token == "" {
+		token, errToken = GetAPITokenFunc(context.Background())
+	}
 
 	return token, errToken
 }
