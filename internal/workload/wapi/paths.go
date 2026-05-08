@@ -22,9 +22,10 @@ import (
 
 // Exported names used by external callers (tests, sync commands).
 const (
-	DirName         = ".wapi"
-	HistoryFile     = "history.log"
-	ManifestVersion = 1
+	DirName          = ".wapi"
+	HistoryFile      = "history.log"
+	ManifestVersion  = 1
+	CheckoutsDirName = ".checkouts"
 )
 
 // Internal layout constants. Stay private so consumers go through the
@@ -77,4 +78,17 @@ func wapiignorePath(projectDir string) string {
 // Returns false if .wapi exists as a file rather than a directory.
 func Exists(projectDir string) bool {
 	return fsutil.DirExists(wapiDir(projectDir))
+}
+
+// CheckoutsDir is the parent directory holding read-only version snapshots
+// produced by `dr workload code checkout`. Each snapshot is a sub-directory
+// named after the full catalog version ID.
+func CheckoutsDir(projectDir string) string {
+	return filepath.Join(wapiDir(projectDir), CheckoutsDirName)
+}
+
+// CheckoutDir is the snapshot directory for a single version, identified by
+// its full catalog version ID.
+func CheckoutDir(projectDir, versionID string) string {
+	return filepath.Join(CheckoutsDir(projectDir), versionID)
 }

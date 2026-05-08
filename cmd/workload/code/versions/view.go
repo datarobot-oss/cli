@@ -126,7 +126,7 @@ func renderText(out io.Writer, v view) {
 		}
 
 		t.Row(
-			marker+row.Short,
+			marker+row.ID,
 			strconv.Itoa(row.NumFiles),
 			humanBytes(row.TotalSize),
 			formatCreatedAt(row.CreatedAt),
@@ -140,7 +140,7 @@ func renderText(out io.Writer, v view) {
 	}
 
 	if v.SyncedVersionID != "" {
-		fmt.Fprintf(out, "Local synced to: %s\n", shortID(v.SyncedVersionID))
+		fmt.Fprintf(out, "Local synced to: %s\n", v.SyncedVersionID)
 	}
 }
 

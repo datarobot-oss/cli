@@ -15,6 +15,7 @@
 package code
 
 import (
+	"github.com/datarobot/cli/cmd/workload/code/checkout"
 	initcmd "github.com/datarobot/cli/cmd/workload/code/init"
 	"github.com/datarobot/cli/cmd/workload/code/versions"
 	"github.com/spf13/cobra"
@@ -37,9 +38,9 @@ Subcommands:
   init       Link a directory to an existing artifact and lay down the
              '.wapi/' state. Required before any other 'code' command.
   sync       Push local edits and pull remote changes (coming soon).
-  versions   List catalog versions for the linked artifact (coming soon).
+  versions   List catalog versions for the linked artifact.
   checkout   Download a prior version into '.wapi/.checkouts/' for
-             read-only inspection (coming soon).
+             read-only inspection.
 
 Artifacts must already exist before running 'init'. Create them via
 'dr workload artifact create' or in the DataRobot UI — these commands
@@ -52,6 +53,7 @@ Example:
 
 	cmd.AddCommand(initcmd.Cmd())
 	cmd.AddCommand(versions.Cmd())
+	cmd.AddCommand(checkout.Cmd())
 
 	return cmd
 }
