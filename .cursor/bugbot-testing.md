@@ -79,49 +79,7 @@ func TestProcessMissingResource(t *testing.T) {
 
 ## Test Seams and Mocking
 
-Design code using **dependency inversion**: depend on abstractions (interfaces), not concrete types. This makes tests simple and code decoupled.
-
-**Anti-pattern** (tight coupling to concrete types):
-```go
-// Bad: Function tightly coupled to concrete *http.Client
-func Fetch(ctx context.Context, path string) ([]byte, error) {
-    // Creates HTTP client internally; cannot mock in tests
-    client := &http.Client{}
-    resp, err := client.Get(ctx, path)
-    // ...
-}
-
-// Test must make real HTTP calls
-func TestFetch(t *testing.T) {
-    data, err := Fetch(context.Background(), "/path")  // Real HTTP!
-    assert.NoError(t, err)
-}
-```
-
-**Correct pattern** (dependency inversion via interface):
-```go
-// Good: Depend on abstraction, not concrete type
-type HTTPClient interface {
-    Get(ctx context.Context, path string) ([]byte, error)
-}
-
-func Fetch(ctx context.Context, client HTTPClient, path string) ([]byte, error) {
-    data, err := client.Get(ctx, path)
-    // ...
-}
-
-// Test uses mock; no real HTTP calls
-type mockClient struct { data []byte; err error }
-func (m *mockClient) Get(ctx context.Context, path string) ([]byte, error) {
-    return m.data, m.err
-}
-
-func TestFetch(t *testing.T) {
-    client := &mockClient{data: []byte("test")}
-    data, err := Fetch(context.Background(), client, "/path")
-    assert.NoError(t, err)
-}
-```
+Design code using **dependency inversion**: depend on abstractions (interfaces), not concrete types. Avoid using exported mutable state or global variables in tests. Prefer function variables or interfaces that can be overridden in tests.
 
 **What to flag**: Real API calls in tests, complex setup, functions depending on concrete types (not interfaces), global state, creating dependencies internally instead of accepting them.
 

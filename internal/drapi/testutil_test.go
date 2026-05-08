@@ -20,16 +20,22 @@ import (
 	"testing"
 )
 
-// StubAPIToken seeds the package-level token and stubs GetAPITokenFunc for the
-// duration of the test. Cleanup is registered via t.Cleanup — no defer needed.
-// Pass an empty string to simulate a missing/invalid token (GetAPITokenFunc
-// will return an error, matching the real behaviour when no credentials exist).
+// StubAPIToken seeds the package-level token cache and stubs GetAPITokenFunc for
+// the duration of the test. Cleanup is registered via t.Cleanup — no defer needed.
+// Pass an empty string to simulate a missing/invalid token (GetAPITokenFunc will
+// return an error, matching real behaviour when no credentials exist).
+//
+// Note: this is a same-package test helper with access to unexported cache vars.
+// Tests outside package drapi (e.g. internal/telemetry) use their own equivalent
+// that only swaps GetAPITokenFunc — they cannot reach the cache vars directly.
 func StubAPIToken(t *testing.T, tok string) {
 	t.Helper()
 
-	prevToken, prevErr, prevFunc := token, errToken, GetAPITokenFunc
-
 	token, errToken = tok, nil
+
+	t.Cleanup(func() { token, errToken = "", nil })
+
+	origFunc := GetAPITokenFunc
 
 	if tok == "" {
 		GetAPITokenFunc = func(_ context.Context) (string, error) {
@@ -39,7 +45,5 @@ func StubAPIToken(t *testing.T, tok string) {
 		GetAPITokenFunc = func(_ context.Context) (string, error) { return tok, nil }
 	}
 
-	t.Cleanup(func() {
-		token, errToken, GetAPITokenFunc = prevToken, prevErr, prevFunc
-	})
+	t.Cleanup(func() { GetAPITokenFunc = origFunc })
 }
