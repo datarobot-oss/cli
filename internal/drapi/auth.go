@@ -15,7 +15,6 @@
 package drapi
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/datarobot/cli/internal/config"
@@ -29,13 +28,10 @@ import (
 //
 // Reuses the package-level `token` memoization declared in get.go.
 func SetAuthHeaders(req *http.Request) error {
-	if token == "" {
-		var err error
+	var err error
 
-		token, err = config.GetAPIKey(context.Background())
-		if err != nil {
-			return err
-		}
+	if token, err = resolveToken(); err != nil {
+		return err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)

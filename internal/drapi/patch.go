@@ -16,7 +16,6 @@ package drapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -28,11 +27,8 @@ import (
 func Patch(url, info string, body any) (*http.Response, error) {
 	var err error
 
-	if token == "" {
-		token, err = config.GetAPIKey(context.Background())
-		if err != nil {
-			return nil, err
-		}
+	if token, err = resolveToken(); err != nil {
+		return nil, err
 	}
 
 	payload, err := json.Marshal(body)
