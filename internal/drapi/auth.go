@@ -26,7 +26,7 @@ import (
 // (e.g. multipart streaming uploads in drapi/filesapi) can reuse the
 // canonical drapi auth-injection logic instead of re-implementing it.
 //
-// Reuses the package-level `token` memoization declared in get.go.
+// Reuses the package-level token/errToken memoization via resolveToken() (declared in get.go).
 func SetAuthHeaders(req *http.Request) error {
 	var err error
 

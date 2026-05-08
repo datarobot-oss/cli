@@ -27,6 +27,7 @@ import (
 func Delete(url, info string, body any) (*http.Response, error) {
 	var err error
 
+	// resolveToken memoizes both success and failure; see get.go for rationale.
 	if token, err = resolveToken(); err != nil {
 		return nil, err
 	}

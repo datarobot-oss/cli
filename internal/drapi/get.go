@@ -52,7 +52,7 @@ func GetToken() string {
 // SetToken sets the cached API token.
 func SetToken(value string) {
 	token = value
-	errToken = nil
+	errToken = nil // clear any cached auth failure so the new token gets a fresh attempt
 }
 
 // resolveToken returns the memoized token, calling GetAPIKey at most once per
