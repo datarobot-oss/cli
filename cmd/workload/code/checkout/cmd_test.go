@@ -169,10 +169,10 @@ func newTestCmd(t *testing.T, dir string, deps Deps, args []string) (*cobra.Comm
 
 const (
 	verA = "abcdef1234567890abcdef1234567890"
-	// verB shares verA's 8-char prefix "abcdef12" so the ambiguous-prefix
-	// test resolves to two matches.
-	verB = "abcdef12fffffffabcdef12fffffff00"
-	verC = "11112222333344445555666677778888"
+	// verAmbiguous shares verA's 8-char prefix "abcdef12", so a query for that
+	// prefix matches both — resolveVersion must reject it as ambiguous.
+	verAmbiguous = "abcdef12fffffffabcdef12fffffff00"
+	verC         = "11112222333344445555666677778888"
 )
 
 func TestCheckout_NotLinked(t *testing.T) {
@@ -251,7 +251,7 @@ func TestCheckout_VersionResolution(t *testing.T) {
 		versions                   []filesapi.CatalogVersion
 	}{
 		{"happy short prefix", "abcdef12", "", verA, []filesapi.CatalogVersion{{ID: verA}, {ID: verC}}},
-		{"ambiguous", "abcdef12", "ambiguous", "", []filesapi.CatalogVersion{{ID: verA}, {ID: verB}}},
+		{"ambiguous", "abcdef12", "ambiguous", "", []filesapi.CatalogVersion{{ID: verA}, {ID: verAmbiguous}}},
 		{"not found", "99999999", `"99999999"`, "", []filesapi.CatalogVersion{{ID: verA}}},
 	}
 
@@ -334,6 +334,43 @@ func TestCheckout_JSONOutput(t *testing.T) {
 	require.Len(t, got.Files, 2)
 	assert.Equal(t, "a.txt", got.Files[0].Path)
 	assert.Equal(t, "b.txt", got.Files[1].Path)
+}
+
+func TestCheckout_RejectsUnsafePath(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		wantHint string
+	}{
+		{"parent escape", "../etc/passwd", "escapes project root"},
+		{"absolute path", "/etc/passwd", "absolute path not allowed"},
+		{"backslash", "evil\\path", "backslash in path"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initLinkedDir(t, "cat-1")
+
+			fc := &fakeClient{
+				versions: []filesapi.CatalogVersion{{ID: verA}},
+				content:  map[string][]byte{tc.path: []byte("evil")},
+			}
+
+			deps := fakeDeps(draftArtifact("art-abc-123"), fc)
+
+			cmd, _ := newTestCmd(t, dir, deps, []string{verA})
+
+			err := cmd.Execute()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsafe path")
+			assert.Contains(t, err.Error(), tc.wantHint)
+
+			_, dlCalls := fc.callCounts()
+			assert.Zero(t, dlCalls, "DownloadFile must not be called when validation rejects a path")
+
+			assert.NoDirExists(t, wapi.CheckoutDir(dir, verA))
+		})
+	}
 }
 
 func TestCheckout_DownloadErrorRemovesPartial(t *testing.T) {

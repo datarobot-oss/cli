@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/datarobot/cli/cmd/workload/code/internal/format"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
 )
@@ -71,15 +72,15 @@ func downloadView(projectDir, versionID, checkoutDir string, files map[string]fi
 	}
 }
 
-func renderDownloadResult(out io.Writer, format workload.OutputFormat, r downloadResult) error {
-	if format == workload.OutputFormatJSON {
+func renderDownloadResult(out io.Writer, outFmt workload.OutputFormat, r downloadResult) error {
+	if outFmt == workload.OutputFormatJSON {
 		return encodeJSON(out, r)
 	}
 
-	fmt.Fprintf(out, "Downloading version %s (%d files, %s)...\n", r.VersionID, r.FileCount, humanBytes(r.TotalSize))
+	fmt.Fprintf(out, "Downloading version %s (%d files, %s)...\n", r.VersionID, r.FileCount, format.Bytes(r.TotalSize))
 
 	for _, f := range r.Files {
-		fmt.Fprintf(out, "  ↓ %s (%s)\n", f.Path, humanBytes(f.Size))
+		fmt.Fprintf(out, "  ↓ %s (%s)\n", f.Path, format.Bytes(f.Size))
 	}
 
 	fmt.Fprintf(out, "Checked out to: %s\n\n", r.CheckoutDir)
@@ -89,8 +90,8 @@ func renderDownloadResult(out io.Writer, format workload.OutputFormat, r downloa
 	return nil
 }
 
-func renderCleanResult(out io.Writer, format workload.OutputFormat, r cleanResult) error {
-	if format == workload.OutputFormatJSON {
+func renderCleanResult(out io.Writer, outFmt workload.OutputFormat, r cleanResult) error {
+	if outFmt == workload.OutputFormatJSON {
 		return encodeJSON(out, r)
 	}
 
@@ -115,23 +116,4 @@ func encodeJSON(out io.Writer, v any) error {
 	enc.SetIndent("", "  ")
 
 	return enc.Encode(v)
-}
-
-// 1 KB = 1024 B (binary), matching sync-engine accounting.
-func humanBytes(n int64) string {
-	const unit = 1024
-
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-
-	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
-		div *= unit
-		exp++
-	}
-
-	suffix := []string{"KB", "MB", "GB", "TB", "PB"}[exp]
-
-	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffix)
 }

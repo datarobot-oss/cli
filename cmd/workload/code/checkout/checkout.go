@@ -29,12 +29,17 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
 const (
-	checkoutMetaFile     = ".checkout-meta.json"
+	checkoutMetaFile = ".checkout-meta.json"
+
+	// Standard Unix modes; the snapshot is for the invoking user's own
+	// inspection, not multi-user sharing — modes here aren't load-bearing
+	// for safety, only for letting the user read/traverse what we wrote.
 	checkoutDirPerm      = 0o755
 	checkoutMetaFilePerm = 0o644
 )
@@ -71,42 +76,57 @@ func runDownload(out io.Writer, format workload.OutputFormat, dir, verArg string
 		return err
 	}
 
+	if err := stageAndInstall(deps.Files, pre, parent, files, totalSize, startedAt); err != nil {
+		return err
+	}
+
+	if err := wapi.AppendHistory(dir, checkoutHistoryEntry(startedAt, pre.versionID, len(files), totalSize, time.Since(startedAt))); err != nil {
+		return fmt.Errorf("append history: %w", err)
+	}
+
+	return renderDownloadResult(out, format, downloadView(dir, pre.versionID, pre.checkoutDir, files))
+}
+
+// stageAndInstall downloads files into a sibling temp dir, writes metadata,
+// and atomically swaps it into place. The temp dir is removed on any failure
+// before the swap; after a successful swap it has been renamed away.
+func stageAndInstall(c filesapi.Client, pre preflightResult, parent string, files map[string]filesapi.FileMeta, totalSize int64, startedAt time.Time) error {
 	// Dot-prefix so listCheckoutNames skips it; sibling of finalDir so the swap rename is intra-filesystem.
 	tempDir, err := os.MkdirTemp(parent, ".tmp-"+pre.versionID+"-")
 	if err != nil {
 		return fmt.Errorf("create temp checkout dir: %w", err)
 	}
 
-	if err := downloadAll(deps.Files, pre.catalogID, pre.versionID, tempDir, files); err != nil {
-		_ = os.RemoveAll(tempDir)
+	installed := false
 
+	defer func() {
+		if !installed {
+			_ = os.RemoveAll(tempDir)
+		}
+	}()
+
+	if err := downloadAll(c, pre.catalogID, pre.versionID, tempDir, files); err != nil {
 		return err
 	}
 
 	meta := checkoutMeta{
 		VersionID:    pre.versionID,
-		CheckedOutAt: time.Now().UTC(),
+		CheckedOutAt: startedAt.UTC(),
 		FileCount:    len(files),
 		TotalSize:    totalSize,
 	}
 
 	if err := writeCheckoutMeta(tempDir, meta); err != nil {
-		_ = os.RemoveAll(tempDir)
-
 		return err
 	}
 
 	if err := swapCheckoutDir(tempDir, pre.checkoutDir); err != nil {
-		_ = os.RemoveAll(tempDir)
-
 		return err
 	}
 
-	if err := wapi.AppendHistory(dir, checkoutHistoryEntry(pre.versionID, len(files), totalSize, time.Since(startedAt))); err != nil {
-		return fmt.Errorf("append history: %w", err)
-	}
+	installed = true
 
-	return renderDownloadResult(out, format, downloadView(dir, pre.versionID, pre.checkoutDir, files))
+	return nil
 }
 
 // Backup-rename swap so a failed install can be rolled back to the previous snapshot.
@@ -120,6 +140,9 @@ func swapCheckoutDir(tempDir, finalDir string) error {
 
 	var hasOld bool
 
+	// TOCTOU window: another process could create or remove finalDir between
+	// the Stat and the Rename. Acceptable for a single-user CLI — concurrent
+	// `dr` invocations against the same checkout dir are not supported.
 	if _, err := os.Stat(finalDir); err == nil {
 		if err := os.Rename(finalDir, backupDir); err != nil {
 			return fmt.Errorf("back up existing checkout dir: %w", err)
@@ -131,11 +154,18 @@ func swapCheckoutDir(tempDir, finalDir string) error {
 	}
 
 	if err := os.Rename(tempDir, finalDir); err != nil {
+		installErr := fmt.Errorf("install checkout dir: %w", err)
+
 		if hasOld {
-			_ = os.Rename(backupDir, finalDir)
+			if rbErr := os.Rename(backupDir, finalDir); rbErr != nil {
+				return errors.Join(
+					installErr,
+					fmt.Errorf("rollback failed; previous snapshot stranded at %s: %w", backupDir, rbErr),
+				)
+			}
 		}
 
-		return fmt.Errorf("install checkout dir: %w", err)
+		return installErr
 	}
 
 	if hasOld {
@@ -145,9 +175,9 @@ func swapCheckoutDir(tempDir, finalDir string) error {
 	return nil
 }
 
-func checkoutHistoryEntry(versionID string, fileCount int, totalSize int64, duration time.Duration) wapi.HistoryEntry {
+func checkoutHistoryEntry(startedAt time.Time, versionID string, fileCount int, totalSize int64, duration time.Duration) wapi.HistoryEntry {
 	return wapi.HistoryEntry{
-		"ts":       time.Now().UTC().Format(time.RFC3339),
+		"ts":       startedAt.UTC().Format(time.RFC3339),
 		"op":       "checkout",
 		"version":  versionID,
 		"files":    fileCount,
@@ -172,8 +202,7 @@ func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
 		return preflightResult{}, errors.New("no code has been synced yet. Run 'dr workload code sync' first")
 	}
 
-	// Fetched only to surface a 404 before any download work begins.
-	if _, err := fetchArtifact(deps.GetArtifact, cfg.ArtifactID); err != nil {
+	if err := probeArtifact(deps.GetArtifact, cfg.ArtifactID); err != nil {
 		return preflightResult{}, err
 	}
 
@@ -201,18 +230,19 @@ func prepareCheckoutsParent(parent string, totalSize int64) error {
 	return nil
 }
 
-func fetchArtifact(get func(string) (*workload.Artifact, error), artifactID string) (*workload.Artifact, error) {
-	art, err := get(artifactID)
-	if err != nil {
+// probeArtifact surfaces a 404 before any download work begins. The artifact
+// payload is discarded; preflight only needs to confirm the ID resolves.
+func probeArtifact(get func(string) (*workload.Artifact, error), artifactID string) error {
+	if _, err := get(artifactID); err != nil {
 		var httpErr *drapi.HTTPError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("artifact %s not found", artifactID)
+			return fmt.Errorf("artifact %s not found", artifactID)
 		}
 
-		return nil, fmt.Errorf("fetch artifact %s: %w", artifactID, err)
+		return fmt.Errorf("fetch artifact %s: %w", artifactID, err)
 	}
 
-	return art, nil
+	return nil
 }
 
 // Accepts the full ID or any unique prefix.
@@ -255,6 +285,12 @@ func downloadAll(c filesapi.Client, catalogID, versionID, checkoutDir string, fi
 	}
 
 	sort.Strings(paths)
+
+	for _, path := range paths {
+		if err := fileops.SafeRelPath(path); err != nil {
+			return fmt.Errorf("server returned unsafe path %q: %w", path, err)
+		}
+	}
 
 	for _, path := range paths {
 		if err := downloadOne(c, catalogID, versionID, checkoutDir, path); err != nil {
