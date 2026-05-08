@@ -39,10 +39,10 @@ func (e *HTTPError) Error() string {
 
 var token string
 
-// tokenErr caches the first GetAPIKey failure so subsequent calls within the
+// errToken caches the first GetAPIKey failure so subsequent calls within the
 // same process do not retry VerifyToken (and hit /api/v2/version/) on every
 // API call when the configured token is invalid.
-var tokenErr error
+var errToken error
 
 // GetToken returns the current cached API token.
 func GetToken() string {
@@ -52,21 +52,21 @@ func GetToken() string {
 // SetToken sets the cached API token.
 func SetToken(value string) {
 	token = value
-	tokenErr = nil
+	errToken = nil
 }
 
 // resolveToken returns the memoized token, calling GetAPIKey at most once per
 // process. Both the token and any auth failure are cached so that a bad or
 // expired credential does not produce a /api/v2/version/ probe on every API call.
 func resolveToken() (string, error) {
-	if tokenErr != nil {
-		return "", tokenErr
+	if errToken != nil {
+		return "", errToken
 	}
 
 	if token == "" {
-		token, tokenErr = config.GetAPIKey(context.Background())
-		if tokenErr != nil {
-			return "", tokenErr
+		token, errToken = config.GetAPIKey(context.Background())
+		if errToken != nil {
+			return "", errToken
 		}
 	}
 

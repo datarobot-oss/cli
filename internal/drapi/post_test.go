@@ -31,10 +31,15 @@ import (
 func resetTokenForTest(t *testing.T, value string) func() {
 	t.Helper()
 
-	previous := token
+	previousToken := token
+	previousErr := errToken
 	token = value
+	errToken = nil
 
-	return func() { token = previous }
+	return func() {
+		token = previousToken
+		errToken = previousErr
+	}
 }
 
 func TestPost_Created(t *testing.T) {
