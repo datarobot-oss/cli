@@ -1,8 +1,8 @@
 # Cross-Platform Code & Behavior
 
-## Build Tags Required
+## Build Tags Recommended
 
-Platform-specific files must have `//go:build` comments.
+Platform-specific files may have `//go:build` comments to clarify intent, but are not required if the filename is unambiguous.
 
 ## Identical Function Signatures Across Platforms
 
@@ -26,11 +26,11 @@ Document and enforce a consistent line-ending strategy across platforms.
 
 ## Syscall Portability
 
-Use `golang.org/x/sys/unix` instead of the raw `syscall` package.
+For cross-platform compatibility, prefer standard libraries instead of the `syscall` package. Prefer `syscall` over spawning subprocesses.
 
 ## Tracked Stubs for Incomplete Platforms
 
-Incomplete platform implementations must be tracked with JIRA tickets and documented in CLI help without exposing ticket numbers to users.
+Incomplete platform implementations must be tracked with JIRA issues. JIRA issues may be referenced in code comments but should not be exposed to users.
 
 ## Platform Assumptions Must Be Explicit
 
