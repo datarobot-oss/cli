@@ -8,10 +8,6 @@ User-facing errors must provide actionable context — not raw system errors.
 
 Different error types (404, 403, 500) must produce different, specific user messages.
 
-## Never Silently Ignore Errors
-
-Never ignore errors without logging or a documented reason.
-
 ## Log Errors Before Returning in Orchestrators
 
 Orchestrators must log errors before returning them to preserve context.
