@@ -14,7 +14,7 @@ Never ignore errors without logging or a documented reason.
 
 ## Log Errors Before Returning in Orchestrators
 
-Phase orchestrators must log errors before returning them to preserve context.
+Orchestrators must log errors before returning them to preserve context.
 
 ## Multiple Error Scenarios Must Be Explicit
 

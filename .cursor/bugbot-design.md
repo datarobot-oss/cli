@@ -28,9 +28,9 @@ All implementations of the same functionality must have identical function signa
 
 File organization must be logical, with related code in the same file or subpackage.
 
-## Phase Orchestration Clarity
+## Orchestration Clarity
 
-In orchestrators or controllers, the sequence of operations must be clear and explicit.
+In orchestrators, the sequence of operations must be clear and explicit.
 
 ## Library Choices Must Be Justified
 

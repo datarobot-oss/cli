@@ -19,7 +19,3 @@ Document how functions fail, especially for streaming, long-running, and resourc
 ## Limitations and Future Work
 
 Intentional limitations must be tracked with JIRA tickets.
-
-## README for Complex Packages
-
-Foundational packages must have a README documenting design decisions, usage examples, and common pitfalls.

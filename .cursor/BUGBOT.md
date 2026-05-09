@@ -2,7 +2,7 @@
 
 ## High-Risk Rules
 
-Catch silent failures, resource leaks, data corruption, poor error handling, platform bugs:
+Catch silent failures, resource leaks, data corruption, poor error handling, platform bugs.
 
 - **bugbot-concurrency.md** — Goroutine safety, WaitGroup patterns, channel closure
 - **bugbot-errors.md** — Error wrapping, user-facing messages, error handling patterns
@@ -11,7 +11,7 @@ Catch silent failures, resource leaks, data corruption, poor error handling, pla
 
 ## Resource & Operations Rules
 
-Prevent hangs, leaks, platform-specific bugs:
+Prevent hangs, leaks, platform-specific bugs.
 
 - **bugbot-resources.md** — Lock/resource lifecycle, timeouts, cleanup
 - **bugbot-paths.md** — Path validation, normalization, Unicode, symlinks
@@ -19,14 +19,14 @@ Prevent hangs, leaks, platform-specific bugs:
 
 ## Design Rules
 
-Prevent tight coupling, premature abstraction, architectural debt:
+Prevent tight coupling, premature abstraction, architectural debt.
 
 - **bugbot-design.md** — Code organization, separation of concerns, dependency injection
 - **bugbot-package-design.md** — Contracts, API documentation, limitations
 
 ## Quality Rules
 
-Ensure consistency and maintainability:
+Ensure consistency and maintainability.
 
 - **bugbot-testing.md** — Race detector, error paths, test seams, mocking
 - **bugbot-cmd.md** — Table rendering, file organization, output consistency
