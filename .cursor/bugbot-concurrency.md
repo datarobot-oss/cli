@@ -4,10 +4,6 @@
 
 Goroutines must have panic recovery to prevent silent failures.
 
-## Loop Variable Capture in Goroutines
-
-Loop variables passed to goroutines must be captured before the goroutine is spawned.
-
 ## Error Channel Buffering
 
 Error channel buffer size must match the number of goroutines writing to it.
