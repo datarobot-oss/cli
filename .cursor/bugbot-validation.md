@@ -16,10 +16,6 @@ Do not log in validation success cases.
 
 Commented-out return statements must have a documented reason or a JIRA ticket.
 
-## Custom Schema Validation vs. Libraries
-
-Use struct tags and `go-playground/validator` for basic field validation instead of custom logic.
-
 ## Inconsistent Validation Approaches
 
 Consolidate validation patterns — don't implement the same validation multiple ways across packages.
