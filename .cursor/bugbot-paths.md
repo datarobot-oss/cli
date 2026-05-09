@@ -10,7 +10,7 @@ Explicitly reject backslashes at system boundaries — `path.Clean` does not cat
 
 ## Unicode Normalization for Cross-Platform Map Keys
 
-Paths used as map keys must be Unicode-normalized to NFC before use.
+Paths used as map keys must be Unicode-normalized to NFC before use. See golang.org/x/text/unicode/norm.
 
 ## Document Path Format Contracts
 
