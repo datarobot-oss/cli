@@ -106,10 +106,16 @@ Write-End
 # Test shell detection
 Write-Delimiter "Testing shell detection"
 Write-InfoMsg "Running dr --debug self version to verify shell detection..."
-$debug_output = & { dr --debug self version 2>&1 } | Out-String
-if ($LASTEXITCODE -eq 0) {
-    # Exit code 0 (authenticated) or 1 (not authenticated) are both acceptable
-    # We're just checking the debug output for shell detection
+# --debug writes to stderr; 2>&1 in PowerShell wraps each stderr line in an
+# ErrorRecord, which terminates the script under $ErrorActionPreference = "Stop".
+# Redirect stderr to a temp file at the OS level instead — no ErrorRecords are
+# created and we can still inspect the debug output afterward.
+$tempStderr = [System.IO.Path]::GetTempFileName()
+$null = dr --debug self version 2>$tempStderr
+$capturedExitCode = $LASTEXITCODE
+$debug_output = Get-Content $tempStderr -Raw -ErrorAction SilentlyContinue
+Remove-Item $tempStderr -ErrorAction SilentlyContinue
+if ($capturedExitCode -eq 0) {
     if ($debug_output -match 'Shell.*name=powershell') {
         Write-SuccessMsg "Assertion passed: Shell detection correctly identified PowerShell."
     } else {
@@ -118,7 +124,7 @@ if ($LASTEXITCODE -eq 0) {
         Write-ErrorMsg "Assertion failed: Shell detection did not identify PowerShell. Expected 'name=powershell' in debug output."
     }
 } else {
-    Write-ErrorMsg "dr --debug self version command failed unexpectedly with exit code $LASTEXITCODE"
+    Write-ErrorMsg "dr --debug self version command failed unexpectedly with exit code $capturedExitCode"
 }
 Write-End
 
