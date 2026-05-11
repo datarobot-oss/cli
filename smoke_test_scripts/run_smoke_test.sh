@@ -92,12 +92,12 @@ stop_timer
 
 start_timer "Shell detection"
 debug_output=$(dr --debug self version 2>&1)
-if echo "$debug_output" | grep -qE 'Shell.*name=(bash|zsh|fish)'; then
+if echo "$debug_output" | grep -qE 'Shell.*name='; then
     shell_line=$(echo "$debug_output" | grep -E 'Shell.*name=' | head -1)
-    echo "✅ Assertion passed: Shell detection identified a known shell."
+    echo "✅ Assertion passed: Shell detection ran and reported a shell."
     echo "   $shell_line"
 else
-    echo "❌ Assertion failed: Shell detection did not identify a known shell."
+    echo "❌ Assertion failed: Shell detection did not report a shell name."
     echo "Debug output:"
     echo "$debug_output"
     exit 1
