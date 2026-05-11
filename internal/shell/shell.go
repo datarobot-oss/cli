@@ -88,7 +88,7 @@ func parentProcessNameWindows(ppid int) string {
 	}
 
 	name := strings.Trim(line[:idx], `"`)
-	name = strings.ToLower(strings.TrimSuffix(name, ".exe"))
+	name = strings.TrimSuffix(strings.ToLower(name), ".exe")
 
 	return name
 }
