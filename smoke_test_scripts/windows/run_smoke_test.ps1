@@ -106,15 +106,15 @@ Write-End
 # Test shell detection
 Write-Delimiter "Testing shell detection"
 Write-InfoMsg "Running dr --debug self version to verify shell detection..."
-# --debug writes to stderr; 2>&1 in PowerShell wraps each stderr line in an
-# ErrorRecord, which terminates the script under $ErrorActionPreference = "Stop".
-# Redirect stderr to a temp file at the OS level instead — no ErrorRecords are
-# created and we can still inspect the debug output afterward.
-$tempStderr = [System.IO.Path]::GetTempFileName()
-$null = dr --debug self version 2>$tempStderr
+# --debug writes to stderr. Under $ErrorActionPreference = "Stop", PowerShell
+# wraps every stderr line from a native command in an ErrorRecord — even with
+# 2>file, because the redirect happens after PowerShell's own error processing.
+# Temporarily relax to "Continue" so stderr lines are captured, not thrown.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$debug_output = dr --debug self version 2>&1 | Out-String
 $capturedExitCode = $LASTEXITCODE
-$debug_output = Get-Content $tempStderr -Raw -ErrorAction SilentlyContinue
-Remove-Item $tempStderr -ErrorAction SilentlyContinue
+$ErrorActionPreference = $prevEAP
 if ($capturedExitCode -eq 0) {
     if ($debug_output -match 'Shell.*name=powershell') {
         Write-SuccessMsg "Assertion passed: Shell detection correctly identified PowerShell."
