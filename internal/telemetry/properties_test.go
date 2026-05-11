@@ -308,6 +308,7 @@ func TestCollectCommonProperties_SetsOSArch(t *testing.T) {
 
 	assert.Equal(t, runtime.GOARCH, props.OSArch)
 }
+
 func TestCollectCommonProperties_DetectsShell(t *testing.T) {
 	props := CollectCommonProperties()
 
