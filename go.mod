@@ -27,7 +27,7 @@ require (
 	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/sys v0.43.0
 	golang.org/x/term v0.42.0
-	golang.org/x/text v0.30.0
+	golang.org/x/text v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
