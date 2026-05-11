@@ -15,6 +15,7 @@
 package shell
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/tui"
 )
@@ -74,7 +76,10 @@ func DetectShell() (string, error) {
 // parentProcessNameWindows returns the lowercase process name (without .exe)
 // of the given PID on Windows by running tasklist.
 func parentProcessNameWindows(ppid int) string {
-	out, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
 	if err != nil {
 		return ""
 	}
@@ -112,7 +117,10 @@ func parentProcessName() string {
 	}
 
 	// macOS and other Unix: ask ps for the command name.
-	out, err := exec.Command("ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
 	if err != nil {
 		return ""
 	}
