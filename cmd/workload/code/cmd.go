@@ -16,6 +16,7 @@ package code
 
 import (
 	initcmd "github.com/datarobot/cli/cmd/workload/code/init"
+	"github.com/datarobot/cli/cmd/workload/code/versions"
 	"github.com/spf13/cobra"
 )
 
@@ -50,6 +51,7 @@ Example:
 	}
 
 	cmd.AddCommand(initcmd.Cmd())
+	cmd.AddCommand(versions.Cmd())
 
 	return cmd
 }

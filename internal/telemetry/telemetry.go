@@ -23,6 +23,7 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/amplitude/analytics-go/amplitude"
@@ -110,12 +111,25 @@ func (c *Client) Track(event types.Event) {
 		event.EventProperties = commonMap
 
 		// Set UserID and DeviceID as top-level fields (required by Amplitude)
-		event.UserID = c.props.UserID
+		if c.props.UserID != nil {
+			event.UserID = *c.props.UserID
+		}
+
 		event.DeviceID = c.props.DeviceID
+
+		// Populate Amplitude EventOptions for built-in segmentation
+		event.AppVersion = c.props.CLIVersion
+		event.Platform = "CLI" // Can't differentiate otherwise
+		event.OSName = c.props.OSName
+		event.OSVersion = c.props.OSVersion
+		event.Language = c.props.Language
+		event.IP = "$remote" // Use $remote to let Amplitude determine location from IP, rather than sending it from the client
 	}
 
 	if c.amp == nil {
-		log.Debug(amplitudeLogPrefix+"Telemetry event (dry-run)", "type", event.EventType, "properties", event.EventProperties)
+		b, _ := json.Marshal(event)
+		log.Debug(amplitudeLogPrefix + "Track event: \n    " + string(b))
+
 		return
 	}
 

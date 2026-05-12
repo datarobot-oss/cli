@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -73,6 +74,17 @@ Example:
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	workload.AddOutputFlag(c, &outputFormat)
+
+	telemetry.TrackWith(c, func(cmd *cobra.Command, args []string) map[string]any {
+		yesFlag, _ := cmd.Flags().GetBool("yes")
+		yes := yesFlag || viperx.GetBool("yes")
+
+		return map[string]any{
+			"artifact_id":   telemetry.FirstArg(args),
+			"yes":           yes,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return c
 }

@@ -84,12 +84,14 @@ type taskfileMetadata struct {
 
 // depth gets our current directory depth by file path
 func depth(path string) int {
-	if path == "." {
+	// Windows uses backslashes, so we normalize to forward slashes
+	normalized := filepath.ToSlash(path)
+	if normalized == "." {
 		return 0
 	}
 
 	// +1 to count the root directory itself
-	return strings.Count(path, "/") + 1
+	return strings.Count(normalized, "/") + 1
 }
 
 type Discovery struct {
@@ -207,12 +209,13 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 			return nil
 		}
 
+		slashRel := filepath.ToSlash(relPath)
 		dirPath := filepath.ToSlash(filepath.Dir(relPath))
 		dirName := filepath.ToSlash(filepath.Base(dirPath))
 
 		includes = append(includes, componentInclude{
 			Name:     dirName,
-			Taskfile: "./" + relPath,
+			Taskfile: "./" + slashRel,
 			Dir:      "./" + dirPath,
 		})
 

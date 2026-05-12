@@ -58,7 +58,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
+          go-version: '1.26.3'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -96,7 +96,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
+          go-version: '1.26.3'
 
       - name: Install Taskfile
         uses: arduino/setup-task@v2
@@ -157,7 +157,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
+          go-version: '1.26.3'
 
       - name: Install Envdoc
         run: |
@@ -178,7 +178,7 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
     uses: ./.github/workflows/.build-matrix.yaml
     with:
-      go-version: '1.26.2'
+      go-version: '1.26.3'
       upload-artifact: true
       artifact-name-prefix: 'dr'
     secrets: inherit
@@ -202,6 +202,24 @@ jobs:
               issue_number: context.issue.number,
               labels: ['go']
             })
+
+  dependabot-reminder:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    name: Dependabot Smoke Test Reminder
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment smoke test instructions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '👋 **Maintainer reminder:** Smoke tests cannot run automatically on dependabot PRs due to GitHub secret restrictions.\n\nBefore merging, add the `run-smoke-tests` label and wait for the smoke tests to pass.'
+            });
 
   completion-tests:
     needs: [build, detect-changes]

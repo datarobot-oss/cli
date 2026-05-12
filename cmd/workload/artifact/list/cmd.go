@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
@@ -65,6 +66,16 @@ Example:
 	workload.AddOutputFlag(cmd, &outputFormat)
 	workload.AddStatusFlag(cmd, &status)
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
+
+	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
+		limit, _ := c.Flags().GetInt("limit")
+
+		return map[string]any{
+			"limit":         limit,
+			"output_format": string(outputFormat),
+			"status":        string(status),
+		}
+	})
 
 	return cmd
 }

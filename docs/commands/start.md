@@ -30,8 +30,8 @@ The command streamlines the process of getting your DataRobot application up and
 
 1. **Starting application quickstart process**&mdash;displays the quickstart flow.
 2. **Checking DataRobot CLI version**&mdash;verifies that your CLI version meets the template's minimum requirements (from `.datarobot/cli/versions.yaml`). If not, prompts to run `dr self update`.
-3. **Checking template prerequisites**&mdash;verifies that required tools (e.g. Task, Git) are installed.
-4. **Checking repository setup**&mdash;verifies you're in a DataRobot repository (contains `.datarobot/`). If not, the command launches the interactive `dr templates setup` wizard; after setup completes, `dr start` runs again in the cloned directory.
+3. **Checking repository setup**&mdash;verifies you're in a DataRobot repository (contains `.datarobot/`). If not, the command launches the interactive `dr templates setup` wizard; after setup completes, `dr start` runs again in the cloned directory.
+4. **Checking template prerequisites**&mdash;verifies that required tools (e.g. uv, Task) are installed and meet the minimum version requirements. If any are missing or out of date, you're prompted to install them inline; press `y` to install or `n` to cancel. Passing `--yes` skips the prompt and installs automatically.
 5. **Finding and executing start command**&mdash;searches for a start command in this order:
    - **`task start`**&mdash;if the Taskfile defines a `start` task, it runs immediately (no confirmation).
    - **Executable quickstart script**&mdash;if an executable script in `.datarobot/cli/bin/` matches `quickstart*`, you're prompted to run it (unless `--yes` is used), then it executes.
@@ -113,8 +113,8 @@ DataRobot AI Application Quickstart
 
   ✓ Starting application quickstart process...
   ✓ Checking DataRobot CLI version...
-  ✓ Checking template prerequisites...
   ✓ Checking repository setup...
+  ✓ Checking template prerequisites...
   → Finding and executing start command...
 
 Found quickstart script at: .datarobot/cli/bin/quickstart.sh
@@ -127,7 +127,6 @@ If you're not in a DataRobot repository, the repository step will trigger templa
 ```text
   ✓ Starting application quickstart process...
   ✓ Checking DataRobot CLI version...
-  ✓ Checking template prerequisites...
   → Checking repository setup...
 
 Not in a DataRobot repository. Launching template setup...
@@ -140,8 +139,8 @@ If you're already in a repository but no start command or quickstart script exis
 ```text
   ✓ Starting application quickstart process...
   ✓ Checking DataRobot CLI version...
-  ✓ Checking template prerequisites...
   ✓ Checking repository setup...
+  ✓ Checking template prerequisites...
   → Finding and executing start command...
 
 No start command or quickstart script found.
@@ -238,7 +237,11 @@ If the user declines to execute the script, the command exits gracefully and sti
 
 ### Prerequisites checked
 
-The "Checking template prerequisites" step verifies that tools required by the template (e.g. Task, Git) are installed. If any are missing, the command exits with an error.
+The "Checking template prerequisites" step verifies that tools required by the template (e.g. uv, Task) are installed and meet the minimum version requirements. If any are missing or out of date, the command lists the affected tools and prompts you to install them inline:
+
+- Press `y` or ENTER to install all missing or outdated tools in sequence.
+- Press `n` to cancel; the command exits with a message directing you to `dr dependencies install`.
+- Pass `--yes` (or set `DATAROBOT_CLI_NON_INTERACTIVE=true`) to skip the prompt and install automatically.
 
 Required tools and minimum versions can be configured in the template by creating `.datarobot/cli/versions.yaml`:
 
@@ -281,12 +284,22 @@ No manual intervention is needed - the command handles this gracefully.
 
 ### Missing prerequisites
 
-```bash
-$ dr start
-Error: required tool 'git' not found
+When prerequisites are missing or out of date, `dr start` shows an interactive install prompt:
 
-# Solution: Install the missing tool
+```text
+  ✓ Starting application quickstart process...
+  ✓ Checking DataRobot CLI version...
+  ✓ Checking repository setup...
+  → Checking template prerequisites...
+
+ ❌ Missing required tools:
+
+	- uv  (https://docs.astral.sh/uv/getting-started/installation/)
+
+Press 'y' or ENTER to install, 'n' to cancel
 ```
+
+Press `y` to install all listed tools in sequence, or `n` to exit with a message directing you to run `dr dependencies install` manually. To install without a prompt, run `dr start --yes` or use `dr dependencies install`.
 
 ### Script execution failure
 

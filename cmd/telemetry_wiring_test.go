@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,6 +54,42 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			cmd := findCommandByPath(RootCmd.Command, path)
 			require.NotNilf(t, cmd, "command %q not found in static command tree", path)
+
+			assert.Containsf(t, cmd.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
+		})
+	}
+}
+
+// expectedWorkloadTrackedCommands enumerates leaf commands under
+// `dr workload` that must be wired to fire a telemetry event. The
+// `dr workload` subtree is hidden from the live RootCmd by
+// cli.CommandAdder when DATAROBOT_CLI_FEATURE_WORKLOAD is unset
+// (the default in CI), so this test walks a freshly-built subtree
+// produced by workload.Cmd() instead of the global RootCmd.
+//
+// Paths are relative to workload.Cmd() (no "dr" prefix) because
+// findCommandByPath matches against the root's Name(), which is
+// "workload" for the standalone subtree.
+var expectedWorkloadTrackedCommands = []string{
+	"workload code init",
+	"workload code versions",
+	"workload artifact get",
+	"workload artifact list",
+	"workload artifact create",
+}
+
+// TestTelemetryWiring_AllWorkloadCommandsTracked walks the workload
+// subtree (built via workload.Cmd() to bypass the feature-gate filter
+// in cli.CommandAdder) and asserts each entry has the "telemetry"
+// annotation set by telemetry.Track / TrackWith.
+func TestTelemetryWiring_AllWorkloadCommandsTracked(t *testing.T) {
+	workloadRoot := workload.Cmd()
+
+	for _, path := range expectedWorkloadTrackedCommands {
+		t.Run("dr "+path, func(t *testing.T) {
+			cmd := findCommandByPath(workloadRoot, path)
+			require.NotNilf(t, cmd, "command %q not found in workload subtree", path)
 
 			assert.Containsf(t, cmd.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
