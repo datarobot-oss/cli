@@ -77,6 +77,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			// before ANY command execution should go here.
 			log.Start()
 
+			cmd.SilenceUsage = true // don’t spam usage for runtime errors
+
 			err := initializeConfig(cmd)
 			if err != nil {
 				return err
