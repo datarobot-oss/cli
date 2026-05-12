@@ -29,6 +29,7 @@ type Client interface {
 	AllFiles(catalogID, versionID string) (map[string]FileMeta, error)
 	DownloadFile(catalogID, versionID, path string, w io.Writer) (string, int64, error)
 	DeleteFiles(catalogID string, paths []string) (*DeleteFilesResp, error)
+	ListVersions(catalogID string, limit int) ([]CatalogVersion, error)
 }
 
 func New() Client {

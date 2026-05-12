@@ -123,29 +123,36 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
-## Configuration & Flag Binding
+## Code Review Guidelines
 
-The CLI persists user configuration to `drconfig.yaml` via viper. To prevent
-transient command flags from leaking into the config file, follow these rules.
-For full details, see [docs/development/configuration.md](docs/development/configuration.md).
+All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
 
-**Quick reference:**
+**High-Risk** (catches silent failures, data corruption, poor error handling):
+- **Concurrency** — Goroutine panic recovery, loop variable capture, WaitGroup pairing, channel closure
+- **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
+- **Security** — Input validation, security boundaries, threat models
+- **Testing** — Race detector, error path coverage, test seams
 
-- **Outside `internal/config/`, do not import `github.com/spf13/viper` directly.**
-  Use `internal/config/viperx`. Direct imports are blocked by `depguard`.
-- **Never call `viper.WriteConfig()` directly** (and `viperx` does not expose it).
-  Use `config.UpdateConfigFile(keys ...string)`, which only writes keys listed
-  in `config.PersistableKeys` (`internal/config/write.go`).
-- **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
-  `BindPFlags`. Bind only specific persistent flags explicitly via
-  `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
-  Do not bind them with `viperx.BindPFlag`.
-- **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
-- **To make a key persistable**, add it to `config.PersistableKeys` and have the
-  write site call `config.UpdateConfigFile("my-key")`.
+**Resource & Operations** (prevents hangs, leaks, platform bugs):
+- **Resources** — Lock lifecycle, timeouts, cleanup, disk space checks
+- **Paths** — Validation, normalization, Unicode, symlinks
+- **Cross-Platform** — Build tags, case sensitivity, line endings, symlink handling
+
+**Design** (prevents tight coupling, premature abstraction):
+- **Architecture** — Code organization, separation of concerns, dependency injection, phase orchestration
+- **Package APIs** — Contracts between packages, documentation, limitations
+
+**Quality** (consistency and maintainability):
+- **Testing** — Test coverage, mocking, pagination tests
+- **Commands** — Table rendering, file organization, output formatting
+
+**When working on code**, apply these quick principles:
+- **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
+- **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
+- **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
+- **Platforms**: Add build tags, match signatures, test on target platforms
+
+Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 
 ## Feature Gates
 

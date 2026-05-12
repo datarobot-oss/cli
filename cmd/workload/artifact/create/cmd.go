@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
@@ -87,6 +88,12 @@ Example:
 	workload.AddOutputFlag(cmd, &outputFormat)
 	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON spec file (required)")
 	_ = cmd.MarkFlagRequired("spec-file")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }

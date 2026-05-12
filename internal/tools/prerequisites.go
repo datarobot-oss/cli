@@ -159,16 +159,6 @@ func PrerequisitesMsg(missingMsgs []string, wrongVersionMsgs []string) string {
 	return strings.Join(result, "\n") + "\n"
 }
 
-// MissingPrerequisites returns a message describing missing prerequisites, or an empty string if all prerequisites are satisfied.
-func MissingPrerequisites() string {
-	_, _, missingMsgs, wrongVersionMsgs := CheckPrerequisites()
-	if len(missingMsgs) > 0 || len(wrongVersionMsgs) > 0 {
-		return PrerequisitesMsg(missingMsgs, wrongVersionMsgs)
-	}
-
-	return ""
-}
-
 func commandArgs(fullCommand string) (string, []string) {
 	command := strings.Split(fullCommand, " ")
 

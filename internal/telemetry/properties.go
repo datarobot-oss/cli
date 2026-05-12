@@ -15,10 +15,9 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -32,30 +31,42 @@ import (
 // event. These are collected once per CLI invocation and reused across all
 // events in that session.
 type CommonProperties struct {
-	// TODO CFX-5206 figure out proper SessionID
-	SessionID string // UUID v4, unique per process invocation
-	DeviceID  string // UUID v4, stable per installation, persisted to disk
-	// TODO CFX-5206 figure out proper UserID
-	UserID            string // Placeholder for future user ID implementation
+	// NOTE: When you add a new property here,
+	// make sure to also add it to:
+	// 1. AsMap() method
+	// 2. CollectCommonProperties() function
+
+	// top-level fields
+	SessionID string  // UUID v4, unique per process invocation
+	DeviceID  string  // UUID v4, stable per installation, cached to disk
+	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
-	OSInfo            string // runtime.GOOS/runtime.GOARCH
+	OSName            string // human-readable OS name from runtime.GOOS
+	OSArch            string // CPU architecture from runtime.GOARCH
+	OSVersion         string // OS release version string, detected at startup
+	Language          string // user language from LANG env var (e.g. "en_US")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
-// current environment. There are currently no network calls here, but we
-// may want to add some in the future (e.g., to get user ID from DR API),
-// so this function returns an error if any property collection step fails.
+// current environment. This function will return an error if any property
+// collection step fails.
 func CollectCommonProperties() *CommonProperties {
 	props := &CommonProperties{
 		SessionID:     generateSessionID(),
 		DeviceID:      getOrCreateDeviceID(),
 		CLIVersion:    version.Version,
 		InstallMethod: InstallMethod,
-		OSInfo:        runtime.GOOS + "/" + runtime.GOARCH,
+		OSName:        humanizeOS(runtime.GOOS),
+		OSArch:        runtime.GOARCH,
+		OSVersion:     detectOSVersion(),
+		Language:      detectLanguage(),
+		GoVersion:     runtime.Version(),
 	}
 
 	// Get DataRobot instance info from config
@@ -66,30 +77,30 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	// Get user ID (currently returns placeholder value)
-	// TODO CFX-5206 implement proper user ID retrieval and consider privacy implications
-	// Additionally, Amplitude strongly suggests not setting user ID until we
-	// absolutely need it, and to not set the same user ID for anon users.
-
-	// if userID, err := drapi.GetUserID(context.Background()); err == nil {
-	// 	props.UserID = userID
-	// }
+	// Retrieve the userID
+	uid, err := retrieveUserID(context.Background())
+	if err == nil {
+		props.UserID = &uid
+	}
 
 	return props
 }
 
-// AsMap returns the properties as a map[string]interface{} suitable for
-// merging into Amplitude event properties.
-func (p *CommonProperties) AsMap() map[string]interface{} {
-	return map[string]interface{}{
+// AsMap returns the properties as a map[string]any suitable for
+// merging into Amplitude event properties. Note: UserID is not included
+// here as it's set as a top-level Amplitude event field, not an event property.
+func (p *CommonProperties) AsMap() map[string]any {
+	m := map[string]any{
 		"session_id":         p.SessionID,
-		"cli_version":        p.CLIVersion,
 		"install_method":     p.InstallMethod,
-		"os_info":            p.OSInfo,
+		"os_arch":            p.OSArch,
+		"go_version":         p.GoVersion,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
 	}
+
+	return m
 }
 
 // generateSessionID generates a UUID v4 for the current CLI session.
@@ -129,6 +140,7 @@ func deriveEnvironment(baseURL string) string {
 }
 
 const (
+	userIDFileName         = "user_id"
 	deviceIDFileName       = "device_id"
 	deviceIDFallbackPrefix = "fallback-"
 )
@@ -140,39 +152,22 @@ func getOrCreateDeviceID() string {
 		return id
 	}
 
-	// Try to read existing device ID from file in the config directory
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		// If we can't get the config directory, we won't be able to persist a device ID,
-		// so we just generate a new one for this session. These IDs will be prefixed with
-		// deviceIDFallbackPrefix to indicate it is not a true device ID.
-		return deviceIDFallbackPrefix + generateSessionID()
-	}
-
-	// Try to read existing device ID from file
-	deviceIDPath := filepath.Join(configDir, deviceIDFileName)
-
-	data, err := os.ReadFile(deviceIDPath)
-	if err == nil {
-		// If we successfully read a device ID from the file, use it (after trimming whitespace).
-		id := strings.TrimSpace(string(data))
-
-		if id != "" {
-			// If the ID is not empty, return it. Otherwise, we'll generate a new one below.
-			return id
-		}
+	// Try to read existing device ID from cache file
+	if id := readTextCacheFile(deviceIDFileName); id != "" {
+		return id
 	}
 
 	// If we couldn't get a machine ID or read an existing device ID, generate a new one
 	// and save it for future sessions. NOTE: Ignore errors at this point, since we can
 	// still function without persisting.
+	// It might be worth considering supporting a DATAROBOT_CLI_DEVICE_ID environment
+	// variable for environments where filesystem persistence is unreliable or machine
+	// IDs are ephemeral (e.g., certain container orchestration systems). This way we
+	// could intentionally pass in a stable ID. Honestly, though, I think being able
+	// to write out a device_id file is good enough.
 	id := deviceIDFallbackPrefix + generateSessionID()
 
-	// At this point, ignore any errors we might have with persisting the device ID, as
-	// telemetry will still function without it, it will just be less stable.
-	if mkErr := os.MkdirAll(configDir, 0o700); mkErr == nil {
-		_ = os.WriteFile(deviceIDPath, []byte(id), 0o600)
-	}
+	writeTextCacheFile(deviceIDFileName, id)
 
 	return id
 }

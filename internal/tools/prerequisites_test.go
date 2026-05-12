@@ -167,48 +167,6 @@ func TestPrerequisitesMsg_EndsWithNewline(t *testing.T) {
 	assert.True(t, len(out) > 0 && out[len(out)-1] == '\n')
 }
 
-func TestMissingPrerequisites_AllSatisfied(t *testing.T) {
-	orig := RequiredTools
-
-	defer func() { RequiredTools = orig }()
-
-	RequiredTools = []Prerequisite{
-		{Name: "sh", Command: "sh"},
-	}
-
-	assert.Empty(t, MissingPrerequisites())
-}
-
-func TestMissingPrerequisites_MissingTool(t *testing.T) {
-	orig := RequiredTools
-
-	defer func() { RequiredTools = orig }()
-
-	RequiredTools = []Prerequisite{
-		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", URL: "https://example.com"},
-	}
-
-	out := MissingPrerequisites()
-
-	assert.NotEmpty(t, out)
-	assert.Contains(t, out, "FakeTool")
-}
-
-func TestMissingPrerequisites_WrongVersion(t *testing.T) {
-	orig := RequiredTools
-
-	defer func() { RequiredTools = orig }()
-
-	RequiredTools = []Prerequisite{
-		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0"},
-	}
-
-	out := MissingPrerequisites()
-
-	assert.NotEmpty(t, out)
-	assert.Contains(t, out, "Echo")
-}
-
 func TestCheckPrerequisites_AllSatisfied(t *testing.T) {
 	orig := RequiredTools
 

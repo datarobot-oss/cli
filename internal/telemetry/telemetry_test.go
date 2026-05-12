@@ -84,7 +84,7 @@ func TestNewClient_StoresProperties(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 	props := &CommonProperties{
-		UserID:     "test-user",
+		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
 	}
 
@@ -123,7 +123,7 @@ func TestTrack_MergesCommonProperties(t *testing.T) {
 
 	AmplitudeAPIKey = ""
 	props := &CommonProperties{
-		UserID:     "test-user",
+		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
 		SessionID:  "session-123",
 	}
@@ -148,7 +148,7 @@ func TestTrack_SetsDeviceIDFromProps(t *testing.T) {
 	AmplitudeAPIKey = ""
 	props := &CommonProperties{
 		DeviceID:   "test-device-id",
-		UserID:     "test-user",
+		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
 	}
 

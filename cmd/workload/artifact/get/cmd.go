@@ -16,6 +16,7 @@ package get
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
@@ -51,6 +52,13 @@ Example:
 	}
 
 	workload.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"artifact_id":   telemetry.FirstArg(args),
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }
