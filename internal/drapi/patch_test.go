@@ -28,7 +28,7 @@ import (
 // decode would surface io.EOF on an empty body, masking a successful
 // patch from any caller that passes non-nil v.
 func TestPatchJSON_204NoContent(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -45,7 +45,7 @@ func TestPatchJSON_204NoContent(t *testing.T) {
 }
 
 func TestPatchJSON_200WithBody(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

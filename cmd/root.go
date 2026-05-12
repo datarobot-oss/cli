@@ -35,6 +35,7 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -81,6 +82,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			if err != nil {
 				return err
 			}
+
+			drapi.Init(config.GetAPIKey)
 
 			// Initialize telemetry client
 			// Always collect common properties for logging (even in dry-run mode),

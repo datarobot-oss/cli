@@ -25,20 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// resetTokenForTest seeds the package-level token so Post() does not call
-// config.GetAPIKey() (which would require a configured environment).
-// Returns a cleanup function the test should defer.
-func resetTokenForTest(t *testing.T, value string) func() {
-	t.Helper()
-
-	previous := token
-	token = value
-
-	return func() { token = previous }
-}
-
 func TestPost_Created(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
@@ -55,7 +43,7 @@ func TestPost_Created(t *testing.T) {
 }
 
 func TestPost_OK(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -72,7 +60,7 @@ func TestPost_OK(t *testing.T) {
 }
 
 func TestPost_NonSuccess(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -90,7 +78,7 @@ func TestPost_NonSuccess(t *testing.T) {
 }
 
 func TestPost_Unauthorized(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -108,14 +96,14 @@ func TestPost_Unauthorized(t *testing.T) {
 }
 
 func TestPost_NetworkError(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	_, err := Post("http://127.0.0.1:1/does-not-exist", "", map[string]string{}) //nolint:bodyclose // network error path returns nil resp
 	require.Error(t, err)
 }
 
 func TestPost_SetsHeaders(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	var (
 		gotAuth        string
@@ -143,7 +131,7 @@ func TestPost_SetsHeaders(t *testing.T) {
 }
 
 func TestPost_SendsBody(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	var gotBody []byte
 
@@ -170,7 +158,7 @@ func TestPost_SendsBody(t *testing.T) {
 }
 
 func TestPostJSON_Decode(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
@@ -190,7 +178,7 @@ func TestPostJSON_Decode(t *testing.T) {
 }
 
 func TestPostJSON_DecodeError(t *testing.T) {
-	defer resetTokenForTest(t, "test-token")()
+	StubAPIToken(t, "test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)

@@ -27,7 +27,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,8 +50,9 @@ func TestGetOrCreateUserID_FreshAPIUID(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
@@ -87,8 +88,9 @@ func TestGetOrCreateUserID_FilePermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
@@ -107,8 +109,9 @@ func TestGetOrCreateUserID_CacheHit(t *testing.T) {
 
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, "https://test.example.com/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
@@ -149,8 +152,9 @@ func TestGetOrCreateUserID_CacheMiss_EndpointChanged(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
@@ -190,8 +194,9 @@ func TestGetOrCreateUserID_CacheMiss_TokenChanged(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "new-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "new-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
@@ -231,8 +236,9 @@ func TestGetOrCreateUserID_CacheMiss_NoFile(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
@@ -253,8 +259,9 @@ func TestGetOrCreateUserID_CacheMiss_CorruptJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
@@ -285,8 +292,9 @@ func TestGetOrCreateUserID_TokenChange_UpdatesCache(t *testing.T) {
 	}))
 	defer server.Close()
 
+	testutil.StubAPIToken(t, "new-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "new-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "new-token")
@@ -339,8 +347,9 @@ func TestRetrieveUserID_APIFailureReturnsError(t *testing.T) {
 	}))
 	server.Close()
 
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
-	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
@@ -358,7 +367,8 @@ func TestGetUserID_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	defer resetTokenForTest(t, "test-token")()
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
@@ -374,7 +384,8 @@ func TestGetUserID_Unauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	defer resetTokenForTest(t, "test-token")()
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
@@ -392,7 +403,8 @@ func TestGetUserID_EmptyUID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	defer resetTokenForTest(t, "test-token")()
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
@@ -409,7 +421,8 @@ func TestGetUserID_NetworkError(t *testing.T) {
 	}))
 	server.Close()
 
-	defer resetTokenForTest(t, "test-token")()
+	testutil.StubAPIToken(t, "test-token")
+
 	defer viperx.Reset()
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
@@ -417,14 +430,4 @@ func TestGetUserID_NetworkError(t *testing.T) {
 	uid, err := GetUserID(context.Background())
 	require.Error(t, err)
 	assert.Empty(t, uid)
-}
-
-func resetTokenForTest(t *testing.T, token string) func() {
-	original := drapi.GetToken()
-
-	drapi.SetToken(token)
-
-	return func() {
-		drapi.SetToken(original)
-	}
 }

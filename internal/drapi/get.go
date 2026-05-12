@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -37,16 +38,31 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
-var token string
+var (
+	tokenOnce sync.Once
+	tokenFunc func(context.Context) (string, error) = config.GetAPIKey
+	token     string
+	errToken  error
+)
 
-// GetToken returns the current cached API token.
-func GetToken() string {
-	return token
+// Init sets the function drapi uses to fetch the API token. Must be called once at
+// application startup before any API call is made. Calling Init again (e.g. in tests)
+// resets the memoized cache so the new function is used on the next call.
+func Init(fn func(context.Context) (string, error)) {
+	tokenFunc = fn
+	tokenOnce = sync.Once{}
+	token = ""
+	errToken = nil
 }
 
-// SetToken sets the cached API token.
-func SetToken(value string) {
-	token = value
+// resolveToken returns the memoized token. tokenOnce guarantees the fetch happens
+// exactly once per Init call, safe for concurrent callers.
+func resolveToken() (string, error) {
+	tokenOnce.Do(func() {
+		token, errToken = tokenFunc(context.Background())
+	})
+
+	return token, errToken
 }
 
 const DefaultGetTimeoutSecs = 30
@@ -57,14 +73,9 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 		timeout = timeoutSecs[0]
 	}
 
-	var err error
-
-	// memoize token to avoid extra VerifyToken() calls
-	if token == "" {
-		token, err = config.GetAPIKey(context.Background())
-		if err != nil {
-			return nil, err
-		}
+	tok, err := resolveToken()
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -72,7 +83,7 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+token)
+	req.Header.Add("Authorization", "Bearer "+tok)
 	req.Header.Add("User-Agent", config.GetUserAgentHeader())
 
 	if config.IsAPIConsumerTrackingEnabled() {
