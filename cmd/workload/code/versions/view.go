@@ -24,6 +24,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/cmd/workload/code/internal/format"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/tui"
@@ -126,9 +127,9 @@ func renderText(out io.Writer, v view) {
 		}
 
 		t.Row(
-			marker+row.Short,
+			marker+row.ID,
 			strconv.Itoa(row.NumFiles),
-			humanBytes(row.TotalSize),
+			format.Bytes(row.TotalSize),
 			formatCreatedAt(row.CreatedAt),
 		)
 	}
@@ -140,7 +141,7 @@ func renderText(out io.Writer, v view) {
 	}
 
 	if v.SyncedVersionID != "" {
-		fmt.Fprintf(out, "Local synced to: %s\n", shortID(v.SyncedVersionID))
+		fmt.Fprintf(out, "Local synced to: %s\n", v.SyncedVersionID)
 	}
 }
 
@@ -187,24 +188,4 @@ func formatCreatedAt(s string) string {
 	}
 
 	return t.UTC().Format("2006-01-02 15:04 UTC")
-}
-
-// humanBytes renders an int64 byte count as KB/MB/GB with one decimal.
-// 1 KB = 1024 B (binary), matching how engine and limits already think.
-func humanBytes(n int64) string {
-	const unit = 1024
-
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-
-	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
-		div *= unit
-		exp++
-	}
-
-	suffix := []string{"KB", "MB", "GB", "TB", "PB"}[exp]
-
-	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffix)
 }

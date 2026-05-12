@@ -194,8 +194,8 @@ func TestVersions_TextOutput(t *testing.T) {
 	assert.Contains(t, out, "Artifact: my-agent (art-abc-123)")
 	assert.Contains(t, out, "Status:   DRAFT")
 	assert.Contains(t, out, "VERSION ID")
-	assert.Contains(t, out, "* v3aaaaaa")
-	assert.Contains(t, out, "v2bbbbbb")
+	assert.Contains(t, out, "* v3aaaaaaaaaaaa")
+	assert.Contains(t, out, "v2bbbbbbbbbbbb")
 	assert.Contains(t, out, "* = current")
 }
 
