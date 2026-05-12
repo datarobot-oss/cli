@@ -10,7 +10,11 @@ linters:
     - depguard
     - dupword
     - errname
+    # - errorlint
     - exhaustive
+    # - godot
+    # - godox
+    # - gosec
     - loggercheck
     - misspell
     - nestif
@@ -22,6 +26,7 @@ linters:
     - testifylint
     - unconvert
     - usestdlibvars
+    # - wrapcheck
     - wsl_v5
   settings:
     depguard:
@@ -42,6 +47,9 @@ linters:
                 The wrapper omits WriteConfig, SafeWriteConfig, and BindPFlags
                 by design so transient flag state cannot leak into
                 drconfig.yaml. See docs/development/configuration.md.
+    # TODO uncomment this for CFX-6070
+    # errcheck:
+    #   check-blank: true
     revive:
       rules:
         # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#error-strings
