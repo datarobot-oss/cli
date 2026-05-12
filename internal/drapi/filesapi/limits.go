@@ -17,7 +17,18 @@ package filesapi
 import "time"
 
 // HTTP-level tunables for the upload and download paths.
+//
+// upload and download share a value today, but stay separate on purpose:
+// the upload ceiling tracks request-body streaming time (zip + multipart
+// stage), the download ceiling tracks response-body streaming time, and
+// the two can drift apart as the backend's per-path limits change.
 const (
 	uploadHTTPTimeout   = 600 * time.Second
 	downloadHTTPTimeout = 600 * time.Second
+
+	// statusPollHTTPTimeout caps a single async-status poll. Each call
+	// hits /status/<id>/ and returns immediately (200 with state, 303
+	// when completed); the server does not block, so a short ceiling is
+	// fine and prevents wedged sockets from stalling the engine loop.
+	statusPollHTTPTimeout = 30 * time.Second
 )

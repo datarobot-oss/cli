@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package syncc
+package codesync
 
 import (
 	"bytes"
@@ -315,6 +315,48 @@ func TestRunE_ConflictPromptSync(t *testing.T) {
 	_, _, _, err := runWithDeps(t, deps, flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed, "user pressed Enter; Execute must run")
+}
+
+// stubFetcher is a tiny display.ContentFetcher used by the "show diffs
+// then sync" test below — it returns canned bytes for the seeded conflict
+// path so PrintDiffs has something to render between prompts.
+type stubFetcher struct {
+	local, remote map[string]string
+}
+
+func (s *stubFetcher) LocalContent(path string) ([]byte, error) { return []byte(s.local[path]), nil }
+
+func (s *stubFetcher) RemoteContent(path string) ([]byte, error) {
+	return []byte(s.remote[path]), nil
+}
+
+// TestRunE_ConflictPromptShowDiffsThenSync exercises the `d` → re-prompt
+// loop: typing 'd' renders per-file diffs and stays in the prompt; the
+// next Enter accepts the plan and Execute runs.
+func TestRunE_ConflictPromptShowDiffsThenSync(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fetcher := &stubFetcher{
+		local:  map[string]string{"x.py": "AAAA\n"},
+		remote: map[string]string{"x.py": "ZZZZ\n"},
+	}
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{Conflicts: []sync.FileAction{
+			{Path: "x.py", Classification: sync.ClsConflict, Action: sync.ActConflictCopy},
+		}},
+		result:  &sync.Result{NewVersion: "v3", ConflictCount: 1},
+		fetcher: fetcher,
+	}
+	deps := fakeEngineDeps(fe)
+	deps.ReadLine = stubReader("d", "")
+
+	flags := map[string]string{"dir": dir}
+
+	_, stdout, _, err := runWithDeps(t, deps, flags)
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "Enter after 'd' must run Execute")
+	assert.Contains(t, stdout.String(), "x.py", "diff render must mention the conflict path")
 }
 
 // TestRunE_NonInteractiveEnvVar: DATAROBOT_CLI_NON_INTERACTIVE=true

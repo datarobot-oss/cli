@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package syncc wires the sync engine into the `dr workload code sync`
-// Cobra command. The package name is "syncc" to avoid colliding with
-// the standard library "sync" package; importers refer to it by the
-// alias the command tree uses.
-package syncc
+// Package codesync wires the sync engine into the `dr workload code sync`
+// Cobra command. Named "codesync" (rather than "sync") to avoid colliding
+// with the standard library and with internal/workload/sync; the directory
+// matches so callers can import without an alias.
+package codesync
 
 import (
 	"errors"
@@ -62,6 +62,15 @@ func (r realEngine) Fetcher() display.ContentFetcher { return r.Engine.Fetcher()
 type Deps struct {
 	NewEngine func(dir string, opts sync.Options) (engineRunner, error)
 	ReadLine  func() (string, error)
+}
+
+// runFlags is the parsed view of the boolean flags that gate
+// finishSync's render/prompt/execute decisions. Grouped so the inner
+// helpers don't carry a three-bool tail through every signature.
+type runFlags struct {
+	DryRun bool
+	Diff   bool
+	Yes    bool
 }
 
 func defaultDeps() Deps {
@@ -131,15 +140,12 @@ Example:
 	workload.AddOutputFlag(c, &outputFormat)
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
-		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		diff, _ := cmd.Flags().GetBool("diff")
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-		yes := yesFlag || viperx.GetBool("yes")
+		flags := parseRunFlags(cmd)
 
 		return map[string]any{
-			"dry_run":       dryRun,
-			"diff":          diff,
-			"yes":           yes,
+			"dry_run":       flags.DryRun,
+			"diff":          flags.Diff,
+			"yes":           flags.Yes,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -148,14 +154,11 @@ Example:
 }
 
 func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) error {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	yes := yesFlag || viperx.GetBool("yes")
+	flags := parseRunFlags(cmd)
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	diffFlag, _ := cmd.Flags().GetBool("diff")
 
-	dir, err := dirprompt.ResolveDir(dirFlag, yes, dirprompt.AskWithDefault)
+	dir, err := dirprompt.ResolveDir(dirFlag, flags.Yes, dirprompt.AskWithDefault)
 	if err != nil {
 		return err
 	}
@@ -164,7 +167,7 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) 
 		return errors.New("not linked: run 'dr workload code init <artifact-id>' first")
 	}
 
-	engine, err := deps.NewEngine(dir, sync.Options{DryRun: dryRun, ShowDiffs: diffFlag, Yes: yes})
+	engine, err := deps.NewEngine(dir, sync.Options{DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes})
 	if err != nil {
 		return err
 	}
@@ -184,28 +187,43 @@ func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) 
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
 	}
 
-	return finishSync(cmd, engine, plan, outputFormat, dryRun, diffFlag, yes, deps)
+	return finishSync(cmd, engine, plan, outputFormat, flags, deps)
+}
+
+// parseRunFlags reads the cobra flags once and folds the
+// DATAROBOT_CLI_NON_INTERACTIVE env-var override into Yes, so the
+// downstream helpers see a single source of truth.
+func parseRunFlags(cmd *cobra.Command) runFlags {
+	yesFlag, _ := cmd.Flags().GetBool("yes")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	diff, _ := cmd.Flags().GetBool("diff")
+
+	return runFlags{
+		DryRun: dryRun,
+		Diff:   diff,
+		Yes:    yesFlag || viperx.GetBool("yes"),
+	}
 }
 
 // finishSync handles the render → optional prompt → execute → render
 // tail of the command. Pulled out so runSync's early-return paths
 // (auth, lock, plan errors) stay flat.
-func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, dryRun, diffFlag, yes bool, deps Deps) error {
+func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, flags runFlags, deps Deps) error {
 	out := cmd.OutOrStdout()
 
 	if outputFormat == workload.OutputFormatJSON {
-		return finishJSON(engine, plan, out, dryRun, diffFlag, yes)
+		return finishJSON(engine, plan, out, flags)
 	}
 
-	if err := renderHumanPlan(cmd, engine, plan, diffFlag); err != nil {
+	if err := renderHumanPlan(cmd, engine, plan, flags.Diff); err != nil {
 		return err
 	}
 
-	if dryRun || diffFlag || plan.IsEmpty() {
+	if flags.DryRun || flags.Diff || plan.IsEmpty() {
 		return nil
 	}
 
-	if shouldPromptConflicts(plan, yes) {
+	if shouldPromptConflicts(plan, flags.Yes) {
 		choice, err := promptConflictMenu(cmd, engine, plan, deps.ReadLine)
 		if err != nil {
 			return err
@@ -252,16 +270,16 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // without --yes are treated like the human-path quit branch: the
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
-func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, dryRun, diffFlag, yes bool) error {
+func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
 	if err := display.RenderPlanJSON(out, plan); err != nil {
 		return err
 	}
 
-	if dryRun || diffFlag || plan.IsEmpty() {
+	if flags.DryRun || flags.Diff || plan.IsEmpty() {
 		return nil
 	}
 
-	if shouldPromptConflicts(plan, yes) {
+	if shouldPromptConflicts(plan, flags.Yes) {
 		return nil
 	}
 

@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package syncc
+package codesync
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
 	"github.com/spf13/cobra"
@@ -46,9 +49,16 @@ func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 
 		raw, err := readLine()
 		if err != nil {
-			// Treat any read error (EOF on Ctrl+D, closed pipe, SIGINT)
-			// as a clean abort, matching the reader.AskYesNo convention
-			// — the user has no way to confirm, so don't proceed.
+			// EOF (Ctrl+D, closed pipe) is a clean abort: the user has
+			// no way to confirm, so don't proceed. Other read errors
+			// (terminal in a broken state, unexpected I/O) shouldn't
+			// silently masquerade as a deliberate quit; log them at
+			// debug so --debug surfaces what happened and still treat
+			// the choice as quit so we never auto-apply on garbage.
+			if !errors.Is(err, io.EOF) {
+				log.Debug("conflict prompt read failed", "err", err)
+			}
+
 			return promptQuit, nil
 		}
 

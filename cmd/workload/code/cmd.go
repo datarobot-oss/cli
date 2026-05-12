@@ -16,8 +16,8 @@ package code
 
 import (
 	"github.com/datarobot/cli/cmd/workload/code/checkout"
+	"github.com/datarobot/cli/cmd/workload/code/codesync"
 	initcmd "github.com/datarobot/cli/cmd/workload/code/init"
-	syncc "github.com/datarobot/cli/cmd/workload/code/sync"
 	"github.com/datarobot/cli/cmd/workload/code/versions"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +55,7 @@ Example:
 	}
 
 	cmd.AddCommand(initcmd.Cmd())
-	cmd.AddCommand(syncc.Cmd())
+	cmd.AddCommand(codesync.Cmd())
 	cmd.AddCommand(versions.Cmd())
 	cmd.AddCommand(checkout.Cmd())
 
