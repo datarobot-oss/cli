@@ -159,6 +159,23 @@ func UpdateAfterSuccessDepsCheck(repoRoot string) error {
 	return existingState.update()
 }
 
+const lastSuccessDepsCheckTTL = 24 * time.Hour
+
+// HasRecentDepsInstall reports whether a successful dependency install completed
+// within the last 24 hours for this repository.
+func HasRecentSuccessDepsCheck(repoRoot string) bool {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		return false
+	}
+
+	if existingState.LastSuccessDepsCheck == nil {
+		return false
+	}
+
+	return time.Since(*existingState.LastSuccessDepsCheck) < lastSuccessDepsCheckTTL
+}
+
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.
 // If force-interactive flag is set, this always returns false to force re-execution.
 func HasCompletedDotenvSetup(repoRoot string) bool {
