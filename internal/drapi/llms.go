@@ -87,6 +87,14 @@ func GetLLMs() (*LLMList, error) {
 			}
 		}
 
+		if llmList.Next == "" {
+			break
+		}
+
+		if err = AssertNextOnSameHost(llmList.Next); err != nil {
+			return nil, err
+		}
+
 		url = llmList.Next
 	}
 

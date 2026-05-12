@@ -385,6 +385,14 @@ func ListArtifacts(limit int, status Status) ([]Artifact, error) {
 			return all[:limit], nil
 		}
 
+		if list.Next == "" {
+			break
+		}
+
+		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
+			return nil, err
+		}
+
 		pageURL = list.Next
 	}
 

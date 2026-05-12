@@ -140,6 +140,15 @@ func GetTemplates() (*TemplateList, error) {
 		}
 
 		templates = append(templates, templateList.Templates...)
+
+		if templateList.Next == "" {
+			break
+		}
+
+		if err = AssertNextOnSameHost(templateList.Next); err != nil {
+			return nil, err
+		}
+
 		url = templateList.Next
 	}
 

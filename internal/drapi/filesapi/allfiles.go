@@ -19,7 +19,6 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload/fileops"
 )
@@ -52,7 +51,7 @@ func (c *httpClient) AllFiles(catalogID, versionID string) (map[string]FileMeta,
 			break
 		}
 
-		if err := assertNextOnSameHost(page.Next); err != nil {
+		if err := drapi.AssertNextOnSameHost(page.Next); err != nil {
 			return nil, err
 		}
 
@@ -60,29 +59,6 @@ func (c *httpClient) AllFiles(catalogID, versionID string) (map[string]FileMeta,
 	}
 
 	return out, nil
-}
-
-// assertNextOnSameHost rejects pagination cursors that switch scheme or
-// host away from the configured API base. drapi attaches the bearer
-// token to whatever URL it gets, so a compromised or buggy server
-// response that sets Next to an attacker-controlled origin would leak
-// credentials on the next page request.
-func assertNextOnSameHost(rawNextURL string) error {
-	next, err := url.Parse(rawNextURL)
-	if err != nil {
-		return fmt.Errorf("pagination: parse Next URL: %w", err)
-	}
-
-	base, err := url.Parse(config.GetBaseURL())
-	if err != nil {
-		return fmt.Errorf("pagination: parse API base URL: %w", err)
-	}
-
-	if next.Scheme != base.Scheme || next.Host != base.Host {
-		return fmt.Errorf("pagination: Next URL host %q does not match API base host %q", next.Host, base.Host)
-	}
-
-	return nil
 }
 
 func allFilesURL(catalogID, versionID string) (string, error) {
