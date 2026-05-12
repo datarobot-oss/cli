@@ -47,7 +47,7 @@ type CommonProperties struct {
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
 	Language          string // user language from LANG env var (e.g. "en_US")
-	GoVersion         string // Go runtime version (e.g. "go1.26.2")
+	GoVersion         string // Go runtime version (e.g. "go1.26.3")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
