@@ -161,7 +161,7 @@ func UpdateAfterSuccessDepsCheck(repoRoot string) error {
 
 const lastSuccessDepsCheckTTL = 24 * time.Hour
 
-// HasRecentDepsInstall reports whether a successful dependency install completed
+// HasRecentSuccessDepsCheck reports whether a successful dependency check completed
 // within the last 24 hours for this repository.
 func HasRecentSuccessDepsCheck(repoRoot string) bool {
 	existingState, err := load(repoRoot)

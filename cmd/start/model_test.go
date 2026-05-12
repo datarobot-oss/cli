@@ -163,7 +163,7 @@ func TestCheckPrerequisites_WrongVersionTool(t *testing.T) {
 	assert.Equal(t, "Echo", depsMsg.prerequisites[0].Name)
 }
 
-func TestCheckPrerequisites_SkipsWhenDepsInstalledRecently(t *testing.T) {
+func TestCheckPrerequisites_SkipsWhenSuccessDepsCheckRecently(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	resolved, err := filepath.EvalSymlinks(tmpDir)
