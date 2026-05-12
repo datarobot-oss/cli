@@ -90,10 +90,18 @@ DataRobot API client implementation for:
 
 An environment configuration builder that:
 
-- Discovers environment variables from templates
-- Validates configuration
-- Generates `.env` files
-- Provides interactive prompts
+- Discovers environment variables from templates via `discovery.go`
+- Validates YAML prompt files via `schema.go` using struct-based schema validation
+- Generates `.env` files with proper formatting and comments
+- Provides interactive prompts with conditional logic and auto-generation
+
+Key files:
+
+- `builder.go`: Core prompt types (`UserPrompt`, `PromptOption`) and merging logic
+- `schema.go`: YAML unmarshaling (`UnmarshalPromptFile`) and validation (`PromptFileSchema`)
+- `discovery.go`: Recursive discovery of `.datarobot` directories and prompt files
+- `validator.go`: Validation rules for environment variables
+- `validator_test.go`: Comprehensive validation tests
 
 #### cli/
 

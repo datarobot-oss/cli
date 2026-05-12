@@ -49,6 +49,22 @@ func Discover(root string, maxDepth int) ([]string, error) {
 	return includes, nil
 }
 
+// shouldSkipDir checks if a directory should be skipped during file walk.
+// Content-based filtering of individual files happens downstream in
+// filePrompts via shape detection; this function only prunes directories
+// that we never want to descend into.
+func shouldSkipDir(name string, currentDepth, maxDepth int) bool {
+	if currentDepth > maxDepth {
+		return true
+	}
+
+	if strings.HasPrefix(name, ".") && name != "." && name != ".datarobot" {
+		return true
+	}
+
+	return false
+}
+
 // findComponents looks for the *.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given .datarobot directory,
 // and returns discovered components
 func findComponents(root string, maxDepth int) ([]string, error) {
@@ -57,6 +73,10 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Debug(err)
+			return nil
+		}
+
+		if !info.IsDir() {
 			return nil
 		}
 
@@ -69,21 +89,13 @@ func findComponents(root string, maxDepth int) ([]string, error) {
 		}
 
 		currentDepth := depth(relPath)
-
-		if info.IsDir() {
-			if (strings.HasPrefix(name, ".") && name != "." && name != ".datarobot") || currentDepth > maxDepth {
-				// skip all hidden dirs (except for our root dir) or if we have already dived too deep
-				return filepath.SkipDir
-			}
+		if shouldSkipDir(name, currentDepth, maxDepth) {
+			return filepath.SkipDir
 		}
 
 		matches, err := filepath.Glob(filepath.Join(path, "*.y*ml"))
 		if err != nil {
 			log.Debug(err)
-			return nil
-		}
-
-		if len(matches) == 0 {
 			return nil
 		}
 

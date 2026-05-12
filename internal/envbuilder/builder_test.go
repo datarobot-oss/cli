@@ -20,10 +20,297 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuilderTestSuite(t *testing.T) {
 	suite.Run(t, new(BuilderTestSuite))
+}
+
+func TestPromptFileSchema(t *testing.T) {
+	suite.Run(t, new(PromptFileSchemaTestSuite))
+}
+
+type PromptFileSchemaTestSuite struct {
+	suite.Suite
+	schema *PromptFileSchema
+}
+
+func (suite *PromptFileSchemaTestSuite) SetupTest() {
+	suite.schema = &PromptFileSchema{}
+}
+
+func (suite *PromptFileSchemaTestSuite) TestValidPromptFile() {
+	yamlContent := `
+root:
+  - env: PORT
+    help: Application port
+  - env: DEBUG
+    help: Enable debug mode
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.NoError(validationErr, "Valid prompt file should pass validation")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestValidMultipleSections() {
+	yamlContent := `
+root:
+  - env: PORT
+    help: Application port
+config:
+  - env: DB_URL
+    help: Database URL
+  - env: DB_USER
+    help: Database user
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.NoError(validationErr, "Valid prompt file with multiple sections should pass")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestValidWithKeyInsteadOfEnv() {
+	yamlContent := `
+root:
+  - key: database-url
+    help: Database connection string
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.NoError(validationErr, "Prompt with 'key' instead of 'env' should be valid")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidRootIsScalar() {
+	yamlContent := `"just a string"`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Require().Error(validationErr, "Scalar root should fail validation")
+	suite.Require().Contains(validationErr.Error(), "root must be a mapping")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidRootIsSequence() {
+	yamlContent := `
+- env: PORT
+  help: Application port
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Require().Error(validationErr, "Sequence root should fail validation")
+	suite.Require().Contains(validationErr.Error(), "root must be a mapping")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidEmptyRoot() {
+	yamlContent := ``
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	if len(root.Content) == 0 {
+		// Empty YAML has no content, which is expected
+		return
+	}
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Error(validationErr, "Empty root should fail validation")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidSectionValueIsScalar() {
+	yamlContent := `
+root: "just a string"
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Require().Error(validationErr, "Section with scalar value should fail validation")
+	suite.Require().Contains(validationErr.Error(), "section value must be a sequence")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidPromptIsNotMapping() {
+	yamlContent := `
+root:
+  - "just a string"
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Require().Error(validationErr, "Non-mapping prompt should fail validation")
+	suite.Require().Contains(validationErr.Error(), "prompt at index 0 must be a mapping")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestInvalidPromptMissingEnvAndKey() {
+	yamlContent := `
+root:
+  - help: Missing env and key
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.Require().Error(validationErr, "Prompt missing env and key should fail validation")
+	suite.Require().Contains(validationErr.Error(), "either 'env' or 'key'")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestValidPromptMissingHelpIsAllowed() {
+	yamlContent := `
+root:
+  - env: PORT
+    type: string
+`
+
+	var root yaml.Node
+
+	err := yaml.Unmarshal([]byte(yamlContent), &root)
+	suite.Require().NoError(err)
+
+	validationErr := suite.schema.Validate(root.Content[0])
+	suite.NoError(validationErr, "Prompt missing help should be valid (warning logged, not error)")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileValidFile() {
+	yamlContent := []byte(`
+root:
+  - env: PORT
+    help: Application port
+  - env: DEBUG
+    help: Enable debug mode
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.True(result, "Valid prompt file should be recognized")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileInvalidStructure() {
+	yamlContent := []byte(`
+port: 8080
+debug: true
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.False(result, "Non-prompt config file should not be recognized")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileCopierAnswerFile() {
+	yamlContent := []byte(`
+project_name: my-project
+project_slug: my_project
+author_email: test@example.com
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.False(result, "Copier answer file should not be recognized as prompt file")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileVersionManifest() {
+	yamlContent := []byte(`
+version: "1.0.0"
+build_date: "2026-04-30"
+components:
+  - name: api
+    version: "2.1.0"
+  - name: worker
+    version: "1.5.3"
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.False(result, "Version manifest should not be recognized as prompt file")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileMalformedYAML() {
+	yamlContent := []byte(`
+root:
+  - env: PORT
+    help: "unclosed string
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.True(result, "Malformed YAML should return true to let real unmarshal surface error")
+}
+
+func (suite *PromptFileSchemaTestSuite) TestLooksLikePromptFileAgentYAMLStructure() {
+	// Test with the exact structure from datarobot-agent-application
+	yamlContent := []byte(`root:
+  - env: AGENT_PORT
+    type: string
+    default: "8842"
+    help: "Enter the local port to access the agent. Should be a unique value."
+  - env: DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT
+    type: string
+    default: "[DataRobot] Python 3.11 GenAI Agents"
+    optional: true
+    help: "Enter the default execution environment for the agent's custom model."
+  - env: DATAROBOT_DEFAULT_EXECUTION_ENVIRONMENT_VERSION_ID
+    type: string
+    default: "69e2134aa5df12076d70afe7"
+    optional: true
+    help: "Enter the default execution environment version ID for the agent's custom model."
+`)
+
+	result := isPromptFile(yamlContent)
+	suite.True(result, "Agent YAML structure should be recognized as valid prompt file")
+}
+
+func (suite *BuilderTestSuite) TestMultipleYAMLFilesInSameFolder() {
+	// Test that the builder correctly handles multiple valid YAML files in the same folder
+	// while skipping non-prompt config files
+	prompts, err := GatherUserPrompts(suite.tempDir, nil)
+	suite.Require().NoError(err)
+
+	// Should have gathered prompts from both parakeet.yaml and another_parakeet.yaml
+	// plus the 2 core prompts (DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN)
+	suite.Greater(len(prompts), 2, "Should gather prompts from multiple YAML files")
+
+	// Verify that specific prompts from both files are present
+	envVars := make(map[string]bool)
+	for _, p := range prompts {
+		envVars[p.Env] = true
+	}
+
+	// From testYamlFile1
+	suite.True(envVars["PULUMI_CONFIG_PASSPHRASE"], "Should find PULUMI_CONFIG_PASSPHRASE from first file")
+	suite.True(envVars["DATAROBOT_DEFAULT_USE_CASE"], "Should find DATAROBOT_DEFAULT_USE_CASE from first file")
+
+	// From testYamlFile2
+	suite.True(envVars["INFRA_ENABLE_LLM"], "Should find INFRA_ENABLE_LLM from second file")
+	suite.True(envVars["TEXTGEN_DEPLOYMENT_ID"], "Should find TEXTGEN_DEPLOYMENT_ID from second file")
+	suite.True(envVars["TEXTGEN_REGISTERED_MODEL_ID"], "Should find TEXTGEN_REGISTERED_MODEL_ID from second file")
 }
 
 type BuilderTestSuite struct {

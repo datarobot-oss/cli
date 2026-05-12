@@ -42,7 +42,8 @@ root:
     default:
     optional: true
     help: "The default use case for this application. If not set, a new use case will be created automatically"
-  - type: string
+  - key: data_source
+    type: string
     default:
     optional: true
     multiple: true

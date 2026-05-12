@@ -71,7 +71,7 @@ EXISTING_VAR=value
 
 		// Create parakeet.yaml with a required variable
 		parakeetYaml := `root:
-  - field: REQUIRED_VAR
+  - env: REQUIRED_VAR
     help: A required variable for testing`
 		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte(parakeetYaml), 0o644)
 		require.NoError(t, err)

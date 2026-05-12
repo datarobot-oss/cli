@@ -170,6 +170,27 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
 	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet/yet_another_parakeet.yml")
 }
 
+// Non-prompt YAML files (copier answers, versions.yaml, etc.) are now filtered
+// at parse time via shape detection in filePrompts rather than during Discover.
+// See TestFilePromptsSkipsNonPromptShapedYaml for the current contract.
+func (suite *DiscoverTestSuite) TestFilePromptsSkipsNonPromptShapedYaml() {
+	cases := map[string]string{
+		"copier_answers.yaml": "_commit: v1.2.3\n_src_path: https://example.com\n",
+		"versions.yaml":       "dr:\n  name: DataRobot CLI\n  minimum-version: 0.2.55\n",
+		"answers.yml":         "some_key: some_value\nother_key: 42\n",
+	}
+
+	for name, content := range cases {
+		path := filepath.Join(suite.tempDir, name)
+
+		suite.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
+
+		prompts, err := filePrompts(path)
+		suite.Require().NoError(err, "non-prompt yaml %s should not surface an error", name)
+		suite.Nil(prompts, "non-prompt yaml %s should yield no prompts", name)
+	}
+}
+
 func TestDepth(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/log"
-	"gopkg.in/yaml.v3"
 )
 
 type PromptType string
@@ -55,7 +54,6 @@ type UserPrompt struct {
 	Value string
 	// Hidden indicates if this prompt should never be shown to users (e.g., core variables).
 	Hidden bool
-
 	// Env is the environment variable name to set (e.g., "DATABASE_URL").
 	Env string `yaml:"env"`
 	// Key is an alternative identifier when Env is not set (written as comment).
@@ -90,8 +88,6 @@ type PromptOption struct {
 	Value    string `yaml:"value,omitempty"`
 	Requires string `yaml:"requires,omitempty"`
 }
-
-type ParsedYaml map[string][]UserPrompt
 
 // It will render as:
 //
@@ -282,9 +278,16 @@ func filePrompts(yamlFile string) ([]UserPrompt, error) {
 		return nil, fmt.Errorf("Failed to read task yaml file %s: %w", yamlFile, err)
 	}
 
-	var fileParsed ParsedYaml
+	if !isPromptFile(data) {
+		log.Debugf("Skipping non-prompt yaml file %s", yamlFile)
 
-	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
+		return nil, nil
+	}
+
+	log.Infof("Parsing prompts from yaml file %s", yamlFile)
+
+	fileParsed, err := UnmarshalPromptFile(data)
+	if err != nil {
 		return nil, fmt.Errorf("Failed to unmarshal task yaml file %s: %w", yamlFile, err)
 	}
 
@@ -347,6 +350,12 @@ func rootSections(fileParsed ParsedYaml) []string {
 	}
 
 	return slices.Sorted(maps.Keys(keys))
+}
+
+// isPromptFile determines whether a YAML file is a prompt-definition file
+// using schema validation. See ValidateAndSkipNonPromptFiles in schema.go.
+func isPromptFile(data []byte) bool {
+	return ValidateAndSkipNonPromptFiles(data)
 }
 
 // childSections is used only for determining sort order of prompts.

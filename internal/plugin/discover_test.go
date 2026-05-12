@@ -144,6 +144,11 @@ func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 	s.Empty(plugins)
 }
 
+// TODO: This test is flaky under `go test -shuffle=on` / parallel execution
+// in the broader `task test` run, but passes cleanly when run in isolation.
+// Suspected: shared filesystem state between sub-tests in the suite, or
+// enumeration-order sensitivity in the manifest-name dedup logic.
+// Unrelated to the envbuilder/dotenv changes that surfaced this observation.
 func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	// Two different binary names, same manifest name
 	manifest := `{"name":"shared-name","version":"1.0.0","description":"Test"}`
