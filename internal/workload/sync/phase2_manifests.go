@@ -144,11 +144,13 @@ func refFromArtifact(e *Engine) codeRefRef {
 
 	for _, group := range e.artifact.Spec.ContainerGroups {
 		for _, container := range group.Containers {
-			if container.CodeRef == nil || container.CodeRef.Datarobot == nil {
+			if container.ImageBuildConfig == nil ||
+				container.ImageBuildConfig.CodeRef == nil ||
+				container.ImageBuildConfig.CodeRef.Datarobot == nil {
 				continue
 			}
 
-			dr := container.CodeRef.Datarobot
+			dr := container.ImageBuildConfig.CodeRef.Datarobot
 
 			return codeRefRef{CatalogID: dr.CatalogID, CatalogVersionID: dr.CatalogVersionID}
 		}

@@ -62,10 +62,12 @@ func makeTestArtifact(id, name, status, catalogID, versionID string) Artifact {
 				{
 					Containers: []Container{
 						{
-							CodeRef: &CodeRef{
-								Datarobot: &DatarobotCodeRef{
-									CatalogID:        catalogID,
-									CatalogVersionID: versionID,
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{
+									Datarobot: &DatarobotCodeRef{
+										CatalogID:        catalogID,
+										CatalogVersionID: versionID,
+									},
 								},
 							},
 						},

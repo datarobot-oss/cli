@@ -31,11 +31,14 @@ const testArtifactJSON = `{
 			{
 				"containers": [
 					{
-						"codeRef": {
-							"datarobot": {
-								"catalogId": "cat-xyz-789",
-								"catalogVersionId": "fedcba0987654321fedcba09"
-							}
+						"imageBuildConfig": {
+							"codeRef": {
+								"datarobot": {
+									"catalogId": "cat-xyz-789",
+									"catalogVersionId": "fedcba0987654321fedcba09"
+								}
+							},
+							"dockerfile": {"source": "provided"}
 						}
 					}
 				]
@@ -92,11 +95,23 @@ func TestExtractCodeRef_EmptyContainers(t *testing.T) {
 	assert.Nil(t, ExtractCodeRef(artifact))
 }
 
+func TestExtractCodeRef_NilImageBuildConfig(t *testing.T) {
+	artifact := Artifact{
+		Spec: Spec{
+			ContainerGroups: []ContainerGroup{
+				{Containers: []Container{{ImageBuildConfig: nil}}},
+			},
+		},
+	}
+
+	assert.Nil(t, ExtractCodeRef(artifact))
+}
+
 func TestExtractCodeRef_NilCodeRef(t *testing.T) {
 	artifact := Artifact{
 		Spec: Spec{
 			ContainerGroups: []ContainerGroup{
-				{Containers: []Container{{CodeRef: nil}}},
+				{Containers: []Container{{ImageBuildConfig: &ImageBuildConfig{CodeRef: nil}}}},
 			},
 		},
 	}
@@ -108,7 +123,9 @@ func TestExtractCodeRef_NilDatarobot(t *testing.T) {
 	artifact := Artifact{
 		Spec: Spec{
 			ContainerGroups: []ContainerGroup{
-				{Containers: []Container{{CodeRef: &CodeRef{Datarobot: nil}}}},
+				{Containers: []Container{{
+					ImageBuildConfig: &ImageBuildConfig{CodeRef: &CodeRef{Datarobot: nil}},
+				}}},
 			},
 		},
 	}
@@ -125,11 +142,8 @@ func TestExtractCodeRef_NotInResponse(t *testing.T) {
 	assert.Nil(t, ExtractCodeRef(artifact))
 }
 
-// TestExtractCodeRef_PrefersPrimaryWhenSidecarFirst is the regression test
-// for the read/write asymmetry: PatchArtifactCodeRef writes the
-// primary=true container, so reads must follow it too — otherwise a
-// sidecar appearing at index 0 makes display/init show stale catalog
-// info immediately after a sync.
+// Read/write asymmetry guard: PatchArtifactCodeRef writes the primary container,
+// so reads must too, even when a sidecar appears at index 0.
 func TestExtractCodeRef_PrefersPrimaryWhenSidecarFirst(t *testing.T) {
 	primary := true
 	notPrimary := false
@@ -141,15 +155,19 @@ func TestExtractCodeRef_PrefersPrimaryWhenSidecarFirst(t *testing.T) {
 					Containers: []Container{
 						{
 							Primary: &notPrimary,
-							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
-								CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
-							}},
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+									CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
+								}},
+							},
 						},
 						{
 							Primary: &primary,
-							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
-								CatalogID: "primary-cat", CatalogVersionID: "primary-ver",
-							}},
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+									CatalogID: "primary-cat", CatalogVersionID: "primary-ver",
+								}},
+							},
 						},
 					},
 				},
@@ -174,9 +192,11 @@ func TestExtractCodeRef_FindsPrimaryAcrossGroups(t *testing.T) {
 					Containers: []Container{
 						{
 							Primary: &primary,
-							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
-								CatalogID: "cat-2", CatalogVersionID: "ver-2",
-							}},
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+									CatalogID: "cat-2", CatalogVersionID: "ver-2",
+								}},
+							},
 						},
 					},
 				},
@@ -189,10 +209,8 @@ func TestExtractCodeRef_FindsPrimaryAcrossGroups(t *testing.T) {
 	assert.Equal(t, "cat-2", codeRef.CatalogID)
 }
 
-// TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil locks in the
-// commit-to-primary semantics: once a container is identified as
-// primary, missing codeRef must return nil rather than falling through
-// to a sidecar's stale data.
+// Commit-to-primary semantics: a primary with no codeRef returns nil rather
+// than falling through to a sidecar's stale data.
 func TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil(t *testing.T) {
 	primary := true
 	notPrimary := false
@@ -204,13 +222,15 @@ func TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil(t *testing.T) {
 					Containers: []Container{
 						{
 							Primary: &notPrimary,
-							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
-								CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
-							}},
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+									CatalogID: "sidecar-cat", CatalogVersionID: "sidecar-ver",
+								}},
+							},
 						},
 						{
-							Primary: &primary,
-							CodeRef: nil,
+							Primary:          &primary,
+							ImageBuildConfig: nil,
 						},
 					},
 				},
@@ -219,12 +239,10 @@ func TestExtractCodeRef_PrimaryWithoutCodeRefReturnsNil(t *testing.T) {
 	}
 
 	assert.Nil(t, ExtractCodeRef(artifact),
-		"primary container with nil codeRef must return nil, not the sidecar's coderef")
+		"primary container with nil imageBuildConfig must return nil, not the sidecar's coderef")
 }
 
-// TestExtractCodeRef_PrimaryFalseDoesNotMatch confirms the *bool primary
-// flag is interpreted strictly: a container with `primary: false` set
-// explicitly is treated as a sidecar, not a candidate.
+// Explicit primary: false is treated as a sidecar, not a candidate.
 func TestExtractCodeRef_PrimaryFalseDoesNotMatch(t *testing.T) {
 	notPrimary := false
 
@@ -235,9 +253,11 @@ func TestExtractCodeRef_PrimaryFalseDoesNotMatch(t *testing.T) {
 					Containers: []Container{
 						{
 							Primary: &notPrimary,
-							CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
-								CatalogID: "first", CatalogVersionID: "v1",
-							}},
+							ImageBuildConfig: &ImageBuildConfig{
+								CodeRef: &CodeRef{Datarobot: &DatarobotCodeRef{
+									CatalogID: "first", CatalogVersionID: "v1",
+								}},
+							},
 						},
 					},
 				},
@@ -245,8 +265,7 @@ func TestExtractCodeRef_PrimaryFalseDoesNotMatch(t *testing.T) {
 		},
 	}
 
-	// No container marked primary → fallback to [0][0], which still
-	// returns "first". Asserts the fallback path remains live.
+	// Fallback to [0][0] when no primary is flagged.
 	codeRef := ExtractCodeRef(artifact)
 	require.NotNil(t, codeRef)
 	assert.Equal(t, "first", codeRef.CatalogID)
@@ -308,7 +327,7 @@ const validMinimalSpec = `{
 			"containers": [{
 				"imageUri": "nginx:latest",
 				"port": 8080,
-				"resourceRequest": {"cpu": 1, "memory": 536870912}
+				"primary": true
 			}]
 		}]
 	}
@@ -325,10 +344,38 @@ func TestValidateCreateRequest_FullValid(t *testing.T) {
 		"spec": {
 			"containerGroups": [{
 				"containers": [{
-					"imageUri": "nginx:latest",
+					"primary": true,
 					"port": 8080,
-					"resourceRequest": {"cpu": 1, "memory": 536870912},
-					"codeRef": {"datarobot": {"catalogId": "c", "catalogVersionId": "v"}}
+					"imageBuildConfig": {
+						"codeRef": {"datarobot": {"catalogId": "c", "catalogVersionId": "v"}},
+						"dockerfile": {
+							"source": "generated",
+							"executionEnvironmentId": "env-1",
+							"executionEnvironmentVersionId": "env-v-1",
+							"entrypoint": ["python", "agent.py"]
+						}
+					}
+				}]
+			}]
+		}
+	}`
+
+	require.NoError(t, ValidateCreateRequest([]byte(spec)))
+}
+
+// TestValidateCreateRequest_BuildFromSource: imageBuildConfig present at create,
+// codeRef and imageUri filled in later by the server / sync flow.
+func TestValidateCreateRequest_BuildFromSource(t *testing.T) {
+	spec := `{
+		"name": "build-from-source",
+		"spec": {
+			"containerGroups": [{
+				"containers": [{
+					"primary": true,
+					"port": 8080,
+					"imageBuildConfig": {
+						"dockerfile": {"source": "provided"}
+					}
 				}]
 			}]
 		}
@@ -369,21 +416,6 @@ func TestValidateCreateRequest_Errors(t *testing.T) {
 			"[0].containers",
 		},
 		{
-			"unknown top-level field",
-			`{"nme":"x","spec":{"containerGroups":[{"containers":[{}]}]}}`,
-			`unknown field "nme"`,
-		},
-		{
-			"unknown nested field",
-			`{"name":"x","spec":{"containerGroups":[{"containers":[{"imageUrl":"x"}]}]}}`,
-			`unknown field "imageUrl"`,
-		},
-		{
-			"wrong type cpu",
-			`{"name":"x","spec":{"containerGroups":[{"containers":[{"resourceRequest":{"cpu":"1","memory":1}}]}]}}`,
-			"invalid spec",
-		},
-		{
 			"not json",
 			`not json`,
 			"invalid spec",
@@ -401,9 +433,8 @@ func TestValidateCreateRequest_Errors(t *testing.T) {
 
 func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 	t.Run("OverwritesPrimaryCodeRef_LeavesSidecarsAlone", func(t *testing.T) {
-		// Sidecar at containers[0]; primary at containers[1]. Only the
-		// primary's codeRef should be repointed; the sidecar's codeRef
-		// must survive untouched.
+		// Sidecar at [0], primary at [1]. Only the primary repoints, and its
+		// existing dockerfile config survives untouched.
 		raw := map[string]any{
 			"spec": map[string]any{
 				"containerGroups": []any{
@@ -411,20 +442,31 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 						"containers": []any{
 							map[string]any{
 								"primary": false,
-								"codeRef": map[string]any{
-									"datarobot": map[string]any{
-										"catalogId":        "sidecar-cat",
-										"catalogVersionId": "sidecar-ver",
+								"imageBuildConfig": map[string]any{
+									"codeRef": map[string]any{
+										"datarobot": map[string]any{
+											"catalogId":        "sidecar-cat",
+											"catalogVersionId": "sidecar-ver",
+										},
 									},
+									"dockerfile": map[string]any{"source": "provided"},
 								},
 								"imageUri": "sidecar-image",
 							},
 							map[string]any{
 								"primary": true,
-								"codeRef": map[string]any{
-									"datarobot": map[string]any{
-										"catalogId":        "old-cat",
-										"catalogVersionId": "old-ver",
+								"imageBuildConfig": map[string]any{
+									"codeRef": map[string]any{
+										"datarobot": map[string]any{
+											"catalogId":        "old-cat",
+											"catalogVersionId": "old-ver",
+										},
+									},
+									"dockerfile": map[string]any{
+										"source":                        "generated",
+										"executionEnvironmentId":        "env-1",
+										"executionEnvironmentVersionId": "env-v-1",
+										"entrypoint":                    []any{"python", "agent.py"},
 									},
 								},
 								"imageUri": "primary-image",
@@ -441,18 +483,19 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 		sidecar := containers[0].(map[string]any)
 		primary := containers[1].(map[string]any)
 
-		// Primary repointed.
-		primaryRef := primary["codeRef"].(map[string]any)
-		assert.Equal(t, "datarobot", primaryRef["type"])
-		assert.Equal(t, "datarobot", primaryRef["provider"])
-		dr := primaryRef["datarobot"].(map[string]any)
+		primaryIBC := primary["imageBuildConfig"].(map[string]any)
+		dr := primaryIBC["codeRef"].(map[string]any)["datarobot"].(map[string]any)
 		assert.Equal(t, "new-cat", dr["catalogId"])
 		assert.Equal(t, "new-ver", dr["catalogVersionId"])
+
+		df := primaryIBC["dockerfile"].(map[string]any)
+		assert.Equal(t, "generated", df["source"])
+		assert.Equal(t, "env-1", df["executionEnvironmentId"])
+		assert.Equal(t, "env-v-1", df["executionEnvironmentVersionId"])
 		assert.Equal(t, "primary-image", primary["imageUri"])
 
-		// Sidecar untouched.
-		sidecarRef := sidecar["codeRef"].(map[string]any)
-		sidecarDR := sidecarRef["datarobot"].(map[string]any)
+		sidecarIBC := sidecar["imageBuildConfig"].(map[string]any)
+		sidecarDR := sidecarIBC["codeRef"].(map[string]any)["datarobot"].(map[string]any)
 		assert.Equal(t, "sidecar-cat", sidecarDR["catalogId"])
 		assert.Equal(t, "sidecar-ver", sidecarDR["catalogVersionId"])
 	})
@@ -480,14 +523,15 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "cat-a", "ver-a"))
 
 		primary := raw["spec"].(map[string]any)["containerGroups"].([]any)[1].(map[string]any)["containers"].([]any)[0].(map[string]any)
-		require.Contains(t, primary, "codeRef")
+		require.Contains(t, primary, "imageBuildConfig")
+		ibc := primary["imageBuildConfig"].(map[string]any)
+		dr := ibc["codeRef"].(map[string]any)["datarobot"].(map[string]any)
+		assert.Equal(t, "cat-a", dr["catalogId"])
+		assert.Equal(t, "ver-a", dr["catalogVersionId"])
+		assert.Equal(t, "provided", ibc["dockerfile"].(map[string]any)["source"])
 	})
 
 	t.Run("FallsBackToFirstContainerWhenNoPrimary", func(t *testing.T) {
-		// Legacy artifact: server doesn't emit `primary` on any
-		// container. Mirror ExtractCodeRef's read-side fallback by
-		// updating containerGroups[0].containers[0] so sync against
-		// older deployments keeps working.
 		raw := map[string]any{
 			"spec": map[string]any{
 				"containerGroups": []any{
@@ -511,10 +555,12 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 		first := containers[0].(map[string]any)
 		second := containers[1].(map[string]any)
 
-		dr := first["codeRef"].(map[string]any)["datarobot"].(map[string]any)
+		ibc := first["imageBuildConfig"].(map[string]any)
+		dr := ibc["codeRef"].(map[string]any)["datarobot"].(map[string]any)
 		assert.Equal(t, "new-cat", dr["catalogId"])
 		assert.Equal(t, "new-ver", dr["catalogVersionId"])
-		assert.NotContains(t, second, "codeRef", "second container must be untouched")
+		assert.Equal(t, "provided", ibc["dockerfile"].(map[string]any)["source"])
+		assert.NotContains(t, second, "imageBuildConfig", "second container must be untouched")
 	})
 
 	cases := []struct {

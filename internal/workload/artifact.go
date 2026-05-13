@@ -64,11 +64,25 @@ type ContainerGroup struct {
 }
 
 type Container struct {
-	CodeRef *CodeRef `json:"codeRef"`
-	// Primary is *bool so absent (legacy responses) round-trips as nil
-	// rather than `false` — `omitempty` then drops it on marshal so the
-	// CLI never re-asserts an unknown value back to the server.
+	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
+	// *bool so an absent value round-trips as nil and omitempty drops it
+	// on marshal, instead of re-asserting `false` back to the server.
 	Primary *bool `json:"primary,omitempty"`
+}
+
+type ImageBuildConfig struct {
+	CodeRef    *CodeRef    `json:"codeRef,omitempty"`
+	Dockerfile *Dockerfile `json:"dockerfile,omitempty"`
+}
+
+// Dockerfile flattens workload-api's ProvidedDockerfile / GeneratedDockerfile
+// union. Source is the discriminator; the rest are only valid when
+// source == "generated".
+type Dockerfile struct {
+	Source                        string   `json:"source"`
+	ExecutionEnvironmentID        string   `json:"executionEnvironmentId,omitempty"`
+	ExecutionEnvironmentVersionID string   `json:"executionEnvironmentVersionId,omitempty"`
+	Entrypoint                    []string `json:"entrypoint,omitempty"`
 }
 
 type CodeRef struct {
@@ -111,15 +125,11 @@ func (a *Artifact) IsLocked() bool {
 	return strings.EqualFold(a.Status, ArtifactStatusLocked)
 }
 
-// ExtractCodeRef returns the codeRef of the container marked
-// primary=true, mirroring the write-side selection in
-// setPrimaryCodeRefInRawArtifact. If no container is flagged primary
-// (legacy server responses that don't emit the field), falls back to
-// containerGroups[0].containers[0] so older deployments keep working.
-//
-// Once a primary container is found, this function commits to it: a
-// primary with no codeRef returns nil rather than falling through to a
-// sidecar, otherwise display would silently surface stale catalog info.
+// ExtractCodeRef mirrors the write-side selection in setPrimaryCodeRefInRawArtifact:
+// once a primary container is found it commits, returning nil if the primary
+// has no codeRef rather than falling through to a sidecar (which would surface
+// stale catalog info in display). Falls back to containerGroups[0].containers[0]
+// when no container is flagged primary.
 func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 	for _, group := range artifact.Spec.ContainerGroups {
 		for _, container := range group.Containers {
@@ -127,11 +137,7 @@ func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 				continue
 			}
 
-			if container.CodeRef == nil {
-				return nil
-			}
-
-			return container.CodeRef.Datarobot
+			return codeRefFromContainer(container)
 		}
 	}
 
@@ -143,12 +149,15 @@ func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
 		return nil
 	}
 
-	codeRef := artifact.Spec.ContainerGroups[0].Containers[0].CodeRef
-	if codeRef == nil {
+	return codeRefFromContainer(artifact.Spec.ContainerGroups[0].Containers[0])
+}
+
+func codeRefFromContainer(container Container) *DatarobotCodeRef {
+	if container.ImageBuildConfig == nil || container.ImageBuildConfig.CodeRef == nil {
 		return nil
 	}
 
-	return codeRef.Datarobot
+	return container.ImageBuildConfig.CodeRef.Datarobot
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {
@@ -190,23 +199,20 @@ type ArtifactCreateContainerGroup struct {
 }
 
 type ArtifactCreateContainer struct {
-	ImageURI        string                         `json:"imageUri,omitempty"`
-	Port            int                            `json:"port,omitempty"`
-	ResourceRequest *ArtifactCreateResourceRequest `json:"resourceRequest,omitempty"`
-	CodeRef         *CodeRef                       `json:"codeRef,omitempty"`
+	ImageURI         string            `json:"imageUri,omitempty"`
+	Port             int               `json:"port,omitempty"`
+	Primary          *bool             `json:"primary,omitempty"`
+	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
 }
 
-type ArtifactCreateResourceRequest struct {
-	CPU    int   `json:"cpu"`
-	Memory int64 `json:"memory"`
-}
-
-// ValidateCreateRequest decodes a user-supplied spec file with DisallowUnknownFields
-// against ArtifactCreateRequest and enforces required-field invariants. The original
-// bytes are still sent verbatim by the caller; the strict struct never reaches the wire.
+// ValidateCreateRequest checks the structural invariants of a user-supplied
+// spec (required name, non-empty containerGroups, every group has containers)
+// and lets the server validate field-level shape. We don't reject unknown
+// fields here because the workload-api schema moves faster than this struct;
+// the server's 422 carries a JSON-path detail that's clearer than what
+// DisallowUnknownFields would produce. The original bytes are sent verbatim.
 func ValidateCreateRequest(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 
 	var req ArtifactCreateRequest
 
@@ -283,8 +289,6 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 	}
 
 	codeRef := map[string]any{
-		"type":     "datarobot",
-		"provider": "datarobot",
 		"datarobot": map[string]any{
 			"catalogId":        catalogID,
 			"catalogVersionId": catalogVersionID,
@@ -295,10 +299,7 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 		return nil
 	}
 
-	// Legacy fallback: server didn't emit `primary` on any container.
-	// Mirror ExtractCodeRef's read-side fallback to containers[0][0] so
-	// sync against older deployments still updates the first container
-	// instead of returning an opaque "no primary container" error.
+	// Mirror ExtractCodeRef's [0][0] fallback when no container is flagged primary.
 	return assignToFirstContainer(groups, codeRef)
 }
 
@@ -321,7 +322,7 @@ func assignToPrimaryContainer(groups []any, codeRef map[string]any) bool {
 			}
 
 			if isPrimaryContainer(container) {
-				container["codeRef"] = codeRef
+				setImageBuildConfigCodeRef(container, codeRef)
 
 				return true
 			}
@@ -347,9 +348,26 @@ func assignToFirstContainer(groups []any, codeRef map[string]any) error {
 		return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
 	}
 
-	firstContainer["codeRef"] = codeRef
+	setImageBuildConfigCodeRef(firstContainer, codeRef)
 
 	return nil
+}
+
+// setImageBuildConfigCodeRef preserves any existing dockerfile config and
+// seeds a "provided" Dockerfile default when imageBuildConfig is absent
+// (server requires a dockerfile on the imageBuildConfig).
+func setImageBuildConfigCodeRef(container map[string]any, codeRef map[string]any) {
+	ibc, ok := container["imageBuildConfig"].(map[string]any)
+	if !ok || ibc == nil {
+		ibc = map[string]any{
+			"dockerfile": map[string]any{
+				"source": "provided",
+			},
+		}
+	}
+
+	ibc["codeRef"] = codeRef
+	container["imageBuildConfig"] = ibc
 }
 
 func isPrimaryContainer(container map[string]any) bool {
