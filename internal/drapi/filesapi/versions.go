@@ -61,7 +61,7 @@ func (c *httpClient) ListVersions(catalogID string, limit int) ([]CatalogVersion
 			break
 		}
 
-		if err := assertNextOnSameHost(page.Next); err != nil {
+		if err := drapi.AssertNextOnSameHost(page.Next); err != nil {
 			return nil, err
 		}
 
