@@ -153,7 +153,7 @@ func TestUpdateAfterSuccessfulRun(t *testing.T) {
 	assert.True(t, loadedState.LastStart.Before(afterUpdate) || loadedState.LastStart.Equal(afterUpdate))
 }
 
-func TestUpdateAfterDepsInstall(t *testing.T) {
+func TestUpdateAfterSuccessDepsCheck(t *testing.T) {
 	tmpDir := t.TempDir()
 	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 	err := os.MkdirAll(localStateDir, 0o755)
@@ -161,7 +161,7 @@ func TestUpdateAfterDepsInstall(t *testing.T) {
 
 	beforeUpdate := time.Now().UTC()
 
-	err = UpdateAfterDepsInstall(tmpDir)
+	err = UpdateAfterSuccessDepsCheck(tmpDir)
 	require.NoError(t, err)
 
 	afterUpdate := time.Now().UTC()
@@ -169,13 +169,61 @@ func TestUpdateAfterDepsInstall(t *testing.T) {
 	loadedState, err := load(tmpDir)
 	require.NoError(t, err)
 
-	require.NotNil(t, loadedState.LastDepsInstall)
+	require.NotNil(t, loadedState.LastSuccessDepsCheck)
 	assert.NotEmpty(t, loadedState.CLIVersion)
-	assert.True(t, loadedState.LastDepsInstall.After(beforeUpdate) || loadedState.LastDepsInstall.Equal(beforeUpdate))
-	assert.True(t, loadedState.LastDepsInstall.Before(afterUpdate) || loadedState.LastDepsInstall.Equal(afterUpdate))
+	assert.True(t, loadedState.LastSuccessDepsCheck.After(beforeUpdate) || loadedState.LastSuccessDepsCheck.Equal(beforeUpdate))
+	assert.True(t, loadedState.LastSuccessDepsCheck.Before(afterUpdate) || loadedState.LastSuccessDepsCheck.Equal(afterUpdate))
 }
 
-func TestUpdateAfterDepsInstall_PreservesOtherFields(t *testing.T) {
+func TestHasRecentSuccessDepsCheck(t *testing.T) {
+	t.Run("returns false when no state file exists", func(t *testing.T) {
+		assert.False(t, HasRecentSuccessDepsCheck(t.TempDir()))
+	})
+
+	t.Run("returns false when LastSuccessDepsCheck is nil", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterSuccessfulRun(tmpDir)
+		require.NoError(t, err)
+
+		assert.False(t, HasRecentSuccessDepsCheck(tmpDir))
+	})
+
+	t.Run("returns true when LastSuccessDepsCheck is within 24 hours", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterSuccessDepsCheck(tmpDir)
+		require.NoError(t, err)
+
+		assert.True(t, HasRecentSuccessDepsCheck(tmpDir))
+	})
+
+	t.Run("returns false when LastSuccessDepsCheck is older than 24 hours", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		stale := time.Now().UTC().Add(-25 * time.Hour)
+		s := state{
+			fullPath:             filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml"),
+			LastSuccessDepsCheck: &stale,
+		}
+
+		err = s.save()
+		require.NoError(t, err)
+
+		assert.False(t, HasRecentSuccessDepsCheck(tmpDir))
+	})
+}
+
+func TestUpdateAfterSuccessDepsCheck_PreservesOtherFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
 	err := os.MkdirAll(localStateDir, 0o755)
@@ -189,14 +237,14 @@ func TestUpdateAfterDepsInstall_PreservesOtherFields(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, stateBefore.LastStart)
 
-	// Now run deps install — LastStart must survive.
-	err = UpdateAfterDepsInstall(tmpDir)
+	// Now run deps check — LastStart must survive.
+	err = UpdateAfterSuccessDepsCheck(tmpDir)
 	require.NoError(t, err)
 
 	stateAfter, err := load(tmpDir)
 	require.NoError(t, err)
 
-	require.NotNil(t, stateAfter.LastDepsInstall)
+	require.NotNil(t, stateAfter.LastSuccessDepsCheck)
 	require.NotNil(t, stateAfter.LastStart)
 	assert.Equal(t, stateBefore.LastStart.Unix(), stateAfter.LastStart.Unix())
 }

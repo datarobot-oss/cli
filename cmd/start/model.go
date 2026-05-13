@@ -506,7 +506,11 @@ func checkSelfVersion(_ *Model) tea.Msg {
 	return stepCompleteMsg{}
 }
 
-func checkPrerequisites(_ *Model) tea.Msg {
+func checkPrerequisites(m *Model) tea.Msg {
+	if m.repoRoot != "" && state.HasRecentSuccessDepsCheck(m.repoRoot) {
+		return stepCompleteMsg{message: "Recent successful dependency check detected, skipping prerequisites check...\n"}
+	}
+
 	missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
 
 	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {

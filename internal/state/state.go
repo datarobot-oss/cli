@@ -35,8 +35,8 @@ type state struct {
 	LastTemplatesSetup *time.Time `yaml:"last_templates_setup,omitempty"`
 	// LastDotenvSetup is an ISO8601-compliant timestamp of the last successful `dr dotenv setup` run
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
-	// LastDepsInstall is an ISO8601-compliant timestamp of the last successful `dr dependencies install` run
-	LastDepsInstall *time.Time `yaml:"last_deps_install,omitempty"`
+	// LastSuccessDepsCheck is an ISO8601-compliant timestamp of the last successful `dr dependencies check` or `dr dependencies install` run
+	LastSuccessDepsCheck *time.Time `yaml:"last_success_deps_check,omitempty"`
 }
 
 // getStatePath determines the appropriate location for the state file.
@@ -146,17 +146,34 @@ func UpdateAfterTemplatesSetup(repoRoot string) error {
 	return existingState.update()
 }
 
-// UpdateAfterDepsInstall updates the state file after a successful `dr dependencies install` run.
-func UpdateAfterDepsInstall(repoRoot string) error {
+// UpdateAfterSuccessDepsCheck updates the state file after a successful `dr dependencies check` or `dr dependencies install` run.
+func UpdateAfterSuccessDepsCheck(repoRoot string) error {
 	existingState, err := load(repoRoot)
 	if err != nil {
 		return err
 	}
 
 	now := time.Now().UTC()
-	existingState.LastDepsInstall = &now
+	existingState.LastSuccessDepsCheck = &now
 
 	return existingState.update()
+}
+
+const lastSuccessDepsCheckTTL = 24 * time.Hour
+
+// HasRecentSuccessDepsCheck reports whether a successful dependency check completed
+// within the last 24 hours for this repository.
+func HasRecentSuccessDepsCheck(repoRoot string) bool {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		return false
+	}
+
+	if existingState.LastSuccessDepsCheck == nil {
+		return false
+	}
+
+	return time.Since(*existingState.LastSuccessDepsCheck) < lastSuccessDepsCheckTTL
 }
 
 // HasCompletedDotenvSetup checks if dotenv setup has been completed in the past.

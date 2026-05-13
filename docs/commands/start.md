@@ -207,7 +207,7 @@ The `dr start` command automatically tracks when it runs successfully by updatin
 
 This state information is stored in `.datarobot/cli/state.yaml` within the repository. State tracking is automatic and transparent. No manual intervention is required.
 
-The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps.
+The state file helps other commands (like `dr templates setup`) know that you've already run `dr start`, allowing them to skip redundant setup steps. It also records the timestamp of the last successful dependency check; `dr start` uses this to skip the prerequisites step when a successful check was recorded within the last 24 hours.
 
 ### When `task start` exists
 
@@ -237,7 +237,11 @@ If the user declines to execute the script, the command exits gracefully and sti
 
 ### Prerequisites checked
 
-The "Checking template prerequisites" step verifies that tools required by the template (e.g. uv, Task) are installed and meet the minimum version requirements. If any are missing or out of date, the command lists the affected tools and prompts you to install them inline:
+The "Checking template prerequisites" step verifies that tools required by the template (e.g. uv, Task) are installed and meet the minimum version requirements.
+
+If a successful dependency check was recorded within the last 24 hours (by `dr dependencies install` , `dr dependencies check` or a previous `dr start` run), this step is skipped automatically.
+
+If any tools are missing or out of date, the command lists the affected tools and prompts you to install them inline:
 
 - Press `y` or ENTER to install all missing or outdated tools in sequence.
 - Press `n` to cancel; the command exits with a message directing you to `dr dependencies install`.

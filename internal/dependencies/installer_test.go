@@ -249,3 +249,46 @@ func TestInstallPrerequisites_AbortsOnFirstFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "uv")
 	assert.NotContains(t, out.String(), "install-task")
 }
+
+func TestInstallPrerequisites_WritesStateOnSuccess(t *testing.T) {
+	repoRoot := setupFakeRepo(t)
+
+	var out bytes.Buffer
+
+	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "last_success_deps_check")
+}
+
+func TestInstallPrerequisites_PartialFailureDoesNotWriteState(t *testing.T) {
+	repoRoot := setupFakeRepo(t)
+
+	var out bytes.Buffer
+
+	deps := []tools.Prerequisite{
+		prereq("failing", "exit 1"),
+		prereq("ok", "echo ok"),
+	}
+
+	err := InstallPrerequisites(&out, deps)
+	require.Error(t, err)
+
+	data, _ := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	assert.NotContains(t, string(data), "last_success_deps_check")
+}
+
+func TestLastSuccessDepsCheck_UpdatedByInstallPrerequisites(t *testing.T) {
+	repoRoot := setupFakeRepo(t)
+
+	var out bytes.Buffer
+
+	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "last_success_deps_check")
+}

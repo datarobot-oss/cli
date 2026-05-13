@@ -22,6 +22,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,7 +128,7 @@ func TestCheckPrerequisites_AllSatisfied(t *testing.T) {
 		{Name: "sh", Command: "sh"},
 	})
 
-	msg := checkPrerequisites(nil)
+	msg := checkPrerequisites(&Model{})
 
 	_, ok := msg.(stepCompleteMsg)
 	assert.True(t, ok, "expected stepCompleteMsg when all deps are satisfied")
@@ -139,7 +140,7 @@ func TestCheckPrerequisites_MissingTool(t *testing.T) {
 		{Name: "FakeTool", Command: "nonexistent_dr_fake_xyz", URL: "https://example.com"},
 	})
 
-	msg := checkPrerequisites(nil)
+	msg := checkPrerequisites(&Model{})
 
 	depsMsg, ok := msg.(depsMissingMsg)
 	require.True(t, ok, "expected depsMissingMsg when a tool is missing")
@@ -154,12 +155,31 @@ func TestCheckPrerequisites_WrongVersionTool(t *testing.T) {
 		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0", URL: "https://example.com"},
 	})
 
-	msg := checkPrerequisites(nil)
+	msg := checkPrerequisites(&Model{})
 
 	depsMsg, ok := msg.(depsMissingMsg)
 	require.True(t, ok, "expected depsMissingMsg when tool has wrong version")
 	require.Len(t, depsMsg.prerequisites, 1)
 	assert.Equal(t, "Echo", depsMsg.prerequisites[0].Name)
+}
+
+func TestCheckPrerequisites_SkipsWhenSuccessDepsCheckRecently(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	resolved, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
+	localStateDir := filepath.Join(resolved, ".datarobot", "cli")
+	err = os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	err = state.UpdateAfterSuccessDepsCheck(resolved)
+	require.NoError(t, err)
+
+	msg := checkPrerequisites(&Model{repoRoot: resolved})
+
+	_, ok := msg.(stepCompleteMsg)
+	assert.True(t, ok, "expected stepCompleteMsg when deps were installed within 24 hours")
 }
 
 // --- handleDepsMissing ---
