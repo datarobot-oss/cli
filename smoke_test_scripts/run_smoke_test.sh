@@ -90,6 +90,20 @@ else
 fi
 stop_timer
 
+start_timer "Shell detection"
+debug_output=$(dr --debug self version 2>&1)
+if echo "$debug_output" | grep -qE 'Shell.*name='; then
+    shell_line=$(echo "$debug_output" | grep -E 'Shell.*name=' | head -1)
+    echo "✅ Assertion passed: Shell detection ran and reported a shell."
+    echo "   $shell_line"
+else
+    echo "❌ Assertion failed: Shell detection did not report a shell name."
+    echo "Debug output:"
+    echo "$debug_output"
+    exit 1
+fi
+stop_timer
+
 start_timer "dr self completion bash"
 dr self completion bash > completion_bash.sh
 function_check=$(cat completion_bash.sh | grep __start_dr\()

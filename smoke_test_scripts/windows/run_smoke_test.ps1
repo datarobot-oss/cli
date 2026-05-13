@@ -103,6 +103,31 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-End
 
+# Test shell detection
+Write-Delimiter "Testing shell detection"
+Write-InfoMsg "Running dr --debug self version to verify shell detection..."
+# --debug writes to stderr. Under $ErrorActionPreference = "Stop", PowerShell
+# wraps every stderr line from a native command in an ErrorRecord — even with
+# 2>file, because the redirect happens after PowerShell's own error processing.
+# Temporarily relax to "Continue" so stderr lines are captured, not thrown.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$debug_output = dr --debug self version 2>&1 | Out-String
+$capturedExitCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($capturedExitCode -eq 0) {
+    if ($debug_output -match 'Shell.*name=powershell') {
+        Write-SuccessMsg "Assertion passed: Shell detection correctly identified PowerShell."
+    } else {
+        Write-Host "Debug output:" -ForegroundColor Yellow
+        Write-Host $debug_output
+        Write-ErrorMsg "Assertion failed: Shell detection did not identify PowerShell. Expected 'name=powershell' in debug output."
+    }
+} else {
+    Write-ErrorMsg "dr --debug self version command failed unexpectedly with exit code $capturedExitCode"
+}
+Write-End
+
 # Test completion generation
 Write-Delimiter "Testing completion generation"
 $completion_file = "completion_powershell.ps1"

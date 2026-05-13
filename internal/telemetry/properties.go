@@ -24,6 +24,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 )
 
@@ -47,10 +48,23 @@ type CommonProperties struct {
 	OSArch            string // CPU architecture from runtime.GOARCH
 	OSVersion         string // OS release version string, detected at startup
 	Language          string // user language from LANG env var (e.g. "en_US")
-	GoVersion         string // Go runtime version (e.g. "go1.26.3")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
+	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
 	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+}
+
+// DetectShell returns the name of the shell the CLI is running from.
+// Delegates to shell.DetectShell() which inspects the parent process first
+// (accurate even after exec sh/bash/etc.) and falls back to $SHELL / OS
+// defaults. Returns "unknown" if the shell cannot be determined.
+func DetectShell() string {
+	if name, err := shell.DetectShell(); err == nil {
+		return name
+	}
+
+	return "unknown"
 }
 
 // CollectCommonProperties gathers all common telemetry properties from the
@@ -67,6 +81,7 @@ func CollectCommonProperties() *CommonProperties {
 		OSVersion:     detectOSVersion(),
 		Language:      detectLanguage(),
 		GoVersion:     runtime.Version(),
+		Shell:         DetectShell(),
 	}
 
 	// Get DataRobot instance info from config
@@ -95,6 +110,7 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"install_method":     p.InstallMethod,
 		"os_arch":            p.OSArch,
 		"go_version":         p.GoVersion,
+		"shell":              p.Shell,
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,

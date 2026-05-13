@@ -603,6 +603,20 @@ Smoke tests are not automatically run on Pull Requests. You can trigger them usi
 
 Daily automated smoke tests also run in CI.
 
+**Windows shell detection tests:**
+
+The Windows smoke tests include shell detection verification. To test shell detection independently:
+
+```powershell
+# From PowerShell (should detect "powershell")
+.\smoke_test_scripts\windows\run_shell_detection_test_powershell.ps1
+
+# From cmd.exe (should detect "cmd")
+.\smoke_test_scripts\windows\run_shell_detection_test_cmd.bat
+```
+
+These tests verify that the CLI correctly identifies the shell from which it's invoked by inspecting the parent process using `tasklist`.
+
 ## Debugging
 
 ### Use Delve
