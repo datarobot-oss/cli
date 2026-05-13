@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -152,7 +153,7 @@ func ExitWithError(err error) {
 	if errors.Is(err, ErrNotInTemplate) {
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
-		os.Exit(1)
+		telemetry.Exit(1)
 
 		return
 	}
@@ -160,14 +161,14 @@ func ExitWithError(err error) {
 	if errors.Is(err, ErrTaskfileHasDotenv) {
 		fmt.Fprintln(os.Stderr, tui.ErrorStyle.Render("Error: Cannot generate 'Taskfile' because an existing 'Taskfile' already has a dotenv directive."))
 		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render(err.Error()))
-		os.Exit(1)
+		telemetry.Exit(1)
 
 		return
 	}
 
 	_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks: ", err)
 
-	os.Exit(1)
+	telemetry.Exit(1)
 }
 
 // findComponents looks for the {T,t}askfile.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given root directory,

@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/task"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -295,7 +296,7 @@ func Cmd() *cobra.Command {
 			if !runner.Installed() {
 				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
 
-				os.Exit(1)
+				telemetry.Exit(1)
 
 				return
 			}
@@ -304,7 +305,7 @@ func Cmd() *cobra.Command {
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 
-				os.Exit(1)
+				telemetry.Exit(1)
 
 				return
 			}
@@ -314,7 +315,7 @@ func Cmd() *cobra.Command {
 			if err = printCategorizedTasks(categories, showAll); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 
-				os.Exit(1)
+				telemetry.Exit(1)
 
 				return
 			}

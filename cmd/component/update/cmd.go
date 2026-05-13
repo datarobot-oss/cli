@@ -56,7 +56,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 	cliData, err := shared.ParseDataArgs(updateFlags.DataArgs)
 	if err != nil {
 		fmt.Println("Fatal:", err)
-		os.Exit(1)
+		telemetry.Exit(1)
 	}
 
 	// If file name has been provided
@@ -64,7 +64,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 		err := runUpdate(updateFileName, cliData, updateFlags.DataFile)
 		if err != nil {
 			fmt.Println("Fatal:", err)
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 
 		compose.Cmd().Run(nil, nil)

@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -225,7 +226,7 @@ func Run(_ *cobra.Command, _ []string) {
 			return
 		}
 
-		os.Exit(1)
+		telemetry.Exit(1)
 	}
 
 	if checkDotenvCredentials(repoRoot) {
@@ -236,7 +237,7 @@ func Run(_ *cobra.Command, _ []string) {
 		return
 	}
 
-	os.Exit(1)
+	telemetry.Exit(1)
 }
 
 func Cmd() *cobra.Command {

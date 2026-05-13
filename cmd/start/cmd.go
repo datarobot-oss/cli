@@ -15,8 +15,6 @@
 package start
 
 import (
-	"os"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/auth"
@@ -59,7 +57,7 @@ The following actions will be performed:
 			}
 
 			if innerModel.err != nil {
-				os.Exit(1)
+				telemetry.Exit(1)
 			}
 
 			capture = innerModel.telemetry
@@ -81,7 +79,7 @@ The following actions will be performed:
 
 			innerSetupModel, ok := setup.InnerModel(finalSetupModel)
 			if ok && innerSetupModel.ExitMessage != "" {
-				os.Exit(1)
+				telemetry.Exit(1)
 			}
 
 			// Now run start again - we're in the cloned repo directory
@@ -99,7 +97,7 @@ The following actions will be performed:
 			}
 
 			if innerModel2.err != nil {
-				os.Exit(1)
+				telemetry.Exit(1)
 			}
 
 			capture = innerModel2.telemetry

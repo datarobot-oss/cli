@@ -15,12 +15,11 @@
 package logout
 
 import (
-	"os"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +29,7 @@ func Run(_ *cobra.Command, _ []string) {
 	err := auth.WriteConfigFile()
 	if err != nil {
 		log.Error(err)
-		os.Exit(1)
+		telemetry.Exit(1)
 	}
 }
 

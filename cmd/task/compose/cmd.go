@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -92,7 +93,7 @@ func createDiscovery(taskfileName string) *task.Discovery {
 		absPath, err := validateTemplatePath(templatePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 
 		return task.NewComposeDiscovery(taskfileName, absPath)

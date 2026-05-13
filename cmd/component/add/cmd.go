@@ -17,7 +17,6 @@ package add
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -57,7 +56,7 @@ func RunE(_ *cobra.Command, args []string) error {
 	cliData, err := shared.ParseDataArgs(addFlags.DataArgs)
 	if err != nil {
 		log.Error(err)
-		os.Exit(1)
+		telemetry.Exit(1)
 
 		return nil
 	}
@@ -134,7 +133,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 		err := copier.ExecAdd(repoURL, mergedData, addFlags)
 		if err != nil {
 			log.Error(err)
-			os.Exit(1)
+			telemetry.Exit(1)
 
 			return nil
 		}

@@ -115,6 +115,10 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			client := telemetry.NewClient(props)
 
+			// Register as global client so telemetry.Exit() can flush even when
+			// commands call os.Exit directly, bypassing PersistentPostRunE.
+			telemetry.SetGlobal(client)
+
 			// Store telemetry client in context for use by commands
 			cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
 

@@ -17,13 +17,13 @@ package login
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	datarobotHost := auth.GetBaseURLOrAsk()
 	if datarobotHost == "" {
 		log.Info("💡 To set your DataRobot URL, run 'dr auth set-url'.")
-		os.Exit(1)
+		telemetry.Exit(1)
 
 		return nil
 	}
@@ -61,7 +61,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	token, err := config.GetAPIKey(context.Background())
 	if errors.Is(err, context.DeadlineExceeded) {
 		log.Errorf("Connection to %s timed out. Check your network and try again.", datarobotHost)
-		os.Exit(1)
+		telemetry.Exit(1)
 
 		return nil
 	}

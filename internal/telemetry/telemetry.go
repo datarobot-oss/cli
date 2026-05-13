@@ -24,6 +24,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/amplitude/analytics-go/amplitude"
@@ -159,6 +160,28 @@ func (c *Client) Flush(timeout time.Duration) {
 		// Timeout reached, events may not have been sent
 		log.Debug("Telemetry flush timed out", "timeout", timeout)
 	}
+}
+
+// globalClient holds the active telemetry client for process-wide Exit calls.
+// It is set by SetGlobal during PersistentPreRunE before any command runs.
+var globalClient *Client
+
+// SetGlobal stores c as the global telemetry client. Must be called during
+// PersistentPreRunE before any os.Exit-based code paths can be reached.
+func SetGlobal(c *Client) {
+	globalClient = c
+}
+
+// Exit flushes any pending telemetry events then calls os.Exit(code).
+// Use this instead of os.Exit in command code so that Amplitude events are
+// delivered even when cobra's PersistentPostRunE hook is bypassed (e.g. when
+// RunE returns an error, or when a command calls os.Exit directly).
+func Exit(code int) {
+	if globalClient != nil {
+		globalClient.Flush(3 * time.Second)
+	}
+
+	os.Exit(code)
 }
 
 // IsEnabled reports whether telemetry collection is active. Returns true only

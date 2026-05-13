@@ -283,13 +283,13 @@ This command will:
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 
 		_, _, err = updateDotenvFile(dotenv)
 		if err != nil {
 			log.Error(err)
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 	},
 }
@@ -301,7 +301,7 @@ var ValidateCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, _ []string) {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 
 		repoRoot := filepath.Dir(dotenv)
@@ -346,7 +346,7 @@ var ValidateCmd = &cobra.Command{
 				}
 			}
 
-			os.Exit(1)
+			telemetry.Exit(1)
 		}
 
 		fmt.Println("\nValidation passed: all required variables are set.")

@@ -16,7 +16,6 @@ package plugin
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -122,7 +121,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(manifest, executable, args)
-			os.Exit(exitCode)
+			telemetry.Exit(exitCode)
 		},
 	}
 

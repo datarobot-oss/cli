@@ -122,7 +122,7 @@ Examples:
 				_, _ = fmt.Fprintln(os.Stderr, "")
 				_, _ = fmt.Fprintln(os.Stderr, "After installing, try running your command again!")
 
-				os.Exit(1)
+				telemetry.Exit(1)
 
 				return
 			}
@@ -151,7 +151,7 @@ Examples:
 					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 				}
 
-				os.Exit(exitCode)
+				telemetry.Exit(exitCode)
 			}
 		},
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {

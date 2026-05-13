@@ -20,6 +20,7 @@ import (
 	"os/signal"
 
 	"github.com/datarobot/cli/cmd"
+	"github.com/datarobot/cli/internal/telemetry"
 )
 
 func main() {
@@ -28,6 +29,6 @@ func main() {
 	defer cancel()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
-		os.Exit(1)
+		telemetry.Exit(1)
 	}
 }
