@@ -199,6 +199,8 @@ func init() {
 	// Override the default help command to add --all-commands flag
 	defaultHelpFunc := RootCmd.HelpFunc()
 
+	RootCmd.SetUsageTemplate(CustomUsageTemplate)
+
 	RootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		showAllCommands, _ := cmd.Flags().GetBool("all-commands")
 		showVersion, _ := cmd.Flags().GetBool("version")
