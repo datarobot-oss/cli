@@ -35,8 +35,8 @@ Manage and execute tasks defined in your project's 'Taskfile':
   • Compose and generate task configurations
 
 🚀 Quick start: dr run dev`,
-		Run: func(cmd *cobra.Command, args []string) {
-			run.Cmd().Run(cmd, args)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run.Cmd().RunE(cmd, args)
 		},
 	}
 

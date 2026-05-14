@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -29,9 +30,9 @@ func RunE(_ *cobra.Command, _ []string) error {
 
 	err := auth.WriteConfigFile()
 	if err != nil {
-		log.Error(err)
+		log.Error(fmt.Errorf("failed to write config: %w", err))
 
-		return fmt.Errorf("failed to write config: %w", err)
+		return cli.ErrSilent
 	}
 
 	return nil
@@ -39,10 +40,11 @@ func RunE(_ *cobra.Command, _ []string) error {
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "logout",
-		Short:        "🚪 Log out from DataRobot",
-		SilenceUsage: true,
-		Long:         `Log out from DataRobot and clear the stored API key.`,
+		Use:           "logout",
+		Short:         "🚪 Log out from DataRobot",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Long:          `Log out from DataRobot and clear the stored API key.`,
 		RunE:         RunE,
 	}
 }

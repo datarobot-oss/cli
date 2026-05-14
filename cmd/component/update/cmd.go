@@ -65,8 +65,13 @@ func RunE(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("updating component: %w", err)
 		}
 
-		compose.Cmd().Run(nil, nil)
-		run.Cmd().Run(nil, []string{"reinstall"})
+		if err := compose.Cmd().RunE(nil, nil); err != nil {
+			return err
+		}
+
+		if err := run.Cmd().RunE(nil, []string{"reinstall"}); err != nil {
+			return err
+		}
 
 		return nil
 	}
@@ -83,8 +88,13 @@ func RunE(cmd *cobra.Command, args []string) error {
 			fmt.Println(innerModel.ExitMessage)
 
 			if innerModel.ComponentUpdated {
-				compose.Cmd().Run(nil, nil)
-				run.Cmd().Run(nil, []string{"reinstall"})
+				if err := compose.Cmd().RunE(nil, nil); err != nil {
+					return err
+				}
+
+				if err := run.Cmd().RunE(nil, []string{"reinstall"}); err != nil {
+					return err
+				}
 
 				fmt.Println(innerModel.ExitMessage)
 				fmt.Println("Post-install tasks finished.")

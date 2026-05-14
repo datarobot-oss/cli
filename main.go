@@ -35,6 +35,7 @@ func main() {
 	defer log.Stop()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
+		log.Stop()
 		telemetry.Exit(1)
 	}
 }

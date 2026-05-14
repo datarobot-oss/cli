@@ -64,7 +64,9 @@ func RunE(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	compose.Cmd().Run(nil, nil)
+	if err := compose.Cmd().RunE(nil, nil); err != nil {
+		return err
+	}
 
 	// Validate and edit .env if needed
 	if err := dotenv.ValidateAndEditIfNeeded(); err != nil {
