@@ -64,7 +64,9 @@ func fakeArtifact(id, name, status string, codeRef *workload.DatarobotCodeRef) *
 		art.Spec = workload.Spec{
 			ContainerGroups: []workload.ContainerGroup{
 				{Containers: []workload.Container{
-					{CodeRef: &workload.CodeRef{Datarobot: codeRef}},
+					{ImageBuildConfig: &workload.ImageBuildConfig{
+						CodeRef: &workload.CodeRef{Datarobot: codeRef},
+					}},
 				}},
 			},
 		}

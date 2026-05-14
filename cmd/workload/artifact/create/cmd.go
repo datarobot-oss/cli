@@ -41,7 +41,21 @@ The created artifact is returned and shown.
 
 By default, output is human-readable. Use --output-format json for machine-parseable output.
 
-Spec file format (minimal valid example):
+Required fields: name, spec.containerGroups (>=1), and at least one container
+per group. All other fields are passed through to the Workload API verbatim,
+so any field accepted by the server is accepted here. The server validates
+field-level shape and returns a 422 with a JSON-path detail on a mismatch.
+
+Container lifecycles:
+
+  1. Prebuilt image: set imageUri (+ port + primary on the entry container).
+  2. Build from source: set imageBuildConfig.dockerfile.source = "provided"
+     to build from ./Dockerfile in your code, or "generated" together with
+     executionEnvironmentId, executionEnvironmentVersionId, and entrypoint
+     to have the server generate a Dockerfile from a base image.
+     'dr workload code sync' fills in imageBuildConfig.codeRef after upload.
+
+Minimal prebuilt example:
 
   {
     "name": "my-agent",
@@ -50,16 +64,26 @@ Spec file format (minimal valid example):
         "containers": [{
           "imageUri": "nginx:latest",
           "port": 8080,
-          "resourceRequest": {"cpu": 1, "memory": 536870912}
+          "primary": true
         }]
       }]
     }
   }
 
-Required fields: name, spec.containerGroups (>=1), and at least one container
-per group. Optional top-level field: description. Optional container fields:
-imageUri, port, resourceRequest{cpu, memory}, codeRef. Unknown fields are
-rejected before the request is sent.
+Minimal build-from-source example (provided Dockerfile):
+
+  {
+    "name": "my-agent",
+    "spec": {
+      "containerGroups": [{
+        "containers": [{
+          "primary": true,
+          "port": 8080,
+          "imageBuildConfig": { "dockerfile": { "source": "provided" } }
+        }]
+      }]
+    }
+  }
 
 Example:
   dr workload artifact create --spec-file spec.json

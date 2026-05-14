@@ -20,13 +20,6 @@ const (
 	UploadConcurrency   = 4
 	DownloadConcurrency = 6
 
-	// UploadRetries is the per-file retry budget for transport failures
-	// (network reset, 5xx). Permanent 4xx errors are not retried.
-	UploadRetries = 3
-
-	UploadTimeoutSecs   = 300
-	DownloadTimeoutSecs = 300
-
 	// DiskSpaceMarginMB is the headroom required on top of the download
 	// size before Phase 5 begins, to prevent disk-full mid-sync.
 	DiskSpaceMarginMB = 100

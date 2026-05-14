@@ -20,7 +20,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -60,7 +59,7 @@ func uploadZipMultipart(requestURL, name string, size int64, body io.Reader) (*F
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: uploadHTTPTimeout}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -121,7 +120,7 @@ func getAcceptingRedirect(requestURL string) (*http.Response, error) {
 	}
 
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: statusPollHTTPTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

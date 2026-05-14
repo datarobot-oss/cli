@@ -167,10 +167,12 @@ func draftArtifact(id, catalogID, versionID string) *workload.Artifact {
 	a.Spec = workload.Spec{
 		ContainerGroups: []workload.ContainerGroup{
 			{Containers: []workload.Container{
-				{CodeRef: &workload.CodeRef{Datarobot: &workload.DatarobotCodeRef{
-					CatalogID:        catalogID,
-					CatalogVersionID: versionID,
-				}}},
+				{ImageBuildConfig: &workload.ImageBuildConfig{
+					CodeRef: &workload.CodeRef{Datarobot: &workload.DatarobotCodeRef{
+						CatalogID:        catalogID,
+						CatalogVersionID: versionID,
+					}},
+				}},
 			}},
 		},
 	}
