@@ -125,7 +125,7 @@ func TestTrack_MergesCommonProperties(t *testing.T) {
 	props := &CommonProperties{
 		UserID:     ptrString("test-user"),
 		CLIVersion: "v0.1.0",
-		SessionID:  "session-123",
+		SessionID:  1234567890,
 	}
 
 	client := NewClient(props)

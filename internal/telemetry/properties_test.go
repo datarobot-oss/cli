@@ -20,9 +20,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -34,17 +34,20 @@ func ptrString(s string) *string {
 	return &s
 }
 
-func TestGenerateSessionID_ReturnsValidUUID(t *testing.T) {
+func TestGenerateSessionID_ReturnsValidTimestamp(t *testing.T) {
+	before := time.Now().UnixMilli()
 	id := generateSessionID()
+	after := time.Now().UnixMilli()
 
-	// UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-	uuidPattern := regexp.MustCompile(`^[0-9a-f]{32}$`)
-	assert.True(t, uuidPattern.MatchString(id), "session ID should be 32 hex characters")
-	assert.NotEmpty(t, id)
+	assert.GreaterOrEqual(t, id, before)
+	assert.LessOrEqual(t, id, after)
 }
 
 func TestGenerateSessionID_UniqueSessions(t *testing.T) {
 	id1 := generateSessionID()
+
+	time.Sleep(2 * time.Millisecond)
+
 	id2 := generateSessionID()
 
 	assert.NotEqual(t, id1, id2, "session IDs should be unique")
@@ -52,7 +55,7 @@ func TestGenerateSessionID_UniqueSessions(t *testing.T) {
 
 func TestCommonPropertiesAsMap(t *testing.T) {
 	props := &CommonProperties{
-		SessionID:         "session-123",
+		SessionID:         1234567890,
 		DeviceID:          "device-789",
 		UserID:            ptrString("user-456"),
 		CLIVersion:        "v0.1.0",
@@ -65,7 +68,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 
 	m := props.AsMap()
 
-	assert.Equal(t, "session-123", m["session_id"])
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "zsh", m["shell"])
 	assert.Equal(t, "US", m["environment"])
@@ -73,7 +75,8 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "core", m["command_kind"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
-	// user_id is a top-level Amplitude field, not an event property
+	// session_id, user_id, and device_id are top-level Amplitude fields, not event properties
+	assert.NotContains(t, m, "session_id")
 	assert.NotContains(t, m, "user_id")
 }
 
@@ -264,10 +267,12 @@ func TestDeriveEnvironment_Custom(t *testing.T) {
 }
 
 func TestCollectCommonProperties_GeneratesSessionID(t *testing.T) {
+	before := time.Now().UnixMilli()
 	props := CollectCommonProperties()
+	after := time.Now().UnixMilli()
 
-	assert.NotEmpty(t, props.SessionID)
-	assert.Len(t, props.SessionID, 32)
+	assert.GreaterOrEqual(t, props.SessionID, before)
+	assert.LessOrEqual(t, props.SessionID, after)
 }
 
 func TestCollectCommonProperties_SetsInstallMethod(t *testing.T) {

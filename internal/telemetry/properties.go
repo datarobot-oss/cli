@@ -38,7 +38,7 @@ type CommonProperties struct {
 	// 2. CollectCommonProperties() function
 
 	// top-level fields
-	SessionID string  // UUID v4, unique per process invocation
+	SessionID int64   // Unix ms timestamp, unique per process invocation
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
 	// event properties
@@ -102,11 +102,10 @@ func CollectCommonProperties() *CommonProperties {
 }
 
 // AsMap returns the properties as a map[string]any suitable for
-// merging into Amplitude event properties. Note: UserID is not included
-// here as it's set as a top-level Amplitude event field, not an event property.
+// merging into Amplitude event properties. Note: UserID, DeviceID, and SessionID
+// are not included here as they are set as top-level Amplitude event fields.
 func (p *CommonProperties) AsMap() map[string]any {
 	m := map[string]any{
-		"session_id":         p.SessionID,
 		"install_method":     p.InstallMethod,
 		"os_arch":            p.OSArch,
 		"go_version":         p.GoVersion,
@@ -119,23 +118,11 @@ func (p *CommonProperties) AsMap() map[string]any {
 	return m
 }
 
-// generateSessionID generates a UUID v4 for the current CLI session.
-// This value is not persisted and will be different on each invocation.
-// The default implementation uses crypto/rand, but if that fails, then
-// fallback to a timestamp-based ID with a "fallback-" prefix to
-// indicate it's not a true UUID.
-func generateSessionID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based ID if crypto random generation fails
-		return deviceIDFallbackPrefix + time.Now().UTC().Format(time.RFC3339)
-	}
-
-	// Set version (4) and variant (RFC 4122) bits
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-
-	return hex.EncodeToString(b)
+// generateSessionID returns a Unix timestamp in milliseconds for the current
+// CLI session. This value is not persisted and will be different on each
+// invocation. Amplitude's top-level session_id field expects an integer value.
+func generateSessionID() int64 {
+	return time.Now().UnixMilli()
 }
 
 // deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)
@@ -181,9 +168,23 @@ func getOrCreateDeviceID() string {
 	// IDs are ephemeral (e.g., certain container orchestration systems). This way we
 	// could intentionally pass in a stable ID. Honestly, though, I think being able
 	// to write out a device_id file is good enough.
-	id := deviceIDFallbackPrefix + generateSessionID()
+	id := deviceIDFallbackPrefix + randomHexID()
 
 	writeTextCacheFile(deviceIDFileName, id)
 
 	return id
+}
+
+// randomHexID generates a random 32-character hex string used as a device ID fallback.
+func randomHexID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return time.Now().UTC().Format(time.RFC3339)
+	}
+
+	// Set version (4) and variant (RFC 4122) bits
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+
+	return hex.EncodeToString(b)
 }
