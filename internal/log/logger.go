@@ -108,7 +108,10 @@ func StartFile() {
 func StopFile() {
 	fileLogger = nil
 
-	fileWriter.Close()
+	if fileWriter != nil {
+		fileWriter.Close()
+		fileWriter = nil
+	}
 }
 
 func Log(level log.Level, msg interface{}, keyvals ...interface{}) {
