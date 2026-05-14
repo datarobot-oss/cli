@@ -22,6 +22,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/log"
@@ -268,8 +269,10 @@ func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 }
 
 var UpdateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "🔄 Automatically update DataRobot credentials",
+	Use:           "update",
+	Short:         "🔄 Automatically update DataRobot credentials",
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	Long: `Automatically update your '.env' file with fresh DataRobot credentials.
 
 This command will:
@@ -280,28 +283,33 @@ This command will:
 💡 Use this when your credentials expire or you need to refresh your connection.`,
 	PreRunE: auth.EnsureAuthenticatedE,
 
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			telemetry.Exit(1)
+			return cli.ErrSilent
 		}
 
 		_, _, err = updateDotenvFile(dotenv)
 		if err != nil {
 			log.Error(err)
-			telemetry.Exit(1)
+
+			return cli.ErrSilent
 		}
+
+		return nil
 	},
 }
 
 var ValidateCmd = &cobra.Command{
-	Use:   "validate",
-	Short: "✅ Validate '.env' and environment variable configuration",
+	Use:           "validate",
+	Short:         "✅ Validate '.env' and environment variable configuration",
+	SilenceErrors: true,
+	SilenceUsage:  true,
 
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		dotenv, err := ensureInRepoWithDotenv()
 		if err != nil {
-			telemetry.Exit(1)
+			return cli.ErrSilent
 		}
 
 		repoRoot := filepath.Dir(dotenv)
@@ -346,9 +354,11 @@ var ValidateCmd = &cobra.Command{
 				}
 			}
 
-			telemetry.Exit(1)
+			return cli.ErrSilent
 		}
 
 		fmt.Println("\nValidation passed: all required variables are set.")
+
+		return nil
 	},
 }

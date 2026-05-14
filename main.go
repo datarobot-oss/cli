@@ -20,6 +20,7 @@ import (
 	"os/signal"
 
 	"github.com/datarobot/cli/cmd"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 )
 
@@ -27,6 +28,11 @@ func main() {
 	// Create a context that's canceled on interrupt signals
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
+
+	// Always stop loggers, whether the command succeeds or returns an error.
+	// PersistentPostRunE is skipped by cobra on error, so we must ensure log.Stop
+	// runs unconditionally here.
+	defer log.Stop()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		telemetry.Exit(1)

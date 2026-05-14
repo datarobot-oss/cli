@@ -55,16 +55,14 @@ func RunE(cmd *cobra.Command, args []string) error {
 
 	cliData, err := shared.ParseDataArgs(updateFlags.DataArgs)
 	if err != nil {
-		fmt.Println("Fatal:", err)
-		telemetry.Exit(1)
+		return fmt.Errorf("parsing data args: %w", err)
 	}
 
 	// If file name has been provided
 	if updateFileName != "" {
 		err := runUpdate(updateFileName, cliData, updateFlags.DataFile)
 		if err != nil {
-			fmt.Println("Fatal:", err)
-			telemetry.Exit(1)
+			return fmt.Errorf("updating component: %w", err)
 		}
 
 		compose.Cmd().Run(nil, nil)

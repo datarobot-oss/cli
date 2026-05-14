@@ -55,10 +55,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 	cliData, err := shared.ParseDataArgs(addFlags.DataArgs)
 	if err != nil {
-		log.Error(err)
-		telemetry.Exit(1)
-
-		return nil
+		return fmt.Errorf("parsing data args: %w", err)
 	}
 
 	componentConfig := loadComponentDefaults(addFlags.DataFile)
@@ -132,10 +129,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 
 		err := copier.ExecAdd(repoURL, mergedData, addFlags)
 		if err != nil {
-			log.Error(err)
-			telemetry.Exit(1)
-
-			return nil
+			return fmt.Errorf("adding component %q: %w", repoURL, err)
 		}
 
 		fmt.Printf("Component %s added.\n", repoURL)

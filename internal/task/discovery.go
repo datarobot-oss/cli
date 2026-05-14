@@ -26,7 +26,6 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -149,26 +148,23 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	return rootTaskfilePath, nil
 }
 
-func ExitWithError(err error) {
+// DiscoveryError formats a discovery error into a user-friendly message string.
+// Commands should call this to get the message, print it themselves if needed,
+// and return cli.ErrSilent (or the returned error directly).
+func DiscoveryError(err error) error {
 	if errors.Is(err, ErrNotInTemplate) {
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."))
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
-		telemetry.Exit(1)
-
-		return
+		return fmt.Errorf("%s\n%s",
+			tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."),
+			tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
 	}
 
 	if errors.Is(err, ErrTaskfileHasDotenv) {
-		fmt.Fprintln(os.Stderr, tui.ErrorStyle.Render("Error: Cannot generate 'Taskfile' because an existing 'Taskfile' already has a dotenv directive."))
-		fmt.Fprintln(os.Stderr, tui.BaseTextStyle.Render(err.Error()))
-		telemetry.Exit(1)
-
-		return
+		return fmt.Errorf("%s\n%s",
+			tui.ErrorStyle.Render("Error: Cannot generate 'Taskfile' because an existing 'Taskfile' already has a dotenv directive."),
+			tui.BaseTextStyle.Render(err.Error()))
 	}
 
-	_, _ = fmt.Fprintln(os.Stderr, "Error discovering tasks: ", err)
-
-	telemetry.Exit(1)
+	return fmt.Errorf("Error discovering tasks: %w", err)
 }
 
 // findComponents looks for the {T,t}askfile.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given root directory,
