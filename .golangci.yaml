@@ -4,6 +4,7 @@ run:
 linters:
   enable:
     - asasalint
+    - forbidigo
     - bodyclose
     - contextcheck
     - cyclop
@@ -29,6 +30,17 @@ linters:
     # - wrapcheck # disabled until we can resolve lints
     - wsl_v5
   settings:
+    forbidigo:
+      forbid:
+        - pattern: '^os\.Exit$'
+          msg: >-
+            Call telemetry.Exit() instead of os.Exit() so pending telemetry is
+            flushed before the process exits. Only main.go and
+            internal/telemetry/telemetry.go may call os.Exit directly.
+        - pattern: '^log\.Fatalf?$'
+          msg: >-
+            log.Fatal/Fatalf calls os.Exit internally and bypasses telemetry
+            flush. Return an error or call telemetry.Exit(1) instead.
     depguard:
       rules:
         no-raw-viper:
@@ -74,6 +86,9 @@ linters:
         - sortslice
         - tests
   exclusions:
+    rules:
+      - linters: [forbidigo]
+        path: "^main\\.go$|internal/telemetry/telemetry\\.go|internal/log/pkg\\.go|_test\\.go$"
     generated: lax
     presets:
       - comments
