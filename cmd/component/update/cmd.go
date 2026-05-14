@@ -47,7 +47,42 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(cmd *cobra.Command, args []string) error {
+func runPostUpdateTasks() error {
+	if err := compose.Cmd().RunE(nil, nil); err != nil {
+		return err
+	}
+
+	return run.Cmd().RunE(nil, []string{"reinstall"})
+}
+
+func handleTUIResult(finalModel tea.Model) error {
+	setupModel, ok := finalModel.(tui.InterruptibleModel)
+	if !ok {
+		return nil
+	}
+
+	innerModel, ok := setupModel.Model.(shared.UpdateModel)
+	if !ok {
+		return nil
+	}
+
+	fmt.Println(innerModel.ExitMessage)
+
+	if !innerModel.ComponentUpdated {
+		return nil
+	}
+
+	if err := runPostUpdateTasks(); err != nil {
+		return err
+	}
+
+	fmt.Println(innerModel.ExitMessage)
+	fmt.Println("Post-install tasks finished.")
+
+	return nil
+}
+
+func RunE(_ *cobra.Command, args []string) error {
 	var updateFileName string
 	if len(args) > 0 {
 		updateFileName = args[0]
@@ -60,20 +95,11 @@ func RunE(cmd *cobra.Command, args []string) error {
 
 	// If file name has been provided
 	if updateFileName != "" {
-		err := runUpdate(updateFileName, cliData, updateFlags.DataFile)
-		if err != nil {
+		if err := runUpdate(updateFileName, cliData, updateFlags.DataFile); err != nil {
 			return fmt.Errorf("updating component: %w", err)
 		}
 
-		if err := compose.Cmd().RunE(nil, nil); err != nil {
-			return err
-		}
-
-		if err := run.Cmd().RunE(nil, []string{"reinstall"}); err != nil {
-			return err
-		}
-
-		return nil
+		return runPostUpdateTasks()
 	}
 
 	m := shared.NewUpdateComponentModel(updateFlags)
@@ -83,26 +109,7 @@ func RunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := setupModel.Model.(shared.UpdateModel); ok {
-			fmt.Println(innerModel.ExitMessage)
-
-			if innerModel.ComponentUpdated {
-				if err := compose.Cmd().RunE(nil, nil); err != nil {
-					return err
-				}
-
-				if err := run.Cmd().RunE(nil, []string{"reinstall"}); err != nil {
-					return err
-				}
-
-				fmt.Println(innerModel.ExitMessage)
-				fmt.Println("Post-install tasks finished.")
-			}
-		}
-	}
-
-	return nil
+	return handleTUIResult(finalModel)
 }
 
 func Cmd() *cobra.Command {

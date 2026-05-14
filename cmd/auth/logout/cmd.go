@@ -45,6 +45,6 @@ func Cmd() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Long:          `Log out from DataRobot and clear the stored API key.`,
-		RunE:         RunE,
+		RunE:          RunE,
 	}
 }
