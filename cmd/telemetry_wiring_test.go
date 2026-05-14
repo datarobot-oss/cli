@@ -43,6 +43,7 @@ var expectedTrackedCommands = []string{
 	"dr component add",
 	"dr component update",
 	"dr template setup",
+	"dr template list",
 	"dr plugin install",
 	"dr plugin uninstall",
 	"dr plugin update",

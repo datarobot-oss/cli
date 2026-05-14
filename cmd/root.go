@@ -119,8 +119,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			client := telemetry.NewClient(props)
 
-			// Store as process-level client so cmd.Exit can flush on the main error path.
-			telemetryClient = client
+			// Store telemetry client in context for use by commands
+			cmd.SetContext(telemetry.NewContext(cmd.Context(), client))
 
 			// Store telemetry client in context for use by commands
 			cmd.SetContext(context.WithValue(cmd.Context(), telemetry.ClientContextKey{}, client))
@@ -141,7 +141,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
 			// Flush telemetry events before exit
-			if client, ok := cmd.Context().Value(telemetry.ClientContextKey{}).(*telemetry.Client); ok {
+			if client, ok := telemetry.ClientFromContext(cmd.Context()); ok {
 				client.Flush(3 * time.Second)
 			}
 

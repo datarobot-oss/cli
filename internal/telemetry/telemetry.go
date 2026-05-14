@@ -34,6 +34,23 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
+// contextKey is the unexported key type used to store a *Client in a context.
+type contextKey struct{}
+
+// NewContext returns a copy of ctx with the given telemetry client stored in it.
+// Use ClientFromContext to retrieve it later.
+func NewContext(ctx context.Context, client *Client) context.Context {
+	return context.WithValue(ctx, contextKey{}, client)
+}
+
+// ClientFromContext retrieves the telemetry *Client stored by NewContext.
+// Returns the client and true if found, or nil and false if the context has no client.
+func ClientFromContext(ctx context.Context) (*Client, bool) {
+	client, ok := ctx.Value(contextKey{}).(*Client)
+
+	return client, ok
+}
+
 // AmplitudeAPIKey is set at build time via ldflags. Dev builds have an empty value,
 // which automatically disables telemetry.
 var AmplitudeAPIKey string

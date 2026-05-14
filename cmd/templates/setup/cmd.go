@@ -17,6 +17,7 @@ package setup
 import (
 	"context"
 
+	"github.com/amplitude/analytics-go/amplitude/types"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -41,7 +42,20 @@ var Cmd = &cobra.Command{
 💡 Perfect for first-time users or someone starting a new project.`,
 	PreRunE: auth.EnsureAuthenticatedE,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return RunTea(cmd.Context(), false)
+		finalModel, err := RunTea(cmd.Context(), false)
+
+		if innerModel, ok := InnerModel(finalModel); ok && innerModel.template.Name != "" {
+			if client, ok := telemetry.ClientFromContext(cmd.Context()); ok {
+				client.Track(types.Event{
+					EventType: cmd.CommandPath(),
+					EventProperties: map[string]any{
+						"template_name": innerModel.template.Name,
+					},
+				})
+			}
+		}
+
+		return err
 	},
 }
 
@@ -49,26 +63,15 @@ func init() {
 	telemetry.Track(Cmd)
 }
 
-// RunTea starts the template setup TUI, optionally from the start command
-func RunTea(ctx context.Context, fromStartCommand bool) error {
+// RunTea starts the template setup TUI, optionally from the start command.
+// It returns the final tea.Model so callers can inspect the result (e.g. to
+// read the selected template name for telemetry purposes).
+func RunTea(ctx context.Context, fromStartCommand bool) (tea.Model, error) {
 	m := NewModel(fromStartCommand)
 
-	_, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(ctx))
-	// TODO: Re-enable after further testing of component configure
-	// if err != nil {
-	// 	return err
-	// }
+	finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(ctx))
 
-	// // Check if we need to launch template setup after quitting
-	// if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-	// 	if innerModel, ok := setupModel.Model.(Model); ok {
-	// 		if innerModel.dotenvSetupCompleted {
-	// 			return component.RunE(component.AddCmd, nil)
-	// 		}
-	// 	}
-	// }
-
-	return err
+	return finalModel, err
 }
 
 func InnerModel(finalModel tea.Model) (Model, bool) {

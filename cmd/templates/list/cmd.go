@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -57,4 +58,8 @@ start building AI applications. Each template includes:
 			return
 		}
 	},
+}
+
+func init() {
+	telemetry.Track(Cmd)
 }
