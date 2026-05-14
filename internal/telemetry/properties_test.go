@@ -45,7 +45,9 @@ func TestGenerateSessionID_ReturnsValidTimestamp(t *testing.T) {
 
 func TestGenerateSessionID_UniqueSessions(t *testing.T) {
 	id1 := generateSessionID()
+
 	time.Sleep(2 * time.Millisecond)
+
 	id2 := generateSessionID()
 
 	assert.NotEqual(t, id1, id2, "session IDs should be unique")
