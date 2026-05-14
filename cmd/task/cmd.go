@@ -24,9 +24,11 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "task",
-		GroupID: "core",
-		Short:   "🛠️ Task management commands",
+		Use:           "task",
+		GroupID:       "core",
+		Short:         "🛠️ Task management commands",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		Long: `Task management commands for your DataRobot applications.
 
 Manage and execute tasks defined in your project's 'Taskfile':

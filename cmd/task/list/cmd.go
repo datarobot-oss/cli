@@ -304,13 +304,17 @@ func Cmd() *cobra.Command {
 
 			tasks, err := runner.ListTasks()
 			if err != nil {
-				return fmt.Errorf("listing tasks: %w", err)
+				_, _ = fmt.Fprintln(os.Stderr, "listing tasks:", err)
+
+				return cli.ErrSilent
 			}
 
 			categories := groupTasksByCategory(tasks, showAll)
 
 			if err = printCategorizedTasks(categories, showAll); err != nil {
-				return fmt.Errorf("printing tasks: %w", err)
+				_, _ = fmt.Fprintln(os.Stderr, "printing tasks:", err)
+
+				return cli.ErrSilent
 			}
 
 			return nil
