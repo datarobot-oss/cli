@@ -29,48 +29,55 @@ Amplitude requires a `device_id` or `user_id` on every event. The CLI uses a sta
 
 3. **Session-scoped fallback** — if the config directory is also inaccessible, a fresh ID prefixed with `"fallback-"` is generated for that session only.
 
-## User ID
+## Account Info
 
-When the user is authenticated, the CLI sends a real DataRobot `uid` as the top-level Amplitude `user_id` field. If the user is unauthenticated (no API token, invalid token, or network failure with no valid cache), the field is left empty and Amplitude falls back to `device_id`-only anonymous tracking.
+When the user is authenticated, the CLI sends a real DataRobot `uid` as the top-level Amplitude `user_id` field, and the user's `organization_id` and `tenant_id` as event properties. If the user is unauthenticated (no API token, invalid token, or network failure with no valid cache), `user_id` is left empty and Amplitude falls back to `device_id`-only anonymous tracking, while `organization_id` and `tenant_id` are omitted from event properties.
 
-The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing the user's unique identifier. The `uid` is stable per DataRobot instance and is not PII (email is deliberately excluded from telemetry to avoid transmitting personally identifiable information).
+The account data is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing `uid`, `orgId`, and `tenantId`. These identifiers are stable per DataRobot instance and are not PII (email, first name, and last name are deliberately excluded from telemetry to avoid transmitting personally identifiable information).
 
 ### Caching
 
-To avoid an API call on every CLI invocation, the `uid` is cached to disk alongside `device_id` and `drconfig.yaml`:
+To avoid an API call on every CLI invocation, the account info (`uid`, `organization_id`, `tenant_id`) is cached to disk alongside `device_id` and `drconfig.yaml`:
 
 - **Cache file**: `$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`)
 - **File permissions**: `0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`
 - **Cache format** (JSON):
 
   ```json
-  {"uid":"...","endpoint":"https://app.datarobot.com","token_fingerprint":"sha256hex"}
+  {"uid":"...","endpoint":"https://app.datarobot.com","token_fingerprint":"sha256hex","organization_id":"...","tenant_id":"..."}
   ```
 
   - `uid` — the DataRobot user identifier
   - `endpoint` — the scheme+host of the DataRobot instance (e.g., `https://app.datarobot.com`)
   - `token_fingerprint` — SHA-256 hex digest of the current API token
+  - `organization_id` — the DataRobot organization identifier
+  - `tenant_id` — the DataRobot tenant identifier
 
 ### Cache validation and invalidation
 
-On subsequent invocations, when no fresh API `uid` is available, the cache is validated against both the current endpoint and the current token fingerprint:
+On subsequent invocations, when no fresh API account info is available, the cache is validated against both the current endpoint and the current token fingerprint:
 
 - **Endpoint match**: the cached `endpoint` must equal the current `viperx.GetString(config.DataRobotURL)` (scheme+host only)
 - **Token fingerprint match**: the cached `token_fingerprint` must equal the SHA-256 hex of the current API token
 
-If either check fails, the cache is treated as stale and the `user_id` is left empty (anonymous tracking). This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
+If either check fails, the cache is treated as stale and the account properties are left empty (anonymous tracking). This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached account info.
+
+### Cache migration
+
+Older versions of the CLI wrote `user_id` cache files that only contained `uid`, `endpoint`, and `token_fingerprint` (no `organization_id` or `tenant_id`). When a cache with a matching endpoint and token fingerprint is missing these new fields, the CLI automatically re-fetches from the API and upgrades the cache file in place. This migration is transparent to the user and requires no manual intervention.
 
 ### Behavior summary
 
-| Scenario | `user_id` behavior |
-|---|---|
-| Authenticated, API succeeds | `uid` from API, cached to disk |
-| Authenticated, cache hit (same endpoint + token) | Cached `uid` (no API call) |
-| Endpoint changed | Re-fetch from API, update cache |
-| Token changed (rotation / new user) | Re-fetch from API, update cache |
-| No API token / invalid token | Empty `user_id`, anonymous tracking |
-| Network error, same endpoint + token | Return cached `uid` |
-| Network error, endpoint/token changed | Empty `user_id`, anonymous tracking |
+| Scenario | `user_id` | `organization_id` / `tenant_id` |
+|---|---|---|
+| Authenticated, API succeeds | `uid` from API, cached to disk | From API, cached to disk |
+| Authenticated, full cache hit (same endpoint + token, all fields present) | Cached `uid` (no API call) | Cached values (no API call) |
+| Partial cache hit (same endpoint + token, missing org/tenant) | Re-fetch from API, upgrade cache | Re-fetch from API, upgrade cache |
+| Endpoint changed | Re-fetch from API, update cache | Re-fetch from API, update cache |
+| Token changed (rotation / new user) | Re-fetch from API, update cache | Re-fetch from API, update cache |
+| No API token / invalid token | Empty `user_id`, anonymous tracking | Omitted from events |
+| Network error, same endpoint + token | Return cached `uid` | Return cached org/tenant |
+| Network error, endpoint/token changed | Empty `user_id`, anonymous tracking | Omitted from events |
 
 ## Common Properties
 
@@ -103,6 +110,8 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 | `datarobot_instance` | Base URL of the configured DataRobot instance |
 | `template_name` | Best-effort from `.datarobot/answers/` in the current repo |
 | `command_kind` | `"core"` or `"plugin"` — automatically set by the root command dispatcher |
+| `organization_id` | DataRobot org ID from `GET /api/v2/account/info/`, cached to disk; omitted if unauthenticated |
+| `tenant_id` | DataRobot tenant ID from `GET /api/v2/account/info/`, cached to disk; omitted if unauthenticated |
 
 ## Event Wiring
 
@@ -131,7 +140,7 @@ User invokes command
 Cobra parses flags
     ↓
 PersistentPreRunE (root.go)
-    ├─ Initialize CommonProperties (session ID, user ID, env, ...)
+    ├─ Initialize CommonProperties (session ID, user ID, org ID, tenant ID, env, ...)
     ├─ Stamp props.CommandKind = "core" or "plugin"
     │   based on telemetry.IsPluginCommand(cmd)
     ├─ Build telemetry.Client
