@@ -33,7 +33,7 @@ type AccountInfo struct {
 	FirstName string  `json:"firstName"`
 	LastName  string  `json:"lastName"`
 	TenantID  *string `json:"tenantId"`
-	OrgID     *string `json:"orgId"`
+	OrgID     string  `json:"orgId"`
 }
 
 type accountCache struct {
@@ -125,7 +125,7 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 
 	result := accountInfoResult{
 		UID:            info.UID,
-		OrganizationID: derefOrEmpty(info.OrgID),
+		OrganizationID: info.OrgID,
 		TenantID:       derefOrEmpty(info.TenantID),
 	}
 

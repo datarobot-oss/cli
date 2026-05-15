@@ -395,8 +395,7 @@ func TestGetAccountInfo_Success(t *testing.T) {
 	info, err := GetAccountInfo(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "account-uid-123", info.UID)
-	require.NotNil(t, info.OrgID)
-	assert.Equal(t, "parakeet", *info.OrgID)
+	assert.Equal(t, "parakeet", info.OrgID)
 	require.NotNil(t, info.TenantID)
 	assert.Equal(t, "parakeet-jones", *info.TenantID)
 }
