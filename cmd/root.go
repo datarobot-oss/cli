@@ -118,20 +118,17 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			// Store telemetry client in context for use by commands
 			cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
 
-			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
-
-			return nil
-		},
-		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-			if client, ok := cmd.Context().Value(telemetryClientKey{}).(*telemetry.Client); ok {
-				if event, ok2 := telemetry.EventFor(cmd, args); ok2 {
+			cobra.OnFinalize(func() {
+				if event, ok := telemetry.EventFor(cmd, args); ok {
 					client.Track(event)
 				}
 
 				client.Flush(3 * time.Second)
-			}
 
-			log.Stop()
+				log.Stop()
+			})
+
+			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
 
 			return nil
 		},
