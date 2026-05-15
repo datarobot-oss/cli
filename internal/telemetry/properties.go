@@ -101,6 +101,7 @@ func CollectCommonProperties() *CommonProperties {
 		if result.OrganizationID != "" {
 			props.OrganizationID = &result.OrganizationID
 		}
+
 		if result.TenantID != "" {
 			props.TenantID = &result.TenantID
 		}
