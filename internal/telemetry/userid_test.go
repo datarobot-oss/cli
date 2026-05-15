@@ -76,6 +76,7 @@ func TestRetrieveAccountInfo_FreshAPI(t *testing.T) {
 	assert.Equal(t, "fresh-uid", cached.UID)
 	assert.Equal(t, "parakeet", cached.OrganizationID)
 	assert.Equal(t, "parakeet-jones", cached.TenantID)
+
 	assert.Equal(t, server.URL, cached.Endpoint)
 	assert.Equal(t, sha256Fingerprint("test-token"), cached.TokenFingerprint)
 }
@@ -394,8 +395,10 @@ func TestGetAccountInfo_Success(t *testing.T) {
 	info, err := GetAccountInfo(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "account-uid-123", info.UID)
-	assert.Equal(t, "parakeet", info.OrgID)
-	assert.Equal(t, "parakeet-jones", info.TenantID)
+	require.NotNil(t, info.OrgID)
+	assert.Equal(t, "parakeet", *info.OrgID)
+	require.NotNil(t, info.TenantID)
+	assert.Equal(t, "parakeet-jones", *info.TenantID)
 }
 
 func TestGetAccountInfo_Unauthorized(t *testing.T) {

@@ -28,12 +28,12 @@ import (
 
 // AccountInfo represents the response from GET /api/v2/account/info/.
 type AccountInfo struct {
-	UID       string `json:"uid"`
-	Email     string `json:"email"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	TenantID  string `json:"tenantId"`
-	OrgID     string `json:"orgId"`
+	UID       string  `json:"uid"`
+	Email     string  `json:"email"`
+	FirstName string  `json:"firstName"`
+	LastName  string  `json:"lastName"`
+	TenantID  *string `json:"tenantId"`
+	OrgID     *string `json:"orgId"`
 }
 
 type accountCache struct {
@@ -44,12 +44,15 @@ type accountCache struct {
 	TenantID         string `json:"tenant_id"`
 }
 
-// isComplete returns true when all account fields are populated.
-// Partial caches (from older CLI versions) return false, triggering a re-fetch.
-// TODO(CFX-6067): Remove partial-cache logic once we are confident all
-// user_id cache files have been upgraded to include organization_id/tenant_id.
+// isComplete returns true when the cache contains all account fields
+// that are expected to be present. Old cache files (from CLI versions
+// before organization_id/tenant_id were added) have OrganizationID == ""
+// and are treated as partial, triggering a re-fetch.
+//
+// tenant_id may legitimately be null/empty from the API for legacy users
+// or system accounts, so we do not include it in the completeness check.
 func (c accountCache) isComplete() bool {
-	return c.UID != "" && c.OrganizationID != "" && c.TenantID != ""
+	return c.UID != "" && c.OrganizationID != ""
 }
 
 type accountInfoResult struct {
@@ -122,13 +125,21 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 
 	result := accountInfoResult{
 		UID:            info.UID,
-		OrganizationID: info.OrgID,
-		TenantID:       info.TenantID,
+		OrganizationID: derefOrEmpty(info.OrgID),
+		TenantID:       derefOrEmpty(info.TenantID),
 	}
 
 	persistAccountInfo(result)
 
 	return result, nil
+}
+
+func derefOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
 }
 
 func persistAccountInfo(result accountInfoResult) {
