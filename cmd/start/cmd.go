@@ -33,6 +33,8 @@ type Options struct {
 func Cmd() *cobra.Command { //nolint: cyclop
 	var opts Options
 
+	var capture telemetryCapture
+
 	cmd := &cobra.Command{
 		Use:     "start",
 		Aliases: []string{"quickstart"},
@@ -59,6 +61,8 @@ The following actions will be performed:
 			if innerModel.err != nil {
 				os.Exit(1)
 			}
+
+			capture = innerModel.telemetry
 
 			// Check if we do not need to launch template setup after quitting
 			if !innerModel.needTemplateSetup || !innerModel.done || innerModel.quitting {
@@ -98,6 +102,8 @@ The following actions will be performed:
 				os.Exit(1)
 			}
 
+			capture = innerModel2.telemetry
+
 			return nil
 		},
 	}
@@ -108,7 +114,15 @@ The following actions will be performed:
 	_ = viperx.BindPFlag("yes", cmd.Flags().Lookup("yes"))
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.Track(cmd)
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"validation_violations": capture.validationViolations,
+			"missing_msgs":          capture.missingMsgs,
+			"wrong_version_msgs":    capture.wrongVersionMsgs,
+			"install_success":       capture.installSuccess,
+			"install_error":         capture.installError,
+		}
+	})
 
 	return cmd
 }

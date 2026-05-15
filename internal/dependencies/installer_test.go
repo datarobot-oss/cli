@@ -183,7 +183,7 @@ func TestInstallPrerequisites_Empty(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := InstallPrerequisites(&out, nil)
+	_, err := InstallPrerequisites(&out, nil)
 
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "successfully")
@@ -194,7 +194,7 @@ func TestInstallPrerequisites_Success(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
 
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "install-uv")
@@ -204,7 +204,7 @@ func TestInstallPrerequisites_Success(t *testing.T) {
 func TestInstallPrerequisites_FailureShowsRawCommand(t *testing.T) {
 	var out bytes.Buffer
 
-	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1")})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exit 1")
@@ -215,7 +215,7 @@ func TestInstallPrerequisites_NoPlatformCommand(t *testing.T) {
 
 	dep := tools.Prerequisite{Name: "uv"}
 
-	err := InstallPrerequisites(&out, []tools.Prerequisite{dep})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{dep})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uv")
@@ -243,7 +243,7 @@ func TestInstallPrerequisites_AbortsOnFirstFailure(t *testing.T) {
 		},
 	}
 
-	err := InstallPrerequisites(&out, deps)
+	_, err := InstallPrerequisites(&out, deps)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uv")
@@ -255,7 +255,7 @@ func TestInstallPrerequisites_WritesStateOnSuccess(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
@@ -273,7 +273,7 @@ func TestInstallPrerequisites_PartialFailureDoesNotWriteState(t *testing.T) {
 		prereq("ok", "echo ok"),
 	}
 
-	err := InstallPrerequisites(&out, deps)
+	_, err := InstallPrerequisites(&out, deps)
 	require.Error(t, err)
 
 	data, _ := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
@@ -285,7 +285,7 @@ func TestLastSuccessDepsCheck_UpdatedByInstallPrerequisites(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))

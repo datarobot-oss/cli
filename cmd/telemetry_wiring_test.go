@@ -32,6 +32,8 @@ import (
 // corresponding telemetry.Track* call at the command-construction site.
 var expectedTrackedCommands = []string{
 	"dr start",
+	"dr dependency check",
+	"dr dependency install",
 	"dr run",
 	"dr task",
 	"dr auth set-url",

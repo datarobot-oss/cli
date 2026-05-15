@@ -15,6 +15,7 @@
 package tools
 
 import (
+	"fmt"
 	"runtime"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -65,58 +66,92 @@ var versionsYamlSchema = YAMLSchema{
 	Install:        installCommandsSchema,
 }
 
-// validate logs a warning if value violates the field rule.
-func (r FieldRule) validate(key, fieldName, value string) {
+// validate logs a warning if value violates the field rule and returns the violation message.
+func (r FieldRule) validate(key, fieldName, value string) string {
 	if r.Required && value == "" {
-		log.Warnf("versions.yaml [%s]: '%s' is required", key, fieldName)
+		msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required", key, fieldName)
+		log.Warn(msg)
 
-		return
+		return msg
 	}
 
 	if r.Format == formatSemver && value != "" {
 		if _, err := semver.NewVersion(value); err != nil {
-			log.Warnf("versions.yaml [%s]: '%s' %q is not a valid semantic version", key, fieldName, value)
+			msg := fmt.Sprintf("versions.yaml [%s]: '%s' %q is not a valid semantic version", key, fieldName, value)
+			log.Warn(msg)
+
+			return msg
 		}
 	}
+
+	return ""
 }
 
-// Validate checks every entry in the parsed versions.yaml and logs warnings for violations.
-func (s YAMLSchema) Validate(data versionsYaml) {
+// Validate checks every entry in the parsed versions.yaml, logs warnings for violations,
+// and returns the list of violation messages.
+func (s YAMLSchema) Validate(data versionsYaml) []string {
+	var violations []string
+
 	for key, p := range data {
-		s.Name.validate(key, "name", p.Name)
-		s.MinimumVersion.validate(key, "minimum-version", p.MinimumVersion)
-		s.Command.validate(key, "command", p.Command)
-		s.URL.validate(key, "url", p.URL)
-		s.Install.validate(key, p.Install)
+		for _, v := range []string{
+			s.Name.validate(key, "name", p.Name),
+			s.MinimumVersion.validate(key, "minimum-version", p.MinimumVersion),
+			s.Command.validate(key, "command", p.Command),
+			s.URL.validate(key, "url", p.URL),
+		} {
+			if v != "" {
+				violations = append(violations, v)
+			}
+		}
+
+		violations = append(violations, s.Install.validate(key, p.Install)...)
 	}
+
+	return violations
 }
 
 // validate checks that install commands are provided
 // according to the InstallCommandsSchema rules, with special attention to the current platform.
-func (s InstallCommandsSchema) validate(key string, ic InstallCommands) {
+func (s InstallCommandsSchema) validate(key string, ic InstallCommands) []string {
 	if ic.MacOS == "" && ic.Linux == "" && ic.Windows == "" {
-		log.Warnf("versions.yaml [%s]: 'install' is not defined", key)
+		msg := fmt.Sprintf("versions.yaml [%s]: 'install' is not defined", key)
+		log.Warn(msg)
 
-		return
+		return []string{msg}
 	}
 
-	s.validatePlatform(key, "install.macos", ic.MacOS, s.MacOS, "darwin")
-	s.validatePlatform(key, "install.linux", ic.Linux, s.Linux, "linux")
-	s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows")
+	var violations []string
+
+	for _, v := range []string{
+		s.validatePlatform(key, "install.macos", ic.MacOS, s.MacOS, "darwin"),
+		s.validatePlatform(key, "install.linux", ic.Linux, s.Linux, "linux"),
+		s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows"),
+	} {
+		if v != "" {
+			violations = append(violations, v)
+		}
+	}
+
+	return violations
 }
 
 // validatePlatform logs Error if the install command for the current platform is missing and it's required, otherwise logs a warning.
-func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) {
+// Returns the violation message, or "" if no violation.
+func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) string {
 	if !rule.Required || value != "" {
-		return
+		return ""
 	}
 
 	// For now it's only warning if the install command for the current platform is missing
 	if runtime.GOOS == goos {
-		log.Errorf("versions.yaml [%s]: '%s' is required for the current platform", key, fieldName)
+		msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required for the current platform", key, fieldName)
+		log.Error(msg)
 
-		return
+		return msg
 	}
 
-	log.Warnf("versions.yaml [%s]: '%s' is required", key, fieldName)
+	msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required", key, fieldName)
+	log.Warn(msg)
+
+	return msg
 }

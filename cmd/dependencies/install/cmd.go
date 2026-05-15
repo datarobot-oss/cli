@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/dependencies"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
 )
@@ -31,48 +32,70 @@ type Options struct {
 var opts Options
 
 func Cmd() *cobra.Command {
+	var (
+		checkResult    tools.CheckResult
+		installSuccess []string
+		installError   string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "📦 Install missing template dependencies",
-		RunE:  RunE,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			checkResult = tools.CheckPrerequisites()
+
+			if len(checkResult.MissingMsgs) == 0 && len(checkResult.WrongVersionMsgs) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
+
+				return nil
+			}
+
+			fmt.Fprintln(cmd.OutOrStderr(), tools.PrerequisitesMsg(checkResult.MissingMsgs, checkResult.WrongVersionMsgs))
+
+			prerequisites := append(checkResult.MissingTools, checkResult.WrongVersionTools...)
+
+			if !viperx.GetBool("yes") {
+				yes, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "\nInstall now? (y/n): ")
+				if err != nil {
+					cmd.SilenceUsage = true
+
+					return err
+				}
+
+				if !yes {
+					return nil
+				}
+			}
+
+			var err error
+
+			installSuccess, err = dependencies.InstallPrerequisites(cmd.OutOrStdout(), prerequisites)
+			if err != nil {
+				installError = err.Error()
+				cmd.SilenceUsage = true
+
+				return err
+			}
+
+			return nil
+		},
 	}
+
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, `Assume "yes" as answer to the install prompt.`)
 
 	// Bind flag to viper to enable env var support (DATAROBOT_CLI_NON_INTERACTIVE)
 	_ = viperx.BindPFlag("yes", cmd.Flags().Lookup("yes"))
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"missing_msgs":          checkResult.MissingMsgs,
+			"wrong_version_msgs":    checkResult.WrongVersionMsgs,
+			"validation_violations": checkResult.ValidationViolations,
+			"install_success":       installSuccess,
+			"install_error":         installError,
+		}
+	})
+
 	return cmd
-}
-
-func RunE(cmd *cobra.Command, _ []string) error {
-	missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
-	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
-		return nil
-	}
-
-	fmt.Fprintln(cmd.OutOrStderr(), tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs))
-
-	prerequisites := append(missingTools, wrongVersionTools...)
-
-	if !viperx.GetBool("yes") {
-		yes, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "\nInstall now? (y/n): ")
-		if err != nil {
-			cmd.SilenceUsage = true
-			return err
-		}
-
-		if !yes {
-			return nil
-		}
-	}
-
-	err := dependencies.InstallPrerequisites(cmd.OutOrStdout(), prerequisites)
-	if err != nil {
-		cmd.SilenceUsage = true
-		return err
-	}
-
-	return nil
 }
