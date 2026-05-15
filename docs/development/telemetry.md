@@ -54,7 +54,7 @@ Collected once per CLI invocation in `telemetry.CollectCommonProperties`:
 | Property             | Source                                                      |
 | -------------------- | ----------------------------------------------------------- |
 | `session_id`         | UUID v4 generated per process                               |
-| `user_id`            | `drapi.GetUserID` (currently a placeholder)                 |
+| `user_id`            | `drapi.GetAccountInfo` → `UID`                              |
 | `cli_version`        | `internal/version.Version` (ldflags)                        |
 | `install_method`     | `telemetry.InstallMethod` (ldflags; defaults to `"source"`) |
 | `os_info`            | `runtime.GOOS + "/" + runtime.GOARCH`                       |

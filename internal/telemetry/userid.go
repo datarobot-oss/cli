@@ -84,18 +84,6 @@ func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 	return &info, nil
 }
 
-// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
-// It returns the uid string on success, or ("", error) on non-200 status,
-// empty uid, or network failure.
-func GetUserID(ctx context.Context) (string, error) {
-	info, err := GetAccountInfo(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return info.UID, nil
-}
-
 func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	// Check cache first to avoid making an API call
 	var cached accountCache
