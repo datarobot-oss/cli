@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,6 +106,71 @@ func TestVersionFlag(t *testing.T) {
 			assert.NotEmpty(t, output, "Version output should not be empty")
 		})
 	}
+}
+
+// TestTelemetryPropExtractor_OnSuccessPath verifies that the DR CLI telemetry
+// event is produced correctly on the success path. Uses dr dependency check with
+// an echo-based tool (always satisfies the version check) so RunE returns nil.
+func TestTelemetryPropExtractor_OnSuccessPath(t *testing.T) {
+	orig := tools.RequiredTools
+
+	defer func() { tools.RequiredTools = orig }()
+
+	tools.RequiredTools = []tools.Prerequisite{
+		{Name: "echo-tool", Command: "echo 1.0.0", MinimumVersion: "1.0.0"},
+	}
+
+	cmd := RootCmd
+	cmd.SetArgs([]string{"dependency", "check"})
+
+	var outBuf bytes.Buffer
+
+	cmd.SetOut(&outBuf)
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	checkCmd := findCommandByPath(RootCmd.Command, "dr dependency check")
+	require.NotNil(t, checkCmd)
+
+	event, ok := telemetry.EventFor(checkCmd, []string{})
+	require.True(t, ok)
+	assert.Equal(t, "dr dependency check", event.EventType)
+	assert.Empty(t, event.EventProperties["missing_msgs"])
+	assert.Empty(t, event.EventProperties["wrong_version_msgs"])
+}
+
+// TestTelemetryPropExtractor_OnErrorPath verifies that the DR CLI telemetry event
+// is produced correctly on the error path. PersistentPostRunE (the previous approach)
+// was skipped on error, silently dropping telemetry for failed commands.
+func TestTelemetryPropExtractor_OnErrorPath(t *testing.T) {
+	orig := tools.RequiredTools
+
+	defer func() { tools.RequiredTools = orig }()
+
+	tools.RequiredTools = []tools.Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_xyz", URL: "https://example.com"},
+	}
+
+	cmd := RootCmd
+	cmd.SetArgs([]string{"dependency", "check"})
+
+	var errBuf bytes.Buffer
+
+	cmd.SetErr(&errBuf)
+
+	_ = cmd.Execute() // returns error: missing dep
+
+	checkCmd := findCommandByPath(RootCmd.Command, "dr dependency check")
+	require.NotNil(t, checkCmd)
+
+	event, ok := telemetry.EventFor(checkCmd, []string{})
+	require.True(t, ok)
+	assert.Equal(t, "dr dependency check", event.EventType)
+
+	missingMsgs, _ := event.EventProperties["missing_msgs"].([]string)
+	assert.NotEmpty(t, missingMsgs,
+		"PropExtractor must see missing_msgs populated by RunE even on the error path")
 }
 
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {

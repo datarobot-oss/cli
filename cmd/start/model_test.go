@@ -219,6 +219,44 @@ func TestHandleDepsMissing_AutoInstallsWhenAnswerYes(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestHandleDepsMissing_AutoInstallsWhenAnswerYesFlag(t *testing.T) {
+	m := Model{opts: Options{AnswerYes: true}}
+
+	msg := depsMissingMsg{
+		prerequisites: []tools.Prerequisite{{Name: "uv"}},
+		message:       "missing: uv",
+	}
+
+	result, cmd := m.handleDepsMissing(msg)
+
+	resultModel := result.(Model)
+	assert.False(t, resultModel.waitingToInstall)
+	assert.NotNil(t, cmd)
+}
+
+func TestHandleDepsMissing_CapturesTelemetry(t *testing.T) {
+	m := Model{}
+
+	checkResult := tools.CheckResult{
+		ValidationViolations: []string{"[uv] 'name' is required"},
+		MissingMsgs:          []string{"uv (https://example.com)"},
+		WrongVersionMsgs:     []string{"task (minimal: v3.35.0, installed: v3.32.0)"},
+	}
+
+	msg := depsMissingMsg{
+		prerequisites: []tools.Prerequisite{{Name: "uv"}},
+		message:       "missing: uv",
+		checkResult:   checkResult,
+	}
+
+	result, _ := m.handleDepsMissing(msg)
+
+	resultModel := result.(Model)
+	assert.Equal(t, checkResult.ValidationViolations, resultModel.telemetry.validationViolations)
+	assert.Equal(t, checkResult.MissingMsgs, resultModel.telemetry.missingMsgs)
+	assert.Equal(t, checkResult.WrongVersionMsgs, resultModel.telemetry.wrongVersionMsgs)
+}
+
 // --- handleInstallConfirmKey ---
 
 func TestHandleInstallConfirmKey_ConfirmKeys(t *testing.T) {
@@ -279,7 +317,7 @@ func TestHandleDepsInstallComplete_Success(t *testing.T) {
 		current: 0,
 	}
 
-	msg := depsInstallCompleteMsg{err: nil, output: "✅ All dependencies installed successfully.\n"}
+	msg := depsInstallCompleteMsg{err: nil, output: "✅ All dependencies installed successfully.\n", installed: []string{"uv"}}
 
 	result, cmd := m.handleDepsInstallComplete(msg)
 
@@ -287,6 +325,22 @@ func TestHandleDepsInstallComplete_Success(t *testing.T) {
 	assert.Equal(t, 1, resultModel.current, "should advance to next step on success")
 	assert.Equal(t, msg.output, resultModel.stepCompleteMessage)
 	assert.NotNil(t, cmd)
+}
+
+func TestHandleDepsInstallComplete_CapturesSuccessTelemetry(t *testing.T) {
+	m := Model{}
+
+	msg := depsInstallCompleteMsg{
+		err:       nil,
+		output:    "✅ All dependencies installed successfully.\n",
+		installed: []string{"uv", "task"},
+	}
+
+	result, _ := m.handleDepsInstallComplete(msg)
+
+	resultModel := result.(Model)
+	assert.Equal(t, []string{"uv", "task"}, resultModel.telemetry.installSuccess)
+	assert.Empty(t, resultModel.telemetry.installError)
 }
 
 func TestHandleDepsInstallComplete_Error(t *testing.T) {
@@ -299,6 +353,19 @@ func TestHandleDepsInstallComplete_Error(t *testing.T) {
 
 	resultModel := result.(Model)
 	assert.Equal(t, installErr, resultModel.err)
+}
+
+func TestHandleDepsInstallComplete_CapturesErrorTelemetry(t *testing.T) {
+	m := Model{}
+
+	installErr := errors.New("install failed for \"uv\" (exit code 1)")
+	msg := depsInstallCompleteMsg{err: installErr, installed: nil}
+
+	result, _ := m.handleDepsInstallComplete(msg)
+
+	resultModel := result.(Model)
+	assert.Empty(t, resultModel.telemetry.installSuccess)
+	assert.Equal(t, installErr.Error(), resultModel.telemetry.installError)
 }
 
 // --- View ---

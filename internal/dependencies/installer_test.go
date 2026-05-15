@@ -183,9 +183,10 @@ func TestInstallPrerequisites_Empty(t *testing.T) {
 
 	var out bytes.Buffer
 
-	_, err := InstallPrerequisites(&out, nil)
+	installed, err := InstallPrerequisites(&out, nil)
 
 	require.NoError(t, err)
+	assert.Empty(t, installed)
 	assert.Contains(t, out.String(), "successfully")
 }
 
@@ -194,17 +195,61 @@ func TestInstallPrerequisites_Success(t *testing.T) {
 
 	var out bytes.Buffer
 
-	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
 
 	require.NoError(t, err)
+	assert.Equal(t, []string{"uv"}, installed)
 	assert.Contains(t, out.String(), "install-uv")
 	assert.Contains(t, out.String(), "successfully")
+}
+
+func TestInstallPrerequisites_ReturnsAllInstalledNames(t *testing.T) {
+	setupFakeRepo(t)
+
+	var out bytes.Buffer
+
+	deps := []tools.Prerequisite{
+		prereq("uv", "echo install-uv"),
+		prereq("task", "echo install-task"),
+	}
+
+	installed, err := InstallPrerequisites(&out, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"uv", "task"}, installed)
+}
+
+func TestInstallPrerequisites_ReturnsPartialInstalledOnFailure(t *testing.T) {
+	var out bytes.Buffer
+
+	deps := []tools.Prerequisite{
+		prereq("uv", "echo install-uv"),
+		prereq("task", "exit 1"),
+	}
+
+	installed, err := InstallPrerequisites(&out, deps)
+
+	require.Error(t, err)
+	assert.Equal(t, []string{"uv"}, installed, "should return names installed before the failure")
+	assert.Contains(t, err.Error(), "task")
+}
+
+func TestInstallPrerequisites_ReturnsEmptyWhenNoPlatformCommand(t *testing.T) {
+	var out bytes.Buffer
+
+	dep := tools.Prerequisite{Name: "uv"} // no install commands set
+
+	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{dep})
+
+	require.Error(t, err)
+	assert.Empty(t, installed)
 }
 
 func TestInstallPrerequisites_FailureShowsRawCommand(t *testing.T) {
 	var out bytes.Buffer
 
-	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1")})
+	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1")})
+	assert.Empty(t, installed)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exit 1")
