@@ -37,8 +37,8 @@ func TestCheckCmd_PropExtractor_AllSatisfied(t *testing.T) {
 
 	event, ok := telemetry.EventFor(cmd, []string{})
 	require.True(t, ok)
-	assert.Empty(t, event.EventProperties["missing_msgs"])
-	assert.Empty(t, event.EventProperties["wrong_version_msgs"])
+	assert.Empty(t, event.EventProperties["missing_deps"])
+	assert.Empty(t, event.EventProperties["wrong_version_deps"])
 	assert.Empty(t, event.EventProperties["validation_violations"])
 }
 
@@ -59,10 +59,10 @@ func TestCheckCmd_PropExtractor_MissingDep(t *testing.T) {
 	event, ok := telemetry.EventFor(cmd, []string{})
 	require.True(t, ok)
 
-	missingMsgs, _ := event.EventProperties["missing_msgs"].([]string)
+	missingMsgs, _ := event.EventProperties["missing_deps"].([]string)
 	require.Len(t, missingMsgs, 1)
 	assert.Contains(t, missingMsgs[0], "FakeTool")
-	assert.Empty(t, event.EventProperties["wrong_version_msgs"])
+	assert.Empty(t, event.EventProperties["wrong_version_deps"])
 }
 
 func TestCheckCmd_PropExtractor_WrongVersion(t *testing.T) {
@@ -82,9 +82,9 @@ func TestCheckCmd_PropExtractor_WrongVersion(t *testing.T) {
 	event, ok := telemetry.EventFor(cmd, []string{})
 	require.True(t, ok)
 
-	assert.Empty(t, event.EventProperties["missing_msgs"])
+	assert.Empty(t, event.EventProperties["missing_deps"])
 
-	wrongVersionMsgs, _ := event.EventProperties["wrong_version_msgs"].([]string)
+	wrongVersionMsgs, _ := event.EventProperties["wrong_version_deps"].([]string)
 	require.Len(t, wrongVersionMsgs, 1)
 	assert.Contains(t, wrongVersionMsgs[0], "Echo")
 }

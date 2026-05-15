@@ -99,6 +99,8 @@ type telemetryCapture struct {
 	wrongVersionMsgs     []string
 	installSuccess       []string
 	installError         string
+	yesFlag              bool
+	nonInteractive       bool
 }
 
 // err messages used in the start command.
@@ -127,6 +129,10 @@ func NewStartModel(opts Options) Model {
 		},
 		opts:     opts,
 		repoRoot: repoRoot,
+		telemetry: telemetryCapture{
+			yesFlag:        opts.AnswerYes,
+			nonInteractive: viperx.GetBool("yes"),
+		},
 	}
 }
 

@@ -36,12 +36,17 @@ func Cmd() *cobra.Command {
 		checkResult    tools.CheckResult
 		installSuccess []string
 		installError   string
+		yesFlag        bool
+		nonInteractive bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "📦 Install missing template dependencies",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			yesFlag = opts.Yes
+			nonInteractive = viperx.GetBool("yes")
+
 			checkResult = tools.CheckPrerequisites()
 
 			if len(checkResult.MissingMsgs) == 0 && len(checkResult.WrongVersionMsgs) == 0 {
@@ -54,7 +59,7 @@ func Cmd() *cobra.Command {
 
 			prerequisites := append(checkResult.MissingTools, checkResult.WrongVersionTools...)
 
-			if !opts.Yes && !viperx.GetBool("yes") {
+			if !yesFlag && !nonInteractive {
 				yes, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "\nInstall now? (y/n): ")
 				if err != nil {
 					cmd.SilenceUsage = true
@@ -87,11 +92,13 @@ func Cmd() *cobra.Command {
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
-			"missing_msgs":          checkResult.MissingMsgs,
-			"wrong_version_msgs":    checkResult.WrongVersionMsgs,
+			"missing_deps":          checkResult.MissingMsgs,
+			"wrong_version_deps":    checkResult.WrongVersionMsgs,
 			"validation_violations": checkResult.ValidationViolations,
 			"install_success":       installSuccess,
 			"install_error":         installError,
+			"yes_flag":              yesFlag,
+			"non_interactive":       nonInteractive,
 		}
 	})
 

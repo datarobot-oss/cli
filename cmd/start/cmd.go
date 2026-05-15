@@ -115,10 +115,12 @@ The following actions will be performed:
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"validation_violations": capture.validationViolations,
-			"missing_msgs":          capture.missingMsgs,
-			"wrong_version_msgs":    capture.wrongVersionMsgs,
+			"missing_deps":          capture.missingMsgs,
+			"wrong_version_deps":    capture.wrongVersionMsgs,
 			"install_success":       capture.installSuccess,
 			"install_error":         capture.installError,
+			"yes_flag":              capture.yesFlag,
+			"non_interactive":       capture.nonInteractive,
 		}
 	})
 

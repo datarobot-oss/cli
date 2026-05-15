@@ -136,8 +136,8 @@ func TestTelemetryPropExtractor_OnSuccessPath(t *testing.T) {
 	event, ok := telemetry.EventFor(checkCmd, []string{})
 	require.True(t, ok)
 	assert.Equal(t, "dr dependency check", event.EventType)
-	assert.Empty(t, event.EventProperties["missing_msgs"])
-	assert.Empty(t, event.EventProperties["wrong_version_msgs"])
+	assert.Empty(t, event.EventProperties["missing_deps"])
+	assert.Empty(t, event.EventProperties["wrong_version_deps"])
 }
 
 // TestTelemetryPropExtractor_OnErrorPath verifies that the DR CLI telemetry event
@@ -168,9 +168,9 @@ func TestTelemetryPropExtractor_OnErrorPath(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "dr dependency check", event.EventType)
 
-	missingMsgs, _ := event.EventProperties["missing_msgs"].([]string)
+	missingMsgs, _ := event.EventProperties["missing_deps"].([]string)
 	assert.NotEmpty(t, missingMsgs,
-		"PropExtractor must see missing_msgs populated by RunE even on the error path")
+		"PropExtractor must see missing_deps populated by RunE even on the error path")
 }
 
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {

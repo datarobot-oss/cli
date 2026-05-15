@@ -120,6 +120,32 @@ func setRequiredTools(t *testing.T, prereqs []tools.Prerequisite) {
 	tools.RequiredTools = prereqs
 }
 
+// --- NewStartModel ---
+
+func TestNewStartModel_CapturesYesFlag(t *testing.T) {
+	m := NewStartModel(Options{AnswerYes: true})
+
+	assert.True(t, m.telemetry.yesFlag)
+	assert.False(t, m.telemetry.nonInteractive)
+}
+
+func TestNewStartModel_CapturesNonInteractive(t *testing.T) {
+	viperx.Set("yes", true)
+	t.Cleanup(func() { viperx.Set("yes", false) })
+
+	m := NewStartModel(Options{AnswerYes: false})
+
+	assert.False(t, m.telemetry.yesFlag)
+	assert.True(t, m.telemetry.nonInteractive)
+}
+
+func TestNewStartModel_NoFlagsSet(t *testing.T) {
+	m := NewStartModel(Options{AnswerYes: false})
+
+	assert.False(t, m.telemetry.yesFlag)
+	assert.False(t, m.telemetry.nonInteractive)
+}
+
 // --- checkPrerequisites ---
 
 func TestCheckPrerequisites_AllSatisfied(t *testing.T) {
