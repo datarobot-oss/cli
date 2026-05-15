@@ -54,7 +54,7 @@ func Cmd() *cobra.Command {
 
 			prerequisites := append(checkResult.MissingTools, checkResult.WrongVersionTools...)
 
-			if !viperx.GetBool("yes") {
+			if !opts.Yes && !viperx.GetBool("yes") {
 				yes, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "\nInstall now? (y/n): ")
 				if err != nil {
 					cmd.SilenceUsage = true
@@ -83,8 +83,6 @@ func Cmd() *cobra.Command {
 
 	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, `Assume "yes" as answer to the install prompt.`)
 
-	// Bind flag to viper to enable env var support (DATAROBOT_CLI_NON_INTERACTIVE)
-	_ = viperx.BindPFlag("yes", cmd.Flags().Lookup("yes"))
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {

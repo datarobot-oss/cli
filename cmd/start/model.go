@@ -337,7 +337,7 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.telemetry.missingMsgs = msg.checkResult.MissingMsgs
 	m.telemetry.wrongVersionMsgs = msg.checkResult.WrongVersionMsgs
 
-	if viperx.GetBool("yes") {
+	if m.opts.AnswerYes || viperx.GetBool("yes") {
 		return m, m.execInstallDeps()
 	}
 
@@ -611,7 +611,7 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		// Found a quickstart script
 		// Don't wait for confirmation if '--yes' flag is set or
 		// DATAROBOT_CLI_NON_INTERACTIVE env var is true
-		waitForConfirmation := !viperx.GetBool("yes")
+		waitForConfirmation := !m.opts.AnswerYes && !viperx.GetBool("yes")
 
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),
