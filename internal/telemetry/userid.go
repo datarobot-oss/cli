@@ -36,62 +36,108 @@ type AccountInfo struct {
 	OrgID     string `json:"orgId"`
 }
 
-type cachedUserID struct {
+type accountCache struct {
 	UID              string `json:"uid"`
 	Endpoint         string `json:"endpoint"`
 	TokenFingerprint string `json:"token_fingerprint"`
+	OrganizationID   string `json:"organization_id"`
+	TenantID         string `json:"tenant_id"`
 }
 
-// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
-// It returns the uid string on success, or ("", error) on non-200 status,
+// isComplete returns true when all account fields are populated.
+// Partial caches (from older CLI versions) return false, triggering a re-fetch.
+// TODO(CFX-6067): Remove partial-cache logic once we are confident all
+// user_id cache files have been upgraded to include organization_id/tenant_id.
+func (c accountCache) isComplete() bool {
+	return c.UID != "" && c.OrganizationID != "" && c.TenantID != ""
+}
+
+type accountInfoResult struct {
+	UID            string
+	OrganizationID string
+	TenantID       string
+}
+
+// GetAccountInfo fetches the DataRobot account info from GET /api/v2/account/info/.
+// It returns the full AccountInfo on success, or (*AccountInfo, error) on non-200 status,
 // empty uid, or network failure.
-func GetUserID(_ context.Context) (string, error) {
+func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 	url, err := config.GetEndpointURL("/api/v2/account/info/")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var info AccountInfo
 
 	//nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
 	if err := drapi.GetJSON(url, "", &info); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if info.UID == "" {
-		return "", errors.New("empty uid in account info response")
+		return nil, errors.New("empty uid in account info response")
+	}
+
+	return &info, nil
+}
+
+// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
+// It returns the uid string on success, or ("", error) on non-200 status,
+// empty uid, or network failure.
+func GetUserID(ctx context.Context) (string, error) {
+	info, err := GetAccountInfo(ctx)
+	if err != nil {
+		return "", err
 	}
 
 	return info.UID, nil
 }
 
-func retrieveUserID(ctx context.Context) (string, error) {
+func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	// Check cache first to avoid making an API call
-	var cached cachedUserID
+	var cached accountCache
 
 	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
 		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
-			return cached.UID, nil
+			if cached.isComplete() {
+				return accountInfoResult{
+					UID:            cached.UID,
+					OrganizationID: cached.OrganizationID,
+					TenantID:       cached.TenantID,
+				}, nil
+			}
+
+			// Partial cache: endpoint/token match but missing org/tenant.
+			// Fall through to re-fetch from API and upgrade the cache in place.
 		}
 	}
 
-	// Cache miss or invalid; try to fetch from API
-	apiUserID, err := GetUserID(ctx)
+	// Cache miss or partial; try to fetch from API
+	info, err := GetAccountInfo(ctx)
 	if err != nil {
-		log.Debugf("Failed to retrieve user ID: %v", err)
-		return "", err
+		log.Debugf("Failed to retrieve account info: %v", err)
+
+		return accountInfoResult{}, err
 	}
 
-	persistUserID(apiUserID)
+	result := accountInfoResult{
+		UID:            info.UID,
+		OrganizationID: info.OrgID,
+		TenantID:       info.TenantID,
+	}
 
-	return apiUserID, nil
+	persistAccountInfo(result)
+
+	return result, nil
 }
 
-func persistUserID(uid string) {
-	cache := cachedUserID{
-		UID:              uid,
+func persistAccountInfo(result accountInfoResult) {
+	cache := accountCache{
+		UID:              result.UID,
 		Endpoint:         currentEndpoint(),
 		TokenFingerprint: tokenFingerprint(),
+		OrganizationID:   result.OrganizationID,
+		TenantID:         result.TenantID,
 	}
 
 	writeJSONCacheFile(userIDFileName, cache)

@@ -42,17 +42,19 @@ type CommonProperties struct {
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
 	// event properties
-	CLIVersion        string // CLI version from version.Version (ldflags)
-	InstallMethod     string // Build distribution method (ldflags)
-	OSName            string // human-readable OS name from runtime.GOOS
-	OSArch            string // CPU architecture from runtime.GOARCH
-	OSVersion         string // OS release version string, detected at startup
-	Language          string // user language from LANG env var (e.g. "en_US")
-	GoVersion         string // Go runtime version (e.g. "go1.26.2")
-	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
-	Environment       string // US, EU, JP, or custom — from endpoint URL
-	DataRobotInstance string // Base URL of configured DataRobot instance
-	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+	CLIVersion        string  // CLI version from version.Version (ldflags)
+	InstallMethod     string  // Build distribution method (ldflags)
+	OSName            string  // human-readable OS name from runtime.GOOS
+	OSArch            string  // CPU architecture from runtime.GOARCH
+	OSVersion         string  // OS release version string, detected at startup
+	Language          string  // user language from LANG env var (e.g. "en_US")
+	GoVersion         string  // Go runtime version (e.g. "go1.26.2")
+	Shell             string  // Name of the user's shell (e.g. "zsh", "bash", "powershell")
+	Environment       string  // US, EU, JP, or custom — from endpoint URL
+	DataRobotInstance string  // Base URL of configured DataRobot instance
+	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
+	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable
 }
 
 // DetectShell returns the name of the shell the CLI is running from.
@@ -92,10 +94,16 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
-	// Retrieve the userID
-	uid, err := retrieveUserID(context.Background())
+	// Retrieve account info (includes userID, orgID, tenantID)
+	result, err := retrieveAccountInfo(context.Background())
 	if err == nil {
-		props.UserID = &uid
+		props.UserID = &result.UID
+		if result.OrganizationID != "" {
+			props.OrganizationID = &result.OrganizationID
+		}
+		if result.TenantID != "" {
+			props.TenantID = &result.TenantID
+		}
 	}
 
 	return props
@@ -113,6 +121,14 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
+	}
+
+	if p.OrganizationID != nil {
+		m["organization_id"] = *p.OrganizationID
+	}
+
+	if p.TenantID != nil {
+		m["tenant_id"] = *p.TenantID
 	}
 
 	return m

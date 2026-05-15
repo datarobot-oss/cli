@@ -64,6 +64,8 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 		Environment:       "US",
 		DataRobotInstance: "https://app.datarobot.com",
 		CommandKind:       "core",
+		OrganizationID:    ptrString("parakeet"),
+		TenantID:          ptrString("parakeet-jones"),
 	}
 
 	m := props.AsMap()
@@ -73,6 +75,8 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
 	assert.Equal(t, "core", m["command_kind"])
+	assert.Equal(t, "parakeet", m["organization_id"])
+	assert.Equal(t, "parakeet-jones", m["tenant_id"])
 	// Verify CWD is not included
 	assert.NotContains(t, m, "cwd")
 	// session_id, user_id, and device_id are top-level Amplitude fields, not event properties
@@ -193,6 +197,8 @@ func TestCollectCommonProperties_UserIDNilWhenUnauthenticated(t *testing.T) {
 	props := CollectCommonProperties()
 
 	assert.Nil(t, props.UserID)
+	assert.Nil(t, props.OrganizationID)
+	assert.Nil(t, props.TenantID)
 }
 
 func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) {
@@ -216,10 +222,12 @@ func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) 
 	hash := sha256.Sum256([]byte(token))
 	fingerprint := hex.EncodeToString(hash[:])
 
-	cache := cachedUserID{
+	cache := accountCache{
 		UID:              "cross-test-uid",
 		Endpoint:         "https://test.datarobot.com",
 		TokenFingerprint: fingerprint,
+		OrganizationID:   "parakeet",
+		TenantID:         "parakeet-jones",
 	}
 	data, err := json.Marshal(cache)
 
@@ -233,10 +241,16 @@ func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) 
 
 	require.NotNil(t, props.UserID)
 	assert.Equal(t, "cross-test-uid", *props.UserID)
+	require.NotNil(t, props.OrganizationID)
+	assert.Equal(t, "parakeet", *props.OrganizationID)
+	require.NotNil(t, props.TenantID)
+	assert.Equal(t, "parakeet-jones", *props.TenantID)
 
 	m := props.AsMap()
 
 	assert.NotContains(t, m, "user_id")
+	assert.Equal(t, "parakeet", m["organization_id"])
+	assert.Equal(t, "parakeet-jones", m["tenant_id"])
 }
 
 func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
