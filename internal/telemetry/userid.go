@@ -95,8 +95,15 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	// Check cache first to avoid making an API call
 	var cached accountCache
 
+	// We only consider the cache valid if the endpoint and
+	// token fingerprint match the current config, to prevent
+	// cross-contamination between different accounts or instances.
+	var hasMatchingCache bool
+
 	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
 		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
+			hasMatchingCache = true
+
 			if cached.isComplete() {
 				return accountInfoResult{
 					UID:            cached.UID,
@@ -117,7 +124,7 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 
 		// Network error on partial cache: return cached UID to preserve tracking
 		// (org/tenant fields remain empty if we couldn't fetch them)
-		if cached.hasValidUID() {
+		if hasMatchingCache && cached.hasValidUID() {
 			return accountInfoResult{
 				UID: cached.UID,
 			}, nil

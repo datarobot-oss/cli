@@ -477,6 +477,106 @@ func TestRetrieveAccountInfo_PartialCache_RefetchesAndUpgrades(t *testing.T) {
 	assert.Equal(t, "parakeet-jones", updated.TenantID)
 }
 
+func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create and immediately close server to force a network error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	serverURL := server.URL
+
+	server.Close()
+
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, serverURL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	// Simulate an old cache file that only had UID (no org/tenant).
+	partial := accountCache{
+		UID:              "cached-uid-123",
+		Endpoint:         serverURL,
+		TokenFingerprint: sha256Fingerprint("test-token"),
+		// OrganizationID and TenantID are intentionally empty (old cache format).
+	}
+	data, err := json.Marshal(partial)
+
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, userIDFileName), data, 0o600)
+
+	require.NoError(t, err)
+
+	// Call should succeed and return the cached UID even though the API call fails.
+	result, err := retrieveAccountInfo(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "cached-uid-123", result.UID)
+	// org/tenant will be empty since we couldn't fetch them.
+	assert.Empty(t, result.OrganizationID)
+	assert.Empty(t, result.TenantID)
+}
+
+func TestRetrieveAccountInfo_StaleCache_NetworkErrorReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create and immediately close server to force a network error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	serverURL := server.URL
+
+	server.Close()
+
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, serverURL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	// Stale cache: endpoint does not match the current config.
+	stale := accountCache{
+		UID:              "stale-uid-456",
+		Endpoint:         "https://old.example.com",
+		TokenFingerprint: sha256Fingerprint("test-token"),
+		OrganizationID:   "parakeet",
+		TenantID:         "parakeet-jones",
+	}
+	data, err := json.Marshal(stale)
+
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, userIDFileName), data, 0o600)
+
+	require.NoError(t, err)
+
+	// Call should fail because the stale cache does not match endpoint/token.
+	result, err := retrieveAccountInfo(context.Background())
+
+	require.Error(t, err)
+	assert.Empty(t, result.UID)
+	assert.Empty(t, result.OrganizationID)
+	assert.Empty(t, result.TenantID)
+}
+
 func resetTokenForTest(t *testing.T, token string) func() {
 	original := drapi.GetToken()
 
