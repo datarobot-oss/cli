@@ -62,6 +62,18 @@ func (c accountCache) hasValidUID() bool {
 	return c.UID != ""
 }
 
+func (c accountCache) matchesCurrentConfig() bool {
+	return c.Endpoint == currentEndpoint() && c.TokenFingerprint == tokenFingerprint()
+}
+
+func (c accountCache) toResult() accountInfoResult {
+	return accountInfoResult{
+		UID:            c.UID,
+		OrganizationID: c.OrganizationID,
+		TenantID:       c.TenantID,
+	}
+}
+
 type accountInfoResult struct {
 	UID            string
 	OrganizationID string
@@ -92,32 +104,11 @@ func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 }
 
 func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
-	// Check cache first to avoid making an API call
-	var cached accountCache
-
-	// We only consider the cache valid if the endpoint and
-	// token fingerprint match the current config, to prevent
-	// cross-contamination between different accounts or instances.
-	var hasMatchingCache bool
-
-	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
-		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
-			hasMatchingCache = true
-
-			if cached.isComplete() {
-				return accountInfoResult{
-					UID:            cached.UID,
-					OrganizationID: cached.OrganizationID,
-					TenantID:       cached.TenantID,
-				}, nil
-			}
-
-			// Partial cache: endpoint/token match but missing org/tenant.
-			// Fall through to re-fetch from API and upgrade the cache in place.
-		}
+	cached, hasMatchingCache := loadMatchingCache()
+	if hasMatchingCache && cached.isComplete() {
+		return cached.toResult(), nil
 	}
 
-	// Cache miss or partial; try to fetch from API
 	info, err := GetAccountInfo(ctx)
 	if err != nil {
 		log.Debugf("Failed to retrieve account info: %v", err)
@@ -142,6 +133,16 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	persistAccountInfo(result)
 
 	return result, nil
+}
+
+func loadMatchingCache() (accountCache, bool) {
+	var cached accountCache
+
+	if err := readJSONCacheFile(userIDFileName, &cached); err != nil {
+		return cached, false
+	}
+
+	return cached, cached.matchesCurrentConfig()
 }
 
 // derefOrEmpty returns the value of the string pointer, or an empty string if the pointer is nil.
