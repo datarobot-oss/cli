@@ -80,29 +80,30 @@ The following are attached to every event:
 
 These map to Amplitude's built-in fields and power native segmentation (version filters, OS breakdowns, language charts, etc.).
 
-| Field | Source |
-|---|---|
-| `user_id` | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty (anonymous) if unauthenticated or cache miss — see [User ID](#user-id) |
-| `device_id` | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above |
-| `session_id` | Unix millisecond timestamp generated once per process invocation — Amplitude uses this as the built-in Session ID for session-based analysis |
-| `app_version` | CLI version set at build time via ldflags |
-| `platform` | Always `"CLI"` |
-| `os_name` | OS name (e.g. `"macOS"`) |
-| `os_version` | OS version (e.g. `"15.7.5"`) |
-| `language` | User locale tag (e.g. `"en-US"`), via `go-locale`; Amplitude maps to a display language name |
-| `ip` | Always `"$remote"` — Amplitude resolves location server-side |
+| Field         | Source                                                                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_id`     | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty (anonymous) if unauthenticated or cache miss — see [User ID](#user-id) |
+| `device_id`   | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above                                                                                                                |
+| `session_id`  | Unix millisecond timestamp generated once per process invocation — Amplitude uses this as the built-in Session ID for session-based analysis                                                |
+| `app_version` | CLI version set at build time via ldflags                                                                                                                                                   |
+| `platform`    | Always `"CLI"`                                                                                                                                                                              |
+| `os_name`     | OS name (e.g. `"macOS"`)                                                                                                                                                                    |
+| `os_version`  | OS version (e.g. `"15.7.5"`)                                                                                                                                                                |
+| `language`    | User locale tag (e.g. `"en-US"`), via `go-locale`; Amplitude maps to a display language name                                                                                                |
+| `ip`          | Always `"$remote"` — Amplitude resolves location server-side                                                                                                                                |
 
 ### Event properties
 
-| Property | Source |
-| --- | --- |
-| `install_method` | Set at build time via ldflags (`release`, `source`, etc.) |
-| `os_arch` | CPU architecture from `runtime.GOARCH` |
-| `go_version` | Go runtime version (e.g. `go1.26.3`) from `runtime.Version()` |
-| `environment` | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL |
-| `datarobot_instance` | Base URL of the configured DataRobot instance |
-| `template_name` | Best-effort from `.datarobot/answers/` in the current repo |
-| `command_kind` | `"core"` or `"plugin"` — automatically set by the root command dispatcher |
+| Property             | Source                                                                    |
+| -------------------- | ------------------------------------------------------------------------- |
+| `install_method`     | Set at build time via ldflags (`release`, `source`, etc.)                 |
+| `os_arch`            | CPU architecture from `runtime.GOARCH`                                    |
+| `go_version`         | Go runtime version (e.g. `go1.26.3`) from `runtime.Version()`             |
+| `environment`        | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL                 |
+| `datarobot_instance` | Base URL of the configured DataRobot instance                             |
+| `template_name`      | Best-effort from `.datarobot/answers/` in the current repo                |
+| `command_kind`       | `"core"` or `"plugin"` — automatically set by the root command dispatcher |
+
 
 ## Event Wiring
 
@@ -114,10 +115,7 @@ Telemetry events are wired declaratively at command-construction time using a sm
 | `telemetry.TrackWith(cmd, extract)` | The command needs dynamic event properties from flags or args at firing time.   |
 | `telemetry.TrackPlugin(cmd, ver)`   | The command comes from a plugin. Adds `plugin_version` and sets `command_kind`. |
 
-Each helper sets a `"telemetry"` annotation on the cobra command. The root
-command's `PersistentPreRunE` calls `telemetry.EventFor(cmd, args)` which
-returns an Amplitude event with `EventType == cmd.CommandPath()` and any
-properties the registered extractor produced.
+Each helper sets a `"telemetry"` annotation on the cobra command. The root command's `PersistentPreRunE` calls `telemetry.EventFor(cmd, args)` which returns an Amplitude event with `EventType == cmd.CommandPath()` and any properties the registered extractor produced.
 
 This approach ensures:
 
@@ -146,20 +144,17 @@ PersistentPostRunE (root.go)
     └─ Flush telemetry (3-second timeout)
 ```
 
-`Client.Track` merges the `CommonProperties` map (which now includes
-`command_kind`) into every event before sending.
+`Client.Track` merges the `CommonProperties` map (which now includes `command_kind`) into every event before sending.
 
 ## How to add telemetry to a new command
 
 ### 1. Decide what (if anything) to extract
 
-Inspect the command's flags and args. Decide which (if any) should be
-exposed as event properties.
+Inspect the command's flags and args. Decide which (if any) should be exposed as event properties.
 
 ### 2. Wire the command at construction
 
-Find the function (or `init`) that builds the cobra command and add a
-`telemetry.Track*` call before returning.
+Find the function (or `init`) that builds the cobra command and add a `telemetry.Track*` call before returning.
 
 **Simple command, no extra properties:**
 
@@ -204,9 +199,7 @@ telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 
 ### 3. Add the command's path to the wiring test
 
-IMPORTANT: Edit `cmd/telemetry_wiring_test.go` and add the new `cmd.CommandPath()`
-to `expectedTrackedCommands`. The test will fail loudly if anyone later removes
-the wiring.
+IMPORTANT: Edit `cmd/telemetry_wiring_test.go` and add the new `cmd.CommandPath()` to `expectedTrackedCommands`. The test will fail loudly if anyone later removes the wiring.
 
 ### 4. Test it
 
@@ -225,14 +218,10 @@ dr foo --debug
 
 ## Plugin Commands
 
-Plugin commands are discovered at runtime by
-`cmd/plugin/discovery.go::createPluginCommand`, which calls
-`telemetry.TrackPlugin(cmd, manifest.Version)`. This:
+Plugin commands are discovered at runtime by `cmd/plugin/discovery.go::createPluginCommand`, which calls `telemetry.TrackPlugin(cmd, manifest.Version)`. This:
 
 - Sets the `"telemetry"` annotation so `EventFor` will fire an event.
-- Sets the `"telemetry:plugin"` annotation so `IsPluginCommand` returns
-  true, which causes the root to stamp `command_kind = "plugin"` on the
-  common properties.
+- Sets the `"telemetry:plugin"` annotation so `IsPluginCommand` returns true, which causes the root to stamp `command_kind = "plugin"` on the common properties.
 - Registers an extractor that adds `plugin_version` to the event.
 
 The event type is `cmd.CommandPath()` — for example `dr assist`. There is no longer a synthetic `"dr plugin execute"` event.
@@ -247,11 +236,11 @@ The Amplitude SDK emits its own internal logs (HTTP responses, client lifecycle,
 
 The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file (see [Logging](../../user-guide/configuration.md#logging)).
 
-| CLI flags | Amplitude INFO appears as | Visible on stderr? |
-|---|---|---|
-| *(default)* | DEBUG | No |
-| `--verbose` | INFO | Yes |
-| `--debug` | INFO | Yes |
+| CLI flags   | Amplitude INFO appears as | Visible on stderr? |
+| ----------- | ------------------------- | ------------------ |
+| *(default)* | DEBUG                     | No                 |
+| `--verbose` | INFO                      | Yes                |
+| `--debug`   | INFO                      | Yes                |
 
 WARN and ERROR messages from the SDK always pass through at their original level.
 
