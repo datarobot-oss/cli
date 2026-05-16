@@ -55,6 +55,13 @@ func (c accountCache) isComplete() bool {
 	return c.UID != "" && c.OrganizationID != ""
 }
 
+// hasValidUID returns true if the cache contains a non-empty UID.
+// We want to preserve the cached UID for tracking purposes, even if we
+// encounter a network error and can't fetch other identifiers.
+func (c accountCache) hasValidUID() bool {
+	return c.UID != ""
+}
+
 type accountInfoResult struct {
 	UID            string
 	OrganizationID string
@@ -107,6 +114,14 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	info, err := GetAccountInfo(ctx)
 	if err != nil {
 		log.Debugf("Failed to retrieve account info: %v", err)
+
+		// Network error on partial cache: return cached UID to preserve tracking
+		// (org/tenant fields remain empty if we couldn't fetch them)
+		if cached.hasValidUID() {
+			return accountInfoResult{
+				UID: cached.UID,
+			}, nil
+		}
 
 		return accountInfoResult{}, err
 	}
