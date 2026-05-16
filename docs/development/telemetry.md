@@ -254,12 +254,9 @@ task test -- ./internal/telemetry/... ./cmd/...
 
 Key tests:
 
-- `internal/telemetry/wire_test.go` — exercises `Track`, `TrackWith`,
-  `TrackPlugin`, `EventFor`, `IsPluginCommand`, `FirstArg`.
-- `internal/telemetry/properties_test.go` — exercises common properties
-  including `command_kind`.
-- `cmd/telemetry_wiring_test.go` — verifies that every expected core
-  command path is wired in the static command tree.
+- `internal/telemetry/wire_test.go` — exercises `Track`, `TrackWith`, `TrackPlugin`, `EventFor`, `IsPluginCommand`, `FirstArg`.
+- `internal/telemetry/properties_test.go` — exercises common properties including `command_kind`.
+- `cmd/telemetry_wiring_test.go` — verifies that every expected core command path is wired in the static command tree.
 
 ## Maintenance checklist
 
