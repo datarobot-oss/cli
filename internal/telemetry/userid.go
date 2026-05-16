@@ -171,6 +171,9 @@ func persistAccountInfo(result accountInfoResult) {
 
 
 func tokenFingerprint() string {
+	// don't use config.GetAPIKey() because it actually
+	// verifies the token. We only need to get the current
+	// known value.
 	token := viperx.GetString(config.DataRobotAPIKey)
 	if token == "" {
 		return ""
