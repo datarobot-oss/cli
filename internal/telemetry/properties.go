@@ -53,8 +53,8 @@ type CommonProperties struct {
 	Environment       string  // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string  // Base URL of configured DataRobot instance
 	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
-	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; pointer for graceful degradation on network failure (like UserID)
-	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legitimately absent for legacy/system accounts)
+	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
+	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
 }
 
 // DetectShell returns the name of the shell the CLI is running from.
