@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 )
@@ -85,7 +86,7 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Get DataRobot instance info from config
-	if baseURL := CurrentEndpoint(); baseURL != "" {
+	if baseURL := config.GetBaseURL(); baseURL != "" {
 		props.DataRobotInstance = baseURL
 		props.Environment = deriveEnvironment(baseURL)
 	}

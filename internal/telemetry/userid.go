@@ -63,7 +63,7 @@ func (c accountCache) hasValidUID() bool {
 }
 
 func (c accountCache) matchesCurrentConfig() bool {
-	return c.Endpoint == CurrentEndpoint() && c.TokenFingerprint == tokenFingerprint()
+	return c.Endpoint == config.GetBaseURL() && c.TokenFingerprint == tokenFingerprint()
 }
 
 func (c accountCache) toResult() accountInfoResult {
@@ -159,7 +159,7 @@ func derefOrEmpty(s *string) string {
 func persistAccountInfo(result accountInfoResult) {
 	cache := accountCache{
 		UID:              result.UID,
-		Endpoint:         CurrentEndpoint(),
+		Endpoint:         config.GetBaseURL(),
 		TokenFingerprint: tokenFingerprint(),
 		OrganizationID:   result.OrganizationID,
 		TenantID:         result.TenantID,
@@ -168,15 +168,7 @@ func persistAccountInfo(result accountInfoResult) {
 	writeJSONCacheFile(userIDFileName, cache)
 }
 
-func CurrentEndpoint() string {
-	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
-		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
-			return baseURL
-		}
-	}
 
-	return ""
-}
 
 func tokenFingerprint() string {
 	token := viperx.GetString(config.DataRobotAPIKey)
