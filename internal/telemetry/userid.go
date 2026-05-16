@@ -137,6 +137,7 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	return result, nil
 }
 
+// derefOrEmpty returns the value of the string pointer, or an empty string if the pointer is nil.
 func derefOrEmpty(s *string) string {
 	if s == nil {
 		return ""
