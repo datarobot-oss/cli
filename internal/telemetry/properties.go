@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 )
@@ -87,11 +85,9 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Get DataRobot instance info from config
-	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
-		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
-			props.DataRobotInstance = baseURL
-			props.Environment = deriveEnvironment(baseURL)
-		}
+	if baseURL := CurrentEndpoint(); baseURL != "" {
+		props.DataRobotInstance = baseURL
+		props.Environment = deriveEnvironment(baseURL)
 	}
 
 	// Retrieve account info (includes userID, orgID, tenantID)
@@ -123,6 +119,8 @@ func (p *CommonProperties) AsMap() map[string]any {
 	}
 
 	if p.OrganizationID != nil {
+		// should never be nil if UserID is present,
+		// but be defensive just in case
 		m["organization_id"] = *p.OrganizationID
 	}
 

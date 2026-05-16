@@ -63,7 +63,7 @@ func (c accountCache) hasValidUID() bool {
 }
 
 func (c accountCache) matchesCurrentConfig() bool {
-	return c.Endpoint == currentEndpoint() && c.TokenFingerprint == tokenFingerprint()
+	return c.Endpoint == CurrentEndpoint() && c.TokenFingerprint == tokenFingerprint()
 }
 
 func (c accountCache) toResult() accountInfoResult {
@@ -135,6 +135,8 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	return result, nil
 }
 
+// loadMatchingCache attempts to load the account cache from disk and returns it along with a boolean indicating
+// whether the cache matches the current configuration.
 func loadMatchingCache() (accountCache, bool) {
 	var cached accountCache
 
@@ -157,7 +159,7 @@ func derefOrEmpty(s *string) string {
 func persistAccountInfo(result accountInfoResult) {
 	cache := accountCache{
 		UID:              result.UID,
-		Endpoint:         currentEndpoint(),
+		Endpoint:         CurrentEndpoint(),
 		TokenFingerprint: tokenFingerprint(),
 		OrganizationID:   result.OrganizationID,
 		TenantID:         result.TenantID,
@@ -166,7 +168,7 @@ func persistAccountInfo(result accountInfoResult) {
 	writeJSONCacheFile(userIDFileName, cache)
 }
 
-func currentEndpoint() string {
+func CurrentEndpoint() string {
 	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
 		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
 			return baseURL
