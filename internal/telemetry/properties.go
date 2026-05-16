@@ -98,9 +98,7 @@ func CollectCommonProperties() *CommonProperties {
 	result, err := retrieveAccountInfo(context.Background())
 	if err == nil {
 		props.UserID = &result.UID
-		if result.OrganizationID != "" {
-			props.OrganizationID = &result.OrganizationID
-		}
+		props.OrganizationID = &result.OrganizationID
 
 		if result.TenantID != "" {
 			props.TenantID = &result.TenantID
