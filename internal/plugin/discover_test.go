@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -65,12 +66,17 @@ func (s *DiscoverTestSuite) SetupTest() {
 
 	s.tempDir, err = os.MkdirTemp("", "plugin-discover-test")
 	s.Require().NoError(err)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
 }
 
 func (s *DiscoverTestSuite) TearDownTest() {
 	if s.tempDir != "" {
 		_ = os.RemoveAll(s.tempDir)
 	}
+
+	viperx.Reset()
 }
 
 func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
@@ -144,11 +150,6 @@ func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 	s.Empty(plugins)
 }
 
-// TODO: This test is flaky under `go test -shuffle=on` / parallel execution
-// in the broader `task test` run, but passes cleanly when run in isolation.
-// Suspected: shared filesystem state between sub-tests in the suite, or
-// enumeration-order sensitivity in the manifest-name dedup logic.
-// Unrelated to the envbuilder/dotenv changes that surfaced this observation.
 func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	// Two different binary names, same manifest name
 	manifest := `{"name":"shared-name","version":"1.0.0","description":"Test"}`
@@ -157,6 +158,11 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 
 	seen := make(map[string]bool)
 	plugins, errs := discoverInDir(s.tempDir, seen)
+
+	// Log any errors for debugging
+	for _, err := range errs {
+		log.Debug("Deduplication test manifest error", "error", err)
+	}
 
 	// Only one should be registered (first one wins based on directory order)
 	s.Require().Len(plugins, 1, "Expected exactly one plugin when two share the same manifest name")

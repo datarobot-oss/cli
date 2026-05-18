@@ -34,6 +34,16 @@ Plugins are deduplicated by `manifest.name` (not by filename). If multiple binar
   - Set to `0s` to disable plugin discovery entirely.
 - Manifest retrieval is bounded by `plugin.manifest_timeout_ms` (default `500ms`).
 
+#### Testing notes
+
+The default `500ms` timeout is occasionally exceeded under heavy test load (e.g. `task test` with `-race`).
+Test suites that exercise plugin discovery should:
+
+1. Call `viperx.Reset()` in `SetupTest`/`TearDownTest` to prevent config-file or env-var
+   values from leaking into the manifest timeout.
+2. Set a generous test-specific timeout before discovering:
+   `viperx.Set("plugin.manifest_timeout_ms", 5000)` (5 seconds).
+
 ## Manifest protocol
 
 To be recognized as a plugin, the executable **must** respond to the special argument:
