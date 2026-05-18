@@ -65,7 +65,7 @@ func GetRequirements() ([]Prerequisite, []string, error) {
 func GetSelfRequirement() (Prerequisite, error) {
 	prerequisites, _, err := GetRequirements()
 	if err != nil {
-		return Prerequisite{}, nil
+		return Prerequisite{}, err
 	}
 
 	selfIndex := slices.IndexFunc(prerequisites, func(p Prerequisite) bool {
