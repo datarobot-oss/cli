@@ -19,7 +19,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -50,7 +49,6 @@ type CommonProperties struct {
 	Language          string // user language from LANG env var (e.g. "en_US")
 	GoVersion         string // Go runtime version (e.g. "go1.26.2")
 	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
-	Environment       string // US, EU, JP, or custom — from endpoint URL
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
 }
@@ -88,7 +86,6 @@ func CollectCommonProperties() *CommonProperties {
 	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
 		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
 			props.DataRobotInstance = baseURL
-			props.Environment = deriveEnvironment(baseURL)
 		}
 	}
 
@@ -110,7 +107,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"os_arch":            p.OSArch,
 		"go_version":         p.GoVersion,
 		"shell":              p.Shell,
-		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
 	}
@@ -123,23 +119,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 // invocation. Amplitude's top-level session_id field expects an integer value.
 func generateSessionID() int64 {
 	return time.Now().UnixMilli()
-}
-
-// deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)
-// from the endpoint URL.
-// TODO Is this really necessary? Can we remove this and just report
-// the base URL?
-func deriveEnvironment(baseURL string) string {
-	switch {
-	case strings.Contains(baseURL, "app.datarobot.com"):
-		return "US"
-	case strings.Contains(baseURL, "app.eu.datarobot.com"):
-		return "EU"
-	case strings.Contains(baseURL, "app.jp.datarobot.com"):
-		return "JP"
-	default:
-		return "custom"
-	}
 }
 
 const (

@@ -61,7 +61,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 		CLIVersion:        "v0.1.0",
 		InstallMethod:     "source",
 		Shell:             "zsh",
-		Environment:       "US",
 		DataRobotInstance: "https://app.datarobot.com",
 		CommandKind:       "core",
 	}
@@ -70,7 +69,6 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 
 	assert.Equal(t, "source", m["install_method"])
 	assert.Equal(t, "zsh", m["shell"])
-	assert.Equal(t, "US", m["environment"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
 	assert.Equal(t, "core", m["command_kind"])
 	// Verify CWD is not included
@@ -248,22 +246,6 @@ func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
 	// collected properties default to an empty string.
 	assert.Empty(t, m["command_kind"])
 	assert.Contains(t, m, "command_kind")
-}
-
-func TestDeriveEnvironment_US(t *testing.T) {
-	assert.Equal(t, "US", deriveEnvironment("https://app.datarobot.com"))
-}
-
-func TestDeriveEnvironment_EU(t *testing.T) {
-	assert.Equal(t, "EU", deriveEnvironment("https://app.eu.datarobot.com"))
-}
-
-func TestDeriveEnvironment_JP(t *testing.T) {
-	assert.Equal(t, "JP", deriveEnvironment("https://app.jp.datarobot.com"))
-}
-
-func TestDeriveEnvironment_Custom(t *testing.T) {
-	assert.Equal(t, "custom", deriveEnvironment("https://custom.internal.company.com"))
 }
 
 func TestCollectCommonProperties_GeneratesSessionID(t *testing.T) {
