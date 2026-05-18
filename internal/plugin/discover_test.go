@@ -67,6 +67,8 @@ func (s *DiscoverTestSuite) SetupTest() {
 	s.tempDir, err = os.MkdirTemp("", "plugin-discover-test")
 	s.Require().NoError(err)
 
+	// Reset viper and raise the manifest timeout so subprocess calls
+	// do not fail under the heavy load of -race / -shuffle test runs.
 	viperx.Reset()
 	viperx.Set("plugin.manifest_timeout_ms", 5000)
 }
@@ -76,6 +78,7 @@ func (s *DiscoverTestSuite) TearDownTest() {
 		_ = os.RemoveAll(s.tempDir)
 	}
 
+	// Clear any test-specific viper state so it does not leak to other suites.
 	viperx.Reset()
 }
 
@@ -159,7 +162,8 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	seen := make(map[string]bool)
 	plugins, errs := discoverInDir(s.tempDir, seen)
 
-	// Log any errors for debugging
+	// Log manifest-fetch errors so future test failures show *why* discovery
+	// returned zero plugins instead of only asserting *that* it did.
 	for _, err := range errs {
 		log.Debug("Deduplication test manifest error", "error", err)
 	}
