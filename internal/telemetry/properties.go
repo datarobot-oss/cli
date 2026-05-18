@@ -95,7 +95,10 @@ func CollectCommonProperties() *CommonProperties {
 	result, err := retrieveAccountInfo(context.Background())
 	if err == nil {
 		props.UserID = &result.UID
-		props.OrganizationID = &result.OrganizationID
+
+		if result.OrganizationID != "" {
+			props.OrganizationID = &result.OrganizationID
+		}
 
 		if result.TenantID != "" {
 			props.TenantID = &result.TenantID
@@ -120,8 +123,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 	}
 
 	if p.OrganizationID != nil {
-		// should never be nil if UserID is present,
-		// but be defensive just in case
 		m["organization_id"] = *p.OrganizationID
 	}
 

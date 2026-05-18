@@ -477,6 +477,10 @@ func TestRetrieveAccountInfo_PartialCache_RefetchesAndUpgrades(t *testing.T) {
 	assert.Equal(t, "parakeet-jones", updated.TenantID)
 }
 
+// This test verifies that if the account info API call fails, but we have a partial
+// account info cache, we still return the cached info rather than erroring out.
+// This is possible for users who have used CLI v0.2.64 or v0.2.65, and have then
+// upgraded to v0.2.66+ which introduced the new cache format with org/tenant fields.
 func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -525,6 +529,59 @@ func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
 	// org/tenant will be empty since we couldn't fetch them.
 	assert.Empty(t, result.OrganizationID)
 	assert.Empty(t, result.TenantID)
+}
+
+// This test verifies that if the account info API call fails, but we have a complete
+// account info cache (including org/tenant), we still return the cached info rather
+// than erroring out. This is possible for users using the CLI v0.2.66 or later.
+func TestRetrieveAccountInfo_CompleteCache_NetworkErrorReturnsAllCachedFields(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create and immediately close server to force a network error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	serverURL := server.URL
+
+	server.Close()
+
+	defer viperx.Reset()
+	defer resetTokenForTest(t, "test-token")()
+
+	viperx.Set(config.DataRobotURL, serverURL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	configDir := filepath.Join(tmpDir, "datarobot")
+
+	err := os.MkdirAll(configDir, 0o700)
+
+	require.NoError(t, err)
+
+	// Complete cache with all fields populated.
+	complete := accountCache{
+		UID:              "cached-uid-456",
+		Endpoint:         serverURL,
+		TokenFingerprint: sha256Fingerprint("test-token"),
+		OrganizationID:   "parakeet",
+		TenantID:         "parakeet-jones",
+	}
+	data, err := json.Marshal(complete)
+
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(configDir, userIDFileName), data, 0o600)
+
+	require.NoError(t, err)
+
+	// Call should succeed and return all cached fields despite API call failure.
+	result, err := retrieveAccountInfo(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "cached-uid-456", result.UID)
+	assert.Equal(t, "parakeet", result.OrganizationID)
+	assert.Equal(t, "parakeet-jones", result.TenantID)
 }
 
 func TestRetrieveAccountInfo_StaleCache_NetworkErrorReturnsError(t *testing.T) {

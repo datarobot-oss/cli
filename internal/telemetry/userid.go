@@ -56,8 +56,9 @@ func (c accountCache) isComplete() bool {
 }
 
 // hasValidUID returns true if the cache contains a non-empty UID.
-// We want to preserve the cached UID for tracking purposes, even if we
-// encounter a network error and can't fetch other identifiers.
+// When combined with matchesCurrentConfig(), this is used to decide whether
+// to fall back to cached values on network errors. We preserve all cached
+// fields for tracking purposes.
 func (c accountCache) hasValidUID() bool {
 	return c.UID != ""
 }
@@ -113,12 +114,10 @@ func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
 	if err != nil {
 		log.Debugf("Failed to retrieve account info: %v", err)
 
-		// Network error on partial cache: return cached UID to preserve tracking
-		// (org/tenant fields remain empty if we couldn't fetch them)
+		// Network error on matching cache: return all cached fields to preserve tracking.
+		// Even if the cache is partial (missing org/tenant), we return what we have.
 		if hasMatchingCache && cached.hasValidUID() {
-			return accountInfoResult{
-				UID: cached.UID,
-			}, nil
+			return cached.toResult(), nil
 		}
 
 		return accountInfoResult{}, err
