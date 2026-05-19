@@ -95,57 +95,70 @@ func NewClient(props *CommonProperties) *Client {
 	}
 }
 
+// omitEmptySharedProperties deletes shared property keys from props that have
+// empty-string values, per Amplitude's preference. This handles both extractors
+// that returned "" and keys registered via TrackWithShared that were not set.
+func omitEmptySharedProperties(props map[string]any) {
+	sharedPropKeys.Range(func(k, _ any) bool {
+		key, ok := k.(string)
+		if !ok {
+			return true
+		}
+
+		val, exists := props[key]
+		if !exists {
+			return true
+		}
+
+		s, ok := val.(string)
+		if ok && s == "" {
+			delete(props, key)
+		}
+
+		return true
+	})
+}
+
+// mergeCommonProperties merges common properties into the event and populates
+// Amplitude-specific fields from the CommonProperties.
+func (c *Client) mergeCommonProperties(event *types.Event) {
+	commonMap := c.props.AsMap()
+
+	// Merge event properties into common properties.
+	for k, v := range event.EventProperties {
+		commonMap[k] = v
+	}
+
+	// Per Amplitude's preference, omit shared properties with empty-string values.
+	omitEmptySharedProperties(commonMap)
+
+	event.EventProperties = commonMap
+
+	// Set UserID, DeviceID, and SessionID as top-level fields (required by Amplitude)
+	if c.props.UserID != nil {
+		event.UserID = *c.props.UserID
+	}
+
+	event.DeviceID = c.props.DeviceID
+	event.SessionID = int(c.props.SessionID)
+
+	// Populate Amplitude EventOptions for built-in segmentation
+	event.AppVersion = c.props.CLIVersion
+	event.Platform = "CLI" // Can't differentiate otherwise
+	event.OSName = c.props.OSName
+	event.OSVersion = c.props.OSVersion
+	event.Language = c.props.Language
+	event.IP = "$remote" // Use $remote to let Amplitude determine location from IP, rather than sending it from the client
+}
+
 // Track queues an event for delivery to Amplitude. Common properties from the
 // client's CommonProperties are merged into the event's EventProperties before
 // sending. UserID is set as a top-level event field (required by Amplitude).
 // This call is non-blocking. When the client is a no-op (dev builds),
 // the event is logged via log.Debug instead.
 func (c *Client) Track(event types.Event) {
-	// Merge common properties into event properties
 	if c.props != nil {
-		commonMap := c.props.AsMap()
-
-		// Merge event properties into common properties.
-		for k, v := range event.EventProperties {
-			commonMap[k] = v
-		}
-
-		// Per Amplitude's preference, omit shared properties that have empty-string values
-		// rather than sending them. This handles both:
-		// 1. Extractors that returned "" (e.g., FirstArg with no args)
-		// 2. Keys registered via TrackWithShared that were not set on this event
-		sharedPropKeys.Range(func(k, _ any) bool {
-			key, ok := k.(string)
-			if !ok {
-				return true
-			}
-
-			if val, exists := commonMap[key]; exists {
-				if s, ok := val.(string); ok && s == "" {
-					delete(commonMap, key)
-				}
-			}
-
-			return true
-		})
-
-		event.EventProperties = commonMap
-
-		// Set UserID, DeviceID, and SessionID as top-level fields (required by Amplitude)
-		if c.props.UserID != nil {
-			event.UserID = *c.props.UserID
-		}
-
-		event.DeviceID = c.props.DeviceID
-		event.SessionID = int(c.props.SessionID)
-
-		// Populate Amplitude EventOptions for built-in segmentation
-		event.AppVersion = c.props.CLIVersion
-		event.Platform = "CLI" // Can't differentiate otherwise
-		event.OSName = c.props.OSName
-		event.OSVersion = c.props.OSVersion
-		event.Language = c.props.Language
-		event.IP = "$remote" // Use $remote to let Amplitude determine location from IP, rather than sending it from the client
+		c.mergeCommonProperties(&event)
 	}
 
 	if c.amp == nil {

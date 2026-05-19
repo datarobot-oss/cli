@@ -50,14 +50,13 @@ var commandProperties sync.Map // map[*cobra.Command]PropExtractor
 
 // sharedExtractors stores PropExtractor closures registered via TrackWithShared.
 // Keyed by *cobra.Command pointer. Unlike commandProperties, the output of these
-// extractors is also seeded as empty strings on every other event so that
-// Amplitude treats the key as a single unified property across all event types.
+// extractors is also tracked by Client.Track to identify and omit empty-string values,
+// ensuring consistency across all event types.
 var sharedExtractors sync.Map // map[*cobra.Command]PropExtractor
 
 // sharedPropKeys accumulates the set of all property keys declared by any
-// TrackWithShared call. Client.Track uses this set to seed empty-string defaults
-// on events from commands that did not register a shared extractor, ensuring
-// Amplitude sees the key on every event.
+// TrackWithShared call. Client.Track uses this set to identify and omit empty-string
+// values across all events, per Amplitude's preference to send only set properties.
 var sharedPropKeys sync.Map // map[string]struct{}
 
 // Track marks cmd as one whose invocation should fire a telemetry event.
@@ -80,11 +79,9 @@ func TrackWith(cmd *cobra.Command, extract PropExtractor) {
 }
 
 // TrackWithShared is like TrackWith but marks the extracted properties as
-// "shared" — keys that should be present on every telemetry event, not just
-// the events fired by this specific command. The keys slice declares which
-// map keys the extractor will produce; Client.Track seeds those keys with an
-// empty string on all other events so Amplitude sees a single unified property
-// across all event types.
+// "shared" — keys that should be consistently handled across telemetry events.
+// The keys slice declares which map keys the extractor will produce; Client.Track
+// uses this set to identify and omit empty-string values, per Amplitude's preference.
 //
 // Use TrackWithShared for properties that span a logical group of commands
 // (e.g., task_name across dr task / dr run / dr task run). Use the regular
@@ -102,7 +99,7 @@ func TrackWithShared(cmd *cobra.Command, keys []string, extract PropExtractor) {
 	}
 
 	// Register each declared key in the global shared-key set so Client.Track
-	// can seed empty-string defaults on events that don't invoke this extractor.
+	// can identify them and omit empty-string values across all events.
 	for _, k := range keys {
 		sharedPropKeys.Store(k, struct{}{})
 	}
@@ -174,9 +171,8 @@ func EventFor(cmd *cobra.Command, args []string) (types.Event, bool) {
 	// Per-command properties (only appear on this event type).
 	mergeExtractorProps(&commandProperties, cmd, args, event.EventProperties)
 
-	// Shared properties. These keys are also seeded as empty strings on every
-	// other event by Client.Track, so Amplitude sees a single unified property
-	// across all event types rather than a per-event-type property.
+	// Shared properties. These keys are consistently handled across all event types
+	// by Client.Track, which omits empty-string values per Amplitude's preference.
 	mergeExtractorProps(&sharedExtractors, cmd, args, event.EventProperties)
 
 	return event, true

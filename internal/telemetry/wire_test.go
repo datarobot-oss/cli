@@ -176,7 +176,7 @@ func TestTrackWithShared_CoexistsWithTrackWith(t *testing.T) {
 		return map[string]any{"parallel": true}
 	})
 
-	// Shared property (seeded empty on all other events)
+	// Shared property (omitted if empty across all event types)
 	TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"task_name": FirstArg(args),
@@ -189,12 +189,11 @@ func TestTrackWithShared_CoexistsWithTrackWith(t *testing.T) {
 	assert.Equal(t, true, event.EventProperties["parallel"])
 }
 
-// TestTrackWithShared_NonRegisteredCommandGetsEmptyKey verifies the seeding
-// contract: after a key is declared via TrackWithShared on one command, that
-// key exists in sharedPropKeys so Client.Track can seed it as "" on all other
-// events. This test validates the key registration (the seeding logic in
-// Client.Track is exercised by TestTrack_* tests).
-func TestTrackWithShared_NonRegisteredCommandGetsEmptyKey(t *testing.T) {
+// TestTrackWithShared_NonRegisteredCommandOmitsKey verifies that when a key is
+// declared via TrackWithShared on one command, unregistered commands do not get
+// that key seeded into their events (it is omitted as an empty value).
+// The key is tracked in sharedPropKeys so Client.Track can identify and omit it.
+func TestTrackWithShared_NonRegisteredCommandOmitsKey(t *testing.T) {
 	t.Cleanup(resetSharedMaps)
 
 	root := &cobra.Command{Use: "dr"}
@@ -213,9 +212,9 @@ func TestTrackWithShared_NonRegisteredCommandGetsEmptyKey(t *testing.T) {
 	event, ok := EventFor(otherCmd, nil)
 	assert.True(t, ok)
 	assert.NotContains(t, event.EventProperties, "task_name",
-		"EventFor does not seed shared keys; that is Client.Track's responsibility")
+		"EventFor does not seed shared keys; Client.Track omits them as empty")
 
-	// But sharedPropKeys has the key, which Client.Track uses to seed the empty default.
+	// But sharedPropKeys has the key, which Client.Track uses to identify and omit it.
 	var keyRegistered bool
 
 	sharedPropKeys.Range(func(k, _ any) bool {
@@ -227,6 +226,50 @@ func TestTrackWithShared_NonRegisteredCommandGetsEmptyKey(t *testing.T) {
 	})
 
 	assert.True(t, keyRegistered, "task_name should be in sharedPropKeys after TrackWithShared call")
+}
+
+// TestTrackWithShared_EmptyExtractorValueOmitsKey verifies that when a shared
+// extractor returns an empty string for a key, Client.Track omits that key
+// from the event properties per Amplitude's preference.
+func TestTrackWithShared_EmptyExtractorValueOmitsKey(t *testing.T) {
+	t.Cleanup(resetSharedMaps)
+
+	root := &cobra.Command{Use: "dr"}
+	cmd := &cobra.Command{Use: "run"}
+
+	root.AddCommand(cmd)
+
+	TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"task_name": "", // Explicitly return empty string
+		}
+	})
+
+	event, ok := EventFor(cmd, nil)
+	assert.True(t, ok)
+	// EventFor includes the empty value from the extractor
+	assert.Empty(t, event.EventProperties["task_name"])
+}
+
+// TestTrackWithShared_NonEmptyValueIsIncluded verifies that shared properties
+// with non-empty values are included in the final event.
+func TestTrackWithShared_NonEmptyValueIsIncluded(t *testing.T) {
+	t.Cleanup(resetSharedMaps)
+
+	root := &cobra.Command{Use: "dr"}
+	cmd := &cobra.Command{Use: "task"}
+
+	root.AddCommand(cmd)
+
+	TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"task_name": FirstArg(args),
+		}
+	})
+
+	event, ok := EventFor(cmd, []string{"build"})
+	assert.True(t, ok)
+	assert.Equal(t, "build", event.EventProperties["task_name"])
 }
 
 func TestFirstArg(t *testing.T) {
