@@ -28,86 +28,149 @@ import (
 
 // AccountInfo represents the response from GET /api/v2/account/info/.
 type AccountInfo struct {
-	UID       string `json:"uid"`
-	Email     string `json:"email"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	TenantID  string `json:"tenantId"`
-	OrgID     string `json:"orgId"`
+	UID       string  `json:"uid"`
+	Email     string  `json:"email"`
+	FirstName string  `json:"firstName"`
+	LastName  string  `json:"lastName"`
+	TenantID  *string `json:"tenantId"`
+	OrgID     string  `json:"orgId"`
 }
 
-type cachedUserID struct {
+type accountCache struct {
 	UID              string `json:"uid"`
 	Endpoint         string `json:"endpoint"`
 	TokenFingerprint string `json:"token_fingerprint"`
+	OrganizationID   string `json:"organization_id"`
+	TenantID         string `json:"tenant_id"`
 }
 
-// GetUserID fetches the DataRobot user uid from GET /api/v2/account/info/.
-// It returns the uid string on success, or ("", error) on non-200 status,
+// isComplete returns true when the cache contains all account fields
+// that are expected to be present. Old cache files (from CLI versions
+// before organization_id/tenant_id were added) have OrganizationID == ""
+// and are treated as partial, triggering a re-fetch.
+//
+// tenant_id may legitimately be null/empty from the API for legacy users
+// or system accounts, so we do not include it in the completeness check.
+func (c accountCache) isComplete() bool {
+	return c.UID != "" && c.OrganizationID != ""
+}
+
+// hasValidUID returns true if the cache contains a non-empty UID.
+// When combined with matchesCurrentConfig(), this is used to decide whether
+// to fall back to cached values on network errors. We preserve all cached
+// fields for tracking purposes.
+func (c accountCache) hasValidUID() bool {
+	return c.UID != ""
+}
+
+func (c accountCache) matchesCurrentConfig() bool {
+	return c.Endpoint == config.GetBaseURL() && c.TokenFingerprint == tokenFingerprint()
+}
+
+func (c accountCache) toResult() accountInfoResult {
+	return accountInfoResult{
+		UID:            c.UID,
+		OrganizationID: c.OrganizationID,
+		TenantID:       c.TenantID,
+	}
+}
+
+type accountInfoResult struct {
+	UID            string
+	OrganizationID string
+	TenantID       string
+}
+
+// GetAccountInfo fetches the DataRobot account info from GET /api/v2/account/info/.
+// It returns the full AccountInfo on success, or (*AccountInfo, error) on non-200 status,
 // empty uid, or network failure.
-func GetUserID(_ context.Context) (string, error) {
+func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 	url, err := config.GetEndpointURL("/api/v2/account/info/")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var info AccountInfo
 
 	//nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
 	if err := drapi.GetJSON(url, "", &info); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if info.UID == "" {
-		return "", errors.New("empty uid in account info response")
+		return nil, errors.New("empty uid in account info response")
 	}
 
-	return info.UID, nil
+	return &info, nil
 }
 
-func retrieveUserID(ctx context.Context) (string, error) {
-	// Check cache first to avoid making an API call
-	var cached cachedUserID
-
-	if err := readJSONCacheFile(userIDFileName, &cached); err == nil {
-		if cached.Endpoint == currentEndpoint() && cached.TokenFingerprint == tokenFingerprint() {
-			return cached.UID, nil
-		}
+func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
+	cached, hasMatchingCache := loadMatchingCache()
+	if hasMatchingCache && cached.isComplete() {
+		return cached.toResult(), nil
 	}
 
-	// Cache miss or invalid; try to fetch from API
-	apiUserID, err := GetUserID(ctx)
+	info, err := GetAccountInfo(ctx)
 	if err != nil {
-		log.Debugf("Failed to retrieve user ID: %v", err)
-		return "", err
+		log.Debugf("Failed to retrieve account info: %v", err)
+
+		// Network error on matching cache: return all cached fields to preserve tracking.
+		// Even if the cache is partial (missing org/tenant), we return what we have.
+		if hasMatchingCache && cached.hasValidUID() {
+			return cached.toResult(), nil
+		}
+
+		return accountInfoResult{}, err
 	}
 
-	persistUserID(apiUserID)
+	result := accountInfoResult{
+		UID:            info.UID,
+		OrganizationID: info.OrgID,
+		TenantID:       derefOrEmpty(info.TenantID),
+	}
 
-	return apiUserID, nil
+	persistAccountInfo(result)
+
+	return result, nil
 }
 
-func persistUserID(uid string) {
-	cache := cachedUserID{
-		UID:              uid,
-		Endpoint:         currentEndpoint(),
+// loadMatchingCache attempts to load the account cache from disk and returns it along with a boolean indicating
+// whether the cache matches the current configuration.
+func loadMatchingCache() (accountCache, bool) {
+	var cached accountCache
+
+	if err := readJSONCacheFile(userIDFileName, &cached); err != nil {
+		return cached, false
+	}
+
+	return cached, cached.matchesCurrentConfig()
+}
+
+// derefOrEmpty returns the value of the string pointer, or an empty string if the pointer is nil.
+func derefOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
+}
+
+func persistAccountInfo(result accountInfoResult) {
+	cache := accountCache{
+		UID:              result.UID,
+		Endpoint:         config.GetBaseURL(),
 		TokenFingerprint: tokenFingerprint(),
+		OrganizationID:   result.OrganizationID,
+		TenantID:         result.TenantID,
 	}
 
 	writeJSONCacheFile(userIDFileName, cache)
 }
 
-func currentEndpoint() string {
-	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
-		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
-			return baseURL
-		}
-	}
-
-	return ""
-}
-
 func tokenFingerprint() string {
+	// don't use config.GetAPIKey() because it actually
+	// verifies the token. We only need to get the current
+	// known value.
 	token := viperx.GetString(config.DataRobotAPIKey)
 	if token == "" {
 		return ""

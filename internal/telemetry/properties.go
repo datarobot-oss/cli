@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
 )
@@ -39,7 +38,7 @@ type CommonProperties struct {
 	// top-level fields
 	SessionID int64   // Unix ms timestamp, unique per process invocation
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
-	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil if unavailable
+	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	// event properties
 	CLIVersion        string // CLI version from version.Version (ldflags)
 	InstallMethod     string // Build distribution method (ldflags)
@@ -51,6 +50,8 @@ type CommonProperties struct {
 	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
 	DataRobotInstance string // Base URL of configured DataRobot instance
 	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
+	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
 }
 
 // DetectShell returns the name of the shell the CLI is running from.
@@ -83,16 +84,22 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Get DataRobot instance info from config
-	if endpoint := viperx.GetString(config.DataRobotURL); endpoint != "" {
-		if baseURL, err := config.SchemeHostOnly(endpoint); err == nil {
-			props.DataRobotInstance = baseURL
-		}
+	if baseURL := config.GetBaseURL(); baseURL != "" {
+		props.DataRobotInstance = baseURL
 	}
 
-	// Retrieve the userID
-	uid, err := retrieveUserID(context.Background())
+	// Retrieve account info (includes userID, orgID, tenantID)
+	result, err := retrieveAccountInfo(context.Background())
 	if err == nil {
-		props.UserID = &uid
+		props.UserID = &result.UID
+
+		if result.OrganizationID != "" {
+			props.OrganizationID = &result.OrganizationID
+		}
+
+		if result.TenantID != "" {
+			props.TenantID = &result.TenantID
+		}
 	}
 
 	return props
@@ -109,6 +116,14 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"shell":              p.Shell,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
+	}
+
+	if p.OrganizationID != nil {
+		m["organization_id"] = *p.OrganizationID
+	}
+
+	if p.TenantID != nil {
+		m["tenant_id"] = *p.TenantID
 	}
 
 	return m
