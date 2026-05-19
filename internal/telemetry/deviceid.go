@@ -24,9 +24,7 @@ import (
 func getMachineID() string {
 	id, err := machineid.ProtectedID("dr")
 	if err != nil {
-		// Errors at this point will cause telemetry to be less effective
-		// or to fail outright, depending on if we have user-id.
-		log.Warn("Failed to get machine ID:", err)
+		log.Debug("Failed to get machine ID:", err)
 		return ""
 	}
 
