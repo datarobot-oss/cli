@@ -134,6 +134,25 @@ func IsPluginCommand(cmd *cobra.Command) bool {
 	return ok
 }
 
+// mergeExtractorProps loads a PropExtractor from store keyed by cmd, invokes
+// it, and merges the resulting properties into props. It is a no-op when no
+// extractor is registered for cmd.
+func mergeExtractorProps(store *sync.Map, cmd *cobra.Command, args []string, props map[string]any) {
+	v, ok := store.Load(cmd)
+	if !ok {
+		return
+	}
+
+	extract, ok := v.(PropExtractor)
+	if !ok || extract == nil {
+		return
+	}
+
+	for k, val := range extract(cmd, args) {
+		props[k] = val
+	}
+}
+
 // EventFor returns the telemetry event to fire for cmd, if any. It is the
 // single entry point used by the root command to translate a command
 // invocation into an Amplitude event. Returns (_, false) when cmd has no
@@ -152,24 +171,13 @@ func EventFor(cmd *cobra.Command, args []string) (types.Event, bool) {
 		EventProperties: map[string]any{},
 	}
 
-	if v, ok := commandProperties.Load(cmd); ok {
-		if extract, ok := v.(PropExtractor); ok && extract != nil {
-			for k, val := range extract(cmd, args) {
-				event.EventProperties[k] = val
-			}
-		}
-	}
+	// Per-command properties (only appear on this event type).
+	mergeExtractorProps(&commandProperties, cmd, args, event.EventProperties)
 
-	// Merge shared extractor output. Shared properties are also seeded as empty
-	// strings on every other event by Client.Track, so Amplitude treats the key
-	// as a single unified property across all event types.
-	if v, ok := sharedExtractors.Load(cmd); ok {
-		if extract, ok := v.(PropExtractor); ok && extract != nil {
-			for k, val := range extract(cmd, args) {
-				event.EventProperties[k] = val
-			}
-		}
-	}
+	// Shared properties. These keys are also seeded as empty strings on every
+	// other event by Client.Track, so Amplitude sees a single unified property
+	// across all event types rather than a per-event-type property.
+	mergeExtractorProps(&sharedExtractors, cmd, args, event.EventProperties)
 
 	return event, true
 }
