@@ -169,6 +169,11 @@ var globalClient *Client
 // SetGlobal stores c as the global telemetry client. Must be called during
 // PersistentPreRunE before any os.Exit-based code paths can be reached.
 func SetGlobal(c *Client) {
+	if c == nil {
+		// failsafe to make sure we don't screw up in dev or testing
+		panic("telemetry.SetGlobal: client cannot be nil")
+	}
+
 	globalClient = c
 }
 
@@ -177,9 +182,12 @@ func SetGlobal(c *Client) {
 // delivered even when cobra's PersistentPostRunE hook is bypassed (e.g. when
 // RunE returns an error, or when a command calls os.Exit directly).
 func Exit(code int) {
-	if globalClient != nil {
-		globalClient.Flush(3 * time.Second)
+	if globalClient == nil {
+		// failsafe to make sure we don't screw up in dev or testing
+		panic("telemetry.Exit called before SetGlobal - PersistentPreRunE must run first")
 	}
+
+	globalClient.Flush(3 * time.Second)
 
 	os.Exit(code)
 }
