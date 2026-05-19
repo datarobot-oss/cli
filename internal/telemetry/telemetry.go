@@ -104,6 +104,25 @@ func (c *Client) Track(event types.Event) {
 	// Merge common properties into event properties
 	if c.props != nil {
 		commonMap := c.props.AsMap()
+
+		// Seed all shared property keys as empty strings so Amplitude sees a
+		// single unified property across all event types. Commands that register
+		// a shared extractor via TrackWithShared populate these keys in their
+		// EventProperties (set by EventFor), which override the empty defaults
+		// in the merge below.
+		sharedPropKeys.Range(func(k, _ any) bool {
+			key, ok := k.(string)
+			if !ok {
+				return true
+			}
+
+			if _, exists := commonMap[key]; !exists {
+				commonMap[key] = ""
+			}
+
+			return true
+		})
+
 		for k, v := range event.EventProperties {
 			commonMap[k] = v
 		}
