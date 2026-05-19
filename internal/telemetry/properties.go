@@ -19,7 +19,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -41,17 +40,16 @@ type CommonProperties struct {
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	// event properties
-	CLIVersion        string  // CLI version from version.Version (ldflags)
-	InstallMethod     string  // Build distribution method (ldflags)
-	OSName            string  // human-readable OS name from runtime.GOOS
-	OSArch            string  // CPU architecture from runtime.GOARCH
-	OSVersion         string  // OS release version string, detected at startup
-	Language          string  // user language from LANG env var (e.g. "en_US")
-	GoVersion         string  // Go runtime version (e.g. "go1.26.2")
-	Shell             string  // Name of the user's shell (e.g. "zsh", "bash", "powershell")
-	Environment       string  // US, EU, JP, or custom — from endpoint URL
-	DataRobotInstance string  // Base URL of configured DataRobot instance
-	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
+	CLIVersion        string // CLI version from version.Version (ldflags)
+	InstallMethod     string // Build distribution method (ldflags)
+	OSName            string // human-readable OS name from runtime.GOOS
+	OSArch            string // CPU architecture from runtime.GOARCH
+	OSVersion         string // OS release version string, detected at startup
+	Language          string // user language from LANG env var (e.g. "en_US")
+	GoVersion         string // Go runtime version (e.g. "go1.26.2")
+	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
+	DataRobotInstance string // Base URL of configured DataRobot instance
+	CommandKind       string // "core" or "plugin", set by the root command after dispatch
 	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
 }
@@ -88,7 +86,6 @@ func CollectCommonProperties() *CommonProperties {
 	// Get DataRobot instance info from config
 	if baseURL := config.GetBaseURL(); baseURL != "" {
 		props.DataRobotInstance = baseURL
-		props.Environment = deriveEnvironment(baseURL)
 	}
 
 	// Retrieve account info (includes userID, orgID, tenantID)
@@ -117,7 +114,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"os_arch":            p.OSArch,
 		"go_version":         p.GoVersion,
 		"shell":              p.Shell,
-		"environment":        p.Environment,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
 	}
@@ -138,23 +134,6 @@ func (p *CommonProperties) AsMap() map[string]any {
 // invocation. Amplitude's top-level session_id field expects an integer value.
 func generateSessionID() int64 {
 	return time.Now().UnixMilli()
-}
-
-// deriveEnvironment determines the DataRobot environment (US/EU/JP/custom)
-// from the endpoint URL.
-// TODO Is this really necessary? Can we remove this and just report
-// the base URL?
-func deriveEnvironment(baseURL string) string {
-	switch {
-	case strings.Contains(baseURL, "app.datarobot.com"):
-		return "US"
-	case strings.Contains(baseURL, "app.eu.datarobot.com"):
-		return "EU"
-	case strings.Contains(baseURL, "app.jp.datarobot.com"):
-		return "JP"
-	default:
-		return "custom"
-	}
 }
 
 const (

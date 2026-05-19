@@ -61,6 +61,7 @@ type Model struct {
 	depsToInstall        []tools.Prerequisite // Deps to install when user confirms
 	needTemplateSetup    bool                 // Whether we need to run template setup after quitting
 	repoRoot             string
+	telemetry            telemetryCapture
 }
 
 type stepCompleteMsg struct {
@@ -83,11 +84,24 @@ type stepErrorMsg struct {
 type depsMissingMsg struct {
 	prerequisites []tools.Prerequisite
 	message       string
+	checkResult   tools.CheckResult
 }
 
 type depsInstallCompleteMsg struct {
-	err    error
-	output string
+	err       error
+	output    string
+	installed []string
+}
+
+// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails
+type telemetryCapture struct {
+	validationViolations []string
+	missingMsgs          []string
+	wrongVersionMsgs     []string
+	installSuccess       []string
+	installError         string
+	yesFlag              bool
+	nonInteractive       bool
 }
 
 // err messages used in the start command.
@@ -116,6 +130,10 @@ func NewStartModel(opts Options) Model {
 		},
 		opts:     opts,
 		repoRoot: repoRoot,
+		telemetry: telemetryCapture{
+			yesFlag:        opts.AnswerYes,
+			nonInteractive: viperx.GetBool("yes"),
+		},
 	}
 }
 
@@ -204,9 +222,9 @@ func (m Model) execInstallDeps() tea.Cmd {
 	return func() tea.Msg {
 		var buf bytes.Buffer
 
-		err := dependencies.InstallPrerequisites(&buf, m.depsToInstall)
+		installed, err := dependencies.InstallPrerequisites(&buf, m.depsToInstall)
 
-		return depsInstallCompleteMsg{err: err, output: buf.String()}
+		return depsInstallCompleteMsg{err: err, output: buf.String(), installed: installed}
 	}
 }
 
@@ -322,8 +340,11 @@ func (m Model) handleStepComplete(msg stepCompleteMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.depsToInstall = msg.prerequisites
 	m.stepCompleteMessage = msg.message
+	m.telemetry.validationViolations = msg.checkResult.ValidationViolations
+	m.telemetry.missingMsgs = msg.checkResult.MissingMsgs
+	m.telemetry.wrongVersionMsgs = msg.checkResult.WrongVersionMsgs
 
-	if viperx.GetBool("yes") {
+	if m.opts.AnswerYes || viperx.GetBool("yes") {
 		return m, m.execInstallDeps()
 	}
 
@@ -333,7 +354,10 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDepsInstallComplete(msg depsInstallCompleteMsg) (tea.Model, tea.Cmd) {
+	m.telemetry.installSuccess = msg.installed
+
 	if msg.err != nil {
+		m.telemetry.installError = msg.err.Error()
 		m.err = msg.err
 
 		return m, tea.Quit
@@ -511,18 +535,19 @@ func checkPrerequisites(m *Model) tea.Msg {
 		return stepCompleteMsg{message: "Recent successful dependency check detected, skipping prerequisites check...\n"}
 	}
 
-	missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
+	result := tools.CheckPrerequisites()
 
-	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {
+	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
 		return stepCompleteMsg{}
 	}
 
-	prerequisites := append(missingTools, wrongVersionTools...)
-	message := tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs)
+	prerequisites := append(result.MissingTools, result.WrongVersionTools...)
+	message := tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs)
 
 	return depsMissingMsg{
 		prerequisites: prerequisites,
 		message:       message,
+		checkResult:   result,
 	}
 }
 
@@ -593,7 +618,7 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		// Found a quickstart script
 		// Don't wait for confirmation if '--yes' flag is set or
 		// DATAROBOT_CLI_NON_INTERACTIVE env var is true
-		waitForConfirmation := !viperx.GetBool("yes")
+		waitForConfirmation := !m.opts.AnswerYes && !viperx.GetBool("yes")
 
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),

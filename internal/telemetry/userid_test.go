@@ -634,7 +634,7 @@ func TestRetrieveAccountInfo_StaleCache_NetworkErrorReturnsError(t *testing.T) {
 	assert.Empty(t, result.TenantID)
 }
 
-func resetTokenForTest(t *testing.T, token string) func() {
+func resetTokenForTest(_ *testing.T, token string) func() {
 	original := drapi.GetToken()
 
 	drapi.SetToken(token)

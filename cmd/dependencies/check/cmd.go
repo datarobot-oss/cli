@@ -18,28 +18,39 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
+	var result tools.CheckResult
+
 	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "✅ Check template dependencies",
-		RunE:  RunE,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			result = tools.CheckPrerequisites()
+
+			if len(result.MissingMsgs) > 0 || len(result.WrongVersionMsgs) > 0 {
+				cmd.SilenceUsage = true
+
+				return errors.New(tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs))
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
+
+			return nil
+		},
 	}
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"missing_deps":          result.MissingMsgs,
+			"wrong_version_deps":    result.WrongVersionMsgs,
+			"validation_violations": result.ValidationViolations,
+		}
+	})
 
 	return cmd
-}
-
-func RunE(cmd *cobra.Command, _ []string) error {
-	_, _, missingMsgs, wrongVersionMsgs := tools.CheckPrerequisites()
-	if len(missingMsgs) > 0 || len(wrongVersionMsgs) > 0 {
-		cmd.SilenceUsage = true
-		return errors.New(tools.PrerequisitesMsg(missingMsgs, wrongVersionMsgs))
-	}
-
-	fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
-
-	return nil
 }

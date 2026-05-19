@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
@@ -111,37 +112,46 @@ func CheckPrerequisite(name string) error {
 	return nil
 }
 
+// CheckResult holds the outcome of a CheckPrerequisites call.
+type CheckResult struct {
+	MissingTools         []Prerequisite
+	WrongVersionTools    []Prerequisite
+	MissingMsgs          []string
+	WrongVersionMsgs     []string
+	ValidationViolations []string
+}
+
 // CheckPrerequisites returns lists of missing prerequisites, wrongVersion prerequisites, and error messages to display to the user.
-func CheckPrerequisites() ([]Prerequisite, []Prerequisite, []string, []string) {
-	prerequisites, err := GetRequirements()
+func CheckPrerequisites() CheckResult {
+	prerequisites, violations, err := GetRequirements()
 	if err == nil {
 		RequiredTools = prerequisites
 	}
 
-	var (
-		missingTools      []Prerequisite
-		wrongVersionTools []Prerequisite
-		missingMsgs       []string
-		wrongVersionMsgs  []string
-	)
+	var result CheckResult
+
+	result.ValidationViolations = violations
 
 	for _, tool := range RequiredTools {
 		if !isInstalled(tool.Command) {
-			missingTools = append(missingTools, tool)
-			missingMsgs = append(missingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))
+			result.MissingTools = append(result.MissingTools, tool)
+			result.MissingMsgs = append(result.MissingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))
 		} else if ver, ok := isVersionInstalled(tool); !ok {
-			wrongVersionTools = append(wrongVersionTools, tool)
-			wrongVersionMsgs = append(wrongVersionMsgs, ver)
+			result.WrongVersionTools = append(result.WrongVersionTools, tool)
+			result.WrongVersionMsgs = append(result.WrongVersionMsgs, ver)
 		}
 	}
 
-	if len(missingMsgs) == 0 && len(wrongVersionMsgs) == 0 {
+	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
 		if repoRoot, err := repo.FindRepoRoot(); err == nil {
-			_ = state.UpdateAfterSuccessDepsCheck(repoRoot)
+			err := state.UpdateAfterSuccessDepsCheck(repoRoot)
+			if err != nil {
+				log.Errorf("Failed to update state AfterSuccessDepsCheck: %v", err)
+			}
 		}
 	}
 
-	return missingTools, wrongVersionTools, missingMsgs, wrongVersionMsgs
+	return result
 }
 
 // PrerequisitesMsg formats the message to display to the user about missing/wrong-version prerequisites.

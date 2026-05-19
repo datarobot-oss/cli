@@ -25,26 +25,31 @@ import (
 	"github.com/datarobot/cli/internal/tools"
 )
 
-func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) error {
-	// Install prerequisites sequentially via ExecuteShLine(), stopping on the first failure
+// InstallPrerequisites installs each prerequisite sequentially. It returns the names
+// of tools successfully installed before any failure, plus the first error encountered.
+func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]string, error) {
+	var installed []string
+
 	for _, prerequisite := range prerequisites {
 		installCmd, err := prerequisite.PlatformInstallCommand()
 		if err != nil {
-			return err
+			return installed, err
 		}
 
 		fmt.Fprintf(w, "📦 Installing %s...\n", prerequisite.Name)
 
 		exitCode, err := ExecuteShLine(installCmd, w)
 		if err != nil {
-			return fmt.Errorf("failed to start install for %q: %w\n  command: %s", prerequisite.Name, err, installCmd)
+			return installed, fmt.Errorf("failed to start install for %q: %w\n  command: %s", prerequisite.Name, err, installCmd)
 		}
 
 		if exitCode != 0 {
-			return fmt.Errorf("install failed for %q (exit code %d)\n  Please run manually: %s\n  Or check %s", prerequisite.Name, exitCode, installCmd, prerequisite.URL)
+			return installed, fmt.Errorf("install failed for %q (exit code %d)\n  Please run manually: %s\n  Or check %s", prerequisite.Name, exitCode, installCmd, prerequisite.URL)
 		}
 
 		fmt.Fprintf(w, "✅ %s installed\n", prerequisite.Name)
+
+		installed = append(installed, prerequisite.Name)
 	}
 
 	fmt.Fprintf(w, "\n✅ All dependencies installed successfully.\n")
@@ -55,7 +60,7 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) error
 		_ = state.UpdateAfterSuccessDepsCheck(repoRoot)
 	}
 
-	return nil
+	return installed, nil
 }
 
 // ExecuteShLine executes shellCmd via sh -c, streaming stdout and stderr

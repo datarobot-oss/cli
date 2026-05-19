@@ -29,13 +29,13 @@ jobs:
             const isFork = pr.data.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo;
             core.setOutput('is_fork', isFork);
 
-            // Check if commenter is a maintainer (write or admin permission)
+            // Check if commenter is a maintainer (write/maintain/admin permission)
             const permission = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
               username: context.actor
             });
-            const isMaintainer = ['write', 'admin'].includes(permission.data.permission);
+            const isMaintainer = ['write', 'maintain', 'admin'].includes(permission.data.permission);
             core.setOutput('is_maintainer', isMaintainer);
 
             return { isFork, isMaintainer };
@@ -206,7 +206,7 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: '❌ **Insufficient permissions**\n\n' +
-                    'Only maintainers with write or admin access can skip smoke tests.'
+                    'Only maintainers with write/maintain/admin access can skip smoke tests.'
             });
 
       - name: Handle unauthorized fork smoke test attempt
@@ -231,6 +231,6 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: '❌ **Insufficient permissions**\n\n' +
-                    'Only maintainers with write or admin access can approve fork PRs for smoke tests.\n\n' +
+                    'Only maintainers with write/maintain/admin access can approve fork PRs for smoke tests.\n\n' +
                     'Please wait for a maintainer to review and approve.'
             });
