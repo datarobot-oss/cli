@@ -96,11 +96,11 @@ func NewClient(props *CommonProperties) *Client {
 }
 
 // omitNilSharedProperties deletes shared property keys from props that have nil values.
-// This handles both extractors that returned "" and keys registered via TrackWithShared that were not set.
+// Extractors should return nil for properties that are not set or available.
+// This prevents unset properties from appearing in Amplitude's (none) bucket.
+//
+// Reference: https://amplitude.com/docs/data/troubleshooting/missing-data#why-does-my-event-property-appear-in-the-none-bucket
 func omitNilSharedProperties(props map[string]any) {
-	// Amplitude recommends not sending properties with empty-string or
-	// null values, as there is special behavior for both.
-	// Ref: https://amplitude.com/docs/data/troubleshooting/missing-data#why-does-my-event-property-appear-in-the-none-bucket
 	sharedPropKeys.Range(func(k, _ any) bool {
 		key, ok := k.(string)
 		if !ok {
@@ -112,7 +112,7 @@ func omitNilSharedProperties(props map[string]any) {
 			return true
 		}
 
-		// Delete only if the value is explicitly nil, i.e. not set
+		// Delete only if the value is explicitly nil (not set)
 		if val == nil {
 			delete(props, key)
 		}
@@ -131,7 +131,8 @@ func (c *Client) mergeCommonProperties(event *types.Event) {
 		commonMap[k] = v
 	}
 
-	// Per Amplitude's preference, omit shared properties with nil values.
+	// Omit shared properties with nil values before sending to Amplitude.
+	// This prevents unset properties from appearing in Amplitude's (none) bucket.
 	omitNilSharedProperties(commonMap)
 
 	event.EventProperties = commonMap
