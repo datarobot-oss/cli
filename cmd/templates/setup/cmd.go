@@ -46,6 +46,8 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	// TODO: CFX-6052 — migrate to TrackWithShared for template_name, template_id, template_version
+	// once those properties are available from the TUI model's telemetry capture.
 	telemetry.Track(Cmd)
 }
 
