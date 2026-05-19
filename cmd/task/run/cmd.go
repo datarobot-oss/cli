@@ -175,7 +175,10 @@ Examples:
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+	// task_name is a shared property so Amplitude sees a single unified
+	// property key across dr run, dr task, and dr task run rather than
+	// three separate per-event-type properties.
+	telemetry.TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"task_name": telemetry.FirstArg(args),
 		}
