@@ -114,12 +114,12 @@ Telemetry events are wired declaratively at command-construction time using a sm
 | `telemetry.TrackWith(cmd, extract)` | The command needs dynamic event properties from flags or args at firing time. |
 | `telemetry.TrackPlugin(cmd, ver)` | The command comes from a plugin. Adds `plugin_version` and sets `command_kind`. |
 
-Each helper sets a `"telemetry"` annotation on the cobra command. The root command's `PersistentPreRunE` calls `telemetry.EventFor(cmd, args)` which returns an Amplitude event with `EventType == cmd.CommandPath()` and any properties the registered extractor produced.
+Each helper sets a `"telemetry"` annotation on the cobra command. After RunE completes, [`cobra.OnFinalize`](https://pkg.go.dev/github.com/spf13/cobra#OnFinalize) calls `telemetry.EventFor(cmd, args)`, which returns an Amplitude event with `EventType == cmd.CommandPath()` and any properties the registered extractor produced.
 
 This approach ensures:
 
 - **Local**: Wiring lives next to the command it tracks, not in a central map.
-- **Safe**: Events fire in `PersistentPreRunE` before commands that may call `os.Exit` directly.
+- **Late-bound**: Events fire after RunE, so PropExtractors can read results computed during command execution (see [Reading RunE results in a PropExtractor](#reading-rune-results-in-a-propextractor)).
 - **Extensible**: Adding a new event requires one call where the command is built.
 - **Self-documenting**: The cobra command itself carries its telemetry intent.
 
@@ -135,13 +135,53 @@ PersistentPreRunE (root.go)
     ├─ Stamp props.CommandKind = "core" or "plugin"
     │   based on telemetry.IsPluginCommand(cmd)
     ├─ Build telemetry.Client
-    └─ telemetry.EventFor(cmd, args) → if tracked, client.Track(event)
+    └─ Register cobra.OnFinalize (closes over cmd, args, client)
     ↓
-RunE / Run executes (may call os.Exit)
+RunE / Run executes
     ↓
-PersistentPostRunE (root.go)
-    └─ Flush telemetry (3-second timeout)
+cobra.OnFinalize (via cobra's deferred postRun, fires on success and error paths — unlike PersistentPostRunE, see [gotcha](https://www.jvt.me/posts/2024/11/29/gotcha-cobra-persistentpostrune/))
+    ├─ telemetry.EventFor(cmd, args) → if tracked, client.Track(event)
+    ├─ Flush telemetry (3-second timeout)
+    └─ log.Stop()
 ```
+
+### Reading RunE results in a PropExtractor
+
+Because [`cobra.OnFinalize`](https://pkg.go.dev/github.com/spf13/cobra#OnFinalize) fires after RunE on both success and error paths (unlike [`PersistentPostRunE`](https://www.jvt.me/posts/2024/11/29/gotcha-cobra-persistentpostrune/)), a PropExtractor can read data that RunE computed. The recommended pattern is to declare closure variables in `Cmd()` that RunE writes and the PropExtractor reads:
+
+```go
+func Cmd() *cobra.Command {
+    var (
+        checkResult    tools.CheckResult
+        installSuccess []string
+        installError   string
+    )
+
+    cmd := &cobra.Command{
+        RunE: func(cmd *cobra.Command, _ []string) error {
+            checkResult = tools.CheckPrerequisites()       // written by RunE
+            installSuccess, err = dependencies.Install(…)
+            if err != nil {
+                installError = err.Error()
+                return err
+            }
+            return nil
+        },
+    }
+
+    telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+        return map[string]any{                             // read by PropExtractor
+            "validation_violations": checkResult.ValidationViolations,
+            "install_success":       installSuccess,
+            "install_error":         installError,
+        }
+    })
+
+    return cmd
+}
+```
+
+Both RunE and the PropExtractor close over the same local variables. No context keys or package-level variables are needed.
 
 ## How to add telemetry to a new command
 

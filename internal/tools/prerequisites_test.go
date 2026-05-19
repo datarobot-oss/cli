@@ -213,12 +213,12 @@ func TestCheckPrerequisites_AllSatisfied(t *testing.T) {
 		{Name: "sh", Command: "sh"},
 	}
 
-	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+	result := CheckPrerequisites()
 
-	assert.Empty(t, missing)
-	assert.Empty(t, wrongVer)
-	assert.Empty(t, missingMsgs)
-	assert.Empty(t, wrongVerMsgs)
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Empty(t, result.MissingMsgs)
+	assert.Empty(t, result.WrongVersionMsgs)
 }
 
 func TestCheckPrerequisites_MissingTool(t *testing.T) {
@@ -230,15 +230,15 @@ func TestCheckPrerequisites_MissingTool(t *testing.T) {
 		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", URL: "https://example.com"},
 	}
 
-	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+	result := CheckPrerequisites()
 
-	require.Len(t, missing, 1)
-	assert.Equal(t, "FakeTool", missing[0].Name)
-	assert.Empty(t, wrongVer)
-	assert.Len(t, missingMsgs, 1)
-	assert.Contains(t, missingMsgs[0], "FakeTool")
-	assert.Contains(t, missingMsgs[0], "https://example.com")
-	assert.Empty(t, wrongVerMsgs)
+	require.Len(t, result.MissingTools, 1)
+	assert.Equal(t, "FakeTool", result.MissingTools[0].Name)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Len(t, result.MissingMsgs, 1)
+	assert.Contains(t, result.MissingMsgs[0], "FakeTool")
+	assert.Contains(t, result.MissingMsgs[0], "https://example.com")
+	assert.Empty(t, result.WrongVersionMsgs)
 }
 
 func TestCheckPrerequisites_WrongVersion(t *testing.T) {
@@ -251,14 +251,14 @@ func TestCheckPrerequisites_WrongVersion(t *testing.T) {
 		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0", URL: "https://example.com"},
 	}
 
-	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+	result := CheckPrerequisites()
 
-	assert.Empty(t, missing)
-	assert.Empty(t, missingMsgs)
-	require.Len(t, wrongVer, 1)
-	assert.Equal(t, "Echo", wrongVer[0].Name)
-	assert.Len(t, wrongVerMsgs, 1)
-	assert.Contains(t, wrongVerMsgs[0], "Echo")
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.MissingMsgs)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "Echo", result.WrongVersionTools[0].Name)
+	assert.Len(t, result.WrongVersionMsgs, 1)
+	assert.Contains(t, result.WrongVersionMsgs[0], "Echo")
 }
 
 func TestCheckPrerequisites_Mixed(t *testing.T) {
@@ -272,14 +272,14 @@ func TestCheckPrerequisites_Mixed(t *testing.T) {
 		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0"},
 	}
 
-	missing, wrongVer, missingMsgs, wrongVerMsgs := CheckPrerequisites()
+	result := CheckPrerequisites()
 
-	require.Len(t, missing, 1)
-	assert.Equal(t, "FakeTool", missing[0].Name)
-	require.Len(t, wrongVer, 1)
-	assert.Equal(t, "Echo", wrongVer[0].Name)
-	assert.Len(t, missingMsgs, 1)
-	assert.Len(t, wrongVerMsgs, 1)
+	require.Len(t, result.MissingTools, 1)
+	assert.Equal(t, "FakeTool", result.MissingTools[0].Name)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "Echo", result.WrongVersionTools[0].Name)
+	assert.Len(t, result.MissingMsgs, 1)
+	assert.Len(t, result.WrongVersionMsgs, 1)
 }
 
 func TestPlatformInstallCommand_CurrentPlatform(t *testing.T) {
@@ -337,10 +337,10 @@ func TestCheckPrerequisites_WritesStateWhenAllDepsSatisfied(t *testing.T) {
 
 	defer func() { RequiredTools = orig }()
 
-	_, _, missingMsgs, wrongVersionMsgs := CheckPrerequisites()
+	result := CheckPrerequisites()
 
-	assert.Empty(t, missingMsgs, "dep already present should not appear as missing")
-	assert.Empty(t, wrongVersionMsgs)
+	assert.Empty(t, result.MissingMsgs, "dep already present should not appear as missing")
+	assert.Empty(t, result.WrongVersionMsgs)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
 	require.NoError(t, err)
@@ -364,8 +364,8 @@ func TestLastSuccessDepsCheck_UpdatedByCheckPrerequisites(t *testing.T) {
 
 	defer func() { RequiredTools = orig }()
 
-	_, _, missingMsgs, _ := CheckPrerequisites()
-	require.Empty(t, missingMsgs)
+	result := CheckPrerequisites()
+	require.Empty(t, result.MissingMsgs)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
 	require.NoError(t, err)
@@ -389,8 +389,8 @@ func TestCheckPrerequisites_FailureDoesNotWriteState(t *testing.T) {
 
 	defer func() { RequiredTools = orig }()
 
-	_, _, missingMsgs, _ := CheckPrerequisites()
-	require.NotEmpty(t, missingMsgs)
+	result := CheckPrerequisites()
+	require.NotEmpty(t, result.MissingMsgs)
 
 	data, _ := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
 	assert.NotContains(t, string(data), "last_success_deps_check")

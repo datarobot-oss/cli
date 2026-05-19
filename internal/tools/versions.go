@@ -26,30 +26,26 @@ import (
 
 type versionsYaml map[string]Prerequisite
 
-func GetRequirements() ([]Prerequisite, error) {
+func GetRequirements() ([]Prerequisite, []string, error) {
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
-		return nil, err
-	}
-
-	if repoRoot == "" {
-		return nil, nil
+		return nil, nil, err
 	}
 
 	yamlFile := filepath.Join(repoRoot, ".datarobot", "cli", "versions.yaml")
 
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read versions yaml file %s: %w", yamlFile, err)
+		return nil, nil, fmt.Errorf("Failed to read versions yaml file %s: %w", yamlFile, err)
 	}
 
 	var fileParsed versionsYaml
 
 	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
+		return nil, nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
 	}
 
-	versionsYamlSchema.Validate(fileParsed)
+	violations := versionsYamlSchema.Validate(fileParsed)
 
 	versions := make([]Prerequisite, 0, len(fileParsed))
 
@@ -59,11 +55,11 @@ func GetRequirements() ([]Prerequisite, error) {
 		versions = append(versions, version)
 	}
 
-	return versions, nil
+	return versions, violations, nil
 }
 
 func GetSelfRequirement() (Prerequisite, error) {
-	prerequisites, err := GetRequirements()
+	prerequisites, _, err := GetRequirements()
 	if err != nil {
 		return Prerequisite{}, nil
 	}
