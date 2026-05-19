@@ -23,6 +23,7 @@
 package telemetry
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"time"
@@ -162,32 +163,19 @@ func (c *Client) Flush(timeout time.Duration) {
 	}
 }
 
-// globalClient holds the active telemetry client for process-wide Exit calls.
-// It is set by SetGlobal during PersistentPreRunE before any command runs.
-var globalClient *Client
+// ClientContextKey is the context key used to store and retrieve the active
+// telemetry Client from a cobra command's context. Storing it in the telemetry
+// package keeps the key accessible to all sub-packages without importing cmd.
+type ClientContextKey struct{}
 
-// SetGlobal stores c as the global telemetry client. Must be called during
-// PersistentPreRunE before any os.Exit-based code paths can be reached.
-func SetGlobal(c *Client) {
-	if c == nil {
-		// failsafe to make sure we don't screw up in dev or testing
-		panic("telemetry.SetGlobal: client cannot be nil")
+// ExitWithContext flushes pending telemetry from the client stored in ctx, then
+// calls os.Exit(code). Use this in cobra RunE/Run callbacks (which always have
+// a *cobra.Command) instead of os.Exit so that Amplitude events are delivered
+// when PersistentPostRunE is bypassed (e.g. when propagating subprocess exit codes).
+func ExitWithContext(ctx context.Context, code int) {
+	if client, ok := ctx.Value(ClientContextKey{}).(*Client); ok {
+		client.Flush(3 * time.Second)
 	}
-
-	globalClient = c
-}
-
-// Exit flushes any pending telemetry events then calls os.Exit(code).
-// Use this instead of os.Exit in command code so that Amplitude events are
-// delivered even when cobra's PersistentPostRunE hook is bypassed (e.g. when
-// RunE returns an error, or when a command calls os.Exit directly).
-func Exit(code int) {
-	if globalClient == nil {
-		// failsafe to make sure we don't screw up in dev or testing
-		panic("telemetry.Exit called before SetGlobal - PersistentPreRunE must run first")
-	}
-
-	globalClient.Flush(3 * time.Second)
 
 	os.Exit(code)
 }

@@ -12,29 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
-	"context"
 	"os"
-	"os/signal"
-
-	"github.com/datarobot/cli/cmd"
-	"github.com/datarobot/cli/internal/log"
+	"time"
 )
 
-func main() {
-	// Create a context that's canceled on interrupt signals
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer cancel()
-
-	// Always stop loggers, whether the command succeeds or returns an error.
-	// PersistentPostRunE is skipped by cobra on error, so we must ensure log.Stop
-	// runs unconditionally here.
-	defer log.Stop()
-
-	if err := cmd.ExecuteContext(ctx); err != nil {
-		log.Stop()
-		cmd.Exit(1)
+// Exit flushes any pending telemetry events then terminates the process with
+// code. Call this from main (instead of os.Exit) when ExecuteContext returns
+// an error, so that Amplitude events are delivered even though
+// PersistentPostRunE is bypassed on the error path.
+//
+// telemetryClient is set in PersistentPreRunE (root.go); it will be nil only
+// if the process exits before any command runs (e.g. flag parse failure), in
+// which case there are no queued events to flush anyway.
+func Exit(code int) {
+	if telemetryClient != nil {
+		telemetryClient.Flush(3 * time.Second)
 	}
+
+	os.Exit(code)
 }

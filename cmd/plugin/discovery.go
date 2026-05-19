@@ -114,14 +114,14 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		GroupID:            "plugin",
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
-		Run: func(_ *cobra.Command, args []string) {
+		Run: func(pluginCmd *cobra.Command, args []string) {
 			checkAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(manifest, executable, args)
-			telemetry.Exit(exitCode)
+			telemetry.ExitWithContext(pluginCmd.Context(), exitCode)
 		},
 	}
 

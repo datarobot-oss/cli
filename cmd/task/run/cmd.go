@@ -153,10 +153,10 @@ Examples:
 					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 				}
 
-				// telemetry.Exit is required here (not return) because we must propagate
+				// telemetry.ExitWithContext is required here (not return) because we must propagate
 				// an exact integer exit code from the subprocess, which cannot be encoded
 				// in a Go error value.
-				telemetry.Exit(exitCode)
+				telemetry.ExitWithContext(cmd.Context(), exitCode)
 			}
 
 			return nil
