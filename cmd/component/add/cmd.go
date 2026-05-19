@@ -155,7 +155,7 @@ func Cmd() *cobra.Command {
 	cmd.Flags().StringVar(&addFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
 	cmd.Flags().BoolVar(&addFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"component_name": telemetry.FirstArg(args),
 		}

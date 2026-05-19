@@ -37,6 +37,10 @@ type state struct {
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 	// LastSuccessDepsCheck is an ISO8601-compliant timestamp of the last successful `dr dependencies check` or `dr dependencies install` run
 	LastSuccessDepsCheck *time.Time `yaml:"last_success_deps_check,omitempty"`
+	// TemplateName is the human-readable name of the template used to create this project
+	TemplateName string `yaml:"template_name,omitempty"`
+	// TemplateID is the unique identifier of the template used to create this project
+	TemplateID string `yaml:"template_id,omitempty"`
 }
 
 // getStatePath determines the appropriate location for the state file.
@@ -133,7 +137,8 @@ func UpdateAfterDotenvSetup(repoRoot string) error {
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup(repoRoot string) error {
+// templateName and templateID are persisted so downstream commands can include them in telemetry.
+func UpdateAfterTemplatesSetup(repoRoot, templateName, templateID string) error {
 	// Load existing state to preserve other fields
 	existingState, err := load(repoRoot)
 	if err != nil {
@@ -143,7 +148,26 @@ func UpdateAfterTemplatesSetup(repoRoot string) error {
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
 
+	if templateName != "" {
+		existingState.TemplateName = templateName
+	}
+
+	if templateID != "" {
+		existingState.TemplateID = templateID
+	}
+
 	return existingState.update()
+}
+
+// GetTemplateName returns the template name stored in the project state file.
+// Returns an empty string (without error) when the field is not set.
+func GetTemplateName(repoRoot string) (string, error) {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		return "", err
+	}
+
+	return existingState.TemplateName, nil
 }
 
 // UpdateAfterSuccessDepsCheck updates the state file after a successful `dr dependencies check` or `dr dependencies install` run.

@@ -241,9 +241,9 @@ func init() {
 	// get persisted to drconfig.yaml on subsequent config writes.
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.Track(SetupCmd)
-	telemetry.Track(UpdateCmd)
-	telemetry.Track(ValidateCmd)
+	telemetry.TrackInProject(SetupCmd)
+	telemetry.TrackInProject(UpdateCmd)
+	telemetry.TrackInProject(ValidateCmd)
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.

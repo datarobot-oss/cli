@@ -182,7 +182,7 @@ Examples:
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("parallel", "watch")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"task_name": telemetry.FirstArg(args),
 		}

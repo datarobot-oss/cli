@@ -18,6 +18,8 @@ import (
 	"sync"
 
 	"github.com/amplitude/analytics-go/amplitude/types"
+	"github.com/datarobot/cli/internal/repo"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +32,13 @@ const trackAnnotation = "telemetry"
 // For now this is a bool, because we may want to track when plugin commands are
 // migrated to core commands.
 const pluginAnnotation = "telemetry:plugin"
+
+// projectAnnotation is the cobra annotation key set by TrackInProject /
+// TrackWithProject to mark a command as project-scoped. EventFor automatically
+// injects "template_name" (read from the nearest project state file) into the
+// event when this annotation is present. Non-project commands (auth, self,
+// plugin, etc.) must NOT carry this annotation.
+const projectAnnotation = "telemetry:project"
 
 // annotationValue is the (otherwise unused) value stored under trackAnnotation
 // and pluginAnnotation. Cobra annotations are map[string]string, but we only
@@ -65,6 +74,21 @@ func TrackWith(cmd *cobra.Command, extract PropExtractor) {
 	if extract != nil {
 		commandProperties.Store(cmd, extract)
 	}
+}
+
+// TrackInProject marks cmd as tracked and project-scoped. EventFor will
+// automatically inject "template_name" into the event for this command.
+// Use for project commands that have no other dynamic properties.
+func TrackInProject(cmd *cobra.Command) {
+	setAnnotation(cmd, trackAnnotation)
+	setAnnotation(cmd, projectAnnotation)
+}
+
+// TrackWithProject is TrackWith plus the project-scoped annotation.
+// EventFor automatically injects "template_name"; extract should not include it.
+func TrackWithProject(cmd *cobra.Command, extract PropExtractor) {
+	TrackWith(cmd, extract)
+	setAnnotation(cmd, projectAnnotation)
 }
 
 // TrackPlugin marks cmd as a plugin command and registers a closure that
@@ -119,6 +143,10 @@ func EventFor(cmd *cobra.Command, args []string) (types.Event, bool) {
 		}
 	}
 
+	if _, ok := cmd.Annotations[projectAnnotation]; ok {
+		event.EventProperties["template_name"] = RepoTemplateName()
+	}
+
 	return event, true
 }
 
@@ -130,6 +158,24 @@ func FirstArg(args []string) string {
 	}
 
 	return ""
+}
+
+// RepoTemplateName returns the template name stored in the nearest project's
+// state file, or "" when called outside a DataRobot project or when the field
+// has not been set (e.g. repos not initially set up via the CLI).
+// All errors are silently swallowed to keep the telemetry path non-blocking.
+func RepoTemplateName() string {
+	repoRoot, err := repo.FindRepoRoot()
+	if err != nil {
+		return ""
+	}
+
+	name, err := state.GetTemplateName(repoRoot)
+	if err != nil {
+		return ""
+	}
+
+	return name
 }
 
 // setAnnotation stores key=annotationValue on cmd, allocating the

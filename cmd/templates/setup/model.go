@@ -92,6 +92,12 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Template returns the drapi.Template selected during setup.
+// Returns a zero-value Template if setup did not complete normally.
+func (m Model) Template() drapi.Template {
+	return m.template
+}
+
 type (
 	getHostMsg         struct{}
 	authKeyStartMsg    struct{}
@@ -466,7 +472,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		// Update state for templates setup completion
-		_ = state.UpdateAfterTemplatesSetup(repoRoot)
+		_ = state.UpdateAfterTemplatesSetup(repoRoot, m.template.Name, m.template.ID)
 
 		return m, exit
 	case exitMsg:

@@ -15,6 +15,7 @@
 package start
 
 import (
+	"github.com/amplitude/analytics-go/amplitude/types"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/auth"
@@ -85,6 +86,17 @@ The following actions will be performed:
 				cmd.SilenceErrors = true
 
 				return cli.ErrSilent
+			}
+
+			if ok && innerSetupModel.Template().Name != "" {
+				if client, ok := telemetry.ClientFromContext(cmd.Context()); ok {
+					client.Track(types.Event{
+						EventType: "dr template setup",
+						EventProperties: map[string]any{
+							"template_name": innerSetupModel.Template().Name,
+						},
+					})
+				}
 			}
 
 			// Now run start again - we're in the cloned repo directory

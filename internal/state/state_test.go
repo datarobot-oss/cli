@@ -248,3 +248,64 @@ func TestUpdateAfterSuccessDepsCheck_PreservesOtherFields(t *testing.T) {
 	require.NotNil(t, stateAfter.LastStart)
 	assert.Equal(t, stateBefore.LastStart.Unix(), stateAfter.LastStart.Unix())
 }
+
+func TestUpdateAfterTemplatesSetup_PersistsTemplateName(t *testing.T) {
+	tmpDir := t.TempDir()
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+	err := os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	err = UpdateAfterTemplatesSetup(tmpDir, "My Template", "template-id-123")
+	require.NoError(t, err)
+
+	loadedState, err := load(tmpDir)
+	require.NoError(t, err)
+
+	assert.Equal(t, "My Template", loadedState.TemplateName)
+	assert.Equal(t, "template-id-123", loadedState.TemplateID)
+	assert.NotNil(t, loadedState.LastTemplatesSetup)
+	assert.NotEmpty(t, loadedState.CLIVersion)
+}
+
+func TestUpdateAfterTemplatesSetup_EmptyNameNoOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+	err := os.MkdirAll(localStateDir, 0o755)
+	require.NoError(t, err)
+
+	// Write an initial template name
+	err = UpdateAfterTemplatesSetup(tmpDir, "Original Template", "orig-id")
+	require.NoError(t, err)
+
+	// Call again with empty strings — should preserve existing values
+	err = UpdateAfterTemplatesSetup(tmpDir, "", "")
+	require.NoError(t, err)
+
+	loadedState, err := load(tmpDir)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Original Template", loadedState.TemplateName)
+	assert.Equal(t, "orig-id", loadedState.TemplateID)
+}
+
+func TestGetTemplateName(t *testing.T) {
+	t.Run("returns empty string when state file does not exist", func(t *testing.T) {
+		name, err := GetTemplateName(t.TempDir())
+		require.NoError(t, err)
+		assert.Empty(t, name)
+	})
+
+	t.Run("returns stored template name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterTemplatesSetup(tmpDir, "Awesome App", "awesome-id")
+		require.NoError(t, err)
+
+		name, err := GetTemplateName(tmpDir)
+		require.NoError(t, err)
+		assert.Equal(t, "Awesome App", name)
+	})
+}

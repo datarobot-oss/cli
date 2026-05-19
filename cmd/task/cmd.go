@@ -48,7 +48,7 @@ Manage and execute tasks defined in your project's 'Taskfile':
 		run.Cmd(),
 	)
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"task_name": telemetry.FirstArg(args),
 		}
