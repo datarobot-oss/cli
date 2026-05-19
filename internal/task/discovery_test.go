@@ -152,6 +152,31 @@ func (suite *DiscoveryTestSuite) TestFindComponentsRespectsMaxDepth() {
 	suite.Equal("shallow", includes[0].Name)
 }
 
+func (suite *DiscoveryTestSuite) TestCheckAndAddTaskRecognizesTracingStart() {
+	discovery := &Discovery{}
+	data := taskfileTmplData{
+		TracingComponents: []string{},
+	}
+
+	discovery.checkAndAddTask(&data, Task{Name: "tracing:start"}, "infra")
+
+	suite.True(data.HasTracing)
+	suite.Equal([]string{"infra"}, data.TracingComponents)
+}
+
+func (suite *DiscoveryTestSuite) TestCheckAndAddTaskDeduplicatesTracingComponents() {
+	discovery := &Discovery{}
+	data := taskfileTmplData{
+		TracingComponents: []string{},
+	}
+
+	discovery.checkAndAddTask(&data, Task{Name: "tracing:start"}, "infra")
+	discovery.checkAndAddTask(&data, Task{Name: "tracing:start"}, "infra")
+
+	suite.True(data.HasTracing)
+	suite.Len(data.TracingComponents, 1)
+}
+
 func (suite *DiscoveryTestSuite) TestFindComponentsSkipsHiddenDirs() {
 	discovery := &Discovery{
 		RootTaskfileName: "Taskfile.yaml",

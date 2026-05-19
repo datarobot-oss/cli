@@ -63,6 +63,8 @@ type taskfileTmplData struct {
 	DeployComponents    []string
 	HasDeployDev        bool
 	DeployDevComponents []string
+	HasTracing          bool
+	TracingComponents   []string
 }
 
 var (
@@ -314,6 +316,7 @@ func (d *Discovery) buildComposeData(root string, includes []componentInclude) (
 		DevComponents:       []string{},
 		DeployComponents:    []string{},
 		DeployDevComponents: []string{},
+		TracingComponents:   []string{},
 		DevPorts:            d.loadDevPorts(root),
 	}
 
@@ -358,10 +361,11 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 		"uninstall":  {&data.UninstallComponents, &data.HasUninstall},
 		"test":       {&data.TestComponents, &data.HasTest},
 		"dev":        {&data.DevComponents, &data.HasDev},
-		"deploy":     {&data.DeployComponents, &data.HasDeploy},
-		"up":         {&data.DeployComponents, &data.HasDeploy},
-		"deploy-dev": {&data.DeployDevComponents, &data.HasDeployDev},
-		"up-dev":     {&data.DeployDevComponents, &data.HasDeployDev},
+		"deploy":         {&data.DeployComponents, &data.HasDeploy},
+		"up":             {&data.DeployComponents, &data.HasDeploy},
+		"deploy-dev":     {&data.DeployDevComponents, &data.HasDeployDev},
+		"up-dev":         {&data.DeployDevComponents, &data.HasDeployDev},
+		"tracing:start":  {&data.TracingComponents, &data.HasTracing},
 	}
 
 	// Check task name

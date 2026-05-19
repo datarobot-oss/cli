@@ -120,3 +120,39 @@ tasks:
       - task: {{ . }}:deploy-dev
       {{- end }}
   {{- end }}
+
+  {{- if .HasDev }}
+
+  dev:stop:
+    desc: "🛑 Stop all local dev services"
+    cmds:
+      - |
+        PIDS=$(for port in{{- range .DevPorts }} {{ .Port }}{{- end }}; do lsof -ti :$port -sTCP:LISTEN 2>/dev/null | sort -u || true; done)
+        if [[ -n "$PIDS" ]]; then
+          echo "Stopping dev services..."
+          echo "$PIDS" | xargs kill 2>/dev/null || true
+        else
+          echo "No dev services running."
+        fi
+    silent: true
+  {{- end }}
+
+  {{- if .HasTracing }}
+
+  tracing:start:
+    desc: "📡 Start the local experimentation tracing dashboard"
+    cmds:
+      - task: tracing:stop
+      {{- range .TracingComponents }}
+      - task: {{ . }}:tracing:start
+      {{- end }}
+    silent: true
+
+  tracing:stop:
+    desc: "🛑 Stop the local experimentation tracing dashboard"
+    cmds:
+      {{- range .TracingComponents }}
+      - task: {{ . }}:tracing:stop
+      {{- end }}
+    silent: true
+  {{- end }}
