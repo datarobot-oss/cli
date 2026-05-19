@@ -185,6 +185,8 @@ func FirstArg(args []string) string {
 		return args[0]
 	}
 
+	// Should we return nil here as well, rather than ""?
+	// Amplitude will treat "" as a set value
 	return ""
 }
 

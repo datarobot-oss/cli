@@ -179,9 +179,12 @@ Examples:
 	// property key across dr run, dr task, and dr task run rather than
 	// three separate per-event-type properties.
 	telemetry.TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, args []string) map[string]any {
-		return map[string]any{
-			"task_name": telemetry.FirstArg(args),
+		// send nil when no task name is provided
+		if len(args) == 0 {
+			return map[string]any{"task_name": nil}
 		}
+
+		return map[string]any{"task_name": args[0]}
 	})
 
 	return cmd
