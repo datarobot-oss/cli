@@ -93,6 +93,7 @@ type depsInstallCompleteMsg struct {
 	installed []string
 }
 
+// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails
 type telemetryCapture struct {
 	validationViolations []string
 	missingMsgs          []string

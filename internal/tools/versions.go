@@ -32,10 +32,6 @@ func GetRequirements() ([]Prerequisite, []string, error) {
 		return nil, nil, err
 	}
 
-	if repoRoot == "" {
-		return nil, nil, nil
-	}
-
 	yamlFile := filepath.Join(repoRoot, ".datarobot", "cli", "versions.yaml")
 
 	data, err := os.ReadFile(yamlFile)
