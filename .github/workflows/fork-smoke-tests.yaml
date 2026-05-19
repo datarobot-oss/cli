@@ -38,6 +38,7 @@ jobs:
                 `@${context.actor} has permission '${permission}' — ` +
                 `maintainer access (write/maintain/admin) is required to run fork smoke tests.`
               );
+              return;
             }
             console.log(`@${context.actor} has permission '${permission}' — proceeding.`);
 
