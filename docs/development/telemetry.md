@@ -124,6 +124,78 @@ This approach ensures:
 - **Extensible**: Adding a new event requires one call where the command is built.
 - **Self-documenting**: The cobra command itself carries its telemetry intent.
 
+## Process exit and telemetry flush
+
+Amplitude events are queued in-process and flushed asynchronously. If a command calls `os.Exit` directly (plugins, task runner exit-code propagation) or if `RunE` returns an error that causes cobra to skip `PersistentPostRunE`, the queue would be silently dropped. Two mechanisms handle this:
+
+### `cmd.Exit(code int)` — for `main.go`'s error path
+
+`cmd.Exit` lives in `cmd/exit.go` alongside the `telemetryClient` package-level variable that `PersistentPreRunE` sets. Use it only from `main.go` when `ExecuteContext` returns an error:
+
+```go
+if err := cmd.ExecuteContext(ctx); err != nil {
+    log.Stop()
+    cmd.Exit(1) // flushes telemetry then calls os.Exit(1)
+}
+```
+
+`cmd.Exit` is nil-safe: if `PersistentPreRunE` never ran (e.g. flag parse failure before any command executes) there are no queued events and it falls straight through to `os.Exit`.
+
+### `telemetry.ExitWithContext(ctx context.Context, code int)` — for cobra sub-commands
+
+Commands that must propagate a subprocess exit code (plugin dispatch, `task run --exit-code`) cannot use `return err` because Go errors carry no integer code. They call `telemetry.ExitWithContext` with the command's cobra context — the client stored there by `PersistentPreRunE` is flushed before `os.Exit`:
+
+```go
+RunE: func(cmd *cobra.Command, args []string) error {
+    exitCode := runSubprocess(...)
+    telemetry.ExitWithContext(cmd.Context(), exitCode) // never returns
+    return nil // unreachable
+},
+```
+
+### State ownership
+
+`internal/telemetry` is **stateless** — it defines `Client`, helpers, and `ClientContextKey` but holds no global variables. The two places that own state are:
+
+| Owner | What | Why |
+|---|---|---|
+| `cmd` package (`root.go` + `exit.go`) | `var telemetryClient *telemetry.Client` | Needed by `main.go`'s error path, which only has the signal context (no cobra context). |
+| cobra command context | `*telemetry.Client` stored under `telemetry.ClientContextKey{}` | Accessible to any sub-package that has a `*cobra.Command` without importing `cmd` (which would be circular). |
+
+Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitWithContext` (exit-code path).
+
+## Silent errors and `SilenceErrors`
+
+`cli.ErrSilent` (`internal/cli/command.go`) is a sentinel returned by `RunE` implementations that have **already printed** their own user-facing error. Returning it tells cobra "don't add a second `Error: …` line", but only if the command (or an ancestor) has `SilenceErrors: true` set.
+
+**Rules:**
+
+1. Any command whose `RunE` can return `cli.ErrSilent` — either directly or by calling a sub-command's `RunE` — must set `SilenceErrors: true` on its own `cobra.Command`.
+2. When composing commands (e.g. calling `compose.Cmd().RunE(nil, nil)` inside another command's `RunE`), the *caller* must also carry `SilenceErrors: true`, because the sentinel propagates up the call stack.
+3. `main.go` always calls `cmd.Exit(1)` for any non-nil error, so telemetry is recorded even for silent failures.
+
+**Example:**
+
+```go
+func Cmd() *cobra.Command {
+    return &cobra.Command{
+        Use:           "add [...]",
+        RunE:          RunE,
+        SilenceErrors: true, // required: RunE can return cli.ErrSilent via compose.Cmd().RunE
+    }
+}
+
+func RunE(_ *cobra.Command, args []string) error {
+    if err := addComponents(args); err != nil {
+        return err
+    }
+
+    // compose prints its own error and returns cli.ErrSilent on failure;
+    // SilenceErrors: true above prevents cobra from echoing "Error: silent error".
+    return compose.Cmd().RunE(nil, nil)
+}
+```
+
 ### Execution flow
 
 ```

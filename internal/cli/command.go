@@ -25,7 +25,7 @@ import (
 // own user-facing error message. Pair it with SilenceErrors: true on the
 // cobra.Command (or set cmd.SilenceErrors = true before returning) so that
 // cobra does not echo an additional "Error: ..." line to stderr.
-// main.go will still call telemetry.Exit(1) for any non-nil error as normal.
+// main.go will still call cmd.Exit(1) for any non-nil error as normal.
 var ErrSilent = errors.New("silent error")
 
 // CommandAdder wraps cobra.Command and overrides AddCommand to filter gated commands.
