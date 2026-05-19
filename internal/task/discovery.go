@@ -355,17 +355,17 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 		components *[]string
 		hasFlag    *bool
 	}{
-		"start":      {&data.StartComponents, &data.HasStart},
-		"lint":       {&data.LintComponents, &data.HasLint},
-		"install":    {&data.InstallComponents, &data.HasInstall},
-		"uninstall":  {&data.UninstallComponents, &data.HasUninstall},
-		"test":       {&data.TestComponents, &data.HasTest},
-		"dev":        {&data.DevComponents, &data.HasDev},
-		"deploy":         {&data.DeployComponents, &data.HasDeploy},
-		"up":             {&data.DeployComponents, &data.HasDeploy},
-		"deploy-dev":     {&data.DeployDevComponents, &data.HasDeployDev},
-		"up-dev":         {&data.DeployDevComponents, &data.HasDeployDev},
-		"tracing:start":  {&data.TracingComponents, &data.HasTracing},
+		"start":         {&data.StartComponents, &data.HasStart},
+		"lint":          {&data.LintComponents, &data.HasLint},
+		"install":       {&data.InstallComponents, &data.HasInstall},
+		"uninstall":     {&data.UninstallComponents, &data.HasUninstall},
+		"test":          {&data.TestComponents, &data.HasTest},
+		"dev":           {&data.DevComponents, &data.HasDev},
+		"deploy":        {&data.DeployComponents, &data.HasDeploy},
+		"up":            {&data.DeployComponents, &data.HasDeploy},
+		"deploy-dev":    {&data.DeployDevComponents, &data.HasDeployDev},
+		"up-dev":        {&data.DeployDevComponents, &data.HasDeployDev},
+		"tracing:start": {&data.TracingComponents, &data.HasTracing},
 	}
 
 	// Check task name
