@@ -114,10 +114,11 @@ func RunE(_ *cobra.Command, args []string) error {
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "update [answers_file]",
-		Short:   "🔄 Update installed component",
-		PreRunE: PreRunE,
-		RunE:    RunE,
+		Use:           "update [answers_file]",
+		Short:         "🔄 Update installed component",
+		PreRunE:       PreRunE,
+		RunE:          RunE,
+		SilenceErrors: true,
 	}
 
 	cmd.Flags().StringArrayVarP(&updateFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")

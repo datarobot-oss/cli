@@ -144,10 +144,11 @@ func Cmd() *cobra.Command {
 	names := strings.Join(copier.EnabledShortNames, ", ")
 
 	cmd := &cobra.Command{
-		Use:     fmt.Sprintf("add [%s or component_url]", names),
-		Short:   "➕ Add a component",
-		PreRunE: PreRunE,
-		RunE:    RunE,
+		Use:           fmt.Sprintf("add [%s or component_url]", names),
+		Short:         "➕ Add a component",
+		PreRunE:       PreRunE,
+		RunE:          RunE,
+		SilenceErrors: true,
 	}
 
 	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
