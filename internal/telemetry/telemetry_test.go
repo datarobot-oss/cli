@@ -236,7 +236,7 @@ func TestAmplitudeLogger_DoesNotPanic(t *testing.T) {
 	logger.Errorf("test %s", "message")
 }
 
-func TestTrack_OmitsEmptySharedProperties(t *testing.T) {
+func TestTrack_OmitsNilSharedProperties(t *testing.T) {
 	originalAPIKey := AmplitudeAPIKey
 
 	defer func() { AmplitudeAPIKey = originalAPIKey }()
@@ -250,11 +250,11 @@ func TestTrack_OmitsEmptySharedProperties(t *testing.T) {
 
 	client := NewClient(props)
 
-	// Simulate a shared property being set to empty string (e.g., from FirstArg with no args)
+	// Simulate a shared property being set to nil (e.g., from FirstArg with no args)
 	event := types.Event{
 		EventType: "test event",
 		EventProperties: map[string]any{
-			"task_name": "", // Empty shared property
+			"task_name": nil, // Nil shared property
 			"custom":    "value",
 		},
 	}
@@ -263,10 +263,10 @@ func TestTrack_OmitsEmptySharedProperties(t *testing.T) {
 	client.Track(event)
 
 	// In no-op mode we only verify no panic; in enabled mode, task_name would be omitted
-	// This test ensures the merge logic doesn't crash and properly handles empty values
+	// This test ensures the merge logic doesn't crash and properly handles nil values
 }
 
-func TestTrack_RemovesEmptyStringsFromSharedKeys(t *testing.T) {
+func TestTrack_RemovesNilValuesFromSharedKeys(t *testing.T) {
 	// This test uses a reset-cleanup helper since we're testing the shared-key removal logic
 	// which depends on the package-level sharedPropKeys map.
 	originalAPIKey := AmplitudeAPIKey
@@ -293,7 +293,7 @@ func TestTrack_RemovesEmptyStringsFromSharedKeys(t *testing.T) {
 	event := types.Event{
 		EventType: "test event",
 		EventProperties: map[string]any{
-			testKey:  "", // Empty shared property
+			testKey:  nil, // Nil shared property
 			"custom": "value",
 		},
 	}
@@ -301,7 +301,7 @@ func TestTrack_RemovesEmptyStringsFromSharedKeys(t *testing.T) {
 	// Track the event; in no-op mode (amp == nil), the merge still happens
 	client.Track(event)
 
-	// Verify: After Track (with no-op amp), the event's props should have the empty key removed
+	// Verify: After Track (with no-op amp), the event's props should have the nil key removed
 	// Note: The no-op path logs but doesn't modify the event, so we just verify no panic
 	// Real verification happens in wire integration tests
 }

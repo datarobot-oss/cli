@@ -176,7 +176,7 @@ func TestTrackWithShared_CoexistsWithTrackWith(t *testing.T) {
 		return map[string]any{"parallel": true}
 	})
 
-	// Shared property (omitted if empty across all event types)
+	// Shared property (omitted if nil across all event types)
 	TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"task_name": FirstArg(args),
@@ -191,7 +191,7 @@ func TestTrackWithShared_CoexistsWithTrackWith(t *testing.T) {
 
 // TestTrackWithShared_NonRegisteredCommandOmitsKey verifies that when a key is
 // declared via TrackWithShared on one command, unregistered commands do not get
-// that key seeded into their events (it is omitted as an empty value).
+// that key seeded into their events (it is omitted as a nil value).
 // The key is tracked in sharedPropKeys so Client.Track can identify and omit it.
 func TestTrackWithShared_NonRegisteredCommandOmitsKey(t *testing.T) {
 	t.Cleanup(resetSharedMaps)
@@ -229,9 +229,9 @@ func TestTrackWithShared_NonRegisteredCommandOmitsKey(t *testing.T) {
 }
 
 // TestTrackWithShared_EmptyExtractorValueOmitsKey verifies that when a shared
-// extractor returns an empty string for a key, Client.Track omits that key
+// extractor returns a nil value for a key, Client.Track omits that key
 // from the event properties per Amplitude's preference.
-func TestTrackWithShared_EmptyExtractorValueOmitsKey(t *testing.T) {
+func TestTrackWithShared_NilExtractorValueOmitsKey(t *testing.T) {
 	t.Cleanup(resetSharedMaps)
 
 	root := &cobra.Command{Use: "dr"}
@@ -241,14 +241,14 @@ func TestTrackWithShared_EmptyExtractorValueOmitsKey(t *testing.T) {
 
 	TrackWithShared(cmd, []string{"task_name"}, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
-			"task_name": "", // Explicitly return empty string
+			"task_name": nil, // Explicitly return nil
 		}
 	})
 
 	event, ok := EventFor(cmd, nil)
 	assert.True(t, ok)
-	// EventFor includes the empty value from the extractor
-	assert.Empty(t, event.EventProperties["task_name"])
+	// EventFor includes the nil value from the extractor
+	assert.Nil(t, event.EventProperties["task_name"])
 }
 
 // TestTrackWithShared_NonEmptyValueIsIncluded verifies that shared properties
