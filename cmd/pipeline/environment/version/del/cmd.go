@@ -1,0 +1,71 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package del implements `dr pipelines environment version delete`.
+// Directory is named `del` to avoid shadowing Go's built-in `delete()`.
+
+package del
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+
+	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/tui"
+	"github.com/spf13/cobra"
+)
+
+func Cmd() *cobra.Command {
+	var environmentID string
+
+	cmd := &cobra.Command{
+		Use:   "delete <version>",
+		Short: "Delete a specific version of a pipeline execution environment",
+		Long: `Soft-delete a specific version of a pipeline execution environment
+without touching the parent environment.
+
+Example:
+  dr pipelines environment version delete --environment env-123 2`,
+		Args:         cobra.ExactArgs(1),
+		PreRunE:      auth.EnsureAuthenticatedE,
+		SilenceUsage: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if environmentID == "" {
+				return errors.New("--environment is required")
+			}
+
+			version, err := strconv.Atoi(args[0])
+			if err != nil || version <= 0 {
+				return fmt.Errorf("invalid version: %q (expected a positive integer)", args[0])
+			}
+
+			err = pipeline.DeleteEnvironmentVersion(environmentID, version)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(tui.BaseTextStyle.Render(
+				fmt.Sprintf("Deleted environment version: %s v%d", environmentID, version),
+			))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&environmentID, "environment", "", "Environment ID (required)")
+
+	return cmd
+}

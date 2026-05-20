@@ -98,12 +98,19 @@ dr
 │   │   ├── get        Display a single input
 │   │   ├── update     Update a draft input's payload
 │   │   └── delete     Delete an input
-│   └── schedule       Manage recurring (cron) runs (locked-only)
-│       ├── create     Register a recurring schedule on a locked version
-│       ├── list       List schedules for a locked version
-│       ├── get        Display a single schedule
-│       ├── update     Change cron expression / timezone
-│       └── delete     Delete a schedule
+│   ├── schedule       Manage recurring (cron) runs (locked-only)
+│   │   ├── create     Register a recurring schedule on a locked version
+│   │   ├── list       List schedules for a locked version
+│   │   ├── get        Display a single schedule
+│   │   ├── update     Change cron expression / timezone
+│   │   └── delete     Delete a schedule
+│   └── environment    Manage named, versioned pip-package environments
+│       ├── create     Register a new environment with an initial version
+│       ├── list       List registered environments
+│       ├── update     Append a new version to an environment
+│       ├── delete     Soft-delete the latest active version of an environment
+│       └── version    Manage environment versions
+│           └── delete Delete a specific version
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -277,6 +284,7 @@ For detailed documentation on each command, see:
   - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
+  - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
 
 ## Getting help
 

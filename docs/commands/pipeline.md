@@ -81,6 +81,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
 | `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
 | `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
+| `dr pipeline environment …` | `/pipelines/environments[/{id}]` | Manage named, versioned pip-package environments. |
 
 ## Subcommands
 
@@ -350,6 +351,25 @@ dr pipeline run cancel --pipeline <id> <run-id> [--scope|--version]
 the run ID, status, and Covalent dispatch ID.
 
 `run cancel` returns `409 Conflict` if the run is already terminal.
+
+### `environment`
+
+Manage pipeline execution environments — named, immutable-versioned bags of pip packages
+that pipelines can be built against. Each `update` appends a new version; individual
+older versions can be removed with `environment version delete`.
+
+```bash
+dr pipeline environment create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output json]
+dr pipeline environment list   [--offset N] [--limit N] [--output json]
+dr pipeline environment update <environment-id> --package <pkg> [--package <pkg> …] [--output json]
+dr pipeline environment delete <environment-id>
+dr pipeline environment version delete --environment <environment-id> <version>
+```
+
+`environment create` registers a new environment; `environment update` appends a new
+immutable version. `environment delete` soft-deletes the latest active version (cascading
+to the parent if no active versions remain). `environment version delete` targets a
+specific version by its integer number.
 
 ## Error handling
 
