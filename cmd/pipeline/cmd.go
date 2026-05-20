@@ -15,6 +15,14 @@
 package pipeline
 
 import (
+	"github.com/datarobot/cli/cmd/pipeline/create"
+	"github.com/datarobot/cli/cmd/pipeline/del"
+	"github.com/datarobot/cli/cmd/pipeline/get"
+	"github.com/datarobot/cli/cmd/pipeline/graph"
+	"github.com/datarobot/cli/cmd/pipeline/list"
+	"github.com/datarobot/cli/cmd/pipeline/lock"
+	"github.com/datarobot/cli/cmd/pipeline/update"
+	"github.com/datarobot/cli/cmd/pipeline/version"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +41,17 @@ input payloads, runs, and recurring schedules.`,
 	}
 
 	features.SetGate(cmd, "pipeline")
+
+	cmd.AddCommand(
+		create.Cmd(),
+		get.Cmd(),
+		list.Cmd(),
+		update.Cmd(),
+		del.Cmd(),
+		lock.Cmd(),
+		version.Cmd(),
+		graph.Cmd(),
+	)
 
 	return cmd
 }

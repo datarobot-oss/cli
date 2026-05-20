@@ -38,8 +38,27 @@ func TestCmd_FeatureGate(t *testing.T) {
 	assert.Equal(t, "pipeline", gate)
 }
 
-func TestCmd_NoSubcommandsYet(t *testing.T) {
+func TestCmd_HasExpectedSubcommands(t *testing.T) {
 	cmd := Cmd()
 
-	assert.Empty(t, cmd.Commands(), "base branch registers no subcommands")
+	want := map[string]bool{
+		"create":  false,
+		"list":    false,
+		"get":     false,
+		"update":  false,
+		"delete":  false,
+		"lock":    false,
+		"version": false,
+		"graph":   false,
+	}
+
+	for _, sub := range cmd.Commands() {
+		if _, ok := want[sub.Name()]; ok {
+			want[sub.Name()] = true
+		}
+	}
+
+	for name, found := range want {
+		assert.True(t, found, "expected subcommand %q to be registered", name)
+	}
 }
