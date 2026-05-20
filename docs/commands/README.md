@@ -85,7 +85,13 @@ dr
 │   ├── version        Inspect pipeline versions
 │   │   ├── list       List versions of a pipeline
 │   │   └── get        Display details of a single pipeline version
-│   └── graph          Display the pipeline/task DAG of a pipeline
+│   ├── graph          Display the pipeline/task DAG of a pipeline
+│   └── run            Trigger and inspect pipeline executions
+│       ├── create     Trigger a run from an input
+│       ├── list       List runs for a pipeline
+│       ├── get        Display a single run
+│       ├── status     Lightweight run status (for polling)
+│       └── cancel     Cancel a running run
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -256,6 +262,7 @@ For detailed documentation on each command, see:
   - `lock`&mdash;promote a draft pipeline to locked mode.
   - `version`&mdash;`list` / `get` to inspect pipeline versions.
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
+  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
 
 ## Getting help
 

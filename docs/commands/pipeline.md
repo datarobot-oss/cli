@@ -78,6 +78,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
 | `dr pipeline version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
 | `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
+| `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
 
 ## Subcommands
 
@@ -300,13 +301,31 @@ dr pipeline version get  --pipeline <pipeline-id> 2
 dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
 ```
 
+### `run`
+
+Trigger, inspect, and cancel pipeline executions.
+
+```bash
+dr pipelines run create --pipeline <id> --input <input-id>              # draft
+dr pipelines run create --pipeline <id> --version=N --input <input-id>  # locked
+dr pipelines run list   --pipeline <id> [--scope|--version]
+dr pipelines run get    --pipeline <id> <run-id> [--scope|--version]
+dr pipelines run status --pipeline <id> <run-id> [--scope|--version]
+dr pipelines run cancel --pipeline <id> <run-id> [--scope|--version]
+```
+
+`run status` is a lighter-weight call intended for polling — returns just
+the run ID, status, and Covalent dispatch ID.
+
+`run cancel` returns `409 Conflict` if the run is already terminal.
+
 ## Error handling
 
 | Status | Cause                                                                          |
 |--------|--------------------------------------------------------------------------------|
 | `400`  | Invalid Python file or mismatched pipeline name.                               |
-| `404`  | The provided `<pipeline-id>` or version does not exist.                        |
-| `409`  | Tried to update a `locked` pipeline.                                           |
+| `404`  | The provided `<pipeline-id>`, version, or run does not exist.                  |
+| `409`  | Tried to update a `locked` pipeline, or cancel an already-terminal run.        |
 
 ## See also
 
