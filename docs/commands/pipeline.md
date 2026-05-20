@@ -79,6 +79,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
 | `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
 | `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
+| `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
 
 ## Subcommands
 
@@ -300,6 +301,21 @@ dr pipeline version list --pipeline <pipeline-id>
 dr pipeline version get  --pipeline <pipeline-id> 2
 dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
 ```
+
+### `input`
+
+Manage JSON payloads that drive a run.
+
+```bash
+dr pipeline input create --pipeline <id> <payload-file>              # draft scope
+dr pipeline input create --pipeline <id> --version=N <payload-file>  # locked scope
+dr pipeline input list   --pipeline <id> [--scope|--version] [--offset N] [--limit N]
+dr pipeline input get    --pipeline <id> <input-id>      [--scope|--version]
+dr pipeline input update --pipeline <id> <input-id> <payload-file>   # draft only
+dr pipeline input delete --pipeline <id> <input-id>      [--scope|--version]
+```
+
+The payload file must contain a JSON object. The CLI wraps it in `{"payload": …}` before sending.
 
 ### `run`
 

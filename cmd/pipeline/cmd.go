@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/del"
 	"github.com/datarobot/cli/cmd/pipeline/get"
 	"github.com/datarobot/cli/cmd/pipeline/graph"
+	"github.com/datarobot/cli/cmd/pipeline/input"
 	"github.com/datarobot/cli/cmd/pipeline/list"
 	"github.com/datarobot/cli/cmd/pipeline/lock"
 	"github.com/datarobot/cli/cmd/pipeline/run"
@@ -53,6 +54,7 @@ input payloads, runs, and recurring schedules.`,
 		version.Cmd(),
 		graph.Cmd(),
 		run.Cmd(),
+		input.Cmd(),
 	)
 
 	return cmd
