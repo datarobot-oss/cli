@@ -62,9 +62,10 @@ func TestCmd_HasExpectedSubcommands(t *testing.T) {
 		"delete":  false,
 		"lock":    false,
 		"version": false,
-		"graph":   false,
-		"run":     false,
-		"input":   false,
+		"graph":    false,
+		"run":      false,
+		"input":    false,
+		"schedule": false,
 	}
 
 	for _, sub := range cmd.Commands() {
