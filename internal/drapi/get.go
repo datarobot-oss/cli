@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 )
 
@@ -51,6 +52,18 @@ func SetToken(value string) {
 
 const DefaultGetTimeoutSecs = 30
 
+// resolveToken returns the API token used for outbound requests.
+// When --skip-auth (or DATAROBOT_CLI_SKIP_AUTH) is active we trust whatever
+// is in viper without contacting the server, so local development against
+// stub APIs that don't implement /version/ still works.
+func resolveToken() (string, error) {
+	if viperx.GetBool("skip_auth") {
+		return viperx.GetString(config.DataRobotAPIKey), nil
+	}
+
+	return config.GetAPIKey(context.Background())
+}
+
 func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	timeout := DefaultGetTimeoutSecs
 	if len(timeoutSecs) > 0 {
@@ -61,7 +74,7 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 
 	// memoize token to avoid extra VerifyToken() calls
 	if token == "" {
-		token, err = config.GetAPIKey(context.Background())
+		token, err = resolveToken()
 		if err != nil {
 			return nil, err
 		}
