@@ -285,7 +285,7 @@ func Cmd() *cobra.Command {
 
 			rootTaskfile, err := discovery.Discover(dir, 2)
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, task.DiscoveryError(err))
+				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
 
 				return cli.ErrSilent
 			}

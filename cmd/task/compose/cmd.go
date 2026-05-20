@@ -46,7 +46,7 @@ func RunE(_ *cobra.Command, _ []string) error {
 
 	taskFilePath, err := discovery.Discover(".", 2)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, task.DiscoveryError(err))
+		_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
 
 		return cli.ErrSilent
 	}

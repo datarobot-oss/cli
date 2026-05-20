@@ -148,10 +148,10 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	return rootTaskfilePath, nil
 }
 
-// DiscoveryError formats a discovery error into a user-friendly message string.
+// FormatDiscoveryError formats a discovery error into a user-friendly message string.
 // Commands should call this to get the message, print it themselves if needed,
 // and return cli.ErrSilent (or the returned error directly).
-func DiscoveryError(err error) error {
+func FormatDiscoveryError(err error) error {
 	if errors.Is(err, ErrNotInTemplate) {
 		return fmt.Errorf("%s\n%s",
 			tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."),
