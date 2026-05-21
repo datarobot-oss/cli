@@ -17,10 +17,10 @@ package login
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -53,17 +53,15 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	datarobotHost := auth.GetBaseURLOrAsk()
 	if datarobotHost == "" {
 		log.Info("💡 To set your DataRobot URL, run 'dr auth set-url'.")
-		os.Exit(1)
 
-		return nil
+		return cli.ErrSilent
 	}
 
 	token, err := config.GetAPIKey(context.Background())
 	if errors.Is(err, context.DeadlineExceeded) {
 		log.Errorf("Connection to %s timed out. Check your network and try again.", datarobotHost)
-		os.Exit(1)
 
-		return nil
+		return cli.ErrSilent
 	}
 
 	// If they explicitly ran 'dr auth login', just authenticate them
@@ -115,6 +113,8 @@ This command will:
   1. Open your default browser.
   2. Redirect you to the DataRobot login page.
   3. Securely store your API key for future CLI operations.`,
-		RunE: RunE,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE:          RunE,
 	}
 }

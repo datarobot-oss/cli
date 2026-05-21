@@ -15,11 +15,10 @@
 package start
 
 import (
-	"os"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -59,7 +58,9 @@ The following actions will be performed:
 			}
 
 			if innerModel.err != nil {
-				os.Exit(1)
+				cmd.SilenceErrors = true
+
+				return cli.ErrSilent
 			}
 
 			capture = innerModel.telemetry
@@ -81,7 +82,9 @@ The following actions will be performed:
 
 			innerSetupModel, ok := setup.InnerModel(finalSetupModel)
 			if ok && innerSetupModel.ExitMessage != "" {
-				os.Exit(1)
+				cmd.SilenceErrors = true
+
+				return cli.ErrSilent
 			}
 
 			// Now run start again - we're in the cloned repo directory
@@ -99,7 +102,9 @@ The following actions will be performed:
 			}
 
 			if innerModel2.err != nil {
-				os.Exit(1)
+				cmd.SilenceErrors = true
+
+				return cli.ErrSilent
 			}
 
 			capture = innerModel2.telemetry

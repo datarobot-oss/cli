@@ -40,16 +40,16 @@ type CommonProperties struct {
 	DeviceID  string  // UUID v4, stable per installation, cached to disk
 	UserID    *string // DataRobot uid from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	// event properties
-	CLIVersion        string // CLI version from version.Version (ldflags)
-	InstallMethod     string // Build distribution method (ldflags)
-	OSName            string // human-readable OS name from runtime.GOOS
-	OSArch            string // CPU architecture from runtime.GOARCH
-	OSVersion         string // OS release version string, detected at startup
-	Language          string // user language from LANG env var (e.g. "en_US")
-	GoVersion         string // Go runtime version (e.g. "go1.26.2")
-	Shell             string // Name of the user's shell (e.g. "zsh", "bash", "powershell")
-	DataRobotInstance string // Base URL of configured DataRobot instance
-	CommandKind       string // "core" or "plugin", set by the root command after dispatch
+	CLIVersion        string  // CLI version from version.Version (ldflags)
+	InstallMethod     string  // Build distribution method (ldflags)
+	OSName            string  // human-readable OS name from runtime.GOOS
+	OSArch            string  // CPU architecture from runtime.GOARCH
+	OSVersion         string  // OS release version string, detected at startup
+	Language          string  // user language from LANG env var (e.g. "en_US")
+	GoVersion         string  // Go runtime version (e.g. "go1.26.2")
+	Shell             string  // Name of the user's shell (e.g. "zsh", "bash", "powershell")
+	DataRobotInstance string  // Base URL of configured DataRobot instance
+	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
 	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
 }

@@ -47,7 +47,42 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func RunE(cmd *cobra.Command, args []string) error {
+func runPostUpdateTasks() error {
+	if err := compose.Cmd().RunE(nil, nil); err != nil {
+		return err
+	}
+
+	return run.Cmd().RunE(nil, []string{"reinstall"})
+}
+
+func handleTUIResult(finalModel tea.Model) error {
+	setupModel, ok := finalModel.(tui.InterruptibleModel)
+	if !ok {
+		return nil
+	}
+
+	innerModel, ok := setupModel.Model.(shared.UpdateModel)
+	if !ok {
+		return nil
+	}
+
+	fmt.Println(innerModel.ExitMessage)
+
+	if !innerModel.ComponentUpdated {
+		return nil
+	}
+
+	if err := runPostUpdateTasks(); err != nil {
+		return err
+	}
+
+	fmt.Println(innerModel.ExitMessage)
+	fmt.Println("Post-install tasks finished.")
+
+	return nil
+}
+
+func RunE(_ *cobra.Command, args []string) error {
 	var updateFileName string
 	if len(args) > 0 {
 		updateFileName = args[0]
@@ -55,22 +90,16 @@ func RunE(cmd *cobra.Command, args []string) error {
 
 	cliData, err := shared.ParseDataArgs(updateFlags.DataArgs)
 	if err != nil {
-		fmt.Println("Fatal:", err)
-		os.Exit(1)
+		return fmt.Errorf("parsing data args: %w", err)
 	}
 
 	// If file name has been provided
 	if updateFileName != "" {
-		err := runUpdate(updateFileName, cliData, updateFlags.DataFile)
-		if err != nil {
-			fmt.Println("Fatal:", err)
-			os.Exit(1)
+		if err := runUpdate(updateFileName, cliData, updateFlags.DataFile); err != nil {
+			return fmt.Errorf("updating component: %w", err)
 		}
 
-		compose.Cmd().Run(nil, nil)
-		run.Cmd().Run(nil, []string{"reinstall"})
-
-		return nil
+		return runPostUpdateTasks()
 	}
 
 	m := shared.NewUpdateComponentModel(updateFlags)
@@ -80,29 +109,16 @@ func RunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := setupModel.Model.(shared.UpdateModel); ok {
-			fmt.Println(innerModel.ExitMessage)
-
-			if innerModel.ComponentUpdated {
-				compose.Cmd().Run(nil, nil)
-				run.Cmd().Run(nil, []string{"reinstall"})
-
-				fmt.Println(innerModel.ExitMessage)
-				fmt.Println("Post-install tasks finished.")
-			}
-		}
-	}
-
-	return nil
+	return handleTUIResult(finalModel)
 }
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "update [answers_file]",
-		Short:   "🔄 Update installed component",
-		PreRunE: PreRunE,
-		RunE:    RunE,
+		Use:           "update [answers_file]",
+		Short:         "🔄 Update installed component",
+		PreRunE:       PreRunE,
+		RunE:          RunE,
+		SilenceErrors: true,
 	}
 
 	cmd.Flags().StringArrayVarP(&updateFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")

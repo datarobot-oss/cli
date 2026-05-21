@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
@@ -216,36 +217,38 @@ func checkDotenvCredentials(repoRoot string) bool {
 	return true
 }
 
-func Run(_ *cobra.Command, _ []string) {
+func RunE(_ *cobra.Command, _ []string) error {
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
 		if checkCLICredentials() {
-			return
+			return nil
 		}
 
-		os.Exit(1)
+		return cli.ErrSilent
 	}
 
 	if checkDotenvCredentials(repoRoot) {
-		return
+		return nil
 	}
 
 	if checkCLICredentials() {
-		return
+		return nil
 	}
 
-	os.Exit(1)
+	return cli.ErrSilent
 }
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "check",
-		Short: "✅ Check if DataRobot credentials are valid",
+		Use:           "check",
+		Short:         "✅ Check if DataRobot credentials are valid",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		Long: `Verify that your DataRobot credentials are properly configured and valid.
 
 If you're in a project directory with a '.env' file, this will check those credentials.`,
-		Run: Run,
+		RunE: RunE,
 	}
 }

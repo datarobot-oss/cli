@@ -45,8 +45,10 @@ import (
 
 var configFilePath string
 
-// telemetryClientKey is used to store the telemetry client in context
-type telemetryClientKey struct{}
+// telemetryClient holds the active client for the current process. It is set
+// in PersistentPreRunE so that cmd.Exit can flush events when main's error
+// path fires (where only the signal context, not the cobra context, is available).
+var telemetryClient *telemetry.Client
 
 // RootCmd represents the base command when called without any subcommands.
 // It uses CommandAdder to intelligently filter child commands based on feature gates.
@@ -117,8 +119,11 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			client := telemetry.NewClient(props)
 
+			// Store as process-level client so cmd.Exit can flush on the main error path.
+			telemetryClient = client
+
 			// Store telemetry client in context for use by commands
-			cmd.SetContext(context.WithValue(cmd.Context(), telemetryClientKey{}, client))
+			cmd.SetContext(context.WithValue(cmd.Context(), telemetry.ClientContextKey{}, client))
 
 			cobra.OnFinalize(func() {
 				if event, ok := telemetry.EventFor(cmd, args); ok {
@@ -131,6 +136,16 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			})
 
 			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
+
+			return nil
+		},
+		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+			// Flush telemetry events before exit
+			if client, ok := cmd.Context().Value(telemetry.ClientContextKey{}).(*telemetry.Client); ok {
+				client.Flush(3 * time.Second)
+			}
+
+			log.Stop()
 
 			return nil
 		},

@@ -23,7 +23,9 @@
 package telemetry
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/amplitude/analytics-go/amplitude"
@@ -159,6 +161,23 @@ func (c *Client) Flush(timeout time.Duration) {
 		// Timeout reached, events may not have been sent
 		log.Debug("Telemetry flush timed out", "timeout", timeout)
 	}
+}
+
+// ClientContextKey is the context key used to store and retrieve the active
+// telemetry Client from a cobra command's context. Storing it in the telemetry
+// package keeps the key accessible to all sub-packages without importing cmd.
+type ClientContextKey struct{}
+
+// ExitWithContext flushes pending telemetry from the client stored in ctx, then
+// calls os.Exit(code). Use this in cobra RunE/Run callbacks (which always have
+// a *cobra.Command) instead of os.Exit so that Amplitude events are delivered
+// when PersistentPostRunE is bypassed (e.g. when propagating subprocess exit codes).
+func ExitWithContext(ctx context.Context, code int) {
+	if client, ok := ctx.Value(ClientContextKey{}).(*Client); ok {
+		client.Flush(3 * time.Second)
+	}
+
+	os.Exit(code)
 }
 
 // IsEnabled reports whether telemetry collection is active. Returns true only

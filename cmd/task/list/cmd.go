@@ -21,6 +21,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -272,18 +273,21 @@ func Cmd() *cobra.Command {
 	var showAll bool
 
 	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"l"},
-		Short:   "📋 List tasks",
+		Use:           "list",
+		Aliases:       []string{"l"},
+		Short:         "📋 List tasks",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
 			rootTaskfile, err := discovery.Discover(dir, 2)
 			if err != nil {
-				task.ExitWithError(err)
-				return
+				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+				return cli.ErrSilent
 			}
 
 			runner := task.NewTaskRunner(task.RunnerOpts{
@@ -295,29 +299,25 @@ func Cmd() *cobra.Command {
 			if !runner.Installed() {
 				_, _ = fmt.Fprintln(os.Stderr, `"`+binaryName+`" binary not found in PATH. Please install Task from https://taskfile.dev/installation/`)
 
-				os.Exit(1)
-
-				return
+				return cli.ErrSilent
 			}
 
 			tasks, err := runner.ListTasks()
 			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
+				_, _ = fmt.Fprintln(os.Stderr, "listing tasks:", err)
 
-				os.Exit(1)
-
-				return
+				return cli.ErrSilent
 			}
 
 			categories := groupTasksByCategory(tasks, showAll)
 
 			if err = printCategorizedTasks(categories, showAll); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
+				_, _ = fmt.Fprintln(os.Stderr, "printing tasks:", err)
 
-				os.Exit(1)
-
-				return
+				return cli.ErrSilent
 			}
+
+			return nil
 		},
 	}
 

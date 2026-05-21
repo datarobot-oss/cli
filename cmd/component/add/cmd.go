@@ -17,7 +17,6 @@ package add
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,10 +55,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 	cliData, err := shared.ParseDataArgs(addFlags.DataArgs)
 	if err != nil {
-		log.Error(err)
-		os.Exit(1)
-
-		return nil
+		return fmt.Errorf("parsing data args: %w", err)
 	}
 
 	componentConfig := loadComponentDefaults(addFlags.DataFile)
@@ -68,7 +64,9 @@ func RunE(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	compose.Cmd().Run(nil, nil)
+	if err := compose.Cmd().RunE(nil, nil); err != nil {
+		return err
+	}
 
 	// Validate and edit .env if needed
 	if err := dotenv.ValidateAndEditIfNeeded(); err != nil {
@@ -133,10 +131,7 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 
 		err := copier.ExecAdd(repoURL, mergedData, addFlags)
 		if err != nil {
-			log.Error(err)
-			os.Exit(1)
-
-			return nil
+			return fmt.Errorf("adding component %q: %w", repoURL, err)
 		}
 
 		fmt.Printf("Component %s added.\n", repoURL)
@@ -149,10 +144,11 @@ func Cmd() *cobra.Command {
 	names := strings.Join(copier.EnabledShortNames, ", ")
 
 	cmd := &cobra.Command{
-		Use:     fmt.Sprintf("add [%s or component_url]", names),
-		Short:   "➕ Add a component",
-		PreRunE: PreRunE,
-		RunE:    RunE,
+		Use:           fmt.Sprintf("add [%s or component_url]", names),
+		Short:         "➕ Add a component",
+		PreRunE:       PreRunE,
+		RunE:          RunE,
+		SilenceErrors: true,
 	}
 
 	cmd.Flags().StringArrayVarP(&addFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -92,14 +93,17 @@ Examples:
 
 💡 Tasks are defined in your project's 'Taskfile' and vary by template.
 💡 Use -- to pass additional arguments to the task command itself.`,
-		Run: func(_ *cobra.Command, args []string) {
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
 			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
 			if err != nil {
-				task.ExitWithError(err)
-				return
+				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+				return cli.ErrSilent
 			}
 
 			runner := task.NewTaskRunner(task.RunnerOpts{
@@ -122,9 +126,7 @@ Examples:
 				_, _ = fmt.Fprintln(os.Stderr, "")
 				_, _ = fmt.Fprintln(os.Stderr, "After installing, try running your command again!")
 
-				os.Exit(1)
-
-				return
+				return cli.ErrSilent
 			}
 
 			taskNames, taskArgs := splitTaskArgs(args)
@@ -151,8 +153,13 @@ Examples:
 					_, _ = fmt.Fprintln(os.Stderr, "Error: ", err)
 				}
 
-				os.Exit(exitCode)
+				// telemetry.ExitWithContext is required here (not return) because we must propagate
+				// an exact integer exit code from the subprocess, which cannot be encoded
+				// in a Go error value.
+				telemetry.ExitWithContext(cmd.Context(), exitCode)
 			}
+
+			return nil
 		},
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return completeTaskNames(&opts)

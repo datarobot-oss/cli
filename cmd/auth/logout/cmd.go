@@ -15,30 +15,36 @@
 package logout
 
 import (
-	"os"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
 )
 
-func Run(_ *cobra.Command, _ []string) {
+func RunE(_ *cobra.Command, _ []string) error {
 	viperx.Set(config.DataRobotAPIKey, "")
 
 	err := auth.WriteConfigFile()
 	if err != nil {
-		log.Error(err)
-		os.Exit(1)
+		log.Error(fmt.Errorf("failed to write config: %w", err))
+
+		return cli.ErrSilent
 	}
+
+	return nil
 }
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logout",
-		Short: "🚪 Log out from DataRobot",
-		Long:  `Log out from DataRobot and clear the stored API key.`,
-		Run:   Run,
+		Use:           "logout",
+		Short:         "🚪 Log out from DataRobot",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Long:          `Log out from DataRobot and clear the stored API key.`,
+		RunE:          RunE,
 	}
 }

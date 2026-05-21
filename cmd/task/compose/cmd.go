@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/spf13/cobra"
@@ -33,14 +34,21 @@ const (
 
 var templatePath string
 
-func Run(_ *cobra.Command, _ []string) {
+func RunE(_ *cobra.Command, _ []string) error {
 	taskfileName, ignoreTaskfile := detectExistingTaskfile()
-	discovery := createDiscovery(taskfileName)
+
+	discovery, err := createDiscovery(taskfileName)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+
+		return cli.ErrSilent
+	}
 
 	taskFilePath, err := discovery.Discover(".", 2)
 	if err != nil {
-		task.ExitWithError(err)
-		return
+		_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+		return cli.ErrSilent
 	}
 
 	fmt.Printf("Generated file saved to: %s\n", taskFilePath)
@@ -48,7 +56,8 @@ func Run(_ *cobra.Command, _ []string) {
 	contentBytes, err := os.ReadFile(".gitignore")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Error(fmt.Errorf("Failed to read from '.gitignore' file: %w", err))
-		return
+
+		return nil
 	}
 
 	contents := string(contentBytes)
@@ -56,13 +65,14 @@ func Run(_ *cobra.Command, _ []string) {
 
 	// Check if Taskfile.yaml or Taskfile.yml is already in .gitignore
 	if isIgnored(contents, taskfileIgnore) {
-		return
+		return nil
 	}
 
 	f, err := os.Create(".gitignore")
 	if err != nil {
 		log.Error(fmt.Errorf("Failed to create '.gitignore' file: %w", err))
-		return
+
+		return nil
 	}
 
 	defer f.Close()
@@ -70,13 +80,16 @@ func Run(_ *cobra.Command, _ []string) {
 	_, err = f.WriteString(taskfileIgnore + "\n\n" + contents)
 	if err != nil {
 		log.Error(fmt.Errorf("Failed to write to '.gitignore' file: %w", err))
-		return
+
+		return nil
 	}
 
 	fmt.Println("Added " + taskfileIgnore + " line to '.gitignore'.")
+
+	return nil
 }
 
-func createDiscovery(taskfileName string) *task.Discovery {
+func createDiscovery(taskfileName string) (*task.Discovery, error) {
 	// Check for .Taskfile.template in the root directory if no template specified
 	autoTemplatePath := ".Taskfile.template"
 
@@ -91,14 +104,13 @@ func createDiscovery(taskfileName string) *task.Discovery {
 	if templatePath != "" {
 		absPath, err := validateTemplatePath(templatePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("invalid template: %w", err)
 		}
 
-		return task.NewComposeDiscovery(taskfileName, absPath)
+		return task.NewComposeDiscovery(taskfileName, absPath), nil
 	}
 
-	return task.NewTaskDiscovery(taskfileName)
+	return task.NewTaskDiscovery(taskfileName), nil
 }
 
 func validateTemplatePath(path string) (string, error) {
@@ -154,7 +166,9 @@ If a .Taskfile.template file is found in the root directory, it will be used
 automatically to generate a more comprehensive Taskfile with aggregated tasks.
 
 You can also specify a custom template with the --template flag.`,
-		Run: Run,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE:          RunE,
 	}
 
 	cmd.Flags().StringVarP(&templatePath, "template", "t", "", "Path to custom Taskfile template")
