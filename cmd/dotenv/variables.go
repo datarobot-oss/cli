@@ -25,7 +25,7 @@ import (
 )
 
 // handleExtraEnvVars detects and prompts the user to configure component-specific environment variables.
-// It gathers user prompts from the parakeet template configuration and compares them against
+// It gathers user prompts from the application template configuration and compares them against
 // the provided variables. If extra variables are found (defined in the template but not in variables),
 // it displays them and prompts the user to configure them interactively.
 //
