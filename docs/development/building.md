@@ -356,9 +356,9 @@ Consider the following when building terminal user interfaces.
 All code must pass these tools without errors:
 
 - `go mod tidy`: Dependency management
-- `go fmt`: Basic formatting
 - `go vet`: Suspicious constructs
-- `golangci-lint`: Comprehensive linting (includes wsl, revive, staticcheck, etc.)
+- `golangci-lint run`: Comprehensive linting (includes wsl, revive, staticcheck, etc.)
+- `golangci-lint fmt`: Comprehensive formatting via gofumpt
 - `goreleaser check`: Release configuration validation
 
 **Before committing code, verify it follows [wsl](https://github.com/bombsimon/wsl?tab=readme-ov-file#wsl---whitespace-linter) (whitespace) rules.**
@@ -371,9 +371,10 @@ task lint
 
 # Individual checks
 go mod tidy
-go fmt ./...
 go vet ./...
+
 task install-tools  # Install golangci-lint
+./tmp/bin/golangci-lint fmt ./...
 ./tmp/bin/golangci-lint run ./...
 ./tmp/bin/goreleaser check
 ```
@@ -388,6 +389,7 @@ When upgrading the Go version in `go.mod`, you may need to update golangci-lint 
 4. Run `task lint` to verify all checks pass
 
 **Important**: golangci-lint is installed as a standalone pre-built binary (via the install script in `Taskfile.yaml`), not via `go install`. This means:
+
 - Version mismatches between your project's Go version and golangci-lint's internal Go version are handled automatically
 - The pre-built binary includes its own Go runtime, so it works with any project Go version
 - Always use `task install-tools` after updating the version variable

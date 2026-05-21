@@ -33,11 +33,9 @@ tasks:
         echo "🚚 Downloading tools…"
         export GOBIN={{.BIN_DIR}}
 
-        go install mvdan.cc/gofumpt@latest
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         go install github.com/goreleaser/goreleaser/v2@latest
     status:
-      - "{{.BIN_DIR}}/gofumpt --version"
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
 
@@ -45,7 +43,6 @@ tasks:
     silent: true
     desc: "Uninstall static checkers & other binaries"
     cmds:
-      - "rm {{.BIN_DIR}}/gofumpt"
       - "rm {{.BIN_DIR}}/golangci-lint"
       - "rm {{.BIN_DIR}}/goreleaser"
 
@@ -70,7 +67,7 @@ tasks:
       - echo "🧹 Checking go.mod…"
       - go mod tidy -diff
       - echo "🧹 Checking formatting…"
-      - "{{.BIN_DIR}}/gofumpt -l -d ."
+      - "{{.BIN_DIR}}/golangci-lint fmt --diff"
       - echo "🧹 Vetting…"
       - go vet ./...
       - echo "🧹 Linting…"
@@ -86,8 +83,7 @@ tasks:
       - echo "🧹 Cleaning go.mod…"
       - go mod tidy
       - echo "🧹 Formatting files…"
-      - go fmt ./...
-      - "{{.BIN_DIR}}/gofumpt -l -w ."
+      - "{{.BIN_DIR}}/golangci-lint fmt"
       - echo "🧹 Fixing lint issues…"
       - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
 
