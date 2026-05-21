@@ -70,7 +70,7 @@ tasks:
       - echo "🧹 Checking go.mod…"
       - go mod tidy -diff
       - echo "🧹 Checking formatting…"
-      - "{{.BIN_DIR}}/gofumpt -l -d ."
+      - "{{.BIN_DIR}}/golangci-lint fmt --diff"
       - echo "🧹 Vetting…"
       - go vet ./...
       - echo "🧹 Linting…"
@@ -86,8 +86,7 @@ tasks:
       - echo "🧹 Cleaning go.mod…"
       - go mod tidy
       - echo "🧹 Formatting files…"
-      - go fmt ./...
-      - "{{.BIN_DIR}}/gofumpt -l -w ."
+      - "{{.BIN_DIR}}/golangci-lint fmt"
       - echo "🧹 Fixing lint issues…"
       - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
 
