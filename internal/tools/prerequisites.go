@@ -128,21 +128,31 @@ func CheckPrerequisites() CheckResult {
 		RequiredTools = prerequisites
 	}
 
+	log.Debug("deps: checking prerequisites", "count", len(RequiredTools))
+
 	var result CheckResult
 
 	result.ValidationViolations = violations
 
 	for _, tool := range RequiredTools {
 		if !isInstalled(tool.Command) {
+			log.Debug("deps: tool missing", "name", tool.Name)
+
 			result.MissingTools = append(result.MissingTools, tool)
 			result.MissingMsgs = append(result.MissingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))
 		} else if ver, ok := isVersionInstalled(tool); !ok {
+			log.Debug("deps: tool wrong version", "name", tool.Name, "msg", ver)
+
 			result.WrongVersionTools = append(result.WrongVersionTools, tool)
 			result.WrongVersionMsgs = append(result.WrongVersionMsgs, ver)
+		} else {
+			log.Debug("deps: tool ok", "name", tool.Name)
 		}
 	}
 
 	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
+		log.Debug("deps: all prerequisites satisfied")
+
 		if repoRoot, err := repo.FindRepoRoot(); err == nil {
 			err := state.UpdateAfterSuccessDepsCheck(repoRoot)
 			if err != nil {
