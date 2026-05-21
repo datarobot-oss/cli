@@ -81,23 +81,8 @@ func DetectShell() (string, error) {
 		}
 	}
 
-	// Shell-specific version variables are exported by the shell and inherited
-	// by every subprocess, including package-manager installers (brew → ruby).
-	// Check them before $SHELL because they reflect the active session shell
-	// rather than the login shell recorded in /etc/passwd.
-	if os.Getenv("ZSH_VERSION") != "" {
-		return string(Zsh), nil
-	}
-
-	if os.Getenv("BASH_VERSION") != "" {
-		return string(Bash), nil
-	}
-
-	if os.Getenv("FISH_VERSION") != "" {
-		return string(Fish), nil
-	}
-
-	// Try SHELL environment variable last (Unix/macOS login shell path).
+	// $SHELL is a real environment variable that is inherited by all
+	// subprocesses, including package-manager installers (brew → ruby → dr).
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}

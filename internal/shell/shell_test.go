@@ -116,6 +116,11 @@ func TestShellFromEnvPath(t *testing.T) {
 	}
 }
 
+// TestDetectShell_ShellVersionEnvVars intentionally omitted: ZSH_VERSION,
+// BASH_VERSION, and FISH_VERSION are shell-only parameters, not environment
+// variables — they are never inherited by subprocesses and cannot be used for
+// detection. The $SHELL env var is the correct fallback (see DetectShell).
+
 func TestIsSupportedShell(t *testing.T) {
 	tests := []struct {
 		name string
@@ -135,40 +140,6 @@ func TestIsSupportedShell(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, isSupportedShell(tt.name))
-		})
-	}
-}
-
-// TestDetectShell_ShellVersionEnvVars verifies that shell-specific version
-// variables ($ZSH_VERSION, $BASH_VERSION, $FISH_VERSION) are used when the
-// parent process is not a supported shell — the scenario that occurs when dr
-// is invoked by a package-manager installer such as Homebrew (parent = ruby).
-func TestDetectShell_ShellVersionEnvVars(t *testing.T) {
-	tests := []struct {
-		envKey string
-		want   string
-	}{
-		{envKey: "ZSH_VERSION", want: "zsh"},
-		{envKey: "BASH_VERSION", want: "bash"},
-		{envKey: "FISH_VERSION", want: "fish"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.envKey, func(t *testing.T) {
-			// Clear competing env vars so only the one under test is set.
-			t.Setenv("ZSH_VERSION", "")
-			t.Setenv("BASH_VERSION", "")
-			t.Setenv("FISH_VERSION", "")
-			t.Setenv("SHELL", "")
-			t.Setenv(tt.envKey, "5.0")
-
-			// parentProcessName() returns the test-runner process (e.g. "go",
-			// "task") which is not a supported shell, so detection must fall
-			// through to the version-env-var branch.
-			name, err := DetectShell()
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, name)
 		})
 	}
 }
