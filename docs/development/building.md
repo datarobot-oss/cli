@@ -389,6 +389,7 @@ When upgrading the Go version in `go.mod`, you may need to update golangci-lint 
 4. Run `task lint` to verify all checks pass
 
 **Important**: golangci-lint is installed as a standalone pre-built binary (via the install script in `Taskfile.yaml`), not via `go install`. This means:
+
 - Version mismatches between your project's Go version and golangci-lint's internal Go version are handled automatically
 - The pre-built binary includes its own Go runtime, so it works with any project Go version
 - Always use `task install-tools` after updating the version variable
