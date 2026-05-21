@@ -143,4 +143,16 @@ func TestPipelinePath(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "pipeline id")
 	})
+
+	t.Run("pipeline ID with slash is path-escaped", func(t *testing.T) {
+		got, err := PipelinePath("abc/def", ScopeDraft, nil, "inputs")
+		require.NoError(t, err)
+		assert.Equal(t, "/api/v2/pipelines/abc%2Fdef/inputs", got)
+	})
+
+	t.Run("pipeline ID with space is path-escaped", func(t *testing.T) {
+		got, err := PipelinePath("my pipeline", ScopeDraft, nil, "inputs")
+		require.NoError(t, err)
+		assert.Equal(t, "/api/v2/pipelines/my%20pipeline/inputs", got)
+	})
 }

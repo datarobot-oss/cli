@@ -16,7 +16,6 @@ package drapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -29,7 +28,7 @@ func Post(url, info string, body any) (*http.Response, error) {
 	var err error
 
 	if token == "" {
-		token, err = config.GetAPIKey(context.Background())
+		token, err = resolveToken()
 		if err != nil {
 			return nil, err
 		}

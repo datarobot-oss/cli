@@ -15,14 +15,12 @@
 package drapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 )
 
@@ -38,31 +36,7 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
-var token string
-
-// GetToken returns the current cached API token.
-func GetToken() string {
-	return token
-}
-
-// SetToken sets the cached API token.
-func SetToken(value string) {
-	token = value
-}
-
 const DefaultGetTimeoutSecs = 30
-
-// resolveToken returns the API token used for outbound requests.
-// When --skip-auth (or DATAROBOT_CLI_SKIP_AUTH) is active we trust whatever
-// is in viper without contacting the server, so local development against
-// stub APIs that don't implement /version/ still works.
-func resolveToken() (string, error) {
-	if viperx.GetBool("skip_auth") {
-		return viperx.GetString(config.DataRobotAPIKey), nil
-	}
-
-	return config.GetAPIKey(context.Background())
-}
 
 func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	timeout := DefaultGetTimeoutSecs

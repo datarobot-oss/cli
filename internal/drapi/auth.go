@@ -15,19 +15,44 @@
 package drapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 )
 
+// token is the memoized API token shared by all outbound request helpers
+// (Get, Post, Patch, Delete, SetAuthHeaders). Resolved lazily on first use
+// via resolveToken.
+var token string
+
+// GetToken returns the current cached API token.
+func GetToken() string {
+	return token
+}
+
+// SetToken sets the cached API token.
+func SetToken(value string) {
+	token = value
+}
+
+// resolveToken returns the API token for outbound requests.
+// When --skip-auth (or DATAROBOT_CLI_SKIP_AUTH) is active the value is read
+// from viper without contacting the server, so local development against stub
+// APIs that don't implement /version/ still works.
+func resolveToken() (string, error) {
+	if viperx.GetBool("skip_auth") {
+		return viperx.GetString(config.DataRobotAPIKey), nil
+	}
+
+	return config.GetAPIKey(context.Background())
+}
+
 // SetAuthHeaders populates Authorization, User-Agent, and (when enabled)
-// X-DataRobot-Api-Consumer-Trace on req using the same sources the verb
-// helpers use inline. Exposed so callers that build their own *http.Request
-// (e.g. multipart streaming uploads in drapi/filesapi) can reuse the
-// canonical drapi auth-injection logic instead of re-implementing it.
-//
-// Reuses the package-level `token` memoization declared in get.go and
-// routes through resolveToken so --skip-auth is honoured consistently.
+// X-DataRobot-Api-Consumer-Trace on req. Exposed so callers that build their
+// own *http.Request (e.g. multipart streaming uploads in drapi/filesapi) can
+// reuse the canonical auth-injection logic instead of re-implementing it.
 func SetAuthHeaders(req *http.Request) error {
 	if token == "" {
 		resolved, err := resolveToken()
