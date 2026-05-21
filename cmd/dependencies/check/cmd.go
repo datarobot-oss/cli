@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -30,7 +31,11 @@ func Cmd() *cobra.Command {
 		Use:   "check",
 		Short: "✅ Check template dependencies",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			log.Debug("deps: check start")
+
 			result = tools.CheckPrerequisites()
+
+			log.Debug("deps: check result", "missing", len(result.MissingMsgs), "wrong_version", len(result.WrongVersionMsgs))
 
 			if len(result.MissingMsgs) > 0 || len(result.WrongVersionMsgs) > 0 {
 				cmd.SilenceUsage = true

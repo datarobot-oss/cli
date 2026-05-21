@@ -20,6 +20,7 @@ import (
 	"io"
 	"os/exec"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
@@ -28,36 +29,53 @@ import (
 // InstallPrerequisites installs each prerequisite sequentially. It returns the names
 // of tools successfully installed before any failure, plus the first error encountered.
 func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]string, error) {
+	log.Debug("deps: installing prerequisites", "count", len(prerequisites))
+
 	var installed []string
 
 	for _, prerequisite := range prerequisites {
 		installCmd, err := prerequisite.PlatformInstallCommand()
 		if err != nil {
+			log.Debug("deps: no install command", "name", prerequisite.Name, "err", err)
+
 			return installed, err
 		}
+
+		log.Debug("deps: running install", "name", prerequisite.Name, "cmd", installCmd)
 
 		fmt.Fprintf(w, "📦 Installing %s...\n", prerequisite.Name)
 
 		exitCode, err := ExecuteShLine(installCmd, w)
 		if err != nil {
+			log.Debug("deps: install failed to start", "name", prerequisite.Name, "err", err)
+
 			return installed, fmt.Errorf("failed to start install for %q: %w\n  command: %s", prerequisite.Name, err, installCmd)
 		}
 
 		if exitCode != 0 {
+			log.Debug("deps: install exited non-zero", "name", prerequisite.Name, "exit_code", exitCode)
+
 			return installed, fmt.Errorf("install failed for %q (exit code %d)\n  Please run manually: %s\n  Or check %s", prerequisite.Name, exitCode, installCmd, prerequisite.URL)
 		}
+
+		log.Debug("deps: tool installed", "name", prerequisite.Name)
 
 		fmt.Fprintf(w, "✅ %s installed\n", prerequisite.Name)
 
 		installed = append(installed, prerequisite.Name)
 	}
 
+	log.Debug("deps: all prerequisites installed", "count", len(installed))
+
 	fmt.Fprintf(w, "\n✅ All dependencies installed successfully.\n")
 
 	// Update state after successful installs.
 	// Executed only after all installs succeed to avoid state inconsistency if an install fails.
 	if repoRoot, err := repo.FindRepoRoot(); err == nil {
-		_ = state.UpdateAfterSuccessDepsCheck(repoRoot)
+		err := state.UpdateAfterSuccessDepsCheck(repoRoot)
+		if err != nil {
+			log.Errorf("Failed to update state AfterSuccessDepsCheck: %v", err)
+		}
 	}
 
 	return installed, nil

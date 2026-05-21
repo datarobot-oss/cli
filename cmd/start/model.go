@@ -219,6 +219,8 @@ func (m Model) execSelfUpdate() tea.Cmd {
 }
 
 func (m Model) execInstallDeps() tea.Cmd {
+	log.Debug("start: installing deps", "count", len(m.depsToInstall))
+
 	return func() tea.Msg {
 		var buf bytes.Buffer
 
@@ -344,7 +346,11 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.telemetry.missingMsgs = msg.checkResult.MissingMsgs
 	m.telemetry.wrongVersionMsgs = msg.checkResult.WrongVersionMsgs
 
-	if m.opts.AnswerYes || viperx.GetBool("yes") {
+	autoInstall := m.opts.AnswerYes || viperx.GetBool("yes")
+
+	log.Debug("start: handling missing deps", "count", len(msg.prerequisites), "auto_install", autoInstall)
+
+	if autoInstall {
 		return m, m.execInstallDeps()
 	}
 
@@ -354,6 +360,8 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDepsInstallComplete(msg depsInstallCompleteMsg) (tea.Model, tea.Cmd) {
+	log.Debug("start: deps install complete", "installed", msg.installed, "err", msg.err)
+
 	m.telemetry.installSuccess = msg.installed
 
 	if msg.err != nil {
@@ -409,11 +417,15 @@ func (m Model) handleWaitingToExecuteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y", "enter":
+		log.Debug("start: user confirmed deps install")
+
 		m.waitingToInstall = false
 		m.stepCompleteMessage = ""
 
 		return m, m.execInstallDeps()
 	case "n", "N", "q", "esc":
+		log.Debug("start: user cancelled deps install")
+
 		m.err = errors.New("Installation cancelled. Run 'dr dependencies install' to install missing dependencies.")
 
 		return m, tea.Quit
@@ -532,10 +544,14 @@ func checkSelfVersion(_ *Model) tea.Msg {
 
 func checkPrerequisites(m *Model) tea.Msg {
 	if m.repoRoot != "" && state.HasRecentSuccessDepsCheck(m.repoRoot) {
+		log.Debug("start: deps check skipped", "reason", "recent_success")
+
 		return stepCompleteMsg{message: "Recent successful dependency check detected, skipping prerequisites check...\n"}
 	}
 
 	result := tools.CheckPrerequisites()
+
+	log.Debug("start: deps check result", "missing", len(result.MissingMsgs), "wrong_version", len(result.WrongVersionMsgs))
 
 	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
 		return stepCompleteMsg{}
@@ -543,6 +559,8 @@ func checkPrerequisites(m *Model) tea.Msg {
 
 	prerequisites := append(result.MissingTools, result.WrongVersionTools...)
 	message := tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs)
+
+	log.Debug("start: deps to install/update", "count", len(prerequisites))
 
 	return depsMissingMsg{
 		prerequisites: prerequisites,

@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/dependencies"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -47,7 +48,11 @@ func Cmd() *cobra.Command {
 			yesFlag = opts.Yes
 			nonInteractive = viperx.GetBool("yes")
 
+			log.Debug("deps: install start", "yes", yesFlag, "non_interactive", nonInteractive)
+
 			checkResult = tools.CheckPrerequisites()
+
+			log.Debug("deps: install check result", "missing", len(checkResult.MissingMsgs), "wrong_version", len(checkResult.WrongVersionMsgs))
 
 			if len(checkResult.MissingMsgs) == 0 && len(checkResult.WrongVersionMsgs) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")
@@ -68,9 +73,13 @@ func Cmd() *cobra.Command {
 				}
 
 				if !yes {
+					log.Debug("deps: install declined by user")
+
 					return nil
 				}
 			}
+
+			log.Debug("deps: proceeding with install", "count", len(prerequisites))
 
 			var err error
 
@@ -81,6 +90,8 @@ func Cmd() *cobra.Command {
 
 				return err
 			}
+
+			log.Debug("deps: install complete", "installed", installSuccess)
 
 			return nil
 		},
