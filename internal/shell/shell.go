@@ -59,13 +59,45 @@ func normalizeShellName(name string) string {
 	return name
 }
 
-func DetectShell() (string, error) {
-	// Prefer the parent process name — accurate even after `exec sh` or similar.
-	if name := parentProcessName(); name != "" {
-		return normalizeShellName(name), nil
+// isSupportedShell reports whether name is one of the shells the CLI supports
+// for completion installation. Only normalized names should be passed.
+func isSupportedShell(name string) bool {
+	for _, s := range SupportedShells() {
+		if name == s {
+			return true
+		}
 	}
 
-	// Try SHELL environment variable next (Unix/macOS).
+	return false
+}
+
+func DetectShell() (string, error) {
+	// Prefer the parent process name — accurate for normal interactive use.
+	// Only trust it when it resolves to a shell the CLI actually supports;
+	// non-shell parents (e.g. Homebrew's Ruby interpreter) must fall through.
+	if name := parentProcessName(); name != "" {
+		if normalized := normalizeShellName(name); isSupportedShell(normalized) {
+			return normalized, nil
+		}
+	}
+
+	// Shell-specific version variables are exported by the shell and inherited
+	// by every subprocess, including package-manager installers (brew → ruby).
+	// Check them before $SHELL because they reflect the active session shell
+	// rather than the login shell recorded in /etc/passwd.
+	if os.Getenv("ZSH_VERSION") != "" {
+		return string(Zsh), nil
+	}
+
+	if os.Getenv("BASH_VERSION") != "" {
+		return string(Bash), nil
+	}
+
+	if os.Getenv("FISH_VERSION") != "" {
+		return string(Fish), nil
+	}
+
+	// Try SHELL environment variable last (Unix/macOS login shell path).
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
