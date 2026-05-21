@@ -1,20 +1,20 @@
-# `dr pipelines` - Pipelines API management
+# `dr pipeline` - Pipelines API management
 
 Manage AI/ML pipelines orchestrated by Covalent through the DataRobot
-pipelines service. The `dr pipelines` group is a thin CLI wrapper over
+pipelines service. The `dr pipeline` group is a thin CLI wrapper over
 the pipelines REST API: every subcommand maps directly to a single
 endpoint.
 
 ## Synopsis
 
 ```bash
-dr pipelines <command> [subcommand] [flags]
+dr pipeline <command> [subcommand] [flags]
 ```
 
 ## Description
 
 A **pipeline** is a versioned bundle of Python source defining a DataRobot pipeline (one or more tasks). Each
-top-level `dr pipelines` subcommand operates on one of four resources:
+top-level `dr pipeline` subcommand operates on one of four resources:
 
 - the **pipeline** itself (create, list, get, update, delete, lock),
 - pipeline **versions** (list, get, graph),
@@ -40,9 +40,9 @@ to a frozen version) — selected via the shared `--scope` and
 `--version` flags. Schedules are locked-only.
 
 > [!NOTE]
-> The `pipelines` command is currently behind a feature gate. Enable it
+> The `pipeline` command is currently behind a feature gate. Enable it
 > by exporting `DATAROBOT_CLI_FEATURE_PIPELINE=true` before running any
-> `dr pipelines` subcommand. See
+> `dr pipeline` subcommand. See
 > [Feature gates](../development/feature-gates.md) for details.
 
 > [!NOTE]
