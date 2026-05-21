@@ -129,7 +129,7 @@ The following actions will be performed:
 
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"validation_violations": capture.validationViolations,
 			"missing_deps":          capture.missingMsgs,

@@ -90,7 +90,7 @@ func Cmd() *cobra.Command {
 
 	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"missing_deps":          checkResult.MissingMsgs,
 			"wrong_version_deps":    checkResult.WrongVersionMsgs,

@@ -44,7 +44,7 @@ func Cmd() *cobra.Command {
 		},
 	}
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWithProject(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"missing_deps":          result.MissingMsgs,
 			"wrong_version_deps":    result.WrongVersionMsgs,
