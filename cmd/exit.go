@@ -32,5 +32,6 @@ func Exit(code int) {
 		telemetryClient.Flush(3 * time.Second)
 	}
 
-	os.Exit(code)
+	// This is the only place in the codebase that should call os.Exit
+	os.Exit(code) //nolint:forbidigo
 }
