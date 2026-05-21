@@ -78,7 +78,12 @@ var EditCmd = &cobra.Command{
 		screen := editorScreen
 
 		if repo.IsInRepo() {
-			if handleExtraEnvVars(variables) {
+			useWizard, err := handleExtraEnvVars(variables)
+			if err != nil {
+				return err
+			}
+
+			if useWizard {
 				screen = wizardScreen
 			}
 		}
