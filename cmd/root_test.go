@@ -94,6 +94,13 @@ func TestVersionFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// pflag does not reset flag values between Parse calls, so the
+			// version flag stays true after this test. Reset it so subsequent
+			// tests that execute the root command aren't affected.
+			t.Cleanup(func() {
+				_ = RootCmd.PersistentFlags().Set("version", "false")
+			})
+
 			cmd := RootCmd
 			buf := new(bytes.Buffer)
 			cmd.SetOut(buf)
@@ -187,10 +194,10 @@ func TestUnknownArgGuard(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "unknown arg on parent command errors",
+			name:        "unknown subcommand on parent command errors",
 			args:        []string{"self", "not-a-thing"},
 			wantErr:     true,
-			errContains: "unknown arg: not-a-thing",
+			errContains: "unknown command: not-a-thing",
 		},
 		{
 			name:    "parent command with no args shows help without error",
@@ -198,9 +205,10 @@ func TestUnknownArgGuard(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "unknown command error",
-			args:    []string{"seIf"},
-			wantErr: true,
+			name:        "unknown top-level command errors",
+			args:        []string{"not-a-command"},
+			wantErr:     true,
+			errContains: "unknown command: not-a-command",
 		},
 	}
 
@@ -243,7 +251,7 @@ func TestSetUnknownArgGuards_AppliesGuardToPureParent(t *testing.T) {
 	err := parent.Args(parent, []string{"bogus"})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown arg: bogus")
+	assert.Contains(t, err.Error(), "unknown command: bogus")
 	assert.NoError(t, parent.Args(parent, []string{}))
 }
 
@@ -264,6 +272,33 @@ func TestSetUnknownArgGuards_SkipsCommandWithRunE(t *testing.T) {
 	assert.Nil(t, parent.Args, "parent with RunE should not have Args guard installed")
 }
 
+// TestSetUnknownArgGuards_RootLevelUnknownCommand verifies that a root-like
+// command (pure parent, no RunE) rejects an unrecognised first arg with the
+// expected "unknown command" message.
+//
+// Uses a fresh, isolated command tree rather than the global RootCmd to avoid
+// state pollution from cobra's package-level finalizers slice, which accumulates
+// across Execute calls in other tests and can cause RootCmd to appear non-runnable
+// by the time this assertion runs in the full test suite.
+func TestSetUnknownArgGuards_RootLevelUnknownCommand(t *testing.T) {
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+	root := &cobra.Command{Use: "root"}
+
+	root.AddCommand(child)
+
+	setUnknownArgGuards(root)
+
+	require.NotNil(t, root.Args)
+
+	err := root.Args(root, []string{"not-a-command"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown command: not-a-command")
+}
+
 func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 	child := &cobra.Command{
 		Use:  "child",
@@ -281,7 +316,7 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 	err := parent.Args(parent, []string{"x"})
 
 	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "unknown arg:", "explicit Args validator should not be overridden")
+	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
 }
 
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {

@@ -273,7 +273,7 @@ func setUnknownArgGuards(root *cobra.Command) {
 			return nil
 		}
 
-		return fmt.Errorf("unknown arg: %s", args[0])
+		return fmt.Errorf("unknown command: %s", args[0])
 	}
 
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
