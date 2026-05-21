@@ -10,11 +10,11 @@ linters:
     - depguard
     - dupword
     - errname
-    # - errorlint
+    # - errorlint # disabled until we can resolve lints
     - exhaustive
-    # - godot
-    # - godox
-    # - gosec
+    # - godot # disabled until we can resolve lints
+    # - godox # disabled until we can resolve lints
+    # - gosec # disabled until we can resolve lints
     - loggercheck
     - misspell
     - nestif
@@ -26,7 +26,7 @@ linters:
     - testifylint
     - unconvert
     - usestdlibvars
-    # - wrapcheck
+    # - wrapcheck # disabled until we can resolve lints
     - wsl_v5
   settings:
     depguard:
@@ -85,6 +85,8 @@ linters:
       - builtin$
       - examples$
 formatters:
+  enable:
+    - gofumpt
   exclusions:
     generated: lax
     paths:
