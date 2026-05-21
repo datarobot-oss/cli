@@ -24,7 +24,7 @@
 // consistently. PipelinePath then turns the resolved scope into the right
 // URL fragment.
 
-package pipelines
+package pipeline
 
 import (
 	"errors"

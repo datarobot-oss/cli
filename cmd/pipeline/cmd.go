@@ -12,34 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pipelines
+package pipeline
 
 import (
-	"testing"
-
 	"github.com/datarobot/cli/internal/features"
-	"github.com/stretchr/testify/assert"
+	"github.com/spf13/cobra"
 )
 
-func TestCmd_BasicMetadata(t *testing.T) {
-	cmd := Cmd()
+func Cmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "pipeline",
+		Aliases: []string{"pipelines"},
+		GroupID: "core",
+		Short:   "Pipelines API management commands",
+		Long: `Manage AI/ML pipelines orchestrated by Covalent.
 
-	assert.Equal(t, "pipeline", cmd.Use)
-	assert.Equal(t, "core", cmd.GroupID)
-	assert.NotEmpty(t, cmd.Short)
-	assert.NotEmpty(t, cmd.Long)
-}
+Create, list, inspect, and update pipelines registered with the
+DataRobot pipelines service. Sub-commands are also available for managing
+input payloads, runs, and recurring schedules.`,
+	}
 
-func TestCmd_FeatureGate(t *testing.T) {
-	cmd := Cmd()
+	features.SetGate(cmd, "pipeline")
 
-	gate, ok := cmd.Annotations[features.AnnotationKey]
-	assert.True(t, ok, "expected feature-gate annotation to be set")
-	assert.Equal(t, "pipelines", gate)
-}
-
-func TestCmd_NoSubcommandsYet(t *testing.T) {
-	cmd := Cmd()
-
-	assert.Empty(t, cmd.Commands(), "base branch registers no subcommands")
+	return cmd
 }

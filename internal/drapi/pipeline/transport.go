@@ -22,7 +22,7 @@
 // shared drapi.SetAuthHeaders helper so the headers stay consistent with
 // every other CLI command.
 
-package pipelines
+package pipeline
 
 import (
 	"bytes"

@@ -41,7 +41,7 @@ to a frozen version) — selected via the shared `--scope` and
 
 > [!NOTE]
 > The `pipelines` command is currently behind a feature gate. Enable it
-> by exporting `DATAROBOT_CLI_FEATURE_PIPELINES=true` before running any
+> by exporting `DATAROBOT_CLI_FEATURE_PIPELINE=true` before running any
 > `dr pipelines` subcommand. See
 > [Feature gates](../development/feature-gates.md) for details.
 
@@ -57,4 +57,4 @@ to a frozen version) — selected via the shared `--scope` and
 - [Configuration](../user-guide/configuration.md) — config file and
   environment-variable precedence.
 - [Feature gates](../development/feature-gates.md) — flipping
-  `DATAROBOT_CLI_FEATURE_PIPELINES` on and off.
+  `DATAROBOT_CLI_FEATURE_PIPELINE` on and off.

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pipelines
+package pipeline
 
 import (
 	"fmt"
@@ -50,5 +50,5 @@ func (t *Time) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	return fmt.Errorf("pipelines: cannot parse time %q", s)
+	return fmt.Errorf("pipeline: cannot parse time %q", s)
 }

@@ -237,7 +237,7 @@ For detailed documentation on each command, see:
 
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
-- **[pipelines](pipelines.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINES=true`).
+- **[pipelines](pipelines.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
 
 ## Getting help
 
