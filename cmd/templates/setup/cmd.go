@@ -17,7 +17,6 @@ package setup
 import (
 	"context"
 
-	"github.com/amplitude/analytics-go/amplitude/types"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -45,14 +44,9 @@ var Cmd = &cobra.Command{
 		finalModel, err := RunTea(cmd.Context(), false)
 
 		if innerModel, ok := InnerModel(finalModel); ok && innerModel.template.Name != "" {
-			if client, ok := telemetry.ClientFromContext(cmd.Context()); ok {
-				client.Track(types.Event{
-					EventType: cmd.CommandPath(),
-					EventProperties: map[string]any{
-						"template_name": innerModel.template.Name,
-					},
-				})
-			}
+			telemetry.TrackEventFromContext(cmd.Context(), cmd.CommandPath(), map[string]any{
+				"template_name": innerModel.template.Name,
+			})
 		}
 
 		return err

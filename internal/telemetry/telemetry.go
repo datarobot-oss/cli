@@ -156,6 +156,26 @@ func (c *Client) Track(event types.Event) {
 	c.amp.Track(event)
 }
 
+// TrackEvent fires a one-off telemetry event using an event type and a property
+// map, without requiring callers to import the Amplitude SDK types directly.
+// It is intended for supplemental events fired outside the normal cobra
+// PersistentPostRunE wiring (e.g. post-TUI events where the result is only
+// known after the model exits).
+func (c *Client) TrackEvent(eventType string, props map[string]any) {
+	c.Track(types.Event{
+		EventType:       eventType,
+		EventProperties: props,
+	})
+}
+
+// TrackEventFromContext is a convenience wrapper around ClientFromContext and
+// TrackEvent. It is a no-op when the context carries no telemetry client.
+func TrackEventFromContext(ctx context.Context, eventType string, props map[string]any) {
+	if client, ok := ClientFromContext(ctx); ok {
+		client.TrackEvent(eventType, props)
+	}
+}
+
 // Flush sends all queued events and blocks until delivery completes or the
 // timeout elapses. Should be called once at process exit (typically in
 // PersistentPostRunE). Safe to call on a no-op client.
