@@ -24,6 +24,17 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
+// handleExtraEnvVars detects and prompts the user to configure component-specific environment variables.
+// It gathers user prompts from the parakeet template configuration and compares them against
+// the provided variables. If extra variables are found (defined in the template but not in variables),
+// it displays them and prompts the user to configure them interactively.
+//
+// Parameters:
+//   - variables: the current environment variables already set or parsed from .env
+//
+// Returns:
+//   - bool: true if user answered 'y' to configure the extra variables (launch wizard), false otherwise
+//   - error: if determining repo root, gathering prompts, or reading user input fails
 func handleExtraEnvVars(variables envbuilder.Variables) (bool, error) { //nolint: cyclop
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {

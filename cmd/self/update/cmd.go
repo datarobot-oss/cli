@@ -146,6 +146,14 @@ with your default shell.
 	return cmd
 }
 
+// backupExecutable creates a backup of the current CLI executable before updating.
+// It renames the existing executable to a versioned backup file (e.g., dr_v1.2.3).
+// If a backup from the same version already exists, it is removed first to avoid conflicts.
+//
+// Returns:
+//   - executable: absolute path to the original CLI executable
+//   - backup: absolute path to the backup file (with version suffix)
+//   - error: if determining the executable path, removing old backups, or creating the backup fails
 func backupExecutable() (string, string, error) {
 	executable, err := os.Executable()
 	if err != nil {

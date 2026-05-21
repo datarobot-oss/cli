@@ -22,6 +22,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Run fetches and displays all available DataRobot AI application templates.
+// It queries the DataRobot API to retrieve the list of templates and prints each one
+// in a tab-separated format (ID and Name).
+//
+// Returns:
+//   - error: if the API request fails or if the template list cannot be retrieved
 func Run() error {
 	templateList, err := drapi.GetTemplates()
 	if err != nil {
