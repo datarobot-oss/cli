@@ -37,7 +37,7 @@ linters:
             Call telemetry.Exit() instead of os.Exit() so pending telemetry is
             flushed before the process exits. Only main.go and
             internal/telemetry/telemetry.go may call os.Exit directly.
-        - pattern: '^log\.Fatalf?$'
+        - pattern: '^log\.Fatal(f|ln)?$'
           msg: >-
             log.Fatal/Fatalf calls os.Exit internally and bypasses telemetry
             flush. Return an error or call telemetry.Exit(1) instead.
