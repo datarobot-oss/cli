@@ -70,7 +70,6 @@ nav:
       - completion: commands/completion.md
       - self: commands/self.md
       - plugins: commands/plugins.md
-      - pipelines: commands/pipelines.md
       - component: commands/component-managed-updates.md
   - Development:
       - development/README.md

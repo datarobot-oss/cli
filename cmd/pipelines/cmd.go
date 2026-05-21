@@ -21,7 +21,8 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "pipelines",
+		Use:     "pipeline",
+		Aliases: []string{"pipelines"},
 		GroupID: "core",
 		Short:   "Pipelines API management commands",
 		Long: `Manage AI/ML pipelines orchestrated by Covalent.

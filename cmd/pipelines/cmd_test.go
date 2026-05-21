@@ -24,7 +24,7 @@ import (
 func TestCmd_BasicMetadata(t *testing.T) {
 	cmd := Cmd()
 
-	assert.Equal(t, "pipelines", cmd.Use)
+	assert.Equal(t, "pipeline", cmd.Use)
 	assert.Equal(t, "core", cmd.GroupID)
 	assert.NotEmpty(t, cmd.Short)
 	assert.NotEmpty(t, cmd.Long)

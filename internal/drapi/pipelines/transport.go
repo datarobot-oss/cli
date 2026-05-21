@@ -19,7 +19,7 @@
 //   - doDelete - DELETE returning 204 (or any 2xx with empty body).
 //
 // Authorization, User-Agent, and consumer-trace headers are owned by the
-// shared drapi.AuthorizeRequest helper so the headers stay consistent with
+// shared drapi.SetAuthHeaders helper so the headers stay consistent with
 // every other CLI command.
 
 package pipelines
@@ -30,16 +30,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 )
 
-// jsonTimeout is used for JSON request/response endpoints. These should
-// finish quickly compared to multipart uploads, so we keep the default
-// drapi timeout.
-const jsonTimeout = drapi.DefaultClientTimeout
+const jsonTimeout = 30 * time.Second
 
 // doJSON performs a request with a JSON-encoded body. If body is nil the
 // request is sent with no body (useful for status-only POSTs). If out is
@@ -58,7 +56,7 @@ func doJSON(method, endpoint string, body any, info string, out any) error {
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(jsonTimeout)
+	client := &http.Client{Timeout: jsonTimeout}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -98,7 +96,7 @@ func buildJSONRequest(method, endpoint string, body any) (*http.Request, error) 
 		return nil, err
 	}
 
-	err = drapi.AuthorizeRequest(req)
+	err = drapi.SetAuthHeaders(req)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +116,7 @@ func doDelete(endpoint, info string) error {
 		return err
 	}
 
-	err = drapi.AuthorizeRequest(req)
+	err = drapi.SetAuthHeaders(req)
 	if err != nil {
 		return err
 	}
@@ -131,7 +129,7 @@ func doDelete(endpoint, info string) error {
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(jsonTimeout)
+	client := &http.Client{Timeout: jsonTimeout}
 
 	resp, err := client.Do(req)
 	if err != nil {

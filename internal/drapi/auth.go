@@ -15,7 +15,6 @@
 package drapi
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/datarobot/cli/internal/config"
@@ -27,15 +26,16 @@ import (
 // (e.g. multipart streaming uploads in drapi/filesapi) can reuse the
 // canonical drapi auth-injection logic instead of re-implementing it.
 //
-// Reuses the package-level `token` memoization declared in get.go.
+// Reuses the package-level `token` memoization declared in get.go and
+// routes through resolveToken so --skip-auth is honoured consistently.
 func SetAuthHeaders(req *http.Request) error {
 	if token == "" {
-		var err error
-
-		token, err = config.GetAPIKey(context.Background())
+		resolved, err := resolveToken()
 		if err != nil {
 			return err
 		}
+
+		token = resolved
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
