@@ -248,3 +248,118 @@ func TestUpdateAfterSuccessDepsCheck_PreservesOtherFields(t *testing.T) {
 	require.NotNil(t, stateAfter.LastStart)
 	assert.Equal(t, stateBefore.LastStart.Unix(), stateAfter.LastStart.Unix())
 }
+
+func TestUpdateAfterTemplatesSetup(t *testing.T) {
+	t.Run("saves template name, ID and timestamp", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		beforeUpdate := time.Now().UTC()
+
+		err = UpdateAfterTemplatesSetup(tmpDir, "my-awesome-template", "tmpl-abc123")
+		require.NoError(t, err)
+
+		afterUpdate := time.Now().UTC()
+
+		loadedState, err := load(tmpDir)
+		require.NoError(t, err)
+
+		assert.Equal(t, "my-awesome-template", loadedState.TemplateName)
+		assert.Equal(t, "tmpl-abc123", loadedState.TemplateID)
+		assert.NotEmpty(t, loadedState.CLIVersion)
+		require.NotNil(t, loadedState.LastTemplatesSetup)
+		assert.True(t, loadedState.LastTemplatesSetup.After(beforeUpdate) || loadedState.LastTemplatesSetup.Equal(beforeUpdate))
+		assert.True(t, loadedState.LastTemplatesSetup.Before(afterUpdate) || loadedState.LastTemplatesSetup.Equal(afterUpdate))
+	})
+
+	t.Run("preserves other fields when updating", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterSuccessfulRun(tmpDir)
+		require.NoError(t, err)
+
+		stateBefore, err := load(tmpDir)
+		require.NoError(t, err)
+		require.NotNil(t, stateBefore.LastStart)
+
+		err = UpdateAfterTemplatesSetup(tmpDir, "preserved-template", "tmpl-xyz999")
+		require.NoError(t, err)
+
+		stateAfter, err := load(tmpDir)
+		require.NoError(t, err)
+
+		assert.Equal(t, "preserved-template", stateAfter.TemplateName)
+		assert.Equal(t, "tmpl-xyz999", stateAfter.TemplateID)
+		require.NotNil(t, stateAfter.LastStart)
+		assert.Equal(t, stateBefore.LastStart.Unix(), stateAfter.LastStart.Unix())
+	})
+}
+
+func TestGetTemplateName(t *testing.T) {
+	t.Run("returns template name when state exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterTemplatesSetup(tmpDir, "cool-template", "tmpl-cool1")
+		require.NoError(t, err)
+
+		name := GetTemplateName(tmpDir)
+
+		assert.Equal(t, "cool-template", name)
+	})
+
+	t.Run("returns empty string when no state file exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		name := GetTemplateName(tmpDir)
+
+		assert.Empty(t, name)
+	})
+
+	t.Run("returns empty string when template name not set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterSuccessfulRun(tmpDir)
+		require.NoError(t, err)
+
+		name := GetTemplateName(tmpDir)
+
+		assert.Empty(t, name)
+	})
+}
+
+func TestGetTemplateInfo(t *testing.T) {
+	t.Run("returns both name and ID when state exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterTemplatesSetup(tmpDir, "my-template", "tmpl-id-001")
+		require.NoError(t, err)
+
+		name, id := GetTemplateInfo(tmpDir)
+
+		assert.Equal(t, "my-template", name)
+		assert.Equal(t, "tmpl-id-001", id)
+	})
+
+	t.Run("returns empty strings when no state file exists", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		name, id := GetTemplateInfo(tmpDir)
+
+		assert.Empty(t, name)
+		assert.Empty(t, id)
+	})
+}

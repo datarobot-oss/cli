@@ -466,7 +466,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		}
 
 		// Update state for templates setup completion
-		_ = state.UpdateAfterTemplatesSetup(repoRoot)
+		_ = state.UpdateAfterTemplatesSetup(repoRoot, m.template.Name, m.template.ID)
 
 		return m, exit
 	case exitMsg:

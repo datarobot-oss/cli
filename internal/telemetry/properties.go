@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/shell"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/version"
 )
 
@@ -52,6 +54,8 @@ type CommonProperties struct {
 	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
 	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
+	TemplateName      *string // Name of the DataRobot template used to create this project; nil when not inside a template project
+	TemplateID        *string // Stable ID of the DataRobot template used to create this project; nil when not inside a template project
 }
 
 // DetectShell returns the name of the shell the CLI is running from.
@@ -102,6 +106,20 @@ func CollectCommonProperties() *CommonProperties {
 		}
 	}
 
+	// Read template info from project state if running inside a template project
+	repoRoot, err := repo.FindRepoRoot()
+	if err == nil {
+		name, id := state.GetTemplateInfo(repoRoot)
+
+		if name != "" {
+			props.TemplateName = &name
+		}
+
+		if id != "" {
+			props.TemplateID = &id
+		}
+	}
+
 	return props
 }
 
@@ -124,6 +142,14 @@ func (p *CommonProperties) AsMap() map[string]any {
 
 	if p.TenantID != nil {
 		m["tenant_id"] = *p.TenantID
+	}
+
+	if p.TemplateName != nil {
+		m["template_name"] = *p.TemplateName
+	}
+
+	if p.TemplateID != nil {
+		m["template_id"] = *p.TemplateID
 	}
 
 	return m
