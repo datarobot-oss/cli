@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config/viperx"
 	drlog "github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,8 +35,7 @@ func startLogger(t *testing.T) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-
-	t.Setenv("HOME", tmpDir)
+	testutil.SetTestHomeDir(t, tmpDir)
 	t.Cleanup(func() {
 		drlog.Stop()
 		viperx.Reset()
