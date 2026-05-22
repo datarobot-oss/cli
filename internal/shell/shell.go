@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -59,14 +60,33 @@ func normalizeShellName(name string) string {
 	return name
 }
 
-func DetectShell() (string, error) {
-	// Prefer the parent process name — accurate even after `exec sh` or similar.
-	if name := parentProcessName(); name != "" {
-		return normalizeShellName(name), nil
+// isSupportedShell reports whether name is one of the shells the CLI supports
+// for completion installation. Only normalized names should be passed.
+func isSupportedShell(name string) bool {
+	for _, s := range SupportedShells() {
+		if name == s {
+			return true
+		}
 	}
 
-	// Try SHELL environment variable next (Unix/macOS).
+	return false
+}
+
+func DetectShell() (string, error) {
+	// Prefer the parent process name — accurate for normal interactive use.
+	// Only trust it when it resolves to a shell the CLI actually supports;
+	// non-shell parents (e.g. Homebrew's Ruby interpreter) must fall through.
+	if name := parentProcessName(); name != "" {
+		if normalized := normalizeShellName(name); isSupportedShell(normalized) {
+			return normalized, nil
+		}
+	}
+
+	// $SHELL is a real environment variable that is inherited by all
+	// subprocesses, including package-manager installers (brew → ruby → dr).
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
+		log.Debug("Parent process name did not match a supported shell; falling back to $SHELL", "SHELL", shellPath)
+
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
 

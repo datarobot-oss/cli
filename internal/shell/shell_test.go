@@ -116,6 +116,34 @@ func TestShellFromEnvPath(t *testing.T) {
 	}
 }
 
+// TestDetectShell_ShellVersionEnvVars intentionally omitted: ZSH_VERSION,
+// BASH_VERSION, and FISH_VERSION are shell-only parameters, not environment
+// variables — they are never inherited by subprocesses and cannot be used for
+// detection. The $SHELL env var is the correct fallback (see DetectShell).
+
+func TestIsSupportedShell(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: "bash", want: true},
+		{name: "zsh", want: true},
+		{name: "fish", want: true},
+		{name: "powershell", want: true},
+		{name: "ruby", want: false},
+		{name: "python", want: false},
+		{name: "sh", want: false},
+		{name: "node", want: false},
+		{name: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isSupportedShell(tt.name))
+		})
+	}
+}
+
 // TestDetectShell_SHELLEnvFixtures calls DetectShell with SHELL set to a
 // variety of fixture values and verifies it always returns a usable, non-empty
 // name. Because parentProcessName() succeeds in the test runner the env-var
