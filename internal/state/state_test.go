@@ -300,44 +300,6 @@ func TestUpdateAfterTemplatesSetup(t *testing.T) {
 	})
 }
 
-func TestGetTemplateName(t *testing.T) {
-	t.Run("returns template name when state exists", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
-		err := os.MkdirAll(localStateDir, 0o755)
-		require.NoError(t, err)
-
-		err = UpdateAfterTemplatesSetup(tmpDir, "cool-template", "tmpl-cool1")
-		require.NoError(t, err)
-
-		name := GetTemplateName(tmpDir)
-
-		assert.Equal(t, "cool-template", name)
-	})
-
-	t.Run("returns empty string when no state file exists", func(t *testing.T) {
-		tmpDir := t.TempDir()
-
-		name := GetTemplateName(tmpDir)
-
-		assert.Empty(t, name)
-	})
-
-	t.Run("returns empty string when template name not set", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
-		err := os.MkdirAll(localStateDir, 0o755)
-		require.NoError(t, err)
-
-		err = UpdateAfterSuccessfulRun(tmpDir)
-		require.NoError(t, err)
-
-		name := GetTemplateName(tmpDir)
-
-		assert.Empty(t, name)
-	})
-}
-
 func TestGetTemplateInfo(t *testing.T) {
 	t.Run("returns both name and ID when state exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -356,6 +318,21 @@ func TestGetTemplateInfo(t *testing.T) {
 
 	t.Run("returns empty strings when no state file exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
+
+		name, id := GetTemplateInfo(tmpDir)
+
+		assert.Empty(t, name)
+		assert.Empty(t, id)
+	})
+
+	t.Run("returns empty strings when template info not set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		localStateDir := filepath.Join(tmpDir, ".datarobot", "cli")
+		err := os.MkdirAll(localStateDir, 0o755)
+		require.NoError(t, err)
+
+		err = UpdateAfterSuccessfulRun(tmpDir)
+		require.NoError(t, err)
 
 		name, id := GetTemplateInfo(tmpDir)
 

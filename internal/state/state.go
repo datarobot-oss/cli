@@ -152,17 +152,6 @@ func UpdateAfterTemplatesSetup(repoRoot, templateName, templateID string) error 
 	return existingState.update()
 }
 
-// GetTemplateName returns the template name stored in the project state file.
-// Returns an empty string if no state file exists or no template name was recorded.
-func GetTemplateName(repoRoot string) string {
-	existingState, err := load(repoRoot)
-	if err != nil {
-		return ""
-	}
-
-	return existingState.TemplateName
-}
-
 // GetTemplateInfo returns the template name and ID stored in the project state file.
 // Returns empty strings if no state file exists or no template info was recorded.
 func GetTemplateInfo(repoRoot string) (name, id string) {

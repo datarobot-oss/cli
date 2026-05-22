@@ -437,6 +437,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	case templateInDirMsg:
 		m.screen = dotenvScreen
 		m.list.Template = msg.template
+		m.template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
 		m.dotenv.NeedsPulumiLogin, m.dotenv.PulumiAlreadyLoggedIn, m.dotenv.NeedsPulumiPassphrase = dotenv.CheckPulumiSetup(filepath.Dir(msg.dotenvFile), nil)
 		m.dotenvSetupCompleted = true
