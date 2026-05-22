@@ -19,10 +19,15 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/cobra"
 )
 
+// Run fetches and displays all available DataRobot AI application templates.
+// It queries the DataRobot API to retrieve the list of templates and prints each one
+// in a tab-separated format (ID and Name).
+//
+// Returns:
+//   - error: if the API request fails or if the template list cannot be retrieved
 func Run() error {
 	templateList, err := drapi.GetTemplates()
 	if err != nil {
@@ -50,11 +55,7 @@ start building AI applications. Each template includes:
 
 💡 Use 'dr templates setup' for an interactive selection experience.`,
 	PreRunE: auth.EnsureAuthenticatedE,
-	Run: func(_ *cobra.Command, _ []string) {
-		err := Run()
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
+	RunE: func(_ *cobra.Command, _ []string) error {
+		return Run()
 	},
 }

@@ -19,21 +19,31 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/envbuilder"
-	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 )
 
-func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
+// handleExtraEnvVars detects and prompts the user to configure component-specific environment variables.
+// It gathers user prompts from the application template configuration and compares them against
+// the provided variables. If extra variables are found (defined in the template but not in variables),
+// it displays them and prompts the user to configure them interactively.
+//
+// Parameters:
+//   - variables: the current environment variables already set or parsed from .env
+//
+// Returns:
+//   - bool: true if user answered 'y' to configure the extra variables (launch wizard), false otherwise
+//   - error: if determining repo root, gathering prompts, or reading user input fails
+func handleExtraEnvVars(variables envbuilder.Variables) (bool, error) { //nolint: cyclop
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
-		log.Fatalf("Error determining repo root: %v", err)
+		return false, fmt.Errorf("error determining repo root: %w", err)
 	}
 
 	userPrompts, err := envbuilder.GatherUserPrompts(repoRoot, variables)
 	if err != nil {
-		log.Fatalf("Error gathering user prompts: %v", err)
+		return false, fmt.Errorf("error gathering user prompts: %w", err)
 	}
 
 	// Create a new empty string set
@@ -83,11 +93,11 @@ func handleExtraEnvVars(variables envbuilder.Variables) bool { //nolint: cyclop
 
 		selectedOption, err := reader.ReadString()
 		if err != nil {
-			log.Fatalf("Error reading user reply: %v", err)
+			return false, fmt.Errorf("error reading user reply: %w", err)
 		}
 
-		return strings.ToLower(strings.TrimSpace(selectedOption)) == "y"
+		return strings.ToLower(strings.TrimSpace(selectedOption)) == "y", nil
 	}
 
-	return false
+	return false, nil
 }

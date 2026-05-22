@@ -83,6 +83,8 @@ func (l *amplitudeLogger) Errorf(msg string, args ...any) {
 // events via the internal/log debug logger for development visibility.
 func NewClient(props *CommonProperties) *Client {
 	if !IsEnabled() {
+		log.Debug("Telemetry client initialized (debug log)")
+
 		return &Client{amp: nil, props: props}
 	}
 
@@ -90,6 +92,8 @@ func NewClient(props *CommonProperties) *Client {
 	config.Logger = &amplitudeLogger{}
 
 	client := amplitude.NewClient(config)
+
+	log.Debug("Telemetry client initialized (Amplitude)")
 
 	return &Client{
 		amp:   client,
@@ -136,6 +140,8 @@ func (c *Client) Track(event types.Event) {
 		return
 	}
 
+	log.Debug("Telemetry event tracked", "event_type", event.EventType)
+
 	c.amp.Track(event)
 }
 
@@ -144,8 +150,12 @@ func (c *Client) Track(event types.Event) {
 // PersistentPostRunE). Safe to call on a no-op client.
 func (c *Client) Flush(timeout time.Duration) {
 	if c.amp == nil {
+		log.Debug("Telemetry flush skipped (client disabled)")
+
 		return
 	}
+
+	log.Debug("Telemetry flush started", "timeout", timeout)
 
 	done := make(chan struct{})
 
@@ -156,7 +166,7 @@ func (c *Client) Flush(timeout time.Duration) {
 
 	select {
 	case <-done:
-		// Successfully flushed
+		log.Debug("Telemetry flush completed")
 	case <-time.After(timeout):
 		// Timeout reached, events may not have been sent
 		log.Debug("Telemetry flush timed out", "timeout", timeout)

@@ -108,7 +108,12 @@ func ValidateAndEditIfNeeded() error {
 	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 	screen := editorScreen
 
-	if handleExtraEnvVars(variables) {
+	useWizard, err := handleExtraEnvVars(variables)
+	if err != nil {
+		return err
+	}
+
+	if useWizard {
 		screen = wizardScreen
 	}
 

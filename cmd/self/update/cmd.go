@@ -107,11 +107,17 @@ with your default shell.
 			switch runtime.GOOS {
 			case "windows":
 				command = "irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex"
-				executable, backup = backupExecutable()
+
+				var err error
+
+				executable, backup, err = backupExecutable()
+				if err != nil {
+					return err
+				}
 			case "darwin", "linux":
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
 			default:
-				log.Fatalf("Could not determine OS: %s\n", runtime.GOOS)
+				return fmt.Errorf("could not determine OS: %s", runtime.GOOS)
 			}
 
 			execCmd := exec.Command(shell, "-c", command)
@@ -122,15 +128,13 @@ with your default shell.
 			if err := execCmd.Run(); err != nil {
 				if runtime.GOOS == "windows" {
 					// rename back if update failed
-					err = os.Rename(backup, executable)
-					if err != nil {
+					revertErr := os.Rename(backup, executable)
+					if revertErr != nil {
 						log.Errorf("Could not revert executable from backup: %s\n", backup)
 					}
 				}
 
-				log.Fatalf("Command execution failed: %v\n", err)
-
-				return err
+				return fmt.Errorf("command execution failed: %w", err)
 			}
 
 			return nil
@@ -142,10 +146,18 @@ with your default shell.
 	return cmd
 }
 
-func backupExecutable() (string, string) {
+// backupExecutable creates a backup of the current CLI executable before updating.
+// It renames the existing executable to a versioned backup file (e.g., dr_v1.2.3).
+// If a backup from the same version already exists, it is removed first to avoid conflicts.
+//
+// Returns:
+//   - executable: absolute path to the original CLI executable
+//   - backup: absolute path to the backup file (with version suffix)
+//   - error: if determining the executable path, removing old backups, or creating the backup fails
+func backupExecutable() (string, string, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		log.Fatal("Could not determine current executable\n")
+		return "", "", fmt.Errorf("could not determine current executable: %w", err)
 	}
 
 	dir, file := filepath.Split(executable)
@@ -157,14 +169,14 @@ func backupExecutable() (string, string) {
 	if fsutil.FileExists(backup) {
 		err = os.Remove(backup)
 		if err != nil {
-			log.Fatalf("Could not remove old backup executable: %s\n", backup)
+			return "", "", fmt.Errorf("could not remove old backup executable %s: %w", backup, err)
 		}
 	}
 
 	err = os.Rename(executable, backup)
 	if err != nil {
-		log.Fatalf("Could not backup current executable\n")
+		return "", "", fmt.Errorf("could not backup current executable: %w", err)
 	}
 
-	return executable, backup
+	return executable, backup, nil
 }
