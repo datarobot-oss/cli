@@ -27,6 +27,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -82,6 +83,13 @@ Example:
 
 	flags.Bind(cmd)
 	pipeline.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"pipeline_id":   flags.PipelineID,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }
