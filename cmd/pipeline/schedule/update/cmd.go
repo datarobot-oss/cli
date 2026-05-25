@@ -16,9 +16,7 @@ package update
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/schedule/scheduleutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
@@ -30,7 +28,7 @@ func Cmd() *cobra.Command {
 		version      int
 		cron         string
 		timezone     string
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -42,13 +40,13 @@ At least one of --cron or --timezone must be supplied; otherwise the
 command sends an empty patch which the API treats as a no-op.
 
 Example:
-  dr pipelines schedule update --pipeline <id> --version=2 <schedule-id> --cron "*/15 * * * *"
-  dr pipelines schedule update --pipeline <id> --version=2 <schedule-id> --timezone Europe/Berlin`,
+  dr pipeline schedule update --pipeline <id> --version=2 <schedule-id> --cron "*/15 * * * *"
+  dr pipeline schedule update --pipeline <id> --version=2 <schedule-id> --timezone Europe/Berlin`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := buildUpdateBody(cmd, pipelineID, version, cron, timezone, outputFormat)
+			body, err := buildUpdateBody(cmd, pipelineID, version, cron, timezone)
 			if err != nil {
 				return err
 			}
@@ -58,13 +56,7 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return scheduleutil.PrintScheduleJSON(*result)
-			}
-
-			scheduleutil.PrintScheduleHuman(*result)
-
-			return nil
+			return pipeline.RenderSchedule(outputFormat, *result)
 		},
 	}
 
@@ -72,18 +64,14 @@ Example:
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	cmd.Flags().StringVar(&cron, "cron", "", "New cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "New IANA timezone name")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
 
 // buildUpdateBody validates the flag set and assembles the PATCH body. It is
 // extracted from RunE to keep the cobra command's cyclomatic complexity low.
-func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, timezone, outputFormat string) (pipeline.ScheduleUpdateRequest, error) {
-	if outputFormat != "" && outputFormat != "json" {
-		return pipeline.ScheduleUpdateRequest{}, fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-	}
-
+func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, timezone string) (pipeline.ScheduleUpdateRequest, error) {
 	if pipelineID == "" {
 		return pipeline.ScheduleUpdateRequest{}, errors.New("--pipeline is required")
 	}

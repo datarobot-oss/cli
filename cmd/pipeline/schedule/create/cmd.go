@@ -16,9 +16,7 @@ package create
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/schedule/scheduleutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
@@ -31,7 +29,7 @@ func Cmd() *cobra.Command {
 		cron         string
 		inputID      string
 		timezone     string
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,16 +38,12 @@ func Cmd() *cobra.Command {
 		Long: `Register a cron-style schedule that triggers a run on a fixed cadence.
 
 Example:
-  dr pipelines schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>
-  dr pipelines schedule create --pipeline <id> --version=2 --cron "0 9 * * *" --input <input-id> --timezone America/Los_Angeles`,
+  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>
+  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 9 * * *" --input <input-id> --timezone America/Los_Angeles`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if pipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -77,13 +71,7 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return scheduleutil.PrintScheduleJSON(*result)
-			}
-
-			scheduleutil.PrintScheduleHuman(*result)
-
-			return nil
+			return pipeline.RenderSchedule(outputFormat, *result)
 		},
 	}
 
@@ -92,7 +80,7 @@ Example:
 	cmd.Flags().StringVar(&cron, "cron", "", "Cron expression, e.g. \"0 * * * *\"")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

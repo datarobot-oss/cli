@@ -16,9 +16,7 @@ package list
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/schedule/scheduleutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
@@ -30,7 +28,7 @@ func Cmd() *cobra.Command {
 		version      int
 		offset       int
 		limit        int
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -39,16 +37,12 @@ func Cmd() *cobra.Command {
 		Long: `List recurring schedules attached to a locked pipeline version.
 
 Example:
-  dr pipelines schedule list --pipeline <id> --version=2
-  dr pipelines schedule list --pipeline <id> --version=2 --output json`,
+  dr pipeline schedule list --pipeline <id> --version=2
+  dr pipeline schedule list --pipeline <id> --version=2 --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if pipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -62,13 +56,7 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return scheduleutil.PrintScheduleListJSON(items)
-			}
-
-			scheduleutil.PrintScheduleListHuman(items)
-
-			return nil
+			return pipeline.RenderSchedules(outputFormat, items)
 		},
 	}
 
@@ -76,7 +64,7 @@ Example:
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of schedules to return")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

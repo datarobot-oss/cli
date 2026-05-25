@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/datarobot/cli/cmd/pipeline/schedule/scheduleutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -31,7 +30,7 @@ func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
 		version      int
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,16 +39,12 @@ func Cmd() *cobra.Command {
 		Long: `Display the cron expression, timezone, and lifecycle status of a schedule.
 
 Example:
-  dr pipelines schedule get --pipeline <id> --version=2 <schedule-id>
-  dr pipelines schedule get --pipeline <id> --version=2 <schedule-id> --output json`,
+  dr pipeline schedule get --pipeline <id> --version=2 <schedule-id>
+  dr pipeline schedule get --pipeline <id> --version=2 <schedule-id> --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if pipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -63,19 +58,13 @@ Example:
 				return handleGetError(err, args[0])
 			}
 
-			if outputFormat == "json" {
-				return scheduleutil.PrintScheduleJSON(*result)
-			}
-
-			scheduleutil.PrintScheduleHuman(*result)
-
-			return nil
+			return pipeline.RenderSchedule(outputFormat, *result)
 		},
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
