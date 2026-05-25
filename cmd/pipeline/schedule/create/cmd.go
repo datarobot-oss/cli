@@ -45,20 +45,12 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if pipelineID == "" {
-				return errors.New("--pipeline is required")
-			}
-
 			if version <= 0 {
 				return errors.New("--version is required and must be > 0")
 			}
 
 			if cron == "" {
 				return errors.New("--cron is required")
-			}
-
-			if inputID == "" {
-				return errors.New("--input is required")
 			}
 
 			body := pipeline.ScheduleCreateRequest{
@@ -77,9 +69,11 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	cmd.Flags().StringVar(&cron, "cron", "", "Cron expression, e.g. \"0 * * * *\"")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
+	_ = cmd.MarkFlagRequired("input")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 

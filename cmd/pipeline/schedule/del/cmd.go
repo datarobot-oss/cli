@@ -21,8 +21,10 @@ package del
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -46,17 +48,13 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if pipelineID == "" {
-				return errors.New("--pipeline is required")
-			}
-
 			if version <= 0 {
 				return errors.New("--version is required and must be > 0")
 			}
 
 			err := pipeline.DeleteSchedule(pipelineID, version, args[0])
 			if err != nil {
-				return err
+				return handleDeleteError(err, args[0])
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted schedule: " + args[0]))
@@ -66,6 +64,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
@@ -77,4 +76,19 @@ Example:
 	})
 
 	return cmd
+}
+
+// handleDeleteError converts a 404 into a friendly informational message
+// (returns nil) so the user does not see a stack-trace-style HTTP error
+// for what is effectively a no-op.
+func handleDeleteError(err error, id string) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		fmt.Println(tui.DimStyle.Render("No schedule found with id: " + id))
+
+		return nil
+	}
+
+	return err
 }

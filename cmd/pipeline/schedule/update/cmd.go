@@ -62,6 +62,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	cmd.Flags().StringVar(&cron, "cron", "", "New cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "New IANA timezone name")
@@ -82,10 +83,6 @@ Example:
 // buildUpdateBody validates the flag set and assembles the PATCH body. It is
 // extracted from RunE to keep the cobra command's cyclomatic complexity low.
 func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, timezone string) (pipeline.ScheduleUpdateRequest, error) {
-	if pipelineID == "" {
-		return pipeline.ScheduleUpdateRequest{}, errors.New("--pipeline is required")
-	}
-
 	if version <= 0 {
 		return pipeline.ScheduleUpdateRequest{}, errors.New("--version is required and must be > 0")
 	}
