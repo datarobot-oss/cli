@@ -42,68 +42,53 @@ const (
 )
 
 // PipelineVersion mirrors PipelineVersionResponse from the pipelines-api.
-//
-// JSON tags `lattice_name` and `electron_names` track the current API wire
-// format. The DataRobot terminology has moved to `pipeline_name` / `task_names`
-// — when the API updates the wire format, flip the json tags here. Until then
-// the Go-level identifiers (PipelineName, TaskNames) use the new names so the
-// rest of the codebase reads cleanly.
 type PipelineVersion struct {
 	Version        int            `json:"version"`
 	Status         string         `json:"status"`
-	PipelineName   string         `json:"lattice_name"`
-	TaskNames      []string       `json:"electron_names,omitempty"`
-	PythonVersion  string         `json:"python_version"`
-	ResourceBundle map[string]any `json:"resource_bundle,omitempty"`
-	ErrorDetail    string         `json:"error_detail,omitempty"`
-	CreatedAt      Time           `json:"created_at"`
+	TaskNames      []string       `json:"taskNames,omitempty"`
+	PythonVersion  string         `json:"pythonVersion"`
+	ResourceBundle map[string]any `json:"resourceBundle,omitempty"`
+	ErrorDetail    string         `json:"errorDetail,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 // Pipeline mirrors PipelineDetailResponse from the pipelines-api.
 type Pipeline struct {
-	PipelineID  string            `json:"pipeline_id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Mode        string            `json:"mode"`
-	IsActive    bool              `json:"is_active"`
-	CreatedAt   Time              `json:"created_at"`
-	UpdatedAt   Time              `json:"updated_at"`
-	Versions    []PipelineVersion `json:"versions"`
+	PipelineID     string            `json:"id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description,omitempty"`
+	Mode           string            `json:"mode"`
+	IsActive       bool              `json:"isActive"`
+	TaskNames      []string          `json:"taskNames,omitempty"`
+	PythonVersion  string            `json:"pythonVersion,omitempty"`
+	ResourceBundle map[string]any    `json:"resourceBundle,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
+	Versions       []PipelineVersion `json:"versions"`
 }
 
 // CreateResponse mirrors PipelineCreateResponse from the pipelines-api.
 // It is also returned by PATCH /pipelines/{id}.
-//
-// See PipelineVersion for the rationale on the legacy `electron_names`
-// JSON tag.
 type CreateResponse struct {
-	PipelineID string    `json:"pipeline_id"`
+	PipelineID string    `json:"id"`
 	Name       string    `json:"name"`
 	Version    int       `json:"version"`
 	Status     string    `json:"status"`
 	Mode       string    `json:"mode"`
-	TaskNames  []string  `json:"electron_names,omitempty"`
-	CreatedAt  Time      `json:"created_at"`
+	TaskNames  []string  `json:"taskNames,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // ListItem mirrors PipelineListItem from the pipelines-api.
 type ListItem struct {
-	PipelineID    string    `json:"pipeline_id"`
+	PipelineID    string    `json:"id"`
 	Name          string    `json:"name"`
 	Description   string    `json:"description,omitempty"`
 	Mode          string    `json:"mode"`
-	IsActive      bool      `json:"is_active"`
-	LatestVersion *int      `json:"latest_version,omitempty"`
-	CreatedAt     Time      `json:"created_at"`
-	UpdatedAt     Time      `json:"updated_at"`
-}
-
-// ListResponse mirrors PipelineListResponse from the pipelines-api.
-type ListResponse struct {
-	Items  []ListItem `json:"items"`
-	Total  int        `json:"total"`
-	Offset int        `json:"offset"`
-	Limit  int        `json:"limit"`
+	IsActive      bool      `json:"isActive"`
+	LatestVersion *int      `json:"latestVersion,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 // CreatePipeline uploads a Python file to POST /api/v2/pipelines.
@@ -133,7 +118,7 @@ func CreatePipeline(filePath, description, mode string) (*CreateResponse, error)
 }
 
 // ListPipelines fetches a paginated list of pipelines from GET /api/v2/pipelines.
-func ListPipelines(mode string, offset, limit int) (*ListResponse, error) {
+func ListPipelines(mode string, offset, limit int) (*DataPage[ListItem], error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -156,14 +141,14 @@ func ListPipelines(mode string, offset, limit int) (*ListResponse, error) {
 		endpoint = endpoint + "?" + encoded
 	}
 
-	var list ListResponse
+	var page DataPage[ListItem]
 
-	err = drapi.GetJSON(endpoint, "pipelines", &list)
+	err = drapi.GetJSON(endpoint, "pipelines", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return &list, nil
+	return &page, nil
 }
 
 // GetPipeline fetches a single pipeline from GET /api/v2/pipelines/{pipeline_id}.
@@ -296,6 +281,18 @@ func buildMultipartRequest(method, endpoint, filePath string, fields map[string]
 	return req, nil
 }
 
+// decodeHTTPError reads a non-2xx response body and turns it into a meaningful error.
+func decodeHTTPError(resp *http.Response, endpoint string) error {
+	respBody, _ := io.ReadAll(resp.Body)
+
+	detail := extractErrorDetail(respBody)
+	if detail != "" {
+		return fmt.Errorf("HTTP %d %s: %s", resp.StatusCode, http.StatusText(resp.StatusCode), detail)
+	}
+
+	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: endpoint}
+}
+
 // buildMultipartBody constructs a multipart/form-data body containing the named
 // file plus the given form fields.
 func buildMultipartBody(filePath string, fields map[string]string) (*bytes.Buffer, string, error) {
@@ -335,3 +332,29 @@ func buildMultipartBody(filePath string, fields map[string]string) (*bytes.Buffe
 	return &body, writer.FormDataContentType(), nil
 }
 
+// extractErrorDetail attempts to pull a "detail" string from a JSON error body
+// returned by FastAPI. Falls back to the raw body if the field is absent.
+func extractErrorDetail(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	var payload struct {
+		Detail any `json:"detail"`
+	}
+
+	err := json.Unmarshal(body, &payload)
+	if err == nil && payload.Detail != nil {
+		switch detail := payload.Detail.(type) {
+		case string:
+			return detail
+		default:
+			encoded, encErr := json.Marshal(detail)
+			if encErr == nil {
+				return string(encoded)
+			}
+		}
+	}
+
+	return string(body)
+}

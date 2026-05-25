@@ -71,10 +71,10 @@ func TestPrintGraphJSON(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
 
-	pipeline, ok := parsed["lattice"].(map[string]any)
+	pipeline, ok := parsed["pipeline"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "wf", pipeline["name"])
-	assert.Equal(t, "3.12", pipeline["python_version"])
+	assert.Equal(t, "3.12", pipeline["pythonVersion"])
 }
 
 func TestPrintGraphHuman(t *testing.T) {
@@ -123,7 +123,7 @@ func TestCmd_RejectsMissingPipeline(t *testing.T) {
 
 func TestCmd_RejectsBadOutput(t *testing.T) {
 	cmd := Cmd()
-	cmd.SetArgs([]string{"--pipeline", "p", "--output", "yaml"})
+	cmd.SetArgs([]string{"--pipeline", "p", "--output-format", "yaml"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.PreRunE = nil

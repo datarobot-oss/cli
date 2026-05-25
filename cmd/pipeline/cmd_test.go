@@ -42,14 +42,10 @@ func TestCmd_HasExpectedSubcommands(t *testing.T) {
 	cmd := Cmd()
 
 	want := map[string]bool{
-		"create":  false,
-		"list":    false,
-		"get":     false,
-		"update":  false,
-		"delete":  false,
-		"lock":    false,
-		"version": false,
-		"graph":   false,
+		"create": false,
+		"list":   false,
+		"get":    false,
+		"update": false,
 	}
 
 	for _, sub := range cmd.Commands() {

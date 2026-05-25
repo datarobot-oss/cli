@@ -20,14 +20,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines version`.
+// Cmd returns the parent command for `dr pipeline version`.
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Inspect pipeline versions",
 		Long: `Read-only access to pipeline versions.
 
-Versions are also surfaced inline by ` + "`dr pipelines get`" + `; this group
+Versions are also surfaced inline by ` + "`dr pipeline get`" + `; this group
 provides a paginated list and a single-version detail view.`,
 	}
 

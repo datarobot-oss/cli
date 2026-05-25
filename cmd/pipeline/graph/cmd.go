@@ -34,7 +34,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -50,16 +50,12 @@ Scope is selected from the --scope/--version flags:
   - --scope=locked --version=N -> locked graph for version N
 
 Example:
-  dr pipelines graph --pipeline <id>
-  dr pipelines graph --pipeline <id> --version=2 --output json`,
+  dr pipeline graph --pipeline <id>
+  dr pipeline graph --pipeline <id> --version=2 --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if flags.PipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -74,7 +70,7 @@ Example:
 				return handleGraphError(err, flags.PipelineID)
 			}
 
-			if outputFormat == "json" {
+			if outputFormat == pipeline.OutputFormatJSON {
 				return printGraphJSON(*result)
 			}
 
@@ -85,7 +81,7 @@ Example:
 	}
 
 	flags.Bind(cmd)
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipelines.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

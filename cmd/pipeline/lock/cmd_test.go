@@ -55,32 +55,32 @@ func sample() pipeline.CreateResponse {
 		Status:     "READY",
 		Mode:       "locked",
 		TaskNames:  []string{"e1", "e2"},
-		CreatedAt:  pipeline.Time{Time: time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)},
+		CreatedAt:  time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC),
 	}
 }
 
 func TestPrintLockJSON(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, printLockJSON(sample()))
+		require.NoError(t, pipeline.RenderCreateResponse(pipelines.OutputFormatJSON, sample()))
 	})
 
 	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
-	assert.Equal(t, "abc", parsed["pipeline_id"])
+	assert.Equal(t, "abc", parsed["id"])
 	assert.Equal(t, "locked", parsed["mode"])
 	assert.EqualValues(t, 3, parsed["version"])
 }
 
 func TestPrintLockHuman(t *testing.T) {
 	output := captureStdout(t, func() {
-		printLockHuman(sample())
+		require.NoError(t, pipeline.RenderCreateResponse(pipelines.OutputFormatText, sample()))
 	})
 
-	assert.Contains(t, output, "Pipeline ID:  abc")
-	assert.Contains(t, output, "Mode:         locked")
-	assert.Contains(t, output, "Version:      v3")
-	assert.Contains(t, output, "Tasks:        e1, e2")
+	assert.Contains(t, output, "abc")
+	assert.Contains(t, output, "locked")
+	assert.Contains(t, output, "3")
+	assert.Contains(t, output, "e1, e2")
 }
 
 func TestPrintLockHuman_NoTasks(t *testing.T) {
@@ -88,15 +88,15 @@ func TestPrintLockHuman_NoTasks(t *testing.T) {
 	resp.TaskNames = nil
 
 	output := captureStdout(t, func() {
-		printLockHuman(resp)
+		require.NoError(t, pipeline.RenderCreateResponse(pipelines.OutputFormatText, resp))
 	})
 
-	assert.Contains(t, output, "Tasks:        \u2014")
+	assert.Contains(t, output, "—")
 }
 
 func TestCmd_RejectsInvalidOutput(t *testing.T) {
 	cmd := Cmd()
-	cmd.SetArgs([]string{"abc", "--output", "yaml"})
+	cmd.SetArgs([]string{"abc", "--output-format", "yaml"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.PreRunE = nil

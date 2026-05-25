@@ -41,8 +41,8 @@ type GraphNode struct {
 	Type           string  `json:"type"`
 	Name           string  `json:"name"`
 	Source         *string `json:"source,omitempty"`
-	ResourceBundle any     `json:"resource_bundle,omitempty"`
-	TaskGroupID    any     `json:"task_group_id,omitempty"`
+	ResourceBundle any     `json:"resourceBundle,omitempty"`
+	TaskGroupID    any     `json:"taskGroupId,omitempty"`
 }
 
 // GraphEdge mirrors PipelineGraphEdge. Source and Target are integer node IDs.
@@ -50,23 +50,22 @@ type GraphNode struct {
 type GraphEdge struct {
 	Source    int    `json:"source"`
 	Target    int    `json:"target"`
-	EdgeName  string `json:"edge_name,omitempty"`
-	ParamType string `json:"param_type,omitempty"`
-	ArgIndex  int    `json:"arg_index,omitempty"`
+	EdgeName  string `json:"edgeName,omitempty"`
+	ParamType string `json:"paramType,omitempty"`
+	ArgIndex  int    `json:"argIndex,omitempty"`
 }
 
-// GraphPipeline mirrors PipelineGraphLattice — the pipeline header in the
-// graph payload. JSON tag remains `lattice` while the API wire format is
-// unchanged.
+// GraphPipeline mirrors PipelineGraphMeta — the pipeline header in the
+// graph payload (action 059: wire key renamed from "lattice" to "pipeline").
 type GraphPipeline struct {
 	Name          string `json:"name"`
-	PythonVersion string `json:"python_version"`
+	PythonVersion string `json:"pythonVersion"`
 }
 
 // Graph mirrors the JSON returned by GET /pipelines/{id}/graph and
 // GET /pipelines/{id}/versions/{ver}/graph.
 type Graph struct {
-	Pipeline GraphPipeline `json:"lattice"`
+	Pipeline GraphPipeline `json:"pipeline"`
 	Nodes    []GraphNode   `json:"nodes"`
 	Edges    []GraphEdge   `json:"edges"`
 }
@@ -91,14 +90,14 @@ func ListVersions(pipelineID string, offset, limit int) ([]PipelineVersion, erro
 		endpoint = endpoint + "?" + encoded
 	}
 
-	var versions []PipelineVersion
+	var page DataPage[PipelineVersion]
 
-	err = doJSON(http.MethodGet, endpoint, nil, "pipeline versions", &versions)
+	err = doJSON(http.MethodGet, endpoint, nil, "pipeline versions", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return versions, nil
+	return page.Data, nil
 }
 
 // GetVersion fetches a single version of a pipeline.

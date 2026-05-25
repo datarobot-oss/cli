@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/datarobot/cli/cmd/pipeline/version/versionutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -31,7 +30,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,16 +39,12 @@ func Cmd() *cobra.Command {
 		Long: `Display the pipeline metadata for a single pipeline version.
 
 Example:
-  dr pipelines version get --pipeline <id> 2
-  dr pipelines version get --pipeline <id> 2 --output json`,
+  dr pipeline version get --pipeline <id> 2
+  dr pipeline version get --pipeline <id> 2 --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if pipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -64,18 +59,12 @@ Example:
 				return handleGetError(err, args[0])
 			}
 
-			if outputFormat == "json" {
-				return versionutil.PrintVersionJSON(*result)
-			}
-
-			versionutil.PrintVersionHuman(*result)
-
-			return nil
+			return pipeline.RenderVersion(outputFormat, *result)
 		},
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipelines.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

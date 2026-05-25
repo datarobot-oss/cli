@@ -15,15 +15,9 @@
 package get
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
-	"text/tabwriter"
-	"time"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -33,42 +27,32 @@ import (
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat string
+	var outputFormat pipeline.OutputFormat
 
 	cmd := &cobra.Command{
 		Use:   "get <pipeline-id>",
 		Short: "Display details of a pipeline.",
 		Long: `Display full details of a pipeline including all versions.
 
-By default, output is human-readable. Use --output json for machine-parseable output.
+By default, output is human-readable. Use --output-format json for machine-parseable output.
 
 Example:
-  dr pipelines get 507f1f77bcf86cd799439011
-  dr pipelines get 507f1f77bcf86cd799439011 --output json`,
+  dr pipeline get 507f1f77bcf86cd799439011
+  dr pipeline get 507f1f77bcf86cd799439011 --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			pipeline, err := pipeline.GetPipeline(args[0])
 			if err != nil {
 				return handleGetError(err, args[0])
 			}
 
-			if outputFormat == "json" {
-				return printGetJSON(*pipeline)
-			}
-
-			printGetHuman(*pipeline)
-
-			return nil
+			return pipeline.RenderPipeline(outputFormat, *pipeline)
 		},
 	}
 
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipelines.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
@@ -87,71 +71,4 @@ func handleGetError(err error, pipelineID string) error {
 	}
 
 	return err
-}
-
-func printGetJSON(pipeline pipeline.Pipeline) error {
-	data, err := json.MarshalIndent(pipeline, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
-}
-
-func printGetHuman(pipeline pipeline.Pipeline) {
-	description := "\u2014"
-	if pipeline.Description != "" {
-		description = pipeline.Description
-	}
-
-	fmt.Println(tui.BaseTextStyle.Render("ID:          " + pipeline.PipelineID))
-	fmt.Println(tui.BaseTextStyle.Render("Name:        " + pipeline.Name))
-	fmt.Println(tui.BaseTextStyle.Render("Description: " + description))
-	fmt.Println(tui.BaseTextStyle.Render("Mode:        " + pipeline.Mode))
-	fmt.Println(tui.BaseTextStyle.Render(fmt.Sprintf("Active:      %t", pipeline.IsActive)))
-	fmt.Println(tui.DimStyle.Render("Created:     " + pipeline.CreatedAt.UTC().Format(time.RFC3339)))
-	fmt.Println(tui.DimStyle.Render("Updated:     " + pipeline.UpdatedAt.UTC().Format(time.RFC3339)))
-
-	if len(pipeline.Versions) == 0 {
-		return
-	}
-
-	fmt.Println()
-	fmt.Println(tui.BaseTextStyle.Render(fmt.Sprintf("Versions (%d):", len(pipeline.Versions))))
-
-	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(writer, "  VERSION\tSTATUS\tPYTHON\tCREATED\tTASKS")
-
-	for _, version := range pipeline.Versions {
-		tasks := "\u2014"
-		if len(version.TaskNames) > 0 {
-			tasks = strings.Join(version.TaskNames, ", ")
-		}
-
-		python := version.PythonVersion
-		if python == "" {
-			python = "\u2014"
-		}
-
-		fmt.Fprintf(writer, "  v%s\t%s\t%s\t%s\t%s\n",
-			strconv.Itoa(version.Version),
-			version.Status,
-			python,
-			version.CreatedAt.UTC().Format(time.RFC3339),
-			tasks,
-		)
-	}
-
-	_ = writer.Flush()
-
-	for _, version := range pipeline.Versions {
-		if version.ErrorDetail == "" {
-			continue
-		}
-
-		fmt.Println(tui.DimStyle.Render(fmt.Sprintf("  v%d error: %s", version.Version, version.ErrorDetail)))
-	}
 }

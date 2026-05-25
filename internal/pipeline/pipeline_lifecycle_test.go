@@ -69,13 +69,13 @@ func TestLockPipeline_PromotesAndDecodes(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"pipeline_id": "p-1",
+			"id": "p-1",
 			"name": "wf",
 			"version": 3,
 			"status": "READY",
 			"mode": "locked",
-			"electron_names": ["e1"],
-			"created_at": "2026-04-29T10:00:00Z"
+			"taskNames": ["e1"],
+			"createdAt": "2026-04-29T10:00:00Z"
 		}`))
 	}))
 

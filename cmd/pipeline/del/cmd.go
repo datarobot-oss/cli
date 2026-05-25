@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements the `dr pipelines delete` verb. The directory
+// Package del implements the `dr pipeline delete` verb. The directory
 // is named `del` rather than `delete` because the latter shadows Go's
 // built-in delete() function in importing files.
 
@@ -38,7 +38,7 @@ func Cmd() *cobra.Command {
 removed from the registry.
 
 Example:
-  dr pipelines delete 507f1f77bcf86cd799439011`,
+  dr pipeline delete 507f1f77bcf86cd799439011`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

@@ -31,7 +31,7 @@ func TestListVersions_TargetsCorrectURL(t *testing.T) {
 		assert.Equal(t, "10", r.URL.Query().Get("offset"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"version":1,"status":"READY","lattice_name":"wf","python_version":"3.12","created_at":"2026-04-29T10:00:00Z"}]`))
+		_, _ = w.Write([]byte(`{"data":[{"version":1,"status":"READY","pythonVersion":"3.12","createdAt":"2026-04-29T10:00:00Z"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
@@ -52,7 +52,7 @@ func TestGetVersion_TargetsCorrectURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"version":2,"status":"READY","lattice_name":"wf","python_version":"3.12","created_at":"2026-04-29T10:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"version":2,"status":"READY","pythonVersion":"3.12","createdAt":"2026-04-29T10:00:00Z"}`))
 	}))
 
 	defer srv.Close()
@@ -72,7 +72,7 @@ func TestGetGraph_DraftURL(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"lattice": {"name":"wf","python_version":"3.12"},
+			"pipeline": {"name":"wf","pythonVersion":"3.12"},
 			"nodes": [{"id":0,"type":"function","name":"wf"}],
 			"edges": []
 		}`))
@@ -96,7 +96,7 @@ func TestGetGraph_LockedURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/3/graph", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"lattice":{"name":"wf","python_version":"3.12"},"nodes":[],"edges":[]}`))
+		_, _ = w.Write([]byte(`{"pipeline":{"name":"wf","pythonVersion":"3.12"},"nodes":[],"edges":[]}`))
 	}))
 
 	defer srv.Close()
