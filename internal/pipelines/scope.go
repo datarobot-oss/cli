@@ -29,6 +29,7 @@ package pipelines
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -94,7 +95,7 @@ func PipelinePath(pipelineID string, scope Scope, version *int, suffix string) (
 
 	suffix = strings.TrimPrefix(suffix, "/")
 
-	base := "/api/v2/pipelines/" + pipelineID
+	base := "/api/v2/pipelines/" + url.PathEscape(pipelineID)
 
 	if scope == ScopeLocked {
 		if version == nil {
