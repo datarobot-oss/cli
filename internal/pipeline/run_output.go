@@ -129,7 +129,7 @@ func PrintRunHuman(r Run) {
 
 	if r.VersionID != nil {
 		scope = "locked"
-		versionDisplay = "v" + strconv.Itoa(*r.VersionID)
+		versionDisplay = strconv.Itoa(*r.VersionID)
 	}
 
 	covalent := r.CovalentDispatchID
@@ -215,7 +215,7 @@ func PrintRunListHuman(items []Run) {
 
 		if r.VersionID != nil {
 			scope = "locked"
-			ver = "v" + strconv.Itoa(*r.VersionID)
+			ver = strconv.Itoa(*r.VersionID)
 		}
 
 		t.Row(r.RunID, scope, ver, r.Status, r.TriggeredBy, r.UpdatedAt.UTC().Format(timestampFormat))
