@@ -46,10 +46,6 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if pipelineID == "" {
-				return errors.New("--pipeline is required")
-			}
-
 			versionID, err := strconv.Atoi(args[0])
 			if err != nil || versionID <= 0 {
 				return fmt.Errorf("invalid version: %q (expected a positive integer)", args[0])
@@ -65,6 +61,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

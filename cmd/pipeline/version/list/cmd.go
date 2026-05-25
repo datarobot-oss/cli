@@ -15,8 +15,6 @@
 package list
 
 import (
-	"errors"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -43,10 +41,6 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if pipelineID == "" {
-				return errors.New("--pipeline is required")
-			}
-
 			items, err := pipeline.ListVersions(pipelineID, offset, limit)
 			if err != nil {
 				return err
@@ -57,8 +51,9 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of versions to return")
+	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of versions to return")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
