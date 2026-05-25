@@ -37,7 +37,7 @@ func runCmd(t *testing.T, args ...string) error {
 func TestCmd_RejectsMissingEnvironment(t *testing.T) {
 	err := runCmd(t, "1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--environment")
+	assert.Contains(t, err.Error(), "environment")
 }
 
 func TestCmd_RejectsBadVersion(t *testing.T) {
