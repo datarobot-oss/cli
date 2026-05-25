@@ -15,9 +15,6 @@
 package list
 
 import (
-	"fmt"
-
-	"github.com/datarobot/cli/cmd/pipeline/environment/envutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
@@ -27,7 +24,7 @@ func Cmd() *cobra.Command {
 	var (
 		offset       int
 		limit        int
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,34 +37,24 @@ row reflects the latest version's status only; per-version details are
 returned by ` + "`environment create`" + ` and ` + "`environment update`" + `.
 
 Example:
-  dr pipelines environment list
-  dr pipelines environment list --offset 50 --limit 10 --output json`,
+  dr pipeline environment list
+  dr pipeline environment list --offset 50 --limit 10 --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			items, err := pipeline.ListEnvironments(offset, limit)
 			if err != nil {
 				return err
 			}
 
-			if outputFormat == "json" {
-				return envutil.PrintEnvironmentListJSON(items)
-			}
-
-			envutil.PrintEnvironmentListHuman(items)
-
-			return nil
+			return pipeline.RenderEnvironments(outputFormat, items)
 		},
 	}
 
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of environments to return")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
