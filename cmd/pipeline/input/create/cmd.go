@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -79,6 +80,15 @@ Example:
 	flags.Bind(cmd)
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the JSON payload file, e.g. --from-file=./payload.json (alternative to the positional argument)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"pipeline_id":   flags.PipelineID,
+			"scope":         flags.Scope,
+			"version":       flags.Version,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }
