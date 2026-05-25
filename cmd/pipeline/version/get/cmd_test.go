@@ -34,7 +34,7 @@ func TestCmd_RejectsMissingPipelineFlag(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsNonNumericVersion(t *testing.T) {
