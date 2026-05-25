@@ -38,7 +38,7 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 	err := runCmd(t,
 		"--pipeline", "p", "--version", "2",
 		"--cron", "0 * * * *", "--input", "in-1",
-		"--output", "yaml",
+		"--output-format", "yaml",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
@@ -71,7 +71,7 @@ func TestCmd_RejectsMissingInput(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"pipeline", "version", "cron", "input", "timezone", "output"} {
+	for _, name := range []string{"pipeline", "version", "cron", "input", "timezone", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }

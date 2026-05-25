@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements the `dr pipelines schedule delete` verb. The
+// Package del implements the `dr pipeline schedule delete` verb. The
 // directory is named `del` rather than `delete` because the latter
 // shadows Go's built-in delete() function in importing files.
 
@@ -40,7 +40,7 @@ func Cmd() *cobra.Command {
 		Long: `Delete a recurring schedule from a locked pipeline version.
 
 Example:
-  dr pipelines schedule delete --pipeline <id> --version=2 <schedule-id>`,
+  dr pipeline schedule delete --pipeline <id> --version=2 <schedule-id>`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

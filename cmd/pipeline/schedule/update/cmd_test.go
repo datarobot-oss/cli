@@ -29,7 +29,7 @@ func TestBuildUpdateBody_RequiresAtLeastOneField(t *testing.T) {
 
 	require.NoError(t, cmd.ParseFlags([]string{"--pipeline=p", "--version=2"}))
 
-	_, err := buildUpdateBody(cmd, "p", 2, "", "", "")
+	_, err := buildUpdateBody(cmd, "p", 2, "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one of --cron")
 }
@@ -45,7 +45,7 @@ func TestBuildUpdateBody_PicksUpChangedFlags(t *testing.T) {
 		"--timezone=America/Los_Angeles",
 	}))
 
-	body, err := buildUpdateBody(cmd, "p", 2, "*/5 * * * *", "America/Los_Angeles", "")
+	body, err := buildUpdateBody(cmd, "p", 2, "*/5 * * * *", "America/Los_Angeles")
 	require.NoError(t, err)
 	require.NotNil(t, body.CronExpression)
 	require.NotNil(t, body.Timezone)
@@ -64,7 +64,7 @@ func TestBuildUpdateBody_SkipsUnchangedFlags(t *testing.T) {
 		"--cron=0 0 * * *",
 	}))
 
-	body, err := buildUpdateBody(cmd, "p", 2, "0 0 * * *", "", "")
+	body, err := buildUpdateBody(cmd, "p", 2, "0 0 * * *", "")
 	require.NoError(t, err)
 	require.NotNil(t, body.CronExpression)
 	assert.Equal(t, "0 0 * * *", *body.CronExpression)
@@ -78,7 +78,7 @@ func TestBuildUpdateBody_RejectsMissingPipeline(t *testing.T) {
 
 	require.NoError(t, cmd.ParseFlags([]string{"--cron=0 0 * * *"}))
 
-	_, err := buildUpdateBody(cmd, "", 2, "0 0 * * *", "", "")
+	_, err := buildUpdateBody(cmd, "", 2, "0 0 * * *", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--pipeline")
 }
@@ -90,19 +90,19 @@ func TestBuildUpdateBody_RejectsZeroVersion(t *testing.T) {
 
 	require.NoError(t, cmd.ParseFlags([]string{"--pipeline=p", "--cron=0 0 * * *"}))
 
-	_, err := buildUpdateBody(cmd, "p", 0, "0 0 * * *", "", "")
+	_, err := buildUpdateBody(cmd, "p", 0, "0 0 * * *", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--version")
 }
 
-func TestBuildUpdateBody_RejectsInvalidOutput(t *testing.T) {
+func TestCmd_RejectsInvalidOutput(t *testing.T) {
 	cmd := Cmd()
+	cmd.SetArgs([]string{"sched-id", "--pipeline=p", "--version=2", "--cron=0 0 * * *", "--output-format=yaml"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
 
-	require.NoError(t, cmd.ParseFlags([]string{"--pipeline=p", "--version=2", "--cron=0 0 * * *"}))
-
-	_, err := buildUpdateBody(cmd, "p", 2, "0 0 * * *", "", "yaml")
+	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }

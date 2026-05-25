@@ -39,7 +39,7 @@ func TestCreateSchedule_LockedOnlyURLAndBody(t *testing.T) {
 		assert.Equal(t, "America/Los_Angeles", body.Timezone)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schedule_id":"s-1","pipeline_id":"p-1","version":2,"cron_expression":"0 * * * *","timezone":"America/Los_Angeles","status":"ACTIVE"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 * * * *","timezone":"America/Los_Angeles","status":"ACTIVE"}`))
 	}))
 
 	defer srv.Close()
@@ -64,7 +64,7 @@ func TestListSchedules_QueryAndDecode(t *testing.T) {
 		assert.Equal(t, "5", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"schedule_id":"s-1","pipeline_id":"p-1","version":2,"cron_expression":"0 0 * * *","timezone":"UTC","status":"ACTIVE"}]`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 0 * * *","timezone":"UTC","status":"ACTIVE"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
@@ -84,7 +84,7 @@ func TestGetSchedule_TargetsCorrectURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules/s-1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schedule_id":"s-1","pipeline_id":"p-1","version":2,"cron_expression":"0 * * * *","timezone":"UTC","status":"PAUSED"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 * * * *","timezone":"UTC","status":"PAUSED"}`))
 	}))
 
 	defer srv.Close()
@@ -112,7 +112,7 @@ func TestUpdateSchedule_OmitsUnsuppliedFields(t *testing.T) {
 		assert.False(t, hasTZ, "expected timezone to be omitted")
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"schedule_id":"s-1","pipeline_id":"p-1","version":2,"cron_expression":"*/15 * * * *","timezone":"UTC","status":"ACTIVE"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"*/15 * * * *","timezone":"UTC","status":"ACTIVE"}`))
 	}))
 
 	defer srv.Close()

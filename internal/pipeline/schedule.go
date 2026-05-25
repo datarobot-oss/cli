@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // ScheduleStatus mirrors PipelineScheduleStatus in the pipelines-api enums.
@@ -36,14 +37,14 @@ const (
 
 // Schedule mirrors PipelineScheduleResponse.
 type Schedule struct {
-	ScheduleID     string         `json:"schedule_id"`
-	PipelineID     string         `json:"pipeline_id"`
+	ScheduleID     string         `json:"id"`
+	PipelineID     string         `json:"pipelineId"`
 	Version        int            `json:"version"`
-	CronExpression string         `json:"cron_expression"`
+	CronExpression string         `json:"cronExpression"`
 	Timezone       string         `json:"timezone"`
 	Status         ScheduleStatus `json:"status"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 // ScheduleCreateRequest mirrors PipelineScheduleCreateRequest.
@@ -97,14 +98,14 @@ func ListSchedules(pipelineID string, version, offset, limit int) ([]Schedule, e
 		endpoint = endpoint + "?" + encoded
 	}
 
-	var schedules []Schedule
+	var page DataPage[Schedule]
 
-	err = doJSON(http.MethodGet, endpoint, nil, "schedules", &schedules)
+	err = doJSON(http.MethodGet, endpoint, nil, "schedules", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return schedules, nil
+	return page.Data, nil
 }
 
 // GetSchedule fetches a single schedule by id.

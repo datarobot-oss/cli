@@ -38,7 +38,7 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2", "--output", "yaml", "s-1")
+	err := runCmd(t, "--pipeline", "p", "--version", "2", "--output-format", "yaml", "s-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }

@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines schedule`.
+// Cmd returns the parent command for `dr pipeline schedule`.
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schedule",
