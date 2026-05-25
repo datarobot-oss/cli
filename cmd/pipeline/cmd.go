@@ -17,6 +17,7 @@ package pipeline
 import (
 	"github.com/datarobot/cli/cmd/pipeline/create"
 	"github.com/datarobot/cli/cmd/pipeline/del"
+	"github.com/datarobot/cli/cmd/pipeline/environment"
 	"github.com/datarobot/cli/cmd/pipeline/get"
 	"github.com/datarobot/cli/cmd/pipeline/graph"
 	"github.com/datarobot/cli/cmd/pipeline/input"
@@ -57,6 +58,7 @@ input payloads, runs, and recurring schedules.`,
 		run.Cmd(),
 		input.Cmd(),
 		schedule.Cmd(),
+		environment.Cmd(),
 	)
 
 	return cmd
