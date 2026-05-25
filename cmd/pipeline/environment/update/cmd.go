@@ -17,6 +17,7 @@ package update
 import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -57,6 +58,13 @@ Example:
 
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"environment_id": telemetry.FirstArg(args),
+			"output_format":  string(outputFormat),
+		}
+	})
 
 	return cmd
 }

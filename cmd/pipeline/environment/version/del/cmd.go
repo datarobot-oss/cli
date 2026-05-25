@@ -24,6 +24,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -66,6 +67,13 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&environmentID, "environment", "", "Environment ID (required)")
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"environment_id": environmentID,
+			"version":        telemetry.FirstArg(args),
+		}
+	})
 
 	return cmd
 }
