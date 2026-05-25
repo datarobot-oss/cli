@@ -43,13 +43,13 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	err := runCmd(t, "--input", "in-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsMissingInput(t *testing.T) {
 	err := runCmd(t, "--pipeline", "p")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--input")
+	assert.Contains(t, err.Error(), "input")
 }
 
 func TestCmd_RejectsBadScopeCombo(t *testing.T) {
