@@ -16,9 +16,7 @@ package list
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/input/inpututil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -30,7 +28,7 @@ func Cmd() *cobra.Command {
 		flags        scopeflag.Flags
 		offset       int
 		limit        int
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -45,17 +43,13 @@ Scope is selected the same way as create:
   - --scope=locked --version=N -> locked, version N
 
 Example:
-  dr pipelines input list --pipeline <id>
-  dr pipelines input list --pipeline <id> --version=2
-  dr pipelines input list --pipeline <id> --offset 50 --limit 10 --output json`,
+  dr pipeline input list --pipeline <id>
+  dr pipeline input list --pipeline <id> --version=2
+  dr pipeline input list --pipeline <id> --offset 50 --limit 10 --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if flags.PipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -70,20 +64,14 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return inpututil.PrintInputListJSON(items)
-			}
-
-			inpututil.PrintInputListHuman(items)
-
-			return nil
+			return pipeline.RenderInputs(outputFormat, items)
 		},
 	}
 
 	flags.Bind(cmd)
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of inputs to return")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

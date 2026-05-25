@@ -16,9 +16,7 @@ package update
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/input/inpututil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
@@ -28,7 +26,7 @@ func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
 		fromFile     string
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -41,23 +39,19 @@ one. The new payload must be a JSON object supplied either as a positional
 argument or via --from-file=<path>.
 
 Example:
-  dr pipelines input update --pipeline <id> <input-id> ./new_payload.json
-  dr pipelines input update --pipeline <id> <input-id> --from-file=./new_payload.json --output json`,
+  dr pipeline input update --pipeline <id> <input-id> ./new_payload.json
+  dr pipeline input update --pipeline <id> <input-id> --from-file=./new_payload.json --output-format json`,
 		Args:         cobra.RangeArgs(1, 2),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if pipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
 
 			inputID := args[0]
 
-			payload, err := inpututil.ResolvePayload(args[1:], fromFile)
+			payload, err := pipeline.ResolvePayload(args[1:], fromFile)
 			if err != nil {
 				return err
 			}
@@ -67,19 +61,13 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return inpututil.PrintInputJSON(*result)
-			}
-
-			inpututil.PrintInputHuman(*result)
-
-			return nil
+			return pipeline.RenderInput(outputFormat, *result)
 		},
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the JSON payload file, e.g. --from-file=./payload.json (alternative to the positional argument)")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
