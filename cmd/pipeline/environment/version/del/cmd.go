@@ -20,9 +20,11 @@ package del
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -44,10 +46,6 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if environmentID == "" {
-				return errors.New("--environment is required")
-			}
-
 			version, err := strconv.Atoi(args[0])
 			if err != nil || version <= 0 {
 				return fmt.Errorf("invalid version: %q (expected a positive integer)", args[0])
@@ -55,7 +53,7 @@ Example:
 
 			err = pipeline.DeleteEnvironmentVersion(environmentID, version)
 			if err != nil {
-				return err
+				return handleDeleteError(err, environmentID, args[0])
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render(
@@ -67,6 +65,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&environmentID, "environment", "", "Environment ID (required)")
+	_ = cmd.MarkFlagRequired("environment")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -76,4 +75,21 @@ Example:
 	})
 
 	return cmd
+}
+
+// handleDeleteError converts a 404 into a friendly informational message
+// (returns nil) so the user does not see a stack-trace-style HTTP error
+// for what is effectively a no-op.
+func handleDeleteError(err error, environmentID, version string) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		fmt.Println(tui.DimStyle.Render(
+			fmt.Sprintf("No environment version found: %s v%s", environmentID, version),
+		))
+
+		return nil
+	}
+
+	return err
 }

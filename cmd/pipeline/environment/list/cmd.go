@@ -54,7 +54,7 @@ Example:
 	}
 
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of environments to return")
+	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of environments to return")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {

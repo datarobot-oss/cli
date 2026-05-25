@@ -19,9 +19,12 @@
 package del
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -47,7 +50,7 @@ Example:
 		RunE: func(_ *cobra.Command, args []string) error {
 			err := pipeline.DeleteEnvironment(args[0])
 			if err != nil {
-				return err
+				return handleDeleteError(err, args[0])
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted environment: " + args[0]))
@@ -63,4 +66,19 @@ Example:
 	})
 
 	return cmd
+}
+
+// handleDeleteError converts a 404 into a friendly informational message
+// (returns nil) so the user does not see a stack-trace-style HTTP error
+// for what is effectively a no-op.
+func handleDeleteError(err error, id string) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		fmt.Println(tui.DimStyle.Render("No environment found with id: " + id))
+
+		return nil
+	}
+
+	return err
 }
