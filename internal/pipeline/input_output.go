@@ -48,7 +48,7 @@ func toInputJSON(input Input) inputJSON {
 
 	if input.VersionID != nil {
 		scope = "locked"
-		version = "v" + strconv.Itoa(*input.VersionID)
+		version = strconv.Itoa(*input.VersionID)
 	}
 
 	payloadBytes, _ := json.Marshal(input.Payload)
@@ -106,7 +106,7 @@ func PrintInputHuman(input Input) {
 
 	if input.VersionID != nil {
 		scope = "locked"
-		versionDisplay = "v" + strconv.Itoa(*input.VersionID)
+		versionDisplay = strconv.Itoa(*input.VersionID)
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -187,7 +187,7 @@ func PrintInputListHuman(inputs []Input) {
 
 		if in.VersionID != nil {
 			scope = "locked"
-			ver = "v" + strconv.Itoa(*in.VersionID)
+			ver = strconv.Itoa(*in.VersionID)
 		}
 
 		t.Row(in.InputID, scope, ver, string(in.State), in.UpdatedAt.UTC().Format(timestampFormat))

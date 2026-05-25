@@ -15,8 +15,6 @@
 package update
 
 import (
-	"errors"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -46,10 +44,6 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if pipelineID == "" {
-				return errors.New("--pipeline is required")
-			}
-
 			inputID := args[0]
 
 			payload, err := pipeline.ResolvePayload(args[1:], fromFile)
@@ -67,6 +61,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the JSON payload file, e.g. --from-file=./payload.json (alternative to the positional argument)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
