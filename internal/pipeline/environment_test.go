@@ -46,12 +46,12 @@ func TestCreateEnvironment_PostsBody(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
-			"environment_id":"env-1",
+			"id":"env-1",
 			"name":"ml-base",
 			"description":"for testing",
-			"latest_version":1,
-			"versions":[{"version":1,"packages":["numpy","pandas==2.0"],"status":"CREATING","created_at":"t","updated_at":"t"}],
-			"created_at":"t","updated_at":"t"
+			"latestVersion":1,
+			"versions":[{"version":1,"packages":["numpy","pandas==2.0"],"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
+			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
 	}))
 
@@ -79,7 +79,7 @@ func TestCreateEnvironment_OmitsEmptyDescription(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"environment_id":"env-1","name":"x","latest_version":1,"versions":[],"created_at":"t","updated_at":"t"}`))
+		_, _ = w.Write([]byte(`{"id":"env-1","name":"x","latestVersion":1,"versions":[],"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}`))
 	}))
 
 	defer srv.Close()
@@ -100,9 +100,7 @@ func TestListEnvironments_AddsPaginationQuery(t *testing.T) {
 		assert.Equal(t, "20", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[
-			{"environment_id":"env-1","name":"ml-base","latest_version":2,"latest_status":"READY","created_at":"t","updated_at":"t"}
-		]`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"env-1","name":"ml-base","latestVersion":2,"latestStatus":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
@@ -123,7 +121,7 @@ func TestListEnvironments_OmitsZeroPagination(t *testing.T) {
 		assert.Empty(t, r.URL.RawQuery)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`{"data":[],"totalCount":0,"count":0}`))
 	}))
 
 	defer srv.Close()
@@ -149,12 +147,12 @@ func TestUpdateEnvironment_PatchesBody(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"environment_id":"env-1","name":"ml-base","latest_version":2,
+			"id":"env-1","name":"ml-base","latestVersion":2,
 			"versions":[
-				{"version":2,"packages":["scikit-learn"],"status":"CREATING","created_at":"t","updated_at":"t"},
-				{"version":1,"packages":["numpy"],"status":"READY","created_at":"t","updated_at":"t"}
+				{"version":2,"packages":["scikit-learn"],"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+				{"version":1,"packages":["numpy"],"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 			],
-			"created_at":"t","updated_at":"t"
+			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
 	}))
 

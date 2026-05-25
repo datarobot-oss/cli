@@ -35,7 +35,7 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--name", "x", "--package", "numpy", "--output", "yaml")
+	err := runCmd(t, "--name", "x", "--package", "numpy", "--output-format", "yaml")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }
@@ -55,7 +55,7 @@ func TestCmd_RejectsMissingPackages(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"name", "description", "package", "output"} {
+	for _, name := range []string{"name", "description", "package", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }

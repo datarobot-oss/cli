@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements `dr pipelines environment version delete`.
+// Package del implements `dr pipeline environment version delete`.
 // Directory is named `del` to avoid shadowing Go's built-in `delete()`.
 
 package del
@@ -38,7 +38,7 @@ func Cmd() *cobra.Command {
 without touching the parent environment.
 
 Example:
-  dr pipelines environment version delete --environment env-123 2`,
+  dr pipeline environment version delete --environment env-123 2`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

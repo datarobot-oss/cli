@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines environment version`.
+// Cmd returns the parent command for `dr pipeline environment version`.
 // Currently only delete is exposed; the pipelines-api does not surface
 // per-version GET endpoints.
 func Cmd() *cobra.Command {

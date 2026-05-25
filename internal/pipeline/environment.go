@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 )
@@ -51,31 +52,31 @@ type EnvironmentVersion struct {
 	Version     int               `json:"version"`
 	Packages    []string          `json:"packages"`
 	Status      EnvironmentStatus `json:"status"`
-	ErrorDetail *string           `json:"error_detail,omitempty"`
-	CreatedAt   string            `json:"created_at"`
-	UpdatedAt   string            `json:"updated_at"`
+	ErrorDetail *string           `json:"errorDetail,omitempty"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
 }
 
 // Environment mirrors PipelineEnvironmentResponse (full detail).
 type Environment struct {
-	EnvironmentID string               `json:"environment_id"`
+	EnvironmentID string               `json:"id"`
 	Name          string               `json:"name"`
 	Description   *string              `json:"description,omitempty"`
-	LatestVersion int                  `json:"latest_version"`
+	LatestVersion int                  `json:"latestVersion"`
 	Versions      []EnvironmentVersion `json:"versions"`
-	CreatedAt     string               `json:"created_at"`
-	UpdatedAt     string               `json:"updated_at"`
+	CreatedAt     time.Time            `json:"createdAt"`
+	UpdatedAt     time.Time            `json:"updatedAt"`
 }
 
 // EnvironmentSummary mirrors PipelineEnvironmentSummaryResponse (list item).
 type EnvironmentSummary struct {
-	EnvironmentID string            `json:"environment_id"`
+	EnvironmentID string            `json:"id"`
 	Name          string            `json:"name"`
 	Description   *string           `json:"description,omitempty"`
-	LatestVersion int               `json:"latest_version"`
-	LatestStatus  EnvironmentStatus `json:"latest_status"`
-	CreatedAt     string            `json:"created_at"`
-	UpdatedAt     string            `json:"updated_at"`
+	LatestVersion int               `json:"latestVersion"`
+	LatestStatus  EnvironmentStatus `json:"latestStatus"`
+	CreatedAt     time.Time         `json:"createdAt"`
+	UpdatedAt     time.Time         `json:"updatedAt"`
 }
 
 // EnvironmentCreateRequest mirrors PipelineEnvironmentCreateRequest.
@@ -139,14 +140,14 @@ func ListEnvironments(offset, limit int) ([]EnvironmentSummary, error) {
 		endpoint = endpoint + "?" + encoded
 	}
 
-	var items []EnvironmentSummary
+	var page DataPage[EnvironmentSummary]
 
-	err = doJSON(http.MethodGet, endpoint, nil, "environments", &items)
+	err = doJSON(http.MethodGet, endpoint, nil, "environments", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return items, nil
+	return page.Data, nil
 }
 
 // UpdateEnvironment PATCHes an environment with additional packages,

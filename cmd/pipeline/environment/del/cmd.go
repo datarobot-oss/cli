@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements `dr pipelines environment delete`. Directory
+// Package del implements `dr pipeline environment delete`. Directory
 // is named `del` rather than `delete` to avoid shadowing Go's built-in
 // `delete()` in importing files.
 
@@ -36,10 +36,10 @@ execution environment. If no active versions remain after the delete,
 the parent environment is soft-deleted too.
 
 To delete a specific older version, use:
-  dr pipelines environment version delete --environment <id> <version>
+  dr pipeline environment version delete --environment <id> <version>
 
 Example:
-  dr pipelines environment delete env-123`,
+  dr pipeline environment delete env-123`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

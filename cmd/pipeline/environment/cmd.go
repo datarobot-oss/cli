@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines environment`. It
+// Cmd returns the parent command for `dr pipeline environment`. It
 // groups the lifecycle verbs that operate on pipeline execution
 // environments (named, immutable-versioned bags of pip packages).
 func Cmd() *cobra.Command {
