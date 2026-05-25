@@ -37,7 +37,7 @@ func TestCreateRun_DraftURLAndBody(t *testing.T) {
 		assert.Equal(t, "in-1", body.InputID)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"dispatch_id":"d-1","pipeline_id":"p-1","input_id":"in-1","triggered_by":"u","status":"PENDING"}`))
+		_, _ = w.Write([]byte(`{"id":"d-1","pipelineId":"p-1","inputId":"in-1","triggeredBy":"u","status":"PENDING"}`))
 	}))
 
 	defer srv.Close()
@@ -57,7 +57,7 @@ func TestCreateRun_LockedURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/dispatches", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"dispatch_id":"d-1","pipeline_id":"p-1","version_id":2,"input_id":"in-1","triggered_by":"u","status":"PENDING"}`))
+		_, _ = w.Write([]byte(`{"id":"d-1","pipelineId":"p-1","versionId":2,"inputId":"in-1","triggeredBy":"u","status":"PENDING"}`))
 	}))
 
 	defer srv.Close()
@@ -80,7 +80,7 @@ func TestListRuns_QueryAndDecode(t *testing.T) {
 		assert.Equal(t, "5", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"dispatch_id":"d-1","pipeline_id":"p-1","input_id":"in-1","triggered_by":"u","status":"RUNNING"}]`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"d-1","pipelineId":"p-1","inputId":"in-1","triggeredBy":"u","status":"RUNNING"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
@@ -100,7 +100,7 @@ func TestGetRun_TargetsCorrectURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/dispatches/d-1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"dispatch_id":"d-1","pipeline_id":"p-1","input_id":"in-1","triggered_by":"u","status":"COMPLETED"}`))
+		_, _ = w.Write([]byte(`{"id":"d-1","pipelineId":"p-1","inputId":"in-1","triggeredBy":"u","status":"COMPLETED"}`))
 	}))
 
 	defer srv.Close()
@@ -119,7 +119,7 @@ func TestGetRunStatus_StatusEndpointURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/dispatches/d-1/status", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"dispatch_id":"d-1","status":"RUNNING","covalent_dispatch_id":"cov-x"}`))
+		_, _ = w.Write([]byte(`{"id":"d-1","status":"RUNNING","covalentDispatchId":"cov-x"}`))
 	}))
 
 	defer srv.Close()

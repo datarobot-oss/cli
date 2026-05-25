@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // Run lifecycle states (mirrors PipelineDispatchStatus on the wire).
@@ -39,31 +40,26 @@ const (
 	RunStatusErrored   = "ERRORED"
 )
 
-// Run mirrors PipelineDispatchResponse from the pipelines-api. JSON tags
-// (`dispatch_id`, `covalent_dispatch_id`) track the current API wire
-// format, which has not been renamed to "run" yet.
+// Run mirrors PipelineDispatchResponse from the pipelines-api.
 type Run struct {
-	RunID              string `json:"dispatch_id"`
-	PipelineID         string `json:"pipeline_id"`
-	VersionID          *int   `json:"version_id,omitempty"`
-	InputID            string `json:"input_id"`
-	CovalentDispatchID string `json:"covalent_dispatch_id,omitempty"`
-	TriggeredBy        string `json:"triggered_by"`
-	Status             string `json:"status"`
-	ErrorDetail        string `json:"error_detail,omitempty"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	RunID              string    `json:"id"`
+	PipelineID         string    `json:"pipelineId"`
+	VersionID          *int      `json:"versionId,omitempty"`
+	InputID            string    `json:"inputId"`
+	CovalentDispatchID string    `json:"covalentDispatchId,omitempty"`
+	TriggeredBy        string    `json:"triggeredBy"`
+	Status             string    `json:"status"`
+	ErrorDetail        string    `json:"errorDetail,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 // RunStatus mirrors PipelineDispatchStatusResponse — the lightweight
 // polling-friendly shape returned by GET .../status.
-//
-// See Run for the rationale on the legacy `dispatch_id` /
-// `covalent_dispatch_id` JSON tags.
 type RunStatus struct {
-	RunID              string `json:"dispatch_id"`
+	RunID              string `json:"id"`
 	Status             string `json:"status"`
-	CovalentDispatchID string `json:"covalent_dispatch_id,omitempty"`
+	CovalentDispatchID string `json:"covalentDispatchId,omitempty"`
 }
 
 // RunCreateRequest mirrors PipelineDispatchCreateRequest.
@@ -111,14 +107,14 @@ func ListRuns(pipelineID string, scope Scope, version *int, offset, limit int) (
 		endpoint = endpoint + "?" + encoded
 	}
 
-	var runs []Run
+	var page DataPage[Run]
 
-	err = doJSON(http.MethodGet, endpoint, nil, "runs", &runs)
+	err = doJSON(http.MethodGet, endpoint, nil, "runs", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return runs, nil
+	return page.Data, nil
 }
 
 // GetRun fetches a single run by id within the given scope.

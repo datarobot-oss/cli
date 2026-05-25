@@ -37,8 +37,8 @@ The API rejects cancellation if the run has already reached a terminal
 state (COMPLETED, FAILED, CANCELLED).
 
 Example:
-  dr pipelines run cancel --pipeline <id> <run-id>
-  dr pipelines run cancel --pipeline <id> --version=2 <run-id>`,
+  dr pipeline run cancel --pipeline <id> <run-id>
+  dr pipeline run cancel --pipeline <id> --version=2 <run-id>`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

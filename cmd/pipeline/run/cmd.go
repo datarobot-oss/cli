@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines run`.
+// Cmd returns the parent command for `dr pipeline run`.
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
