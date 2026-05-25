@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -81,6 +82,14 @@ Example:
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+		return map[string]any{
+			"pipeline_id":   pipelineID,
+			"version":       version,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }

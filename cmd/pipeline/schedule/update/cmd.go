@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -65,6 +66,15 @@ Example:
 	cmd.Flags().StringVar(&cron, "cron", "", "New cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "New IANA timezone name")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
+
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+		return map[string]any{
+			"pipeline_id":   pipelineID,
+			"schedule_id":   telemetry.FirstArg(args),
+			"version":       version,
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return cmd
 }
