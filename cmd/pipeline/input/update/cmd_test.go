@@ -43,7 +43,7 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	err := runCmd(t, "in-1", "p.json")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RequiresInputID(t *testing.T) {

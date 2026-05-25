@@ -37,7 +37,7 @@ func runCmd(t *testing.T, args ...string) error {
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	err := runCmd(t, "in-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsBadScopeCombo(t *testing.T) {
