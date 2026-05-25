@@ -24,19 +24,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetAuthHeaders_AuthorizationAndUserAgent(t *testing.T) {
+func TestAuthorizeRequest_AuthorizationAndUserAgent(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
 	req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 	require.NoError(t, err)
 
-	require.NoError(t, SetAuthHeaders(req))
+	require.NoError(t, AuthorizeRequest(req))
 
 	assert.Equal(t, "Bearer test-token", req.Header.Get("Authorization"))
 	assert.NotEmpty(t, req.Header.Get("User-Agent"))
 }
 
-func TestSetAuthHeaders_TraceHeaderEnabled(t *testing.T) {
+func TestAuthorizeRequest_TraceHeaderEnabled(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Reset()
@@ -46,12 +46,12 @@ func TestSetAuthHeaders_TraceHeaderEnabled(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 	require.NoError(t, err)
 
-	require.NoError(t, SetAuthHeaders(req))
+	require.NoError(t, AuthorizeRequest(req))
 
 	assert.NotEmpty(t, req.Header.Get("X-DataRobot-Api-Consumer-Trace"))
 }
 
-func TestSetAuthHeaders_TraceHeaderDisabled(t *testing.T) {
+func TestAuthorizeRequest_TraceHeaderDisabled(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
 	viperx.Reset()
@@ -61,31 +61,31 @@ func TestSetAuthHeaders_TraceHeaderDisabled(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 	require.NoError(t, err)
 
-	require.NoError(t, SetAuthHeaders(req))
+	require.NoError(t, AuthorizeRequest(req))
 
 	assert.Empty(t, req.Header.Get("X-DataRobot-Api-Consumer-Trace"))
 }
 
-// TestSetAuthHeaders_MemoizesToken confirms a seeded token short-circuits
-// config.GetAPIKey on subsequent calls — the second SetAuthHeaders call
+// TestAuthorizeRequest_MemoizesToken confirms a seeded token short-circuits
+// config.GetAPIKey on subsequent calls — the second AuthorizeRequest call
 // must succeed without contacting config (which would fail in this test env).
-func TestSetAuthHeaders_MemoizesToken(t *testing.T) {
+func TestAuthorizeRequest_MemoizesToken(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
 	for range 2 {
 		req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 		require.NoError(t, err)
 
-		require.NoError(t, SetAuthHeaders(req))
+		require.NoError(t, AuthorizeRequest(req))
 		assert.Equal(t, "Bearer test-token", req.Header.Get("Authorization"))
 	}
 }
 
-// TestSetAuthHeaders_PropagatesTokenError confirms that when the token is
+// TestAuthorizeRequest_PropagatesTokenError confirms that when the token is
 // unset and config.GetAPIKey fails (no DR_API_TOKEN, no config file in the
 // test env), the error is returned rather than silently producing a request
 // with an empty bearer.
-func TestSetAuthHeaders_PropagatesTokenError(t *testing.T) {
+func TestAuthorizeRequest_PropagatesTokenError(t *testing.T) {
 	defer resetTokenForTest(t, "")()
 
 	viperx.Reset()
@@ -94,6 +94,6 @@ func TestSetAuthHeaders_PropagatesTokenError(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://example/", nil)
 	require.NoError(t, err)
 
-	err = SetAuthHeaders(req)
+	err = AuthorizeRequest(req)
 	require.Error(t, err)
 }

@@ -22,7 +22,7 @@
 // shared drapi.AuthorizeRequest helper so the headers stay consistent with
 // every other CLI command.
 
-package pipeline
+package pipelines
 
 import (
 	"bytes"
@@ -30,14 +30,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 )
 
-const jsonTimeout = 30 * time.Second
+// jsonTimeout is used for JSON request/response endpoints. These should
+// finish quickly compared to multipart uploads, so we keep the default
+// drapi timeout.
+const jsonTimeout = drapi.DefaultClientTimeout
 
 // doJSON performs a request with a JSON-encoded body. If body is nil the
 // request is sent with no body (useful for status-only POSTs). If out is
@@ -56,7 +58,7 @@ func doJSON(method, endpoint string, body any, info string, out any) error {
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := &http.Client{Timeout: jsonTimeout}
+	client := drapi.NewHTTPClient(jsonTimeout)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -108,41 +110,14 @@ func buildJSONRequest(method, endpoint string, body any) (*http.Request, error) 
 	return req, nil
 }
 
-// doDelete sends a DELETE and treats any 2xx response as success. The
-// response body is drained but ignored.
-func doDelete(endpoint, info string) error {
-	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return err
-	}
-
-	err = drapi.AuthorizeRequest(req)
-	if err != nil {
-		return err
-	}
-
-	if info != "" {
-		log.Infof("%s at: %s", info, endpoint)
-	}
-
-	if log.GetLevel() <= log.DebugLevel {
-		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
-	}
-
-	client := &http.Client{Timeout: jsonTimeout}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return decodeHTTPError(resp, endpoint)
-	}
-
-	return nil
+// DataPage is the pagination envelope returned by all pipelines-api list endpoints
+// (action 056 — DataPage[T] convention).
+type DataPage[T any] struct {
+	Data       []T     `json:"data"`
+	TotalCount int     `json:"totalCount"`
+	Count      int     `json:"count"`
+	Next       *string `json:"next"`
+	Previous   *string `json:"previous"`
 }
 
 // decodeHTTPError reads a non-2xx response body and turns it into a meaningful error.
@@ -182,4 +157,41 @@ func extractErrorDetail(body []byte) string {
 	}
 
 	return string(body)
+}
+
+// doDelete sends a DELETE and treats any 2xx response as success. The
+// response body is drained but ignored.
+func doDelete(endpoint, info string) error {
+	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	err = drapi.AuthorizeRequest(req)
+	if err != nil {
+		return err
+	}
+
+	if info != "" {
+		log.Infof("%s at: %s", info, endpoint)
+	}
+
+	if log.GetLevel() <= log.DebugLevel {
+		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
+	}
+
+	client := drapi.NewHTTPClient(jsonTimeout)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return decodeHTTPError(resp, endpoint)
+	}
+
+	return nil
 }

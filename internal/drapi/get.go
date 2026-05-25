@@ -15,12 +15,14 @@
 package drapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 )
 
@@ -36,22 +38,34 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
-const DefaultGetTimeoutSecs = 30
+var token string
 
-func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
-	timeout := DefaultGetTimeoutSecs
-	if len(timeoutSecs) > 0 {
-		timeout = timeoutSecs[0]
+// GetToken returns the current cached API token.
+func GetToken() string {
+	return token
+}
+
+// SetToken sets the cached API token.
+func SetToken(value string) {
+	token = value
+}
+
+// resolveToken returns the API token used for outbound requests.
+// When --skip-auth (or DATAROBOT_CLI_SKIP_AUTH) is active we trust whatever
+// is in viper without contacting the server, so local development against
+// stub APIs that don't implement /version/ still works.
+func resolveToken() (string, error) {
+	if viperx.GetBool("skip_auth") {
+		return viperx.GetString(config.DataRobotAPIKey), nil
 	}
 
-	var err error
+	return config.GetAPIKey(context.Background())
+}
 
-	// memoize token to avoid extra VerifyToken() calls
-	if token == "" {
-		token, err = resolveToken()
-		if err != nil {
-			return nil, err
-		}
+func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
+	timeout := DefaultClientTimeout
+	if len(timeoutSecs) > 0 {
+		timeout = time.Duration(timeoutSecs[0]) * time.Second
 	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -59,11 +73,8 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+token)
-	req.Header.Add("User-Agent", config.GetUserAgentHeader())
-
-	if config.IsAPIConsumerTrackingEnabled() {
-		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
+	if err = AuthorizeRequest(req); err != nil {
+		return nil, err
 	}
 
 	if info != "" {
@@ -72,11 +83,7 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := NewHTTPClient(timeout).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +103,7 @@ func GetJSON(url, info string, v any, timeoutSecs ...int) error {
 		return err
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&v)
-	if err != nil {
-		return err
-	}
+	defer resp.Body.Close()
 
-	resp.Body.Close()
-
-	return nil
+	return json.NewDecoder(resp.Body).Decode(&v)
 }
