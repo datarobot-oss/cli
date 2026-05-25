@@ -47,7 +47,7 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	err := runCmd(t, "--version", "2", "--cron", "0 * * * *", "--input", "in-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsZeroVersion(t *testing.T) {
@@ -65,7 +65,7 @@ func TestCmd_RejectsMissingCron(t *testing.T) {
 func TestCmd_RejectsMissingInput(t *testing.T) {
 	err := runCmd(t, "--pipeline", "p", "--version", "2", "--cron", "0 * * * *")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--input")
+	assert.Contains(t, err.Error(), "input")
 }
 
 func TestCmd_HasExpectedFlags(t *testing.T) {

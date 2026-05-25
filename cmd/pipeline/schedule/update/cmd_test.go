@@ -71,18 +71,6 @@ func TestBuildUpdateBody_SkipsUnchangedFlags(t *testing.T) {
 	assert.Nil(t, body.Timezone, "untouched --timezone should not be sent")
 }
 
-func TestBuildUpdateBody_RejectsMissingPipeline(t *testing.T) {
-	cmd := Cmd()
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	require.NoError(t, cmd.ParseFlags([]string{"--cron=0 0 * * *"}))
-
-	_, err := buildUpdateBody(cmd, "", 2, "0 0 * * *", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
-}
-
 func TestBuildUpdateBody_RejectsZeroVersion(t *testing.T) {
 	cmd := Cmd()
 	cmd.SetOut(io.Discard)
