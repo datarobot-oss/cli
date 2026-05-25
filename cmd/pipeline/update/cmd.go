@@ -66,7 +66,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the Python file to upload, e.g. --from-file=./my_pipeline.py (alternative to the positional argument)")
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

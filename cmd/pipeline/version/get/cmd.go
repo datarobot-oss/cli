@@ -64,7 +64,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

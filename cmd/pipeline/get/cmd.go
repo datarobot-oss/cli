@@ -43,16 +43,16 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			pipeline, err := pipeline.GetPipeline(args[0])
+			result, err := pipeline.GetPipeline(args[0])
 			if err != nil {
 				return handleGetError(err, args[0])
 			}
 
-			return pipeline.RenderPipeline(outputFormat, *pipeline)
+			return pipeline.RenderPipeline(outputFormat, *result)
 		},
 	}
 
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

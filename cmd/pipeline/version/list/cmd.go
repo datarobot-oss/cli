@@ -58,7 +58,7 @@ Example:
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of versions to return")
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

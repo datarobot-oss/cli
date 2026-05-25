@@ -63,7 +63,7 @@ func TestPrintUpdateJSON(t *testing.T) {
 	resp := sampleUpdateResponse()
 
 	output := captureStdout(t, func() {
-		err := pipeline.RenderCreateResponse(pipelines.OutputFormatJSON, resp)
+		err := pipeline.RenderCreateResponse(pipeline.OutputFormatJSON, resp)
 		require.NoError(t, err)
 	})
 
@@ -80,7 +80,7 @@ func TestPrintUpdateHuman_WithTasks(t *testing.T) {
 	resp := sampleUpdateResponse()
 
 	output := captureStdout(t, func() {
-		require.NoError(t, pipeline.RenderCreateResponse(pipelines.OutputFormatText, resp))
+		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 
 	assert.Contains(t, output, resp.PipelineID)
@@ -96,7 +96,7 @@ func TestPrintUpdateHuman_NoTasks(t *testing.T) {
 	resp.TaskNames = nil
 
 	output := captureStdout(t, func() {
-		require.NoError(t, pipeline.RenderCreateResponse(pipelines.OutputFormatText, resp))
+		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 
 	assert.Contains(t, output, "—")

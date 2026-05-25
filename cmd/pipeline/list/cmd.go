@@ -60,7 +60,7 @@ Example:
 	cmd.Flags().StringVar(&mode, "mode", "", "Filter by mode: draft or locked")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 50, "Pagination limit (1-200)")
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

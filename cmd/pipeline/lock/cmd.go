@@ -45,7 +45,7 @@ Example:
 		},
 	}
 
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

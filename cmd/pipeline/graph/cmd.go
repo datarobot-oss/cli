@@ -81,7 +81,7 @@ Example:
 	}
 
 	flags.Bind(cmd)
-	pipelines.AddOutputFlag(cmd, &outputFormat)
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
