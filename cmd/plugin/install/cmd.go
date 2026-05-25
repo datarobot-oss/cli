@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -76,11 +75,22 @@ Use --version to specify a version constraint:
 
 func runInstall(_ *cobra.Command, args []string) error {
 	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
-	if viperx.GetBool("verbose") {
-		fmt.Printf("Fetching plugin registry from %s...\n", finalRegistryURL)
-	}
 
-	registry, baseURL, err := plugin.FetchRegistry(finalRegistryURL)
+	var (
+		registry *plugin.PluginRegistry
+		baseURL  string
+	)
+
+	err := tui.RunWithSpinner(
+		fmt.Sprintf("Fetching plugin registry from %s…", finalRegistryURL),
+		func() error {
+			var fetchErr error
+
+			registry, baseURL, fetchErr = plugin.FetchRegistry(finalRegistryURL)
+
+			return fetchErr
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to fetch plugin registry: %w", err)
 	}
@@ -129,10 +139,10 @@ func runInstall(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to resolve version: %w", err)
 	}
 
-	fmt.Printf("Installing %s version %s...\n", pluginEntry.Name, version.Version)
-	fmt.Printf("Downloading from: %s/%s\n", baseURL, version.URL)
-
-	if err := plugin.InstallPlugin(pluginEntry, *version, baseURL); err != nil {
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Installing %s %s…", pluginEntry.Name, version.Version),
+		func() error { return plugin.InstallPlugin(pluginEntry, *version, baseURL) },
+	); err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
 	}
 

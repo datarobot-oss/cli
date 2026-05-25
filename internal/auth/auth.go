@@ -218,13 +218,13 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	}
 
 	// Start the server in a goroutine
+	authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
+
+	fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
+	fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
+	fmt.Printf("%s\n\n", authURL)
+
 	go func() {
-		authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
-
-		fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
-		fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
-		fmt.Printf("%s\n\n", authURL)
-
 		open.Open(authURL)
 
 		err := server.Serve(listen)

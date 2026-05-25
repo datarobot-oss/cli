@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -107,6 +108,7 @@ type UpdateModel struct {
 	viewport    viewport.Model
 	help        help.Model
 	keys        detailKeyMap
+	spinner     spinner.Model
 	ready       bool
 	ExitMessage string
 	updateFlags copier.UpdateFlags
@@ -193,16 +195,21 @@ func NewUpdateComponentModel(updateFlags copier.UpdateFlags) UpdateModel {
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = tui.InfoStyle
+
 	return UpdateModel{
 		screen:      listScreen,
 		help:        h,
 		keys:        newDetailKeys(),
 		updateFlags: updateFlags,
+		spinner:     s,
 	}
 }
 
 func (m UpdateModel) Init() tea.Cmd {
-	return tea.Batch(m.loadComponents(), tea.WindowSize())
+	return tea.Batch(m.loadComponents(), m.spinner.Tick, tea.WindowSize())
 }
 
 func (m UpdateModel) loadComponents() tea.Cmd {
@@ -243,6 +250,14 @@ func (m UpdateModel) showComponentInfo() tea.Cmd {
 
 func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		if len(m.list.Items()) == 0 {
+			var cmd tea.Cmd
+
+			m.spinner, cmd = m.spinner.Update(msg)
+
+			return m, cmd
+		}
 	case componentsLoadedMsg:
 		m.list = msg.list
 
@@ -415,6 +430,13 @@ func (m UpdateModel) viewListScreen() string {
 		sb.WriteString("\n")
 		sb.WriteString(tui.DimStyle.Render("Press any key to exit"))
 		sb.WriteString("\n")
+
+		return sb.String()
+	}
+
+	// Show spinner while components are loading
+	if len(m.list.Items()) == 0 {
+		sb.WriteString(tui.InfoStyle.Render(m.spinner.View()+" ") + "Loading components…")
 
 		return sb.String()
 	}

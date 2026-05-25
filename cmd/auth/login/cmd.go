@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -76,7 +77,15 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// Clear existing token and get new one
 	viperx.Set(config.DataRobotAPIKey, "")
 
-	key, err := auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
+	var key string
+
+	err = tui.RunWithSpinner("Waiting for browser authorization…", func() error {
+		var waitErr error
+
+		key, waitErr = auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
+
+		return waitErr
+	})
 	if err != nil {
 		log.Error(err)
 

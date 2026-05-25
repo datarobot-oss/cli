@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/copier"
@@ -46,6 +47,7 @@ const (
 type AddModel struct {
 	screen   addScreens
 	list     list.Model
+	spinner  spinner.Model
 	width    int
 	height   int
 	errorMsg string
@@ -53,8 +55,13 @@ type AddModel struct {
 }
 
 func NewAddModel() AddModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = tui.InfoStyle
+
 	return AddModel{
-		screen: addLoadingScreen,
+		screen:  addLoadingScreen,
+		spinner: s,
 	}
 }
 
@@ -149,7 +156,7 @@ func (am AddModel) loadComponents() tea.Cmd {
 }
 
 func (am AddModel) Init() tea.Cmd {
-	return tea.Batch(am.loadComponents(), tea.WindowSize())
+	return tea.Batch(am.loadComponents(), am.spinner.Tick, tea.WindowSize())
 }
 
 func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -158,6 +165,14 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		if msg.MsgID == errMsgID {
 			am.errorMsg = ""
 			return am, nil
+		}
+	case spinner.TickMsg:
+		if am.screen == addLoadingScreen {
+			var cmd tea.Cmd
+
+			am.spinner, cmd = am.spinner.Update(msg)
+
+			return am, cmd
 		}
 	case tea.WindowSizeMsg:
 		am.width = msg.Width
@@ -230,7 +245,7 @@ func (am AddModel) View() string {
 func (am AddModel) addLoadingScreenView() string {
 	var sb strings.Builder
 
-	sb.WriteString("Loading components...")
+	sb.WriteString(tui.InfoStyle.Render(am.spinner.View()+" ") + "Loading components…")
 
 	return sb.String()
 }
