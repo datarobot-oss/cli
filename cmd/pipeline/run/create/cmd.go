@@ -16,9 +16,7 @@ package create
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -29,7 +27,7 @@ func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
 		inputID      string
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -37,20 +35,16 @@ func Cmd() *cobra.Command {
 		Short: "Trigger a pipeline run",
 		Long: `Trigger a new run (single execution) of a pipeline.
 
-The run is created in PENDING state. Use ` + "`dr pipelines run get`" + `
-or ` + "`dr pipelines run status`" + ` to follow its progress.
+The run is created in PENDING state. Use ` + "`dr pipeline run get`" + `
+or ` + "`dr pipeline run status`" + ` to follow its progress.
 
 Example:
-  dr pipelines run create --pipeline <id> --input <input-id>
-  dr pipelines run create --pipeline <id> --version=2 --input <input-id> --output json`,
+  dr pipeline run create --pipeline <id> --input <input-id>
+  dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if flags.PipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -69,19 +63,13 @@ Example:
 				return err
 			}
 
-			if outputFormat == "json" {
-				return runutil.PrintRunJSON(*result)
-			}
-
-			runutil.PrintRunHuman(*result)
-
-			return nil
+			return pipeline.RenderRun(outputFormat, *result)
 		},
 	}
 
 	flags.Bind(cmd)
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to trigger the run with")
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }

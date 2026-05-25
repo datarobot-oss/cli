@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -31,7 +30,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
-		outputFormat string
+		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,16 +39,12 @@ func Cmd() *cobra.Command {
 		Long: `Poll a run's current status without re-downloading the full record.
 
 Example:
-  dr pipelines run status --pipeline <id> <run-id>
-  dr pipelines run status --pipeline <id> --version=2 <run-id> --output json`,
+  dr pipeline run status --pipeline <id> <run-id>
+  dr pipeline run status --pipeline <id> --version=2 <run-id> --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if outputFormat != "" && outputFormat != "json" {
-				return fmt.Errorf("invalid output format: %s (supported: json)", outputFormat)
-			}
-
 			if flags.PipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -64,18 +59,12 @@ Example:
 				return handleStatusError(err, args[0])
 			}
 
-			if outputFormat == "json" {
-				return runutil.PrintStatusJSON(*result)
-			}
-
-			runutil.PrintStatusHuman(*result)
-
-			return nil
+			return pipeline.RenderRunStatus(outputFormat, *result)
 		},
 	}
 
 	flags.Bind(cmd)
-	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format (json)")
+	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	return cmd
 }
