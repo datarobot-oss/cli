@@ -15,7 +15,7 @@
 // input_payload.go contains the shared helper for resolving an input payload
 // from either a positional argument or the --from-file flag, then parsing
 // it as JSON.
-package pipelines
+package pipeline
 
 import (
 	"encoding/json"

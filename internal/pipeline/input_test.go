@@ -20,9 +20,25 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// installEndpoint sets viper's endpoint to the given URL for the duration
+// of the test, restoring the previous value at cleanup.
+func installEndpoint(t *testing.T, url string) {
+	t.Helper()
+
+	prev := viperx.GetString(config.DataRobotURL)
+
+	viperx.Set(config.DataRobotURL, url)
+
+	t.Cleanup(func() {
+		viperx.Set(config.DataRobotURL, prev)
+	})
+}
 
 func TestCreateInput_Draft(t *testing.T) {
 	installSkipAuth(t)
@@ -37,7 +53,7 @@ func TestCreateInput_Draft(t *testing.T) {
 		assert.Equal(t, "v", body.Payload["k"])
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"input_id":"in-1","pipeline_id":"p-1","is_draft":true,"state":"VALID","payload":{"k":"v"}}`))
+		_, _ = w.Write([]byte(`{"id":"in-1","pipelineId":"p-1","isDraft":true,"state":"VALID","payload":{"k":"v"}}`))
 	}))
 
 	defer srv.Close()
@@ -57,7 +73,7 @@ func TestCreateInput_LockedURLShape(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/inputs", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"input_id":"in-1","pipeline_id":"p-1","version_id":2,"is_draft":false,"state":"VALID","payload":{}}`))
+		_, _ = w.Write([]byte(`{"id":"in-1","pipelineId":"p-1","versionId":2,"isDraft":false,"state":"VALID","payload":{}}`))
 	}))
 
 	defer srv.Close()
@@ -79,7 +95,7 @@ func TestListInputs_AddsPaginationQuery(t *testing.T) {
 		assert.Equal(t, "5", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"input_id":"in-1","pipeline_id":"p-1","is_draft":true,"state":"VALID","payload":{}}]`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"in-1","pipelineId":"p-1","isDraft":true,"state":"VALID","payload":{}}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
@@ -99,7 +115,7 @@ func TestListInputs_OmitsZeroPagination(t *testing.T) {
 		assert.Empty(t, r.URL.RawQuery)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`{"data":[],"totalCount":0,"count":0}`))
 	}))
 
 	defer srv.Close()
@@ -118,7 +134,7 @@ func TestGetInput_TargetsCorrectURL(t *testing.T) {
 		assert.Equal(t, "/api/v2/pipelines/p-1/inputs/in-1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"input_id":"in-1","pipeline_id":"p-1","is_draft":true,"state":"VALID","payload":{}}`))
+		_, _ = w.Write([]byte(`{"id":"in-1","pipelineId":"p-1","isDraft":true,"state":"VALID","payload":{}}`))
 	}))
 
 	defer srv.Close()
@@ -143,7 +159,7 @@ func TestUpdateInput_PatchesDraft(t *testing.T) {
 		assert.Equal(t, "new", body.Payload["k"])
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"input_id":"in-1","pipeline_id":"p-1","is_draft":true,"state":"VALID","payload":{"k":"new"}}`))
+		_, _ = w.Write([]byte(`{"id":"in-1","pipelineId":"p-1","isDraft":true,"state":"VALID","payload":{"k":"new"}}`))
 	}))
 
 	defer srv.Close()

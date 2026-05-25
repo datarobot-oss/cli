@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // InputState mirrors PipelineInputState in the pipelines-api enums.
@@ -34,14 +35,14 @@ const (
 
 // Input mirrors PipelineInputResponse from the pipelines-api.
 type Input struct {
-	InputID    string         `json:"input_id"`
-	PipelineID string         `json:"pipeline_id"`
-	VersionID  *int           `json:"version_id,omitempty"`
-	IsDraft    bool           `json:"is_draft"`
+	InputID    string         `json:"id"`
+	PipelineID string         `json:"pipelineId"`
+	VersionID  *int           `json:"versionId,omitempty"`
+	IsDraft    bool           `json:"isDraft"`
 	Payload    map[string]any `json:"payload"`
 	State      InputState     `json:"state"`
-	CreatedAt  string         `json:"created_at"`
-	UpdatedAt  string         `json:"updated_at"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	UpdatedAt  time.Time      `json:"updatedAt"`
 }
 
 // InputCreateRequest mirrors PipelineInputCreateRequest.
@@ -94,15 +95,14 @@ func ListInputs(pipelineID string, scope Scope, version *int, offset, limit int)
 		endpoint = endpoint + "?" + encoded
 	}
 
-	// The pipelines-api returns a bare JSON array for list endpoints.
-	var inputs []Input
+	var page DataPage[Input]
 
-	err = doJSON(http.MethodGet, endpoint, nil, "inputs", &inputs)
+	err = doJSON(http.MethodGet, endpoint, nil, "inputs", &page)
 	if err != nil {
 		return nil, err
 	}
 
-	return inputs, nil
+	return page.Data, nil
 }
 
 // GetInput fetches a single input by id within the given scope.

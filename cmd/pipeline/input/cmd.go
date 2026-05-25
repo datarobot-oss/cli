@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipelines input`. It groups the
+// Cmd returns the parent command for `dr pipeline input`. It groups the
 // CRUD verbs that operate on pipeline input sets.
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{

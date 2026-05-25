@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements the `dr pipelines input delete` verb. The
+// Package del implements the `dr pipeline input delete` verb. The
 // directory is named `del` rather than `delete` because the latter
 // shadows Go's built-in delete() function in importing files.
 
@@ -38,8 +38,8 @@ func Cmd() *cobra.Command {
 		Long: `Delete an input payload from a pipeline.
 
 Example:
-  dr pipelines input delete --pipeline <id> <input-id>
-  dr pipelines input delete --pipeline <id> --version=2 <input-id>`,
+  dr pipeline input delete --pipeline <id> <input-id>
+  dr pipeline input delete --pipeline <id> --version=2 <input-id>`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
