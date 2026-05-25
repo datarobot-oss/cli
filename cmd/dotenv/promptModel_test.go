@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
@@ -169,6 +170,65 @@ func TestNewLLMListPrompt_Success(t *testing.T) {
 
 	require.NotContains(t, pm.prompt.Type.String(), "error")
 	assert.Len(t, pm.list.Items(), 2)
+}
+
+func TestNewLLMListPromptAsync_LoadingState(t *testing.T) {
+	prompt := envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR"}
+
+	pm, cmd := newLLMListPromptAsync(prompt, nil)
+
+	assert.True(t, pm.loading)
+	assert.NotNil(t, cmd)
+}
+
+func TestPromptModel_UpdateLLMCatalogLoadedMsg_Success(t *testing.T) {
+	pm, _ := newLLMListPromptAsync(envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR"}, nil)
+
+	updated, cmd := pm.Update(llmCatalogLoadedMsg{llms: &drapi.LLMList{
+		LLMs: []drapi.LLM{
+			{LlmID: "1", Name: "GPT-4o", Provider: "azure", Model: "gpt-4o", IsActive: true},
+		},
+		Count: 1, TotalCount: 1,
+	}})
+
+	assert.False(t, updated.loading)
+	assert.NotContains(t, updated.prompt.Type.String(), "error")
+	assert.Len(t, updated.list.Items(), 1)
+	assert.NotNil(t, cmd)
+}
+
+func TestPromptModel_UpdateLLMCatalogLoadedMsg_Error(t *testing.T) {
+	pm, _ := newLLMListPromptAsync(envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR"}, nil)
+
+	updated, cmd := pm.Update(llmCatalogLoadedMsg{err: &drapi.HTTPError{StatusCode: http.StatusUnauthorized}})
+
+	assert.False(t, updated.loading)
+	assert.Contains(t, updated.prompt.Type.String(), "error")
+	assert.Contains(t, updated.prompt.Help, "Authentication failed")
+	assert.Nil(t, cmd)
+}
+
+func TestPromptModel_UpdateLLMCatalogSpinnerTick(t *testing.T) {
+	pm, _ := newLLMListPromptAsync(envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR"}, nil)
+
+	updated, cmd := pm.Update(spinner.TickMsg{})
+
+	assert.True(t, updated.loading)
+	assert.NotNil(t, cmd)
+}
+
+func TestPromptModelView_LoadingState(t *testing.T) {
+	pm := promptModel{
+		prompt: envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR", Help: "help text"},
+		loading: true,
+		spinner: spinner.New(),
+	}
+
+	view := pm.View()
+
+	assert.Contains(t, view, "LLM_VAR")
+	assert.Contains(t, view, "Fetching available LLMs from DataRobot")
+	assert.Contains(t, view, "ctrl-p back to previous")
 }
 
 // TestPromptModelView_ErrorType verifies that when the prompt type contains "error",
