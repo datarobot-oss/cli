@@ -268,7 +268,6 @@ func llmErrorPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd, err error)
 	return promptModel{prompt: errPrompt, successCmd: successCmd}
 }
 
-
 func llmListPromptFromCatalog(prompt envbuilder.UserPrompt, successCmd tea.Cmd, llms *drapi.LLMList) (promptModel, tea.Cmd) {
 	if llms == nil {
 		errPrompt := prompt
@@ -320,7 +319,7 @@ func (pm promptModel) GetValues() []string {
 	return []string{current.FilterValue()}
 }
 
-func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
+func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) { //nolint:cyclop
 	if pm.loading {
 		switch msg := msg.(type) {
 		case llmCatalogLoadedMsg:
