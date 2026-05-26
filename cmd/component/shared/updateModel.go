@@ -105,10 +105,12 @@ type UpdateModel struct {
 	infoMessage string
 	screen      screens
 	list        list.Model // This list holds the components
+	width       int
 	viewport    viewport.Model
 	help        help.Model
 	keys        detailKeyMap
 	spinner     spinner.Model
+	updating    bool
 	ready       bool
 	ExitMessage string
 	updateFlags copier.UpdateFlags
@@ -161,6 +163,8 @@ func (m UpdateModel) unselectComponent(itemToUnselect ListItem, err error) (Upda
 	}
 
 	if count <= 1 {
+		m.updating = false
+
 		return m, tea.Quit
 	}
 
@@ -250,8 +254,11 @@ func (m UpdateModel) showComponentInfo() tea.Cmd {
 
 func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+
 	case spinner.TickMsg:
-		if len(m.list.Items()) == 0 {
+		if len(m.list.Items()) == 0 || m.updating {
 			var cmd tea.Cmd
 
 			m.spinner, cmd = m.spinner.Update(msg)
@@ -268,11 +275,33 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 		return m, tea.WindowSize()
 	case updateCompleteMsg:
+		if msg.err != nil {
+			m.infoMessage = "Failed to update " + msg.item.component.ComponentDetails.Name
+		} else {
+			m.infoMessage = "Updated " + msg.item.component.ComponentDetails.Name
+		}
+
 		return m.unselectComponent(msg.item, msg.err)
 	}
 
 	switch m.screen {
 	case listScreen:
+		if m.updating {
+			switch msg := msg.(type) {
+			case tea.WindowSizeMsg:
+				if len(m.list.Items()) > 0 {
+					newListModel, cmd := m.list.Update(msg)
+					m.list = newListModel
+
+					return m, cmd
+				}
+
+				return m, nil
+			}
+
+			return m, nil
+		}
+
 		// IMPT: Since we're using a custom item & respective delegate
 		// we need to account for filtering here and allow list to handle updating
 		if m.list.FilterState() == list.Filtering {
@@ -331,9 +360,12 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 						cmdsToRun = append(cmdsToRun, updateComponent(listItem, m.updateFlags))
 					}
 
+					m.updating = true
+					m.infoMessage = "Updating selected components..."
+
 					cmd := tea.Sequence(cmdsToRun...)
 
-					return m, cmd
+					return m, tea.Batch(m.spinner.Tick, cmd)
 				}
 			default:
 				// If we have an error allow any keypress to exit screen/quit
@@ -437,6 +469,14 @@ func (m UpdateModel) viewListScreen() string {
 	// Show spinner while components are loading
 	if len(m.list.Items()) == 0 {
 		sb.WriteString(tui.InfoStyle.Render(m.spinner.View()+" ") + "Loading components…")
+
+		return sb.String()
+	}
+
+	if m.updating {
+		sb.WriteString(tui.WelcomeStyle.Render("Available Components for Recipe Agent Template:"))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Updating selected components...", true))
 
 		return sb.String()
 	}

@@ -166,9 +166,18 @@ func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistr
 		return false
 	}
 
-	if !shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL) {
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Updating %s from %s to %s…", p.Name, p.Version, latestVersion.Version),
+		func() error {
+			return shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL)
+		},
+	); err != nil {
+		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", p.Name, err)))
+
 		return false
 	}
+
+	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + p.Name + " to " + latestVersion.Version))
 
 	fmt.Println()
 
