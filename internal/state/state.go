@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -157,6 +158,8 @@ func UpdateAfterTemplatesSetup(repoRoot, templateName, templateID string) error 
 func GetTemplateInfo(repoRoot string) (name, id string) {
 	existingState, err := load(repoRoot)
 	if err != nil {
+		log.Debugf("Failed to load state for template info: %v", err)
+
 		return "", ""
 	}
 

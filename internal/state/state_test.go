@@ -339,4 +339,20 @@ func TestGetTemplateInfo(t *testing.T) {
 		assert.Empty(t, name)
 		assert.Empty(t, id)
 	})
+
+	t.Run("returns empty strings when state file is malformed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		statePath := filepath.Join(tmpDir, ".datarobot", "cli", "state.yaml")
+
+		err := os.MkdirAll(filepath.Dir(statePath), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(statePath, []byte("template_name: [invalid"), 0o644)
+		require.NoError(t, err)
+
+		name, id := GetTemplateInfo(tmpDir)
+
+		assert.Empty(t, name)
+		assert.Empty(t, id)
+	})
 }
