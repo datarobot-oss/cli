@@ -96,6 +96,19 @@
           "releaseDate": "2026-02-06"
         }
       ]
+    },
+    "xp": {
+      "name": "xp",
+      "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
+      "repository": "https://github.com/datarobot/dr-experimentation-cli",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "url": "xp/xp-1.0.0.tar.xz",
+          "sha256": "5035e784ca107ff29a16295790bf12fc6e28b2031721e8b95760757c723fc3b3",
+          "releaseDate": "2026-05-27"
+        }
+      ]
     }
   }
 }
