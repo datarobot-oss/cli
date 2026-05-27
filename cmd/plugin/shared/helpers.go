@@ -15,10 +15,10 @@
 package shared
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/datarobot/cli/internal/plugin"
-	"github.com/datarobot/cli/tui"
 )
 
 // NormalizeRegistryURL ensures the URL ends with index.json
@@ -35,45 +35,48 @@ func NormalizeRegistryURL(url string) string {
 }
 
 // RunPluginUpdate performs the backup → install → validate → rollback cycle
-// for upgrading a managed plugin. It prints styled status messages and returns
-// true only when the update succeeds and validation passes.
-func RunPluginUpdate(pluginName, fromVersion string, entry plugin.RegistryPlugin, version plugin.RegistryVersion, baseURL string) bool {
-	fmt.Printf("Updating %s from %s to %s...\n", pluginName, fromVersion, version.Version)
-
+// for upgrading a managed plugin. It returns nil only when the update succeeds
+// and validation passes.
+func RunPluginUpdate(pluginName, _ string, entry plugin.RegistryPlugin, version plugin.RegistryVersion, baseURL string) error {
 	backupPath, err := plugin.BackupPlugin(pluginName)
 	if err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to backup %s: %v", pluginName, err)))
-
-		return false
+		return fmt.Errorf("backup %s: %w", pluginName, err)
 	}
+
 	defer plugin.CleanupBackup(backupPath)
 
 	if err := plugin.InstallPlugin(entry, version, baseURL); err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", pluginName, err)))
-		rollbackPlugin(pluginName, backupPath)
+		rollbackErr := rollbackPlugin(pluginName, backupPath)
+		if rollbackErr != nil {
+			return errors.Join(
+				fmt.Errorf("install %s: %w", pluginName, err),
+				rollbackErr,
+			)
+		}
 
-		return false
+		return fmt.Errorf("install %s: %w", pluginName, err)
 	}
 
 	if err := plugin.ValidatePlugin(pluginName); err != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Plugin validation failed: %v", err)))
-		rollbackPlugin(pluginName, backupPath)
+		rollbackErr := rollbackPlugin(pluginName, backupPath)
+		if rollbackErr != nil {
+			return errors.Join(
+				fmt.Errorf("validate %s: %w", pluginName, err),
+				rollbackErr,
+			)
+		}
 
-		return false
+		return fmt.Errorf("validate %s: %w", pluginName, err)
 	}
 
-	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + pluginName + " to " + version.Version))
-
-	return true
+	return nil
 }
 
-// rollbackPlugin attempts to restore a plugin from its backup, printing the outcome.
-func rollbackPlugin(pluginName, backupPath string) {
-	fmt.Println("Rolling back to previous version...")
-
+// rollbackPlugin attempts to restore a plugin from its backup.
+func rollbackPlugin(pluginName, backupPath string) error {
 	if restoreErr := plugin.RestorePlugin(pluginName, backupPath); restoreErr != nil {
-		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to restore backup: %v", restoreErr)))
-	} else {
-		fmt.Println(tui.SuccessStyle.Render("✓ Restored previous version"))
+		return fmt.Errorf("restore backup for %s: %w", pluginName, restoreErr)
 	}
+
+	return nil
 }

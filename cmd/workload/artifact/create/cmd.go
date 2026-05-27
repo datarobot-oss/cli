@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -100,8 +101,15 @@ Example:
 				return err
 			}
 
-			artifact, err := workload.CreateArtifact(payload)
-			if err != nil {
+			var artifact *workload.Artifact
+
+			if err := tui.RunWithSpinner("Creating artifact…", func() error {
+				var createErr error
+
+				artifact, createErr = workload.CreateArtifact(payload)
+
+				return createErr
+			}); err != nil {
 				return err
 			}
 

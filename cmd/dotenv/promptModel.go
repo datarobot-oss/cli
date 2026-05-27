@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -39,6 +40,8 @@ type promptModel struct {
 	list       list.Model
 	Values     []string
 	successCmd tea.Cmd
+	loading    bool
+	spinner    spinner.Model
 }
 
 var (
@@ -56,7 +59,13 @@ const (
 	errMsgTimeout        = "⏳ Request timed out. Please check your network connection and try again."
 	errMsgNoLLMs         = "🤷 No available LLMs found. Please contact support for assistance."
 	errMsgContactSupport = "👥 Please try again or contact support if the issue persists."
+	loadingLLMsMsg       = "Fetching available LLMs from DataRobot..."
 )
+
+type llmCatalogLoadedMsg struct {
+	llms *drapi.LLMList
+	err  error
+}
 
 type item envbuilder.PromptOption
 
@@ -105,7 +114,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	if prompt.Type == "llmgw_catalog" {
-		return newLLMListPrompt(prompt, successCmd)
+		return newLLMListPromptAsync(prompt, successCmd)
 	}
 
 	if len(prompt.Options) == 0 {
@@ -113,6 +122,29 @@ func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMod
 	}
 
 	return newListPrompt(prompt, successCmd)
+}
+
+func newLLMListPromptAsync(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = tui.InfoStyle
+
+	pm := promptModel{
+		prompt:     prompt,
+		successCmd: successCmd,
+		loading:    true,
+		spinner:    s,
+	}
+
+	return pm, tea.Batch(pm.spinner.Tick, loadLLMCatalogCmd())
+}
+
+func loadLLMCatalogCmd() tea.Cmd {
+	return func() tea.Msg {
+		llms, err := drapi.GetLLMs()
+
+		return llmCatalogLoadedMsg{llms: llms, err: err}
+	}
 }
 
 func newTextInputPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
@@ -193,39 +225,54 @@ func llmsToPromptOptions(llms []drapi.LLM) []envbuilder.PromptOption {
 func newLLMListPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
 	llms, err := drapi.GetLLMs()
 	if err != nil {
-		log.Errorf("Error retrieving LLMs: %s", err.Error())
+		return llmErrorPrompt(prompt, successCmd, err), nil
+	}
 
-		var (
-			netErr     net.Error
-			httpErr    *drapi.HTTPError
-			statusCode int
-		)
+	return llmListPromptFromCatalog(prompt, successCmd, llms)
+}
 
-		helpMsg := errMsgPrefix
+func llmErrorPrompt(prompt envbuilder.UserPrompt, successCmd tea.Cmd, err error) promptModel {
+	log.Errorf("Error retrieving LLMs: %s", err.Error())
 
-		// Check if the error is a network timeout or an HTTP error to provide more specific feedback
-		// Treat net.Error.Timeout() as an HTTP 408 Request Timeout for user-friendly messaging
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			statusCode = http.StatusRequestTimeout
-		} else if errors.As(err, &httpErr) {
-			statusCode = httpErr.StatusCode
-		}
+	var (
+		netErr     net.Error
+		httpErr    *drapi.HTTPError
+		statusCode int
+	)
 
-		switch statusCode {
-		case http.StatusUnauthorized, http.StatusForbidden:
-			helpMsg += errMsgAuthFailed
-		case http.StatusNotFound:
-			helpMsg += errMsgNotFound
-		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-			helpMsg += errMsgTimeout
-		default:
-			helpMsg += err.Error() + "\n\n" + errMsgContactSupport
-		}
+	helpMsg := errMsgPrefix
 
+	// Check if the error is a network timeout or an HTTP error to provide more specific feedback
+	// Treat net.Error.Timeout() as an HTTP 408 Request Timeout for user-friendly messaging
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		statusCode = http.StatusRequestTimeout
+	} else if errors.As(err, &httpErr) {
+		statusCode = httpErr.StatusCode
+	}
+
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		helpMsg += errMsgAuthFailed
+	case http.StatusNotFound:
+		helpMsg += errMsgNotFound
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		helpMsg += errMsgTimeout
+	default:
+		helpMsg += err.Error() + "\n\n" + errMsgContactSupport
+	}
+
+	errPrompt := prompt
+	errPrompt.Type = typeError
+	errPrompt.Help = helpMsg
+
+	return promptModel{prompt: errPrompt, successCmd: successCmd}
+}
+
+func llmListPromptFromCatalog(prompt envbuilder.UserPrompt, successCmd tea.Cmd, llms *drapi.LLMList) (promptModel, tea.Cmd) {
+	if llms == nil {
 		errPrompt := prompt
 		errPrompt.Type = typeError
-
-		errPrompt.Help = helpMsg
+		errPrompt.Help = errMsgPrefix + errMsgContactSupport
 
 		return promptModel{prompt: errPrompt, successCmd: successCmd}, nil
 	}
@@ -272,7 +319,32 @@ func (pm promptModel) GetValues() []string {
 	return []string{current.FilterValue()}
 }
 
-func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
+func (pm promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) { //nolint:cyclop
+	if pm.loading {
+		switch msg := msg.(type) {
+		case llmCatalogLoadedMsg:
+			if msg.err != nil {
+				errorPrompt := llmErrorPrompt(pm.prompt, pm.successCmd, msg.err)
+				errorPrompt.loading = false
+
+				return errorPrompt, nil
+			}
+
+			nextPrompt, cmd := llmListPromptFromCatalog(pm.prompt, pm.successCmd, msg.llms)
+			nextPrompt.loading = false
+
+			return nextPrompt, cmd
+		case spinner.TickMsg:
+			var cmd tea.Cmd
+
+			pm.spinner, cmd = pm.spinner.Update(msg)
+
+			return pm, cmd
+		}
+
+		return pm, nil
+	}
+
 	if len(pm.prompt.Options) > 0 {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -357,6 +429,14 @@ func (pm promptModel) View() string {
 
 	sb.Write([]byte(tui.SubTitleStyle.Render(fmt.Sprintf("Variable: %v", pm.prompt.Env))))
 	sb.WriteString("\n\n")
+
+	if pm.loading {
+		sb.WriteString(tui.InfoStyle.Render(pm.spinner.View() + " " + loadingLLMsMsg))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.DimStyle.Render("ctrl-p back to previous"))
+
+		return sb.String()
+	}
 
 	if pm.prompt.Type.String() == typeError {
 		sb.WriteString(tui.ErrorStyle.Render(pm.prompt.Help))

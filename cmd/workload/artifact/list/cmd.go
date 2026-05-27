@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -54,8 +55,15 @@ Example:
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
 
-			artifacts, err := workload.ListArtifacts(limit, status)
-			if err != nil {
+			var artifacts []workload.Artifact
+
+			if err := tui.RunWithSpinner("Fetching artifacts…", func() error {
+				var listErr error
+
+				artifacts, listErr = workload.ListArtifacts(limit, status)
+
+				return listErr
+			}); err != nil {
 				return err
 			}
 
