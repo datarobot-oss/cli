@@ -17,6 +17,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/misc/reader"
 )
 
 type spinnerModel struct {
@@ -65,6 +66,10 @@ func (m spinnerModel) View() string {
 // RunWithSpinner runs fn in the background while showing an animated spinner
 // with the given label. Returns the error from fn, if any.
 func RunWithSpinner(label string, fn func() error) error {
+	if !reader.IsStdinTerminal() {
+		return fn()
+	}
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = InfoStyle
