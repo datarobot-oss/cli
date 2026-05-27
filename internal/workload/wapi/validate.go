@@ -37,6 +37,7 @@ func getValidator() *validator.Validate {
 		v := validator.New()
 		_ = v.RegisterValidation("dr_id", validateDRID)
 		_ = v.RegisterValidation("dr_nonempty_ptr", validateDRNonemptyPtr)
+		_ = v.RegisterValidation("dr_sha256hex", validateDRSHA256Hex)
 		validate = v
 	})
 
@@ -93,6 +94,38 @@ func isValidDRID(s string) bool {
 	}
 
 	if strings.Contains(s, "..") {
+		return false
+	}
+
+	return true
+}
+
+// validateDRSHA256Hex requires exactly 64 lowercase hex digits (no 0x prefix),
+// matching encoding/hex.EncodeToString output from the sync engine.
+func validateDRSHA256Hex(fl validator.FieldLevel) bool {
+	s, ok := fl.Field().Interface().(string)
+	if !ok {
+		return false
+	}
+
+	return isSHA256Hex(s)
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		return false
+	}
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' {
+			continue
+		}
+
 		return false
 	}
 
@@ -186,8 +219,8 @@ func formatFieldError(fe validator.FieldError) string {
 		return fmt.Sprintf("%s must be >= %s", field, fe.Param())
 	case "len":
 		return fmt.Sprintf("%s must be %s characters", field, fe.Param())
-	case "hexadecimal":
-		return field + " must be lowercase hexadecimal"
+	case "dr_sha256hex":
+		return field + " must be a 64-character lowercase SHA-256 hex string"
 	case "dr_id":
 		return field + " must be a non-empty identifier without path separators"
 	case "dr_nonempty_ptr":

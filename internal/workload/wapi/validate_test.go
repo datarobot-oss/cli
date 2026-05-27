@@ -61,6 +61,15 @@ func TestIsValidDRID(t *testing.T) {
 	assert.False(t, isValidDRID("has..dots"))
 }
 
+func TestIsSHA256Hex(t *testing.T) {
+	assert.True(t, isSHA256Hex(testHash('a')))
+	assert.False(t, isSHA256Hex(""))
+	assert.False(t, isSHA256Hex("abc"))
+	assert.False(t, isSHA256Hex(strings.ToUpper(testHash('a'))))
+	assert.False(t, isSHA256Hex("0x"+strings.Repeat("a", 62)))
+	assert.False(t, isSHA256Hex(strings.Repeat("g", 64)))
+}
+
 func TestValidateInitOptions(t *testing.T) {
 	version := "fedcba0987654321fedcba09"
 
@@ -276,7 +285,7 @@ func TestValidateManifest(t *testing.T) {
 						"a.py": {Hash: "abc", Size: 1},
 					},
 				},
-				wantErr: "hash must be 64 characters",
+				wantErr: "hash must be a 64-character lowercase SHA-256 hex string",
 			},
 			{
 				name: "hash not hex",
@@ -286,7 +295,27 @@ func TestValidateManifest(t *testing.T) {
 						"a.py": {Hash: strings.Repeat("g", 64), Size: 1},
 					},
 				},
-				wantErr: "hash must be lowercase hexadecimal",
+				wantErr: "hash must be a 64-character lowercase SHA-256 hex string",
+			},
+			{
+				name: "hash uppercase",
+				manifest: Manifest{
+					Version: ManifestVersion,
+					Files: map[string]FileMeta{
+						"a.py": {Hash: strings.ToUpper(validHash), Size: 1},
+					},
+				},
+				wantErr: "hash must be a 64-character lowercase SHA-256 hex string",
+			},
+			{
+				name: "hash with 0x prefix",
+				manifest: Manifest{
+					Version: ManifestVersion,
+					Files: map[string]FileMeta{
+						"a.py": {Hash: "0x" + strings.Repeat("a", 62), Size: 1},
+					},
+				},
+				wantErr: "hash must be a 64-character lowercase SHA-256 hex string",
 			},
 			{
 				name: "negative size",

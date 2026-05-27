@@ -25,7 +25,7 @@ import (
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
 // (64 chars) as produced by the sync engine.
 type FileMeta struct {
-	Hash string `json:"hash" validate:"required,hexadecimal,len=64"`
+	Hash string `json:"hash" validate:"required,dr_sha256hex"`
 	Size int64  `json:"size" validate:"gte=0"`
 }
 
