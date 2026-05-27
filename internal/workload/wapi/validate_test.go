@@ -231,9 +231,9 @@ func TestValidateManifest(t *testing.T) {
 
 	t.Run("errors", func(t *testing.T) {
 		tests := []struct {
-			name    string
+			name     string
 			manifest Manifest
-			wantErr string
+			wantErr  string
 		}{
 			{
 				name:     "unsupported version",
