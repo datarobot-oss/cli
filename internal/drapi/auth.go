@@ -15,30 +15,22 @@
 package drapi
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/datarobot/cli/internal/config"
 )
 
-// SetAuthHeaders populates Authorization, User-Agent, and (when enabled)
-// X-DataRobot-Api-Consumer-Trace on req using the same sources the verb
-// helpers use inline. Exposed so callers that build their own *http.Request
-// (e.g. multipart streaming uploads in drapi/filesapi) can reuse the
-// canonical drapi auth-injection logic instead of re-implementing it.
-//
-// Reuses the package-level `token` memoization declared in get.go.
-func SetAuthHeaders(req *http.Request) error {
-	if token == "" {
-		var err error
-
-		token, err = config.GetAPIKey(context.Background())
-		if err != nil {
-			return err
-		}
+// AuthorizeRequest sets the standard DataRobot API headers on req:
+// Authorization (Bearer token), User-Agent, and the optional
+// X-DataRobot-Api-Consumer-Trace. The request body is never read, so this
+// is safe to call on multipart upload requests.
+func AuthorizeRequest(req *http.Request) error {
+	bearer, err := getToken()
+	if err != nil {
+		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("User-Agent", config.GetUserAgentHeader())
 
 	if config.IsAPIConsumerTrackingEnabled() {

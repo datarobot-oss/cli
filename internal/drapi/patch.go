@@ -16,25 +16,14 @@ package drapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 )
 
 func Patch(url, info string, body any) (*http.Response, error) {
-	var err error
-
-	if token == "" {
-		token, err = config.GetAPIKey(context.Background())
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -45,13 +34,11 @@ func Patch(url, info string, body any) (*http.Response, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+token)
-	req.Header.Add("User-Agent", config.GetUserAgentHeader())
-	req.Header.Add("Content-Type", "application/json")
-
-	if config.IsAPIConsumerTrackingEnabled() {
-		req.Header.Add("X-DataRobot-Api-Consumer-Trace", config.GetAPIConsumerTrace())
+	if err = AuthorizeRequest(req); err != nil {
+		return nil, err
 	}
+
+	req.Header.Set("Content-Type", "application/json")
 
 	if info != "" {
 		log.Infof("Updating %s at: %s", info, url)
@@ -63,11 +50,7 @@ func Patch(url, info string, body any) (*http.Response, error) {
 		return nil, err
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := NewHTTPClient(DefaultClientTimeout).Do(req)
 	if err != nil {
 		return nil, err
 	}

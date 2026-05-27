@@ -69,7 +69,7 @@ func newStreamingMultipartRequest(
 		req.ContentLength = int64(len(prologue)) + size + int64(len(epilogue))
 	}
 
-	if err := drapi.SetAuthHeaders(req); err != nil {
+	if err := drapi.AuthorizeRequest(req); err != nil {
 		_ = pr.Close()
 
 		return nil, err

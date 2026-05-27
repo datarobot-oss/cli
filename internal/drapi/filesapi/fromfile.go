@@ -115,7 +115,7 @@ func getAcceptingRedirect(requestURL string) (*http.Response, error) {
 		return nil, fmt.Errorf("build status request: %w", err)
 	}
 
-	if err := drapi.SetAuthHeaders(req); err != nil {
+	if err := drapi.AuthorizeRequest(req); err != nil {
 		return nil, err
 	}
 
