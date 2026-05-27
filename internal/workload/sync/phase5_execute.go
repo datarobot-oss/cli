@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
 // phase5Execute applies the SyncPlan in the order: disk-space check +
@@ -28,6 +30,13 @@ import (
 func phase5Execute(e *Engine) error {
 	if e.plan == nil || e.plan.IsEmpty() {
 		return nil
+	}
+
+	// Reject server-controlled traversal paths before any filesystem op
+	// runs, including Rollback.Backup which stats/reads the source path
+	// and would otherwise touch files outside e.projectDir.
+	if err := validateServerPaths(e.plan); err != nil {
+		return err
 	}
 
 	if len(e.plan.Uploads)+len(e.plan.Downloads)+len(e.plan.Deletes)+len(e.plan.Conflicts) > RollbackMaxFiles {
@@ -168,9 +177,47 @@ func removeLocalDeletedFiles(e *Engine) error {
 			continue
 		}
 
+		// phase5Execute already rejected unsafe server paths up front
+		// via validateServerPaths; re-check here so the per-call-site
+		// invariant survives future refactors that might bypass the
+		// phase entry point.
+		if err := fileops.SafeRelPath(fa.Path); err != nil {
+			return fmt.Errorf("server returned unsafe delete path %q: %w", fa.Path, err)
+		}
+
 		abs := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
 		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove %s: %w", fa.Path, err)
+		}
+	}
+
+	return nil
+}
+
+// validateServerPaths rejects plan entries whose Path is server-controlled
+// and not safe to filepath.Join with e.projectDir. The local walker
+// already validates Uploads and ActUploadDelete entries, so those are
+// skipped to avoid over-rejecting benign locally-scanned paths.
+func validateServerPaths(plan *SyncPlan) error {
+	for _, fa := range plan.Downloads {
+		if err := fileops.SafeRelPath(fa.Path); err != nil {
+			return fmt.Errorf("server returned unsafe download path %q: %w", fa.Path, err)
+		}
+	}
+
+	for _, fa := range plan.Conflicts {
+		if err := fileops.SafeRelPath(fa.Path); err != nil {
+			return fmt.Errorf("server returned unsafe conflict path %q: %w", fa.Path, err)
+		}
+	}
+
+	for _, fa := range plan.Deletes {
+		if fa.Action != ActDownloadDelete {
+			continue
+		}
+
+		if err := fileops.SafeRelPath(fa.Path); err != nil {
+			return fmt.Errorf("server returned unsafe delete path %q: %w", fa.Path, err)
 		}
 	}
 
