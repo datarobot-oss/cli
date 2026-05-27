@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
 // downloadFiles pulls files in parallel up to DownloadConcurrency. Each
@@ -87,6 +88,13 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 // downloadOne streams the remote file to disk, hashing as it writes.
 // Empty RemoteHash skips verification (e.g. synthesized EDIT_DEL_CONFLICT).
 func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
+	// phase5Execute already rejected unsafe server paths up front via
+	// validateServerPaths; re-check here so the per-call-site invariant
+	// survives future refactors that might bypass the phase entry point.
+	if err := fileops.SafeRelPath(fa.Path); err != nil {
+		return fmt.Errorf("server returned unsafe download path %q: %w", fa.Path, err)
+	}
+
 	dst := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
