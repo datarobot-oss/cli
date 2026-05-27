@@ -171,9 +171,7 @@ func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 	}
 
 	fm, ok := finalModel.(Model)
-	if !ok {
-		suite.T().Error("Final model is not of type Model")
-	}
+	suite.Require().True(ok, "Final model is not of type Model")
 
 	return fm
 }
