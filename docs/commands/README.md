@@ -42,6 +42,7 @@ These flags are available for all commands:
 | [`self`](self.md)       | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)  | Inspect and manage CLI plugins.                     |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced). |
+| [`workload`](workload.md) | Manage workload artifacts and code sync (feature-gated). |
 
 ### Command tree
 
@@ -74,18 +75,28 @@ dr
 │   ├── install        Install a plugin
 │   ├── uninstall      Uninstall a plugin
 │   └── update         Update plugins
-└── self               CLI utility commands
-    ├── completion     Shell completion
-    │   ├── install    Install completions interactively
-    │   ├── uninstall  Uninstall completions
-    │   └── <shell>    Generate script (bash|zsh|fish|powershell)
-    ├── config         Display configuration settings
-    ├── plugin         Plugin packaging and development tools
-    │   ├── add        Add a packaged plugin version to a registry file
-    │   ├── publish    Package and publish a plugin in one step
-    │   └── package    Package a plugin directory into a .tar.xz archive
-    ├── update         Update CLI to latest version
-    └── version        Version information
+├── self               CLI utility commands
+│   ├── completion     Shell completion
+│   │   ├── install    Install completions interactively
+│   │   ├── uninstall  Uninstall completions
+│   │   └── <shell>    Generate script (bash|zsh|fish|powershell)
+│   ├── config         Display configuration settings
+│   ├── plugin         Plugin packaging and development tools
+│   │   ├── add        Add a packaged plugin version to a registry file
+│   │   ├── publish    Package and publish a plugin in one step
+│   │   └── package    Package a plugin directory into a .tar.xz archive
+│   ├── update         Update CLI to latest version
+│   └── version        Version information
+└── workload           Workload artifacts and code sync (feature-gated)
+    ├── artifact       Workload artifact management
+    │   ├── create     Create a workload artifact from a JSON spec
+    │   ├── get        Display details of a workload artifact
+    │   └── list       List workload artifacts
+    └── code           Project-to-artifact code synchronization
+        ├── init       Link a project directory to an artifact
+        ├── sync       Push and pull code changes
+        ├── versions   List catalog versions for the linked artifact
+        └── checkout   Download a version snapshot for inspection
 ```
 
 ## Quick examples
@@ -234,6 +245,15 @@ For detailed documentation on each command, see:
   - `install`&mdash;install missing or out-of-date tools; supports `--yes`/`-y` and `DATAROBOT_CLI_NON_INTERACTIVE` for non-interactive use.
 
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
+
+- **[workload](workload.md)**&mdash;workload artifact and code management (feature-gated; set `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+  - `artifact create`&mdash;create a workload artifact from a JSON spec file.
+  - `artifact get`&mdash;display details of a single artifact.
+  - `artifact list`&mdash;list workload artifacts with optional `--status` filter.
+  - `code init`&mdash;link a project directory to an existing artifact.
+  - `code sync`&mdash;push local edits and pull remote changes.
+  - `code versions`&mdash;list catalog versions for the linked artifact.
+  - `code checkout`&mdash;download a version snapshot for read-only inspection.
 
 ## Getting help
 
