@@ -100,7 +100,6 @@
     "xp": {
       "name": "xp",
       "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
-      "repository": "https://github.com/datarobot/dr-experimentation-cli",
       "versions": [
         {
           "version": "1.0.0",
