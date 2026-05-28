@@ -17,9 +17,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/allcommands"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
@@ -38,6 +40,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
@@ -138,6 +141,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
 
+			showFirstRunAnimation()
+
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
@@ -149,6 +154,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			log.Stop()
 
 			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	},
 }
@@ -287,4 +295,24 @@ func initializeConfig(_ *cobra.Command) error {
 	}
 
 	return nil
+}
+
+// showFirstRunAnimation displays the animated DataRobot logo on the very first CLI invocation.
+// It checks global state to avoid showing it more than once, and only runs in interactive terminals.
+func showFirstRunAnimation() {
+	if !state.IsFirstRun() {
+		return
+	}
+
+	// Only show animation when stdout is a terminal (not piped or redirected)
+	fi, err := os.Stdout.Stat()
+	if err != nil || (fi.Mode()&os.ModeCharDevice) == 0 {
+		return
+	}
+
+	m := tui.NewLogoAnimationModel()
+
+	_, _ = tui.Run(m, tea.WithAltScreen())
+
+	state.MarkAnimationShown()
 }
