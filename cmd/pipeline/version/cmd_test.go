@@ -20,19 +20,35 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestCmd_BasicMetadata(t *testing.T) {
+	cmd := Cmd()
+
+	assert.Equal(t, "version", cmd.Use)
+	assert.NotEmpty(t, cmd.Short)
+	assert.NotEmpty(t, cmd.Long)
+}
+
+func TestCmd_IsGroupOnly(t *testing.T) {
+	cmd := Cmd()
+
+	assert.Nil(t, cmd.RunE, "version is a group command and should not have a RunE")
+}
+
 func TestCmd_RegistersAllVerbs(t *testing.T) {
 	cmd := Cmd()
 
 	want := map[string]bool{
-		"list": false,
 		"get":  false,
+		"list": false,
 	}
 
 	for _, sub := range cmd.Commands() {
-		want[sub.Name()] = true
+		if _, ok := want[sub.Name()]; ok {
+			want[sub.Name()] = true
+		}
 	}
 
 	for verb, present := range want {
-		assert.Truef(t, present, "missing subcommand: %s", verb)
+		assert.True(t, present, "missing subcommand: %s", verb)
 	}
 }
