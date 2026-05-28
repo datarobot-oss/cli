@@ -39,6 +39,9 @@ type InitOptions struct {
 // and an "init" entry in history.log. It also drops the .wapiignore template
 // at projectDir if the user has no .wapiignore yet.
 //
+// Basic input validation happens before any filesystem changes (including
+// creating projectDir or running mkdir for .wapi/).
+//
 // projectDir is created (with any missing parents) if it does not already
 // exist, matching the convenience of `git init <newdir>`.
 //
