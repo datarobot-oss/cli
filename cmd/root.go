@@ -224,6 +224,10 @@ func init() {
 	// Discover and register plugin commands
 	plugin.RegisterPluginCommands(RootCmd.Command)
 
+	// Guard parent commands against unrecognised positional args.
+	// Must run after all commands (including plugins) are registered.
+	setUnknownArgGuards(RootCmd.Command)
+
 	// Override the default help command to add --all-commands flag
 	defaultHelpFunc := RootCmd.HelpFunc()
 
@@ -245,6 +249,38 @@ func init() {
 			defaultHelpFunc(cmd, args)
 		}
 	})
+}
+
+// setUnknownArgGuards walks the command tree and installs a RunE + Args validator
+// on every pure-parent command (has subcommands, no Run/RunE, no explicit Args set).
+//
+// Cobra checks !Runnable() before ValidateArgs, so a non-runnable parent silently
+// shows help for any arg. Making the command runnable lets Args fire first and
+// return a clear error; the RunE fallback shows help when no args are given.
+func setUnknownArgGuards(root *cobra.Command) {
+	for _, cmd := range root.Commands() {
+		setUnknownArgGuards(cmd)
+	}
+
+	if !root.HasSubCommands() {
+		return
+	}
+
+	if root.Args != nil || root.RunE != nil || root.Run != nil {
+		return
+	}
+
+	root.Args = func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+
+		return fmt.Errorf("unknown command: %s", args[0])
+	}
+
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	}
 }
 
 // initializeConfig initializes the configuration by reading from

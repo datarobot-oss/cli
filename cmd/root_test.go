@@ -20,6 +20,7 @@ import (
 
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,6 +94,13 @@ func TestVersionFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// pflag does not reset flag values between Parse calls, so the
+			// version flag stays true after this test. Reset it so subsequent
+			// tests that execute the root command aren't affected.
+			t.Cleanup(func() {
+				_ = RootCmd.PersistentFlags().Set("version", "false")
+			})
+
 			cmd := RootCmd
 			buf := new(bytes.Buffer)
 			cmd.SetOut(buf)
@@ -171,6 +179,144 @@ func TestTelemetryPropExtractor_OnErrorPath(t *testing.T) {
 	missingMsgs, _ := event.EventProperties["missing_deps"].([]string)
 	assert.NotEmpty(t, missingMsgs,
 		"PropExtractor must see missing_deps populated by RunE even on the error path")
+}
+
+func TestUnknownArgGuard(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "valid subcommand passes",
+			args:    []string{"self", "version"},
+			wantErr: false,
+		},
+		{
+			name:        "unknown subcommand on parent command errors",
+			args:        []string{"self", "not-a-thing"},
+			wantErr:     true,
+			errContains: "unknown command: not-a-thing",
+		},
+		{
+			name:    "parent command with no args shows help without error",
+			args:    []string{"self"},
+			wantErr: false,
+		},
+		{
+			name:        "unknown top-level command errors",
+			args:        []string{"not-a-command"},
+			wantErr:     true,
+			errContains: "unknown command: not-a-command",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := RootCmd
+
+			var buf bytes.Buffer
+
+			cmd.SetOut(&buf)
+			cmd.SetErr(&buf)
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetUnknownArgGuards_AppliesGuardToPureParent(t *testing.T) {
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+	parent := &cobra.Command{Use: "parent"}
+
+	parent.AddCommand(child)
+
+	setUnknownArgGuards(parent)
+
+	require.NotNil(t, parent.Args, "pure parent command should have Args guard installed")
+	require.NotNil(t, parent.RunE, "pure parent command should have RunE installed")
+
+	err := parent.Args(parent, []string{"bogus"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown command: bogus")
+	assert.NoError(t, parent.Args(parent, []string{}))
+}
+
+func TestSetUnknownArgGuards_SkipsCommandWithRunE(t *testing.T) {
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+	parent := &cobra.Command{
+		Use:  "parent",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+
+	parent.AddCommand(child)
+
+	setUnknownArgGuards(parent)
+
+	assert.Nil(t, parent.Args, "parent with RunE should not have Args guard installed")
+}
+
+// TestSetUnknownArgGuards_RootLevelUnknownCommand verifies that a root-like
+// command (pure parent, no RunE) rejects an unrecognised first arg with the
+// expected "unknown command" message.
+//
+// Uses a fresh, isolated command tree rather than the global RootCmd to avoid
+// state pollution from cobra's package-level finalizers slice, which accumulates
+// across Execute calls in other tests and can cause RootCmd to appear non-runnable
+// by the time this assertion runs in the full test suite.
+func TestSetUnknownArgGuards_RootLevelUnknownCommand(t *testing.T) {
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+	root := &cobra.Command{Use: "root"}
+
+	root.AddCommand(child)
+
+	setUnknownArgGuards(root)
+
+	require.NotNil(t, root.Args)
+
+	err := root.Args(root, []string{"not-a-command"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown command: not-a-command")
+}
+
+func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+	parent := &cobra.Command{
+		Use:  "parent",
+		Args: cobra.NoArgs,
+	}
+
+	parent.AddCommand(child)
+
+	setUnknownArgGuards(parent)
+
+	err := parent.Args(parent, []string{"x"})
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
 }
 
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
