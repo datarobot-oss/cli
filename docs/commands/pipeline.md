@@ -54,30 +54,30 @@ to a frozen version) — selected via the shared `--scope` and
 
 ```bash
 # List pipelines registered with the pipelines service
-dr pipelines list
+dr pipeline list
 
 # Register a new draft pipeline by uploading a DataRobot pipeline source file
-dr pipelines create ./my_pipeline.py --description "First draft"
+dr pipeline create ./my_pipeline.py --description "First draft"
 
 # Append a new version after editing the file
-dr pipelines update <pipeline-id> ./my_pipeline.py
+dr pipeline update <pipeline-id> ./my_pipeline.py
 
 # Promote the draft to locked when you are happy with it
-dr pipelines lock <pipeline-id>
+dr pipeline lock <pipeline-id>
 ```
 
 ## Command groups
 
 | Group                    | Endpoint(s)                          | Purpose                                          |
 |--------------------------|--------------------------------------|--------------------------------------------------|
-| `dr pipelines create`    | `POST   /api/v2/pipelines`           | Upload a Python file to register a new pipeline. |
-| `dr pipelines list`      | `GET    /api/v2/pipelines`           | Paginated list with mode filtering.              |
-| `dr pipelines get`       | `GET    /api/v2/pipelines/{id}`      | Pipeline detail including all versions.          |
-| `dr pipelines update`    | `PATCH  /api/v2/pipelines/{id}`      | Re-upload a file to append a new version.        |
-| `dr pipelines delete`    | `DELETE /api/v2/pipelines/{id}`      | Remove a pipeline and all of its versions.       |
-| `dr pipelines lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
-| `dr pipelines version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
-| `dr pipelines graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
+| `dr pipeline create`    | `POST   /api/v2/pipelines`           | Upload a Python file to register a new pipeline. |
+| `dr pipeline list`      | `GET    /api/v2/pipelines`           | Paginated list with mode filtering.              |
+| `dr pipeline get`       | `GET    /api/v2/pipelines/{id}`      | Pipeline detail including all versions.          |
+| `dr pipeline update`    | `PATCH  /api/v2/pipelines/{id}`      | Re-upload a file to append a new version.        |
+| `dr pipeline delete`    | `DELETE /api/v2/pipelines/{id}`      | Remove a pipeline and all of its versions.       |
+| `dr pipeline lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
+| `dr pipeline version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
+| `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
 
 ## Subcommands
 
@@ -88,8 +88,8 @@ register a new pipeline. The pipeline name is extracted from the file and used a
 pipeline name.
 
 ```bash
-dr pipelines create <file> [flags]
-dr pipelines create --from-file=<file> [flags]
+dr pipeline create <file> [flags]
+dr pipeline create --from-file=<file> [flags]
 ```
 
 **Arguments:**
@@ -109,7 +109,7 @@ dr pipelines create --from-file=<file> [flags]
 **Example:**
 
 ```bash
-$ dr pipelines create ./confluence_to_vdb.py --description "test"
+$ dr pipeline create ./confluence_to_vdb.py --description "test"
 Pipeline ID:  683c2a1b4f8e1a2b3c4d5e6f
 Name:         confluence_to_vdb
 Version:      1
@@ -125,7 +125,7 @@ List pipelines registered with the pipelines service, with optional
 mode filtering and pagination.
 
 ```bash
-dr pipelines list [flags]
+dr pipeline list [flags]
 ```
 
 **Flags:**
@@ -138,7 +138,7 @@ dr pipelines list [flags]
 **Example:**
 
 ```bash
-$ dr pipelines list
+$ dr pipeline list
 Showing 1 of 1 (offset=0 limit=50)
 
 ID                        NAME               MODE   ACTIVE  VERSION  UPDATED
@@ -150,12 +150,12 @@ ID                        NAME               MODE   ACTIVE  VERSION  UPDATED
 Display full details of a single pipeline including all versions.
 
 ```bash
-dr pipelines get <pipeline-id> [flags]
+dr pipeline get <pipeline-id> [flags]
 ```
 
 **Arguments:**
 
-- `<pipeline-id>` — the ObjectId returned by `create` / shown in `pipelines list`.
+- `<pipeline-id>` — the ObjectId returned by `create` / shown in `pipeline list`.
 
 **Flags:**
 
@@ -164,7 +164,7 @@ dr pipelines get <pipeline-id> [flags]
 **Example:**
 
 ```bash
-$ dr pipelines get 683c2a1b4f8e1a2b3c4d5e6f
+$ dr pipeline get 683c2a1b4f8e1a2b3c4d5e6f
 ID:          683c2a1b4f8e1a2b3c4d5e6f
 Name:        confluence_to_vdb
 Mode:        draft
@@ -188,8 +188,8 @@ Re-upload a Python file to update a draft pipeline. A new version is
 appended.
 
 ```bash
-dr pipelines update <pipeline-id> <file> [flags]
-dr pipelines update <pipeline-id> --from-file=<file> [flags]
+dr pipeline update <pipeline-id> <file> [flags]
+dr pipeline update <pipeline-id> --from-file=<file> [flags]
 ```
 
 **Constraints:**
@@ -208,7 +208,7 @@ dr pipelines update <pipeline-id> --from-file=<file> [flags]
 Delete a pipeline and all of its versions.
 
 ```bash
-dr pipelines delete <pipeline-id>
+dr pipeline delete <pipeline-id>
 ```
 
 If the pipeline doesn't exist, `delete` prints
@@ -220,7 +220,7 @@ Promote a draft pipeline to locked mode. Once locked, the pipeline can
 no longer be updated.
 
 ```bash
-dr pipelines lock <pipeline-id> [flags]
+dr pipeline lock <pipeline-id> [flags]
 ```
 
 **Flags:**
@@ -232,8 +232,8 @@ dr pipelines lock <pipeline-id> [flags]
 Read-only access to pipeline versions.
 
 ```bash
-dr pipelines version list --pipeline <id> [--offset N] [--limit N] [--output json]
-dr pipelines version get  --pipeline <id> <version-id>     [--output json]
+dr pipeline version list --pipeline <id> [--offset N] [--limit N] [--output json]
+dr pipeline version get  --pipeline <id> <version-id>     [--output json]
 ```
 
 ### `graph`
@@ -241,20 +241,20 @@ dr pipelines version get  --pipeline <id> <version-id>     [--output json]
 Display the pipeline/task DAG as either a JSON payload or a human-readable summary.
 
 ```bash
-dr pipelines graph --pipeline <id>                       # draft graph
-dr pipelines graph --pipeline <id> --version=N           # locked-version graph
-dr pipelines graph --pipeline <id> --output json
+dr pipeline graph --pipeline <id>                       # draft graph
+dr pipeline graph --pipeline <id> --version=N           # locked-version graph
+dr pipeline graph --pipeline <id> --output json
 ```
 
 ## Shared flags
 
 ### `--from-file` / positional file
 
-`pipelines create` and `pipelines update` accept the input file in two equivalent ways:
+`pipeline create` and `pipeline update` accept the input file in two equivalent ways:
 
 ```bash
-dr pipelines create ./my_pipeline.py
-dr pipelines create --from-file=./my_pipeline.py
+dr pipeline create ./my_pipeline.py
+dr pipeline create --from-file=./my_pipeline.py
 ```
 
 ### `--output`
@@ -272,12 +272,12 @@ While iterating against a locally running pipelines-api (default port `8100`), p
 `http://localhost:8100` and bypass token verification:
 
 ```bash
-export DATAROBOT_CLI_FEATURE_PIPELINES=true
+export DATAROBOT_CLI_FEATURE_PIPELINE=true
 export DATAROBOT_CLI_ENDPOINT=http://localhost:8100/api/v2
 export DATAROBOT_CLI_TOKEN=local
 export DATAROBOT_CLI_SKIP_AUTH=true
 
-./dist/dr pipelines list
+./dist/dr pipeline list
 ```
 
 ## Examples
@@ -286,18 +286,18 @@ export DATAROBOT_CLI_SKIP_AUTH=true
 
 ```bash
 # Register a draft, append a version, lock it, then delete it
-dr pipelines create ./my_pipeline.py --description "Initial draft"
-dr pipelines update <pipeline-id> ./my_pipeline.py
-dr pipelines lock   <pipeline-id>
-dr pipelines delete <pipeline-id>
+dr pipeline create ./my_pipeline.py --description "Initial draft"
+dr pipeline update <pipeline-id> ./my_pipeline.py
+dr pipeline lock   <pipeline-id>
+dr pipeline delete <pipeline-id>
 ```
 
 ### Inspect versions and graph
 
 ```bash
-dr pipelines version list --pipeline <pipeline-id>
-dr pipelines version get  --pipeline <pipeline-id> 2
-dr pipelines graph        --pipeline <pipeline-id> --version=2 --output json
+dr pipeline version list --pipeline <pipeline-id>
+dr pipeline version get  --pipeline <pipeline-id> 2
+dr pipeline graph        --pipeline <pipeline-id> --version=2 --output json
 ```
 
 ## Error handling

@@ -1,12 +1,12 @@
-# `dr pipelines` command reference
+# `dr pipeline` command reference
 
-Complete cross-reference of every `dr pipelines …` subcommand, the
+Complete cross-reference of every `dr pipeline …` subcommand, the
 `pipelines-api` endpoint each one calls, sample invocations, and the
 inputs (positional args, flags, request body fields) each command
 accepts.
 
-> All commands below assume the `pipelines` feature is enabled
-> (`DATAROBOT_CLI_FEATURE_PIPELINES=true`).
+> All commands below assume the `pipeline` feature is enabled
+> (`DATAROBOT_CLI_FEATURE_PIPELINE=true`).
 
 ## How to read this document
 
@@ -24,12 +24,12 @@ accepts.
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipelines create` | `POST /pipelines` | `dr pipelines create ./my_pipeline.py` <br> `dr pipelines create --from-file=./my_pipeline.py` <br> `dr pipelines create ./my_pipeline.py --description "First draft" --mode draft` <br> `dr pipelines create --from-file=./my_pipeline.py --output json` | **Positional:** `<file>` (Python file; mutually exclusive with `--from-file`). <br> **Flags:** `--from-file=<path>`, `--description <text>`, `--mode draft\|locked`, `--output json`. |
-| `dr pipelines list` | `GET /pipelines` | `dr pipelines list` <br> `dr pipelines list --mode draft` <br> `dr pipelines list --offset 50 --limit 10 --output json` | **Flags:** `--mode draft\|locked`, `--offset <n>`, `--limit <n>`, `--output json`. |
-| `dr pipelines get` | `GET /pipelines/{pipeline_id}` | `dr pipelines get <pipeline-id>` <br> `dr pipelines get <pipeline-id> --output json` | **Positional:** `<pipeline-id>` (required). <br> **Flags:** `--output json`. |
-| `dr pipelines update` | `PATCH /pipelines/{pipeline_id}` | `dr pipelines update <pipeline-id> ./my_pipeline.py` <br> `dr pipelines update <pipeline-id> --from-file=./my_pipeline.py` | **Positional:** `<pipeline-id>` (required), `<file>` (mutually exclusive with `--from-file`). <br> **Flags:** `--from-file=<path>`, `--output json`. |
-| `dr pipelines delete` | `DELETE /pipelines/{pipeline_id}` | `dr pipelines delete <pipeline-id>` | **Positional:** `<pipeline-id>` (required). |
-| `dr pipelines lock` | `PATCH /pipelines/{pipeline_id}/mode` | `dr pipelines lock <pipeline-id>` <br> `dr pipelines lock <pipeline-id> --output json` | **Positional:** `<pipeline-id>` (required). <br> **Flags:** `--output json`. |
+| `dr pipeline create` | `POST /pipelines` | `dr pipeline create ./my_pipeline.py` <br> `dr pipeline create --from-file=./my_pipeline.py` <br> `dr pipeline create ./my_pipeline.py --description "First draft" --mode draft` <br> `dr pipeline create --from-file=./my_pipeline.py --output json` | **Positional:** `<file>` (Python file; mutually exclusive with `--from-file`). <br> **Flags:** `--from-file=<path>`, `--description <text>`, `--mode draft\|locked`, `--output json`. |
+| `dr pipeline list` | `GET /pipelines` | `dr pipeline list` <br> `dr pipeline list --mode draft` <br> `dr pipeline list --offset 50 --limit 10 --output json` | **Flags:** `--mode draft\|locked`, `--offset <n>`, `--limit <n>`, `--output json`. |
+| `dr pipeline get` | `GET /pipelines/{pipeline_id}` | `dr pipeline get <pipeline-id>` <br> `dr pipeline get <pipeline-id> --output json` | **Positional:** `<pipeline-id>` (required). <br> **Flags:** `--output json`. |
+| `dr pipeline update` | `PATCH /pipelines/{pipeline_id}` | `dr pipeline update <pipeline-id> ./my_pipeline.py` <br> `dr pipeline update <pipeline-id> --from-file=./my_pipeline.py` | **Positional:** `<pipeline-id>` (required), `<file>` (mutually exclusive with `--from-file`). <br> **Flags:** `--from-file=<path>`, `--output json`. |
+| `dr pipeline delete` | `DELETE /pipelines/{pipeline_id}` | `dr pipeline delete <pipeline-id>` | **Positional:** `<pipeline-id>` (required). |
+| `dr pipeline lock` | `PATCH /pipelines/{pipeline_id}/mode` | `dr pipeline lock <pipeline-id>` <br> `dr pipeline lock <pipeline-id> --output json` | **Positional:** `<pipeline-id>` (required). <br> **Flags:** `--output json`. |
 
 ---
 
@@ -37,9 +37,9 @@ accepts.
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipelines version list` | `GET /pipelines/{pipeline_id}/versions` | `dr pipelines version list --pipeline <id>` <br> `dr pipelines version list --pipeline <id> --offset 10 --limit 5 --output json` | **Flags:** `--pipeline <id>` (required), `--offset <n>`, `--limit <n>`, `--output json`. |
-| `dr pipelines version get` | `GET /pipelines/{pipeline_id}/versions/{version_id}` | `dr pipelines version get --pipeline <id> 2` <br> `dr pipelines version get --pipeline <id> 2 --output json` | **Positional:** `<version-id>` (positive integer, required). <br> **Flags:** `--pipeline <id>` (required), `--output json`. |
-| `dr pipelines graph` | `GET /pipelines/{pipeline_id}/graph` (draft) <br> `GET /pipelines/{pipeline_id}/versions/{version_id}/graph` (locked) | `dr pipelines graph --pipeline <id>` (draft) <br> `dr pipelines graph --pipeline <id> --version=2` (locked) <br> `dr pipelines graph --pipeline <id> --version=2 --output json` | **Flags:** `--pipeline <id>` (required), `--scope draft\|locked`, `--version <n>`, `--output json`. |
+| `dr pipeline version list` | `GET /pipelines/{pipeline_id}/versions` | `dr pipeline version list --pipeline <id>` <br> `dr pipeline version list --pipeline <id> --offset 10 --limit 5 --output json` | **Flags:** `--pipeline <id>` (required), `--offset <n>`, `--limit <n>`, `--output json`. |
+| `dr pipeline version get` | `GET /pipelines/{pipeline_id}/versions/{version_id}` | `dr pipeline version get --pipeline <id> 2` <br> `dr pipeline version get --pipeline <id> 2 --output json` | **Positional:** `<version-id>` (positive integer, required). <br> **Flags:** `--pipeline <id>` (required), `--output json`. |
+| `dr pipeline graph` | `GET /pipelines/{pipeline_id}/graph` (draft) <br> `GET /pipelines/{pipeline_id}/versions/{version_id}/graph` (locked) | `dr pipeline graph --pipeline <id>` (draft) <br> `dr pipeline graph --pipeline <id> --version=2` (locked) <br> `dr pipeline graph --pipeline <id> --version=2 --output json` | **Flags:** `--pipeline <id>` (required), `--scope draft\|locked`, `--version <n>`, `--output json`. |
 
 ---
 
@@ -62,12 +62,12 @@ version — through a pair of optional flags:
 
 ### `--from-file` / positional file (create + update verbs)
 
-`pipelines create` and `pipelines update` accept the input file in two
+`pipeline create` and `pipeline update` accept the input file in two
 equivalent ways:
 
 ```bash
-dr pipelines create ./my_pipeline.py
-dr pipelines create --from-file=./my_pipeline.py
+dr pipeline create ./my_pipeline.py
+dr pipeline create --from-file=./my_pipeline.py
 ```
 
 Exactly one of the two must be supplied.
@@ -90,13 +90,13 @@ exercising a local API stub that doesn't implement `/version/`.
 
 | API endpoint | CLI command |
 |---|---|
-| `POST /pipelines` | `dr pipelines create` |
-| `GET /pipelines` | `dr pipelines list` |
-| `GET /pipelines/{id}` | `dr pipelines get` |
-| `PATCH /pipelines/{id}` | `dr pipelines update` |
-| `DELETE /pipelines/{id}` | `dr pipelines delete` |
-| `PATCH /pipelines/{id}/mode` | `dr pipelines lock` |
-| `GET /pipelines/{id}/versions` | `dr pipelines version list` |
-| `GET /pipelines/{id}/versions/{ver}` | `dr pipelines version get` |
-| `GET /pipelines/{id}/graph` | `dr pipelines graph` (draft) |
-| `GET /pipelines/{id}/versions/{ver}/graph` | `dr pipelines graph` (locked) |
+| `POST /pipelines` | `dr pipeline create` |
+| `GET /pipelines` | `dr pipeline list` |
+| `GET /pipelines/{id}` | `dr pipeline get` |
+| `PATCH /pipelines/{id}` | `dr pipeline update` |
+| `DELETE /pipelines/{id}` | `dr pipeline delete` |
+| `PATCH /pipelines/{id}/mode` | `dr pipeline lock` |
+| `GET /pipelines/{id}/versions` | `dr pipeline version list` |
+| `GET /pipelines/{id}/versions/{ver}` | `dr pipeline version get` |
+| `GET /pipelines/{id}/graph` | `dr pipeline graph` (draft) |
+| `GET /pipelines/{id}/versions/{ver}/graph` | `dr pipeline graph` (locked) |
