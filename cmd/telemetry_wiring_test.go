@@ -75,6 +75,7 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 // "workload" for the standalone subtree.
 var expectedWorkloadTrackedCommands = []string{
 	"workload code init",
+	"workload code sync",
 	"workload code versions",
 	"workload artifact get",
 	"workload artifact list",
