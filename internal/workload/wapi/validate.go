@@ -17,119 +17,27 @@ package wapi
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 
+	drvalidate "github.com/datarobot/cli/internal/validate"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/go-playground/validator/v10"
 )
 
-const maxIDLen = 256
-
 var (
 	validateOnce sync.Once
-	validate     *validator.Validate
+	validateV    *validator.Validate
 )
 
 func getValidator() *validator.Validate {
 	validateOnce.Do(func() {
 		v := validator.New()
-		_ = v.RegisterValidation("dr_id", validateDRID)
-		_ = v.RegisterValidation("dr_nonempty_ptr", validateDRNonemptyPtr)
-		_ = v.RegisterValidation("dr_sha256hex", validateDRSHA256Hex)
-		validate = v
+		_ = drvalidate.RegisterDRTags(v)
+		validateV = v
 	})
 
-	return validate
-}
-
-// validateDRID rejects empty IDs and values unsafe for filesystem paths.
-func validateDRID(fl validator.FieldLevel) bool {
-	switch v := fl.Field().Interface().(type) {
-	case string:
-		return isValidDRID(v)
-	case *string:
-		if v == nil {
-			return true
-		}
-
-		return isValidDRID(*v)
-	default:
-		return false
-	}
-}
-
-// validateDRNonemptyPtr ensures a non-nil *string points to a non-empty value.
-func validateDRNonemptyPtr(fl validator.FieldLevel) bool {
-	field := fl.Field()
-
-	if field.Kind() == reflect.Ptr {
-		if field.IsNil() {
-			return true
-		}
-
-		elem := field.Elem()
-		if elem.Kind() != reflect.String {
-			return false
-		}
-
-		return elem.Len() > 0
-	}
-
-	if field.Kind() == reflect.String {
-		return field.Len() > 0
-	}
-
-	return false
-}
-
-func isValidDRID(s string) bool {
-	if s == "" || len(s) > maxIDLen {
-		return false
-	}
-
-	if strings.ContainsAny(s, `/\`) {
-		return false
-	}
-
-	if strings.Contains(s, "..") {
-		return false
-	}
-
-	return true
-}
-
-// validateDRSHA256Hex requires exactly 64 lowercase hex digits (no 0x prefix),
-// matching encoding/hex.EncodeToString output from the sync engine.
-func validateDRSHA256Hex(fl validator.FieldLevel) bool {
-	s, ok := fl.Field().Interface().(string)
-	if !ok {
-		return false
-	}
-
-	return isSHA256Hex(s)
-}
-
-func isSHA256Hex(s string) bool {
-	if len(s) != 64 {
-		return false
-	}
-
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		return false
-	}
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' {
-			continue
-		}
-
-		return false
-	}
-
-	return true
+	return validateV
 }
 
 func validateConfig(cfg Config) error {
@@ -219,11 +127,11 @@ func formatFieldError(fe validator.FieldError) string {
 		return fmt.Sprintf("%s must be >= %s", field, fe.Param())
 	case "len":
 		return fmt.Sprintf("%s must be %s characters", field, fe.Param())
-	case "dr_sha256hex":
+	case drvalidate.TagDRSHA256Hex:
 		return field + " must be a 64-character lowercase SHA-256 hex string"
-	case "dr_id":
+	case drvalidate.TagDRID:
 		return field + " must be a non-empty identifier without path separators"
-	case "dr_nonempty_ptr":
+	case drvalidate.TagDRNonemptyPtr:
 		return field + " must not be empty when set"
 	default:
 		return fmt.Sprintf("%s failed validation (%s)", field, fe.Tag())

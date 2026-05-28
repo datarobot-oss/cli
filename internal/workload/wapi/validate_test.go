@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	drvalidate "github.com/datarobot/cli/internal/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,24 +51,24 @@ func TestValidateConfig_ValidPointers(t *testing.T) {
 func TestValidateDRNonemptyPtr_OnPointer(t *testing.T) {
 	catalog := "cat-xyz-789"
 
-	err := getValidator().Var(&catalog, "dr_nonempty_ptr")
+	err := getValidator().Var(&catalog, drvalidate.TagDRNonemptyPtr)
 	require.NoError(t, err)
 }
 
 func TestIsValidDRID(t *testing.T) {
-	assert.True(t, isValidDRID("art-abc-123"))
-	assert.False(t, isValidDRID(""))
-	assert.False(t, isValidDRID("has/slash"))
-	assert.False(t, isValidDRID("has..dots"))
+	assert.True(t, drvalidate.IsValidDRID("art-abc-123"))
+	assert.False(t, drvalidate.IsValidDRID(""))
+	assert.False(t, drvalidate.IsValidDRID("has/slash"))
+	assert.False(t, drvalidate.IsValidDRID("has..dots"))
 }
 
 func TestIsSHA256Hex(t *testing.T) {
-	assert.True(t, isSHA256Hex(testHash('a')))
-	assert.False(t, isSHA256Hex(""))
-	assert.False(t, isSHA256Hex("abc"))
-	assert.False(t, isSHA256Hex(strings.ToUpper(testHash('a'))))
-	assert.False(t, isSHA256Hex("0x"+strings.Repeat("a", 62)))
-	assert.False(t, isSHA256Hex(strings.Repeat("g", 64)))
+	assert.True(t, drvalidate.IsSHA256Hex(testHash('a')))
+	assert.False(t, drvalidate.IsSHA256Hex(""))
+	assert.False(t, drvalidate.IsSHA256Hex("abc"))
+	assert.False(t, drvalidate.IsSHA256Hex(strings.ToUpper(testHash('a'))))
+	assert.False(t, drvalidate.IsSHA256Hex("0x"+strings.Repeat("a", 62)))
+	assert.False(t, drvalidate.IsSHA256Hex(strings.Repeat("g", 64)))
 }
 
 func TestValidateInitOptions(t *testing.T) {
