@@ -168,7 +168,7 @@ func validateManifest(m Manifest) error {
 
 func validateManifestSyncState(m Manifest) error {
 	hasVersion := m.SyncedVersionID != nil && *m.SyncedVersionID != ""
-	hasSyncedAt := m.SyncedAt != nil
+	hasSyncedAt := m.SyncedAt != nil && !m.SyncedAt.IsZero()
 
 	if hasVersion && !hasSyncedAt {
 		return errors.New("syncedAt is required when syncedVersionId is set")
