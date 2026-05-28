@@ -80,6 +80,7 @@ func TestCmd_VersionHasSubcommands(t *testing.T) {
 	cmd := Cmd()
 
 	var versionCmd *cobra.Command
+
 	for _, sub := range cmd.Commands() {
 		if sub.Name() == "version" {
 			versionCmd = sub

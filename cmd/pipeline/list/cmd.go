@@ -42,8 +42,9 @@ Example:
   dr pipeline list
   dr pipeline list --mode draft
   dr pipeline list --offset 0 --limit 50 --output-format json`,
-		Args:    cobra.NoArgs,
-		PreRunE: auth.EnsureAuthenticatedE,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if mode != "" && mode != pipeline.ModeDraft && mode != pipeline.ModeLocked {
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)

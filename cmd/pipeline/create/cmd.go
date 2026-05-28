@@ -15,9 +15,9 @@
 package create
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/datarobot/cli/cmd/pipeline/fileutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -48,14 +48,15 @@ Example:
   dr pipeline create --from-file=./my_pipeline.py
   dr pipeline create ./my_pipeline.py --description "First draft" --mode draft
   dr pipeline create --from-file=./my_pipeline.py --output-format json`,
-		Args:    cobra.MaximumNArgs(1),
-		PreRunE: auth.EnsureAuthenticatedE,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true,
+		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if mode != "" && mode != pipeline.ModeDraft && mode != pipeline.ModeLocked {
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
 			}
 
-			filePath, err := resolveFilePath(args, fromFile)
+			filePath, err := fileutil.ResolveFilePath(args, fromFile)
 			if err != nil {
 				return err
 			}
@@ -82,24 +83,4 @@ Example:
 	})
 
 	return cmd
-}
-
-// resolveFilePath returns the file path supplied either positionally or via
-// --from-file. Exactly one of the two must be provided.
-func resolveFilePath(args []string, fromFile string) (string, error) {
-	positional := ""
-	if len(args) > 0 {
-		positional = args[0]
-	}
-
-	switch {
-	case positional != "" && fromFile != "":
-		return "", errors.New("specify the file either as a positional argument or via --from-file, not both")
-	case positional != "":
-		return positional, nil
-	case fromFile != "":
-		return fromFile, nil
-	default:
-		return "", errors.New("a file path is required (positional argument or --from-file)")
-	}
 }

@@ -15,8 +15,7 @@
 package update
 
 import (
-	"errors"
-
+	"github.com/datarobot/cli/cmd/pipeline/fileutil"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -47,12 +46,13 @@ Example:
   dr pipeline update 507f1f77bcf86cd799439011 ./my_pipeline.py
   dr pipeline update 507f1f77bcf86cd799439011 --from-file=./my_pipeline.py
   dr pipeline update 507f1f77bcf86cd799439011 --from-file=./my_pipeline.py --output-format json`,
-		Args:    cobra.RangeArgs(1, 2),
-		PreRunE: auth.EnsureAuthenticatedE,
+		Args:         cobra.RangeArgs(1, 2),
+		SilenceUsage: true,
+		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, args []string) error {
 			pipelineID := args[0]
 
-			filePath, err := resolveFilePath(args[1:], fromFile)
+			filePath, err := fileutil.ResolveFilePath(args[1:], fromFile)
 			if err != nil {
 				return err
 			}
@@ -77,24 +77,4 @@ Example:
 	})
 
 	return cmd
-}
-
-// resolveFilePath returns the file path supplied either positionally (in
-// extraArgs) or via --from-file. Exactly one of the two must be provided.
-func resolveFilePath(extraArgs []string, fromFile string) (string, error) {
-	positional := ""
-	if len(extraArgs) > 0 {
-		positional = extraArgs[0]
-	}
-
-	switch {
-	case positional != "" && fromFile != "":
-		return "", errors.New("specify the file either as a positional argument or via --from-file, not both")
-	case positional != "":
-		return positional, nil
-	case fromFile != "":
-		return fromFile, nil
-	default:
-		return "", errors.New("a file path is required (positional argument or --from-file)")
-	}
 }

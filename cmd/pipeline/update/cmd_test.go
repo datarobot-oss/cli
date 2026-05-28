@@ -174,29 +174,3 @@ func TestCmd_FromFileEqualsSyntax(t *testing.T) {
 	require.NotNil(t, flag)
 	assert.Equal(t, "./my_pipeline.py", flag.Value.String())
 }
-
-func TestResolveFilePath(t *testing.T) {
-	t.Run("positional only", func(t *testing.T) {
-		got, err := resolveFilePath([]string{"a.py"}, "")
-		require.NoError(t, err)
-		assert.Equal(t, "a.py", got)
-	})
-
-	t.Run("flag only", func(t *testing.T) {
-		got, err := resolveFilePath(nil, "b.py")
-		require.NoError(t, err)
-		assert.Equal(t, "b.py", got)
-	})
-
-	t.Run("both supplied", func(t *testing.T) {
-		_, err := resolveFilePath([]string{"a.py"}, "b.py")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not both")
-	})
-
-	t.Run("neither supplied", func(t *testing.T) {
-		_, err := resolveFilePath(nil, "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "required")
-	})
-}
