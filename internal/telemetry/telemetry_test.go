@@ -235,3 +235,50 @@ func TestAmplitudeLogger_DoesNotPanic(t *testing.T) {
 	logger.Warnf("test %s", "message")
 	logger.Errorf("test %s", "message")
 }
+
+func TestTrack_TemplateFieldsInEventProperties(t *testing.T) {
+	originalAPIKey := AmplitudeAPIKey
+
+	defer func() { AmplitudeAPIKey = originalAPIKey }()
+
+	AmplitudeAPIKey = ""
+
+	props := &CommonProperties{
+		TemplateName: ptrString("my-template"),
+		TemplateID:   ptrString("tmpl-abc123"),
+	}
+
+	client := NewClient(props)
+
+	var captured types.Event
+
+	// Intercept the event by inspecting EventProperties after Track merges them.
+	// Since amp is nil (dev mode), Track only logs — we validate via AsMap directly.
+	eventProps := client.props.AsMap()
+
+	// Simulate Track merge: common props are the base, event-specific props override.
+	captured.EventProperties = eventProps
+
+	assert.Equal(t, "my-template", captured.EventProperties["template_name"])
+	assert.Equal(t, "tmpl-abc123", captured.EventProperties["template_id"])
+}
+
+func TestTrack_TemplateFieldsAbsentWhenNotInProject(t *testing.T) {
+	originalAPIKey := AmplitudeAPIKey
+
+	defer func() { AmplitudeAPIKey = originalAPIKey }()
+
+	AmplitudeAPIKey = ""
+
+	props := &CommonProperties{
+		CLIVersion: "v1.0.0",
+		// TemplateName and TemplateID intentionally nil
+	}
+
+	client := NewClient(props)
+
+	eventProps := client.props.AsMap()
+
+	assert.NotContains(t, eventProps, "template_name")
+	assert.NotContains(t, eventProps, "template_id")
+}

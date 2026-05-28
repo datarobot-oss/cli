@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -37,6 +38,10 @@ type state struct {
 	LastDotenvSetup *time.Time `yaml:"last_dotenv_setup,omitempty"`
 	// LastSuccessDepsCheck is an ISO8601-compliant timestamp of the last successful `dr dependencies check` or `dr dependencies install` run
 	LastSuccessDepsCheck *time.Time `yaml:"last_success_deps_check,omitempty"`
+	// TemplateName is the name of the DataRobot template used to create this project
+	TemplateName string `yaml:"template_name,omitempty"`
+	// TemplateID is the stable identifier of the DataRobot template used to create this project
+	TemplateID string `yaml:"template_id,omitempty"`
 }
 
 // getStatePath determines the appropriate location for the state file.
@@ -133,7 +138,7 @@ func UpdateAfterDotenvSetup(repoRoot string) error {
 }
 
 // UpdateAfterTemplatesSetup updates the state file after a successful `dr templates setup` run.
-func UpdateAfterTemplatesSetup(repoRoot string) error {
+func UpdateAfterTemplatesSetup(repoRoot, templateName, templateID string) error {
 	// Load existing state to preserve other fields
 	existingState, err := load(repoRoot)
 	if err != nil {
@@ -142,8 +147,23 @@ func UpdateAfterTemplatesSetup(repoRoot string) error {
 
 	now := time.Now().UTC()
 	existingState.LastTemplatesSetup = &now
+	existingState.TemplateName = templateName
+	existingState.TemplateID = templateID
 
 	return existingState.update()
+}
+
+// GetTemplateInfo returns the template name and ID stored in the project state file.
+// Returns empty strings if no state file exists or no template info was recorded.
+func GetTemplateInfo(repoRoot string) (name, id string) {
+	existingState, err := load(repoRoot)
+	if err != nil {
+		log.Debugf("Failed to load state for template info: %v", err)
+
+		return "", ""
+	}
+
+	return existingState.TemplateName, existingState.TemplateID
 }
 
 // UpdateAfterSuccessDepsCheck updates the state file after a successful `dr dependencies check` or `dr dependencies install` run.
