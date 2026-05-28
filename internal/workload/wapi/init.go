@@ -29,15 +29,18 @@ import (
 // LastSyncedVersionID are empty when the artifact has no committed code yet;
 // empty strings serialize as JSON null.
 type InitOptions struct {
-	ArtifactID          string
-	CatalogID           string
-	LastSyncedVersionID string
+	ArtifactID          string `validate:"required,dr_id"`
+	CatalogID           string `validate:"omitempty,dr_id"`
+	LastSyncedVersionID string `validate:"omitempty,dr_id"`
 }
 
 // Initialize creates the .wapi/ directory at projectDir and writes all the
 // bootstrap files: config.json, manifest.json (empty BASE), .gitignore ("*"),
 // and an "init" entry in history.log. It also drops the .wapiignore template
 // at projectDir if the user has no .wapiignore yet.
+//
+// Basic input validation happens before any filesystem changes (including
+// creating projectDir or running mkdir for .wapi/).
 //
 // projectDir is created (with any missing parents) if it does not already
 // exist, matching the convenience of `git init <newdir>`.
@@ -46,6 +49,10 @@ type InitOptions struct {
 // mkdir, the incomplete .wapi/ tree is left in place for the user to inspect
 // or remove manually rather than attempting rollback.
 func Initialize(projectDir string, opts InitOptions) error {
+	if err := validateInitOptions(opts); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		return fmt.Errorf("create project directory %s: %w", projectDir, err)
 	}

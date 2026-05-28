@@ -17,10 +17,16 @@ package wapi
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// testHash returns a 64-char lowercase hex string for manifest FileMeta fixtures.
+func testHash(c byte) string {
+	return strings.Repeat(string(c), 64)
+}
 
 // initWapiDir creates an empty .wapi/ directory inside projectDir so that
 // Load* / Save* / AppendHistory operations bypass their ErrNotInitialized

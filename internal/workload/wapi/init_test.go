@@ -185,3 +185,24 @@ func TestInitialize_WritesCLIVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, version.Version, cfg.CLIVersion)
 }
+
+func TestInitialize_InvalidOptions(t *testing.T) {
+	t.Run("empty artifact ID", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := Initialize(tmp, InitOptions{ArtifactID: ""})
+		require.Error(t, err)
+		assert.False(t, Exists(tmp))
+	})
+
+	t.Run("lastSyncedVersionId without catalogId", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := Initialize(tmp, InitOptions{
+			ArtifactID:          "art-abc-123",
+			LastSyncedVersionID: "fedcba0987654321fedcba09",
+		})
+		require.Error(t, err)
+		assert.False(t, Exists(tmp))
+	})
+}

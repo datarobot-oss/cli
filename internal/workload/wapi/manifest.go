@@ -23,11 +23,10 @@ import (
 )
 
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
-// (64 chars) as produced by the sync engine; this package does not validate
-// its shape.
+// (64 chars) as produced by the sync engine.
 type FileMeta struct {
-	Hash string `json:"hash"`
-	Size int64  `json:"size"`
+	Hash string `json:"hash" validate:"required,dr_sha256hex"`
+	Size int64  `json:"size" validate:"gte=0"`
 }
 
 // Manifest is the parsed representation of .wapi/manifest.json — the BASE
@@ -39,16 +38,16 @@ type FileMeta struct {
 // redundant with config.json so corruption of one is recoverable from the
 // other.
 type Manifest struct {
-	Version         int                 `json:"version"`
+	Version         int                 `json:"version" validate:"eq=1"`
 	SyncedAt        *time.Time          `json:"syncedAt"`
-	SyncedVersionID *string             `json:"syncedVersionId"`
-	Files           map[string]FileMeta `json:"files"`
+	SyncedVersionID *string             `json:"syncedVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	Files           map[string]FileMeta `json:"files" validate:"dive"`
 }
 
 // LoadManifest reads and parses .wapi/manifest.json. Returns
 // ErrNotInitialized if .wapi/ (or manifest.json inside it) is missing, and
-// a *CorruptedError wrapping the parse failure if the file is unreadable or
-// malformed.
+// a *CorruptedError wrapping parse or semantic validation failures if the
+// file is unreadable, malformed, or invalid.
 func LoadManifest(projectDir string) (Manifest, error) {
 	path := manifestPath(projectDir)
 
@@ -69,6 +68,10 @@ func LoadManifest(projectDir string) (Manifest, error) {
 
 	if m.Files == nil {
 		m.Files = map[string]FileMeta{}
+	}
+
+	if err := validateManifest(m); err != nil {
+		return Manifest{}, &CorruptedError{Path: path, Err: err}
 	}
 
 	return m, nil

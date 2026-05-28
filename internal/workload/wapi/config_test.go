@@ -134,3 +134,56 @@ func TestConfig_LoadCorrupted_WrongType(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, path, ce.Path)
 }
+
+func TestConfig_LoadInvalid(t *testing.T) {
+	createdAt := "2026-04-10T09:15:00Z"
+
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "missing artifactId",
+			json: `{"createdAt":"` + createdAt + `","cliVersion":"0.2.0"}`,
+		},
+		{
+			name: "empty artifactId",
+			json: `{"artifactId":"","createdAt":"` + createdAt + `","cliVersion":"0.2.0"}`,
+		},
+		{
+			name: "empty catalogId string",
+			json: `{"artifactId":"art-abc-123","catalogId":"","createdAt":"` + createdAt + `","cliVersion":"0.2.0"}`,
+		},
+		{
+			name: "zero createdAt",
+			json: `{"artifactId":"art-abc-123","createdAt":"0001-01-01T00:00:00Z","cliVersion":"0.2.0"}`,
+		},
+		{
+			name: "missing cliVersion",
+			json: `{"artifactId":"art-abc-123","createdAt":"` + createdAt + `"}`,
+		},
+		{
+			name: "lastSyncedVersionId without catalogId",
+			json: `{"artifactId":"art-abc-123","lastSyncedVersionId":"fedcba0987654321fedcba09","createdAt":"` + createdAt + `","cliVersion":"0.2.0"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			initWapiDir(t, tmp)
+
+			path := filepath.Join(tmp, DirName, configFile)
+			err := os.WriteFile(path, []byte(tc.json), 0o644)
+			require.NoError(t, err)
+
+			_, err = LoadConfig(tmp)
+			require.Error(t, err)
+
+			var ce *CorruptedError
+
+			require.ErrorAs(t, err, &ce)
+			assert.Equal(t, path, ce.Path)
+		})
+	}
+}

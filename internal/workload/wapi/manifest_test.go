@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,9 +38,9 @@ func TestManifest_SaveLoadRoundTrip(t *testing.T) {
 		SyncedAt:        &synced,
 		SyncedVersionID: &versionID,
 		Files: map[string]FileMeta{
-			"agent.py":                {Hash: "1b960f93", Size: 1234},
-			"utils/helper.py":         {Hash: "a3f2b8c9", Size: 567},
-			"models/bert/weights.bin": {Hash: "d8e9f0a1", Size: 45678912},
+			"agent.py":                {Hash: testHash('1'), Size: 1234},
+			"utils/helper.py":         {Hash: testHash('a'), Size: 567},
+			"models/bert/weights.bin": {Hash: testHash('d'), Size: 45678912},
 		},
 	}
 
@@ -91,10 +92,10 @@ func TestManifest_PreservesPathsVerbatim(t *testing.T) {
 	initWapiDir(t, tmp)
 
 	paths := map[string]FileMeta{
-		"forward/slash.py":   {Hash: "aaa", Size: 1},
-		"deep/nested/x.py":   {Hash: "bbb", Size: 2},
-		"unicode/café.py":    {Hash: "ccc", Size: 3},
-		"with spaces/f.json": {Hash: "ddd", Size: 4},
+		"forward/slash.py":   {Hash: testHash('a'), Size: 1},
+		"deep/nested/x.py":   {Hash: testHash('b'), Size: 2},
+		"unicode/café.py":    {Hash: testHash('c'), Size: 3},
+		"with spaces/f.json": {Hash: testHash('d'), Size: 4},
 	}
 
 	err := SaveManifest(tmp, Manifest{Version: ManifestVersion, Files: paths})
@@ -134,4 +135,63 @@ func TestManifest_LoadCorrupted(t *testing.T) {
 
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, path, ce.Path)
+}
+
+func TestManifest_LoadInvalid(t *testing.T) {
+	synced := "2026-04-10T09:30:00Z"
+	versionID := "fedcba0987654321fedcba09"
+	validHash := testHash('a')
+
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "unsupported version",
+			json: `{"version":2,"files":{}}`,
+		},
+		{
+			name: "path escapes root",
+			json: `{"version":1,"files":{"../escape.py":{"hash":"` + validHash + `","size":1}}}`,
+		},
+		{
+			name: "hash too short",
+			json: `{"version":1,"files":{"a.py":{"hash":"abc","size":1}}}`,
+		},
+		{
+			name: "hash not hex",
+			json: `{"version":1,"files":{"a.py":{"hash":"` + strings.Repeat("g", 64) + `","size":1}}}`,
+		},
+		{
+			name: "negative size",
+			json: `{"version":1,"files":{"a.py":{"hash":"` + validHash + `","size":-1}}}`,
+		},
+		{
+			name: "syncedAt without syncedVersionId",
+			json: `{"version":1,"syncedAt":"` + synced + `","files":{}}`,
+		},
+		{
+			name: "syncedVersionId without syncedAt",
+			json: `{"version":1,"syncedVersionId":"` + versionID + `","files":{}}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			initWapiDir(t, tmp)
+
+			path := filepath.Join(tmp, DirName, manifestFile)
+			err := os.WriteFile(path, []byte(tc.json), 0o644)
+			require.NoError(t, err)
+
+			_, err = LoadManifest(tmp)
+			require.Error(t, err)
+
+			var ce *CorruptedError
+
+			require.ErrorAs(t, err, &ce)
+			assert.Equal(t, path, ce.Path)
+		})
+	}
 }

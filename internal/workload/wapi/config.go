@@ -28,16 +28,17 @@ import (
 // CatalogID and LastSyncedVersionID use pointer semantics so that an empty
 // value round-trips as JSON null rather than "".
 type Config struct {
-	ArtifactID          string    `json:"artifactId"`
-	CatalogID           *string   `json:"catalogId"`
-	LastSyncedVersionID *string   `json:"lastSyncedVersionId"`
-	CreatedAt           time.Time `json:"createdAt"`
-	CLIVersion          string    `json:"cliVersion"`
+	ArtifactID          string    `json:"artifactId" validate:"required,dr_id"`
+	CatalogID           *string   `json:"catalogId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	LastSyncedVersionID *string   `json:"lastSyncedVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	CreatedAt           time.Time `json:"createdAt" validate:"required"`
+	CLIVersion          string    `json:"cliVersion" validate:"required"`
 }
 
 // LoadConfig reads and parses .wapi/config.json. Returns ErrNotInitialized if
 // .wapi/ (or config.json inside it) is missing, and a *CorruptedError
-// wrapping the parse failure if the file is unreadable or malformed.
+// wrapping parse or semantic validation failures if the file is unreadable,
+// malformed, or invalid.
 func LoadConfig(projectDir string) (Config, error) {
 	path := configPath(projectDir)
 
@@ -53,6 +54,10 @@ func LoadConfig(projectDir string) (Config, error) {
 	var cfg Config
 
 	if err := json.Unmarshal(data, &cfg); err != nil {
+		return Config{}, &CorruptedError{Path: path, Err: err}
+	}
+
+	if err := validateConfig(cfg); err != nil {
 		return Config{}, &CorruptedError{Path: path, Err: err}
 	}
 

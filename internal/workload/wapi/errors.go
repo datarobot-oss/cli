@@ -28,9 +28,9 @@ var ErrAlreadyLinked = errors.New("Project already linked: .wapi/ exists.")
 // for translating this into a user-facing hint about how to initialize.
 var ErrNotInitialized = errors.New(".wapi/ not found.")
 
-// CorruptedError wraps a parse or read failure for a specific file under
-// .wapi/. It carries the absolute path of the corrupted file so callers
-// can include it in user-facing diagnostics.
+// CorruptedError wraps a read, parse, or semantic validation failure for a
+// specific file under .wapi/. It carries the absolute path of the corrupted
+// file so callers can include it in user-facing diagnostics.
 type CorruptedError struct {
 	Path string
 	Err  error
