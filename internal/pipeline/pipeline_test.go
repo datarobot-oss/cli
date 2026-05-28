@@ -90,6 +90,12 @@ func TestDecodeHTTPError_WithDetail(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 400")
 	assert.Contains(t, err.Error(), "lattice missing")
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr, "detail response must still be *drapi.HTTPError so errors.As works")
+	assert.Equal(t, http.StatusBadRequest, httpErr.StatusCode)
+	assert.Equal(t, "lattice missing", httpErr.Detail)
 }
 
 func TestDecodeHTTPError_WithoutDetail_ReturnsHTTPError(t *testing.T) {

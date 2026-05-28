@@ -282,15 +282,13 @@ func buildMultipartRequest(method, endpoint, filePath string, fields map[string]
 }
 
 // decodeHTTPError reads a non-2xx response body and turns it into a meaningful error.
+// Always returns *drapi.HTTPError so callers can use errors.As for status-code checks.
 func decodeHTTPError(resp *http.Response, endpoint string) error {
 	respBody, _ := io.ReadAll(resp.Body)
 
 	detail := extractErrorDetail(respBody)
-	if detail != "" {
-		return fmt.Errorf("HTTP %d %s: %s", resp.StatusCode, http.StatusText(resp.StatusCode), detail)
-	}
 
-	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: endpoint}
+	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: endpoint, Detail: detail}
 }
 
 // buildMultipartBody constructs a multipart/form-data body containing the named
