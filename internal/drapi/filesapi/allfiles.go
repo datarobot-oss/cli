@@ -63,10 +63,11 @@ func (c *httpClient) AllFiles(catalogID, versionID string) (map[string]FileMeta,
 
 func allFilesURL(catalogID, versionID string) (string, error) {
 	if versionID != "" {
-		return drapi.EndpointURL("/files/"+catalogID+"/versions/"+versionID+"/allFiles/", nil)
+		return drapi.EndpointURL(
+			"/files/"+url.PathEscape(catalogID)+"/versions/"+url.PathEscape(versionID)+"/allFiles/", nil)
 	}
 
-	return drapi.EndpointURL("/files/"+catalogID+"/allFiles/", nil)
+	return drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/allFiles/", nil)
 }
 
 func (c *httpClient) DownloadFile(catalogID, versionID, path string, w io.Writer) (string, int64, error) {
@@ -77,7 +78,8 @@ func (c *httpClient) DownloadFile(catalogID, versionID, path string, w io.Writer
 	q := url.Values{}
 	q.Set("fileName", path)
 
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/versions/"+versionID+"/file/", q)
+	requestURL, err := drapi.EndpointURL(
+		"/files/"+url.PathEscape(catalogID)+"/versions/"+url.PathEscape(versionID)+"/file/", q)
 	if err != nil {
 		return "", 0, fmt.Errorf("build download url: %w", err)
 	}
@@ -102,7 +104,7 @@ func (c *httpClient) DeleteFiles(catalogID string, paths []string) (*DeleteFiles
 		return nil, nil
 	}
 
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/allFiles/", nil)
+	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/allFiles/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build delete url: %w", err)
 	}

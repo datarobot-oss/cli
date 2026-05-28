@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -38,7 +39,7 @@ func (c *httpClient) CreateCatalog() (*CatalogResp, error) {
 }
 
 func (c *httpClient) CreateStage(catalogID string) (*StageResp, error) {
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/stages/", nil)
+	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/stages/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build stage url: %w", err)
 	}
@@ -53,7 +54,8 @@ func (c *httpClient) CreateStage(catalogID string) (*StageResp, error) {
 }
 
 func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error {
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/stages/"+stageID+"/upload/", nil)
+	requestURL, err := drapi.EndpointURL(
+		"/files/"+url.PathEscape(catalogID)+"/stages/"+url.PathEscape(stageID)+"/upload/", nil)
 	if err != nil {
 		return fmt.Errorf("build upload url: %w", err)
 	}
@@ -80,7 +82,7 @@ func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, 
 }
 
 func (c *httpClient) ApplyStage(catalogID, stageID, overwrite string) (*ApplyStageResp, error) {
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/fromStage/", nil)
+	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/fromStage/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build apply-stage url: %w", err)
 	}
