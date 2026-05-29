@@ -112,27 +112,6 @@ func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discover
 	}
 }
 
-// NewDiscovery creates the appropriate Discovery for the given taskfile name.
-// If templatePath is non-empty it is resolved to an absolute path and used as
-// the custom template. If templatePath is empty, Discover will automatically
-// check for a ".Taskfile.template" file in the project root at runtime.
-func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
-	if templatePath == "" {
-		return NewTaskDiscovery(taskfileName), nil
-	}
-
-	absPath, err := filepath.Abs(templatePath)
-	if err != nil {
-		return nil, fmt.Errorf("resolving template path: %w", err)
-	}
-
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("template file not found: %s", absPath)
-	}
-
-	return NewComposeDiscovery(taskfileName, absPath), nil
-}
-
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	// Check if .env file exists in the root directory
 	envPath := filepath.Join(root, ".datarobot")
@@ -155,14 +134,6 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	}
 
 	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
-
-	// Auto-detect .Taskfile.template in the project root when no explicit template is configured
-	if d.TemplatePath == "" {
-		candidate := filepath.Join(root, ".Taskfile.template")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			d.TemplatePath = candidate
-		}
-	}
 
 	composeData, err := d.buildComposeData(root, includes)
 	if err != nil {
