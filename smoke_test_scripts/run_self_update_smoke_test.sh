@@ -42,7 +42,12 @@ get_installed_version() {
 }
 
 get_latest_version() {
-    curl -fsSL "https://api.github.com/repos/datarobot-oss/cli/releases/latest" \
+    local auth_header=""
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        auth_header="Authorization: Bearer $GITHUB_TOKEN"
+    fi
+    curl -fsSL ${auth_header:+-H "$auth_header"} \
+        "https://api.github.com/repos/datarobot-oss/cli/releases/latest" \
         | grep '"tag_name"' \
         | sed -E 's/.*"([^"]+)".*/\1/'
 }

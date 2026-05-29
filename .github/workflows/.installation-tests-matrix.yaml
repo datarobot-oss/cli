@@ -21,6 +21,9 @@ jobs:
         os: ${{ fromJSON(inputs.os-matrix) }}
     runs-on: ${{ matrix.os }}
     name: Installation Test (${{ matrix.os }})
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Install for Linux and macOS (latest)
         if: matrix.os != 'windows-latest' && inputs.version == ''

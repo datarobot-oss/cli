@@ -1,0 +1,9 @@
+name: On-Demand Dependency Install Smoke Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deps-install-smoke-tests:
+    uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
+    secrets: inherit
