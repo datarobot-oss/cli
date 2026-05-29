@@ -97,13 +97,7 @@ Examples:
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
-
-			discovery, err := task.NewDiscovery("Taskfile.gen.yaml", "")
-			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, err)
-
-				return cli.ErrSilent
-			}
+			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
 			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
 			if err != nil {
