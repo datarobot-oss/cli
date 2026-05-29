@@ -43,7 +43,6 @@ assert_file_exists() {
     else
         echo "  ❌ assert_file_exists FAILED: $label does not exist"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
     fi
 }
 
@@ -55,7 +54,6 @@ assert_executable() {
     else
         echo "  ❌ assert_executable FAILED: $path is not executable"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
     fi
 }
 
@@ -67,7 +65,6 @@ assert_symlink() {
     else
         echo "  ❌ assert_symlink FAILED: $path is not a symlink"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
     fi
 }
 
@@ -83,7 +80,6 @@ assert_output_contains() {
         echo "     Expected to find: $expected"
         echo "     In output: $output"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
     fi
 }
 
@@ -99,7 +95,6 @@ assert_output_not_contains() {
         echo "     Did not expect to find: $unexpected"
         echo "     In output: $output"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
     fi
 }
 
