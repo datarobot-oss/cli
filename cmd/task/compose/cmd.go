@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/datarobot/cli/internal/cli"
@@ -37,7 +36,7 @@ var templatePath string
 func RunE(_ *cobra.Command, _ []string) error {
 	taskfileName, ignoreTaskfile := detectExistingTaskfile()
 
-	discovery, err := createDiscovery(taskfileName)
+	discovery, err := task.NewDiscovery(taskfileName, templatePath)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 
@@ -87,43 +86,6 @@ func RunE(_ *cobra.Command, _ []string) error {
 	fmt.Println("Added " + taskfileIgnore + " line to '.gitignore'.")
 
 	return nil
-}
-
-func createDiscovery(taskfileName string) (*task.Discovery, error) {
-	// Check for .Taskfile.template in the root directory if no template specified
-	autoTemplatePath := ".Taskfile.template"
-
-	if templatePath == "" {
-		if _, err := os.Stat(autoTemplatePath); err == nil {
-			templatePath = autoTemplatePath
-			fmt.Printf("Using auto-discovered template: %s\n", autoTemplatePath)
-		}
-	}
-
-	// If template is specified or found, use compose mode
-	if templatePath != "" {
-		absPath, err := validateTemplatePath(templatePath)
-		if err != nil {
-			return nil, fmt.Errorf("invalid template: %w", err)
-		}
-
-		return task.NewComposeDiscovery(taskfileName, absPath), nil
-	}
-
-	return task.NewTaskDiscovery(taskfileName), nil
-}
-
-func validateTemplatePath(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("resolving template path: %w", err)
-	}
-
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("template file not found: %s", absPath)
-	}
-
-	return absPath, nil
 }
 
 // detectExistingTaskfile checks for existing Taskfile.yaml or Taskfile.yml
