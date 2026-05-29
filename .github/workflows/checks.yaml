@@ -23,6 +23,7 @@ jobs:
       auth: ${{ steps.changes.outputs.auth }}
       go_code: ${{ steps.changes.outputs.go_code }}
       deps: ${{ steps.changes.outputs.deps }}
+      install_sh: ${{ steps.changes.outputs.install_sh }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -50,6 +51,9 @@ jobs:
               - 'internal/dependencies/**'
               - 'internal/tools/**'
               - 'smoke_test_scripts/run_deps_install_smoke_test.sh'
+            install_sh:
+              - 'install.sh'
+              - 'smoke_test_scripts/run_install_integration_test.sh'
 
   lint:
     needs: detect-changes
@@ -231,6 +235,12 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.deps == 'true'
     uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
+    secrets: inherit
+
+  install-integration-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.install_sh == 'true'
+    uses: ./.github/workflows/.install-integration-tests-matrix.yaml
     secrets: inherit
 
   completion-tests:
