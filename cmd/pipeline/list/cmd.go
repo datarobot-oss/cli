@@ -33,7 +33,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List pipeline.",
+		Short: "List pipelines.",
 		Long: `List pipelines registered with the pipelines service.
 
 By default, output is human-readable. Use --output-format json for machine-parseable output.
@@ -59,7 +59,7 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&mode, "mode", "", "Filter by mode: draft or locked")
+	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 50, "Pagination limit (1-200)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)

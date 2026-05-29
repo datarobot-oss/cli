@@ -15,37 +15,16 @@
 package create
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-
-	os.Stdout = old
-
-	var buf bytes.Buffer
-
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
-}
 
 func sampleCreateResponse() pipeline.CreateResponse {
 	return pipeline.CreateResponse{
@@ -62,7 +41,7 @@ func sampleCreateResponse() pipeline.CreateResponse {
 func TestPrintCreateJSON(t *testing.T) {
 	resp := sampleCreateResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := pipeline.RenderCreateResponse(pipeline.OutputFormatJSON, resp)
 		require.NoError(t, err)
 	})
@@ -81,7 +60,7 @@ func TestPrintCreateJSON(t *testing.T) {
 func TestPrintCreateHuman_WithTasks(t *testing.T) {
 	resp := sampleCreateResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 
@@ -97,7 +76,7 @@ func TestPrintCreateHuman_NoTasks(t *testing.T) {
 	resp := sampleCreateResponse()
 	resp.TaskNames = nil
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 

@@ -15,37 +15,16 @@
 package update
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-
-	os.Stdout = old
-
-	var buf bytes.Buffer
-
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
-}
 
 func sampleUpdateResponse() pipeline.CreateResponse {
 	return pipeline.CreateResponse{
@@ -62,7 +41,7 @@ func sampleUpdateResponse() pipeline.CreateResponse {
 func TestPrintUpdateJSON(t *testing.T) {
 	resp := sampleUpdateResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := pipeline.RenderCreateResponse(pipeline.OutputFormatJSON, resp)
 		require.NoError(t, err)
 	})
@@ -79,7 +58,7 @@ func TestPrintUpdateJSON(t *testing.T) {
 func TestPrintUpdateHuman_WithTasks(t *testing.T) {
 	resp := sampleUpdateResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 
@@ -95,7 +74,7 @@ func TestPrintUpdateHuman_NoTasks(t *testing.T) {
 	resp := sampleUpdateResponse()
 	resp.TaskNames = nil
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
 	})
 

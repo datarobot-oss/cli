@@ -15,37 +15,16 @@
 package list
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-
-	os.Stdout = old
-
-	var buf bytes.Buffer
-
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
-}
 
 func intPtr(v int) *int {
 	return &v
@@ -72,7 +51,7 @@ func sampleListResponse() pipeline.DataPage[pipeline.ListItem] {
 func TestPrintListJSON(t *testing.T) {
 	list := sampleListResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := pipeline.RenderPipelines(pipeline.OutputFormatJSON, list)
 		require.NoError(t, err)
 	})
@@ -89,7 +68,7 @@ func TestPrintListJSON(t *testing.T) {
 }
 
 func TestPrintListHuman_Empty(t *testing.T) {
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, pipeline.DataPage[pipeline.ListItem]{}))
 	})
 
@@ -99,7 +78,7 @@ func TestPrintListHuman_Empty(t *testing.T) {
 func TestPrintListHuman_RendersHeaderAndRow(t *testing.T) {
 	list := sampleListResponse()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, list))
 	})
 
@@ -122,7 +101,7 @@ func TestPrintListHuman_NoLatestVersion(t *testing.T) {
 	list := sampleListResponse()
 	list.Data[0].LatestVersion = nil
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, list))
 	})
 

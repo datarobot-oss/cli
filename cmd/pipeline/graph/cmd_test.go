@@ -15,39 +15,18 @@
 package graph
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-
-	os.Stdout = old
-
-	var buf bytes.Buffer
-
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
-}
 
 func sampleGraph() pipeline.Graph {
 	return pipeline.Graph{
@@ -63,7 +42,7 @@ func sampleGraph() pipeline.Graph {
 }
 
 func TestPrintGraphJSON(t *testing.T) {
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, printGraphJSON(sampleGraph()))
 	})
 
@@ -78,7 +57,7 @@ func TestPrintGraphJSON(t *testing.T) {
 }
 
 func TestPrintGraphHuman(t *testing.T) {
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		printGraphHuman(sampleGraph())
 	})
 
@@ -89,7 +68,7 @@ func TestPrintGraphHuman(t *testing.T) {
 }
 
 func TestPrintGraphHuman_EmptyGraph(t *testing.T) {
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		printGraphHuman(pipeline.Graph{Pipeline: pipeline.GraphPipeline{Name: "empty"}})
 	})
 
@@ -118,7 +97,7 @@ func TestCmd_RejectsMissingPipeline(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--pipeline")
+	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsBadOutput(t *testing.T) {

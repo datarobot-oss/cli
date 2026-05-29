@@ -15,38 +15,17 @@
 package get
 
 import (
-	"bytes"
 	"errors"
 	"io"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-
-	os.Stdout = old
-
-	var buf bytes.Buffer
-
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
-}
 
 func samplePipeline() pipeline.Pipeline {
 	return pipeline.Pipeline{
@@ -79,7 +58,7 @@ func samplePipeline() pipeline.Pipeline {
 func TestPrintGetJSON(t *testing.T) {
 	p := samplePipeline()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := pipeline.RenderPipeline(pipeline.OutputFormatJSON, p)
 		require.NoError(t, err)
 	})
@@ -92,7 +71,7 @@ func TestPrintGetJSON(t *testing.T) {
 func TestPrintGetHuman_RendersHeaderAndVersions(t *testing.T) {
 	p := samplePipeline()
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
 	})
 
@@ -117,7 +96,7 @@ func TestPrintGetHuman_BlankDescriptionFallsBack(t *testing.T) {
 	p := samplePipeline()
 	p.Description = ""
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
 	})
 
@@ -128,7 +107,7 @@ func TestPrintGetHuman_NoVersions(t *testing.T) {
 	p := samplePipeline()
 	p.Versions = nil
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
 	})
 
@@ -165,7 +144,7 @@ func TestCmd_HasOutputFlag(t *testing.T) {
 func TestHandleGetError_NotFoundPrintsFriendlyMessage(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: 404, URL: "http://example/api/v2/pipelines/abc"}
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := handleGetError(httpErr, "abc")
 		assert.NoError(t, err)
 	})
@@ -176,7 +155,7 @@ func TestHandleGetError_NotFoundPrintsFriendlyMessage(t *testing.T) {
 func TestHandleGetError_OtherErrorsPassThrough(t *testing.T) {
 	otherHTTP := &drapi.HTTPError{StatusCode: 500, URL: "http://example/api/v2/pipelines/abc"}
 
-	output := captureStdout(t, func() {
+	output := testutil.CaptureStdout(t, func() {
 		err := handleGetError(otherHTTP, "abc")
 		require.Error(t, err)
 		assert.Same(t, otherHTTP, err)
