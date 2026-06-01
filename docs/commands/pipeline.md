@@ -306,12 +306,12 @@ dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format js
 Trigger, inspect, and cancel pipeline executions.
 
 ```bash
-dr pipelines run create --pipeline <id> --input <input-id>              # draft
-dr pipelines run create --pipeline <id> --version=N --input <input-id>  # locked
-dr pipelines run list   --pipeline <id> [--scope|--version]
-dr pipelines run get    --pipeline <id> <run-id> [--scope|--version]
-dr pipelines run status --pipeline <id> <run-id> [--scope|--version]
-dr pipelines run cancel --pipeline <id> <run-id> [--scope|--version]
+dr pipeline run create --pipeline <id> --input <input-id>              # draft
+dr pipeline run create --pipeline <id> --version=N --input <input-id>  # locked
+dr pipeline run list   --pipeline <id> [--scope|--version]
+dr pipeline run get    --pipeline <id> <run-id> [--scope|--version]
+dr pipeline run status --pipeline <id> <run-id> [--scope|--version]
+dr pipeline run cancel --pipeline <id> <run-id> [--scope|--version]
 ```
 
 `run status` is a lighter-weight call intended for polling — returns just

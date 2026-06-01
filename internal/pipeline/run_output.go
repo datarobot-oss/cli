@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // run_output.go holds the rendering helpers shared by the
-// `dr pipelines run` verbs.
+// `dr pipeline run` verbs.
 package pipeline
 
 import (

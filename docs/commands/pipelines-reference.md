@@ -86,7 +86,7 @@ exercising a local API stub that doesn't implement `/version/`.
 
 ---
 
-## Runs (`dr pipelines run …`)
+## Runs (`dr pipeline run …`)
 
 Same draft/locked scope rules as graph. The wire-level URLs still use the legacy
 term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps these to
@@ -94,11 +94,11 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipelines run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipelines run create --pipeline <id> --input <input-id>` <br> `dr pipelines run create --pipeline <id> --version=2 --input <input-id> --output-format json` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--scope`, `--version`, `--output-format json`. |
-| `dr pipelines run list` | `GET /pipelines/{id}/dispatches` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipelines run list --pipeline <id>` <br> `dr pipelines run list --pipeline <id> --version=2 --output-format json` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
-| `dr pipelines run get` | `GET /pipelines/{id}/dispatches/{dispatch_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}` (locked) | `dr pipelines run get --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
-| `dr pipelines run status` | `GET /pipelines/{id}/dispatches/{dispatch_id}/status` | `dr pipelines run status --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
-| `dr pipelines run cancel` | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipelines run cancel --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
+| `dr pipeline run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run create --pipeline <id> --input <input-id>` <br> `dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--scope`, `--version`, `--output-format json`. |
+| `dr pipeline run list` | `GET /pipelines/{id}/dispatches` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run list --pipeline <id>` <br> `dr pipeline run list --pipeline <id> --version=2 --output-format json` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
+| `dr pipeline run get` | `GET /pipelines/{id}/dispatches/{dispatch_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}` (locked) | `dr pipeline run get --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
+| `dr pipeline run status` | `GET /pipelines/{id}/dispatches/{dispatch_id}/status` | `dr pipeline run status --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
+| `dr pipeline run cancel` | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run cancel --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
 
 ---
 
