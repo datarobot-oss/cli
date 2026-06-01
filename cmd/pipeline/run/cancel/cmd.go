@@ -17,9 +17,11 @@ package cancel
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -55,7 +57,7 @@ Example:
 
 			err = pipeline.CancelRun(flags.PipelineID, scope, version, args[0])
 			if err != nil {
-				return err
+				return handleCancelError(err, args[0])
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Cancelled run: " + args[0]))
@@ -65,6 +67,7 @@ Example:
 	}
 
 	flags.Bind(cmd)
+	_ = cmd.MarkFlagRequired("pipeline")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -76,4 +79,16 @@ Example:
 	})
 
 	return cmd
+}
+
+func handleCancelError(err error, runID string) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		fmt.Println(tui.DimStyle.Render("No run found with id: " + runID))
+
+		return nil
+	}
+
+	return err
 }

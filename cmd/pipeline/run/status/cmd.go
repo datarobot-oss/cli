@@ -65,6 +65,7 @@ Example:
 	}
 
 	flags.Bind(cmd)
+	_ = cmd.MarkFlagRequired("pipeline")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
