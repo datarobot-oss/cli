@@ -76,6 +76,16 @@ dr
 │   ├── uninstall      Uninstall a plugin
 │   └── update         Update plugins
 ├── pipeline           Pipelines API management (feature-gated)
+│   ├── create         Upload a Python file to create a pipeline
+│   ├── list           List pipelines
+│   ├── get            Display pipeline details and versions
+│   ├── update         Re-upload a Python file to update a draft pipeline
+│   ├── delete         Delete a pipeline and all of its versions
+│   ├── lock           Promote a draft pipeline to locked mode
+│   ├── version        Inspect pipeline versions
+│   │   ├── list       List versions of a pipeline
+│   │   └── get        Display details of a single pipeline version
+│   └── graph          Display the pipeline/task DAG of a pipeline
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -238,6 +248,14 @@ For detailed documentation on each command, see:
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
 - **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
+  - `create`&mdash;upload a Python file to register a new pipeline.
+  - `list`&mdash;list pipelines with mode filtering and pagination.
+  - `get`&mdash;display full details of a pipeline including all versions.
+  - `update`&mdash;re-upload a Python file to append a new version to a draft pipeline.
+  - `delete`&mdash;remove a pipeline and all of its versions.
+  - `lock`&mdash;promote a draft pipeline to locked mode.
+  - `version`&mdash;`list` / `get` to inspect pipeline versions.
+  - `graph`&mdash;display the pipeline/task DAG (draft or locked).
 
 ## Getting help
 

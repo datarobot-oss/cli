@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/features"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,6 +31,12 @@ func TestCmd_BasicMetadata(t *testing.T) {
 	assert.NotEmpty(t, cmd.Long)
 }
 
+func TestCmd_HasAlias(t *testing.T) {
+	cmd := Cmd()
+
+	assert.Contains(t, cmd.Aliases, "pipelines")
+}
+
 func TestCmd_FeatureGate(t *testing.T) {
 	cmd := Cmd()
 
@@ -38,8 +45,64 @@ func TestCmd_FeatureGate(t *testing.T) {
 	assert.Equal(t, "pipeline", gate)
 }
 
-func TestCmd_NoSubcommandsYet(t *testing.T) {
+func TestCmd_IsGroupOnly(t *testing.T) {
 	cmd := Cmd()
 
-	assert.Empty(t, cmd.Commands(), "base branch registers no subcommands")
+	assert.Nil(t, cmd.RunE, "pipeline is a group command and should not have a RunE")
+}
+
+func TestCmd_HasExpectedSubcommands(t *testing.T) {
+	cmd := Cmd()
+
+	want := map[string]bool{
+		"create":  false,
+		"get":     false,
+		"list":    false,
+		"update":  false,
+		"delete":  false,
+		"lock":    false,
+		"version": false,
+		"graph":   false,
+	}
+
+	for _, sub := range cmd.Commands() {
+		if _, ok := want[sub.Name()]; ok {
+			want[sub.Name()] = true
+		}
+	}
+
+	for name, found := range want {
+		assert.True(t, found, "expected subcommand %q to be registered", name)
+	}
+}
+
+func TestCmd_VersionHasSubcommands(t *testing.T) {
+	cmd := Cmd()
+
+	var versionCmd *cobra.Command
+
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "version" {
+			versionCmd = sub
+
+			break
+		}
+	}
+
+	assert.NotNil(t, versionCmd, "version subcommand must be registered")
+
+	want := map[string]bool{
+		"get":  false,
+		"list": false,
+	}
+
+	for _, sub := range versionCmd.Commands() {
+		if _, ok := want[sub.Name()]; ok {
+			want[sub.Name()] = true
+		}
+	}
+
+	for name, found := range want {
+		assert.True(t, found, "expected version subcommand %q to be registered", name)
+	}
 }

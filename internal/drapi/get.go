@@ -31,10 +31,15 @@ import (
 type HTTPError struct {
 	StatusCode int
 	URL        string
+	Detail     string
 }
 
 // Error implements the error interface for HTTPError.
 func (e *HTTPError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("HTTP %d %s: %s", e.StatusCode, http.StatusText(e.StatusCode), e.Detail)
+	}
+
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 

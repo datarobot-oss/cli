@@ -46,6 +46,20 @@ func installSkipAuth(t *testing.T) {
 	})
 }
 
+// installEndpoint temporarily sets the DataRobot URL viper key to url,
+// restoring the previous value at test cleanup.
+func installEndpoint(t *testing.T, url string) {
+	t.Helper()
+
+	prev := viperx.GetString(config.DataRobotURL)
+
+	viperx.Set(config.DataRobotURL, url)
+
+	t.Cleanup(func() {
+		viperx.Set(config.DataRobotURL, prev)
+	})
+}
+
 func TestBuildJSONRequest_BodyAndHeaders(t *testing.T) {
 	installSkipAuth(t)
 
