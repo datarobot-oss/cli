@@ -1,0 +1,37 @@
+name: Install Integration Tests Matrix
+
+on:
+  workflow_call:
+
+jobs:
+  install-integration-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: Install Integration Tests (${{ matrix.os }})
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build binary
+        run: task build
+
+      - name: Run install integration tests
+        run: |
+          LOCAL_BINARY=./dist/dr bash smoke_test_scripts/run_install_integration_test.sh

@@ -1,0 +1,42 @@
+name: Dependency Install Smoke Tests Matrix
+
+on:
+  workflow_call:
+
+jobs:
+  deps-install-smoke-tests:
+    strategy:
+      matrix:
+        sys:
+          - { os: ubuntu-latest, shell: bash }
+          - { os: macos-latest,  shell: "zsh {0}" }
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+    runs-on: ${{ matrix.sys.os }}
+    name: Dependency Install Smoke Tests (${{ matrix.sys.os }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build binary
+        run: task build
+
+      - name: Run dependency install smoke tests
+        run: |
+          DR_BIN=./dist/dr bash smoke_test_scripts/run_deps_install_smoke_test.sh

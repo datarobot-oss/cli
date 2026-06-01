@@ -22,6 +22,8 @@ jobs:
       templates: ${{ steps.changes.outputs.templates }}
       auth: ${{ steps.changes.outputs.auth }}
       go_code: ${{ steps.changes.outputs.go_code }}
+      deps: ${{ steps.changes.outputs.deps }}
+      install_sh: ${{ steps.changes.outputs.install_sh }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -44,6 +46,14 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+            deps:
+              - 'cmd/dependencies/**'
+              - 'internal/dependencies/**'
+              - 'internal/tools/**'
+              - 'smoke_test_scripts/run_deps_install_smoke_test.sh'
+            install_sh:
+              - 'install.sh'
+              - 'smoke_test_scripts/run_install_integration_test.sh'
 
   lint:
     needs: detect-changes
@@ -220,6 +230,18 @@ jobs:
               issue_number: context.issue.number,
               body: '👋 **Maintainer reminder:** Smoke tests cannot run automatically on dependabot PRs due to GitHub secret restrictions.\n\nBefore merging, add the `run-smoke-tests` label and wait for the smoke tests to pass.'
             });
+
+  deps-install-smoke-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.deps == 'true'
+    uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
+    secrets: inherit
+
+  install-integration-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.install_sh == 'true'
+    uses: ./.github/workflows/.install-integration-tests-matrix.yaml
+    secrets: inherit
 
   completion-tests:
     needs: [build, detect-changes]
