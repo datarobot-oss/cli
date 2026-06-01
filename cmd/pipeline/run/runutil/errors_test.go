@@ -12,41 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package get
+package runutil
 
 import (
-	"io"
+	"errors"
+	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func runCmd(t *testing.T, args ...string) error {
-	t.Helper()
-
-	cmd := Cmd()
-	cmd.SetArgs(args)
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	cmd.PreRunE = nil
-
-	return cmd.Execute()
+func TestHandleRunNotFoundError_404IsSuppressed(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+	assert.NoError(t, HandleRunNotFoundError(httpErr, "d-1"))
 }
 
-func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--output-format", "yaml", "d-1")
+func TestHandleRunNotFoundError_PropagatesOther(t *testing.T) {
+	err := HandleRunNotFoundError(errors.New("boom"), "d-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-}
-
-func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "d-1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pipeline")
-}
-
-func TestCmd_RequiresPositional(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p")
-	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
 }

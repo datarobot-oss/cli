@@ -16,15 +16,12 @@ package status
 
 import (
 	"errors"
-	"fmt"
-	"net/http"
 
+	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
-	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +54,7 @@ Example:
 
 			result, err := pipeline.GetRunStatus(flags.PipelineID, scope, version, args[0])
 			if err != nil {
-				return handleStatusError(err, args[0])
+				return runutil.HandleRunNotFoundError(err, args[0])
 			}
 
 			return pipeline.RenderRunStatus(outputFormat, *result)
@@ -79,16 +76,4 @@ Example:
 	})
 
 	return cmd
-}
-
-func handleStatusError(err error, runID string) error {
-	var httpErr *drapi.HTTPError
-
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render("No run found with id: " + runID))
-
-		return nil
-	}
-
-	return err
 }

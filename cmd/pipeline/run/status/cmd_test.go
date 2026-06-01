@@ -15,12 +15,9 @@
 package status
 
 import (
-	"errors"
 	"io"
-	"net/http"
 	"testing"
 
-	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,15 +44,4 @@ func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	err := runCmd(t, "d-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
-}
-
-func TestHandleStatusError_404IsSuppressed(t *testing.T) {
-	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
-	assert.NoError(t, handleStatusError(httpErr, "d-1"))
-}
-
-func TestHandleStatusError_PropagatesOther(t *testing.T) {
-	err := handleStatusError(errors.New("boom"), "d-1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "boom")
 }
