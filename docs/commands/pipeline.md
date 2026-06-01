@@ -103,7 +103,7 @@ dr pipeline create --from-file=<file> [flags]
 - `--description <text>` — optional human-readable description stored on
   the pipeline.
 - `--mode <draft|locked>` — pipeline lifecycle mode. Defaults to `draft`.
-- `--output <json>` — emit machine-parseable JSON instead of the
+- `--output-format <json>` — emit machine-parseable JSON instead of the
   human-readable summary.
 
 **Example:**
@@ -133,7 +133,7 @@ dr pipeline list [flags]
 - `--mode <draft|locked>` — filter by pipeline mode.
 - `--offset <N>` — pagination offset. Default `0`.
 - `--limit <N>` — pagination limit (1-200). Default `50`.
-- `--output <json>` — emit machine-parseable JSON instead of a table.
+- `--output-format <json>` — emit machine-parseable JSON instead of a table.
 
 **Example:**
 
@@ -159,7 +159,7 @@ dr pipeline get <pipeline-id> [flags]
 
 **Flags:**
 
-- `--output <json>` — emit machine-parseable JSON.
+- `--output-format <json>` — emit machine-parseable JSON.
 
 **Example:**
 
@@ -201,7 +201,7 @@ dr pipeline update <pipeline-id> --from-file=<file> [flags]
 **Flags:**
 
 - `--from-file <path>` — alternative to the positional file argument.
-- `--output <json>` — emit machine-parseable JSON.
+- `--output-format <json>` — emit machine-parseable JSON.
 
 ### `delete`
 
@@ -225,15 +225,15 @@ dr pipeline lock <pipeline-id> [flags]
 
 **Flags:**
 
-- `--output <json>` — emit machine-parseable JSON.
+- `--output-format <json>` — emit machine-parseable JSON.
 
 ### `version`
 
 Read-only access to pipeline versions.
 
 ```bash
-dr pipeline version list --pipeline <id> [--offset N] [--limit N] [--output json]
-dr pipeline version get  --pipeline <id> <version-id>     [--output json]
+dr pipeline version list --pipeline <id> [--offset N] [--limit N] [--output-format json]
+dr pipeline version get  --pipeline <id> <version-id>     [--output-format json]
 ```
 
 ### `graph`
@@ -243,7 +243,7 @@ Display the pipeline/task DAG as either a JSON payload or a human-readable summa
 ```bash
 dr pipeline graph --pipeline <id>                       # draft graph
 dr pipeline graph --pipeline <id> --version=N           # locked-version graph
-dr pipeline graph --pipeline <id> --output json
+dr pipeline graph --pipeline <id> --output-format json
 ```
 
 ## Shared flags
@@ -257,9 +257,9 @@ dr pipeline create ./my_pipeline.py
 dr pipeline create --from-file=./my_pipeline.py
 ```
 
-### `--output`
+### `--output-format`
 
-Every verb that produces a payload accepts `--output json` to emit the response struct as indented JSON.
+Every verb that produces a payload accepts `--output-format json` to emit the response struct as indented JSON.
 
 ### Global options
 
@@ -297,7 +297,7 @@ dr pipeline delete <pipeline-id>
 ```bash
 dr pipeline version list --pipeline <pipeline-id>
 dr pipeline version get  --pipeline <pipeline-id> 2
-dr pipeline graph        --pipeline <pipeline-id> --version=2 --output json
+dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
 ```
 
 ## Error handling
