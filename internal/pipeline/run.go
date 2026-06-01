@@ -64,7 +64,7 @@ type RunStatus struct {
 
 // RunCreateRequest mirrors PipelineDispatchCreateRequest.
 type RunCreateRequest struct {
-	InputID string `json:"input_id"`
+	InputID string `json:"inputId"`
 }
 
 // CreateRun starts a new run for the given input. Returns the
