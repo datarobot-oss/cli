@@ -359,9 +359,9 @@ that pipelines can be built against. Each `update` appends a new version; indivi
 older versions can be removed with `environment version delete`.
 
 ```bash
-dr pipeline environment create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output json]
-dr pipeline environment list   [--offset N] [--limit N] [--output json]
-dr pipeline environment update <environment-id> --package <pkg> [--package <pkg> …] [--output json]
+dr pipeline environment create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output-format json]
+dr pipeline environment list   [--offset N] [--limit N] [--output-format json]
+dr pipeline environment update <environment-id> --package <pkg> [--package <pkg> …] [--output-format json]
 dr pipeline environment delete <environment-id>
 dr pipeline environment version delete --environment <environment-id> <version>
 ```
