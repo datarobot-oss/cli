@@ -48,6 +48,20 @@ type PropExtractor func(cmd *cobra.Command, args []string) map[string]any
 // TrackPlugin. Keyed by *cobra.Command pointer.
 var commandProperties sync.Map // map[*cobra.Command]PropExtractor
 
+// sharedExtractors stores PropExtractor closures registered via TrackWithShared.
+// Keyed by *cobra.Command pointer. Unlike commandProperties, the output of these
+// extractors is also tracked by Client.Track to identify and omit nil values,
+// ensuring consistency across all event types. Extractors should return nil for
+// unset properties (as opposed to empty strings or other values).
+var sharedExtractors sync.Map // map[*cobra.Command]PropExtractor
+
+// sharedPropKeys accumulates the set of all property keys declared by any
+// TrackWithShared call. Client.Track uses this set to identify and omit nil
+// values across all events, per Amplitude's preference. Properties with nil
+// values are deleted before sending to prevent them from appearing in the
+// (none) bucket.
+var sharedPropKeys sync.Map // map[string]struct{}
+
 // Track marks cmd as one whose invocation should fire a telemetry event.
 // The event's EventType is derived from cmd.CommandPath() and no extra
 // event properties are added. Common properties are merged at Track-time
@@ -64,6 +78,37 @@ func TrackWith(cmd *cobra.Command, extract PropExtractor) {
 
 	if extract != nil {
 		commandProperties.Store(cmd, extract)
+	}
+}
+
+// TrackWithShared is like TrackWith but marks the extracted properties as
+// "shared" — keys that should be consistently handled across telemetry events.
+// The keys slice declares which map keys the extractor will produce; Client.Track
+// uses this set to identify and omit nil values before sending to Amplitude.
+//
+// Extractors should return nil for properties that are not set or available,
+// and actual values (including empty strings) for properties that are set.
+// This prevents unset properties from appearing in Amplitude's (none) bucket.
+//
+// Use TrackWithShared for properties that span a logical group of commands
+// (e.g., task_name across dr task / dr run / dr task run). Use the regular
+// TrackWith for command-specific properties that do not need to appear on
+// unrelated events.
+//
+// Like TrackWith, the extractor is invoked at event-firing time (inside
+// cobra.OnFinalize, after RunE completes), so closures over local variables
+// updated during RunE work correctly.
+func TrackWithShared(cmd *cobra.Command, keys []string, extract PropExtractor) {
+	setAnnotation(cmd, trackAnnotation)
+
+	if extract != nil {
+		sharedExtractors.Store(cmd, extract)
+	}
+
+	// Register each declared key in the global shared-key set so Client.Track
+	// can identify them and omit nil values before sending to Amplitude.
+	for _, k := range keys {
+		sharedPropKeys.Store(k, struct{}{})
 	}
 }
 
@@ -93,6 +138,25 @@ func IsPluginCommand(cmd *cobra.Command) bool {
 	return ok
 }
 
+// mergeExtractorProps loads a PropExtractor from store keyed by cmd, invokes
+// it, and merges the resulting properties into props. It is a no-op when no
+// extractor is registered for cmd.
+func mergeExtractorProps(store *sync.Map, cmd *cobra.Command, args []string, props map[string]any) {
+	v, ok := store.Load(cmd)
+	if !ok {
+		return
+	}
+
+	extract, ok := v.(PropExtractor)
+	if !ok || extract == nil {
+		return
+	}
+
+	for k, val := range extract(cmd, args) {
+		props[k] = val
+	}
+}
+
 // EventFor returns the telemetry event to fire for cmd, if any. It is the
 // single entry point used by the root command to translate a command
 // invocation into an Amplitude event. Returns (_, false) when cmd has no
@@ -111,13 +175,12 @@ func EventFor(cmd *cobra.Command, args []string) (types.Event, bool) {
 		EventProperties: map[string]any{},
 	}
 
-	if v, ok := commandProperties.Load(cmd); ok {
-		if extract, ok := v.(PropExtractor); ok && extract != nil {
-			for k, val := range extract(cmd, args) {
-				event.EventProperties[k] = val
-			}
-		}
-	}
+	// Per-command properties (only appear on this event type).
+	mergeExtractorProps(&commandProperties, cmd, args, event.EventProperties)
+
+	// Shared properties. These keys are consistently handled across all event types
+	// by Client.Track, which omits nil values per Amplitude's preference.
+	mergeExtractorProps(&sharedExtractors, cmd, args, event.EventProperties)
 
 	return event, true
 }
@@ -129,6 +192,8 @@ func FirstArg(args []string) string {
 		return args[0]
 	}
 
+	// Should we return nil here as well, rather than ""?
+	// Amplitude will treat "" as a set value
 	return ""
 }
 
