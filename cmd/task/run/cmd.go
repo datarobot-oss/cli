@@ -68,6 +68,23 @@ func splitTaskArgs(args []string) (taskNames []string, taskArgs []string) {
 	return taskNames, taskArgs
 }
 
+func rootTaskfilePath(dir string) (string, error) {
+	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
+		path := filepath.Join(dir, name)
+
+		_, err := os.Stat(path)
+		if err == nil {
+			return path, nil
+		}
+
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+
+	return "", os.ErrNotExist
+}
+
 func Cmd() *cobra.Command {
 	var opts taskRunOptions
 
@@ -97,15 +114,20 @@ Examples:
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
+			taskNames, taskArgs := splitTaskArgs(args)
 
-			discovery, err := task.NewDiscovery("Taskfile.gen.yaml", "")
-			if err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, err)
+			rootTaskfile, err := rootTaskfilePath(opts.Dir)
+			if os.IsNotExist(err) {
+				discovery, discoveryErr := task.NewDiscovery("Taskfile.gen.yaml", "")
+				if discoveryErr != nil {
+					_, _ = fmt.Fprintln(os.Stderr, discoveryErr)
 
-				return cli.ErrSilent
+					return cli.ErrSilent
+				}
+
+				rootTaskfile, err = discovery.Discover(opts.Dir, 2)
 			}
 
-			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
 
@@ -134,8 +156,6 @@ Examples:
 
 				return cli.ErrSilent
 			}
-
-			taskNames, taskArgs := splitTaskArgs(args)
 
 			if !opts.taskOpts.Silent {
 				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
