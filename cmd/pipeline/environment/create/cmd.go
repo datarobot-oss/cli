@@ -66,6 +66,7 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Environment name (required)")
+	_ = cmd.MarkFlagRequired("name")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)

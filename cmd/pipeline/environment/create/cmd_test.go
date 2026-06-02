@@ -43,7 +43,7 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 func TestCmd_RejectsMissingName(t *testing.T) {
 	err := runCmd(t, "--package", "numpy")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--name")
+	assert.Contains(t, err.Error(), "name")
 }
 
 func TestCmd_RejectsMissingPackages(t *testing.T) {
