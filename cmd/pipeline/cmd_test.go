@@ -63,6 +63,7 @@ func TestCmd_HasExpectedSubcommands(t *testing.T) {
 		"lock":    false,
 		"version": false,
 		"graph":   false,
+		"run":     false,
 	}
 
 	for _, sub := range cmd.Commands() {
