@@ -78,6 +78,7 @@ Example:
 	}
 
 	flags.Bind(cmd)
+	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the JSON payload file, e.g. --from-file=./payload.json (alternative to the positional argument)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
