@@ -25,7 +25,7 @@ import (
 )
 
 // ResolvePayload mirrors the create/update flag pattern from
-// `dr pipelines create`: a JSON file path can be supplied either as a
+// `dr pipeline create`: a JSON file path can be supplied either as a
 // positional argument or via --from-file=<path>; exactly one of the two
 // must be provided. The contents of the file must be a JSON object so it
 // fits the `{payload: object}` body the API expects.

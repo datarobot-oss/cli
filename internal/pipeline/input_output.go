@@ -32,14 +32,14 @@ import (
 
 // inputJSON is the CLI-facing DTO used for `--output-format json`.
 type inputJSON struct {
-	InputID    string          `json:"input_id"`
-	PipelineID string          `json:"pipeline_id"`
-	Scope      string          `json:"scope"`
-	Version    string          `json:"version"`
-	State      string          `json:"state"`
-	Payload    json.RawMessage `json:"payload"`
-	CreatedAt  string          `json:"created_at"`
-	UpdatedAt  string          `json:"updated_at"`
+	InputID    string         `json:"input_id"`
+	PipelineID string         `json:"pipeline_id"`
+	Scope      string         `json:"scope"`
+	Version    string         `json:"version"`
+	State      string         `json:"state"`
+	Payload    map[string]any `json:"payload"`
+	CreatedAt  string         `json:"created_at"`
+	UpdatedAt  string         `json:"updated_at"`
 }
 
 func toInputJSON(input Input) inputJSON {
@@ -51,15 +51,13 @@ func toInputJSON(input Input) inputJSON {
 		version = strconv.Itoa(*input.VersionID)
 	}
 
-	payloadBytes, _ := json.Marshal(input.Payload)
-
 	return inputJSON{
 		InputID:    input.InputID,
 		PipelineID: input.PipelineID,
 		Scope:      scope,
 		Version:    version,
 		State:      string(input.State),
-		Payload:    payloadBytes,
+		Payload:    input.Payload,
 		CreatedAt:  input.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:  input.UpdatedAt.UTC().Format(time.RFC3339),
 	}

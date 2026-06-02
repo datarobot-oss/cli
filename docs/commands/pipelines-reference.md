@@ -94,9 +94,9 @@ Inputs exist in two scopes — **draft** and **locked** — selected via `--scop
 |---|---|---|---|
 | `dr pipeline input create` | `POST /pipelines/{id}/inputs` (draft) <br> `POST /pipelines/{id}/versions/{ver}/inputs` (locked) | `dr pipeline input create --pipeline <id> ./payload.json` <br> `dr pipeline input create --pipeline <id> --version=2 ./payload.json --output-format json` | **Positional:** `<payload-file>` (JSON object; mutually exclusive with `--from-file`). <br> **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--from-file=<path>`, `--output-format json`. |
 | `dr pipeline input list` | `GET /pipelines/{id}/inputs` (draft) <br> `GET /pipelines/{id}/versions/{ver}/inputs` (locked) | `dr pipeline input list --pipeline <id>` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
-| `dr pipeline input get` | `GET /pipelines/{id}/inputs/{input_id}` | `dr pipeline input get --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
+| `dr pipeline input get` | `GET /pipelines/{id}/inputs/{input_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/inputs/{input_id}` (locked) | `dr pipeline input get --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline input update` | `PATCH /pipelines/{id}/inputs/{input_id}` (draft only) | `dr pipeline input update --pipeline <id> <input-id> ./payload.json` | **Positional:** `<input-id>` (required), `<payload-file>`. **Flags:** `--pipeline <id>` (required), `--from-file=<path>`, `--output-format json`. |
-| `dr pipeline input delete` | `DELETE /pipelines/{id}/inputs/{input_id}` | `dr pipeline input delete --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
+| `dr pipeline input delete` | `DELETE /pipelines/{id}/inputs/{input_id}` (draft) <br> `DELETE /pipelines/{id}/versions/{ver}/inputs/{input_id}` (locked) | `dr pipeline input delete --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
 
 ---
 
