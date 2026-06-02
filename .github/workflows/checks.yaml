@@ -6,6 +6,7 @@ concurrency:
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
 
@@ -24,6 +25,7 @@ jobs:
       go_code: ${{ steps.changes.outputs.go_code }}
       deps: ${{ steps.changes.outputs.deps }}
       install_sh: ${{ steps.changes.outputs.install_sh }}
+      github_dir: ${{ steps.changes.outputs.github_dir }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -54,6 +56,154 @@ jobs:
             install_sh:
               - 'install.sh'
               - 'smoke_test_scripts/run_install_integration_test.sh'
+            github_dir:
+              - '.github/**'
+
+  # Guards changes under `.github/` (workflows, actions, CODEOWNERS, branch-protection
+  # configs, etc.) against fork PRs and non-maintainer authors. These files control
+  # CI behavior and secret handling, so modifications from untrusted sources must be
+  # explicitly approved by a maintainer applying the `approved-workflow-changes` label.
+  #
+  # Label trust: GitHub allows triage-level users (not just maintainers) to add labels,
+  # so the guard does not trust label presence alone — it inspects the issue timeline
+  # to find who applied the label and verifies that actor has write/maintain/admin.
+  # A non-maintainer's label application is rejected and the label is auto-removed.
+  workflow-changes-guard:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.github_dir == 'true'
+    runs-on: ubuntu-latest
+    name: Guard .github/ Changes
+    permissions:
+      pull-requests: write  # needed to remove an unauthorized approval label
+      issues: read
+      contents: read
+    steps:
+      - name: Verify maintainer-authored or explicitly approved
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const isFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            const approvalLabel = 'approved-workflow-changes';
+            const maintainerPerms = ['write', 'maintain', 'admin'];
+
+            async function permissionOf(username) {
+              try {
+                const res = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  username,
+                });
+
+                return res.data.permission;
+              } catch (e) {
+                console.log(`Could not resolve permission for @${username}: ${e.message}`);
+
+                return 'none';
+              }
+            }
+
+            const authorPermission = await permissionOf(pr.user.login);
+            const isAuthorMaintainer = maintainerPerms.includes(authorPermission);
+
+            // List changed files under .github/ for diagnostics.
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+            });
+            const changedGithubFiles = files
+              .filter(f => f.filename.startsWith('.github/'))
+              .map(f => `  - ${f.filename}`)
+              .join('\n');
+
+            console.log(`PR author: @${pr.user.login} (permission: ${authorPermission}, maintainer: ${isAuthorMaintainer})`);
+            console.log(`Fork PR: ${isFork}`);
+            console.log(`Changed .github/ files:\n${changedGithubFiles}`);
+
+            if (!isFork && isAuthorMaintainer) {
+              console.log('✅ Non-fork PR authored by a maintainer — allowed.');
+
+              return;
+            }
+
+            // Determine whether the approval label is present AND was applied by a maintainer.
+            // We walk the issue events timeline to find the most recent `labeled` event for
+            // our approval label and check that actor's permission. This prevents triage-level
+            // users from self-approving by applying the label themselves.
+            const events = await github.paginate(github.rest.issues.listEvents, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+
+            // Most recent `labeled`/`unlabeled` event for the approval label decides current state.
+            let labelerLogin = null;
+            let labelCurrentlyApplied = false;
+
+            for (const ev of events) {
+              if (!ev.label || ev.label.name !== approvalLabel) {
+                continue;
+              }
+
+              if (ev.event === 'labeled') {
+                labelCurrentlyApplied = true;
+                labelerLogin = ev.actor && ev.actor.login;
+              } else if (ev.event === 'unlabeled') {
+                labelCurrentlyApplied = false;
+                labelerLogin = null;
+              }
+            }
+
+            if (labelCurrentlyApplied && labelerLogin) {
+              const labelerPermission = await permissionOf(labelerLogin);
+              const isLabelerMaintainer = maintainerPerms.includes(labelerPermission);
+
+              console.log(`Approval label applied by @${labelerLogin} (permission: ${labelerPermission}, maintainer: ${isLabelerMaintainer})`);
+
+              if (isLabelerMaintainer) {
+                console.log(`✅ Changes explicitly approved via '${approvalLabel}' label by a maintainer.`);
+
+                return;
+              }
+
+              // Unauthorized application — remove the label so it can't be re-used as a bypass.
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  name: approvalLabel,
+                });
+
+                console.log(`Removed '${approvalLabel}' label applied by non-maintainer @${labelerLogin}.`);
+              } catch (e) {
+                console.log(`Failed to remove '${approvalLabel}' label: ${e.message}`);
+              }
+
+              core.setFailed(
+                `The '${approvalLabel}' label was applied by @${labelerLogin}, ` +
+                `who is not a maintainer (permission: \`${labelerPermission}\`). ` +
+                `The label has been removed. A user with write/maintain/admin permission ` +
+                `must re-apply it to approve these workflow changes.`
+              );
+
+              return;
+            }
+
+            const reason = isFork
+              ? `This PR comes from a fork (\`${pr.head.repo.full_name}\`)`
+              : `PR author @${pr.user.login} is not a maintainer (permission: \`${authorPermission}\`)`;
+
+            core.setFailed(
+              `Changes under \`.github/\` are restricted.\n` +
+              `${reason}, so modifications to CI workflows / actions / CODEOWNERS ` +
+              `require explicit maintainer review.\n\n` +
+              `Changed files:\n${changedGithubFiles}\n\n` +
+              `A maintainer (write/maintain/admin permission) must review these changes ` +
+              `and add the \`${approvalLabel}\` label to unblock this check.`
+            );
 
   lint:
     needs: detect-changes

@@ -2,13 +2,18 @@ name: Smoke Tests Gate
 
 # Sets the required "Smoke Tests" commit status for all PRs targeting main.
 # - Non-fork PRs: auto-succeed (smoke tests can be run optionally via labels/commands).
-# - Fork PRs: no status is set here (read-only token). The missing required check blocks
-#   merge. A maintainer must run (/approve-smoke-tests) or skip (/skip-smoke-tests) tests.
+# - Fork PRs: an explicit `failure` status is posted to block merge until a maintainer
+#   runs (/approve-smoke-tests) or skips (/skip-smoke-tests) tests. Uses
+#   `pull_request_target` so the workflow runs with a token that can write statuses
+#   (the job only reads PR metadata and posts a status — it does NOT check out PR code).
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     branches:
       - main
+
+permissions:
+  contents: read
 
 jobs:
   gate:
@@ -24,9 +29,15 @@ jobs:
             const sha = context.payload.pull_request.head.sha;
 
             if (isFork) {
-              console.log('Fork PR detected — skipping status creation (read-only token).');
-              console.log('The missing required "Smoke Tests" check will block merge.');
-              console.log('Maintainers: use /approve-smoke-tests to run tests, or /skip-smoke-tests to bypass.');
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state: 'failure',
+                context: 'Smoke Tests',
+                description: 'Fork PR — maintainer must run /approve-smoke-tests or /skip-smoke-tests',
+              });
+              console.log(`Set Smoke Tests → failure for fork PR ${sha} (blocks merge until maintainer action).`);
             } else {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
