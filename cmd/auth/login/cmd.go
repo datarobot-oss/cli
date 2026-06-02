@@ -79,6 +79,8 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	var key string
 
+	auth.PrintAuthInstructions(auth.AuthCallbackURL(datarobotHost))
+
 	err = tui.RunWithSpinner("Waiting for browser authorization…", func() error {
 		var waitErr error
 

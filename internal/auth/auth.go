@@ -37,6 +37,20 @@ import (
 // This can be overridden in tests to mock the browser-based authentication flow.
 var APIKeyCallbackFunc = WaitForAPIKeyCallback
 
+// AuthCallbackURL returns the DataRobot URL the user must visit to authorize the CLI.
+func AuthCallbackURL(datarobotHost string) string {
+	return datarobotHost + "/account/developer-tools?cliRedirect=true"
+}
+
+// PrintAuthInstructions prints the message instructing the user to visit the
+// given auth URL. It must be called before any TUI/bubbletea program starts
+// rendering, otherwise the output will be garbled or hidden.
+func PrintAuthInstructions(authURL string) {
+	fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
+	fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
+	fmt.Printf("%s\n\n", authURL)
+}
+
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
 var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
 
@@ -165,6 +179,8 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	// Auto-retrieve new credentials without prompting
 	viperx.Set(config.DataRobotAPIKey, "")
 
+	PrintAuthInstructions(AuthCallbackURL(datarobotHost))
+
 	key, err := APIKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
 		log.Error("Failed to retrieve API key.", "error", err)
@@ -218,11 +234,7 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	}
 
 	// Start the server in a goroutine
-	authURL := datarobotHost + "/account/developer-tools?cliRedirect=true"
-
-	fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
-	fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
-	fmt.Printf("%s\n\n", authURL)
+	authURL := AuthCallbackURL(datarobotHost)
 
 	go func() {
 		open.Open(authURL)
@@ -246,11 +258,11 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 			return "", errors.New("Interrupt request received.")
 		}
 
-		fmt.Println("Successfully consumed API key from API request")
+		log.Debug("Successfully consumed API key from API request")
 
 		return apiKey, nil
 	case <-ctx.Done():
-		fmt.Println("\nCtrl-C received, exiting...")
+		log.Debug("Ctrl-C received, exiting auth wait")
 		return "", errors.New("Interrupt request received.")
 	}
 }
