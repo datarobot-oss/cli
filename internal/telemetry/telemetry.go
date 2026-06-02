@@ -53,8 +53,10 @@ type Client struct {
 const amplitudeLogPrefix = "[amplitude] "
 
 // amplitudeLogger adapts the internal log package to Amplitude's Logger interface.
-// Amplitude's INFO logs (HTTP responses, variable additions) are demoted to DEBUG
-// when the app's log level is above INFO, keeping stderr clean by default.
+// Amplitude's INFO/WARN/ERROR logs (HTTP responses, retry exhaustion, etc.) are
+// demoted to DEBUG when the app's log level is above INFO, keeping stderr clean
+// by default — telemetry must never surface user-visible errors. They reappear
+// at INFO/WARN under --verbose/--debug for diagnostics.
 // All messages are prefixed with [amplitude] for traceability in debug log files.
 type amplitudeLogger struct{}
 
@@ -71,11 +73,19 @@ func (l *amplitudeLogger) Infof(msg string, args ...any) {
 }
 
 func (l *amplitudeLogger) Warnf(msg string, args ...any) {
-	log.Warnf(amplitudeLogPrefix+msg, args...)
+	if log.IsVerbose() {
+		log.Warnf(amplitudeLogPrefix+msg, args...)
+	} else {
+		log.Debugf(amplitudeLogPrefix+msg, args...)
+	}
 }
 
 func (l *amplitudeLogger) Errorf(msg string, args ...any) {
-	log.Errorf(amplitudeLogPrefix+msg, args...)
+	if log.IsVerbose() {
+		log.Warnf(amplitudeLogPrefix+msg, args...)
+	} else {
+		log.Debugf(amplitudeLogPrefix+msg, args...)
+	}
 }
 
 // NewClient creates a telemetry client. If IsEnabled() returns true, it initializes
