@@ -17,12 +17,14 @@ builds:
       binary: "dr"
       mod_timestamp: "{{ .CommitTimestamp }}"
 
+      # Telemetry disabled pending legal approval. To re-enable, add this back
+      # to the ldflags block below:
+      #   -X "github.com/datarobot/cli/internal/telemetry.AmplitudeAPIKey={{ if index .Env "AMPLITUDE_API_KEY" }}{{ .Env.AMPLITUDE_API_KEY }}{{ end }}"
       ldflags:
         - >
           -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
           -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
           -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
-          -X "github.com/datarobot/cli/internal/telemetry.AmplitudeAPIKey={{ if index .Env "AMPLITUDE_API_KEY" }}{{ .Env.AMPLITUDE_API_KEY }}{{ end }}"
           -X "github.com/datarobot/cli/internal/telemetry.InstallMethod=release"
 
       goarch:
