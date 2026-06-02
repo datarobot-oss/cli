@@ -26,6 +26,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,6 +81,29 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	// session_id, user_id, and device_id are top-level Amplitude fields, not event properties
 	assert.NotContains(t, m, "session_id")
 	assert.NotContains(t, m, "user_id")
+	// template_name is absent when not set
+	assert.NotContains(t, m, "template_name")
+}
+
+func TestCommonPropertiesAsMap_IncludesTemplateName(t *testing.T) {
+	props := &CommonProperties{
+		TemplateName: ptrString("my-template"),
+		TemplateID:   ptrString("tmpl-abc123"),
+	}
+
+	m := props.AsMap()
+
+	assert.Equal(t, "my-template", m["template_name"])
+	assert.Equal(t, "tmpl-abc123", m["template_id"])
+}
+
+func TestCommonPropertiesAsMap_OmitsTemplateNameWhenNil(t *testing.T) {
+	props := &CommonProperties{}
+
+	m := props.AsMap()
+
+	assert.NotContains(t, m, "template_name")
+	assert.NotContains(t, m, "template_id")
 }
 
 func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
@@ -323,4 +347,71 @@ func TestDetectShell_ReturnsNonEmpty(t *testing.T) {
 
 	assert.NotEmpty(t, shell)
 	assert.NotEqual(t, "unknown", shell)
+}
+
+func TestCollectCommonProperties_TemplateNameFromState(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Resolve symlinks (important for macOS where /var -> /private/var)
+	tmpDir, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
+	// Create .datarobot/answers to satisfy repo detection
+	answersDir := filepath.Join(tmpDir, ".datarobot", "answers")
+	err = os.MkdirAll(answersDir, 0o755)
+	require.NoError(t, err)
+
+	// Write state with template name and ID
+	err = state.UpdateAfterTemplatesSetup(tmpDir, "telemetry-test-template", "tmpl-tst-001")
+	require.NoError(t, err)
+
+	// Change to temp dir so FindRepoRoot() finds it
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, os.Chdir(originalWd))
+	}()
+
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	props := CollectCommonProperties()
+
+	require.NotNil(t, props.TemplateName)
+	assert.Equal(t, "telemetry-test-template", *props.TemplateName)
+	require.NotNil(t, props.TemplateID)
+	assert.Equal(t, "tmpl-tst-001", *props.TemplateID)
+
+	m := props.AsMap()
+
+	assert.Equal(t, "telemetry-test-template", m["template_name"])
+	assert.Equal(t, "tmpl-tst-001", m["template_id"])
+}
+
+func TestCollectCommonProperties_TemplateNameNilOutsideProject(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// No .datarobot directory — not a template project
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, os.Chdir(originalWd))
+	}()
+
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	props := CollectCommonProperties()
+
+	assert.Nil(t, props.TemplateName)
+
+	m := props.AsMap()
+
+	assert.NotContains(t, m, "template_name")
 }
