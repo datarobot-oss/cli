@@ -30,9 +30,33 @@ func TestCmdPrefersRecipeRootTaskfileWhenPresent(t *testing.T) {
 
 	logs := readTaskLog(t, logFile)
 	require.Contains(t, logs, "-t "+filepath.Join(recipeDir, rootTaskfileYML)+" -C 2 start")
+	require.Contains(t, logs, "|1|")
 
 	_, err := os.Stat(filepath.Join(recipeDir, generatedTaskfileYML))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestCmdUsesEmbeddedGeneratedTaskfileWhenCalledFromRootTaskfile(t *testing.T) {
+	recipeDir := t.TempDir()
+	writeRecipeFixture(t, recipeDir, true)
+	t.Setenv(taskRunFromRootEnv, "1")
+
+	logFile := filepath.Join(t.TempDir(), "task.log")
+	writeFakeTaskBinary(t, logFile)
+
+	cmd := Cmd()
+	cmd.SetArgs([]string{"--dir", recipeDir, "start"})
+
+	require.NoError(t, cmd.Execute())
+
+	logs := readTaskLog(t, logFile)
+	require.Contains(t, logs, "-t "+filepath.Join(recipeDir, generatedTaskfileYML)+" -C 2 start")
+	require.NotContains(t, logs, "-t "+filepath.Join(recipeDir, rootTaskfileYML)+" -C 2 start")
+
+	generated := readTextFile(t, filepath.Join(recipeDir, generatedTaskfileYML))
+	require.Contains(t, generated, "task agent:start")
+	require.NotContains(t, generated, "dr task run start")
+	require.NotContains(t, generated, "build-agents-md")
 }
 
 func TestCmdUsesRecipeTemplateWhenRootTaskfileIsMissing(t *testing.T) {
@@ -143,7 +167,7 @@ JSON
   exit 0
 fi
 
-printf '%s|%s\n' "$PWD" "$*" >> "$TASK_LOG"
+printf '%s|%s|%s\n' "$PWD" "$DATAROBOT_CLI_TASK_RUN_FROM_ROOT" "$*" >> "$TASK_LOG"
 `
 
 	require.NoError(t, os.WriteFile(filepath.Join(binDir, "task"), []byte(script), 0o755))
@@ -157,7 +181,7 @@ if "%1"=="--list" (
   echo {"tasks":[{"name":"start","desc":"Start component"},{"name":"lint","desc":"Lint component"},{"name":"install","desc":"Install component"},{"name":"test","desc":"Test component"},{"name":"dev","desc":"Dev component"},{"name":"deploy-dev","desc":"Deploy dev component","aliases":["up-dev"]}]}
   exit /b 0
 )
-echo %CD%^|%*>>"%TASK_LOG%"
+echo %CD%^|%DATAROBOT_CLI_TASK_RUN_FROM_ROOT%^|%*>>"%TASK_LOG%"
 exit /b 0
 `
 

@@ -95,8 +95,9 @@ func depth(path string) int {
 }
 
 type Discovery struct {
-	RootTaskfileName string
-	TemplatePath     string
+	RootTaskfileName   string
+	TemplatePath       string
+	UseProjectTemplate bool
 }
 
 func NewTaskDiscovery(rootTaskfileName string) *Discovery {
@@ -107,8 +108,9 @@ func NewTaskDiscovery(rootTaskfileName string) *Discovery {
 
 func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discovery {
 	return &Discovery{
-		RootTaskfileName: rootTaskfileName,
-		TemplatePath:     templatePath,
+		RootTaskfileName:   rootTaskfileName,
+		TemplatePath:       templatePath,
+		UseProjectTemplate: true,
 	}
 }
 
@@ -118,7 +120,7 @@ func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discover
 // check for a ".Taskfile.template" file in the project root at runtime.
 func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
 	if templatePath == "" {
-		return NewTaskDiscovery(taskfileName), nil
+		return NewComposeDiscovery(taskfileName, ""), nil
 	}
 
 	absPath, err := filepath.Abs(templatePath)
@@ -157,7 +159,7 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
 
 	// Auto-detect .Taskfile.template in the project root when no explicit template is configured
-	if d.TemplatePath == "" {
+	if d.UseProjectTemplate && d.TemplatePath == "" {
 		candidate := filepath.Join(root, ".Taskfile.template")
 		if _, statErr := os.Stat(candidate); statErr == nil {
 			d.TemplatePath = candidate

@@ -123,6 +123,7 @@ type RunOpts struct {
 	ExitCode    bool
 	Concurrency int
 	TaskArgs    []string // Additional arguments to pass to the task command
+	Env         []string
 }
 
 func (o *RunOpts) RunArgs() []string {
@@ -175,7 +176,11 @@ func (r *Runner) Run(tasks []string, opts RunOpts) error {
 
 	cmd.Stdout = r.opts.Stdout
 	cmd.Stderr = r.opts.Stderr
+
 	cmd.Stdin = r.opts.Stdin
+	if len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
 
 	return cmd.Run()
 }
