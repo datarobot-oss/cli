@@ -1,0 +1,9 @@
+name: On-Demand Install Integration Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install-integration-tests:
+    uses: ./.github/workflows/.install-integration-tests-matrix.yaml
+    secrets: inherit
