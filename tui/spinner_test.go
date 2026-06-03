@@ -106,6 +106,35 @@ func TestRunWithSpinner_ErrorPath(t *testing.T) {
 	assert.ErrorIs(t, err, want)
 }
 
+func TestRunWithSpinner_NonInteractiveEnv_SkipsTUI(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
+
+	called := false
+
+	err := RunWithSpinner("test label", func() error {
+		called = true
+
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.True(t, called)
+}
+
+func TestIsNonInteractiveEnv(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "")
+	assert.False(t, isNonInteractiveEnv())
+
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
+	assert.True(t, isNonInteractiveEnv())
+
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+	assert.True(t, isNonInteractiveEnv())
+
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "false")
+	assert.False(t, isNonInteractiveEnv())
+}
+
 func TestRunWithSpinner_LabelRendered(t *testing.T) {
 	s := spinner.New()
 	s.Spinner = spinner.Dot

@@ -15,10 +15,27 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/misc/reader"
 )
+
+// nonInteractiveEnv mirrors the DATAROBOT_CLI_NON_INTERACTIVE env var used
+// elsewhere (bound to the viper "yes" key). When set to a truthy value, the
+// spinner skips animation and just runs fn synchronously.
+const nonInteractiveEnv = "DATAROBOT_CLI_NON_INTERACTIVE"
+
+func isNonInteractiveEnv() bool {
+	switch os.Getenv(nonInteractiveEnv) {
+	case "1", "t", "T", "true", "TRUE", "True", "y", "Y", "yes", "YES", "Yes":
+		return true
+	}
+
+	return false
+}
 
 type spinnerModel struct {
 	spinner spinner.Model
@@ -67,6 +84,12 @@ func (m spinnerModel) View() string {
 // with the given label. Returns the error from fn, if any.
 func RunWithSpinner(label string, fn func() error) error {
 	if !reader.IsStdinTerminal() {
+		return fn()
+	}
+
+	if isNonInteractiveEnv() {
+		fmt.Fprintln(os.Stderr, InfoStyle.Render("• ")+label)
+
 		return fn()
 	}
 
