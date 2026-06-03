@@ -136,7 +136,11 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 | `GET /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run get` (draft) |
 | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run cancel` (draft) |
 | `POST /pipelines/{id}/inputs` | `dr pipeline input create` (draft) |
+| `POST /pipelines/{id}/versions/{ver}/inputs` | `dr pipeline input create` (locked) |
 | `GET /pipelines/{id}/inputs` | `dr pipeline input list` (draft) |
+| `GET /pipelines/{id}/versions/{ver}/inputs` | `dr pipeline input list` (locked) |
 | `GET /pipelines/{id}/inputs/{input_id}` | `dr pipeline input get` (draft) |
-| `PATCH /pipelines/{id}/inputs/{input_id}` | `dr pipeline input update` |
+| `GET /pipelines/{id}/versions/{ver}/inputs/{input_id}` | `dr pipeline input get` (locked) |
+| `PATCH /pipelines/{id}/inputs/{input_id}` | `dr pipeline input update` (draft) |
 | `DELETE /pipelines/{id}/inputs/{input_id}` | `dr pipeline input delete` (draft) |
+| `DELETE /pipelines/{id}/versions/{ver}/inputs/{input_id}` | `dr pipeline input delete` (locked) |
