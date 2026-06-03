@@ -83,7 +83,7 @@ Example:
 
 // buildUpdateBody validates the flag set and assembles the PATCH body. It is
 // extracted from RunE to keep the cobra command's cyclomatic complexity low.
-func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, timezone string) (pipeline.ScheduleUpdateRequest, error) {
+func buildUpdateBody(cmd *cobra.Command, _ string, version int, cron, timezone string) (pipeline.ScheduleUpdateRequest, error) {
 	if version <= 0 {
 		return pipeline.ScheduleUpdateRequest{}, errors.New("--version is required and must be > 0")
 	}
@@ -97,6 +97,10 @@ func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, t
 
 	if cronChanged && cron == "" {
 		return pipeline.ScheduleUpdateRequest{}, errors.New("--cron must not be empty")
+	}
+
+	if tzChanged && timezone == "" {
+		return pipeline.ScheduleUpdateRequest{}, errors.New("--timezone must not be empty")
 	}
 
 	body := pipeline.ScheduleUpdateRequest{}

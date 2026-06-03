@@ -46,7 +46,7 @@ Example:
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if version <= 0 {
-				return errors.New("--version must be > 0")
+				return errors.New("--version is required and must be > 0")
 			}
 
 			body := pipeline.ScheduleCreateRequest{

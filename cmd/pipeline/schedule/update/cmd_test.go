@@ -34,6 +34,18 @@ func TestBuildUpdateBody_RejectsEmptyCron(t *testing.T) {
 	assert.Contains(t, err.Error(), "--cron must not be empty")
 }
 
+func TestBuildUpdateBody_RejectsEmptyTimezone(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	require.NoError(t, cmd.ParseFlags([]string{"--pipeline=p", "--version=2", "--timezone="}))
+
+	_, err := buildUpdateBody(cmd, "p", 2, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--timezone must not be empty")
+}
+
 func TestBuildUpdateBody_RequiresAtLeastOneField(t *testing.T) {
 	cmd := Cmd()
 	cmd.SetOut(io.Discard)
