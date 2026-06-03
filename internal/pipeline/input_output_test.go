@@ -46,7 +46,8 @@ func TestToInputJSON_RemapsWireFields(t *testing.T) {
 	assert.Equal(t, "in-1", j.InputID)
 	assert.Equal(t, "p-1", j.PipelineID)
 	assert.Equal(t, "locked", j.Scope)
-	assert.Equal(t, "3", j.Version)
+	require.NotNil(t, j.VersionID)
+	assert.Equal(t, 3, *j.VersionID)
 	assert.Equal(t, string(InputStateValid), j.State)
 	assert.Equal(t, map[string]any{"key": "value"}, j.Payload)
 }
@@ -58,7 +59,7 @@ func TestToInputJSON_DraftScope(t *testing.T) {
 	j := toInputJSON(in)
 
 	assert.Equal(t, "draft", j.Scope)
-	assert.Equal(t, emptyValuePlaceholder, j.Version)
+	assert.Nil(t, j.VersionID)
 }
 
 func TestToInputJSON_FormatsTimestampsAsRFC3339(t *testing.T) {
@@ -79,7 +80,7 @@ func TestToInputJSON_JSONKeysUseCliVocabulary(t *testing.T) {
 	assert.Contains(t, raw, "input_id", "wire 'id' must be remapped to 'input_id'")
 	assert.Contains(t, raw, "pipeline_id")
 	assert.Contains(t, raw, "scope")
-	assert.Contains(t, raw, "version")
+	assert.Contains(t, raw, "version_id")
 	assert.NotContains(t, raw, "id", "raw wire key 'id' must not appear in CLI output")
 	assert.NotContains(t, raw, "pipelineId")
 	assert.NotContains(t, raw, "versionId")

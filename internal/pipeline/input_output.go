@@ -35,7 +35,7 @@ type inputJSON struct {
 	InputID    string         `json:"input_id"`
 	PipelineID string         `json:"pipeline_id"`
 	Scope      string         `json:"scope"`
-	Version    string         `json:"version"`
+	VersionID  *int           `json:"version_id,omitempty"`
 	State      string         `json:"state"`
 	Payload    map[string]any `json:"payload"`
 	CreatedAt  string         `json:"created_at"`
@@ -44,18 +44,16 @@ type inputJSON struct {
 
 func toInputJSON(input Input) inputJSON {
 	scope := "draft"
-	version := emptyValuePlaceholder
 
 	if input.VersionID != nil {
 		scope = "locked"
-		version = strconv.Itoa(*input.VersionID)
 	}
 
 	return inputJSON{
 		InputID:    input.InputID,
 		PipelineID: input.PipelineID,
 		Scope:      scope,
-		Version:    version,
+		VersionID:  input.VersionID,
 		State:      string(input.State),
 		Payload:    input.Payload,
 		CreatedAt:  input.CreatedAt.UTC().Format(time.RFC3339),
