@@ -46,11 +46,7 @@ Example:
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if version <= 0 {
-				return errors.New("--version is required and must be > 0")
-			}
-
-			if cron == "" {
-				return errors.New("--cron is required")
+				return errors.New("--version must be > 0")
 			}
 
 			body := pipeline.ScheduleCreateRequest{
@@ -71,7 +67,9 @@ Example:
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
+	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().StringVar(&cron, "cron", "", "Cron expression, e.g. \"0 * * * *\"")
+	_ = cmd.MarkFlagRequired("cron")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
 	_ = cmd.MarkFlagRequired("input")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")

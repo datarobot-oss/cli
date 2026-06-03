@@ -60,6 +60,7 @@ Example:
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
+	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of schedules to return")
 	pipeline.AddOutputFlag(cmd, &outputFormat)

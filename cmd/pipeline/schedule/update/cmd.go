@@ -64,6 +64,7 @@ Example:
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
+	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().StringVar(&cron, "cron", "", "New cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "New IANA timezone name")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
@@ -92,6 +93,10 @@ func buildUpdateBody(cmd *cobra.Command, pipelineID string, version int, cron, t
 
 	if !cronChanged && !tzChanged {
 		return pipeline.ScheduleUpdateRequest{}, errors.New("at least one of --cron or --timezone must be specified")
+	}
+
+	if cronChanged && cron == "" {
+		return pipeline.ScheduleUpdateRequest{}, errors.New("--cron must not be empty")
 	}
 
 	body := pipeline.ScheduleUpdateRequest{}

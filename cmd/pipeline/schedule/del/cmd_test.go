@@ -40,10 +40,10 @@ func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RejectsZeroVersion(t *testing.T) {
+func TestCmd_RejectsMissingVersion(t *testing.T) {
 	err := runCmd(t, "--pipeline", "p", "s-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--version")
+	assert.Contains(t, err.Error(), "version")
 }
 
 func TestCmd_RequiresPositional(t *testing.T) {

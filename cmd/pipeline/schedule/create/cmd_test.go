@@ -50,16 +50,16 @@ func TestCmd_RejectsMissingPipeline(t *testing.T) {
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RejectsZeroVersion(t *testing.T) {
+func TestCmd_RejectsMissingVersion(t *testing.T) {
 	err := runCmd(t, "--pipeline", "p", "--cron", "0 * * * *", "--input", "in-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--version")
+	assert.Contains(t, err.Error(), "version")
 }
 
 func TestCmd_RejectsMissingCron(t *testing.T) {
 	err := runCmd(t, "--pipeline", "p", "--version", "2", "--input", "in-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--cron")
+	assert.Contains(t, err.Error(), "cron")
 }
 
 func TestCmd_RejectsMissingInput(t *testing.T) {
