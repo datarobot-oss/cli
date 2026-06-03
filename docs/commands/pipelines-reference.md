@@ -45,7 +45,7 @@ accepts.
 
 ## Shared flag semantics
 
-### `--scope` / `--version` (graph)
+### `--scope` / `--version` (inputs, runs, graph)
 
 The CLI mirrors the API's two URL shapes — `/pipelines/{id}/…` for the
 mutable draft and `/pipelines/{id}/versions/{ver}/…` for a locked
@@ -86,6 +86,21 @@ exercising a local API stub that doesn't implement `/version/`.
 
 ---
 
+## Inputs (`dr pipeline input …`)
+
+Inputs exist in two scopes — **draft** and **locked** — selected via `--scope` / `--version`.
+
+| Command | API endpoint | Usage | Inputs |
+|---|---|---|---|
+| `dr pipeline input create` | `POST /pipelines/{id}/inputs` (draft) <br> `POST /pipelines/{id}/versions/{ver}/inputs` (locked) | `dr pipeline input create --pipeline <id> ./payload.json` <br> `dr pipeline input create --pipeline <id> --version=2 ./payload.json --output-format json` | **Positional:** `<payload-file>` (JSON object; mutually exclusive with `--from-file`). <br> **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--from-file=<path>`, `--output-format json`. |
+| `dr pipeline input list` | `GET /pipelines/{id}/inputs` (draft) <br> `GET /pipelines/{id}/versions/{ver}/inputs` (locked) | `dr pipeline input list --pipeline <id>` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
+| `dr pipeline input get` | `GET /pipelines/{id}/inputs/{input_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/inputs/{input_id}` (locked) | `dr pipeline input get --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
+| `dr pipeline input update` | `PATCH /pipelines/{id}/inputs/{input_id}` (draft only) | `dr pipeline input update --pipeline <id> <input-id> ./payload.json` | **Positional:** `<input-id>` (required), `<payload-file>`. **Flags:** `--pipeline <id>` (required), `--from-file=<path>`, `--output-format json`. |
+| `dr pipeline input delete` | `DELETE /pipelines/{id}/inputs/{input_id}` (draft) <br> `DELETE /pipelines/{id}/versions/{ver}/inputs/{input_id}` (locked) | `dr pipeline input delete --pipeline <id> <input-id>` | **Positional:** `<input-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
+
+---
+
+
 ## Runs (`dr pipeline run …`)
 
 Same draft/locked scope rules as graph. The wire-level URLs still use the legacy
@@ -120,3 +135,12 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 | `GET /pipelines/{id}/dispatches` | `dr pipeline run list` (draft) |
 | `GET /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run get` (draft) |
 | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run cancel` (draft) |
+| `POST /pipelines/{id}/inputs` | `dr pipeline input create` (draft) |
+| `POST /pipelines/{id}/versions/{ver}/inputs` | `dr pipeline input create` (locked) |
+| `GET /pipelines/{id}/inputs` | `dr pipeline input list` (draft) |
+| `GET /pipelines/{id}/versions/{ver}/inputs` | `dr pipeline input list` (locked) |
+| `GET /pipelines/{id}/inputs/{input_id}` | `dr pipeline input get` (draft) |
+| `GET /pipelines/{id}/versions/{ver}/inputs/{input_id}` | `dr pipeline input get` (locked) |
+| `PATCH /pipelines/{id}/inputs/{input_id}` | `dr pipeline input update` (draft) |
+| `DELETE /pipelines/{id}/inputs/{input_id}` | `dr pipeline input delete` (draft) |
+| `DELETE /pipelines/{id}/versions/{ver}/inputs/{input_id}` | `dr pipeline input delete` (locked) |

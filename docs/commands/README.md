@@ -86,12 +86,18 @@ dr
 │   │   ├── list       List versions of a pipeline
 │   │   └── get        Display details of a single pipeline version
 │   ├── graph          Display the pipeline/task DAG of a pipeline
-│   └── run            Trigger and inspect pipeline executions
-│       ├── create     Trigger a run from an input
-│       ├── list       List runs for a pipeline
-│       ├── get        Display a single run
-│       ├── status     Lightweight run status (for polling)
-│       └── cancel     Cancel a running run
+│   ├── run            Trigger and inspect pipeline executions
+│   │   ├── create     Trigger a run from an input
+│   │   ├── list       List runs for a pipeline
+│   │   ├── get        Display a single run
+│   │   ├── status     Lightweight run status (for polling)
+│   │   └── cancel     Cancel a running run
+│   └── input          Manage pipeline input payloads
+│       ├── create     Register a JSON payload on a pipeline
+│       ├── list       List inputs for a pipeline (draft or locked scope)
+│       ├── get        Display a single input
+│       ├── update     Update a draft input's payload
+│       └── delete     Delete an input
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -263,6 +269,7 @@ For detailed documentation on each command, see:
   - `version`&mdash;`list` / `get` to inspect pipeline versions.
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
   - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
+  - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
 
 ## Getting help
 
