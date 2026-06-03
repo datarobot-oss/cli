@@ -90,7 +90,7 @@ func TestCreateInput_LockedURLShape(t *testing.T) {
 func TestListInputs_AddsPaginationQuery(t *testing.T) {
 	installSkipAuth(t)
 
-srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/v2/pipelines/p-1/inputs", r.URL.Path)
 		assert.Equal(t, "10", r.URL.Query().Get("offset"))
