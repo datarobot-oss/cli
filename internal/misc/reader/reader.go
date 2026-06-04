@@ -79,3 +79,20 @@ func AskYesNo() bool {
 func IsStdinTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
 }
+
+// NonInteractiveEnv is the env var users set to force non-interactive mode
+// (e.g. Agent Assist). It is also bound to the viper "yes" key in commands
+// that support a --yes flag.
+const NonInteractiveEnv = "DATAROBOT_CLI_NON_INTERACTIVE"
+
+// IsNonInteractive reports whether DATAROBOT_CLI_NON_INTERACTIVE is set to a
+// truthy value. Callers should use this to skip animations, prompts, and other
+// interactive UI when running under automation.
+func IsNonInteractive() bool {
+	switch os.Getenv(NonInteractiveEnv) {
+	case "1", "t", "T", "true", "TRUE", "True", "y", "Y", "yes", "YES", "Yes":
+		return true
+	}
+
+	return false
+}

@@ -23,20 +23,6 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 )
 
-// nonInteractiveEnv mirrors the DATAROBOT_CLI_NON_INTERACTIVE env var used
-// elsewhere (bound to the viper "yes" key). When set to a truthy value, the
-// spinner skips animation and just runs fn synchronously.
-const nonInteractiveEnv = "DATAROBOT_CLI_NON_INTERACTIVE"
-
-func isNonInteractiveEnv() bool {
-	switch os.Getenv(nonInteractiveEnv) {
-	case "1", "t", "T", "true", "TRUE", "True", "y", "Y", "yes", "YES", "Yes":
-		return true
-	}
-
-	return false
-}
-
 type spinnerModel struct {
 	spinner spinner.Model
 	label   string
@@ -87,7 +73,7 @@ func RunWithSpinner(label string, fn func() error) error {
 		return fn()
 	}
 
-	if isNonInteractiveEnv() {
+	if reader.IsNonInteractive() {
 		fmt.Fprintln(os.Stderr, InfoStyle.Render("• ")+label)
 
 		return fn()
