@@ -42,7 +42,7 @@ pipelines once its first version reaches the READY state.
 
 Example:
   dr pipeline environment create --name ml-base --package numpy --package pandas
-  dr pipeline environment create --name ml-base --packages numpy,pandas==2.0 --description "training base" --output-format json`,
+  dr pipeline environment create --name ml-base --package numpy,pandas==2.0 --description "training base" --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

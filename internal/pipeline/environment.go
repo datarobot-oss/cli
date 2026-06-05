@@ -120,7 +120,7 @@ func CreateEnvironment(name, description string, packages []string) (*Environmen
 }
 
 // ListEnvironments returns a paginated slice of environments. The API
-// returns a bare JSON array (no envelope), newest first.
+// returns a DataPage envelope; results are newest first.
 func ListEnvironments(offset, limit int) ([]EnvironmentSummary, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/environments")
 	if err != nil {

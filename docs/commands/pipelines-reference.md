@@ -135,7 +135,7 @@ Schedules are **locked-only** — every verb requires both `--pipeline` and `--v
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline environment create` | `POST /pipelines/environments` | `dr pipeline environment create --name ml-base --package numpy --package pandas` <br> `dr pipeline environment create --name ml-base --packages numpy,pandas==2.0 --description "base" --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--description <text>`, `--output-format json`. |
+| `dr pipeline environment create` | `POST /pipelines/environments` | `dr pipeline environment create --name ml-base --package numpy --package pandas` <br> `dr pipeline environment create --name ml-base --package numpy,pandas==2.0 --description "base" --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--description <text>`, `--output-format json`. |
 | `dr pipeline environment list` | `GET /pipelines/environments` | `dr pipeline environment list` <br> `dr pipeline environment list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
 | `dr pipeline environment update` | `PATCH /pipelines/environments/{id}` | `dr pipeline environment update <env-id> --package scikit-learn` | **Positional:** `<environment-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--output-format json`. |
 | `dr pipeline environment delete` | `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete <env-id>` | **Positional:** `<environment-id>` (required). |
