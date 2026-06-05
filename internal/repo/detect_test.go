@@ -201,3 +201,29 @@ func (suite *DetectTestSuite) TestIsInRepoReturnsFalseWhenOnlyStateYaml() {
 	// Should return false
 	suite.False(repo.IsInRepo())
 }
+
+func (suite *DetectTestSuite) TestIsTemplateDirReturnsTrueWithAnswers() {
+	suite.createAnswersDir()
+	suite.True(repo.IsTemplateDir(suite.tempDir))
+}
+
+func (suite *DetectTestSuite) TestIsTemplateDirReturnsTrueWithCliVersions() {
+	suite.createCliVersionsYaml()
+	suite.True(repo.IsTemplateDir(suite.tempDir))
+}
+
+func (suite *DetectTestSuite) TestIsTemplateDirReturnsFalseWithNoMarkers() {
+	suite.False(repo.IsTemplateDir(suite.tempDir))
+}
+
+func (suite *DetectTestSuite) TestIsTemplateDirReturnsFalseWithOnlyStateYaml() {
+	suite.createCliStateYaml()
+	suite.False(repo.IsTemplateDir(suite.tempDir))
+}
+
+func (suite *DetectTestSuite) TestIsTemplateDirReturnsFalseWithBareDatarobotDir() {
+	// A plain .datarobot/ with no recognised subdirs is not a template
+	err := os.MkdirAll(filepath.Join(suite.tempDir, ".datarobot"), 0o755)
+	suite.Require().NoError(err)
+	suite.False(repo.IsTemplateDir(suite.tempDir))
+}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -92,6 +93,10 @@ func rootTaskfilePath(dir string) (string, error) {
 }
 
 func taskfileForRun(dir string) (string, bool, error) {
+	if !repo.IsTemplateDir(dir) {
+		return "", false, task.ErrNotInTemplate
+	}
+
 	rootTaskfile, err := rootTaskfilePath(dir)
 	if err == nil {
 		return rootTaskfile, true, nil
