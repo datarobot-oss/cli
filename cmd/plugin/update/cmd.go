@@ -22,6 +22,7 @@ import (
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -74,9 +75,21 @@ func runUpdate(_ *cobra.Command, args []string) error {
 
 	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
 
-	fmt.Printf("Fetching plugin registry from %s...\n", finalRegistryURL)
+	var (
+		registry *plugin.PluginRegistry
+		baseURL  string
+	)
 
-	registry, baseURL, err := plugin.FetchRegistry(finalRegistryURL)
+	err = tui.RunWithSpinner(
+		fmt.Sprintf("Fetching plugin registry from %s…", finalRegistryURL),
+		func() error {
+			var fetchErr error
+
+			registry, baseURL, fetchErr = plugin.FetchRegistry(finalRegistryURL)
+
+			return fetchErr
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to fetch plugin registry: %w", err)
 	}
@@ -153,9 +166,18 @@ func updateSinglePlugin(p plugin.InstalledPlugin, registry *plugin.PluginRegistr
 		return false
 	}
 
-	if !shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL) {
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Updating %s from %s to %s…", p.Name, p.Version, latestVersion.Version),
+		func() error {
+			return shared.RunPluginUpdate(p.Name, p.Version, pluginEntry, *latestVersion, baseURL)
+		},
+	); err != nil {
+		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", p.Name, err)))
+
 		return false
 	}
+
+	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + p.Name + " to " + latestVersion.Version))
 
 	fmt.Println()
 

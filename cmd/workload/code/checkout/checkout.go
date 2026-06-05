@@ -32,6 +32,7 @@ import (
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/tui"
 )
 
 const (
@@ -76,7 +77,10 @@ func runDownload(out io.Writer, format workload.OutputFormat, dir, verArg string
 		return err
 	}
 
-	if err := stageAndInstall(deps.Files, pre, parent, files, totalSize, startedAt); err != nil {
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Downloading %d file(s)…", len(files)),
+		func() error { return stageAndInstall(deps.Files, pre, parent, files, totalSize, startedAt) },
+	); err != nil {
 		return err
 	}
 

@@ -206,11 +206,18 @@ func askYesNo() bool {
 
 // performPluginUpdate runs the backup → install → validate cycle for a plugin update.
 func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
-	shared.RunPluginUpdate(
+	err := shared.RunPluginUpdate(
 		result.PluginName,
 		result.InstalledVersion,
 		result.RegistryPlugin,
 		*result.LatestVersion,
 		result.BaseURL,
 	)
+	if err != nil {
+		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", result.PluginName, err)))
+
+		return
+	}
+
+	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + result.PluginName + " to " + result.LatestVersion.Version))
 }
