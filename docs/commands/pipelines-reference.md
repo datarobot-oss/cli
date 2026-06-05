@@ -117,6 +117,20 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 
 ---
 
+## Schedules (`dr pipeline schedule …`)
+
+Schedules are **locked-only** — every verb requires both `--pipeline` and `--version`.
+
+| Command | API endpoint | Usage | Inputs |
+|---|---|---|---|
+| `dr pipeline schedule create` | `POST /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"` (required), `--input <input-id>` (required), `--timezone <iana>` (default `UTC`), `--output-format json`. |
+| `dr pipeline schedule list` | `GET /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule list --pipeline <id> --version=2` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--offset <n>`, `--limit <n>`, `--output-format json`. |
+| `dr pipeline schedule get` | `GET /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule get --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--output-format json`. |
+| `dr pipeline schedule update` | `PATCH /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule update --pipeline <id> --version=2 <schedule-id> --cron "*/15 * * * *"` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"`, `--timezone <iana>`. At least one required. |
+| `dr pipeline schedule delete` | `DELETE /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule delete --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required). |
+
+---
+
 ## Quick endpoint lookup
 
 | API endpoint | CLI command |
@@ -144,3 +158,8 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 | `PATCH /pipelines/{id}/inputs/{input_id}` | `dr pipeline input update` (draft) |
 | `DELETE /pipelines/{id}/inputs/{input_id}` | `dr pipeline input delete` (draft) |
 | `DELETE /pipelines/{id}/versions/{ver}/inputs/{input_id}` | `dr pipeline input delete` (locked) |
+| `POST /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule create` |
+| `GET /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule list` |
+| `GET /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule get` |
+| `PATCH /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule update` |
+| `DELETE /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule delete` |

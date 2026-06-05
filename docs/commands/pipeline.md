@@ -80,6 +80,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
 | `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
 | `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
+| `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
 
 ## Subcommands
 
@@ -317,6 +318,21 @@ dr pipeline input delete --pipeline <id> <input-id>      [--scope|--version]
 
 The payload file must contain a JSON object. The CLI wraps it in `{"payload": …}` before sending.
 
+### `schedule`
+
+Manage recurring (cron) runs on locked versions only. Both `--pipeline` and `--version` are
+required for every verb.
+
+```bash
+dr pipeline schedule create --pipeline <id> --version=N \
+    --cron "0 * * * *" --input <input-id> [--timezone UTC]
+dr pipeline schedule list   --pipeline <id> --version=N [--offset N] [--limit N]
+dr pipeline schedule get    --pipeline <id> --version=N <schedule-id>
+dr pipeline schedule update --pipeline <id> --version=N <schedule-id> --cron "*/15 * * * *"
+dr pipeline schedule delete --pipeline <id> --version=N <schedule-id>
+```
+
+`schedule update` requires at least one of `--cron` or `--timezone`.
 ### `run`
 
 Trigger, inspect, and cancel pipeline executions.

@@ -92,12 +92,18 @@ dr
 │   │   ├── get        Display a single run
 │   │   ├── status     Lightweight run status (for polling)
 │   │   └── cancel     Cancel a running run
-│   └── input          Manage pipeline input payloads
-│       ├── create     Register a JSON payload on a pipeline
-│       ├── list       List inputs for a pipeline (draft or locked scope)
-│       ├── get        Display a single input
-│       ├── update     Update a draft input's payload
-│       └── delete     Delete an input
+│   ├── input          Manage pipeline input payloads
+│   │   ├── create     Register a JSON payload on a pipeline
+│   │   ├── list       List inputs for a pipeline (draft or locked scope)
+│   │   ├── get        Display a single input
+│   │   ├── update     Update a draft input's payload
+│   │   └── delete     Delete an input
+│   └── schedule       Manage recurring (cron) runs (locked-only)
+│       ├── create     Register a recurring schedule on a locked version
+│       ├── list       List schedules for a locked version
+│       ├── get        Display a single schedule
+│       ├── update     Change cron expression / timezone
+│       └── delete     Delete a schedule
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -270,6 +276,7 @@ For detailed documentation on each command, see:
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
   - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
+  - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
 
 ## Getting help
 
