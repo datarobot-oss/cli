@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -136,9 +137,7 @@ func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
 }
 
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
-	// Check if .env file exists in the root directory
-	envPath := filepath.Join(root, ".datarobot")
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+	if !repo.IsTemplateDir(root) {
 		return "", ErrNotInTemplate
 	}
 

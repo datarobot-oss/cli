@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,6 +92,21 @@ func TestCmdUsesRecipeTemplateWhenRootTaskfileIsMissing(t *testing.T) {
 	generated := readTextFile(t, filepath.Join(recipeDir, generatedTaskfileYML))
 	require.Contains(t, generated, "build-agents-md")
 	require.Contains(t, generated, "drdev")
+}
+
+func TestCmdReturnsErrNotInTemplateWhenDatarobotMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	// Place a Taskfile.yaml with no .datarobot dir — simulates the cli repo itself
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Taskfile.yaml"), []byte("version: '3'\ntasks: {}\n"), 0o644))
+
+	cmd := Cmd()
+	cmd.SetArgs([]string{"--dir", dir, "dev"})
+
+	err := cmd.Execute()
+
+	// Command prints the message to stderr and returns ErrSilent (already printed)
+	require.ErrorIs(t, err, cli.ErrSilent)
 }
 
 func writeRecipeFixture(t *testing.T, recipeDir string, includeRootTaskfile bool) {
