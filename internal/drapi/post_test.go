@@ -89,6 +89,30 @@ func TestPost_NonSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
 }
 
+// Non-success response bodies must reach the caller so server validation
+// details (e.g. a FastAPI {"detail":[...]} envelope) survive in the error.
+func TestPost_NonSuccess_IncludesBody(t *testing.T) {
+	defer resetTokenForTest(t, "test-token")()
+
+	const validationBody = `{"detail":[{"path":"spec","message":"Field required","code":"missing"}]}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(validationBody))
+	}))
+	defer server.Close()
+
+	resp, err := Post(server.URL, "", map[string]string{}) //nolint:bodyclose // resp is nil on error; Post closes it before returning
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Contains(t, err.Error(), validationBody)
+
+	var httpErr *HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
+}
+
 func TestPost_Unauthorized(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
