@@ -131,6 +131,18 @@ Schedules are **locked-only** — every verb requires both `--pipeline` and `--v
 
 ---
 
+## Environments (`dr pipeline environment …`)
+
+| Command | API endpoint | Usage | Inputs |
+|---|---|---|---|
+| `dr pipeline environment create` | `POST /pipelines/environments` | `dr pipeline environment create --name ml-base --package numpy --package pandas` <br> `dr pipeline environment create --name ml-base --package numpy,pandas==2.0 --description "base" --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--description <text>`, `--output-format json`. |
+| `dr pipeline environment list` | `GET /pipelines/environments` | `dr pipeline environment list` <br> `dr pipeline environment list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
+| `dr pipeline environment update` | `PATCH /pipelines/environments/{id}` | `dr pipeline environment update <env-id> --package scikit-learn` | **Positional:** `<environment-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--output-format json`. |
+| `dr pipeline environment delete` | `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete <env-id>` | **Positional:** `<environment-id>` (required). |
+| `dr pipeline environment version delete` | `DELETE /pipelines/environments/{id}/versions/{n}` | `dr pipeline environment version delete --environment <env-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--environment <env-id>` (required). |
+
+---
+
 ## Quick endpoint lookup
 
 | API endpoint | CLI command |
@@ -163,3 +175,8 @@ Schedules are **locked-only** — every verb requires both `--pipeline` and `--v
 | `GET /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule get` |
 | `PATCH /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule update` |
 | `DELETE /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule delete` |
+| `POST /pipelines/environments` | `dr pipeline environment create` |
+| `GET /pipelines/environments` | `dr pipeline environment list` |
+| `PATCH /pipelines/environments/{id}` | `dr pipeline environment update` |
+| `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete` |
+| `DELETE /pipelines/environments/{id}/versions/{n}` | `dr pipeline environment version delete` |
