@@ -58,9 +58,7 @@ func Post(url, info string, body any) (*http.Response, error) {
 	}
 
 	if !isCreateSuccess(resp.StatusCode) {
-		resp.Body.Close()
-
-		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
+		return nil, ErrFromResp(resp, url)
 	}
 
 	return resp, err
