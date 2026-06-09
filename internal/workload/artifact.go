@@ -65,6 +65,10 @@ type ContainerGroup struct {
 
 type Container struct {
 	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
+	// ImageURI is the resolved container image reference. Server-managed:
+	// before a successful build this is the placeholder from create; after
+	// build COMPLETED it points at the produced image.
+	ImageURI string `json:"imageUri,omitempty"`
 	// *bool so an absent value round-trips as nil and omitempty drops it
 	// on marshal, instead of re-asserting `false` back to the server.
 	Primary *bool `json:"primary,omitempty"`
@@ -158,6 +162,33 @@ func codeRefFromContainer(container Container) *DatarobotCodeRef {
 	}
 
 	return container.ImageBuildConfig.CodeRef.Datarobot
+}
+
+// GetPrimaryContainerImageURI returns the imageUri of the primary container
+// (the one flagged "primary": true), falling back to
+// containerGroups[0].containers[0] when no primary is marked. Mirrors
+// ExtractCodeRef's selection semantics so reads and writes target the same
+// container after a build updates the spec server-side.
+func GetPrimaryContainerImageURI(artifact Artifact) string {
+	for _, group := range artifact.Spec.ContainerGroups {
+		for _, container := range group.Containers {
+			if container.Primary == nil || !*container.Primary {
+				continue
+			}
+
+			return container.ImageURI
+		}
+	}
+
+	if len(artifact.Spec.ContainerGroups) == 0 {
+		return ""
+	}
+
+	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
+		return ""
+	}
+
+	return artifact.Spec.ContainerGroups[0].Containers[0].ImageURI
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {

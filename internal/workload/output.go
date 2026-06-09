@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
@@ -98,6 +99,235 @@ func printArtifactDetails(artifact Artifact) {
 	fmt.Fprintf(w, "Updated:\t%s\n", artifact.UpdatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
+}
+
+// Build log levels in ascending severity. Used by FilterLogsByLevel to drop
+// records below the requested threshold; ordering mirrors the python logging
+// numeric levels but compared by name (the server emits "DEBUG", "INFO",
+// "WARNING"/"WARN", "ERROR", "CRITICAL"). Unknown levels are passed through.
+var buildLogLevelRank = map[string]int{
+	"DEBUG":    10,
+	"INFO":     20,
+	"WARN":     30,
+	"WARNING":  30,
+	"ERROR":    40,
+	"CRITICAL": 50,
+}
+
+// FilterLogsByLevel returns the subset of entries whose Levelname is at or
+// above the given minimum. The threshold is matched case-insensitively;
+// "info" drops DEBUG, "debug" keeps everything, an unknown threshold passes
+// the input through unchanged so users can opt out of filtering with a
+// nonsense value if desired.
+func FilterLogsByLevel(entries []BuildLogEntry, minLevel string) []BuildLogEntry {
+	threshold, ok := buildLogLevelRank[strings.ToUpper(minLevel)]
+	if !ok {
+		return entries
+	}
+
+	out := make([]BuildLogEntry, 0, len(entries))
+
+	for _, e := range entries {
+		rank, known := buildLogLevelRank[strings.ToUpper(e.Levelname)]
+		if !known {
+			out = append(out, e)
+
+			continue
+		}
+
+		if rank >= threshold {
+			out = append(out, e)
+		}
+	}
+
+	return out
+}
+
+func RenderBuild(format OutputFormat, build Build) error {
+	if format == OutputFormatJSON {
+		return printJSON(NewBuildOutput(build))
+	}
+
+	printBuildDetails(build)
+
+	return nil
+}
+
+func RenderBuilds(format OutputFormat, builds []Build) error {
+	if format == OutputFormatJSON {
+		outputs := make([]BuildOutput, 0, len(builds))
+
+		for _, b := range builds {
+			outputs = append(outputs, NewBuildOutput(b))
+		}
+
+		return printJSON(outputs)
+	}
+
+	printBuildsTable(builds)
+
+	return nil
+}
+
+func RenderBuildTrigger(format OutputFormat, resp BuildTriggerResponse) error {
+	if format == OutputFormatJSON {
+		return printJSON(resp)
+	}
+
+	for _, id := range resp.BuildIDs {
+		fmt.Println(id)
+	}
+
+	return nil
+}
+
+// RenderBuildSummaries emits a list of summaries. Text mode walks each one
+// through RenderBuildSummary; JSON mode emits the whole slice as one array
+// document so `--wait` scripts always get a single `jq`-able value even
+// when multiple build IDs were triggered.
+func RenderBuildSummaries(format OutputFormat, summaries []BuildSummary) error {
+	if format == OutputFormatJSON {
+		return printJSON(summaries)
+	}
+
+	for _, s := range summaries {
+		if err := RenderBuildSummary(format, s); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// RenderBuildSummary renders the terminal-state summary for `--wait`.
+// In text mode the human one-liner goes to stdout; the failure log tail
+// (when present) goes to stderr so stdout stays clean for script callers
+// reading both build ID and summary line. JSON mode emits one document on
+// stdout including the LogTail in-document.
+func RenderBuildSummary(format OutputFormat, summary BuildSummary) error {
+	if format == OutputFormatJSON {
+		return printJSON(summary)
+	}
+
+	dur := fmt.Sprintf("%ds", summary.DurationSeconds)
+
+	if summary.ImageURI != "" {
+		fmt.Printf("Build %s: %s in %s (image: %s)\n", summary.BuildID, summary.Status, dur, summary.ImageURI)
+	} else {
+		fmt.Printf("Build %s: %s in %s\n", summary.BuildID, summary.Status, dur)
+	}
+
+	if len(summary.LogTail) > 0 {
+		fmt.Fprintf(os.Stderr, "--- last %d log lines ---\n", len(summary.LogTail))
+
+		for _, entry := range summary.LogTail {
+			fmt.Fprintln(os.Stderr, formatLogLine(entry))
+		}
+	}
+
+	return nil
+}
+
+func RenderBuildLogs(format OutputFormat, entries []BuildLogEntry) error {
+	if format == OutputFormatJSON {
+		return printJSON(entries)
+	}
+
+	for _, entry := range entries {
+		fmt.Println(formatLogLine(entry))
+	}
+
+	return nil
+}
+
+func printJSON(v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+
+	return nil
+}
+
+func printBuildDetails(build Build) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintf(w, "ID:\t%s\n", build.ID)
+
+	if build.Name != "" {
+		fmt.Fprintf(w, "Name:\t%s\n", build.Name)
+	}
+
+	fmt.Fprintf(w, "Artifact ID:\t%s\n", build.ArtifactID)
+	fmt.Fprintf(w, "Status:\t%s\n", build.Status)
+	fmt.Fprintf(w, "Created:\t%s\n", build.CreatedAt.UTC().Format(timestampFormat))
+	fmt.Fprintf(w, "Updated:\t%s\n", build.UpdatedAt.UTC().Format(timestampFormat))
+
+	w.Flush()
+}
+
+func printBuildsTable(builds []Build) {
+	if len(builds) == 0 {
+		fmt.Println("No builds found.")
+
+		return
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+	dimStyle := tui.DimStyle.Padding(0, 1)
+
+	headers := []string{"BUILD ID", "NAME", "ARTIFACT ID", "STATUS", "CREATED", "UPDATED"}
+	updatedCol := slices.Index(headers, "UPDATED")
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			if col == updatedCol {
+				return dimStyle
+			}
+
+			return cellStyle
+		}).
+		Headers(headers...)
+
+	for _, b := range builds {
+		name := b.Name
+		if name == "" {
+			name = emptyValuePlaceholder
+		}
+
+		t.Row(
+			b.ID,
+			name,
+			b.ArtifactID,
+			b.Status,
+			b.CreatedAt.UTC().Format(timestampFormat),
+			b.UpdatedAt.UTC().Format(timestampFormat),
+		)
+	}
+
+	fmt.Fprintln(os.Stdout, t.Render())
+}
+
+func formatLogLine(entry BuildLogEntry) string {
+	level := entry.Levelname
+	if level == "" {
+		level = "?"
+	}
+
+	asctime := entry.Asctime
+	if asctime == "" {
+		return fmt.Sprintf("[%s] %s", level, entry.Message)
+	}
+
+	return fmt.Sprintf("[%s] %s %s", level, asctime, entry.Message)
 }
 
 func printArtifactsTable(artifacts []Artifact) {

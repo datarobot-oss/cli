@@ -213,3 +213,274 @@ func TestPrintArtifactsTable_Empty(t *testing.T) {
 
 	assert.Equal(t, "No artifacts found.\n", output)
 }
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	fn()
+
+	w.Close()
+
+	os.Stderr = old
+
+	var buf bytes.Buffer
+
+	_, _ = io.Copy(&buf, r)
+
+	return buf.String()
+}
+
+func makeTestBuild(id, status string) Build {
+	return Build{
+		ID:         id,
+		Name:       "image build",
+		ArtifactID: "art-1",
+		Status:     status,
+		CreatedAt:  time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 6, 9, 10, 0, 12, 0, time.UTC),
+	}
+}
+
+func TestRenderBuild_Text(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuild(OutputFormatText, makeTestBuild("b-1", BuildStatusCompleted)))
+	})
+
+	assert.Contains(t, out, "ID:")
+	assert.Contains(t, out, "b-1")
+	assert.Contains(t, out, "Status:")
+	assert.Contains(t, out, BuildStatusCompleted)
+}
+
+func TestRenderBuild_JSON(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuild(OutputFormatJSON, makeTestBuild("b-1", BuildStatusCompleted)))
+	})
+
+	var got map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	assert.Equal(t, "b-1", got["id"])
+	assert.Equal(t, BuildStatusCompleted, got["status"])
+}
+
+func TestRenderBuilds_TextTable(t *testing.T) {
+	builds := []Build{makeTestBuild("b-1", BuildStatusCompleted), makeTestBuild("b-2", BuildStatusFailed)}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuilds(OutputFormatText, builds))
+	})
+
+	assert.Contains(t, out, "BUILD ID")
+	assert.Contains(t, out, "b-1")
+	assert.Contains(t, out, "b-2")
+	assert.Contains(t, out, BuildStatusFailed)
+}
+
+func TestRenderBuilds_TextEmpty(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuilds(OutputFormatText, nil))
+	})
+
+	assert.Equal(t, "No builds found.\n", out)
+}
+
+func TestRenderBuilds_JSONAlwaysArray(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuilds(OutputFormatJSON, []Build{makeTestBuild("b-1", BuildStatusCompleted)}))
+	})
+
+	var got []map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, "b-1", got[0]["id"])
+}
+
+func TestRenderBuildTrigger_TextOneIDPerLine(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildTrigger(OutputFormatText, BuildTriggerResponse{BuildIDs: []string{"b-1", "b-2"}}))
+	})
+
+	assert.Equal(t, "b-1\nb-2\n", out, "exact one-id-per-line format is the BID=$(...) script contract")
+}
+
+func TestRenderBuildTrigger_JSONPassthrough(t *testing.T) {
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildTrigger(OutputFormatJSON, BuildTriggerResponse{BuildIDs: []string{"b-1"}}))
+	})
+
+	var got map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	ids, ok := got["buildIds"].([]any)
+	require.True(t, ok)
+	require.Len(t, ids, 1)
+	assert.Equal(t, "b-1", ids[0])
+}
+
+func TestRenderBuildSummary_TextSuccessIncludesImage(t *testing.T) {
+	summary := BuildSummary{
+		BuildID:         "b-1",
+		Status:          BuildStatusCompleted,
+		DurationSeconds: 12,
+		ImageURI:        "ecr/img:tag",
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+	})
+
+	assert.Equal(t, "Build b-1: COMPLETED in 12s (image: ecr/img:tag)\n", out)
+}
+
+func TestRenderBuildSummary_TextSuccessWithoutImageURI(t *testing.T) {
+	summary := BuildSummary{
+		BuildID:         "b-1",
+		Status:          BuildStatusCompleted,
+		DurationSeconds: 12,
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+	})
+
+	assert.Equal(t, "Build b-1: COMPLETED in 12s\n", out)
+}
+
+func TestRenderBuildSummary_TextFailureDumpsTailToStderr(t *testing.T) {
+	summary := BuildSummary{
+		BuildID:         "b-1",
+		Status:          BuildStatusFailed,
+		DurationSeconds: 9,
+		LogTail: []BuildLogEntry{
+			{Levelname: "INFO", Asctime: "t1", Message: "start"},
+			{Levelname: "ERROR", Asctime: "t2", Message: "boom"},
+		},
+	}
+
+	var (
+		stdoutOut string
+		stderrOut string
+	)
+
+	stderrOut = captureStderr(t, func() {
+		stdoutOut = captureStdout(t, func() {
+			require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+		})
+	})
+
+	assert.Equal(t, "Build b-1: FAILED in 9s\n", stdoutOut, "summary line stays on stdout")
+	assert.Contains(t, stderrOut, "last 2 log lines")
+	assert.Contains(t, stderrOut, "start")
+	assert.Contains(t, stderrOut, "boom")
+}
+
+func TestRenderBuildSummary_JSONIncludesTail(t *testing.T) {
+	summary := BuildSummary{
+		BuildID:         "b-1",
+		Status:          BuildStatusFailed,
+		DurationSeconds: 9,
+		LogTail: []BuildLogEntry{
+			{Levelname: "ERROR", Message: "boom"},
+		},
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildSummary(OutputFormatJSON, summary))
+	})
+
+	var got map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	assert.Equal(t, BuildStatusFailed, got["status"])
+	assert.InEpsilon(t, float64(9), got["durationSeconds"], 0.001)
+
+	tail, ok := got["logTail"].([]any)
+	require.True(t, ok)
+	require.Len(t, tail, 1)
+}
+
+func TestRenderBuildLogs_TextFormat(t *testing.T) {
+	entries := []BuildLogEntry{
+		{Levelname: "INFO", Asctime: "t1", Message: "started"},
+		{Levelname: "ERROR", Asctime: "t2", Message: "broke"},
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildLogs(OutputFormatText, entries))
+	})
+
+	assert.Contains(t, out, "[INFO] t1 started")
+	assert.Contains(t, out, "[ERROR] t2 broke")
+}
+
+func TestRenderBuildLogs_JSONPassthroughPreservesRaw(t *testing.T) {
+	entries := []BuildLogEntry{
+		{
+			Levelname: "INFO",
+			Message:   "decoded",
+			Raw:       json.RawMessage(`{"levelname":"INFO","extra":"server-field","message":"raw"}`),
+		},
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildLogs(OutputFormatJSON, entries))
+	})
+
+	var got []map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, "server-field", got[0]["extra"], "raw bytes must pass through unchanged")
+	assert.Equal(t, "raw", got[0]["message"])
+}
+
+func TestFilterLogsByLevel(t *testing.T) {
+	entries := []BuildLogEntry{
+		{Levelname: "DEBUG", Message: "d"},
+		{Levelname: "INFO", Message: "i"},
+		{Levelname: "WARNING", Message: "w"},
+		{Levelname: "ERROR", Message: "e"},
+		{Levelname: "UNKNOWN", Message: "u"},
+	}
+
+	t.Run("info drops DEBUG and keeps unknown", func(t *testing.T) {
+		got := FilterLogsByLevel(entries, "info")
+
+		msgs := make([]string, 0, len(got))
+
+		for _, e := range got {
+			msgs = append(msgs, e.Message)
+		}
+
+		assert.ElementsMatch(t, []string{"i", "w", "e", "u"}, msgs)
+	})
+
+	t.Run("debug keeps everything", func(t *testing.T) {
+		got := FilterLogsByLevel(entries, "debug")
+		assert.Len(t, got, len(entries))
+	})
+
+	t.Run("error keeps only ERROR and unknown", func(t *testing.T) {
+		got := FilterLogsByLevel(entries, "error")
+
+		msgs := make([]string, 0, len(got))
+
+		for _, e := range got {
+			msgs = append(msgs, e.Message)
+		}
+
+		assert.ElementsMatch(t, []string{"e", "u"}, msgs)
+	})
+
+	t.Run("unknown threshold is pass-through", func(t *testing.T) {
+		got := FilterLogsByLevel(entries, "nonsense")
+		assert.Equal(t, entries, got)
+	})
+}

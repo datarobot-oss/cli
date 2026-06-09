@@ -12,32 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package build
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/cmd/workload/build"
-	"github.com/datarobot/cli/cmd/workload/code"
-	"github.com/datarobot/cli/internal/features"
+	"github.com/datarobot/cli/cmd/workload/build/get"
+	"github.com/datarobot/cli/cmd/workload/build/list"
+	"github.com/datarobot/cli/cmd/workload/build/logs"
+	"github.com/datarobot/cli/cmd/workload/build/trigger"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "workload",
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
+		Use:   "build",
+		Short: "Manage workload artifact builds",
+		Long: `Trigger, inspect, and read logs from container image builds for workload
+artifacts.
 
-Manage and monitor workloads in your deployment infrastructure.`,
+When run inside a directory linked via 'dr workload code init', the
+<artifact-id> argument may be omitted on every subcommand and is read from
+.wapi/config.json.`,
 	}
 
-	features.SetGate(cmd, "workload")
-
 	cmd.AddCommand(
-		artifact.Cmd(),
-		build.Cmd(),
-		code.Cmd(),
+		get.Cmd(),
+		list.Cmd(),
+		logs.Cmd(),
+		trigger.Cmd(),
 	)
 
 	return cmd

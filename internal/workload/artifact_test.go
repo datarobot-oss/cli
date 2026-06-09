@@ -431,6 +431,50 @@ func TestValidateCreateRequest_Errors(t *testing.T) {
 	}
 }
 
+func TestGetPrimaryContainerImageURI(t *testing.T) {
+	primary := true
+	notPrimary := false
+
+	t.Run("returns primary container imageUri", func(t *testing.T) {
+		artifact := Artifact{
+			Spec: Spec{
+				ContainerGroups: []ContainerGroup{
+					{Containers: []Container{
+						{Primary: &notPrimary, ImageURI: "side-image:1"},
+						{Primary: &primary, ImageURI: "primary-image:1"},
+					}},
+				},
+			},
+		}
+		assert.Equal(t, "primary-image:1", GetPrimaryContainerImageURI(artifact))
+	})
+
+	t.Run("falls back to [0][0] when no primary marked", func(t *testing.T) {
+		artifact := Artifact{
+			Spec: Spec{
+				ContainerGroups: []ContainerGroup{
+					{Containers: []Container{
+						{ImageURI: "first-image:1"},
+						{ImageURI: "second-image:1"},
+					}},
+				},
+			},
+		}
+		assert.Equal(t, "first-image:1", GetPrimaryContainerImageURI(artifact))
+	})
+
+	t.Run("empty when no container groups", func(t *testing.T) {
+		assert.Empty(t, GetPrimaryContainerImageURI(Artifact{}))
+	})
+
+	t.Run("empty when group has no containers", func(t *testing.T) {
+		artifact := Artifact{
+			Spec: Spec{ContainerGroups: []ContainerGroup{{}}},
+		}
+		assert.Empty(t, GetPrimaryContainerImageURI(artifact))
+	})
+}
+
 func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 	t.Run("OverwritesPrimaryCodeRef_LeavesSidecarsAlone", func(t *testing.T) {
 		// Sidecar at [0], primary at [1]. Only the primary repoints, and its
