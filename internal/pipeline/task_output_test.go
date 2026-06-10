@@ -93,6 +93,7 @@ func TestRenderTask_JSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &parsed))
 	assert.Equal(t, "t-1", parsed["task_id"])
 	assert.Equal(t, "add", parsed["name"])
+	assert.Equal(t, "def add(x: int, y: int) -> int:\n    return x + y", parsed["source"])
 }
 
 func TestRenderTask_Human(t *testing.T) {
