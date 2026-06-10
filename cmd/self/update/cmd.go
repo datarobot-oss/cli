@@ -77,16 +77,19 @@ with your default shell.
 							return err
 						}
 
-						brewUpgradeCmd := exec.Command(brewPath, "upgrade", "--cask", "dr-cli")
-						brewUpgradeCmd.Stdout = os.Stdout
-						brewUpgradeCmd.Stderr = os.Stderr
+						brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
+						brewReinstallCmd.Stdout = os.Stdout
+						brewReinstallCmd.Stderr = os.Stderr
 
-						if err := brewUpgradeCmd.Run(); err != nil {
-							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return err
+						if err := brewReinstallCmd.Run(); err == nil {
+							// Reinstall succeeded, we are done
+							return nil
 						}
-
-						return nil
+						// `brew reinstall` failed (e.g. the GitHub release was
+						// deleted and the cask download URL now returns 404).
+						// Fall through to the install script
+						fmt.Fprintf(os.Stderr, "Warning: brew reinstall --cask dr-cli failed: %v\n", err)
+						fmt.Fprintln(os.Stderr, "Falling back to install script...")
 					}
 				}
 			}
