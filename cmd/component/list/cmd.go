@@ -15,37 +15,53 @@
 package list
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
 
-	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/cmd/component/shared"
+	"github.com/datarobot/cli/internal/appframework"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
 )
 
+func PreRunE(_ *cobra.Command, _ []string) error {
+	if err := tools.CheckPrerequisite("uv"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func RunE(_ *cobra.Command, _ []string) error {
-	answers, err := copier.AnswersFromPath(".", false)
+	fw := shared.GetFrameworkPath()
+
+	instances, err := appframework.ListInstalled(fw, ".")
 	if err != nil {
 		return err
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(w, "Component name\tAnswers file\tRepository\n")
+	fmt.Fprintf(w, "Label\tModule\tAnswers\n")
 
-	for _, answer := range answers {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", answer.ComponentDetails.Name, answer.FileName, answer.Repo)
+	for _, inst := range instances {
+		fmt.Fprintf(w, "%s\t%s\t%d\n", inst.Label, inst.Module, len(inst.Answers))
 	}
 
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return errors.New("flushing output")
+	}
 
 	return nil
 }
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "📋 List installed components",
-		RunE:  RunE,
+		Use:     "list",
+		Short:   "📋 List installed components",
+		PreRunE: PreRunE,
+		RunE:    RunE,
 	}
 }

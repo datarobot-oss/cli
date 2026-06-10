@@ -24,7 +24,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/internal/appframework"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -45,34 +45,38 @@ const (
 )
 
 type AddModel struct {
-	screen   addScreens
-	list     list.Model
-	spinner  spinner.Model
-	width    int
-	height   int
-	errorMsg string
-	RepoURLs []string
+	screen      addScreens
+	list        list.Model
+	spinner     spinner.Model
+	width       int
+	height      int
+	errorMsg    string
+	frameworkFW string // framework path captured at construction time
+	ModuleNames []string
 }
 
-func NewAddModel() AddModel {
+// NewAddModel creates the add TUI model. fw is the framework path used to load modules.
+func NewAddModel(fw string) AddModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = tui.InfoStyle
 
 	return AddModel{
-		screen:  addLoadingScreen,
-		spinner: s,
+		screen:      addLoadingScreen,
+		spinner:     s,
+		frameworkFW: fw,
 	}
 }
 
+// AddComponentDelegate is a list item backed by an appframework.Module.
 type AddComponentDelegate struct {
 	current bool
 	checked bool
-	details copier.Details
+	module  appframework.Module
 }
 
 func (i AddComponentDelegate) FilterValue() string {
-	return strings.ToLower(i.details.Name)
+	return strings.ToLower(i.module.DisplayName)
 }
 
 func (i AddComponentDelegate) Height() int                             { return 1 }
@@ -84,15 +88,13 @@ func (i AddComponentDelegate) Render(w io.Writer, m list.Model, index int, listI
 		return
 	}
 
-	checkbox := ""
+	checkbox := "[ ] "
 
 	if i.checked {
 		checkbox = "[x] "
-	} else {
-		checkbox = "[ ] "
 	}
 
-	str := fmt.Sprintf("%s%s", checkbox, i.details.Name)
+	str := fmt.Sprintf("%s%s", checkbox, i.module.DisplayName)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -111,7 +113,6 @@ func (am AddModel) toggleCurrent() (AddModel, tea.Cmd) {
 	currentItem.checked = !currentItem.checked
 	items[am.list.Index()] = currentItem
 
-	// If we've checked an item and error message exists, reset it
 	if currentItem.checked && am.errorMsg != "" {
 		am.errorMsg = ""
 	}
@@ -121,14 +122,14 @@ func (am AddModel) toggleCurrent() (AddModel, tea.Cmd) {
 	return am, cmd
 }
 
-func (am AddModel) getSelectedRepoURLs() []string {
+func (am AddModel) getSelectedModuleNames() []string {
 	items := am.list.Items()
 
 	values := make([]string, 0, len(items))
 
 	for i := range items {
 		if itm := items[i].(AddComponentDelegate); itm.checked {
-			values = append(values, itm.details.RepoURL)
+			values = append(values, itm.module.DisambiguatedName)
 		}
 	}
 
@@ -136,14 +137,21 @@ func (am AddModel) getSelectedRepoURLs() []string {
 }
 
 func (am AddModel) loadComponents() tea.Cmd {
-	return func() tea.Msg {
-		details := copier.EnabledComponents
+	fw := am.frameworkFW
 
-		items := make([]list.Item, 0, len(details))
+	return func() tea.Msg {
+		modules, err := appframework.DescribeFramework(fw, ".")
+		if err != nil {
+			// Surface a non-fatal empty list so the TUI still shows (user can cancel and re-run
+			// after ensuring the framework is accessible).
+			modules = []appframework.Module{}
+		}
+
+		items := make([]list.Item, 0, len(modules))
 		first := true
 
-		for _, detail := range details {
-			items = append(items, AddComponentDelegate{current: first, details: detail})
+		for _, m := range modules {
+			items = append(items, AddComponentDelegate{current: first, module: m})
 			first = false
 		}
 
@@ -164,6 +172,7 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	case tui.ClearStatusMsg:
 		if msg.MsgID == errMsgID {
 			am.errorMsg = ""
+
 			return am, nil
 		}
 	case spinner.TickMsg:
@@ -203,17 +212,18 @@ func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case tea.KeySpace.String():
 				return am.toggleCurrent()
 			case tea.KeyEnter.String():
-				repoURLs := am.getSelectedRepoURLs()
-				if len(repoURLs) == 0 {
-					am.errorMsg = "At least one component must be selected. Please select one or more components to continue."
-					return am, tui.ClearStatusAfter(3*time.Second, errMsgID)
-				} else if len(repoURLs) > 0 {
-					// Reset error message (it may already be an empty string but can't hurt)
-					am.errorMsg = ""
-					am.RepoURLs = repoURLs
+				moduleNames := am.getSelectedModuleNames()
 
-					return am, tea.Quit
+				if len(moduleNames) == 0 {
+					am.errorMsg = "At least one component must be selected. Please select one or more components to continue."
+
+					return am, tui.ClearStatusAfter(3*time.Second, errMsgID)
 				}
+
+				am.errorMsg = ""
+				am.ModuleNames = moduleNames
+
+				return am, tea.Quit
 			case tea.KeyEscape.String(), "q":
 				return am, tea.Quit
 			}
@@ -267,13 +277,11 @@ func (am AddModel) addComponentsScreenView() string {
 
 	sb.WriteString(listStyle.Render(am.list.View()))
 
-	// If we don't have any components selected then grey out the message
 	style := tui.DimStyle
 	if am.anySelectedComponents() {
 		style = tui.BaseTextStyle
 	}
 
-	// Display error message
 	if am.errorMsg != "" {
 		sb.WriteString("\n")
 		sb.WriteString(tui.ErrorStyle.Render("Error: ") + am.errorMsg)

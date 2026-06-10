@@ -17,42 +17,47 @@ package update
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"slices"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/task/compose"
-	"github.com/datarobot/cli/cmd/task/run"
+	"github.com/datarobot/cli/internal/appframework"
 	"github.com/datarobot/cli/internal/config"
-	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
-var updateFlags copier.UpdateFlags
+type updateFlags struct {
+	DataArgs []string
+	DataFile string
+	Filter   []string
+}
+
+var flags updateFlags
 
 func PreRunE(_ *cobra.Command, _ []string) error {
 	if !repo.IsInRepoRoot() {
 		return errors.New("You must be in the repository root directory.")
 	}
 
+	if err := tools.CheckPrerequisite("uv"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func runPostUpdateTasks() error {
-	if err := compose.Cmd().RunE(nil, nil); err != nil {
+	if err := appframework.ExecRunTasks("."); err != nil {
 		return err
 	}
 
-	return run.Cmd().RunE(nil, []string{"reinstall"})
+	return compose.Cmd().RunE(nil, nil)
 }
 
 func handleTUIResult(finalModel tea.Model) error {
@@ -77,32 +82,33 @@ func handleTUIResult(finalModel tea.Model) error {
 	}
 
 	fmt.Println(innerModel.ExitMessage)
-	fmt.Println("Post-install tasks finished.")
+	fmt.Println("Post-update tasks finished.")
 
 	return nil
 }
 
 func RunE(_ *cobra.Command, args []string) error {
-	var updateFileName string
+	var label string
+
 	if len(args) > 0 {
-		updateFileName = args[0]
+		label = args[0]
 	}
 
-	cliData, err := shared.ParseDataArgs(updateFlags.DataArgs)
+	cliData, err := shared.ParseDataArgs(flags.DataArgs)
 	if err != nil {
 		return fmt.Errorf("parsing data args: %w", err)
 	}
 
-	// If file name has been provided
-	if updateFileName != "" {
-		if err := runUpdate(updateFileName, cliData, updateFlags.DataFile); err != nil {
+	// If a label was provided directly, run the update non-interactively.
+	if label != "" {
+		if err := runUpdate(label, cliData, flags.DataFile); err != nil {
 			return fmt.Errorf("updating component: %w", err)
 		}
 
 		return runPostUpdateTasks()
 	}
 
-	m := shared.NewUpdateComponentModel(updateFlags)
+	m := shared.NewUpdateComponentModel(flags.DataArgs, flags.DataFile)
 
 	finalModel, err := tui.Run(m, tea.WithAltScreen())
 	if err != nil {
@@ -114,20 +120,16 @@ func RunE(_ *cobra.Command, args []string) error {
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "update [answers_file]",
+		Use:           "update [label]",
 		Short:         "🔄 Update installed component",
 		PreRunE:       PreRunE,
 		RunE:          RunE,
 		SilenceErrors: true,
 	}
 
-	cmd.Flags().StringArrayVarP(&updateFlags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
-	cmd.Flags().StringVar(&updateFlags.DataFile, "data-file", "", "Path to YAML file with default answers (follows copier data_file semantics)")
-	cmd.Flags().BoolVarP(&updateFlags.Recopy, "recopy", "r", false, "Regenerate an existing component with different answers.")
-	cmd.Flags().StringVar(&updateFlags.VcsRef, "vcs-ref", "", "Git reference to checkout in `template_src`.")
-	cmd.Flags().BoolVarP(&updateFlags.Quiet, "quiet", "q", false, "Suppress status output.")
-	cmd.Flags().BoolVarP(&updateFlags.Overwrite, "overwrite", "w", false, "Overwrite files even if they exist.")
-	cmd.Flags().BoolVar(&updateFlags.Trust, "trust", true, "Trust the template repository (required for migrations)")
+	cmd.Flags().StringArrayVarP(&flags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
+	cmd.Flags().StringVar(&flags.DataFile, "data-file", "", "Path to YAML file with default answers")
+	cmd.Flags().StringArrayVarP(&flags.Filter, "filter", "F", []string{}, "Restrict update to specific labels (can be specified multiple times)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -138,35 +140,10 @@ func Cmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath string) error {
-	// Clean path like this `./.datarobot/answers/cli/../react-frontend_web.yml`
-	// to .datarobot/answers/react-frontend_web.yml
-	yamlFile = filepath.Clean(yamlFile)
+func runUpdate(label string, cliData map[string]interface{}, dataFilePath string) error {
+	fw := shared.GetFrameworkPath()
 
-	if !isYamlFile(yamlFile) {
-		return errors.New("The supplied file is not a YAML file.")
-	}
-
-	answers, err := copier.AnswersFromPath(".", false)
-	if err != nil {
-		return err
-	}
-
-	answersContainFile := slices.ContainsFunc(answers, func(answer copier.Answers) bool {
-		return answer.FileName == yamlFile
-	})
-
-	if !answersContainFile {
-		return errors.New("The supplied filename doesn't exist in answers.")
-	}
-
-	// Get the repo URL from the answers file to look up defaults
-	repoURL, err := getRepoURLFromAnswersFile(yamlFile)
-	if err != nil {
-		return err
-	}
-
-	// Load component defaults configuration
+	// Load component defaults and merge with CLI data.
 	componentConfig, err := config.LoadComponentDefaults(dataFilePath)
 	if err != nil {
 		log.Warn("Failed to load component defaults", "error", err)
@@ -176,12 +153,17 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 		}
 	}
 
-	// Merge defaults with CLI data (CLI data takes precedence)
-	mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
+	mergedData := componentConfig.MergeWithCLIData(label, cliData)
 
-	execErr := copier.ExecUpdate(yamlFile, mergedData, updateFlags)
+	// Pre-supply any known answers before the three-way merge update.
+	if err := appframework.ExecAnswer(label, mergedData, fw, "."); err != nil {
+		return fmt.Errorf("answering questions for %q: %w", label, err)
+	}
+
+	filter := append(flags.Filter, label) //nolint:gocritic
+
+	execErr := appframework.ExecUpdate(filter, fw, ".")
 	if execErr != nil {
-		// TODO: Check beforehand if uv is installed or not
 		if errors.Is(execErr, exec.ErrNotFound) {
 			log.Error("uv is not installed.")
 		}
@@ -190,37 +172,4 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	}
 
 	return nil
-}
-
-// getRepoURLFromAnswersFile reads the _src_path from a copier answers file
-func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
-	data, err := os.ReadFile(yamlFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read answers file: %w", err)
-	}
-
-	var answers struct {
-		SrcPath string `yaml:"_src_path"`
-	}
-
-	if err := yaml.Unmarshal(data, &answers); err != nil {
-		return "", fmt.Errorf("failed to parse answers file: %w", err)
-	}
-
-	if answers.SrcPath == "" {
-		return "", errors.New("answers file missing _src_path field")
-	}
-
-	return answers.SrcPath, nil
-}
-
-// TODO: Maybe use `IsValidYAML` from /internal/misc/yaml/validation.go instead or even move this function there
-func isYamlFile(yamlFile string) bool {
-	info, err := os.Stat(yamlFile)
-
-	if errors.Is(err, os.ErrNotExist) || info.IsDir() {
-		return false
-	}
-
-	return strings.HasSuffix(yamlFile, ".yaml") || strings.HasSuffix(yamlFile, ".yml")
 }

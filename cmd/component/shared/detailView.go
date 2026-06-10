@@ -18,16 +18,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/tui"
 )
 
-// getScrollPercent calculates the scroll percentage for the viewport
+// getScrollPercent calculates the scroll percentage for the viewport.
 func (m UpdateModel) getScrollPercent() int {
 	if m.viewport.TotalLineCount() <= m.viewport.Height {
-		return 100 // If content fits in viewport, we're at 100%
+		return 100
 	}
 
 	maxScroll := m.viewport.TotalLineCount() - m.viewport.Height
@@ -42,42 +40,44 @@ func (m UpdateModel) getScrollPercent() int {
 	return int(float64(m.viewport.YOffset) / float64(maxScroll) * 100)
 }
 
-// getCurrentComponentFileName returns the filename of the currently selected component
-func (m UpdateModel) getCurrentComponentFileName() string {
+// getCurrentComponentLabel returns the label of the currently selected component.
+func (m UpdateModel) getCurrentComponentLabel() string {
 	if len(m.list.VisibleItems()) == 0 {
 		return ""
 	}
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
 
-	return item.component.FileName
+	return item.instance.Label
 }
 
-// getComponentDetailContent generates the markdown content for component details
+// getComponentDetailContent generates the detail content for the currently selected component.
+// Shows the module name, description, and tags since full README fetch is not implemented yet.
 func (m UpdateModel) getComponentDetailContent() string {
 	var sb strings.Builder
 
 	item := m.list.VisibleItems()[m.list.Index()].(ListItem)
-	selectedComponent := item.component
-	selectedComponentDetails := copier.ComponentDetailsByURL[selectedComponent.Repo]
+	inst := item.instance
 
-	style := "light"
-	if lipgloss.HasDarkBackground() {
-		style = "dark"
+	sb.WriteString("# " + inst.Label + "\n\n")
+	sb.WriteString("**Module:** " + inst.Module + "\n\n")
+
+	if len(inst.Answers) > 0 {
+		sb.WriteString("## Answers\n\n")
+
+		for k, v := range inst.Answers {
+			fmt.Fprintf(&sb, "- `%s`: %v\n", k, v)
+		}
 	}
-
-	readMe, _ := glamour.Render(selectedComponentDetails.ReadMeContents, style)
-	sb.WriteString(readMe)
 
 	return sb.String()
 }
 
-// renderStatusBar creates the status bar for the detail view
+// renderStatusBar creates the status bar for the detail view.
 func (m UpdateModel) renderStatusBar() string {
-	fileName := m.getCurrentComponentFileName()
+	label := m.getCurrentComponentLabel()
 	scrollPercent := m.getScrollPercent()
 
-	// Style definitions
 	labelStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFDF5"}).
 		Background(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#4A1BA8"})
@@ -102,14 +102,12 @@ func (m UpdateModel) renderStatusBar() string {
 		Inherit(statusBarStyle).
 		Padding(0, 1)
 
-	// Build left, center, and right parts
-	leftText := labelStyle.Render(" Component file: ") + fileNameStyle.Render(" "+fileName+" ")
+	leftText := labelStyle.Render(" Component: ") + fileNameStyle.Render(" "+label+" ")
 	rightText := statusKeyStyle.Render(fmt.Sprintf("%d%%", scrollPercent))
 
-	// Calculate available space for spacing
 	width := m.viewport.Width
 	if width <= 0 {
-		width = 80 // fallback width
+		width = 80
 	}
 
 	leftWidth := lipgloss.Width(leftText)
@@ -127,7 +125,7 @@ func (m UpdateModel) renderStatusBar() string {
 	return statusBarStyle.Width(width).Render(bar)
 }
 
-// viewComponentDetailScreen renders the component detail screen
+// viewComponentDetailScreen renders the component detail screen.
 func (m UpdateModel) viewComponentDetailScreen() string {
 	if !m.ready {
 		return "\n  Initializing..."
@@ -140,7 +138,6 @@ func (m UpdateModel) viewComponentDetailScreen() string {
 	sb.WriteString(m.viewport.View())
 	sb.WriteString("\n\n")
 
-	// Help text with subtle styling
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#999999"}).
 		Padding(0, 1)

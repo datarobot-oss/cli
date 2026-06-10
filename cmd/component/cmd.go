@@ -17,6 +17,7 @@ package component
 import (
 	"github.com/datarobot/cli/cmd/component/add"
 	"github.com/datarobot/cli/cmd/component/list"
+	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/component/update"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,13 @@ func Cmd() *cobra.Command {
 		Short:   "🧩 Manage application components",
 		Aliases: []string{"c"},
 	}
+
+	cmd.PersistentFlags().StringVar(
+		&shared.FrameworkPath,
+		"framework-path",
+		"",
+		"Path to the app-framework directory (default: ~/.datarobot/app-framework/)",
+	)
 
 	cmd.AddCommand(
 		add.Cmd(),

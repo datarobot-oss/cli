@@ -26,7 +26,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/copier"
+	"github.com/datarobot/cli/internal/appframework"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -100,11 +100,12 @@ func newDetailKeys() detailKeyMap {
 	}
 }
 
+// UpdateModel is the Bubble Tea model for the component update TUI.
 type UpdateModel struct {
 	err         error
 	infoMessage string
 	screen      screens
-	list        list.Model // This list holds the components
+	list        list.Model
 	width       int
 	viewport    viewport.Model
 	help        help.Model
@@ -113,7 +114,9 @@ type UpdateModel struct {
 	updating    bool
 	ready       bool
 	ExitMessage string
-	updateFlags copier.UpdateFlags
+	dataArgs    []string // forwarded to ExecAnswer before ExecUpdate
+	dataFile    string
+	frameworkFW string
 
 	ComponentUpdated bool
 }
@@ -124,14 +127,17 @@ func (m UpdateModel) toggleCurrent() (UpdateModel, tea.Cmd) {
 
 	currentItem.checked = !currentItem.checked
 
-	// Use GlobalIndex() for what is the canonical, unfiltered list
 	cmd := m.list.SetItem(m.list.GlobalIndex(), currentItem)
 
 	return m, cmd
 }
 
-func updateComponent(item ListItem, updateFlags copier.UpdateFlags) tea.Cmd {
-	command := copier.Update(item.component.FileName, nil, updateFlags)
+// updateComponent runs the AF update for a single label using tea.ExecProcess so
+// Bubble Tea pauses the TUI for the interactive subprocess then resumes.
+// Note: --data pre-answering is skipped in TUI mode (the three-way merge handles it).
+func updateComponent(item ListItem, fw string, _ string, _ []string) tea.Cmd {
+	label := item.instance.Label
+	command := appframework.UpdateCmd([]string{label}, fw, ".")
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}
@@ -139,17 +145,17 @@ func updateComponent(item ListItem, updateFlags copier.UpdateFlags) tea.Cmd {
 }
 
 func (m UpdateModel) unselectComponent(itemToUnselect ListItem, err error) (UpdateModel, tea.Cmd) {
-	details := itemToUnselect.component.ComponentDetails
+	label := itemToUnselect.instance.Label
 
 	if err != nil {
 		m.ExitMessage += fmt.Sprintf(
-			"Update of \"%s\" component finished with error: %s.",
-			details.Name, err,
+			"Update of %q component finished with error: %s.",
+			label, err,
 		)
 	} else {
 		m.ExitMessage += fmt.Sprintf(
-			"Update of \"%s\" component finished successfully.",
-			details.Name,
+			"Update of %q component finished successfully.",
+			label,
 		)
 		m.ComponentUpdated = true
 	}
@@ -169,7 +175,7 @@ func (m UpdateModel) unselectComponent(itemToUnselect ListItem, err error) (Upda
 	}
 
 	for i, item := range m.list.VisibleItems() {
-		if item.(ListItem).component.FileName == itemToUnselect.component.FileName {
+		if item.(ListItem).instance.Label == itemToUnselect.instance.Label {
 			newItem := item.(ListItem)
 			newItem.checked = false
 
@@ -194,7 +200,9 @@ func (m UpdateModel) getSelectedComponents() []ListItem {
 	return values
 }
 
-func NewUpdateComponentModel(updateFlags copier.UpdateFlags) UpdateModel {
+// NewUpdateComponentModel creates the update TUI model.
+// dataArgs and dataFile are forwarded to ExecAnswer before each update.
+func NewUpdateComponentModel(dataArgs []string, dataFile string) UpdateModel {
 	h := help.New()
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
@@ -207,7 +215,9 @@ func NewUpdateComponentModel(updateFlags copier.UpdateFlags) UpdateModel {
 		screen:      listScreen,
 		help:        h,
 		keys:        newDetailKeys(),
-		updateFlags: updateFlags,
+		dataArgs:    dataArgs,
+		dataFile:    dataFile,
+		frameworkFW: GetFrameworkPath(),
 		spinner:     s,
 	}
 }
@@ -217,21 +227,22 @@ func (m UpdateModel) Init() tea.Cmd {
 }
 
 func (m UpdateModel) loadComponents() tea.Cmd {
+	fw := m.frameworkFW
+
 	return func() tea.Msg {
-		answers, err := copier.AnswersFromPath(".", false)
+		instances, err := appframework.ListInstalled(fw, ".")
 		if err != nil {
 			return errMsg{err}
 		}
 
-		// If we've found zero components return error message that is handled by UI
-		if len(answers) == 0 {
+		if len(instances) == 0 {
 			return errMsg{errors.New("No components were found.")}
 		}
 
-		items := make([]list.Item, 0, len(answers))
+		items := make([]list.Item, 0, len(instances))
 
-		for i, c := range answers {
-			items = append(items, ListItem{current: i == 0, component: c})
+		for i, c := range instances {
+			items = append(items, ListItem{current: i == 0, instance: c})
 		}
 
 		delegateKeys := newDelegateKeyMap()
@@ -248,6 +259,7 @@ func (m UpdateModel) loadComponents() tea.Cmd {
 func (m UpdateModel) showComponentInfo() tea.Cmd {
 	return func() tea.Msg {
 		item := m.list.VisibleItems()[m.list.Index()]
+
 		return componentInfoRequestMsg{item.(ListItem)}
 	}
 }
@@ -276,9 +288,9 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 		return m, tea.WindowSize()
 	case updateCompleteMsg:
 		if msg.err != nil {
-			m.infoMessage = "Failed to update " + msg.item.component.ComponentDetails.Name
+			m.infoMessage = "Failed to update " + msg.item.instance.Label
 		} else {
-			m.infoMessage = "Updated " + msg.item.component.ComponentDetails.Name
+			m.infoMessage = "Updated " + msg.item.instance.Label
 		}
 
 		return m.unselectComponent(msg.item, msg.err)
@@ -302,8 +314,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			return m, nil
 		}
 
-		// IMPT: Since we're using a custom item & respective delegate
-		// we need to account for filtering here and allow list to handle updating
 		if m.list.FilterState() == list.Filtering {
 			newListModel, cmd := m.list.Update(msg)
 			m.list = newListModel
@@ -313,7 +323,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
-			// Only update list size if it's been initialized
 			if len(m.list.Items()) > 0 {
 				newListModel, cmd := m.list.Update(msg)
 				m.list = newListModel
@@ -327,7 +336,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			case tea.KeySpace.String():
 				return m.toggleCurrent()
 			case "k", tea.KeyUp.String():
-				// If we're at the top of list go to the bottom (accounting for pagination as well)
 				if m.list.Cursor() == 0 && m.list.Paginator.OnFirstPage() {
 					for range len(m.list.Items()) {
 						m.list.CursorDown()
@@ -338,7 +346,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 				return m, nil
 			case "j", tea.KeyDown.String():
-				// If we're already at end of list go back to the beginning (accounting for pagination)
 				itemsLength := len(m.list.Items())
 				if m.list.Cursor() == m.list.Paginator.ItemsOnPage(itemsLength)-1 && m.list.Paginator.OnLastPage() {
 					for range itemsLength {
@@ -350,14 +357,15 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 				return m, nil
 			case "i":
-				// TODO: [CFX-3996] What do we show here?
 				return m, m.showComponentInfo()
 			case tea.KeyEnter.String():
 				if len(m.getSelectedComponents()) > 0 {
 					var cmdsToRun []tea.Cmd
 
+					fw := m.frameworkFW
+
 					for _, listItem := range m.getSelectedComponents() {
-						cmdsToRun = append(cmdsToRun, updateComponent(listItem, m.updateFlags))
+						cmdsToRun = append(cmdsToRun, updateComponent(listItem, fw, m.dataFile, m.dataArgs))
 					}
 
 					m.updating = true
@@ -368,7 +376,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 					return m, tea.Batch(m.spinner.Tick, cmd)
 				}
 			default:
-				// If we have an error allow any keypress to exit screen/quit
 				if m.err != nil {
 					return m, tea.Quit
 				}
@@ -376,19 +383,19 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 			var cmd tea.Cmd
 
-			// Be sure to call list's Update method - to note, we're overriding the up/down keys
 			m.list, cmd = m.list.Update(msg)
 
 			return m, cmd
 		case errMsg:
 			m.err = msg.err
+
 			return m, nil
 		}
 	case componentDetailScreen:
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
 			headerHeight := 4
-			footerHeight := 4 // help line + status bar + spacing
+			footerHeight := 4
 			verticalMarginHeight := headerHeight + footerHeight
 
 			if !m.ready {
@@ -397,7 +404,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 				m.help.Width = msg.Width
 				m.ready = true
 
-				// Set the content for the viewport
 				m.viewport.SetContent(m.getComponentDetailContent())
 			} else {
 				m.viewport.Width = msg.Width
@@ -420,7 +426,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 				return m, nil
 			default:
-				// Pass other keys to viewport for scrolling
 				var cmd tea.Cmd
 
 				m.viewport, cmd = m.viewport.Update(msg)
@@ -429,7 +434,6 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 			}
 		}
 
-		// Update viewport for mouse wheel scrolling
 		var cmd tea.Cmd
 
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -456,7 +460,6 @@ func (m UpdateModel) View() string {
 func (m UpdateModel) viewListScreen() string {
 	var sb strings.Builder
 
-	// Display error message
 	if m.err != nil {
 		fmt.Fprintf(&sb, "%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error())
 		sb.WriteString("\n")
@@ -466,7 +469,6 @@ func (m UpdateModel) viewListScreen() string {
 		return sb.String()
 	}
 
-	// Show spinner while components are loading
 	if len(m.list.Items()) == 0 {
 		sb.WriteString(tui.InfoStyle.Render(m.spinner.View()+" ") + "Loading components…")
 
@@ -484,7 +486,6 @@ func (m UpdateModel) viewListScreen() string {
 	sb.WriteString(tui.WelcomeStyle.Render("Available Components for Recipe Agent Template:"))
 	sb.WriteString("\n\n")
 
-	// Display status message
 	if m.infoMessage != "" {
 		fmt.Fprintf(&sb, "%s %s\n", tui.InfoStyle.Render("Info: "), m.infoMessage)
 		sb.WriteString("\n")
@@ -494,7 +495,6 @@ func (m UpdateModel) viewListScreen() string {
 	sb.WriteString(m.list.View())
 	sb.WriteString("\n\n")
 
-	// If we don't have any components selected then grey out the message
 	style := tui.DimStyle
 	if len(m.getSelectedComponents()) > 0 {
 		style = tui.BaseTextStyle

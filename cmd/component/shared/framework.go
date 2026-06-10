@@ -15,29 +15,25 @@
 package shared
 
 import (
-	"strings"
-
-	"github.com/datarobot/cli/internal/appframework"
+	"os"
+	"path/filepath"
 )
 
-// ListItem wraps a ComponentInstance for display in the update TUI list.
-type ListItem struct {
-	current  bool
-	checked  bool
-	instance appframework.ComponentInstance
-}
+// FrameworkPath is set by the --framework-path persistent flag on the component parent command.
+// Child commands read it via GetFrameworkPath() rather than directly so the default is applied.
+var FrameworkPath string
 
-// Title returns the instance label (e.g. "core.agent.1").
-func (i ListItem) Title() string {
-	return i.instance.Label
-}
+// GetFrameworkPath returns the configured framework path, applying the default
+// (~/.datarobot/app-framework/) if the flag was not set.
+func GetFrameworkPath() string {
+	if FrameworkPath != "" {
+		return FrameworkPath
+	}
 
-// Description returns the disambiguated module name (e.g. "core.agent").
-func (i ListItem) Description() string {
-	return i.instance.Module
-}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".datarobot", "app-framework")
+	}
 
-// FilterValue is used by the Bubble Tea list for filtering.
-func (i ListItem) FilterValue() string {
-	return strings.ToLower(i.instance.Label)
+	return filepath.Join(home, ".datarobot", "app-framework")
 }
