@@ -80,3 +80,26 @@ func TestDeleteJSON_NonSuccess(t *testing.T) {
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
 }
+
+// TestDeleteJSON_NonSuccessWithBody pins the Delete error contract: a failed
+// DELETE with a non-empty response body surfaces the server's detail in the
+// error message (via ErrFromResp, as Post does) while still unwrapping to
+// *HTTPError for status-code checks by callers such as handleDeleteError.
+func TestDeleteJSON_NonSuccessWithBody(t *testing.T) {
+	defer resetTokenForTest(t, "test-token")()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"artifact is used by workloads: wl-1"}`))
+	}))
+	defer server.Close()
+
+	err := DeleteJSON(server.URL, "", nil, nil)
+	require.Error(t, err)
+
+	var httpErr *HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "artifact is used by workloads: wl-1")
+}

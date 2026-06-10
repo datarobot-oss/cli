@@ -56,9 +56,11 @@ func Delete(url, info string, body any) (*http.Response, error) {
 	}
 
 	if !isDeleteSuccess(resp.StatusCode) {
-		resp.Body.Close()
-
-		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
+		// Use ErrFromResp (as Post does) so delete failures carry the
+		// server's detail: workloads DELETE replies 502 with a "please
+		// retry" hint when proton cleanup fails, and artifacts DELETE
+		// replies 409 naming the workloads that block the deletion.
+		return nil, ErrFromResp(resp, url)
 	}
 
 	return resp, err

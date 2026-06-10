@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package create
+package list
 
 import (
 	"testing"
@@ -21,31 +21,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Spec-file reading (not-found, JSON passthrough, YAML conversion) is
-// covered by internal/workload's ReadSpecFile tests.
-
 func TestCmd_RejectsArgs(t *testing.T) {
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", "x.json", "unexpected-arg"})
-
-	require.Error(t, cmd.Execute())
-}
-
-func TestCmd_MissingSpecFile(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{})
+	cmd.SetArgs([]string{"unexpected"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `required flag(s) "spec-file" not set`)
+}
+
+func TestCmd_InvalidLimit(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--limit", "0"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --limit")
+}
+
+func TestCmd_InvalidStatus(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--status", "sleeping"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid status "sleeping"`)
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", "x.json", "--output-format", "yaml"})
+	cmd.SetArgs([]string{"--output-format", "yaml"})
 
 	err := cmd.Execute()
 	require.Error(t, err)

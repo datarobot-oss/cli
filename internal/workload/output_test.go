@@ -484,3 +484,132 @@ func TestFilterLogsByLevel(t *testing.T) {
 		assert.Equal(t, entries, got)
 	})
 }
+
+func makeTestWorkload(id, name, status string) Workload {
+	return Workload{
+		ID:         id,
+		Name:       name,
+		Status:     status,
+		Type:       "service",
+		Importance: "low",
+		ArtifactID: "art-1",
+		Endpoint:   "https://app.example.com/api/v2/endpoints/workloads/" + id + "/",
+		CreatedAt:  time.Date(2026, 6, 10, 8, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 6, 10, 8, 5, 0, 0, time.UTC),
+	}
+}
+
+func TestPrintWorkloadJSON(t *testing.T) {
+	workload := makeTestWorkload("wl-1", "my-app", "running")
+
+	output := captureStdout(t, func() {
+		require.NoError(t, printWorkloadJSON(workload))
+	})
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+	assert.Equal(t, "wl-1", parsed["id"])
+	assert.Equal(t, "my-app", parsed["name"])
+	assert.Equal(t, "running", parsed["status"])
+	assert.Equal(t, "service", parsed["type"])
+	assert.Equal(t, "low", parsed["importance"])
+	assert.Equal(t, "art-1", parsed["artifactId"])
+	assert.Equal(t, "https://app.example.com/api/v2/endpoints/workloads/wl-1/", parsed["endpoint"])
+	assert.Equal(t, "2026-06-10T08:00:00Z", parsed["createdAt"])
+	assert.Equal(t, "2026-06-10T08:05:00Z", parsed["updatedAt"])
+	// The projection must not leak server-side extras.
+	assert.NotContains(t, parsed, "owners")
+	assert.NotContains(t, parsed, "permissions")
+}
+
+func TestPrintWorkloadsJSON(t *testing.T) {
+	workloads := []Workload{
+		makeTestWorkload("wl-1", "app-one", "running"),
+		makeTestWorkload("wl-2", "app-two", "errored"),
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, printWorkloadsJSON(workloads))
+	})
+
+	var parsed []map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+	assert.Len(t, parsed, 2)
+	assert.Equal(t, "wl-1", parsed[0]["id"])
+	assert.Equal(t, "errored", parsed[1]["status"])
+}
+
+func TestPrintWorkloadsJSON_Empty(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, printWorkloadsJSON(nil))
+	})
+
+	// A regression that emits `null` instead of a JSON array must fail here.
+	assert.JSONEq(t, `[]`, output)
+}
+
+func TestPrintWorkloadDetails(t *testing.T) {
+	workload := makeTestWorkload("wl-1", "my-app", "launching")
+
+	output := captureStdout(t, func() {
+		printWorkloadDetails(workload)
+	})
+
+	assert.Contains(t, output, "ID:")
+	assert.Contains(t, output, "wl-1")
+	assert.Contains(t, output, "Status:")
+	assert.Contains(t, output, "launching")
+	assert.Contains(t, output, "Endpoint:")
+	assert.Contains(t, output, "https://app.example.com/api/v2/endpoints/workloads/wl-1/")
+	assert.Contains(t, output, "Artifact ID:")
+	assert.Contains(t, output, "2026-06-10 08:00 UTC")
+
+	// Endpoint must come right after Status so repeated `workload get`
+	// polling reads naturally during the deploy loop.
+	statusIdx := strings.Index(output, "Status:")
+	endpointIdx := strings.Index(output, "Endpoint:")
+
+	require.GreaterOrEqual(t, statusIdx, 0)
+	assert.Greater(t, endpointIdx, statusIdx)
+}
+
+func TestPrintWorkloadDetails_EmptyEndpointPlaceholder(t *testing.T) {
+	workload := makeTestWorkload("wl-1", "my-app", "submitted")
+	workload.Endpoint = ""
+
+	output := captureStdout(t, func() {
+		printWorkloadDetails(workload)
+	})
+
+	assert.Contains(t, output, "—")
+}
+
+func TestPrintWorkloadsTable(t *testing.T) {
+	workloads := []Workload{
+		makeTestWorkload("wl-1", "app-one", "running"),
+		makeTestWorkload("wl-2", "app-two", "stopped"),
+	}
+
+	output := captureStdout(t, func() {
+		printWorkloadsTable(workloads)
+	})
+
+	assert.Contains(t, output, "WORKLOAD ID")
+	assert.Contains(t, output, "STATUS")
+	assert.Contains(t, output, "IMPORTANCE")
+	assert.Contains(t, output, "wl-1")
+	assert.Contains(t, output, "app-two")
+	assert.Contains(t, output, "running")
+	assert.Contains(t, output, "stopped")
+	assert.Contains(t, output, "2026-06-10 08:05 UTC")
+}
+
+func TestPrintWorkloadsTable_Empty(t *testing.T) {
+	output := captureStdout(t, func() {
+		printWorkloadsTable([]Workload{})
+	})
+
+	assert.Equal(t, "No workloads found.\n", output)
+}

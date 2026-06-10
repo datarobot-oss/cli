@@ -83,6 +83,11 @@ var expectedWorkloadTrackedCommands = []string{
 	"workload build get",
 	"workload build list",
 	"workload build logs",
+	"workload artifact delete",
+	"workload create",
+	"workload get",
+	"workload list",
+	"workload delete",
 }
 
 // TestTelemetryWiring_AllWorkloadCommandsTracked walks the workload

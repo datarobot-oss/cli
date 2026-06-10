@@ -192,7 +192,7 @@ func GetPrimaryContainerImageURI(artifact Artifact) string {
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/")
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func CreateArtifact(payload any) (*Artifact, error) {
 }
 
 func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/")
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
 	if err != nil {
 		return err
 	}
@@ -405,6 +405,19 @@ func isPrimaryContainer(container map[string]any) bool {
 	primary, ok := container["primary"].(bool)
 
 	return ok && primary
+}
+
+// DeleteArtifact deletes a draft artifact. The server replies 409 when the
+// artifact is locked (locking is one-way; locked artifacts can never be
+// deleted) or still referenced by a workload's proton(s); the 409 detail
+// names the blocking workload IDs.
+func DeleteArtifact(artifactID string) error {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
+	if err != nil {
+		return err
+	}
+
+	return drapi.DeleteJSON(url, "artifact", nil, nil)
 }
 
 func ListArtifacts(limit int, status Status) ([]Artifact, error) {

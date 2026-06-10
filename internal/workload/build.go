@@ -165,7 +165,7 @@ func IsBuildErrorStatus(s string) bool {
 // caller so the service layer remains a thin pass-through of the server
 // shape.
 func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/builds/")
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/")
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 
 // GetArtifactBuild fetches a single Build by id.
 func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/builds/" + buildID)
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID))
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	endpoint := "/api/v2/artifacts/" + artifactID + "/builds/?limit=" + strconv.Itoa(limit)
+	endpoint := "/api/v2/artifacts/" + escapeID(artifactID) + "/builds/?limit=" + strconv.Itoa(limit)
 
 	pageURL, err := config.GetEndpointURL(endpoint)
 	if err != nil {
@@ -243,7 +243,7 @@ func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 // record cannot blank the whole tail. The original bytes for each line are
 // preserved in Raw so JSON output can pass them through unchanged.
 func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + artifactID + "/builds/" + buildID + "/logs")
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID) + "/logs")
 	if err != nil {
 		return nil, err
 	}

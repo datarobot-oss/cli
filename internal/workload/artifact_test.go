@@ -16,8 +16,12 @@ package workload
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -641,4 +645,59 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 			assert.Contains(t, err.Error(), c.wantSub)
 		})
 	}
+}
+
+func TestDeleteArtifact_Success(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v2/artifacts/art-1/", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	require.NoError(t, DeleteArtifact("art-1"))
+}
+
+func TestDeleteArtifact_EscapesIDInPath(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// '?' must arrive escaped inside the path segment, never as a query.
+		assert.Equal(t, "/api/v2/artifacts/art-1%3Fforce=true/", r.URL.EscapedPath())
+		assert.Empty(t, r.URL.RawQuery)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	require.NoError(t, DeleteArtifact("art-1?force=true"))
+}
+
+func TestDeleteArtifact_409PropagatesAsHTTPError(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"detail":"Cannot delete artifact referenced by 1 workload(s): wl-1. Delete the workload(s) first."}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := DeleteArtifact("art-1")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "Delete the workload(s) first")
 }

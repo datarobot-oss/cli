@@ -15,31 +15,46 @@
 package create
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// Spec-file reading (not-found, JSON passthrough, YAML conversion) is
-// covered by internal/workload's ReadSpecFile tests.
-
-func TestCmd_RejectsArgs(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", "x.json", "unexpected-arg"})
-
-	require.Error(t, cmd.Execute())
-}
-
-func TestCmd_MissingSpecFile(t *testing.T) {
+func TestCmd_RequiresSpecFile(t *testing.T) {
 	cmd := Cmd()
 	cmd.PreRunE = nil
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `required flag(s) "spec-file" not set`)
+	assert.Contains(t, err.Error(), "spec-file")
+}
+
+func TestCmd_SpecFileNotFound(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", "/nonexistent/workload.json"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "file not found")
+}
+
+func TestCmd_InvalidSpecFailsBeforeNetwork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"name": "wl"}`), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one of 'artifactId'")
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {
@@ -50,4 +65,13 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
+}
+
+func TestCmd_RejectsPositionalArgs(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"unexpected", "--spec-file", "x.json"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
 }
