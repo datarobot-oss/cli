@@ -16,7 +16,9 @@ package component
 
 import (
 	"github.com/datarobot/cli/cmd/component/add"
+	"github.com/datarobot/cli/cmd/component/describe"
 	"github.com/datarobot/cli/cmd/component/list"
+	"github.com/datarobot/cli/cmd/component/listavailable"
 	"github.com/datarobot/cli/cmd/component/shared"
 	"github.com/datarobot/cli/cmd/component/update"
 	"github.com/spf13/cobra"
@@ -39,7 +41,9 @@ func Cmd() *cobra.Command {
 
 	cmd.AddCommand(
 		add.Cmd(),
+		describe.Cmd(),
 		list.Cmd(),
+		listavailable.Cmd(),
 		update.Cmd(),
 	)
 

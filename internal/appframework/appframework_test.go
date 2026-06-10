@@ -144,6 +144,80 @@ func TestDescribeFramework_ParseModules(t *testing.T) {
 	assert.Equal(t, "str", m.Questions[0].Type)
 }
 
+func TestDescribeFramework_ParseAgentGuidanceAndDeps(t *testing.T) {
+	repeatable := "agent_app_name"
+	payload := `{
+		"path": "/fw",
+		"registries": {
+			"core": {"uri": "https://example.com/registry.yml", "alias": "core",
+			         "fetched_at": "2026-01-01", "owner": "datarobot", "description": ""}
+		},
+		"modules": {
+			"core.agent": {
+				"name": "agent",
+				"registry": "core",
+				"display_name": "Agent",
+				"description": "Deploys a DataRobot agent application.",
+				"tags": [],
+				"repeatable": "agent_app_name",
+				"dependencies": ["base", "llm", "datarobot_mcp"],
+				"agent_guidance": {
+					"summary": "Core component for every agent project."
+				},
+				"questions": [
+					{
+						"name": "agent_app_name",
+						"display_name": "agent_app_name",
+						"help": "The name/folder of your Agent Deployment.",
+						"default": "agent",
+						"type": "str",
+						"choices": null,
+						"agent_guidance": {
+							"ask_user": false,
+							"reason": "Derive from working directory name."
+						}
+					},
+					{
+						"name": "agent_template_framework",
+						"display_name": "agent_template_framework",
+						"help": "Choose the agentic framework template to start with:",
+						"default": null,
+						"type": "str",
+						"choices": ["base", "crewai", "langgraph", "llamaindex", "nat"],
+						"agent_guidance": {
+							"ask_user": true,
+							"reason": "Framework choice fundamentally changes the generated code structure."
+						}
+					}
+				]
+			}
+		}
+	}`
+
+	var resp describeFrameworkResponse
+
+	require.NoError(t, json.Unmarshal([]byte(payload), &resp))
+
+	m := resp.Modules["core.agent"]
+
+	assert.Equal(t, &repeatable, m.Repeatable)
+	assert.Equal(t, []string{"base", "llm", "datarobot_mcp"}, m.Dependencies)
+	require.NotNil(t, m.AgentGuidance)
+	assert.Equal(t, "Core component for every agent project.", m.AgentGuidance.Summary)
+	require.Len(t, m.Questions, 2)
+
+	appNameQ := m.Questions[0]
+
+	require.NotNil(t, appNameQ.AgentGuidance)
+	assert.False(t, appNameQ.AgentGuidance.AskUser)
+	assert.Equal(t, "Derive from working directory name.", appNameQ.AgentGuidance.Reason)
+
+	frameworkQ := m.Questions[1]
+
+	require.NotNil(t, frameworkQ.AgentGuidance)
+	assert.True(t, frameworkQ.AgentGuidance.AskUser)
+}
+
 // --- JSON parsing: add-module response ---
 
 func TestAddModuleResponse_Parse(t *testing.T) {

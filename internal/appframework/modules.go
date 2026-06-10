@@ -22,27 +22,42 @@ import (
 	"sort"
 )
 
+// QuestionAgentGuidance mirrors QuestionAgentGuidance in the dr-app-framework Python CLI.
+type QuestionAgentGuidance struct {
+	AskUser bool   `json:"ask_user"`
+	Reason  string `json:"reason"`
+}
+
+// ModuleAgentGuidance mirrors ModuleAgentGuidance in the dr-app-framework Python CLI.
+type ModuleAgentGuidance struct {
+	Summary string `json:"summary"`
+}
+
 // Question mirrors the Question type in the dr-app-framework Python CLI.
 // JSON keys match models/core_types.py:Question.model_dump_json().
 type Question struct {
-	Name        string        `json:"name"`
-	DisplayName string        `json:"display_name"`
-	Help        string        `json:"help"`
-	Default     interface{}   `json:"default"`
-	Type        string        `json:"type"` // str | int | bool | json | yaml
-	Choices     []interface{} `json:"choices"`
+	Name          string                 `json:"name"`
+	DisplayName   string                 `json:"display_name"`
+	Help          string                 `json:"help"`
+	Default       interface{}            `json:"default"`
+	Type          string                 `json:"type"` // str | int | bool | json | yaml
+	Choices       []interface{}          `json:"choices"`
+	AgentGuidance *QuestionAgentGuidance `json:"agent_guidance,omitempty"`
 }
 
 // Module mirrors the Module type in the dr-app-framework Python CLI.
 // DisambiguatedName is populated from the modules map key (e.g. "core.agent"), not a JSON field.
 type Module struct {
-	DisambiguatedName string     // set from the describe-framework modules map key
-	Name              string     `json:"name"`
-	Registry          string     `json:"registry"`
-	DisplayName       string     `json:"display_name"`
-	Description       string     `json:"description"`
-	Tags              []string   `json:"tags"`
-	Questions         []Question `json:"questions"`
+	DisambiguatedName string               // set from the describe-framework modules map key
+	Name              string               `json:"name"`
+	Registry          string               `json:"registry"`
+	DisplayName       string               `json:"display_name"`
+	Description       string               `json:"description"`
+	Tags              []string             `json:"tags"`
+	Repeatable        *string              `json:"repeatable,omitempty"`
+	Dependencies      []string             `json:"dependencies"`
+	Questions         []Question           `json:"questions"`
+	AgentGuidance     *ModuleAgentGuidance `json:"agent_guidance,omitempty"`
 }
 
 // describeFrameworkResponse is an internal type for JSON unmarshalling of describe-framework output.
