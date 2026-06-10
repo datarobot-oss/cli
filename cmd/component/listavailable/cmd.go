@@ -39,9 +39,32 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
+func ensureReady(fw string) error {
+	if err := appframework.ExecInitializeFramework(fw); err != nil {
+		return fmt.Errorf("initializing framework: %w", err)
+	}
+
+	aliases, err := appframework.RegistryAliases(fw, ".")
+	if err != nil {
+		return err
+	}
+
+	if aliases["core"] {
+		return nil
+	}
+
+	fmt.Println("Adding default registry...")
+
+	return appframework.ExecAddRegistry(appframework.RegistryURI(), "core", fw)
+}
+
 func RunE(opts *listAvailableOptions) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
 		fw := shared.GetFrameworkPath()
+
+		if err := ensureReady(fw); err != nil {
+			return err
+		}
 
 		modules, err := appframework.DescribeFramework(fw, ".")
 		if err != nil {
@@ -49,7 +72,7 @@ func RunE(opts *listAvailableOptions) func(*cobra.Command, []string) error {
 		}
 
 		if len(modules) == 0 {
-			fmt.Println("No components available. Run `dr component add` to initialize the framework and register the default registry.")
+			fmt.Println("Registry is registered but contains no modules.")
 
 			return nil
 		}
