@@ -29,6 +29,8 @@ var (
 	registryURL       string
 	listPlugins       bool
 	listVersions      bool
+	filePath          string
+	pluginURL         string
 )
 
 func Cmd() *cobra.Command {
@@ -43,12 +45,17 @@ Use --version to specify a version constraint:
   - Caret (compatible): ^1.2.3 (any 1.x.x >= 1.2.3)
   - Tilde (patch-level): ~1.2.3 (any 1.2.x >= 1.2.3)
   - Minimum: >=1.0.0
-  - Latest: latest (default)`,
+  - Latest: latest (default)
+
+Use --file to install directly from a local .tar.xz archive instead of the registry.
+Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 		Example: `  dr plugin install assist
   dr plugin install assist --version 0.1.6
   dr plugin install assist --version "^0.1.0"
   dr plugin install assist --versions
-  dr plugin install --list`,
+  dr plugin install --list
+  dr plugin install assist --file ./assist-0.2.0.tar.xz
+  dr plugin install assist --url https://example.com/assist-0.2.0.tar.xz`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runInstall,
 	}
@@ -57,9 +64,13 @@ Use --version to specify a version constraint:
 	cmd.Flags().BoolVar(&listVersions, "versions", false, "List available versions for a plugin")
 	cmd.Flags().StringVar(&registryURL, "registry-url", plugin.PluginRegistryURL, "URL of the plugin registry")
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
+	cmd.Flags().StringVar(&filePath, "file", "", "Install from a local .tar.xz archive instead of the registry")
+	cmd.Flags().StringVar(&pluginURL, "url", "", "Install from an HTTP/HTTPS URL instead of the registry")
 
 	// Mark mutually exclusive flags
-	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version")
+	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version", "file", "url")
+	cmd.MarkFlagsMutuallyExclusive("file", "registry-url")
+	cmd.MarkFlagsMutuallyExclusive("url", "registry-url")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		ver, _ := c.Flags().GetString("version")
@@ -74,6 +85,18 @@ Use --version to specify a version constraint:
 }
 
 func runInstall(_ *cobra.Command, args []string) error {
+	if filePath != "" {
+		return runInstallFromFile(args)
+	}
+
+	if pluginURL != "" {
+		return runInstallFromURL(args)
+	}
+
+	return runInstallFromRegistry(args)
+}
+
+func runInstallFromRegistry(args []string) error {
 	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
 
 	var (
@@ -150,6 +173,70 @@ func runInstall(_ *cobra.Command, args []string) error {
 	fmt.Println(tui.SuccessStyle.Render("✓ Successfully installed " + pluginEntry.Name + " " + version.Version))
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
+
+	return nil
+}
+
+func runInstallFromFile(args []string) error {
+	name := ""
+	if len(args) > 0 {
+		name = args[0]
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SubTitleStyle.Render("Installing Plugin"))
+
+	var resolvedName string
+
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Installing plugin from %s…", filePath),
+		func() error {
+			var err error
+
+			resolvedName, err = plugin.InstallPluginFromFile(filePath, name)
+
+			return err
+		},
+	); err != nil {
+		return fmt.Errorf("failed to install plugin: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SuccessStyle.Render("✓ Successfully installed " + resolvedName + " (local)"))
+	fmt.Println()
+	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
+
+	return nil
+}
+
+func runInstallFromURL(args []string) error {
+	name := ""
+	if len(args) > 0 {
+		name = args[0]
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SubTitleStyle.Render("Installing Plugin"))
+
+	var resolvedName string
+
+	if err := tui.RunWithSpinner(
+		fmt.Sprintf("Installing plugin from %s…", pluginURL),
+		func() error {
+			var err error
+
+			resolvedName, err = plugin.InstallPluginFromURL(pluginURL, name)
+
+			return err
+		},
+	); err != nil {
+		return fmt.Errorf("failed to install plugin: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SuccessStyle.Render("✓ Successfully installed " + resolvedName))
+	fmt.Println()
+	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
 	return nil
 }
