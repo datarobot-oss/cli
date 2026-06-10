@@ -64,8 +64,17 @@ func Post(url, info string, body any) (*http.Response, error) {
 	return resp, err
 }
 
+// isCreateSuccess permits 200 OK and 201 Created (synchronous create) plus
+// 202 Accepted for async triggers such as POST /artifacts/{id}/builds/, which
+// return the trigger response body alongside the accepted status. Mirrors the
+// 202 acceptance already present in isDeleteSuccess.
 func isCreateSuccess(code int) bool {
-	return code == http.StatusOK || code == http.StatusCreated
+	switch code {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
+		return true
+	}
+
+	return false
 }
 
 // restoreRequestBody re-arms req.Body after RedactedReqInfo (which dumps and
