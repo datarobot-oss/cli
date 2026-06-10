@@ -12,9 +12,13 @@ dr plugin install PLUGIN_NAME --version "^1.0.0"
 dr plugin install --list
 dr plugin install PLUGIN_NAME --versions
 dr plugin install --list --registry-url http://localhost:8000/plugins
+dr plugin install PLUGIN_NAME --file ./plugin-0.2.0.tar.xz
+dr plugin install --file ./plugin-0.2.0.tar.xz
+dr plugin install PLUGIN_NAME --url https://example.com/plugin-0.2.0.tar.xz
+dr plugin install --url https://example.com/plugin-0.2.0.tar.xz
 ```
 
-Installs a plugin from the remote plugin registry.
+Installs a plugin from the remote plugin registry, a local archive, or an HTTP/HTTPS URL.
 
 When you run the command without arguments, it displays the list of available plugins (equivalent to `--list`).
 
@@ -29,6 +33,14 @@ When you run the command without arguments, it displays the list of available pl
 - `--registry-url`&mdash;URL of the plugin registry (default: `https://cli.datarobot.com/plugins/index.json`).
 - `--versions`&mdash;list available versions for a specific plugin.
 - `--list`&mdash;list available plugins from the registry without installing.
+- `--file`&mdash;install from a local `.tar.xz` archive instead of the registry.
+- `--url`&mdash;install from an HTTP/HTTPS URL instead of the registry.
+
+`--file` and `--url` are mutually exclusive with each other and with `--version`, `--versions`, `--list`, and `--registry-url`.
+
+When no plugin name argument is given with `--file` or `--url`, the name is read from `manifest.json` inside the archive. You can pass an explicit name as the first argument to override this.
+
+> **Note:** URL installs bypass registry checksum verification. Only install from URLs you trust.
 
 ### Examples
 
@@ -55,6 +67,18 @@ dr plugin install assist --version "^0.1.0"
 
 # Install from custom registry.
 dr plugin install assist --registry-url http://127.0.0.1:8000/cli/dev-docs/plugins
+
+# Install from a local archive (name read from manifest.json inside the archive).
+dr plugin install --file ./assist-0.2.0.tar.xz
+
+# Install from a local archive with an explicit plugin name.
+dr plugin install assist --file ./assist-0.2.0.tar.xz
+
+# Install from an HTTP/HTTPS URL (name read from manifest.json inside the archive).
+dr plugin install --url https://example.com/assist-0.2.0.tar.xz
+
+# Install from an HTTP/HTTPS URL with an explicit plugin name.
+dr plugin install assist --url https://example.com/assist-0.2.0.tar.xz
 ```
 
 ## dr plugin uninstall
