@@ -28,19 +28,38 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// AFSourcePath is the --from target for uvx. Points to the local dr-application-framework CLI
-// checkout for this experimental branch. Once app-framework-cli is published to PyPI, change
-// this to just "app-framework-cli".
+// AFSourcePath is the default --from target for uvx. Points to the local dr-application-framework
+// CLI checkout for this experimental branch. Override with DR_APP_FRAMEWORK_PATH for local dev.
+// Once app-framework-cli is published to PyPI, change this to just "app-framework-cli".
 const AFSourcePath = "/Users/damon.stanley/workspace/dr-application-framework/cli"
 
-// DefaultRegistryURI is the canonical registry manifest URL. Adjust for local development.
-const DefaultRegistryURI = "https://raw.githubusercontent.com/datarobot/dr-application-framework/main/registry.yml"
+const defaultRegistryURI = "https://raw.githubusercontent.com/datarobot/dr-application-framework/main/registry.yml"
+
+// afSourcePath returns the uvx --from target. DR_APP_FRAMEWORK_PATH overrides the hardcoded
+// default, useful for pointing at a local checkout during development.
+func afSourcePath() string {
+	if p := os.Getenv("DR_APP_FRAMEWORK_PATH"); p != "" {
+		return p
+	}
+
+	return AFSourcePath
+}
+
+// RegistryURI returns the registry manifest URL. The env var DR_APP_FRAMEWORK_REGISTRY_URI
+// overrides the default, useful for pointing at a local file:// path during development.
+func RegistryURI() string {
+	if uri := os.Getenv("DR_APP_FRAMEWORK_REGISTRY_URI"); uri != "" {
+		return uri
+	}
+
+	return defaultRegistryURI
+}
 
 // afCommand builds a dr-app-framework subprocess invocation.
 // Usage: afCommand("add-module", "-m", "core.agent", ...)
 func afCommand(subcmd string, args ...string) *exec.Cmd {
 	all := make([]string, 0, 4+len(args))
-	all = append(all, "--from", AFSourcePath, "dr-app-framework", subcmd)
+	all = append(all, "--from", afSourcePath(), "dr-app-framework", subcmd)
 	all = append(all, args...)
 
 	cmd := exec.Command("uvx", all...)
