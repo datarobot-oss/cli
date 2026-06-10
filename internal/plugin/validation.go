@@ -23,10 +23,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/google/go-cmp/cmp"
 )
+
+// validatePluginName checks that name is a safe single-segment identifier with no path separators.
+// This prevents path traversal attacks when name is used to construct a filesystem path.
+func validatePluginName(name string) error {
+	if name == "" {
+		return errors.New("plugin name must not be empty")
+	}
+
+	if strings.ContainsAny(name, `/\`) || name == ".." || name == "." {
+		return fmt.Errorf("plugin name %q must not contain path separators or be a relative reference", name)
+	}
+
+	return nil
+}
 
 // ValidatePluginScript validates that a plugin script outputs a manifest matching the expected manifest.
 // All fields must match exactly, including Scripts and MinCLIVersion for managed plugins.

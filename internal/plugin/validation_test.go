@@ -25,6 +25,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestValidatePluginName(t *testing.T) {
+	valid := []string{
+		"assist",
+		"my-plugin",
+		"plugin_v2",
+		"dr-apps",
+	}
+
+	for _, name := range valid {
+		t.Run("valid/"+name, func(t *testing.T) {
+			assert.NoError(t, validatePluginName(name))
+		})
+	}
+
+	invalid := []struct {
+		name  string
+		input string
+	}{
+		{"empty", ""},
+		{"dotdot", ".."},
+		{"dot", "."},
+		{"unix traversal", "../../etc/passwd"},
+		{"unix separator", "foo/bar"},
+		{"windows separator", `foo\bar`},
+		{"leading slash", "/absolute"},
+	}
+
+	for _, tt := range invalid {
+		t.Run("invalid/"+tt.name, func(t *testing.T) {
+			err := validatePluginName(tt.input)
+
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestValidateManifests_Matching(t *testing.T) {
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{

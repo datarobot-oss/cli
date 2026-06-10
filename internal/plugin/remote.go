@@ -170,6 +170,112 @@ func findBestMatch(versions []RegistryVersion, constraint *semver.Constraints) (
 	return &versions[candidateIndexes[bestIdx]], nil
 }
 
+// InstallPluginFromURL downloads and installs a plugin from an arbitrary HTTP/HTTPS URL.
+// No SHA256 checksum is required since the URL comes directly from the user.
+// If name is empty, the plugin name is read from manifest.json inside the archive.
+// Returns the resolved plugin name.
+func InstallPluginFromURL(url, name string) (string, error) {
+	archivePath, err := downloadHTTP(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to download plugin: %w", err)
+	}
+
+	defer os.Remove(archivePath)
+
+	if name == "" {
+		name, err = readNameFromArchive(archivePath)
+		if err != nil {
+			return "", fmt.Errorf("could not determine plugin name: %w\nUse: dr plugin install <name> --url ...", err)
+		}
+	}
+
+	pluginDir, err := preparePluginDirectory(name)
+	if err != nil {
+		return "", err
+	}
+
+	entry := RegistryPlugin{Name: name}
+
+	version := RegistryVersion{
+		Version: "local",
+		URL:     url,
+	}
+
+	return name, installPluginFromArchive(archivePath, pluginDir, entry, version)
+}
+
+// InstallPluginFromFile installs a plugin from a local .tar.xz archive.
+// If name is empty, the plugin name is read from manifest.json inside the archive.
+// Returns the resolved plugin name.
+func InstallPluginFromFile(filePath, name string) (string, error) {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve file path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); err != nil {
+		return "", fmt.Errorf("file not found: %w", err)
+	}
+
+	if name == "" {
+		name, err = readNameFromArchive(absPath)
+		if err != nil {
+			return "", fmt.Errorf("could not determine plugin name: %w\nUse: dr plugin install <name> --file ...", err)
+		}
+	}
+
+	pluginDir, err := preparePluginDirectory(name)
+	if err != nil {
+		return "", err
+	}
+
+	entry := RegistryPlugin{Name: name}
+
+	version := RegistryVersion{
+		Version: "local",
+		URL:     absPath,
+	}
+
+	return name, installPluginFromArchive(absPath, pluginDir, entry, version)
+}
+
+// readNameFromArchive extracts a .tar.xz archive to a temp directory, reads the
+// plugin name from manifest.json, and cleans up. Used when the caller has not
+// supplied an explicit plugin name.
+func readNameFromArchive(archivePath string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "dr-plugin-probe-*")
+	if err != nil {
+		return "", err
+	}
+
+	defer os.RemoveAll(tmpDir)
+
+	if err := extractTarXz(archivePath, tmpDir); err != nil {
+		return "", fmt.Errorf("failed to read archive: %w", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "manifest.json"))
+	if err != nil {
+		return "", fmt.Errorf("manifest.json not found in archive: %w", err)
+	}
+
+	var manifest BasicPluginManifest
+
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return "", fmt.Errorf("failed to parse manifest.json: %w", err)
+	}
+
+	if manifest.Name == "" {
+		return "", errors.New("manifest.json is missing the 'name' field")
+	}
+
+	if err := validatePluginName(manifest.Name); err != nil {
+		return "", fmt.Errorf("manifest.json contains unsafe plugin name: %w", err)
+	}
+
+	return manifest.Name, nil
+}
+
 // InstallPlugin downloads and installs a plugin
 func InstallPlugin(pluginEntry RegistryPlugin, version RegistryVersion, baseURL string) error {
 	pluginDir, err := preparePluginDirectory(pluginEntry.Name)
@@ -187,6 +293,10 @@ func InstallPlugin(pluginEntry RegistryPlugin, version RegistryVersion, baseURL 
 }
 
 func preparePluginDirectory(name string) (string, error) {
+	if err := validatePluginName(name); err != nil {
+		return "", err
+	}
+
 	managedDir, err := ManagedPluginsDir()
 	if err != nil {
 		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
