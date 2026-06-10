@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,11 +59,25 @@ func RegistryURI() string {
 // afCommand builds a dr-app-framework subprocess invocation.
 // Usage: afCommand("add-module", "-m", "core.agent", ...)
 func afCommand(subcmd string, args ...string) *exec.Cmd {
-	all := make([]string, 0, 4+len(args))
-	all = append(all, "--from", afSourcePath(), "dr-app-framework", subcmd)
-	all = append(all, args...)
+	src := afSourcePath()
 
-	cmd := exec.Command("uvx", all...)
+	var cmd *exec.Cmd
+
+	if filepath.IsAbs(src) {
+		// Local checkout: use `uv run --project <path>` so the tool runs directly
+		// from source, bypassing uvx's package cache which won't pick up code changes
+		// without a version bump.
+		all := make([]string, 0, 4+len(args))
+		all = append(all, "run", "--project", src, "dr-app-framework", subcmd)
+		all = append(all, args...)
+		cmd = exec.Command("uv", all...)
+	} else {
+		all := make([]string, 0, 4+len(args))
+		all = append(all, "--from", src, "dr-app-framework", subcmd)
+		all = append(all, args...)
+		cmd = exec.Command("uvx", all...)
+	}
+
 	log.Debug("Running command: " + cmd.String())
 
 	// Suppress all Python warnings unless debug mode is enabled.
