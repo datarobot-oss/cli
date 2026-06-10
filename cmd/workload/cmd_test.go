@@ -15,29 +15,13 @@
 package workload
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact"
-	"github.com/datarobot/cli/cmd/workload/code"
-	"github.com/datarobot/cli/internal/features"
-	"github.com/spf13/cobra"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "workload",
-		Aliases: []string{"wl"},
-		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
+func TestCmd_HasAlias(t *testing.T) {
+	cmd := Cmd()
 
-Manage and monitor workloads in your deployment infrastructure.`,
-	}
-
-	features.SetGate(cmd, "workload")
-
-	cmd.AddCommand(
-		artifact.Cmd(),
-		code.Cmd(),
-	)
-
-	return cmd
+	assert.Contains(t, cmd.Aliases, "wl")
 }
