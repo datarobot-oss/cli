@@ -22,7 +22,9 @@ top-level `dr pipeline` subcommand operates on one of four resources:
 - pipeline **runs** — concrete executions on Covalent,
 - pipeline **schedules** — recurring runs on a cron expression,
 - pipeline **environments** — named, immutable-versioned bags of pip
-  packages that pipelines can be built against.
+  packages that pipelines can be built against,
+- pipeline **tasks** — source code, function signature, and input payload
+  for individual `@task`-decorated functions.
 
 Versions are created automatically:
 
@@ -82,6 +84,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
 | `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
 | `dr pipeline environment …` | `/pipelines/environments[/{id}]` | Manage named, versioned pip-package environments. |
+| `dr pipeline task …`        | `…/tasks/{task_id}` (draft or locked) | Inspect individual task source, signature, and inputs. |
 
 ## Subcommands
 
@@ -243,11 +246,13 @@ dr pipeline version get  --pipeline <id> <version-id>     [--output-format json]
 ### `graph`
 
 Display the pipeline/task DAG as either a JSON payload or a human-readable summary.
+The human table includes a **TASK ID** column showing the stable identifier for each
+task node (populated once CMPT-6040 is deployed; `—` for legacy pipelines).
 
 ```bash
 dr pipeline graph --pipeline <id>                       # draft graph
 dr pipeline graph --pipeline <id> --version=N           # locked-version graph
-dr pipeline graph --pipeline <id> --output-format json
+dr pipeline graph --pipeline <id> --output-format json  # includes taskId on each node
 ```
 
 ## Shared flags
@@ -302,6 +307,19 @@ dr pipeline delete <pipeline-id>
 dr pipeline version list --pipeline <pipeline-id>
 dr pipeline version get  --pipeline <pipeline-id> 2
 dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
+```
+
+### Inspect a task
+
+```bash
+# 1. Find task IDs via the graph (TASK ID column)
+dr pipeline graph --pipeline <pipeline-id>
+
+# 2. View source + signature for a draft task
+dr pipeline task get --pipeline <pipeline-id> <task-id>
+
+# 3. View the same task on a locked version (includes input payload)
+dr pipeline task get --pipeline <pipeline-id> --version=2 <task-id>
 ```
 
 ### `input`
@@ -370,6 +388,25 @@ dr pipeline environment version delete --environment <environment-id> <version>
 immutable version. `environment delete` soft-deletes the latest active version (cascading
 to the parent if no active versions remain). `environment version delete` targets a
 specific version by its integer number.
+
+### `task`
+
+Inspect individual `@task`-decorated functions within a pipeline. Task IDs are stable
+24-char identifiers minted when a pipeline is uploaded; they appear in the **TASK ID**
+column of `dr pipeline graph` and are preserved across re-uploads and across the
+draft-to-locked transition.
+
+```bash
+dr pipeline task get --pipeline <id> <task-id>                   # draft — source + params, inputs=null
+dr pipeline task get --pipeline <id> --version=N <task-id>       # locked — source + params + latest VALID input payload
+dr pipeline task get --pipeline <id> <task-id> --output-format json
+```
+
+`task get` returns the task's Python source string, its `@task` function signature
+parameters (name + optional type annotation), and — for locked versions — the full
+payload from the latest `VALID` `PipelineInput` record for that version.
+
+If the task ID is not found, the command prints `Task not found: <task-id>` and exits 0.
 
 ## Error handling
 
