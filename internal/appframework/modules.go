@@ -68,7 +68,13 @@ type describeFrameworkResponse struct {
 	Modules map[string]Module `json:"modules"`
 }
 
-// DescribeFramework runs dr-app-framework describe-framework and returns the available modules.
+// listRegistryComponentsResponse is an internal type for JSON unmarshalling of
+// list-registry-components output.
+type listRegistryComponentsResponse struct {
+	Modules map[string]Module `json:"modules"`
+}
+
+// DescribeFramework runs dr-app-framework describe-framework and returns the already-added modules.
 // The slice is sorted by DisplayName for stable TUI ordering.
 // Returns an empty slice (no error) if the framework has not been initialized yet.
 func DescribeFramework(fw, target string) ([]Module, error) {
@@ -88,6 +94,48 @@ func DescribeFramework(fw, target string) ([]Module, error) {
 
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("parsing describe-framework response: %w", err)
+	}
+
+	modules := make([]Module, 0, len(resp.Modules))
+
+	for disambigName, m := range resp.Modules {
+		m.DisambiguatedName = disambigName
+
+		if m.DisplayName == "" {
+			m.DisplayName = m.Name
+		}
+
+		modules = append(modules, m)
+	}
+
+	sort.Slice(modules, func(i, j int) bool {
+		return modules[i].DisplayName < modules[j].DisplayName
+	})
+
+	return modules, nil
+}
+
+// ListAvailableComponents runs dr-app-framework list-registry-components, which enumerates all
+// components in registered registries and clones each repo to read its metadata.yml.
+// Returns the full set with display_name, description, questions, etc. populated.
+// The slice is sorted by DisplayName for stable TUI ordering.
+// Returns an empty slice (no error) if the framework has not been initialized yet.
+func ListAvailableComponents(fw, target string) ([]Module, error) {
+	fwYML := filepath.Join(fw, "framework.yml")
+
+	if _, err := os.Stat(fwYML); os.IsNotExist(err) {
+		return []Module{}, nil
+	}
+
+	data, err := cmdOutput(afCommand("list-registry-components", "-f", fw, "-t", target))
+	if err != nil {
+		return nil, fmt.Errorf("list-registry-components: %w", err)
+	}
+
+	var resp listRegistryComponentsResponse
+
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("parsing list-registry-components response: %w", err)
 	}
 
 	modules := make([]Module, 0, len(resp.Modules))

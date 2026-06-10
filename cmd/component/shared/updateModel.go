@@ -137,7 +137,7 @@ func (m UpdateModel) toggleCurrent() (UpdateModel, tea.Cmd) {
 // Note: --data pre-answering is skipped in TUI mode (the three-way merge handles it).
 func updateComponent(item ListItem, fw string, _ string, _ []string) tea.Cmd {
 	label := item.instance.Label
-	command := appframework.UpdateCmd([]string{label}, fw, ".")
+	command := appframework.UpdateCmd([]string{label}, fw, ".", false)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
 		return updateCompleteMsg{item, err}

@@ -66,13 +66,13 @@ func RunE(opts *listAvailableOptions) func(*cobra.Command, []string) error {
 			return err
 		}
 
-		modules, err := appframework.DescribeFramework(fw, ".")
+		modules, err := appframework.ListAvailableComponents(fw, ".")
 		if err != nil {
 			return err
 		}
 
 		if len(modules) == 0 {
-			fmt.Println("Registry is registered but contains no modules.")
+			fmt.Println("No components found. Ensure a registry is registered.")
 
 			return nil
 		}

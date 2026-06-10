@@ -25,7 +25,7 @@ import (
 
 func main() {
 	// Create a context that's canceled on interrupt signals
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	// Always stop loggers, whether the command succeeds or returns an error.

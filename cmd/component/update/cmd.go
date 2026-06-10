@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/cmd/task/compose"
 	"github.com/datarobot/cli/internal/appframework"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -87,7 +88,7 @@ func handleTUIResult(finalModel tea.Model) error {
 	return nil
 }
 
-func RunE(_ *cobra.Command, args []string) error {
+func RunE(cmd *cobra.Command, args []string) error {
 	var label string
 
 	if len(args) > 0 {
@@ -99,9 +100,12 @@ func RunE(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("parsing data args: %w", err)
 	}
 
+	yesFlag, _ := cmd.Flags().GetBool("yes")
+	yes := yesFlag || viperx.GetBool("yes")
+
 	// If a label was provided directly, run the update non-interactively.
 	if label != "" {
-		if err := runUpdate(label, cliData, flags.DataFile); err != nil {
+		if err := runUpdate(label, cliData, flags.DataFile, yes); err != nil {
 			return fmt.Errorf("updating component: %w", err)
 		}
 
@@ -120,16 +124,19 @@ func RunE(_ *cobra.Command, args []string) error {
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "update [label]",
-		Short:         "🔄 Update installed component",
-		PreRunE:       PreRunE,
-		RunE:          RunE,
-		SilenceErrors: true,
+		Use:     "update [label]",
+		Short:   "🔄 Update installed component",
+		PreRunE: PreRunE,
+		RunE:    RunE,
 	}
 
 	cmd.Flags().StringArrayVarP(&flags.DataArgs, "data", "d", []string{}, "Provide answer data in key=value format (can be specified multiple times)")
 	cmd.Flags().StringVar(&flags.DataFile, "data-file", "", "Path to YAML file with default answers")
 	cmd.Flags().StringArrayVarP(&flags.Filter, "filter", "F", []string{}, "Restrict update to specific labels (can be specified multiple times)")
+	cmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts; fail if required answers are missing.")
+
+	// Bind only the env var so --yes does not leak into drconfig.yaml via viper.AllSettings().
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -140,7 +147,7 @@ func Cmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(label string, cliData map[string]interface{}, dataFilePath string) error {
+func runUpdate(label string, cliData map[string]interface{}, dataFilePath string, nonInteractive bool) error {
 	fw := shared.GetFrameworkPath()
 
 	// Load component defaults and merge with CLI data.
@@ -162,7 +169,7 @@ func runUpdate(label string, cliData map[string]interface{}, dataFilePath string
 
 	filter := append(flags.Filter, label) //nolint:gocritic
 
-	execErr := appframework.ExecUpdate(filter, fw, ".")
+	execErr := appframework.ExecUpdate(filter, fw, ".", nonInteractive)
 	if execErr != nil {
 		if errors.Is(execErr, exec.ErrNotFound) {
 			log.Error("uv is not installed.")

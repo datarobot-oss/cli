@@ -63,17 +63,27 @@ func afCommand(subcmd string, args ...string) *exec.Cmd {
 
 	var cmd *exec.Cmd
 
+	debugArgs := []string{}
+
+	if log.GetLevel() <= log.DebugLevel {
+		debugArgs = []string{"--log-level", "debug"}
+	}
+
 	if filepath.IsAbs(src) {
 		// Local checkout: use `uv run --project <path>` so the tool runs directly
 		// from source, bypassing uvx's package cache which won't pick up code changes
 		// without a version bump.
-		all := make([]string, 0, 4+len(args))
-		all = append(all, "run", "--project", src, "dr-app-framework", subcmd)
+		all := make([]string, 0, 6+len(args))
+		all = append(all, "run", "--project", src, "dr-app-framework")
+		all = append(all, debugArgs...)
+		all = append(all, subcmd)
 		all = append(all, args...)
 		cmd = exec.Command("uv", all...)
 	} else {
-		all := make([]string, 0, 4+len(args))
-		all = append(all, "--from", src, "dr-app-framework", subcmd)
+		all := make([]string, 0, 6+len(args))
+		all = append(all, "--from", src, "dr-app-framework")
+		all = append(all, debugArgs...)
+		all = append(all, subcmd)
 		all = append(all, args...)
 		cmd = exec.Command("uvx", all...)
 	}
@@ -95,7 +105,12 @@ func cmdRun(cmd *exec.Cmd) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		log.Debug("Subprocess failed", "error", err)
+	}
+
+	return err
 }
 
 // cmdOutput executes a command, capturing stdout as bytes. stderr passes through so the
@@ -107,6 +122,8 @@ func cmdOutput(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		log.Debug("Subprocess failed", "error", err)
+
 		return nil, err
 	}
 
@@ -115,7 +132,16 @@ func cmdOutput(cmd *exec.Cmd) ([]byte, error) {
 
 // ExecInitializeFramework creates the framework directory structure (idempotent).
 func ExecInitializeFramework(fw string) error {
-	return cmdRun(afCommand("initialize-framework", "-f", fw, "-t", "."))
+	src := afSourcePath()
+	if filepath.IsAbs(src) {
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			return fmt.Errorf("application framework not found at %q; set DR_APP_FRAMEWORK_PATH to the correct path", src)
+		}
+	}
+
+	_, err := cmdOutput(afCommand("initialize-framework", "-f", fw, "-t", "."))
+
+	return err
 }
 
 // ExecAddRegistry registers a registry URI with a local alias.
@@ -193,20 +219,18 @@ func ExecAnswer(label string, answers map[string]interface{}, fw, target string)
 	return cmdRun(afCommand("answer", args...))
 }
 
-// ExecCopy runs the copy step, which populates the target directory from templates.
-// Interactive: stdio is passed through so the user can answer any remaining questions.
-func ExecCopy(fw, target string) error {
-	return cmdRun(afCommand("copy", "-f", fw, "-t", target))
-}
-
 // UpdateCmd returns the update *exec.Cmd without running it.
 // Used by the TUI (tea.ExecProcess) so Bubble Tea can manage the subprocess lifecycle.
-func UpdateCmd(filter []string, fw, target string) *exec.Cmd {
-	args := make([]string, 0, 4+2*len(filter))
+func UpdateCmd(filter []string, fw, target string, nonInteractive bool) *exec.Cmd {
+	args := make([]string, 0, 5+2*len(filter))
 	args = append(args, "-f", fw, "-t", target)
 
 	for _, f := range filter {
 		args = append(args, "-F", f)
+	}
+
+	if nonInteractive {
+		args = append(args, "--no-interactive")
 	}
 
 	cmd := afCommand("update", args...)
@@ -219,15 +243,32 @@ func UpdateCmd(filter []string, fw, target string) *exec.Cmd {
 
 // ExecUpdate runs the three-way merge update.
 // filter optionally restricts the update to specific labels.
-func ExecUpdate(filter []string, fw, target string) error {
-	args := make([]string, 0, 4+2*len(filter))
+func ExecUpdate(filter []string, fw, target string, nonInteractive bool) error {
+	args := make([]string, 0, 5+2*len(filter))
 	args = append(args, "-f", fw, "-t", target)
 
 	for _, f := range filter {
 		args = append(args, "-F", f)
 	}
 
+	if nonInteractive {
+		args = append(args, "--no-interactive")
+	}
+
 	return cmdRun(afCommand("update", args...))
+}
+
+// ExecCopy runs the copy step, which populates the target directory from templates.
+// Interactive: stdio is passed through so the user can answer any remaining questions.
+// When nonInteractive is true, --no-interactive is forwarded so missing answers fail fast.
+func ExecCopy(fw, target string, nonInteractive bool) error {
+	args := []string{"-f", fw, "-t", target}
+
+	if nonInteractive {
+		args = append(args, "--no-interactive")
+	}
+
+	return cmdRun(afCommand("copy", args...))
 }
 
 // ExecRunTasks executes post-copy/update tasks in the .phantom/ directory, then removes it.

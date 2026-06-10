@@ -25,15 +25,41 @@ import (
 
 // --- afCommand construction ---
 
-func TestAfCommand_BasicForm(t *testing.T) {
+// TestAfCommand_LocalPath verifies the uv-run-project form used when DR_APP_FRAMEWORK_PATH
+// is an absolute filesystem path (local checkout).
+func TestAfCommand_LocalPath(t *testing.T) {
+	t.Setenv("DR_APP_FRAMEWORK_PATH", "/some/local/path")
+
+	cmd := afCommand("describe-framework", "-f", "/fw", "-t", ".")
+
+	assert.Equal(t, "uv", filepath.Base(cmd.Path))
+
+	args := cmd.Args[1:] // cmd.Args[0] is the binary path
+
+	assert.Equal(t, "run", args[0])
+	assert.Equal(t, "--project", args[1])
+	assert.Equal(t, "/some/local/path", args[2])
+	assert.Equal(t, "dr-app-framework", args[3])
+	assert.Equal(t, "describe-framework", args[4])
+	assert.Equal(t, "-f", args[5])
+	assert.Equal(t, "/fw", args[6])
+	assert.Equal(t, "-t", args[7])
+	assert.Equal(t, ".", args[8])
+}
+
+// TestAfCommand_PyPIPackage verifies the uvx-from form used when DR_APP_FRAMEWORK_PATH
+// is a package name (PyPI distribution).
+func TestAfCommand_PyPIPackage(t *testing.T) {
+	t.Setenv("DR_APP_FRAMEWORK_PATH", "dr-app-framework-cli")
+
 	cmd := afCommand("describe-framework", "-f", "/fw", "-t", ".")
 
 	assert.Equal(t, "uvx", filepath.Base(cmd.Path))
 
-	args := cmd.Args[1:] // cmd.Args[0] is the binary path
+	args := cmd.Args[1:]
 
 	assert.Equal(t, "--from", args[0])
-	assert.Equal(t, AFSourcePath, args[1])
+	assert.Equal(t, "dr-app-framework-cli", args[1])
 	assert.Equal(t, "dr-app-framework", args[2])
 	assert.Equal(t, "describe-framework", args[3])
 	assert.Equal(t, "-f", args[4])
@@ -43,11 +69,14 @@ func TestAfCommand_BasicForm(t *testing.T) {
 }
 
 func TestAfCommand_AddModule(t *testing.T) {
+	t.Setenv("DR_APP_FRAMEWORK_PATH", "/some/local/path")
+
 	cmd := afCommand("add-module", "-m", "core.agent", "-l", "core.agent.1", "-f", "/fw", "-t", ".")
 
 	args := cmd.Args[1:]
 
-	assert.Equal(t, "add-module", args[3])
+	// uv run --project <path> dr-app-framework add-module ...  → subcmd is at index 4
+	assert.Equal(t, "add-module", args[4])
 	assert.Contains(t, args, "-m")
 	assert.Contains(t, args, "core.agent")
 	assert.Contains(t, args, "-l")
