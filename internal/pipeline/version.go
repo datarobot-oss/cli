@@ -43,6 +43,7 @@ type GraphNode struct {
 	Source         *string `json:"source,omitempty"`
 	ResourceBundle any     `json:"resourceBundle,omitempty"`
 	TaskGroupID    any     `json:"taskGroupId,omitempty"`
+	TaskID         *string `json:"taskId,omitempty"`
 }
 
 // GraphEdge mirrors PipelineGraphEdge. Source and Target are integer node IDs.

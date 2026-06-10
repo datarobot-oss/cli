@@ -128,10 +128,16 @@ func printGraphHuman(g pipeline.Graph) {
 
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(writer, "  ID\tTYPE\tNAME")
+	fmt.Fprintln(writer, "  ID\tTYPE\tNAME\tTASK ID")
 
 	for _, n := range g.Nodes {
-		fmt.Fprintf(writer, "  %d\t%s\t%s\n", n.ID, n.Type, n.Name)
+		taskID := "—"
+
+		if n.TaskID != nil {
+			taskID = *n.TaskID
+		}
+
+		fmt.Fprintf(writer, "  %d\t%s\t%s\t%s\n", n.ID, n.Type, n.Name, taskID)
 	}
 
 	_ = writer.Flush()
