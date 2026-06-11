@@ -92,6 +92,8 @@ var expectedWorkloadTrackedCommands = []string{
 	"workload start",
 	"workload stop",
 	"workload status",
+	"workload endpoint",
+	"workload logs",
 }
 
 // TestTelemetryWiring_AllWorkloadCommandsTracked walks the workload

@@ -660,3 +660,75 @@ func TestRenderWorkloadStatus_JSONShape(t *testing.T) {
 
 	assert.JSONEq(t, `{"id": "wl-1", "status": "errored"}`, output)
 }
+
+func makeTestLogEntry(ts, level, message string) WorkloadLogEntry {
+	return WorkloadLogEntry{Timestamp: ts, Level: level, Message: message}
+}
+
+func TestRenderWorkloadLogs_TextFormat(t *testing.T) {
+	entries := []WorkloadLogEntry{
+		makeTestLogEntry("2026-06-11 14:04:14+00:00", "info", "started"),
+		makeTestLogEntry("2026-06-11 14:04:15+00:00", "error", "boom"),
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogs(OutputFormatText, entries))
+	})
+
+	assert.Contains(t, output, "[INFO] 2026-06-11 14:04:14+00:00 started")
+	assert.Contains(t, output, "[ERROR] 2026-06-11 14:04:15+00:00 boom")
+}
+
+func TestRenderWorkloadLogs_TextEmpty(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogs(OutputFormatText, nil))
+	})
+
+	assert.Equal(t, "No logs found.\n", output)
+}
+
+func TestRenderWorkloadLogs_JSONAlwaysArray(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogs(OutputFormatJSON, nil))
+	})
+
+	// A regression that emits `null` instead of a JSON array must fail here.
+	assert.JSONEq(t, `[]`, output)
+}
+
+func TestRenderWorkloadLogs_JSONPassthrough(t *testing.T) {
+	entries := []WorkloadLogEntry{makeTestLogEntry("2026-06-11 14:04:14+00:00", "INFO", "hi")}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogs(OutputFormatJSON, entries))
+	})
+
+	assert.JSONEq(t,
+		`[{"timestamp": "2026-06-11 14:04:14+00:00", "level": "INFO", "message": "hi"}]`,
+		output)
+}
+
+func TestRenderWorkloadLogLine_Text(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogLine(OutputFormatText,
+			makeTestLogEntry("2026-06-11 14:04:14+00:00", "info", "hello")))
+	})
+
+	assert.Equal(t, "[INFO] 2026-06-11 14:04:14+00:00 hello\n", output)
+}
+
+func TestRenderWorkloadLogLine_JSONLineCompact(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadLogLine(OutputFormatJSON,
+			makeTestLogEntry("2026-06-11 14:04:14+00:00", "INFO", "hello")))
+	})
+
+	line := strings.TrimSuffix(output, "\n")
+
+	// One JSON object on a single line (JSON Lines): the absence of any
+	// internal newline is what distinguishes it from indented output.
+	assert.NotContains(t, line, "\n")
+	assert.JSONEq(t,
+		`{"timestamp": "2026-06-11 14:04:14+00:00", "level": "INFO", "message": "hello"}`,
+		line)
+}

@@ -512,3 +512,63 @@ func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
 
 	return nil
 }
+
+// RenderWorkloadLogs prints a workload's container logs. Text mode emits one
+// "[LEVEL] timestamp message" line each (the same shape as build logs); JSON
+// mode emits the entries as an array, always [] rather than null when empty.
+func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
+	if format == OutputFormatJSON {
+		if entries == nil {
+			entries = []WorkloadLogEntry{}
+		}
+
+		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("No logs found.")
+
+		return nil
+	}
+
+	for _, e := range entries {
+		fmt.Println(formatWorkloadLogLine(e))
+	}
+
+	return nil
+}
+
+func formatWorkloadLogLine(e WorkloadLogEntry) string {
+	level := strings.ToUpper(e.Level)
+	if level == "" {
+		level = "?"
+	}
+
+	if e.Timestamp == "" {
+		return fmt.Sprintf("[%s] %s", level, e.Message)
+	}
+
+	return fmt.Sprintf("[%s] %s %s", level, e.Timestamp, e.Message)
+}
+
+// RenderWorkloadLogLine prints a single log entry, for the streaming
+// `--wait` (follow) path where lines arrive one at a time. Text mode uses the
+// same "[LEVEL] timestamp message" shape as RenderWorkloadLogs; JSON mode
+// emits one compact object per line (JSON Lines), since a never-ending follow
+// stream cannot be one closed array.
+func RenderWorkloadLogLine(format OutputFormat, e WorkloadLogEntry) error {
+	if format == OutputFormatJSON {
+		data, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(data))
+
+		return nil
+	}
+
+	fmt.Println(formatWorkloadLogLine(e))
+
+	return nil
+}
