@@ -15,11 +15,6 @@
 package create
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -37,15 +32,18 @@ func Cmd() *cobra.Command {
 		Short: "Create a workload artifact.",
 		Long: `Create a workload artifact in your DataRobot deployment infrastructure.
 
-This command reads a JSON spec from a file and POSTs it to the Workload API.
-The created artifact is returned and shown.
+This command reads a JSON or YAML spec from a file and POSTs it to the
+Workload API. The created artifact is returned and shown.
 
 By default, output is human-readable. Use --output-format json for machine-parseable output.
 
 Required fields: name, spec.containerGroups (>=1), and at least one container
-per group. All other fields are passed through to the Workload API verbatim,
-so any field accepted by the server is accepted here. The server validates
-field-level shape and returns a 422 with a JSON-path detail on a mismatch.
+per group. Any other field accepted by the server is accepted here. JSON
+specs are sent to the Workload API verbatim, byte-for-byte. YAML specs are
+converted to JSON using standard YAML typing rules before sending: quote
+values that must stay strings (for example "0644" or "1.10"), and unquoted
+dates are sent as RFC3339 timestamps. The server validates field-level
+shape and returns a 422 with a JSON-path detail on a mismatch.
 
 Container lifecycles:
 
@@ -88,11 +86,12 @@ Minimal build-from-source example (provided Dockerfile):
 
 Example:
   dr workload artifact create --spec-file spec.json
-  dr workload artifact create --spec-file spec.json --output-format json`,
+  dr workload artifact create --spec-file spec.yaml
+  dr workload artifact create --spec-file spec.yaml --output-format json`,
 		Args:    cobra.NoArgs,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			payload, err := readSpecFile(specFile)
+			payload, err := workload.ReadSpecFile(specFile)
 			if err != nil {
 				return err
 			}
@@ -118,7 +117,7 @@ Example:
 	}
 
 	workload.AddOutputFlag(cmd, &outputFormat)
-	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON spec file (required)")
+	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON or YAML spec file (required)")
 	_ = cmd.MarkFlagRequired("spec-file")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
@@ -128,17 +127,4 @@ Example:
 	})
 
 	return cmd
-}
-
-func readSpecFile(path string) (json.RawMessage, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file not found: %s", path)
-		}
-
-		return nil, err
-	}
-
-	return json.RawMessage(data), nil
 }

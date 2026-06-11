@@ -18,6 +18,10 @@ import (
 	"github.com/datarobot/cli/cmd/workload/artifact"
 	"github.com/datarobot/cli/cmd/workload/build"
 	"github.com/datarobot/cli/cmd/workload/code"
+	"github.com/datarobot/cli/cmd/workload/create"
+	"github.com/datarobot/cli/cmd/workload/del"
+	"github.com/datarobot/cli/cmd/workload/get"
+	"github.com/datarobot/cli/cmd/workload/list"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -36,6 +40,13 @@ Manage and monitor workloads in your deployment infrastructure.`,
 	features.SetGate(cmd, "workload")
 
 	cmd.AddCommand(
+		// The workload itself is the primary resource: direct verbs, like
+		// `dr pipeline create|get|...`.
+		create.Cmd(),
+		del.Cmd(),
+		get.Cmd(),
+		list.Cmd(),
+		// Sub-resources keep their noun groups.
 		artifact.Cmd(),
 		build.Cmd(),
 		code.Cmd(),

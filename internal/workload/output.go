@@ -330,6 +330,115 @@ func formatLogLine(entry BuildLogEntry) string {
 	return fmt.Sprintf("[%s] %s %s", level, asctime, entry.Message)
 }
 
+func RenderWorkload(format OutputFormat, workload Workload) error {
+	if format == OutputFormatJSON {
+		return printWorkloadJSON(workload)
+	}
+
+	printWorkloadDetails(workload)
+
+	return nil
+}
+
+func RenderWorkloads(format OutputFormat, workloads []Workload) error {
+	if format == OutputFormatJSON {
+		return printWorkloadsJSON(workloads)
+	}
+
+	printWorkloadsTable(workloads)
+
+	return nil
+}
+
+func printWorkloadJSON(workload Workload) error {
+	data, err := json.MarshalIndent(NewWorkloadOutput(workload), "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+
+	return nil
+}
+
+func printWorkloadsJSON(workloads []Workload) error {
+	outputs := make([]WorkloadOutput, 0, len(workloads))
+
+	for _, w := range workloads {
+		outputs = append(outputs, NewWorkloadOutput(w))
+	}
+
+	data, err := json.MarshalIndent(outputs, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+
+	return nil
+}
+
+func printWorkloadDetails(workload Workload) {
+	endpoint := workload.Endpoint
+	if endpoint == "" {
+		endpoint = emptyValuePlaceholder
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintf(w, "ID:\t%s\n", workload.ID)
+	fmt.Fprintf(w, "Name:\t%s\n", workload.Name)
+	fmt.Fprintf(w, "Status:\t%s\n", workload.Status)
+	fmt.Fprintf(w, "Endpoint:\t%s\n", endpoint)
+	fmt.Fprintf(w, "Type:\t%s\n", workload.Type)
+	fmt.Fprintf(w, "Importance:\t%s\n", workload.Importance)
+	fmt.Fprintf(w, "Artifact ID:\t%s\n", workload.ArtifactID)
+	fmt.Fprintf(w, "Created:\t%s\n", workload.CreatedAt.UTC().Format(timestampFormat))
+	fmt.Fprintf(w, "Updated:\t%s\n", workload.UpdatedAt.UTC().Format(timestampFormat))
+
+	w.Flush()
+}
+
+func printWorkloadsTable(workloads []Workload) {
+	if len(workloads) == 0 {
+		fmt.Println("No workloads found.")
+
+		return
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+
+	dimStyle := tui.DimStyle.Padding(0, 1)
+
+	headers := []string{"WORKLOAD ID", "NAME", "STATUS", "TYPE", "IMPORTANCE", "UPDATED"}
+
+	updatedCol := slices.Index(headers, "UPDATED")
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			if col == updatedCol {
+				return dimStyle
+			}
+
+			return cellStyle
+		}).
+		Headers(headers...)
+
+	for _, w := range workloads {
+		updated := w.UpdatedAt.UTC().Format(timestampFormat)
+
+		t.Row(w.ID, w.Name, w.Status, w.Type, w.Importance, updated)
+	}
+
+	fmt.Fprintln(os.Stdout, t.Render())
+}
+
 func printArtifactsTable(artifacts []Artifact) {
 	if len(artifacts) == 0 {
 		fmt.Println("No artifacts found.")

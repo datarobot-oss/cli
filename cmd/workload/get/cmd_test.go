@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package create
+package get
 
 import (
 	"testing"
@@ -21,31 +21,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Spec-file reading (not-found, JSON passthrough, YAML conversion) is
-// covered by internal/workload's ReadSpecFile tests.
-
-func TestCmd_RejectsArgs(t *testing.T) {
+func TestCmd_RequiresArg(t *testing.T) {
 	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", "x.json", "unexpected-arg"})
-
-	require.Error(t, cmd.Execute())
-}
-
-func TestCmd_MissingSpecFile(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `required flag(s) "spec-file" not set`)
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", "x.json", "--output-format", "yaml"})
+	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0", "--output-format", "yaml"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
