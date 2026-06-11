@@ -81,15 +81,12 @@ with your default shell.
 						brewReinstallCmd.Stdout = os.Stdout
 						brewReinstallCmd.Stderr = os.Stderr
 
-						if err := brewReinstallCmd.Run(); err == nil {
-							// Reinstall succeeded, we are done
-							return nil
+						if err := brewReinstallCmd.Run(); err != nil {
+							fmt.Fprintln(os.Stderr, "Error: ", err)
+							return err
 						}
-						// `brew reinstall` failed (e.g. the GitHub release was
-						// deleted and the cask download URL now returns 404).
-						// Fall through to the install script
-						fmt.Fprintf(os.Stderr, "Warning: brew reinstall --cask dr-cli failed: %v\n", err)
-						fmt.Fprintln(os.Stderr, "Falling back to install script...")
+
+						return nil
 					}
 				}
 			}
