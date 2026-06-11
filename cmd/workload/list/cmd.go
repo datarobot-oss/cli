@@ -21,7 +21,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -64,15 +63,8 @@ Example:
 				return err
 			}
 
-			var workloads []workload.Workload
-
-			if err := tui.RunWithSpinner("Fetching workloads…", func() error {
-				var listErr error
-
-				workloads, listErr = workload.ListWorkloads(limit, parsedStatuses)
-
-				return listErr
-			}); err != nil {
+			workloads, err := workload.ListWorkloads(limit, parsedStatuses)
+			if err != nil {
 				return err
 			}
 

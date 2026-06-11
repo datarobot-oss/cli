@@ -32,7 +32,6 @@ import (
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
-	"github.com/datarobot/cli/tui"
 )
 
 const (
@@ -77,10 +76,11 @@ func runDownload(out io.Writer, format workload.OutputFormat, dir, verArg string
 		return err
 	}
 
-	if err := tui.RunWithSpinner(
-		fmt.Sprintf("Downloading %d file(s)…", len(files)),
-		func() error { return stageAndInstall(deps.Files, pre, parent, files, totalSize, startedAt) },
-	); err != nil {
+	// Progress goes to stderr (same as `build trigger`) so stdout stays
+	// reserved for the result document.
+	fmt.Fprintf(os.Stderr, "Downloading %d file(s)…\n", len(files))
+
+	if err := stageAndInstall(deps.Files, pre, parent, files, totalSize, startedAt); err != nil {
 		return err
 	}
 

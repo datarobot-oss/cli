@@ -18,7 +18,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -48,15 +47,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			var wl *workload.Workload
-
-			if err := tui.RunWithSpinner("Fetching workload…", func() error {
-				var getErr error
-
-				wl, getErr = workload.GetWorkload(args[0])
-
-				return getErr
-			}); err != nil {
+			wl, err := workload.GetWorkload(args[0])
+			if err != nil {
 				return err
 			}
 
