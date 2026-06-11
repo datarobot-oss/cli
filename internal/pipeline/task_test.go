@@ -38,7 +38,9 @@ func TestGetTask_DraftURLShape(t *testing.T) {
 			"name":"add",
 			"parameters":[{"name":"x","annotation":"int"},{"name":"y","annotation":"int"}],
 			"inputs":null,
-			"source":"def add(x: int, y: int) -> int:\n    return x + y"
+			"source":"def add(x: int, y: int) -> int:\n    return x + y",
+			"resourceBundle":null,
+			"taskGroupId":null
 		}`))
 	}))
 
@@ -57,6 +59,8 @@ func TestGetTask_DraftURLShape(t *testing.T) {
 	require.NotNil(t, got.Parameters[0].Annotation)
 	assert.Equal(t, "int", *got.Parameters[0].Annotation)
 	assert.Nil(t, got.Inputs)
+	assert.Nil(t, got.ResourceBundle)
+	assert.Nil(t, got.TaskGroupID)
 }
 
 func TestGetTask_LockedURLShape(t *testing.T) {
@@ -74,7 +78,9 @@ func TestGetTask_LockedURLShape(t *testing.T) {
 			"name":"add",
 			"parameters":[{"name":"x","annotation":"int"}],
 			"inputs":{"a":100,"b":200},
-			"source":"def add(x: int) -> int:\n    return x"
+			"source":"def add(x: int) -> int:\n    return x",
+			"resourceBundle":null,
+			"taskGroupId":null
 		}`))
 	}))
 

@@ -79,6 +79,37 @@ func TestToTaskJSON_JSONKeysUseCliVocabulary(t *testing.T) {
 	assert.NotContains(t, raw, "id", "wire 'id' must not appear in CLI output")
 	assert.NotContains(t, raw, "pipelineId")
 	assert.NotContains(t, raw, "versionId")
+	assert.NotContains(t, raw, "resourceBundle", "camelCase wire key must not appear in CLI output")
+	assert.NotContains(t, raw, "taskGroupId", "camelCase wire key must not appear in CLI output")
+}
+
+func TestToTaskJSON_NewFieldsOmittedWhenNil(t *testing.T) {
+	tk := sampleTask()
+	tk.ResourceBundle = nil
+	tk.TaskGroupID = nil
+
+	data, err := json.Marshal(toTaskJSON(tk))
+	require.NoError(t, err)
+
+	var raw map[string]any
+
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.NotContains(t, raw, "resource_bundle", "omitempty: nil ResourceBundle must be absent")
+	assert.NotContains(t, raw, "task_group_id", "omitempty: nil TaskGroupID must be absent")
+}
+
+func TestToTaskJSON_NewFieldsPassedThrough(t *testing.T) {
+	grp := 7
+	tk := sampleTask()
+	tk.ResourceBundle = map[string]any{"cpu": "2", "memory": "4Gi"}
+	tk.TaskGroupID = &grp
+
+	j := toTaskJSON(tk)
+
+	require.NotNil(t, j.ResourceBundle)
+	assert.Equal(t, "2", j.ResourceBundle["cpu"])
+	require.NotNil(t, j.TaskGroupID)
+	assert.Equal(t, 7, *j.TaskGroupID)
 }
 
 // ── RenderTask ───────────────────────────────────────────────────────────────

@@ -35,14 +35,18 @@ type TaskParameter struct {
 // PipelineTask mirrors TaskResponse from the pipelines-api.
 // The wire-level "id" is stored as TaskID to match the CLI vocabulary used
 // across other pipeline resource types (InputID, RunID, etc.).
+// ResourceBundle and TaskGroupID are null until the executor AST-extraction
+// and task-grouping features land (pipelines-api CMPT-6040).
 type PipelineTask struct {
-	TaskID     string          `json:"id"`
-	PipelineID string          `json:"pipelineId"`
-	VersionID  *int            `json:"versionId,omitempty"`
-	Name       string          `json:"name"`
-	Parameters []TaskParameter `json:"parameters"`
-	Inputs     map[string]any  `json:"inputs,omitempty"`
-	Source     string          `json:"source"`
+	TaskID         string          `json:"id"`
+	PipelineID     string          `json:"pipelineId"`
+	VersionID      *int            `json:"versionId,omitempty"`
+	Name           string          `json:"name"`
+	Parameters     []TaskParameter `json:"parameters"`
+	Inputs         map[string]any  `json:"inputs,omitempty"`
+	Source         string          `json:"source"`
+	ResourceBundle map[string]any  `json:"resourceBundle,omitempty"`
+	TaskGroupID    *int            `json:"taskGroupId,omitempty"`
 }
 
 // GetTask fetches per-task detail from the pipelines-api. For draft scope

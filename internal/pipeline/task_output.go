@@ -35,13 +35,15 @@ type taskParamJSON struct {
 // taskJSON is the CLI-facing DTO used for `--output-format json`. It remaps
 // camelCase wire keys to snake_case to match the other pipeline output DTOs.
 type taskJSON struct {
-	TaskID     string          `json:"task_id"`
-	PipelineID string          `json:"pipeline_id"`
-	VersionID  *int            `json:"version_id,omitempty"`
-	Name       string          `json:"name"`
-	Parameters []taskParamJSON `json:"parameters"`
-	Inputs     map[string]any  `json:"inputs,omitempty"`
-	Source     string          `json:"source"`
+	TaskID         string          `json:"task_id"`
+	PipelineID     string          `json:"pipeline_id"`
+	VersionID      *int            `json:"version_id,omitempty"`
+	Name           string          `json:"name"`
+	Parameters     []taskParamJSON `json:"parameters"`
+	Inputs         map[string]any  `json:"inputs,omitempty"`
+	Source         string          `json:"source"`
+	ResourceBundle map[string]any  `json:"resource_bundle,omitempty"`
+	TaskGroupID    *int            `json:"task_group_id,omitempty"`
 }
 
 func toTaskJSON(t PipelineTask) taskJSON {
@@ -52,13 +54,15 @@ func toTaskJSON(t PipelineTask) taskJSON {
 	}
 
 	return taskJSON{
-		TaskID:     t.TaskID,
-		PipelineID: t.PipelineID,
-		VersionID:  t.VersionID,
-		Name:       t.Name,
-		Parameters: params,
-		Inputs:     t.Inputs,
-		Source:     t.Source,
+		TaskID:         t.TaskID,
+		PipelineID:     t.PipelineID,
+		VersionID:      t.VersionID,
+		Name:           t.Name,
+		Parameters:     params,
+		Inputs:         t.Inputs,
+		Source:         t.Source,
+		ResourceBundle: t.ResourceBundle,
+		TaskGroupID:    t.TaskGroupID,
 	}
 }
 
