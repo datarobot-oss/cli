@@ -214,7 +214,7 @@ func TestWaitForWorkloadStatus_ErroredReturnsWorkloadAndError(t *testing.T) {
 	wl, err := WaitForWorkloadStatus("wl-1", time.Millisecond, time.Minute, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "settled with status errored")
-	assert.Contains(t, err.Error(), "dr workload events wl-1")
+	assert.Contains(t, err.Error(), "dr workload get wl-1")
 	require.NotNil(t, wl)
 	assert.Equal(t, WorkloadStatusErrored, wl.Status)
 }
@@ -260,11 +260,67 @@ func TestWaitForWorkloadStatus_Timeout(t *testing.T) {
 	assert.Equal(t, WorkloadStatusLaunching, wl.Status)
 }
 
-func TestWaitForWorkloadStatus_GetErrorAborts(t *testing.T) {
+func TestWaitForWorkloadStatus_RetriesTransientErrorThenSucceeds(t *testing.T) {
 	installSkipAuth(t)
 
+	calls := 0
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		// The first two polls hit a transient gateway error; the wait must
+		// recover rather than abort on the first blip.
+		if calls <= 2 {
+			w.WriteHeader(http.StatusBadGateway)
+
+			return
+		}
+
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", WorkloadStatusRunning))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkloadStatus("wl-1", time.Millisecond, time.Minute, nil)
+	require.NoError(t, err)
+	assert.Equal(t, WorkloadStatusRunning, wl.Status)
+	assert.Equal(t, 3, calls)
+}
+
+func TestWaitForWorkloadStatus_AbortsAfterSustainedTransientErrors(t *testing.T) {
+	installSkipAuth(t)
+
+	calls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
 		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkloadStatus("wl-1", time.Millisecond, time.Minute, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "consecutive transient errors")
+	assert.Nil(t, wl)
+	// One initial poll plus retries until the cap is exceeded.
+	assert.Equal(t, maxTransientPollErrors+1, calls)
+}
+
+func TestWaitForWorkloadStatus_4xxAbortsImmediately(t *testing.T) {
+	installSkipAuth(t)
+
+	calls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusNotFound)
 	}))
 
 	defer srv.Close()
@@ -275,4 +331,6 @@ func TestWaitForWorkloadStatus_GetErrorAborts(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "poll workload wl-1")
 	assert.Nil(t, wl)
+	// A 4xx is terminal: a deleted workload is not coming back.
+	assert.Equal(t, 1, calls)
 }

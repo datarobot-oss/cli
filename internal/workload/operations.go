@@ -15,7 +15,9 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -92,6 +94,12 @@ func IsSettledWorkloadStatus(status string) bool {
 	return false
 }
 
+// maxTransientPollErrors bounds how many consecutive transient failures
+// (5xx, 429, or network errors) WaitForWorkloadStatus tolerates before
+// giving up. The counter resets on any successful poll, so it only trips on
+// a sustained outage, not on isolated gateway blips during a long --wait.
+const maxTransientPollErrors = 5
+
 // WaitForWorkloadStatus polls GetWorkload on interval until
 // IsSettledWorkloadStatus reports the status settled or the deadline
 // expires. Settling on errored returns the final workload alongside an
@@ -99,6 +107,12 @@ func IsSettledWorkloadStatus(status string) bool {
 // waiting after stop legitimately lands on stopped) is a plain success.
 // onTick may be nil and is invoked after each successful poll for passive
 // observation, e.g. printing status transitions.
+//
+// Transient poll failures are retried rather than aborting the whole wait:
+// a single 502 over a multi-minute poll must not fail a CI deploy gate. A
+// 4xx is terminal (a 404 means the workload is gone, a 403 means auth
+// changed), and a sustained run of transient errors past
+// maxTransientPollErrors still gives up.
 func WaitForWorkloadStatus(
 	workloadID string,
 	interval, timeout time.Duration,
@@ -106,11 +120,31 @@ func WaitForWorkloadStatus(
 ) (*Workload, error) {
 	deadline := time.Now().Add(timeout)
 
+	var transientErrors int
+
 	for {
 		wl, err := GetWorkload(workloadID)
 		if err != nil {
-			return nil, fmt.Errorf("poll workload %s: %w", workloadID, err)
+			if !isTransientPollError(err) {
+				return nil, fmt.Errorf("poll workload %s: %w", workloadID, err)
+			}
+
+			transientErrors++
+
+			if transientErrors > maxTransientPollErrors {
+				return nil, fmt.Errorf("poll workload %s: %d consecutive transient errors, last: %w", workloadID, transientErrors, err)
+			}
+
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("timeout waiting for workload %s after %s: %w", workloadID, timeout, err)
+			}
+
+			time.Sleep(interval)
+
+			continue
 		}
+
+		transientErrors = 0
 
 		if onTick != nil {
 			onTick(wl)
@@ -118,7 +152,9 @@ func WaitForWorkloadStatus(
 
 		if IsSettledWorkloadStatus(wl.Status) {
 			if wl.Status == WorkloadStatusErrored {
-				return wl, fmt.Errorf("workload %s settled with status %s; run 'dr workload events %s' to inspect", workloadID, wl.Status, workloadID)
+				// Points at `dr workload get` until the events command ships;
+				// the events PR flips this hint when the command exists.
+				return wl, fmt.Errorf("workload %s settled with status %s; run 'dr workload get %s' to inspect", workloadID, wl.Status, workloadID)
 			}
 
 			return wl, nil
@@ -130,4 +166,19 @@ func WaitForWorkloadStatus(
 
 		time.Sleep(interval)
 	}
+}
+
+// isTransientPollError reports whether a GetWorkload failure is worth
+// retrying during a poll loop: server-side 5xx and 429 rate limits, plus
+// non-HTTP errors (connection resets, timeouts). Client 4xx errors are
+// terminal -- a retry will not bring back a deleted workload or fix lost
+// auth.
+func isTransientPollError(err error) bool {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode >= 500 || httpErr.StatusCode == http.StatusTooManyRequests
+	}
+
+	return true
 }

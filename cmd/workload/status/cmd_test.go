@@ -64,3 +64,15 @@ func TestCmd_HidesPollFlags(t *testing.T) {
 	assert.True(t, pollIntervalFlag.Hidden)
 	assert.True(t, pollTimeoutFlag.Hidden)
 }
+
+func TestCmd_UsesStatusPollDefaults(t *testing.T) {
+	cmd := Cmd()
+
+	// Status settles in minutes, so it polls less often and times out far
+	// sooner than the build commands' 2s/30m defaults.
+	interval, _ := cmd.Flags().GetDuration("poll-interval")
+	timeout, _ := cmd.Flags().GetDuration("poll-timeout")
+
+	assert.Equal(t, statusPollInterval, interval)
+	assert.Equal(t, statusPollTimeout, timeout)
+}

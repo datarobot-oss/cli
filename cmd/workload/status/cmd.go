@@ -16,12 +16,21 @@ package status
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/datarobot/cli/cmd/workload/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
+)
+
+const (
+	// A workload settles in minutes (or fails to), so status polls less
+	// often and gives up far sooner than the build commands' defaults,
+	// which are sized for slow container builds.
+	statusPollInterval = 5 * time.Second
+	statusPollTimeout  = 5 * time.Minute
 )
 
 func Cmd() *cobra.Command {
@@ -61,7 +70,8 @@ Example:
 	}
 
 	workload.AddOutputFlag(cmd, &outputFormat)
-	pollflags.Register(cmd, &poll)
+	pollflags.RegisterWithDefaults(cmd, &poll, statusPollInterval, statusPollTimeout,
+		"Poll until the workload settles.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -110,11 +120,16 @@ func runStatus(
 		return waitErr
 	}
 
-	if err := workload.RenderWorkloadStatus(outputFormat, *wl); err != nil {
-		return err
+	// Only a settled status is rendered: a poll timeout hands back the last
+	// in-flight workload, and printing that on stdout would give script
+	// captures a non-final value that looks like a final one.
+	if workload.IsSettledWorkloadStatus(wl.Status) {
+		if err := workload.RenderWorkloadStatus(outputFormat, *wl); err != nil {
+			return err
+		}
 	}
 
-	// The settled status was already rendered; an errored settle or poll
-	// timeout still fails the command for script callers.
+	// An errored settle or poll timeout still fails the command for script
+	// callers.
 	return waitErr
 }
