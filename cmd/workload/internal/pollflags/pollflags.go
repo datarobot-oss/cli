@@ -13,9 +13,10 @@
 // limitations under the License.
 
 // Package pollflags centralizes the --wait, --poll-interval, and
-// --poll-timeout flags shared between `dr workload build trigger` and
-// `dr workload build get`. Single source of truth so the two commands
-// cannot drift out of sync on defaults or names.
+// --poll-timeout flags shared between the polling workload commands
+// (`dr workload build trigger`, `dr workload build get`, and
+// `dr workload status`). Single source of truth so the commands cannot
+// drift out of sync on defaults or names.
 
 package pollflags
 
@@ -42,7 +43,7 @@ type Set struct {
 // Register adds --wait, --poll-interval (hidden), and --poll-timeout
 // (hidden) to cmd, binding them into s. Returns s for chaining.
 func Register(cmd *cobra.Command, s *Set) *Set {
-	cmd.Flags().BoolVar(&s.Wait, "wait", false, "Poll until the build reaches a terminal status.")
+	cmd.Flags().BoolVar(&s.Wait, "wait", false, "Poll until a terminal status is reached.")
 	cmd.Flags().DurationVar(&s.Interval, "poll-interval", DefaultPollInterval, "Interval between status polls.")
 	cmd.Flags().DurationVar(&s.Timeout, "poll-timeout", DefaultPollTimeout, "Maximum time to wait before giving up.")
 	_ = cmd.Flags().MarkHidden("poll-interval")
