@@ -613,3 +613,50 @@ func TestPrintWorkloadsTable_Empty(t *testing.T) {
 
 	assert.Equal(t, "No workloads found.\n", output)
 }
+
+func TestRenderWorkloadOperation_TextPrintsServerMessage(t *testing.T) {
+	resp := WorkloadOperationResponse{
+		Status:     "Proton is already stopped",
+		WorkloadID: "wl-1",
+		TrackVia:   "/api/v2/workloads/wl-1",
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadOperation(OutputFormatText, resp))
+	})
+
+	assert.Equal(t, "Proton is already stopped\n", output)
+}
+
+func TestRenderWorkloadOperation_JSON(t *testing.T) {
+	resp := WorkloadOperationResponse{
+		Status:     "started",
+		WorkloadID: "wl-1",
+		TrackVia:   "/api/v2/workloads/wl-1",
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadOperation(OutputFormatJSON, resp))
+	})
+
+	assert.JSONEq(t,
+		`{"status": "started", "workloadId": "wl-1", "trackVia": "/api/v2/workloads/wl-1"}`,
+		output)
+}
+
+func TestRenderWorkloadStatus_TextBare(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadStatus(OutputFormatText, makeTestWorkload("wl-1", "a", "running")))
+	})
+
+	// The bare status value is the script-capture contract.
+	assert.Equal(t, "running\n", output)
+}
+
+func TestRenderWorkloadStatus_JSONShape(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderWorkloadStatus(OutputFormatJSON, makeTestWorkload("wl-1", "a", "errored")))
+	})
+
+	assert.JSONEq(t, `{"id": "wl-1", "status": "errored"}`, output)
+}

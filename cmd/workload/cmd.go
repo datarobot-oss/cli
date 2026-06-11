@@ -22,6 +22,9 @@ import (
 	"github.com/datarobot/cli/cmd/workload/del"
 	"github.com/datarobot/cli/cmd/workload/get"
 	"github.com/datarobot/cli/cmd/workload/list"
+	"github.com/datarobot/cli/cmd/workload/start"
+	"github.com/datarobot/cli/cmd/workload/status"
+	"github.com/datarobot/cli/cmd/workload/stop"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +49,9 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		del.Cmd(),
 		get.Cmd(),
 		list.Cmd(),
+		start.Cmd(),
+		status.Cmd(),
+		stop.Cmd(),
 		// Sub-resources keep their noun groups.
 		artifact.Cmd(),
 		build.Cmd(),
