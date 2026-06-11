@@ -18,7 +18,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -43,15 +42,8 @@ Example:
 		Args:    cobra.ExactArgs(1),
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(_ *cobra.Command, args []string) error {
-			var artifact *workload.Artifact
-
-			if err := tui.RunWithSpinner("Fetching artifact…", func() error {
-				var getErr error
-
-				artifact, getErr = workload.GetArtifact(args[0])
-
-				return getErr
-			}); err != nil {
+			artifact, err := workload.GetArtifact(args[0])
+			if err != nil {
 				return err
 			}
 

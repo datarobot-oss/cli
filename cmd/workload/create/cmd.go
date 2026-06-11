@@ -18,7 +18,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -104,15 +103,8 @@ Example:
 				return err
 			}
 
-			var wl *workload.Workload
-
-			if err := tui.RunWithSpinner("Creating workload…", func() error {
-				var createErr error
-
-				wl, createErr = workload.CreateWorkload(payload)
-
-				return createErr
-			}); err != nil {
+			wl, err := workload.CreateWorkload(payload)
+			if err != nil {
 				return err
 			}
 
