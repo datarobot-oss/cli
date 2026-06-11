@@ -77,11 +77,11 @@ with your default shell.
 							return err
 						}
 
-						brewUpgradeCmd := exec.Command(brewPath, "upgrade", "--cask", "dr-cli")
-						brewUpgradeCmd.Stdout = os.Stdout
-						brewUpgradeCmd.Stderr = os.Stderr
+						brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
+						brewReinstallCmd.Stdout = os.Stdout
+						brewReinstallCmd.Stderr = os.Stderr
 
-						if err := brewUpgradeCmd.Run(); err != nil {
+						if err := brewReinstallCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
 							return err
 						}
