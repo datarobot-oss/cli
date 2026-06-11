@@ -41,10 +41,9 @@ Required fields: name, spec.containerGroups (>=1), and at least one container
 per group. Any other field accepted by the server is accepted here. JSON
 specs are sent to the Workload API verbatim, byte-for-byte. YAML specs are
 converted to JSON using standard YAML typing rules before sending: quote
-values that must stay strings (for example "0644" or "1.10"), unquoted
-dates are sent as RFC3339 timestamps, and only the first document of a
-multi-document file is read. The server validates field-level shape and
-returns a 422 with a JSON-path detail on a mismatch.
+values that must stay strings (for example "0644" or "1.10"), and unquoted
+dates are sent as RFC3339 timestamps. The server validates field-level
+shape and returns a 422 with a JSON-path detail on a mismatch.
 
 Container lifecycles:
 

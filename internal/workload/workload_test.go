@@ -341,6 +341,14 @@ func TestListWorkloads_FollowsNextAndTruncatesToLimit(t *testing.T) {
 	assert.Equal(t, "wl-3", workloads[2].ID)
 }
 
+func TestListWorkloads_RejectsNonPositiveLimit(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		_, err := ListWorkloads(limit, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be positive")
+	}
+}
+
 func TestDeleteWorkload_Success(t *testing.T) {
 	installSkipAuth(t)
 

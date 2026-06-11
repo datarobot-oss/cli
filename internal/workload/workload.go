@@ -229,6 +229,10 @@ type WorkloadList struct {
 const maxWorkloadPageSize = 100
 
 func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
+	}
+
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
 
