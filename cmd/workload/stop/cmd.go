@@ -38,8 +38,7 @@ so. The workload is not deleted and can be brought back with
 'dr workload start <workload-id>'.
 
 The acknowledgement message is printed on stdout. Use
-'dr workload status <workload-id> --wait' to block until the workload
-has settled.
+'dr workload status <workload-id>' to check the workload's progress.
 
 By default, output is human-readable. Use --output-format json for the
 full acknowledgement document.
@@ -63,7 +62,7 @@ Example:
 			// The follow-up hint goes to stderr so script captures of stdout
 			// stay limited to the server's acknowledgement message.
 			if outputFormat == workload.OutputFormatText {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Track progress with: dr workload status "+args[0]+" --wait")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+args[0])
 			}
 
 			return nil

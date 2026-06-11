@@ -66,3 +66,25 @@ func TestCmd_ParsesFollowFlag(t *testing.T) {
 func TestCmd_HidesPollInterval(t *testing.T) {
 	assert.True(t, Cmd().Flag("poll-interval").Hidden)
 }
+
+func TestCmd_RejectsInvalidLevel(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0", "--level", "eror"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid log level "eror"`)
+}
+
+func TestCmd_RejectsNonPositivePollInterval(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0", "--follow", "--poll-interval", "0s"})
+
+	// Rejected at flag-parse time by pollflags.PositiveDuration, before any
+	// request is made.
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a positive duration")
+}

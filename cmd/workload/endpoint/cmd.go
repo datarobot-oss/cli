@@ -30,9 +30,10 @@ func Cmd() *cobra.Command {
 		Long: `Print a workload's endpoint URL, and nothing else.
 
 The bare URL on stdout is the whole contract, so the command composes
-directly in scripts:
+directly in scripts. The URL ends with a trailing slash, so append
+sub-paths without a leading slash of their own:
 
-  curl "$(dr workload endpoint 68b0c1d2e3f4a5b6c7d8e9f0)/health"
+  curl "$(dr workload endpoint 68b0c1d2e3f4a5b6c7d8e9f0)health"
 
 The endpoint is a stable gateway URL assigned at creation; it serves
 traffic once the workload is running. The command fails when the

@@ -316,18 +316,22 @@ func printBuildsTable(builds []Build) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-func formatLogLine(entry BuildLogEntry) string {
-	level := entry.Levelname
+// formatLogParts renders the "[LEVEL] timestamp message" line shape shared
+// by build and workload logs, dropping the timestamp segment when absent.
+func formatLogParts(level, timestamp, message string) string {
 	if level == "" {
 		level = "?"
 	}
 
-	asctime := entry.Asctime
-	if asctime == "" {
-		return fmt.Sprintf("[%s] %s", level, entry.Message)
+	if timestamp == "" {
+		return fmt.Sprintf("[%s] %s", level, message)
 	}
 
-	return fmt.Sprintf("[%s] %s %s", level, asctime, entry.Message)
+	return fmt.Sprintf("[%s] %s %s", level, timestamp, message)
+}
+
+func formatLogLine(entry BuildLogEntry) string {
+	return formatLogParts(entry.Levelname, entry.Asctime, entry.Message)
 }
 
 func RenderWorkload(format OutputFormat, workload Workload) error {
@@ -513,9 +517,9 @@ func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
 	return nil
 }
 
-// RenderWorkloadLogs prints a workload's container logs. Text mode emits one
-// "[LEVEL] timestamp message" line each (the same shape as build logs); JSON
-// mode emits the entries as an array, always [] rather than null when empty.
+// RenderWorkloadLogs prints a workload's container logs: one
+// "[LEVEL] timestamp message" line each, or a JSON array (always [], never
+// null, when empty).
 func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
 	if format == OutputFormatJSON {
 		if entries == nil {
@@ -539,23 +543,13 @@ func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
 }
 
 func formatWorkloadLogLine(e WorkloadLogEntry) string {
-	level := strings.ToUpper(e.Level)
-	if level == "" {
-		level = "?"
-	}
-
-	if e.Timestamp == "" {
-		return fmt.Sprintf("[%s] %s", level, e.Message)
-	}
-
-	return fmt.Sprintf("[%s] %s %s", level, e.Timestamp, e.Message)
+	// OTEL levels arrive lowercase (build logs are already uppercase).
+	return formatLogParts(strings.ToUpper(e.Level), e.Timestamp, e.Message)
 }
 
-// RenderWorkloadLogLine prints a single log entry, for the streaming
-// `--wait` (follow) path where lines arrive one at a time. Text mode uses the
-// same "[LEVEL] timestamp message" shape as RenderWorkloadLogs; JSON mode
-// emits one compact object per line (JSON Lines), since a never-ending follow
-// stream cannot be one closed array.
+// RenderWorkloadLogLine prints a single log entry for the --follow stream:
+// the same text line as RenderWorkloadLogs, or one compact JSON object
+// (JSON Lines), since a never-ending stream cannot be one closed array.
 func RenderWorkloadLogLine(format OutputFormat, e WorkloadLogEntry) error {
 	if format == OutputFormatJSON {
 		data, err := json.Marshal(e)

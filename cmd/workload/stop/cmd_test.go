@@ -38,3 +38,13 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
 }
+
+func TestCmd_HasNoWaitFlag(t *testing.T) {
+	// stop is fire-and-ack; blocking lives only in the long-running build
+	// commands. `dr workload status` checks progress.
+	cmd := Cmd()
+
+	assert.Nil(t, cmd.Flag("wait"))
+	assert.Nil(t, cmd.Flag("poll-interval"))
+	assert.Nil(t, cmd.Flag("poll-timeout"))
+}
