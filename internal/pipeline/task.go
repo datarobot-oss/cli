@@ -23,7 +23,10 @@
 // payload. The same draft/locked URL split is used as for inputs and runs.
 package pipeline
 
-import "net/http"
+import (
+	"net/http"
+	"strconv"
+)
 
 // TaskParameter mirrors TaskParameter from the pipelines-api schema.
 // It holds a single parameter from a @task function signature.
@@ -34,11 +37,13 @@ type TaskParameter struct {
 
 // PipelineTask mirrors TaskResponse from the pipelines-api.
 // The wire-level "id" is stored as TaskID to match the CLI vocabulary used
-// across other pipeline resource types (InputID, RunID, etc.).
+// across other pipeline resource types (InputID, RunID, etc.). Task IDs are
+// small sequential integers (1-based) scoped per pipeline — the same shape
+// as version numbers.
 // ResourceBundle and TaskGroupID are null until the executor AST-extraction
 // and task-grouping features land (pipelines-api CMPT-6040).
 type PipelineTask struct {
-	TaskID         string          `json:"id"`
+	TaskID         int             `json:"id"`
 	PipelineID     string          `json:"pipelineId"`
 	VersionID      *int            `json:"versionId,omitempty"`
 	Name           string          `json:"name"`
@@ -52,8 +57,8 @@ type PipelineTask struct {
 // GetTask fetches per-task detail from the pipelines-api. For draft scope
 // the response always has Inputs=nil; for locked scope Inputs is the latest
 // VALID pipeline input payload or nil if none exists.
-func GetTask(pipelineID string, scope Scope, version *int, taskID string) (*PipelineTask, error) {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "tasks/"+taskID)
+func GetTask(pipelineID string, scope Scope, version *int, taskID int) (*PipelineTask, error) {
+	endpoint, err := EndpointFor(pipelineID, scope, version, "tasks/"+strconv.Itoa(taskID))
 	if err != nil {
 		return nil, err
 	}

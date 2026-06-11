@@ -35,7 +35,7 @@ type taskParamJSON struct {
 // taskJSON is the CLI-facing DTO used for `--output-format json`. It remaps
 // camelCase wire keys to snake_case to match the other pipeline output DTOs.
 type taskJSON struct {
-	TaskID         string          `json:"task_id"`
+	TaskID         int             `json:"task_id"`
 	PipelineID     string          `json:"pipeline_id"`
 	VersionID      *int            `json:"version_id,omitempty"`
 	Name           string          `json:"name"`
@@ -101,7 +101,7 @@ func PrintTaskHuman(t PipelineTask) {
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(w, "Task ID:\t%s\n", t.TaskID)
+	fmt.Fprintf(w, "Task ID:\t%d\n", t.TaskID)
 	fmt.Fprintf(w, "Pipeline ID:\t%s\n", t.PipelineID)
 	fmt.Fprintf(w, "Scope:\t%s\n", scope)
 	fmt.Fprintf(w, "Version:\t%s\n", versionDisplay)

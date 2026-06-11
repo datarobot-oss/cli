@@ -39,7 +39,7 @@ func TestCmd_Name(t *testing.T) {
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "t-1")
+	err := runCmd(t, "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
@@ -49,14 +49,26 @@ func TestCmd_RequiresPositional(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestCmd_RejectsNonNumericTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p", "abc123")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task-id must be a positive number")
+}
+
+func TestCmd_RejectsZeroTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p", "0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task-id must be a positive number")
+}
+
 func TestCmd_RejectsBadScopeCombo(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--scope", "locked", "t-1")
+	err := runCmd(t, "--pipeline", "p", "--scope", "locked", "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--version")
 }
 
 func TestCmd_RejectsInvalidOutputFormat(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--output-format", "yaml", "t-1")
+	err := runCmd(t, "--pipeline", "p", "--output-format", "yaml", "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }

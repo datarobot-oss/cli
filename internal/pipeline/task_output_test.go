@@ -27,7 +27,7 @@ func sampleTask() PipelineTask {
 	ann := "int"
 
 	return PipelineTask{
-		TaskID:     "t-1",
+		TaskID:     1,
 		PipelineID: "p-1",
 		VersionID:  &ver,
 		Name:       "add",
@@ -45,7 +45,7 @@ func sampleTask() PipelineTask {
 func TestToTaskJSON_RemapsWireFields(t *testing.T) {
 	j := toTaskJSON(sampleTask())
 
-	assert.Equal(t, "t-1", j.TaskID)
+	assert.Equal(t, 1, j.TaskID)
 	assert.Equal(t, "p-1", j.PipelineID)
 	require.NotNil(t, j.VersionID)
 	assert.Equal(t, 2, *j.VersionID)
@@ -122,7 +122,7 @@ func TestRenderTask_JSON(t *testing.T) {
 	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(out), &parsed))
-	assert.Equal(t, "t-1", parsed["task_id"])
+	assert.EqualValues(t, 1, parsed["task_id"])
 	assert.Equal(t, "add", parsed["name"])
 	assert.Equal(t, "def add(x: int, y: int) -> int:\n    return x + y", parsed["source"])
 }
@@ -130,7 +130,7 @@ func TestRenderTask_JSON(t *testing.T) {
 func TestRenderTask_Human(t *testing.T) {
 	out := captureStdout(t, func() { PrintTaskHuman(sampleTask()) })
 
-	assert.Contains(t, out, "t-1")
+	assert.Contains(t, out, "Task ID:")
 	assert.Contains(t, out, "locked")
 	assert.Contains(t, out, "add")
 	assert.Contains(t, out, "x")

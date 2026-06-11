@@ -28,11 +28,11 @@ func TestGetTask_DraftURLShape(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/p-1/tasks/t-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/tasks/1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"id":"t-1",
+			"id":1,
 			"pipelineId":"p-1",
 			"versionId":null,
 			"name":"add",
@@ -48,9 +48,9 @@ func TestGetTask_DraftURLShape(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := GetTask("p-1", ScopeDraft, nil, "t-1")
+	got, err := GetTask("p-1", ScopeDraft, nil, 1)
 	require.NoError(t, err)
-	assert.Equal(t, "t-1", got.TaskID)
+	assert.Equal(t, 1, got.TaskID)
 	assert.Equal(t, "p-1", got.PipelineID)
 	assert.Nil(t, got.VersionID)
 	assert.Equal(t, "add", got.Name)
@@ -68,11 +68,11 @@ func TestGetTask_LockedURLShape(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/tasks/t-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/tasks/1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"id":"t-1",
+			"id":1,
 			"pipelineId":"p-1",
 			"versionId":2,
 			"name":"add",
@@ -89,9 +89,9 @@ func TestGetTask_LockedURLShape(t *testing.T) {
 	installEndpoint(t, srv.URL)
 
 	v := 2
-	got, err := GetTask("p-1", ScopeLocked, &v, "t-1")
+	got, err := GetTask("p-1", ScopeLocked, &v, 1)
 	require.NoError(t, err)
-	assert.Equal(t, "t-1", got.TaskID)
+	assert.Equal(t, 1, got.TaskID)
 	require.NotNil(t, got.VersionID)
 	assert.Equal(t, 2, *got.VersionID)
 	assert.NotNil(t, got.Inputs)
@@ -110,7 +110,7 @@ func TestGetTask_404ReturnsHTTPError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetTask("p-1", ScopeDraft, nil, "t-missing")
+	_, err := GetTask("p-1", ScopeDraft, nil, 404)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 404")
 }
@@ -121,7 +121,7 @@ func TestGetTask_ParameterNilAnnotation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"id":"t-1",
+			"id":1,
 			"pipelineId":"p-1",
 			"name":"fn",
 			"parameters":[{"name":"x"}],
@@ -133,7 +133,7 @@ func TestGetTask_ParameterNilAnnotation(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := GetTask("p-1", ScopeDraft, nil, "t-1")
+	got, err := GetTask("p-1", ScopeDraft, nil, 1)
 	require.NoError(t, err)
 	require.Len(t, got.Parameters, 1)
 	assert.Nil(t, got.Parameters[0].Annotation)

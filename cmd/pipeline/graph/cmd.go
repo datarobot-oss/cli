@@ -134,7 +134,7 @@ func printGraphHuman(g pipeline.Graph) {
 		taskID := "—"
 
 		if n.TaskID != nil {
-			taskID = *n.TaskID
+			taskID = strconv.Itoa(*n.TaskID)
 		}
 
 		fmt.Fprintf(writer, "  %d\t%s\t%s\t%s\n", n.ID, n.Type, n.Name, taskID)

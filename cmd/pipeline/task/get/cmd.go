@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
@@ -40,7 +41,8 @@ func Cmd() *cobra.Command {
 		Long: `Display the source code, function signature, and (for locked versions)
 the latest pipeline input payload for a single task.
 
-Task IDs are returned by the pipeline graph command in the TASK ID column.
+Task IDs are small sequential numbers (1, 2, 3, ...) scoped to the pipeline,
+returned by the pipeline graph command in the TASK ID column.
 
 Scope is selected from the --scope/--version flags:
   - no flags                   -> draft task
@@ -49,9 +51,9 @@ Scope is selected from the --scope/--version flags:
   - --scope=locked --version=N -> locked task for version N
 
 Example:
-  dr pipeline task get --pipeline <id> <task-id>
-  dr pipeline task get --pipeline <id> --version=2 <task-id>
-  dr pipeline task get --pipeline <id> <task-id> --output-format json`,
+  dr pipeline task get --pipeline <id> 1
+  dr pipeline task get --pipeline <id> --version=2 1
+  dr pipeline task get --pipeline <id> 1 --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -60,12 +62,17 @@ Example:
 				return errors.New("--pipeline is required")
 			}
 
+			taskID, err := strconv.Atoi(args[0])
+			if err != nil || taskID < 1 {
+				return fmt.Errorf("task-id must be a positive number (e.g. 1), got %q", args[0])
+			}
+
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
 				return err
 			}
 
-			result, err := pipeline.GetTask(flags.PipelineID, scope, version, args[0])
+			result, err := pipeline.GetTask(flags.PipelineID, scope, version, taskID)
 			if err != nil {
 				return handleTaskNotFoundError(err, args[0])
 			}
