@@ -485,3 +485,30 @@ func printArtifactsTable(artifacts []Artifact) {
 
 	fmt.Fprintln(os.Stdout, t.Render())
 }
+
+// RenderWorkloadOperation renders the acknowledgement of an asynchronous
+// start/stop request. Text mode prints the server's human-readable outcome
+// message; JSON mode emits the full operation response document so scripts
+// keep the workloadId and trackVia handles.
+func RenderWorkloadOperation(format OutputFormat, resp WorkloadOperationResponse) error {
+	if format == OutputFormatJSON {
+		return printJSON(resp)
+	}
+
+	fmt.Println(resp.Status)
+
+	return nil
+}
+
+// RenderWorkloadStatus renders just the workload's status. Text mode prints
+// the bare status value so `dr workload status <id>` is directly usable in
+// scripts (symmetric with `dr workload endpoint` printing the bare URL).
+func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
+	if format == OutputFormatJSON {
+		return printJSON(WorkloadStatusOutput{ID: workload.ID, Status: workload.Status})
+	}
+
+	fmt.Println(workload.Status)
+
+	return nil
+}

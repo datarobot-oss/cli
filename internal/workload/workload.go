@@ -137,6 +137,14 @@ func NewWorkloadOutput(w Workload) WorkloadOutput {
 	}
 }
 
+// WorkloadStatusOutput is the stable JSON shape emitted by
+// `dr workload status --output-format json`; the full document stays the
+// domain of `dr workload get`.
+type WorkloadStatusOutput struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 type workloadCreateRequest struct {
 	Name       string          `json:"name"`
 	ArtifactID string          `json:"artifactId"`
