@@ -57,9 +57,7 @@ func Patch(url, info string, body any) (*http.Response, error) {
 
 	if !isPatchSuccess(resp.StatusCode) {
 		// Use ErrFromResp (as Post and Delete do) so patch failures carry
-		// the server's detail: artifacts PATCH replies 403 when the
-		// artifact is locked and 422 naming the incomplete build piece
-		// when a lock is rejected.
+		// the server's error detail instead of a bare status code.
 		return nil, ErrFromResp(resp, url)
 	}
 
