@@ -56,9 +56,9 @@ func Patch(url, info string, body any) (*http.Response, error) {
 	}
 
 	if !isPatchSuccess(resp.StatusCode) {
-		resp.Body.Close()
-
-		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
+		// Use ErrFromResp (as Post and Delete do) so patch failures carry
+		// the server's error detail instead of a bare status code.
+		return nil, ErrFromResp(resp, url)
 	}
 
 	return resp, err

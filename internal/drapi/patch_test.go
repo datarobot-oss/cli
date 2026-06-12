@@ -61,3 +61,24 @@ func TestPatchJSON_200WithBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "xyz", out.ID)
 }
+
+// TestPatchJSON_ErrorCarriesBodyDetail pins Patch to ErrFromResp on failure
+// so the server's error detail reaches the user instead of a bare status code.
+func TestPatchJSON_ErrorCarriesBodyDetail(t *testing.T) {
+	defer resetTokenForTest(t, "test-token")()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"detail":"resource is immutable"}`))
+	}))
+	defer server.Close()
+
+	err := PatchJSON(server.URL, "", map[string]string{"k": "v"}, nil)
+	require.Error(t, err)
+
+	var httpErr *HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusForbidden, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "resource is immutable")
+}
