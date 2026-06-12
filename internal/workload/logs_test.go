@@ -236,6 +236,47 @@ func TestGetWorkloadLogs_DropsCrossPageDuplicates(t *testing.T) {
 	assert.Equal(t, "n4", entries[2].Message)
 }
 
+func TestGetWorkloadLogs_RejectsOffHostNext(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// A buggy or compromised server response pointing next at a
+		// different host would otherwise leak the bearer token on the
+		// next request; AssertNextOnSameHost must refuse it.
+		fmt.Fprint(w, logsPage(
+			"http://evil.example.com/api/v2/otel/workload/wl-1/logs/?offset=2",
+			logEntryDoc("INFO", "x"),
+		))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := GetWorkloadLogs("wl-1", 10, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match API base host")
+}
+
+func TestGetWorkloadLogs_RejectsMalformedNext(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// A malformed next URL must surface as an error rather than being
+		// silently rebased against the API host. The embedded newline makes
+		// url.Parse fail with "invalid control character in URL".
+		fmt.Fprint(w, logsPage("http://example.com\n/oops", logEntryDoc("INFO", "x")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := GetWorkloadLogs("wl-1", 10, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse Next URL")
+}
+
 func TestGetWorkloadLogs_KeepsSamePageDuplicates(t *testing.T) {
 	installSkipAuth(t)
 
@@ -529,7 +570,7 @@ func TestFollowWorkloadLogs_GivesUpAfterSustainedTransientErrors(t *testing.T) {
 	assert.Len(t, warnings, maxTransientPollErrors)
 }
 
-func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
+func TestFollowWorkloadLogs_RecoversFromTransientErrors(t *testing.T) {
 	installSkipAuth(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -538,20 +579,21 @@ func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
 
 	calls := 0
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 
-		switch {
-		case calls == 1:
-			fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "a")))
-		case r.URL.Query().Get("startTime") != "":
-			// An older server rejects the filter outright.
-			w.WriteHeader(http.StatusUnprocessableEntity)
-		default:
-			// The follow must retry without the filter and keep streaming.
-			fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "b"), logEntryDoc("INFO", "a")))
-			cancel()
+		// Two transient failures, then a real response. emit() resets the
+		// transient counter on the success, so the follow keeps streaming
+		// instead of accumulating toward the give-up cap.
+		if calls <= 2 {
+			w.WriteHeader(http.StatusBadGateway)
+
+			return
 		}
+
+		fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "ok")))
+
+		cancel()
 	}))
 
 	defer srv.Close()
@@ -570,10 +612,64 @@ func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
 		},
 		func(msg string) { warnings = append(warnings, msg) })
 	require.NoError(t, err)
-	assert.Equal(t, []string{"a", "b"}, lines)
-	require.NotEmpty(t, warnings)
-	assert.Contains(t, warnings[0], "rejected the time filter")
+	assert.Equal(t, []string{"ok"}, lines)
+	// Each transient failure produced one retry warning before the third
+	// call succeeded.
+	assert.Len(t, warnings, 2)
 	assert.Equal(t, 3, calls)
+}
+
+func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
+	// Both 400 and 422 must classify as filter rejection; exercising both
+	// catches a regression that drops one from isFilterRejectedError.
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			installSkipAuth(t)
+
+			ctx, cancel := context.WithCancel(context.Background())
+
+			defer cancel()
+
+			calls := 0
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+
+				switch {
+				case calls == 1:
+					fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "a")))
+				case r.URL.Query().Get("startTime") != "":
+					// An older server rejects the filter outright.
+					w.WriteHeader(status)
+				default:
+					// The follow must retry without the filter and keep streaming.
+					fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "b"), logEntryDoc("INFO", "a")))
+					cancel()
+				}
+			}))
+
+			defer srv.Close()
+
+			installEndpoint(t, srv.URL)
+
+			var lines []string
+
+			var warnings []string
+
+			err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+				func(e WorkloadLogEntry) error {
+					lines = append(lines, e.Message)
+
+					return nil
+				},
+				func(msg string) { warnings = append(warnings, msg) })
+			require.NoError(t, err)
+			assert.Equal(t, []string{"a", "b"}, lines)
+			require.NotEmpty(t, warnings)
+			assert.Contains(t, warnings[0], "rejected the time filter")
+			assert.Equal(t, 3, calls)
+		})
+	}
 }
 
 func TestFollowWorkloadLogs_WarnsOnWindowGap(t *testing.T) {
@@ -651,4 +747,9 @@ func TestFollowWorkloadLogs_RejectsBadArguments(t *testing.T) {
 	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", 0, func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid interval")
+
+	// A nil onLine would panic in emit(); reject it up front instead.
+	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Second, nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "onLine callback is required")
 }

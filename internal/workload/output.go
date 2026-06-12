@@ -519,7 +519,9 @@ func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
 
 // RenderWorkloadLogs prints a workload's container logs: one
 // "[LEVEL] timestamp message" line each, or a JSON array (always [], never
-// null, when empty).
+// null, when empty). With no logs in text mode the "No logs found." hint
+// goes to stderr, so stdout stays log lines only and a `logs | grep`/pipe is
+// not polluted by a status line.
 func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
 	if format == OutputFormatJSON {
 		if entries == nil {
@@ -530,7 +532,7 @@ func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
 	}
 
 	if len(entries) == 0 {
-		fmt.Println("No logs found.")
+		fmt.Fprintln(os.Stderr, "No logs found.")
 
 		return nil
 	}

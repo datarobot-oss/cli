@@ -46,8 +46,8 @@ func Cmd() *cobra.Command {
 
 By default the most recent --limit lines are printed in chronological
 order (oldest first), like 'kubectl logs --tail'. Use --level to drop
-everything below a severity (debug, info, warning, error, critical);
-debug (the default) keeps every line.
+everything below a severity (debug, info, warn, warning, error,
+critical); debug (the default) keeps every line.
 
 With --follow (-f) the command keeps running and streams new log lines as
 they arrive (like 'tail -f'), starting from the most recent --limit lines.
@@ -100,7 +100,7 @@ Example:
 
 	workload.AddOutputFlag(cmd, &outputFormat)
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of recent log lines to return")
-	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warning, error, critical)")
+	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, warning, error, critical)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream new log lines as they arrive (Ctrl-C to stop).")
 	cmd.Flags().Var(pollflags.PositiveDuration(&interval, followPollInterval), "poll-interval",
 		"Interval between polls when --follow is set.")

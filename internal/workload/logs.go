@@ -114,7 +114,7 @@ func GetWorkloadLogs(workloadID string, limit int, level string) ([]WorkloadLogE
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	all, err := fetchWorkloadLogs(workloadID, limit, level, "")
+	all, err := fetchWorkloadLogs(workloadID, limit, level, "", "workload logs")
 	if err != nil {
 		return nil, err
 	}
@@ -125,9 +125,9 @@ func GetWorkloadLogs(workloadID string, limit int, level string) ([]WorkloadLogE
 	return all, nil
 }
 
-// buildLogsQuery assembles the limit, optional level, and optional startTime
+// logsQueryParams assembles the limit, optional level, and optional startTime
 // query params.
-func buildLogsQuery(maxEntries int, level, since string) url.Values {
+func logsQueryParams(maxEntries int, level, since string) url.Values {
 	pageSize := maxLogsPageSize
 	if maxEntries > 0 {
 		pageSize = min(maxEntries, maxLogsPageSize)
@@ -166,9 +166,11 @@ func appendUnseenPageEntries(all, page []WorkloadLogEntry, priorPages map[string
 
 // fetchWorkloadLogs retrieves log lines newest-first across pages. since (if
 // set) is the startTime filter; maxEntries <= 0 drains every page. An empty
-// page stops the loop even if a next link is present.
-func fetchWorkloadLogs(workloadID string, maxEntries int, level, since string) ([]WorkloadLogEntry, error) {
-	pageURL, err := drapi.EndpointURL("/otel/workload/"+escapeID(workloadID)+"/logs/", buildLogsQuery(maxEntries, level, since))
+// page stops the loop even if a next link is present. reqInfo is drapi's
+// per-request log label; the follow loop passes "" to silence the per-poll
+// "Fetching ..." line so it does not interleave with the streamed log lines.
+func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
+	pageURL, err := drapi.EndpointURL("/otel/workload/"+escapeID(workloadID)+"/logs/", logsQueryParams(maxEntries, level, since))
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +182,7 @@ func fetchWorkloadLogs(workloadID string, maxEntries int, level, since string) (
 	for pageURL != "" {
 		var resp workloadLogsResponse
 
-		if err := drapi.GetJSON(pageURL, "workload logs", &resp); err != nil {
+		if err := drapi.GetJSON(pageURL, reqInfo, &resp); err != nil {
 			return nil, err
 		}
 
@@ -293,6 +295,10 @@ func newLogFollower(
 		return nil, fmt.Errorf("invalid interval %s: must be positive", interval)
 	}
 
+	if onLine == nil {
+		return nil, errors.New("onLine callback is required")
+	}
+
 	if onWarn == nil {
 		onWarn = func(string) {}
 	}
@@ -320,7 +326,9 @@ func (f *logFollower) fetch() (entries []WorkloadLogEntry, hadSince bool, err er
 		maxEntries = 0
 	}
 
-	entries, err = fetchWorkloadLogs(f.workloadID, maxEntries, f.level, since)
+	// Empty reqInfo silences drapi's per-request "Fetching ..." log so the
+	// follow stream stays just the workload's log lines.
+	entries, err = fetchWorkloadLogs(f.workloadID, maxEntries, f.level, since, "")
 
 	return entries, since != "", err
 }

@@ -680,11 +680,17 @@ func TestRenderWorkloadLogs_TextFormat(t *testing.T) {
 }
 
 func TestRenderWorkloadLogs_TextEmpty(t *testing.T) {
-	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogs(OutputFormatText, nil))
+	var stderr string
+
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			require.NoError(t, RenderWorkloadLogs(OutputFormatText, nil))
+		})
 	})
 
-	assert.Equal(t, "No logs found.\n", output)
+	// The hint goes to stderr so stdout stays log lines only (pipe/grep safe).
+	assert.Empty(t, stdout)
+	assert.Equal(t, "No logs found.\n", stderr)
 }
 
 func TestRenderWorkloadLogs_JSONAlwaysArray(t *testing.T) {
