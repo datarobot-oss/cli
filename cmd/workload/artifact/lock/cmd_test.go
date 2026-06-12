@@ -12,31 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package artifact
+package lock
 
 import (
-	"github.com/datarobot/cli/cmd/workload/artifact/create"
-	"github.com/datarobot/cli/cmd/workload/artifact/del"
-	"github.com/datarobot/cli/cmd/workload/artifact/get"
-	"github.com/datarobot/cli/cmd/workload/artifact/list"
-	"github.com/datarobot/cli/cmd/workload/artifact/lock"
-	"github.com/spf13/cobra"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func Cmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "artifact",
-		Short: "Manage workload artifacts",
-		Long:  `Manage workload artifacts in your DataRobot deployment infrastructure.`,
-	}
+func TestCmd_RequiresArg(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{})
 
-	cmd.AddCommand(
-		create.Cmd(),
-		del.Cmd(),
-		get.Cmd(),
-		list.Cmd(),
-		lock.Cmd(),
-	)
+	err := cmd.Execute()
+	require.Error(t, err)
+}
 
-	return cmd
+func TestCmd_InvalidOutputFormat(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"art-abc-123", "--output-format", "yaml"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
 }

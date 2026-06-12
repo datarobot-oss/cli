@@ -85,6 +85,7 @@ var expectedWorkloadTrackedCommands = []string{
 	"workload build list",
 	"workload build logs",
 	"workload artifact delete",
+	"workload artifact lock",
 	"workload create",
 	"workload get",
 	"workload list",
