@@ -207,6 +207,10 @@ else
   stop_timer
 fi
 
+# NOTE: The heavier `dr start` (Agentic Starter) end-to-end test lives in the
+# pre-release suite (run_pre_release_smoke_test.sh / `task smoke-test-pre-release`)
+# to keep this fast suite quick. See smoke_test_scripts/COVERAGE.md.
+
 # Print timing summary
 TOTAL_ELAPSED=$(( $(date +%s) - SCRIPT_START ))
 echo ""

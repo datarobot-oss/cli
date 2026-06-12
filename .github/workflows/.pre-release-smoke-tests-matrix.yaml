@@ -1,0 +1,75 @@
+name: Pre-Release Smoke Tests Matrix
+
+# Heavier, longer-running end-to-end smoke tests that gate promotion of a
+# release from pre-release to stable. Installs the freshly published binary for
+# the given version and exercises real flows (e.g. `dr start` for the Agentic
+# Starter template — regression guard).
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Released version/tag to install and verify (e.g. v1.2.3)'
+        required: true
+        type: string
+      os-matrix:
+        description: 'OS matrix for pre-release smoke tests'
+        required: false
+        type: string
+        default: '["ubuntu-latest", "macos-latest"]'
+    secrets:
+      DR_API_TOKEN:
+        required: true
+
+jobs:
+  pre-release-smoke-test:
+    strategy:
+      matrix:
+        sys:
+          - { os: ubuntu-latest, shell: bash }
+          - { os: macos-latest, shell: "zsh {0}" }
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+    runs-on: ${{ matrix.sys.os }}
+    name: Run Pre-Release Smoke Tests (${{ matrix.sys.os }})
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Ubuntu - Install dependencies w/ apt-get
+        if: matrix.sys.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect bash-completion
+
+      - name: MacOS - Install dependencies w/ homebrew
+        if: matrix.sys.os == 'macos-latest'
+        run: |
+          brew install expect bash-completion
+
+      - name: Install yq
+        uses: dcarbone/install-yq-action@v1.3.1
+
+      - name: Install Taskfile
+        uses: arduino/setup-task@v2
+        with:
+          version: '3.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install the published DR CLI binary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          sh ./install.sh "${{ inputs.version }}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run Pre-Release Smoke Tests
+        env:
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+        run: |
+          task smoke-test-pre-release DR_API_TOKEN="$DR_API_TOKEN"

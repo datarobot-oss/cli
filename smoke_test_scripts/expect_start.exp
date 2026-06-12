@@ -1,0 +1,102 @@
+#!/usr/local/bin/expect -f
+
+# Bounded `dr start` smoke test.
+#
+# Regression guard: CLI 0.2.69/0.2.70 went into an infinite loop on
+# `dr start` for the Agentic Starter (datarobot-agent-application) template and
+# completely broke the quickstart flow. No pre-release test caught it.
+#
+# This script runs `dr start` non-interactively under a PTY and verifies it
+# reaches the "execute the template start command" stage WITHOUT hanging or
+# looping. As soon as the start command is invoked, we stop the process so the
+# template's app/server is never fully booted (the "bounded" approach): we only
+# assert that `dr start`'s discovery + resolution completed correctly and once.
+#
+# Detection of the failure mode is layered:
+#   * inactivity `timeout` here -> a stalled flow that never reaches execution.
+#   * a hard wall-clock `timeout` wrapped around this script in
+#     run_pre_release_smoke_test.sh -> a busy loop that keeps emitting output
+#     (never hits inactivity timeout).
+#   * a bounded "start: execute step" / "execute_script=true" assertion against
+#     the $HOME/.dr-tui-debug.log file in run_pre_release_smoke_test.sh ->
+#     repetition loops.
+
+# Inactivity timeout. Generous so a slow (but healthy) dependency auto-install
+# does not false-fail; a true hang trips this, while a busy loop is caught by the
+# hard wall-clock timeout wrapped around this script in run_pre_release_smoke_test.sh.
+set timeout 240
+
+# Use TERM=dumb to prevent terminal color probing which causes OSC sequences.
+set env(TERM) dumb
+
+set config $env(DATAROBOT_CLI_CONFIG)
+
+# --yes        : non-interactive (auto-install deps, auto-run start script)
+# --debug      : emit step logs to $HOME/.dr-tui-debug.log even while the TUI runs
+spawn dr start --yes --debug --config $config
+
+# Walk the quickstart flow. We loop because intermediate prompts/screens may
+# appear before the start command is reached.
+set reached_execution 0
+set saw_error 0
+
+expect {
+    -re {Running 'task start'} {
+        puts "\nOK: dr start reached 'task start' execution."
+        set reached_execution 1
+    }
+    "Found quickstart script at:" {
+        puts "\nOK: dr start found and is executing a quickstart script."
+        set reached_execution 1
+    }
+    "No start command or quickstart script found" {
+        # Flow completed (no loop) but the template exposed no start command.
+        # Unexpected for the Agentic Starter template - surface it.
+        puts "\nERROR: dr start found no start command for this template."
+        exit 3
+    }
+    -re {update it now|Press 'y' or ENTER to confirm} {
+        # Self-update prompt. Decline so the quickstart flow continues.
+        puts "Self-update prompt detected - declining to continue start flow."
+        send -- "n"
+        exp_continue
+    }
+    "Press 'y' or ENTER to install" {
+        # Should not appear with --yes, but proceed if it does.
+        puts "Dependency install prompt detected - accepting."
+        send -- "y"
+        exp_continue
+    }
+    -re {Error: } {
+        # The flow surfaced an error and quit. This is a terminal state (no
+        # infinite loop), but indicates the start flow did not succeed.
+        puts "\nERROR: dr start exited with an error before reaching execution."
+        set saw_error 1
+    }
+    timeout {
+        puts "\nERROR: Timeout waiting for dr start to reach the start command."
+        puts "       This may indicate an infinite-loop / hang regression."
+        exit 1
+    }
+    eof {
+        puts "\nERROR: dr start exited before reaching the start command."
+        exit 4
+    }
+}
+
+# Stop the process immediately once execution is reached so we never fully boot
+# the template's application/server (bounded run). Ctrl-C is handled globally by
+# the TUI's interruptible model; closing the PTY guarantees teardown.
+send -- "\003"
+catch {close}
+catch {wait}
+
+if {$saw_error} {
+    exit 2
+}
+
+if {$reached_execution} {
+    exit 0
+}
+
+exit 5

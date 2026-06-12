@@ -155,6 +155,11 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_smoke_test.sh {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$DR_API_TOKEN{{end}}
 
+  smoke-test-pre-release:
+    desc: "Run pre-release smoke tests (heavier end-to-end; gates release promotion)"
+    cmds:
+      - ./smoke_test_scripts/run_pre_release_smoke_test.sh {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$DR_API_TOKEN{{end}}
+
   smoke-test-self-update:
     desc: "Run self-update smoke tests"
     cmds:
