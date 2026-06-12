@@ -104,13 +104,15 @@ dr
 │   │   ├── get        Display a single schedule
 │   │   ├── update     Change cron expression / timezone
 │   │   └── delete     Delete a schedule
-│   └── environment    Manage named, versioned pip-package environments
-│       ├── create     Register a new environment with an initial version
-│       ├── list       List registered environments
-│       ├── update     Append a new version to an environment
-│       ├── delete     Soft-delete the latest active version of an environment
-│       └── version    Manage environment versions
-│           └── delete Delete a specific version
+│   ├── environment    Manage named, versioned pip-package environments
+│   │   ├── create     Register a new environment with an initial version
+│   │   ├── list       List registered environments
+│   │   ├── update     Append a new version to an environment
+│   │   ├── delete     Soft-delete the latest active version of an environment
+│   │   └── version    Manage environment versions
+│   │       └── delete Delete a specific version
+│   └── task           Inspect individual pipeline tasks (source + signature)
+│       └── get        Display task source, parameters, and input payload
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -285,6 +287,7 @@ For detailed documentation on each command, see:
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
   - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
+  - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
 ## Getting help
 

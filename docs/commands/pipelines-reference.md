@@ -131,6 +131,17 @@ Schedules are **locked-only** — every verb requires both `--pipeline` and `--v
 
 ---
 
+## Tasks (`dr pipeline task …`)
+
+Task IDs are stable identifiers minted when a pipeline is uploaded. They appear in the
+TASK ID column of `dr pipeline graph` and can be used to inspect individual tasks.
+
+| Command | API endpoint | Usage | Inputs |
+|---|---|---|---|
+| `dr pipeline task get` | `GET /pipelines/{id}/tasks/{task_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/tasks/{task_id}` (locked) | `dr pipeline task get --pipeline <id> <task-id>` <br> `dr pipeline task get --pipeline <id> --version=2 <task-id>` <br> `dr pipeline task get --pipeline <id> <task-id> --output-format json` | **Positional:** `<task-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
+
+---
+
 ## Environments (`dr pipeline environment …`)
 
 | Command | API endpoint | Usage | Inputs |
@@ -180,3 +191,5 @@ Schedules are **locked-only** — every verb requires both `--pipeline` and `--v
 | `PATCH /pipelines/environments/{id}` | `dr pipeline environment update` |
 | `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete` |
 | `DELETE /pipelines/environments/{id}/versions/{n}` | `dr pipeline environment version delete` |
+| `GET /pipelines/{id}/tasks/{task_id}` | `dr pipeline task get` (draft) |
+| `GET /pipelines/{id}/versions/{ver}/tasks/{task_id}` | `dr pipeline task get` (locked) |
