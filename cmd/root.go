@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/allcommands"
+	"github.com/datarobot/cli/cmd/artifact"
 	"github.com/datarobot/cli/cmd/auth"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
@@ -207,6 +208,7 @@ func init() {
 	// otherwise the command will be added under 'Additional Commands'.
 	// Commands with disabled feature gates are automatically filtered by cli.CommandAdder.
 	RootCmd.AddCommand(
+		artifact.Cmd(),
 		auth.Cmd(),
 		component.Cmd(),
 		dependencies.Cmd(),

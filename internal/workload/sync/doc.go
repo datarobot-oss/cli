@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sync is the engine behind `dr workload code sync`. It walks the
+// Package sync is the engine behind `dr artifact code sync`. It walks the
 // project, builds a three-way diff against base and remote manifests,
 // executes the plan with rollback safety, and updates .wapi/ state on
-// success. The CLI command in cmd/workload/code/sync wires it in.
+// success. The `dr artifact code sync` CLI command wires it in.
 package sync

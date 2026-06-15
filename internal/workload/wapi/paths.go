@@ -81,7 +81,7 @@ func Exists(projectDir string) bool {
 }
 
 // CheckoutsDir is the parent directory holding read-only version snapshots
-// produced by `dr workload code checkout`. Each snapshot is a sub-directory
+// produced by `dr artifact code checkout`. Each snapshot is a sub-directory
 // named after the full catalog version ID.
 func CheckoutsDir(projectDir string) string {
 	return filepath.Join(wapiDir(projectDir), CheckoutsDirName)

@@ -33,7 +33,7 @@ func phase0Preflight(e *Engine) error {
 	e.staleNote = restored
 
 	if !wapi.Exists(e.projectDir) {
-		return errors.New("not linked: run 'dr workload code init <artifact-id>' first")
+		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
 	lock, err := AcquireSyncLock(e.projectDir)

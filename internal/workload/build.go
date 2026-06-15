@@ -316,7 +316,7 @@ func WaitForBuild(
 
 		if IsTerminalBuildStatus(build.Status) {
 			if IsBuildErrorStatus(build.Status) {
-				return build, fmt.Errorf("build %s ended with status %s; run 'dr workload build logs %s' to inspect", buildID, build.Status, buildID)
+				return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
 			}
 
 			return build, nil
