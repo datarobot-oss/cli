@@ -1,0 +1,88 @@
+name: Smoke Tests Gate Status
+
+# Companion to `Smoke Tests Gate`. Runs via `workflow_run` so it executes from the
+# default branch with a writable token (NOT `pull_request_target`, which is risky
+# because it runs PR-supplied workflow files with secret access). This workflow only
+# reads a small artifact produced by the gate job — it never checks out or executes
+# PR code.
+#
+# Sets the required "Smoke Tests" commit status:
+# - Non-fork PRs: `success` (smoke tests may be run optionally via labels/commands).
+# - Fork PRs:     `failure` — blocks merge until a maintainer runs
+#                 `/approve-smoke-tests` or `/skip-smoke-tests`.
+on:
+  workflow_run:
+    workflows: ['Smoke Tests Gate']
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  set-status:
+    runs-on: ubuntu-latest
+    # Skip status updates if the gate run itself was cancelled / failed in a way that
+    # produced no artifact — `success`/`failure` from the gate are both fine because
+    # the gate's only job is to upload metadata.
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    permissions:
+      actions: read       # download artifact from the triggering run
+      statuses: write     # post the required commit status
+    steps:
+      - name: Download gate info artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke-tests-gate-info
+          path: gate-info
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load gate info
+        id: load
+        run: |
+          if [ ! -f gate-info/pr.env ]; then
+            echo "::error::gate-info/pr.env not found in artifact"
+            exit 1
+          fi
+
+          # shellcheck disable=SC2002
+          cat gate-info/pr.env | tee -a "$GITHUB_OUTPUT"
+
+      - name: Set Smoke Tests commit status
+        uses: actions/github-script@v7
+        env:
+          SHA: ${{ steps.load.outputs.sha }}
+          IS_FORK: ${{ steps.load.outputs.is_fork }}
+          PR_NUMBER: ${{ steps.load.outputs.pr_number }}
+        with:
+          script: |
+            const sha = process.env.SHA;
+            const isFork = process.env.IS_FORK === 'true';
+            const prNumber = process.env.PR_NUMBER;
+
+            if (!sha) {
+              core.setFailed('Missing SHA from gate artifact.');
+              return;
+            }
+
+            if (isFork) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state: 'failure',
+                context: 'Smoke Tests',
+                description: 'Fork PR — maintainer must run /approve-smoke-tests or /skip-smoke-tests',
+              });
+              console.log(`Set Smoke Tests → failure for fork PR #${prNumber} @ ${sha} (blocks merge until maintainer action).`);
+            } else {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state: 'success',
+                context: 'Smoke Tests',
+                description: 'Non-fork PR — use /trigger-smoke-test or labels to run smoke tests',
+              });
+              console.log(`Set Smoke Tests → success for PR #${prNumber} @ ${sha}`);
+            }

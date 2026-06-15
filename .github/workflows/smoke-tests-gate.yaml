@@ -1,40 +1,44 @@
 name: Smoke Tests Gate
 
-# Sets the required "Smoke Tests" commit status for all PRs targeting main.
-# - Non-fork PRs: auto-succeed (smoke tests can be run optionally via labels/commands).
-# - Fork PRs: no status is set here (read-only token). The missing required check blocks
-#   merge. A maintainer must run (/approve-smoke-tests) or skip (/skip-smoke-tests) tests.
+# Records the PR head SHA + fork status so the companion `Smoke Tests Gate Status`
+# workflow (triggered via `workflow_run`) can post the required "Smoke Tests" commit
+# status with a writable token.
+#
+# We deliberately use `pull_request` (NOT `pull_request_target`) here so this workflow
+# runs with a read-only token and no secrets exposed to fork PR code. The status
+# write happens in the companion workflow, which runs from the default branch.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   gate:
     runs-on: ubuntu-latest
-    permissions:
-      statuses: write
     steps:
-      - name: Set Smoke Tests status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const isFork = context.payload.pull_request.head.repo.full_name !== context.payload.pull_request.base.repo.full_name;
-            const sha = context.payload.pull_request.head.sha;
+      - name: Record PR metadata for status workflow
+        run: |
+          mkdir -p gate-info
+          IS_FORK="false"
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.event.pull_request.base.repo.full_name }}" ]; then
+            IS_FORK="true"
+          fi
+          {
+            echo "sha=${{ github.event.pull_request.head.sha }}"
+            echo "pr_number=${{ github.event.pull_request.number }}"
+            echo "is_fork=${IS_FORK}"
+          } > gate-info/pr.env
 
-            if (isFork) {
-              console.log('Fork PR detected — skipping status creation (read-only token).');
-              console.log('The missing required "Smoke Tests" check will block merge.');
-              console.log('Maintainers: use /approve-smoke-tests to run tests, or /skip-smoke-tests to bypass.');
-            } else {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha,
-                state: 'success',
-                context: 'Smoke Tests',
-                description: 'Non-fork PR — use /trigger-smoke-test or labels to run smoke tests',
-              });
-              console.log(`Set Smoke Tests → success for ${sha}`);
-            }
+          echo "Recorded gate info:"
+          cat gate-info/pr.env
+
+      - name: Upload gate info
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-tests-gate-info
+          path: gate-info/
+          retention-days: 1
