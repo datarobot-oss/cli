@@ -64,8 +64,12 @@ yq -i ".endpoint = \"${testing_url}/api/v2\"" "$DATAROBOT_CLI_CONFIG"
 
 start_timer "dr start flow (Agentic Starter template)"
 if [ "$url_accessible" -eq 0 ]; then
-  echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr start' Agentic Starter test."
+  # This is a release gate: if we cannot reach the endpoint we CANNOT verify the
+  # `dr start` regression guard, so we must fail rather than skip. Skipping here
+  # would let a release be promoted without the check ever running.
+  echo "❌ URL (${testing_url}) is not accessible - cannot run the 'dr start' pre-release gate. Failing instead of skipping."
   stop_timer
+  exit 1
 else
   # Regression guard: CLI 0.2.69/0.2.70 went into an infinite loop on
   # `dr start` for the Agentic Starter (datarobot-agent-application) template and
@@ -102,17 +106,16 @@ else
   elif command -v gtimeout >/dev/null 2>&1; then
     TIMEOUT_BIN="gtimeout" # macOS via coreutils
   else
-    TIMEOUT_BIN=""
+    # The hard wall-clock cap is the primary busy-loop detector for this gate, so
+    # we refuse to run uncapped. On macOS install GNU coreutils for `gtimeout`.
+    echo "❌ Neither 'timeout' nor 'gtimeout' is available - cannot enforce the wall-clock cap this gate requires. Install GNU coreutils (e.g. 'brew install coreutils')."
+    cd ..
+    rm -rf "$AGENTIC_DIR"
+    exit 1
   fi
 
-  if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$START_TIMEOUT" expect ../smoke_test_scripts/expect_start.exp
-    start_rc=$?
-  else
-    echo "ℹ️ 'timeout' not available - running without a hard wall-clock cap."
-    expect ../smoke_test_scripts/expect_start.exp
-    start_rc=$?
-  fi
+  "$TIMEOUT_BIN" "$START_TIMEOUT" expect ../smoke_test_scripts/expect_start.exp
+  start_rc=$?
 
   if [ "$start_rc" -eq 124 ]; then
     echo "❌ Assertion failed: 'dr start' exceeded ${START_TIMEOUT}s (hard timeout) - likely an infinite loop / hang."
@@ -132,30 +135,35 @@ else
 
   # 3. Confirm via the debug log that discovery resolved to executing the start
   #    command, and that the step machine ran a bounded number of times.
-  if [ -f "$DEBUG_LOG" ]; then
-    if grep -q "execute_script=true" "$DEBUG_LOG"; then
-      echo "✅ Assertion passed: 'dr start' resolved to executing the template start command (execute_script=true)."
-    else
-      echo "❌ Assertion failed: 'dr start' never reached start-command execution (no execute_script=true in debug log)."
-      tail -n 40 "$DEBUG_LOG" 2>/dev/null
-      cd ..
-      rm -rf "$AGENTIC_DIR"
-      exit 1
-    fi
+  #    The log-based checks ARE the regression guard, so a missing log is a hard
+  #    failure for this gate - never a silent skip.
+  if [ ! -f "$DEBUG_LOG" ]; then
+    echo "❌ Assertion failed: debug log ($DEBUG_LOG) not found - cannot run the log-based regression assertions. Failing instead of skipping."
+    cd ..
+    rm -rf "$AGENTIC_DIR"
+    exit 1
+  fi
 
-    # A healthy run logs "start: execute step" once per step (5 steps). A loop
-    # would repeat these far beyond the step count. Allow generous headroom.
-    step_runs=$(grep -c "start: execute step" "$DEBUG_LOG" 2>/dev/null)
-    [ -z "$step_runs" ] && step_runs=0
-    echo "ℹ️ 'start: execute step' log lines: ${step_runs}"
-    if [ "$step_runs" -gt 20 ]; then
-      echo "❌ Assertion failed: 'dr start' executed steps ${step_runs} times (> 20) - indicates an infinite loop."
-      cd ..
-      rm -rf "$AGENTIC_DIR"
-      exit 1
-    fi
+  if grep -q "execute_script=true" "$DEBUG_LOG"; then
+    echo "✅ Assertion passed: 'dr start' resolved to executing the template start command (execute_script=true)."
   else
-    echo "ℹ️ Debug log ($DEBUG_LOG) not found - skipping debug-log assertions."
+    echo "❌ Assertion failed: 'dr start' never reached start-command execution (no execute_script=true in debug log)."
+    tail -n 40 "$DEBUG_LOG" 2>/dev/null
+    cd ..
+    rm -rf "$AGENTIC_DIR"
+    exit 1
+  fi
+
+  # A healthy run logs "start: execute step" once per step (5 steps). A loop
+  # would repeat these far beyond the step count. Allow generous headroom.
+  step_runs=$(grep -c "start: execute step" "$DEBUG_LOG" 2>/dev/null)
+  [ -z "$step_runs" ] && step_runs=0
+  echo "ℹ️ 'start: execute step' log lines: ${step_runs}"
+  if [ "$step_runs" -gt 20 ]; then
+    echo "❌ Assertion failed: 'dr start' executed steps ${step_runs} times (> 20) - indicates an infinite loop."
+    cd ..
+    rm -rf "$AGENTIC_DIR"
+    exit 1
   fi
 
   # Clean up the cloned template.
