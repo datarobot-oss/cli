@@ -33,7 +33,7 @@ jobs:
     name: (${{ matrix.os }})
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Taskfile
         uses: arduino/setup-task@v2

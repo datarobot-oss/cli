@@ -78,7 +78,7 @@ jobs:
     name: Security Scan
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve-pr.outputs.sha }}
           fetch-depth: 0
