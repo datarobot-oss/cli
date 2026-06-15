@@ -39,40 +39,12 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
 }
 
-func TestCmd_ParsesPollFlags(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
-
-	require.NoError(t, cmd.ParseFlags([]string{"--wait", "--poll-interval", "100ms", "--poll-timeout", "30s"}))
-
-	wait, _ := cmd.Flags().GetBool("wait")
-	interval, _ := cmd.Flags().GetDuration("poll-interval")
-	timeout, _ := cmd.Flags().GetDuration("poll-timeout")
-
-	assert.True(t, wait)
-	assert.Equal(t, "100ms", interval.String())
-	assert.Equal(t, "30s", timeout.String())
-}
-
-func TestCmd_HidesPollFlags(t *testing.T) {
-	cmd := Cmd()
-	pollIntervalFlag := cmd.Flag("poll-interval")
-	pollTimeoutFlag := cmd.Flag("poll-timeout")
-
-	require.NotNil(t, pollIntervalFlag)
-	require.NotNil(t, pollTimeoutFlag)
-	assert.True(t, pollIntervalFlag.Hidden)
-	assert.True(t, pollTimeoutFlag.Hidden)
-}
-
-func TestCmd_UsesStatusPollDefaults(t *testing.T) {
+func TestCmd_HasNoWaitFlag(t *testing.T) {
+	// status is a single fetch; blocking lives only in the long-running
+	// build commands.
 	cmd := Cmd()
 
-	// Status settles in minutes, so it polls less often and times out far
-	// sooner than the build commands' 2s/30m defaults.
-	interval, _ := cmd.Flags().GetDuration("poll-interval")
-	timeout, _ := cmd.Flags().GetDuration("poll-timeout")
-
-	assert.Equal(t, statusPollInterval, interval)
-	assert.Equal(t, statusPollTimeout, timeout)
+	assert.Nil(t, cmd.Flag("wait"))
+	assert.Nil(t, cmd.Flag("poll-interval"))
+	assert.Nil(t, cmd.Flag("poll-timeout"))
 }

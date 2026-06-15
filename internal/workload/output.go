@@ -316,18 +316,22 @@ func printBuildsTable(builds []Build) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-func formatLogLine(entry BuildLogEntry) string {
-	level := entry.Levelname
+// formatLogParts renders the "[LEVEL] timestamp message" line shape shared
+// by build and workload logs, dropping the timestamp segment when absent.
+func formatLogParts(level, timestamp, message string) string {
 	if level == "" {
 		level = "?"
 	}
 
-	asctime := entry.Asctime
-	if asctime == "" {
-		return fmt.Sprintf("[%s] %s", level, entry.Message)
+	if timestamp == "" {
+		return fmt.Sprintf("[%s] %s", level, message)
 	}
 
-	return fmt.Sprintf("[%s] %s %s", level, asctime, entry.Message)
+	return fmt.Sprintf("[%s] %s %s", level, timestamp, message)
+}
+
+func formatLogLine(entry BuildLogEntry) string {
+	return formatLogParts(entry.Levelname, entry.Asctime, entry.Message)
 }
 
 func RenderWorkload(format OutputFormat, workload Workload) error {
@@ -509,6 +513,58 @@ func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
 	}
 
 	fmt.Println(workload.Status)
+
+	return nil
+}
+
+// RenderWorkloadLogs prints a workload's container logs: one
+// "[LEVEL] timestamp message" line each, or a JSON array (always [], never
+// null, when empty). With no logs in text mode the "No logs found." hint
+// goes to stderr, so stdout stays log lines only and a `logs | grep`/pipe is
+// not polluted by a status line.
+func RenderWorkloadLogs(format OutputFormat, entries []WorkloadLogEntry) error {
+	if format == OutputFormatJSON {
+		if entries == nil {
+			entries = []WorkloadLogEntry{}
+		}
+
+		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
+	}
+
+	for _, e := range entries {
+		fmt.Println(formatWorkloadLogLine(e))
+	}
+
+	return nil
+}
+
+func formatWorkloadLogLine(e WorkloadLogEntry) string {
+	// OTEL levels arrive lowercase (build logs are already uppercase).
+	return formatLogParts(strings.ToUpper(e.Level), e.Timestamp, e.Message)
+}
+
+// RenderWorkloadLogLine prints a single log entry for the --follow stream:
+// the same text line as RenderWorkloadLogs, or one compact JSON object
+// (JSON Lines), since a never-ending stream cannot be one closed array.
+func RenderWorkloadLogLine(format OutputFormat, e WorkloadLogEntry) error {
+	if format == OutputFormatJSON {
+		data, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(data))
+
+		return nil
+	}
+
+	fmt.Println(formatWorkloadLogLine(e))
 
 	return nil
 }

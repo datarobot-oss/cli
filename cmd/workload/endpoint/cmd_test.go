@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stop
+package endpoint
 
 import (
 	"testing"
@@ -29,22 +29,8 @@ func TestCmd_RequiresArg(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCmd_InvalidOutputFormat(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0", "--output-format", "yaml"})
-
-	err := cmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
-}
-
-func TestCmd_HasNoWaitFlag(t *testing.T) {
-	// stop is fire-and-ack; blocking lives only in the long-running build
-	// commands. `dr workload status` checks progress.
-	cmd := Cmd()
-
-	assert.Nil(t, cmd.Flag("wait"))
-	assert.Nil(t, cmd.Flag("poll-interval"))
-	assert.Nil(t, cmd.Flag("poll-timeout"))
+func TestCmd_HasNoOutputFormatFlag(t *testing.T) {
+	// The bare URL on stdout is the whole contract; the flag's absence is
+	// deliberate (use `dr workload get --output-format json` for JSON).
+	assert.Nil(t, Cmd().Flag("output-format"))
 }

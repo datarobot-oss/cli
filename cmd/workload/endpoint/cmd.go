@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package status
+package endpoint
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -22,25 +24,24 @@ import (
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
-
 	cmd := &cobra.Command{
-		Use:   "status <workload-id>",
-		Short: "Show a workload's status.",
-		Long: `Show a workload's current status.
+		Use:   "endpoint <workload-id>",
+		Short: "Print a workload's endpoint URL.",
+		Long: `Print a workload's endpoint URL, and nothing else.
 
-The status is fetched once and printed as a bare value (submitted,
-provisioning, launching, running, suspended, interrupted, stopping,
-stopped, errored, terminated, or unknown), making the command directly
-usable in scripts. An errored status is a valid answer, not a command
-failure, so the command still exits zero. Use 'dr workload get' for the
-full document.
+The bare URL on stdout is the whole contract, so the command composes
+directly in scripts. The URL ends with a trailing slash, so append
+sub-paths without a leading slash of their own:
 
-JSON output emits one {"id", "status"} document.
+  curl "$(dr workload endpoint 68b0c1d2e3f4a5b6c7d8e9f0)health"
+
+The endpoint is a stable gateway URL assigned at creation; it serves
+traffic once the workload is running. The command fails when the
+workload has no endpoint URL. For the full document (including the
+endpoint alongside status and metadata) use 'dr workload get'.
 
 Example:
-  dr workload status 68b0c1d2e3f4a5b6c7d8e9f0
-  dr workload status 68b0c1d2e3f4a5b6c7d8e9f0 --output-format json`,
+  dr workload endpoint 68b0c1d2e3f4a5b6c7d8e9f0`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -50,16 +51,21 @@ Example:
 				return err
 			}
 
-			return workload.RenderWorkloadStatus(outputFormat, *wl)
+			// Fail loudly rather than print an empty line: a script doing
+			// curl "$(dr workload endpoint ...)" must not curl "".
+			if wl.Endpoint == "" {
+				return fmt.Errorf("workload %s has no endpoint URL", args[0])
+			}
+
+			fmt.Println(wl.Endpoint)
+
+			return nil
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
-
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id":   telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"workload_id": telemetry.FirstArg(args),
 		}
 	})
 

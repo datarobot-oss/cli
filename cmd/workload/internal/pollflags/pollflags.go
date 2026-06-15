@@ -13,18 +13,21 @@
 // limitations under the License.
 
 // Package pollflags centralizes the --wait, --poll-interval, and
-// --poll-timeout flags shared between the polling workload commands
-// (`dr workload build trigger`, `dr workload build get`, and
-// `dr workload status`). Single source of truth for the flag names and
-// registration so the commands cannot drift out of sync; poll defaults
-// and the --wait help text vary per command via RegisterWithDefaults.
+// --poll-timeout flags shared between the long-running build commands
+// (`dr workload build trigger` and `dr workload build get`). Single source
+// of truth for the flag names and registration so the commands cannot drift
+// out of sync; poll defaults and the --wait help text vary per command via
+// RegisterWithDefaults. PositiveDuration is also reused by `dr workload logs
+// --poll-interval` so its non-positive rejection stays consistent.
 
 package pollflags
 
 import (
+	"errors"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Build-oriented defaults: container image builds are slow, so callers that
@@ -45,6 +48,46 @@ type Set struct {
 	Timeout  time.Duration
 }
 
+// positiveDurationValue parses like a plain duration flag but rejects zero
+// and negative values at parse time: time.Sleep returns immediately for
+// them, which would turn a poll loop into a hot loop hammering the API.
+type positiveDurationValue struct {
+	d *time.Duration
+}
+
+// PositiveDuration returns a duration flag value with value as the default,
+// for poll cadence flags that must stay positive. Commands outside the
+// pollflags triple (e.g. `dr workload logs --poll-interval`) reuse it so the
+// validation cannot drift between the polling commands.
+func PositiveDuration(p *time.Duration, value time.Duration) pflag.Value {
+	*p = value
+
+	return &positiveDurationValue{d: p}
+}
+
+func (v *positiveDurationValue) Set(s string) error {
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+
+	if parsed <= 0 {
+		return errors.New("must be a positive duration")
+	}
+
+	*v.d = parsed
+
+	return nil
+}
+
+func (v *positiveDurationValue) String() string {
+	return v.d.String()
+}
+
+func (v *positiveDurationValue) Type() string {
+	return "duration"
+}
+
 // Register adds --wait, --poll-interval (hidden), and --poll-timeout
 // (hidden) to cmd with the build-oriented defaults and --wait help text,
 // binding them into s. Returns s for chaining.
@@ -60,8 +103,8 @@ func Register(cmd *cobra.Command, s *Set) *Set {
 // like running that are not terminal).
 func RegisterWithDefaults(cmd *cobra.Command, s *Set, interval, timeout time.Duration, waitUsage string) *Set {
 	cmd.Flags().BoolVar(&s.Wait, "wait", false, waitUsage)
-	cmd.Flags().DurationVar(&s.Interval, "poll-interval", interval, "Interval between status polls.")
-	cmd.Flags().DurationVar(&s.Timeout, "poll-timeout", timeout, "Maximum time to wait before giving up.")
+	cmd.Flags().Var(PositiveDuration(&s.Interval, interval), "poll-interval", "Interval between status polls.")
+	cmd.Flags().Var(PositiveDuration(&s.Timeout, timeout), "poll-timeout", "Maximum time to wait before giving up.")
 	_ = cmd.Flags().MarkHidden("poll-interval")
 	_ = cmd.Flags().MarkHidden("poll-timeout")
 
