@@ -15,7 +15,7 @@ on:
         required: false
         type: string
       approver:
-        description: 'Auto-filled by /approve-smoke-tests, leave empty for manual runs'
+        description: 'Auto-filled by CI (leave empty for manual runs)'
         required: false
         type: string
 
