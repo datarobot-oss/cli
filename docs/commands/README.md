@@ -30,19 +30,21 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                 | Description                                         |
-|-------------------------|-----------------------------------------------------|
-| [`auth`](auth.md)       | Authenticate with DataRobot.                        |
-| `component`             | Manage template components.                         |
-| `templates`             | Manage application templates.                       |
-| [`start`](start.md)     | Run the application quickstart process.             |
-| [`run`](run.md)         | Execute application tasks.                          |
-| [`task`](task.md)       | Manage Taskfile composition and task execution.     |
-| [`dotenv`](dotenv.md)   | Manage environment variables.                       |
-| [`self`](self.md)       | CLI utility commands (update, version, completion, plugin). |
-| [`plugin`](plugins.md)  | Inspect and manage CLI plugins.                     |
-| [`pipeline`](pipeline.md) | Manage pipelines via the pipelines API (feature-gated). |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced). |
+| Command                           | Description                                                 |
+| --------------------------------- | ----------------------------------------------------------- |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                |
+| `component`                       | Manage template components.                                 |
+| `templates`                       | Manage application templates.                               |
+| [`start`](start.md)               | Run the application quickstart process.                     |
+| [`run`](run.md)                   | Execute application tasks.                                  |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.             |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                               |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
 ### Command tree
 
@@ -113,6 +115,32 @@ dr
 │   │       └── delete Delete a specific version
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
+├── artifact           Artifact management (feature-gated)
+│   ├── create         Create an artifact
+│   ├── get            Display details of an artifact
+│   ├── list           List artifacts
+│   ├── lock           Lock a draft artifact
+│   ├── delete         Delete an artifact
+│   ├── build          Manage artifact builds
+│   │   ├── create     Trigger a new image build
+│   │   ├── get        Get the status of a build
+│   │   ├── list       List builds for an artifact
+│   │   └── logs       Fetch build logs
+│   └── code           Manage artifact code synchronization
+│       ├── init       Link a directory to an artifact
+│       ├── sync       Push and pull code changes
+│       ├── versions   List catalog versions
+│       └── checkout   Download a version snapshot
+├── workload           Workload management (alias: wl, feature-gated)
+│   ├── create         Create (deploy) a workload
+│   ├── get            Display details of a workload
+│   ├── list           List workloads
+│   ├── delete         Delete a workload
+│   ├── start          Start a stopped workload
+│   ├── stop           Stop a workload
+│   ├── status         Show a workload's status
+│   ├── endpoint       Print a workload's endpoint URL
+│   └── logs           Show a workload's container logs
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -288,6 +316,16 @@ For detailed documentation on each command, see:
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
   - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
+
+- **[artifact](artifact.md)** - build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+  - `create` / `get` / `list` / `lock` / `delete` - the draft-to-locked artifact lifecycle.
+  - `build` - `create` / `get` / `list` / `logs` for container image builds.
+  - `code` - `init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.wapi/` state directory.
+
+- **[workload](workload.md)** - deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+  - `create` / `get` / `list` / `delete` - the workload lifecycle.
+  - `start` / `stop` / `status` - run-state control and status polling.
+  - `endpoint` / `logs` - print the endpoint URL and stream container logs.
 
 ## Getting help
 
