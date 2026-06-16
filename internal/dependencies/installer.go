@@ -159,7 +159,7 @@ func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permD
 // no actionable suggestion is available.
 func buildInstallTip(toolKey, installCmd string, permDenied bool, env map[string]bool, goos string) string {
 	if permDenied {
-		switch runtime.GOOS {
+		switch goos {
 		case "windows":
 			return "  Tip: This action requires Administrator privileges. Please restart your terminal/tool as Administrator."
 		case "darwin", "linux":
