@@ -15,6 +15,7 @@
 package dependencies
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,10 +23,11 @@ import (
 	"strings"
 )
 
-// Strategy is a sealed interface implemented by ManagerStrategy and FallbackStrategy.
-// External callers can type-switch on the concrete types.
+// Strategy is implemented by ManagerStrategy and FallbackStrategy.
+// getStrategyTip returns the user-facing tip line for an install failure, or ""
+// when no actionable suggestion is available.
 type Strategy interface {
-	implementsStrategy()
+	getStrategyTip(goos string) string
 }
 
 // ManagerStrategy provides install commands when a specific package/version manager
@@ -44,8 +46,38 @@ type FallbackStrategy struct {
 	URL             string
 }
 
-func (ManagerStrategy) implementsStrategy()  {}
-func (FallbackStrategy) implementsStrategy() {}
+func (ms ManagerStrategy) getStrategyTip(_ string) string {
+	tipMsg := ms.Commands[0]
+
+	if len(ms.Commands) > 1 {
+		tipMsg = "\n\t" + strings.Join(ms.Commands, "\n\t")
+	}
+
+	return fmt.Sprintf("  Tip: You have %s — try: %s", ms.Manager, tipMsg)
+}
+
+func (fs FallbackStrategy) getStrategyTip(goos string) string {
+	cmds := fs.Commands
+
+	if goos == "windows" && len(fs.CommandsWindows) > 0 {
+		cmds = fs.CommandsWindows
+	}
+
+	switch len(cmds) {
+	case 0:
+		if fs.URL != "" {
+			return "  See: " + fs.URL
+		}
+
+		return ""
+
+	case 1:
+		return "  Try: " + cmds[0]
+
+	default:
+		return "  Try:\n\t" + strings.Join(cmds, "\n\t")
+	}
+}
 
 // ToolInfo holds installation information for a dependency.
 type ToolInfo struct {
@@ -119,6 +151,7 @@ var ToolRegistry = map[string]ToolInfo{
 					"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash",
 					"# Restart terminal, then:",
 					"nvm install 24",
+					"nvm use 24",
 				},
 				URL: "https://nodejs.org/",
 			},
@@ -163,6 +196,9 @@ var ToolRegistry = map[string]ToolInfo{
 		},
 	},
 }
+
+// knownManagers lists manager names checked by extractFailedManager.
+var knownManagers = []string{"brew", "pyenv", "asdf", "nvm", "fnm", "winget", "choco", "scoop"}
 
 // toolNameMap maps lowercase dr CLI display names to ToolRegistry keys.
 var toolNameMap = map[string]string{
@@ -243,42 +279,29 @@ func detectEnvironment(
 	}
 }
 
-// GetInstallSuggestion returns ordered install commands for the given tool key based
-// on the detected environment. Returns nil if the tool key is not in ToolRegistry.
-func GetInstallSuggestion(toolKey string) []string {
-	return getInstallSuggestion(toolKey, DetectEnvironment(), runtime.GOOS)
-}
-
-func getInstallSuggestion(toolKey string, env map[string]bool, goos string) []string {
+// selectInstallStrategy returns the first matching Strategy for toolKey.
+// ManagerStrategy entries whose Manager equals failedMgr are skipped.
+// Returns ManagerStrategy when a detected manager matches, FallbackStrategy
+// as last resort, or nil when toolKey is unknown.
+func selectInstallStrategy(toolKey, failedMgr string, env map[string]bool) Strategy {
 	toolKey = NormalizeToolName(toolKey)
+
 	tool, ok := ToolRegistry[toolKey]
 	if !ok {
 		return nil
 	}
 
-	isWindows := goos == "windows"
-
 	for _, s := range tool.Strategies {
 		switch strategy := s.(type) {
 		case ManagerStrategy:
-			if env[strategy.Manager] {
-				return strategy.Commands
+			// Do not provide a tip for the detected manager if it was involved in the failed install attempt, since that may be why the strategy failed;
+			// Instead, continue checking other strategies.
+			if strategy.Manager != failedMgr && env[strategy.Manager] {
+				return strategy
 			}
 
 		case FallbackStrategy:
-			cmds := strategy.Commands
-
-			if isWindows && len(strategy.CommandsWindows) > 0 {
-				cmds = strategy.CommandsWindows
-			}
-
-			if len(cmds) > 0 {
-				return cmds
-			}
-
-			if strategy.URL != "" {
-				return []string{"Download from: " + strategy.URL}
-			}
+			return strategy
 		}
 	}
 

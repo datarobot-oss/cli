@@ -252,7 +252,7 @@ func TestInstallPrerequisites_FailureShowsRawCommand(t *testing.T) {
 	assert.Empty(t, installed)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exit 1")
+	assert.Contains(t, out.String(), "exit 1")
 }
 
 func TestInstallPrerequisites_NoPlatformCommand(t *testing.T) {
@@ -336,4 +336,181 @@ func TestLastSuccessDepsCheck_UpdatedByInstallPrerequisites(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "last_success_deps_check")
+}
+
+// --- isPermissionDenied tests ---
+
+func TestIsPermissionDenied_ExitCode126(t *testing.T) {
+	assert.True(t, isPermissionDenied(126, ""))
+}
+
+func TestIsPermissionDenied_NonSpecialExitCode(t *testing.T) {
+	assert.False(t, isPermissionDenied(1, ""))
+}
+
+func TestIsPermissionDenied_StderrPermissionDenied(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "sh: permission denied"))
+}
+
+func TestIsPermissionDenied_StderrOperationNotPermitted(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "operation not permitted"))
+}
+
+func TestIsPermissionDenied_StderrAccessIsDenied(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "Access is denied"))
+}
+
+func TestIsPermissionDenied_StderrRequiresRootPrivileges(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "requires root privileges"))
+}
+
+func TestIsPermissionDenied_StderrUnauthorizedAccessException(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "UnauthorizedAccessException"))
+}
+
+func TestIsPermissionDenied_StderrCaseInsensitive(t *testing.T) {
+	assert.True(t, isPermissionDenied(1, "PERMISSION DENIED"))
+}
+
+func TestIsPermissionDenied_ExitCodeNonZero(t *testing.T) {
+	assert.False(t, isPermissionDenied(1, "Just a normal error"))
+}
+
+func TestIsPermissionDenied_ExitCodeZeroNoText(t *testing.T) {
+	assert.False(t, isPermissionDenied(0, ""))
+}
+
+// --- extractFailedManager tests ---
+
+func TestExtractFailedManager_Brew(t *testing.T) {
+	assert.Equal(t, "brew", extractFailedManager("brew install uv"))
+}
+
+func TestExtractFailedManager_Pyenv(t *testing.T) {
+	assert.Equal(t, "pyenv", extractFailedManager("pyenv install 3.12"))
+}
+
+func TestExtractFailedManager_Winget(t *testing.T) {
+	assert.Equal(t, "winget", extractFailedManager("winget install OpenJS.NodeJS"))
+}
+
+func TestExtractFailedManager_NoMatch(t *testing.T) {
+	assert.Empty(t, extractFailedManager("curl -LsSf https://astral.sh/uv/install.sh | sh"))
+}
+
+func TestExtractFailedManager_EmptyCmd(t *testing.T) {
+	assert.Empty(t, extractFailedManager(""))
+}
+
+// --- buildInstallTip tests ---
+
+func TestBuildInstallTip_PermDenied_ContainsSudo(t *testing.T) {
+	tip := buildInstallTip("uv", "brew install uv", true, map[string]bool{}, "linux")
+
+	assert.Contains(t, tip, "sudo")
+}
+
+func TestBuildInstallTip_EmptyToolKey(t *testing.T) {
+	assert.Empty(t, buildInstallTip("", "brew install uv", false, map[string]bool{"brew": true}, "linux"))
+}
+
+func TestBuildInstallTip_UnknownTool(t *testing.T) {
+	assert.Empty(t, buildInstallTip("nonexistent", "brew install nonexistent", false, map[string]bool{"brew": true}, "linux"))
+}
+
+func TestBuildInstallTip_ManagerStrategy(t *testing.T) {
+	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"pyenv": true}, "linux")
+
+	assert.Contains(t, tip, "You have pyenv")
+	assert.Contains(t, tip, "pip install uv")
+}
+
+func TestBuildInstallTip_ManagerStrategyMultipleCommands(t *testing.T) {
+	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"asdf": true}, "linux")
+
+	assert.Contains(t, tip, "You have asdf")
+	assert.Contains(t, tip, "asdf install uv latest")
+	assert.Contains(t, tip, "\t")
+}
+
+func TestBuildInstallTip_FallbackStrategy(t *testing.T) {
+	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{}, "linux")
+
+	assert.Contains(t, tip, "curl")
+	assert.NotContains(t, tip, "You have")
+}
+
+func TestBuildInstallTip_FallbackStrategyWindows(t *testing.T) {
+	tip := buildInstallTip("uv", "winget install uv", false, map[string]bool{}, "windows")
+
+	assert.Contains(t, tip, "iex")
+}
+
+func TestBuildInstallTip_SkipsFailedManager(t *testing.T) {
+	// brew failed, pyenv is available — should suggest pyenv, not brew
+	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"brew": true, "pyenv": true}, "linux")
+
+	assert.Contains(t, tip, "pyenv")
+	assert.NotContains(t, tip, "brew")
+}
+
+// --- buildInstallFailureMsg tests ---
+
+func TestBuildInstallFailureMsg_AlternativeManagerDetected(t *testing.T) {
+	env := map[string]bool{"pyenv": true}
+
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+
+	assert.Contains(t, result, "You have pyenv")
+	assert.Contains(t, result, "pip install uv")
+	assert.NotContains(t, result, "permission denied")
+}
+
+func TestBuildInstallFailureMsg_NoManagerDetected(t *testing.T) {
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+
+	assert.Contains(t, result, "✗ uv install failed")
+	assert.Contains(t, result, "Raw command if you want to retry")
+	assert.NotContains(t, result, "You have")
+}
+
+func TestBuildInstallFailureMsg_FallbackShownWhenNoManager(t *testing.T) {
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+
+	assert.Contains(t, result, "curl")
+}
+
+func TestBuildInstallFailureMsg_MultiCommandTip(t *testing.T) {
+	env := map[string]bool{"asdf": true}
+
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+
+	assert.Contains(t, result, "You have asdf")
+	assert.Contains(t, result, "\t")
+}
+
+func TestBuildInstallFailureMsg_PermissionDenied(t *testing.T) {
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 126, true, map[string]bool{}, "linux")
+
+	assert.Contains(t, result, "permission denied")
+	assert.Contains(t, result, "sudo")
+}
+
+func TestBuildInstallFailureMsg_AlwaysShowsTriedAndRawCommand(t *testing.T) {
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+
+	assert.Contains(t, result, "  Tried: brew install uv")
+	assert.Contains(t, result, "  Raw command if you want to retry: brew install uv")
+}
+
+func TestBuildInstallFailureMsg_AcceptanceCriteria(t *testing.T) {
+	env := map[string]bool{"pyenv": true}
+
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+
+	expected := "✗ uv install failed (exit code 1)\n" +
+		"  Tried: brew install uv\n" +
+		"  Tip: You have pyenv — try: pip install uv\n" +
+		"  Raw command if you want to retry: brew install uv\n"
+	assert.Equal(t, expected, result)
 }

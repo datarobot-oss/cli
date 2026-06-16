@@ -160,93 +160,166 @@ func TestDetectEnvironment_AllAbsent(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// GetInstallSuggestion
+// getStrategyTip — ManagerStrategy
 // ──────────────────────────────────────────────────────────────
 
-// TestGetInstallSuggestion_PyenvPresentBrewAbsent_UV is the acceptance-criteria test:
-// with pyenv on PATH and brew absent, GetInstallSuggestion("uv") must return the
-// pyenv-based command (pip install uv).
-func TestGetInstallSuggestion_PyenvPresentBrewAbsent_UV(t *testing.T) {
+func TestManagerStrategy_GetStrategyTip_SingleCommand(t *testing.T) {
+	ms := ManagerStrategy{Manager: "pyenv", Commands: []string{"pip install uv"}}
+
+	assert.Equal(t, "  Tip: You have pyenv — try: pip install uv", ms.getStrategyTip("linux"))
+}
+
+func TestManagerStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
+	ms := ManagerStrategy{
+		Manager:  "asdf",
+		Commands: []string{"asdf install uv latest", "asdf global uv latest"},
+	}
+
+	assert.Equal(t, "  Tip: You have asdf — try: \n\tasdf install uv latest\n\tasdf global uv latest", ms.getStrategyTip("linux"))
+}
+
+func TestManagerStrategy_GetStrategyTip_GoosIgnored(t *testing.T) {
+	ms := ManagerStrategy{Manager: "brew", Commands: []string{"brew install uv"}}
+
+	assert.Equal(t, ms.getStrategyTip("linux"), ms.getStrategyTip("windows"), "goos must not affect ManagerStrategy tip")
+}
+
+// ──────────────────────────────────────────────────────────────
+// getStrategyTip — FallbackStrategy
+// ──────────────────────────────────────────────────────────────
+
+func TestFallbackStrategy_GetStrategyTip_SingleCommand(t *testing.T) {
+	fs := FallbackStrategy{Commands: []string{"curl -LsSf https://astral.sh/uv/install.sh | sh"}}
+
+	assert.Equal(t, "  Try: curl -LsSf https://astral.sh/uv/install.sh | sh", fs.getStrategyTip("linux"))
+}
+
+func TestFallbackStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
+	fs := FallbackStrategy{Commands: []string{"curl https://pyenv.run | bash", "pyenv install 3.12", "pyenv global 3.12"}}
+
+	assert.Equal(t, "  Try:\n\tcurl https://pyenv.run | bash\n\tpyenv install 3.12\n\tpyenv global 3.12", fs.getStrategyTip("linux"))
+}
+
+func TestFallbackStrategy_GetStrategyTip_URLOnly(t *testing.T) {
+	fs := FallbackStrategy{URL: "https://git-scm.com/downloads"}
+
+	assert.Equal(t, "  See: https://git-scm.com/downloads", fs.getStrategyTip("linux"))
+}
+
+func TestFallbackStrategy_GetStrategyTip_Empty(t *testing.T) {
+	assert.Empty(t, FallbackStrategy{}.getStrategyTip("linux"))
+}
+
+func TestFallbackStrategy_GetStrategyTip_WindowsOverride(t *testing.T) {
+	fs := FallbackStrategy{
+		Commands:        []string{"curl -LsSf https://astral.sh/uv/install.sh | sh"},
+		CommandsWindows: []string{`powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`},
+	}
+
+	assert.Contains(t, fs.getStrategyTip("windows"), "iex")
+	assert.Contains(t, fs.getStrategyTip("linux"), "curl")
+}
+
+// ──────────────────────────────────────────────────────────────
+// selectInstallStrategy
+// ──────────────────────────────────────────────────────────────
+
+// TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV is the acceptance-criteria test:
+// with pyenv on PATH and brew absent, selectInstallStrategy("uv") must return the
+// pyenv ManagerStrategy (pip install uv).
+func TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV(t *testing.T) {
 	env := map[string]bool{
 		"pyenv": true,
 		"brew":  false,
 	}
 
-	result := getInstallSuggestion("uv", env, "linux")
+	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Equal(t, []string{"pip install uv"}, result)
+	require.True(t, ok)
+	assert.Equal(t, "pyenv", ms.Manager)
+	assert.Equal(t, []string{"pip install uv"}, ms.Commands)
 }
 
-func TestGetInstallSuggestion_BrewPresent_UV(t *testing.T) {
+func TestSelectInstallStrategy_BrewPresent_UV(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	result := getInstallSuggestion("uv", env, "darwin")
+	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Equal(t, []string{"brew install uv"}, result)
+	require.True(t, ok)
+	assert.Equal(t, []string{"brew install uv"}, ms.Commands)
 }
 
-func TestGetInstallSuggestion_BrewPresent_Python(t *testing.T) {
+func TestSelectInstallStrategy_BrewPresent_Python(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	result := getInstallSuggestion("python", env, "darwin")
+	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Equal(t, []string{"brew install python@3.12"}, result)
+	require.True(t, ok)
+	assert.Equal(t, []string{"brew install python@3.12"}, ms.Commands)
 }
 
-func TestGetInstallSuggestion_FallbackUnix_WhenNoManagerDetected(t *testing.T) {
+func TestSelectInstallStrategy_FallbackUnix_WhenNoManagerDetected(t *testing.T) {
 	env := map[string]bool{}
 
-	result := getInstallSuggestion("uv", env, "linux")
+	fs, ok := selectInstallStrategy("uv", "", env).(FallbackStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Contains(t, result[0], "curl")
+	require.True(t, ok)
+	require.NotEmpty(t, fs.Commands)
+	assert.Contains(t, fs.Commands[0], "curl")
 }
 
-func TestGetInstallSuggestion_FallbackWindows(t *testing.T) {
+func TestSelectInstallStrategy_FallbackWindows(t *testing.T) {
 	env := map[string]bool{"is_windows": true}
 
-	result := getInstallSuggestion("uv", env, "windows")
+	fs, ok := selectInstallStrategy("uv", "", env).(FallbackStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Contains(t, result[0], "iex")
+	require.True(t, ok)
+	require.NotEmpty(t, fs.CommandsWindows)
+	assert.Contains(t, fs.CommandsWindows[0], "iex")
 }
 
-func TestGetInstallSuggestion_UnknownTool(t *testing.T) {
+func TestSelectInstallStrategy_UnknownTool(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	result := getInstallSuggestion("nonexistent-tool", env, "linux")
+	result := selectInstallStrategy("nonexistent-tool", "", env)
 
 	assert.Nil(t, result)
 }
 
-func TestGetInstallSuggestion_WingetPresent_Task(t *testing.T) {
+func TestSelectInstallStrategy_WingetPresent_Task(t *testing.T) {
 	env := map[string]bool{"winget": true, "is_windows": true}
 
-	result := getInstallSuggestion("task", env, "windows")
+	ms, ok := selectInstallStrategy("task", "", env).(ManagerStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Equal(t, []string{"winget install Task.Task"}, result)
+	require.True(t, ok)
+	assert.Equal(t, []string{"winget install Task.Task"}, ms.Commands)
 }
 
-func TestGetInstallSuggestion_NVMPresent_Node(t *testing.T) {
+func TestSelectInstallStrategy_NVMPresent_Node(t *testing.T) {
 	env := map[string]bool{"nvm": true}
 
-	result := getInstallSuggestion("node", env, "linux")
+	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
 
-	require.NotEmpty(t, result)
-	assert.Equal(t, []string{"nvm install 24", "nvm use 24"}, result)
+	require.True(t, ok)
+	assert.Equal(t, []string{"nvm install 24", "nvm use 24"}, ms.Commands)
 }
 
-func TestGetInstallSuggestion_AllToolsHaveAtLeastOneFallback(t *testing.T) {
+func TestSelectInstallStrategy_AllToolsHaveAtLeastOneFallback(t *testing.T) {
 	emptyEnv := map[string]bool{}
 
 	for key := range ToolRegistry {
 		t.Run(key, func(t *testing.T) {
-			result := getInstallSuggestion(key, emptyEnv, "linux")
+			result := selectInstallStrategy(key, "", emptyEnv)
 			assert.NotNil(t, result, "tool %q must have a fallback strategy", key)
 		})
 	}
+}
+
+func TestSelectInstallStrategy_SkipsFailedMgr(t *testing.T) {
+	env := map[string]bool{"pyenv": true, "brew": true}
+
+	ms, ok := selectInstallStrategy("uv", "pyenv", env).(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, "brew", ms.Manager, "should skip pyenv and return brew")
 }

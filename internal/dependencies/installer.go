@@ -15,10 +15,13 @@
 package dependencies
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
+	"strings"
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
@@ -45,7 +48,9 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 
 		fmt.Fprintf(w, "📦 Installing %s...\n", prerequisite.Name)
 
-		exitCode, err := ExecuteShLine(installCmd, w)
+		var cmdBuf bytes.Buffer
+
+		exitCode, err := ExecuteShLine(installCmd, io.MultiWriter(w, &cmdBuf))
 		if err != nil {
 			log.Debug("deps: install failed to start", "name", prerequisite.Name, "err", err)
 
@@ -55,7 +60,13 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 		if exitCode != 0 {
 			log.Debug("deps: install exited non-zero", "name", prerequisite.Name, "exit_code", exitCode)
 
-			return installed, fmt.Errorf("install failed for %q (exit code %d)\n  Please run manually: %s\n  Or check %s", prerequisite.Name, exitCode, installCmd, prerequisite.URL)
+			env := DetectEnvironment()
+			permDenied := isPermissionDenied(exitCode, cmdBuf.String())
+			msg := buildInstallFailureMsg(prerequisite, exitCode, permDenied, env, runtime.GOOS)
+
+			fmt.Fprint(w, msg)
+
+			return installed, fmt.Errorf("install failed for %q (exit code %d)", prerequisite.Name, exitCode)
 		}
 
 		log.Debug("deps: tool installed", "name", prerequisite.Name)
@@ -79,6 +90,97 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 	}
 
 	return installed, nil
+}
+
+// isPermissionDenied inspects exit codes and stderr text across OS types.
+func isPermissionDenied(exitCode int, stderr string) bool {
+	stderrLower := strings.ToLower(stderr)
+
+	if strings.Contains(stderrLower, "permission denied") ||
+		strings.Contains(stderrLower, "operation not permitted") ||
+		strings.Contains(stderrLower, "access is denied") ||
+		strings.Contains(stderrLower, "requires root privileges") ||
+		strings.Contains(stderrLower, "unauthorizedaccessexception") {
+		return true
+	}
+
+	// Unix-like systems (Linux & macOS) return 126 when a file lacks execute permissions
+	if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && exitCode == 126 {
+		return true
+	}
+
+	return false
+}
+
+// extractFailedManager heuristically identifies the package/version manager
+// referenced in cmd (e.g. "brew" in "brew install uv"). Returns "" if none found.
+func extractFailedManager(cmd string) string {
+	for _, m := range knownManagers {
+		if strings.Contains(cmd, m) {
+			return m
+		}
+	}
+
+	return ""
+}
+
+// buildInstallFailureMsg composes the user-facing failure message for a failed install.
+// env and goos are injectable for testing.
+func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permDenied bool, env map[string]bool, goos string) string {
+	toolName := prerequisite.Name
+
+	toolKey := prerequisite.Key
+	if toolKey == "" {
+		toolKey = NormalizeToolName(prerequisite.Name)
+	}
+
+	installCmd, _ := prerequisite.PlatformInstallCommand()
+
+	var sb strings.Builder
+
+	if permDenied {
+		fmt.Fprintf(&sb, "✗ %s install failed (exit code %d — permission denied)\n", toolName, exitCode)
+	} else {
+		fmt.Fprintf(&sb, "✗ %s install failed (exit code %d)\n", toolName, exitCode)
+	}
+
+	fmt.Fprintf(&sb, "  Tried: %s\n", installCmd)
+
+	if tip := buildInstallTip(toolKey, installCmd, permDenied, env, goos); tip != "" {
+		fmt.Fprintf(&sb, "%s\n", tip)
+	}
+
+	fmt.Fprintf(&sb, "  Raw command if you want to retry: %s\n", installCmd)
+
+	return sb.String()
+}
+
+// buildInstallTip returns the optional tip line for buildInstallFailureMsg, or "" when
+// no actionable suggestion is available.
+func buildInstallTip(toolKey, installCmd string, permDenied bool, env map[string]bool, goos string) string {
+	if permDenied {
+		switch runtime.GOOS {
+		case "windows":
+			return "  Tip: This action requires Administrator privileges. Please restart your terminal/tool as Administrator."
+		case "darwin", "linux":
+			return "  Tip: This action requires root privileges. Please re-run this tool using 'sudo'."
+		default:
+			return "  Tip: Administrative or root privileges are required to perform this action."
+		}
+	}
+
+	if toolKey == "" {
+		return ""
+	}
+
+	failedMgr := extractFailedManager(installCmd)
+
+	strategy := selectInstallStrategy(toolKey, failedMgr, env)
+	if strategy == nil {
+		return ""
+	}
+
+	return strategy.getStrategyTip(goos)
 }
 
 // ExecuteShLine executes shellCmd via sh -c, streaming stdout and stderr
