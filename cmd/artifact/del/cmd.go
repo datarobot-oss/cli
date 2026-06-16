@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements the `dr workload delete` verb. The directory is
-// named `del` rather than `delete` because the latter shadows Go's built-in
-// delete() function in importing files.
+// Package del implements the `dr artifact delete` verb. The
+// directory is named `del` rather than `delete` because the latter shadows
+// Go's built-in delete() function in importing files.
 package del
 
 import (
@@ -35,20 +35,21 @@ import (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <workload-id>",
-		Short: "Delete a workload.",
-		Long: `Delete a workload by id.
+		Use:   "delete <artifact-id>",
+		Short: "Delete an artifact",
+		Long: `Delete an artifact by id.
 
-Deleting a running workload is allowed: the platform stops the backing
-replicas first, then removes the workload. The artifact it was created from
-is not deleted with it; remove that separately with
-'dr artifact delete <artifact-id>' once no workload references it.
+Two server-side rules apply:
+  • Locked artifacts can never be deleted (locking is one-way).
+  • An artifact still referenced by a workload cannot be deleted; the error
+    names the blocking workload ids. Delete those first with
+    'dr workload delete <workload-id>'.
 
 Without --yes the command asks for confirmation.
 
 Example:
-  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0
-  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes`,
+  dr artifact delete 68b0c1d2e3f4a5b6c7d8e9f0
+  dr artifact delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -58,11 +59,11 @@ Example:
 				return err
 			}
 
-			if err := workload.DeleteWorkload(args[0]); err != nil {
+			if err := workload.DeleteArtifact(args[0]); err != nil {
 				return handleDeleteError(err, args[0])
 			}
 
-			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + args[0]))
+			fmt.Println(tui.BaseTextStyle.Render("Deleted artifact: " + args[0]))
 
 			return nil
 		},
@@ -79,7 +80,7 @@ Example:
 		yesFlag, _ := cmd.Flags().GetBool("yes")
 
 		return map[string]any{
-			"workload_id": telemetry.FirstArg(args),
+			"artifact_id": telemetry.FirstArg(args),
 			"yes":         yesFlag || viperx.GetBool("yes"),
 		}
 	})
@@ -87,11 +88,7 @@ Example:
 	return cmd
 }
 
-// confirmDelete returns (true, nil) when the deletion may proceed: either
-// --yes / DATAROBOT_CLI_NON_INTERACTIVE was given, or the user confirmed
-// interactively. A declined prompt is (false, nil) so the command exits 0
-// as a no-op.
-func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
+func confirmDelete(cmd *cobra.Command, artifactID string) (bool, error) {
 	yesFlag, _ := cmd.Flags().GetBool("yes")
 	if yesFlag || viperx.GetBool("yes") {
 		return true, nil
@@ -102,7 +99,7 @@ func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
 	}
 
 	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
-		"Delete workload "+workloadID+"? This stops and removes a running workload. [y/N] ")
+		"Delete artifact "+artifactID+"? [y/N] ")
 	if err != nil {
 		return false, err
 	}
@@ -116,12 +113,13 @@ func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
 
 // handleDeleteError converts a 404 into a friendly informational message
 // (returns nil) so the user does not see a stack-trace-style HTTP error
-// for what is effectively a no-op.
-func handleDeleteError(err error, workloadID string) error {
+// for what is effectively a no-op. Conflicts (409: locked, or referenced by
+// a workload) propagate with the server's detail intact.
+func handleDeleteError(err error, artifactID string) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render("No workload found with id: " + workloadID))
+		fmt.Println(tui.DimStyle.Render("No artifact found with id: " + artifactID))
 
 		return nil
 	}

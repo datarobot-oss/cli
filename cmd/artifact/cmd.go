@@ -12,47 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workload
+package artifact
 
 import (
-	"github.com/datarobot/cli/cmd/workload/create"
-	"github.com/datarobot/cli/cmd/workload/del"
-	"github.com/datarobot/cli/cmd/workload/endpoint"
-	"github.com/datarobot/cli/cmd/workload/get"
-	"github.com/datarobot/cli/cmd/workload/list"
-	"github.com/datarobot/cli/cmd/workload/logs"
-	"github.com/datarobot/cli/cmd/workload/start"
-	"github.com/datarobot/cli/cmd/workload/status"
-	"github.com/datarobot/cli/cmd/workload/stop"
+	"github.com/datarobot/cli/cmd/artifact/build"
+	"github.com/datarobot/cli/cmd/artifact/code"
+	"github.com/datarobot/cli/cmd/artifact/create"
+	"github.com/datarobot/cli/cmd/artifact/del"
+	"github.com/datarobot/cli/cmd/artifact/get"
+	"github.com/datarobot/cli/cmd/artifact/list"
+	"github.com/datarobot/cli/cmd/artifact/lock"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "workload",
-		Aliases: []string{"wl"},
+		Use:     "artifact",
 		GroupID: "core",
-		Short:   "🚀 Workload management commands",
-		Long: `Workload management commands for your DataRobot applications.
+		Short:   "📦 Artifact management commands",
+		Long: `Artifact management commands for your DataRobot workloads.
 
-Manage and monitor workloads in your deployment infrastructure.`,
+Create and inspect artifacts, build their container images, and
+synchronize local code with a remote artifact.`,
 	}
 
 	features.SetGate(cmd, "workload")
 
 	cmd.AddCommand(
-		// The workload itself is the primary resource: direct verbs, like
+		// The artifact is the primary resource: direct verbs, like
 		// `dr pipeline create|get|...`.
 		create.Cmd(),
 		del.Cmd(),
-		endpoint.Cmd(),
 		get.Cmd(),
 		list.Cmd(),
-		logs.Cmd(),
-		start.Cmd(),
-		status.Cmd(),
-		stop.Cmd(),
+		lock.Cmd(),
+		// Sub-resources keep their noun groups.
+		build.Cmd(),
+		code.Cmd(),
 	)
 
 	return cmd

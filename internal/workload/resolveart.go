@@ -31,7 +31,7 @@ const (
 // ResolveArtifactID returns the artifact id to operate on. When explicit is
 // non-empty it is returned verbatim with source "explicit". Otherwise the
 // current working directory is searched for a .wapi/config.json (the same
-// project-linked sync state managed by 'dr workload code init/sync') and the
+// project-linked sync state managed by 'dr artifact code init/sync') and the
 // id is read from there with source "wapi".
 //
 // Returns a user-facing error when neither source provides one so callers can
@@ -54,7 +54,7 @@ func ResolveArtifactID(explicit string) (string, string, error) {
 	cfg, err := wapi.LoadConfig(absDir)
 	if err != nil {
 		if errors.Is(err, wapi.ErrNotInitialized) {
-			return "", "", fmt.Errorf("artifact id not provided and no .wapi project in %s. Run 'dr workload code init <artifact-id>' or pass the id explicitly", absDir)
+			return "", "", fmt.Errorf("artifact id not provided and no .wapi project in %s. Run 'dr artifact code init <artifact-id>' or pass the id explicitly", absDir)
 		}
 
 		return "", "", fmt.Errorf("read .wapi/config.json: %w", err)

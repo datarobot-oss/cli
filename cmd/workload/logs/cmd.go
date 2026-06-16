@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/datarobot/cli/cmd/workload/internal/pollflags"
+	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"

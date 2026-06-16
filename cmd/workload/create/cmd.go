@@ -47,7 +47,7 @@ a 422 with a JSON-path detail on a mismatch.
 
 Two flows:
 
-  1. Deploy an existing artifact (e.g. one built with 'dr workload code sync'
+  1. Deploy an existing artifact (e.g. one built with 'dr artifact code sync'
      and a build):
 
   {
