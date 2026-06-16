@@ -151,6 +151,7 @@ func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permD
 	}
 
 	fmt.Fprintf(&sb, "  Raw command if you want to retry: %s\n", installCmd)
+
 	if prerequisite.URL != "" {
 		fmt.Fprintf(&sb, "  Refer to %s for manual installation instructions.\n", prerequisite.URL)
 	}
