@@ -1,19 +1,22 @@
 #!/bin/bash
 # Smoke tests for `dr dependency install`
 #
-# Scenarios:
-#   1. `dr dependency install --yes`           skips prompt, exits 0
-#   2. `dr dependency install -y`              short flag alias, exits 0
-#   3. `DATAROBOT_CLI_NON_INTERACTIVE=true dr dependency install`
-#                                              env var bypasses prompt, exits 0
-#   4. All tools present → "already up to date" path (no install triggered)
-#   5. `dr dependency check` exits 0 after install
-#   6. User types "y" at interactive prompt    → install proceeds, exits 0
-#   7. User types "n" at interactive prompt    → install declined, exits 0, nothing installed
+# Each test creates an isolated temp directory containing a synthetic
+# .datarobot/cli/versions.yaml so the CLI reads fake tool requirements
+# rather than installing real tools. Two kinds of fake tools are used:
 #
-# Before each test the state of python3/uv/pulumi/task is snapshotted.
-# After each test any tool that was absent beforehand is uninstalled so the
-# next test starts from the same baseline.
+#   "outdated":  command "echo 1.0.0", minimum-version "999.0.0" → always WrongVersionTools
+#   "satisfied": command "echo 99.0.0", minimum-version "1.0.0"  → always passes check
+#
+# Scenarios:
+#   1. `dr dependency install --yes`                    skips prompt, runs install, exits 0
+#   2. `dr dependency install -y`                       short flag alias, same
+#   3. `DATAROBOT_CLI_NON_INTERACTIVE=true dr dependency install`
+#                                                       env var bypasses prompt, exits 0
+#   4. All tools satisfied → "already up to date"      no install triggered
+#   5. `dr dependency check` exits 0 when all satisfied
+#   6. User types "y" at interactive prompt             install proceeds, exits 0
+#   7. User types "n" at interactive prompt             install declined, exits 0, nothing installed
 #
 # Usage:
 #   DR_BIN=./dist/dr bash smoke_test_scripts/run_deps_install_smoke_test.sh
@@ -25,7 +28,11 @@ export TERM="dumb"
 
 DR_BIN="${DR_BIN:-dr}"
 
-TRACKED_TOOLS="python3 uv pulumi task"
+# Resolve relative paths so DR_BIN still works after cd into temp dirs.
+case "$DR_BIN" in
+    /*) ;;
+    */*) DR_BIN="$(pwd)/$DR_BIN" ;;
+esac
 
 # ──────────────────────────────────────────────────────────────
 # Assertion helpers
@@ -51,7 +58,7 @@ assert_output_contains() {
     local pattern="$2"
     local label="${3:-contains '$pattern'}"
 
-    if echo "$output" | grep -q "$pattern"; then
+    if echo "$output" | grep -qE "$pattern"; then
         echo "  ✅ assert_output_contains: $label"
     else
         echo "  ❌ assert_output_contains FAILED: $label"
@@ -66,7 +73,7 @@ assert_output_not_contains() {
     local pattern="$2"
     local label="${3:-does not contain '$pattern'}"
 
-    if ! echo "$output" | grep -q "$pattern"; then
+    if ! echo "$output" | grep -qE "$pattern"; then
         echo "  ✅ assert_output_not_contains: $label"
     else
         echo "  ❌ assert_output_not_contains FAILED: $label"
@@ -76,130 +83,49 @@ assert_output_not_contains() {
     fi
 }
 
-pass_test() {
-    echo "✅ $1 PASSED"
-    PASS_COUNT=$((PASS_COUNT + 1))
-}
-
 # ──────────────────────────────────────────────────────────────
-# State snapshot & cleanup
+# Fake template helpers
 # ──────────────────────────────────────────────────────────────
 
-# Current snapshot file path — set by snapshot_tool_state, consumed by restore_tool_state.
-_SNAPSHOT_FILE=""
-
-# snapshot_tool_state — call at the top of each test.
-# Writes one line per tracked tool:  <tool>:<status>:<path>
-#   status = "installed" | "not_installed"
-#   path   = absolute path from `command -v`, or "-" when not installed
-# Also prints the state so CI logs show the baseline at test entry.
-snapshot_tool_state() {
-    _SNAPSHOT_FILE=$(mktemp /tmp/dr-deps-snapshot.XXXXXX)
-
-    echo "  --- tool state before test ---"
-
-    local tool
-
-    for tool in $TRACKED_TOOLS; do
-        local status path ver
-
-        if command -v "$tool" >/dev/null 2>&1; then
-            path=$(command -v "$tool")
-            status="installed"
-            case "$tool" in
-                python3) ver=$(python3 --version 2>&1 | head -1) ;;
-                uv)      ver=$(uv --version 2>&1 | head -1) ;;
-                pulumi)  ver=$(pulumi version 2>&1 | head -1) ;;
-                task)    ver=$(task --version 2>&1 | head -1) ;;
-                *)       ver="unknown" ;;
-            esac
-            echo "    $tool: $ver  ($path)"
-        else
-            path="-"
-            status="not_installed"
-            echo "    $tool: not installed"
-        fi
-
-        echo "${tool}:${status}:${path}" >> "$_SNAPSHOT_FILE"
-    done
-
-    echo "  ------------------------------"
+# make_outdated_template — creates a temp directory with a versions.yaml that
+# always reports the fake tool as outdated (version 1.0.0 < minimum 999.0.0).
+# The install command is a no-op echo so nothing is actually installed.
+make_outdated_template() {
+    local dir
+    dir=$(mktemp -d /tmp/dr-deps-smoke.XXXXXX)
+    mkdir -p "$dir/.datarobot/cli"
+    cat > "$dir/.datarobot/cli/versions.yaml" << 'YAML'
+fake-dep:
+  name: FakeDep
+  command: "echo 1.0.0"
+  minimum-version: "999.0.0"
+  url: "https://example.com"
+  install:
+    macos: "echo FakeDep installed"
+    linux: "echo FakeDep installed"
+    windows: "echo FakeDep installed"
+YAML
+    echo "$dir"
 }
 
-# uninstall_tool — best-effort removal of a single tool.
-# Uses the reverse of the platform install commands in tools/prerequisites.go.
-# Errors are suppressed so a failed uninstall never aborts the test suite.
-uninstall_tool() {
-    local tool="$1"
-
-    echo "  🧹 cleanup: removing $tool..."
-
-    case "$(uname -s)" in
-        Darwin)
-            case "$tool" in
-                python3) brew uninstall python 2>/dev/null || true ;;
-                uv)      brew uninstall uv 2>/dev/null || true ;;
-                pulumi)  brew uninstall pulumi 2>/dev/null || true ;;
-                task)    brew uninstall go-task/tap/go-task 2>/dev/null || true ;;
-            esac
-            ;;
-        Linux)
-            case "$tool" in
-                uv)
-                    # astral.sh installer puts binaries in ~/.local/bin
-                    rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx" 2>/dev/null || true
-                    ;;
-                pulumi)
-                    # get.pulumi.com installer creates ~/.pulumi
-                    rm -rf "$HOME/.pulumi" 2>/dev/null || true
-                    local bin_path
-                    bin_path=$(command -v pulumi 2>/dev/null || true)
-                    [ -n "$bin_path" ] && rm -f "$bin_path" 2>/dev/null || true
-                    ;;
-                task)
-                    # taskfile.dev installer puts task on PATH; remove it
-                    local bin_path
-                    bin_path=$(command -v task 2>/dev/null || true)
-                    [ -n "$bin_path" ] && rm -f "$bin_path" 2>/dev/null || true
-                    ;;
-                python3)
-                    # Do not remove python3 on Linux — system may depend on it
-                    echo "  ⚠️  cleanup: skipping python3 removal on Linux (system dependency)"
-                    ;;
-            esac
-            ;;
-    esac
-
-    echo "  🧹 cleanup: $tool removed"
-}
-
-# restore_tool_state — call at the end of each test (including on failure).
-# Compares current tool presence against the snapshot taken at test start.
-# Any tool that was absent before the test but present now is uninstalled.
-restore_tool_state() {
-    if [ -z "$_SNAPSHOT_FILE" ] || [ ! -f "$_SNAPSHOT_FILE" ]; then
-        return 0
-    fi
-
-    local changed=0
-    local tool
-
-    for tool in $TRACKED_TOOLS; do
-        local was_installed
-        was_installed=$(grep "^${tool}:" "$_SNAPSHOT_FILE" | cut -d: -f2)
-
-        if [ "$was_installed" = "not_installed" ] && command -v "$tool" >/dev/null 2>&1; then
-            changed=1
-            uninstall_tool "$tool"
-        fi
-    done
-
-    if [ "$changed" -eq 0 ]; then
-        echo "  🧹 cleanup: no new tools to remove"
-    fi
-
-    rm -f "$_SNAPSHOT_FILE"
-    _SNAPSHOT_FILE=""
+# make_satisfied_template — creates a temp directory with a versions.yaml where
+# the fake tool always satisfies the version requirement (99.0.0 > minimum 1.0.0).
+make_satisfied_template() {
+    local dir
+    dir=$(mktemp -d /tmp/dr-deps-smoke.XXXXXX)
+    mkdir -p "$dir/.datarobot/cli"
+    cat > "$dir/.datarobot/cli/versions.yaml" << 'YAML'
+fake-dep:
+  name: FakeDep
+  command: "echo 99.0.0"
+  minimum-version: "1.0.0"
+  url: "https://example.com"
+  install:
+    macos: "echo FakeDep installed"
+    linux: "echo FakeDep installed"
+    windows: "echo FakeDep installed"
+YAML
+    echo "$dir"
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -229,26 +155,30 @@ test_yes_flag() {
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_outdated_template)
 
-    local output
-    local exit_code=0
-    output=$("$DR_BIN" dependency install --yes 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && "$DR_BIN" dependency install --yes 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "dr dependency install --yes" "$exit_code"
+    assert_output_not_contains "$output" "Install now\? \(y/n\)" \
+        "interactive prompt not shown with --yes"
+    assert_output_contains "$output" "installed|All dependencies installed" \
+        "install ran without prompt"
 
-    assert_output_not_contains "$output" "Install now? (y/n)" \
-        "interactive prompt is not shown when --yes is set"
+    rm -rf "$dir"
 
-    assert_output_contains "$output" "up to date\|installed\|Installing" \
-        "output indicates install outcome"
-
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -262,26 +192,30 @@ test_short_yes_flag() {
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_outdated_template)
 
-    local output
-    local exit_code=0
-    output=$("$DR_BIN" dependency install -y 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && "$DR_BIN" dependency install -y 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "dr dependency install -y" "$exit_code"
+    assert_output_not_contains "$output" "Install now\? \(y/n\)" \
+        "interactive prompt not shown with -y"
+    assert_output_contains "$output" "installed|All dependencies installed" \
+        "install ran without prompt"
 
-    assert_output_not_contains "$output" "Install now? (y/n)" \
-        "interactive prompt is not shown when -y is set"
+    rm -rf "$dir"
 
-    assert_output_contains "$output" "up to date\|installed\|Installing" \
-        "output indicates install outcome"
-
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -295,108 +229,106 @@ test_non_interactive_env() {
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_outdated_template)
 
-    local output
-    local exit_code=0
-    output=$(DATAROBOT_CLI_NON_INTERACTIVE=true "$DR_BIN" dependency install 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && DATAROBOT_CLI_NON_INTERACTIVE=true "$DR_BIN" dependency install 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "DATAROBOT_CLI_NON_INTERACTIVE=true dr dependency install" "$exit_code"
+    assert_output_not_contains "$output" "Install now\? \(y/n\)" \
+        "interactive prompt not shown when DATAROBOT_CLI_NON_INTERACTIVE is set"
+    assert_output_contains "$output" "installed|All dependencies installed" \
+        "install ran without prompt"
 
-    assert_output_not_contains "$output" "Install now? (y/n)" \
-        "interactive prompt is not shown when DATAROBOT_CLI_NON_INTERACTIVE is set"
+    rm -rf "$dir"
 
-    assert_output_contains "$output" "up to date\|installed\|Installing" \
-        "output indicates install outcome"
-
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
-# Test 4: All tools present → "already up to date" (no install)
-#
-# Skips if any tool is absent — "up to date" only makes sense when all present.
+# Test 4: All tools satisfied → "already up to date" (no install)
 # ──────────────────────────────────────────────────────────────
 
 test_all_satisfied_no_install() {
-    local TEST_NAME="TEST 4: all tools present → already up to date, no install"
+    local TEST_NAME="TEST 4: all tools satisfied → already up to date, no install"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_satisfied_template)
 
-    # Ensure all tools are installed before asserting the "up to date" path.
-    # Snapshot was taken above, so restore_tool_state will clean up anything
-    # installed here together with anything installed by the assertion run.
-    "$DR_BIN" dependency install --yes >/dev/null 2>&1 || true
-
-    local output
-    local exit_code=0
-    output=$("$DR_BIN" dependency install --yes 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && "$DR_BIN" dependency install --yes 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
-    assert_exit_zero "dr dependency install --yes (all present)" "$exit_code"
-
+    assert_exit_zero "dr dependency install --yes (satisfied)" "$exit_code"
     assert_output_contains "$output" "up to date" \
         "output says 'up to date' when all tools are satisfied"
-
     assert_output_not_contains "$output" "Installing" \
-        "no installation is triggered when all tools are satisfied"
+        "no installation triggered when all tools are satisfied"
 
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    rm -rf "$dir"
+
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
-# Test 5: dr dependency check agrees with install outcome
+# Test 5: dr dependency check exits 0 when all satisfied
 # ──────────────────────────────────────────────────────────────
 
-test_check_after_install() {
-    local TEST_NAME="TEST 5: dr dependency check succeeds after install"
+test_check_satisfied() {
+    local TEST_NAME="TEST 5: dr dependency check exits 0 when all satisfied"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_satisfied_template)
 
-    # Ensure tools are installed before running check
-    "$DR_BIN" dependency install --yes >/dev/null 2>&1 || true
-
-    local output
-    local exit_code=0
-    output=$("$DR_BIN" dependency check 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && "$DR_BIN" dependency check 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "dr dependency check" "$exit_code"
-
     assert_output_contains "$output" "up to date" \
-        "dependency check reports all satisfied after install"
+        "dependency check reports all satisfied"
 
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    rm -rf "$dir"
+
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
 # Test 6: User types "y" at the interactive prompt → install proceeds
-#
-# Pipes "y\n" to stdin so helpers.Confirm reads it and returns true.
-# When all tools are already present the prompt is never shown (early exit),
-# so this test is valid in both cases: tools present → "up to date", exit 0;
-# tools missing → prompt shown, "y" consumed, install runs, exit 0.
 # ──────────────────────────────────────────────────────────────
 
 test_interactive_user_y() {
@@ -406,38 +338,34 @@ test_interactive_user_y() {
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_outdated_template)
 
-    local output
-    local exit_code=0
-    output=$(printf "y\n" | "$DR_BIN" dependency install 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && printf "y\n" | "$DR_BIN" dependency install 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "dr dependency install (user answered y)" "$exit_code"
+    assert_output_contains "$output" "Install now\? \(y/n\)" \
+        "interactive prompt was displayed"
+    assert_output_contains "$output" "installed|All dependencies installed" \
+        "install ran after 'y' was entered"
 
-    assert_output_contains "$output" "up to date\|installed\|Installing" \
-        "output indicates install outcome (install ran or already satisfied)"
+    rm -rf "$dir"
 
-    # When tools were missing the prompt must have appeared and been answered.
-    # Skip this sub-assertion when the "up to date" early-exit path was taken.
-    if ! echo "$output" | grep -q "up to date"; then
-        assert_output_contains "$output" "Install now? (y/n)" \
-            "interactive prompt was displayed before install"
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
     fi
-
-    restore_tool_state
-    pass_test "$TEST_NAME"
 }
 
 # ──────────────────────────────────────────────────────────────
 # Test 7: User types "n" at the interactive prompt → install cancelled
-#
-# Pipes "n\n" to stdin so helpers.Confirm reads it and returns false.
-# Command must exit 0 (decline is not an error) and must not install anything.
-# When all tools are already present the prompt is skipped entirely ("up to date").
 # ──────────────────────────────────────────────────────────────
 
 test_interactive_user_n() {
@@ -447,30 +375,30 @@ test_interactive_user_n() {
     echo "$TEST_NAME"
     echo "═══════════════════════════════════════════════════════════════"
 
-    snapshot_tool_state
+    local dir initial_fails=$FAIL_COUNT
+    dir=$(make_outdated_template)
 
-    local output
-    local exit_code=0
-    output=$(printf "n\n" | "$DR_BIN" dependency install 2>&1) || exit_code=$?
+    local output exit_code=0
+    output=$(cd "$dir" && printf "n\n" | "$DR_BIN" dependency install 2>&1) || exit_code=$?
 
     echo "--- output ---"
     echo "$output"
     echo "--- end output ---"
 
     assert_exit_zero "dr dependency install (user answered n)" "$exit_code"
-
-    # Decline must never trigger an installation
+    assert_output_contains "$output" "Install now\? \(y/n\)" \
+        "interactive prompt was displayed before decline"
     assert_output_not_contains "$output" "📦 Installing" \
         "no installation runs when user declines"
 
-    # When tools were missing, verify the prompt was shown before the decline
-    if ! echo "$output" | grep -q "up to date"; then
-        assert_output_contains "$output" "Install now? (y/n)" \
-            "interactive prompt was displayed before decline"
-    fi
+    rm -rf "$dir"
 
-    restore_tool_state
-    pass_test "$TEST_NAME"
+    if [ "$FAIL_COUNT" -eq "$initial_fails" ]; then
+        echo "✅ $TEST_NAME PASSED"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "❌ $TEST_NAME FAILED"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -489,7 +417,7 @@ main() {
     test_short_yes_flag
     test_non_interactive_env
     test_all_satisfied_no_install
-    test_check_after_install
+    test_check_satisfied
     test_interactive_user_y
     test_interactive_user_n
 

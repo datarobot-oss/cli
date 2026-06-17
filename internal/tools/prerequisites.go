@@ -94,10 +94,10 @@ var pulumiInstallCmd = InstallCommands{
 
 // RequiredTools lists all tools required for the quickstart process
 var RequiredTools = []Prerequisite{
-	{Name: "Python", Command: "python3", URL: "https://www.python.org/downloads/", Install: pythonInstallCmd},
-	{Name: "uv", Command: "uv", URL: "https://docs.astral.sh/uv/getting-started/installation/", Install: uvInstallCmd},
-	{Name: "task", Command: "task", URL: "https://taskfile.dev/docs/installation", Install: taskInstallCmd},
-	{Name: "pulumi", Command: "pulumi", URL: "https://www.pulumi.com/docs/get-started/download-install/", Install: pulumiInstallCmd},
+	{Name: "Python", Command: "python3 --version", URL: "https://www.python.org/downloads/", MinimumVersion: "3.9.6", Install: pythonInstallCmd},
+	{Name: "uv", Command: "uv --version", URL: "https://docs.astral.sh/uv/getting-started/installation/", MinimumVersion: "0.11.20", Install: uvInstallCmd},
+	{Name: "task", Command: "task --version", URL: "https://taskfile.dev/docs/installation", MinimumVersion: "3.50.0", Install: taskInstallCmd},
+	{Name: "pulumi", Command: "pulumi version", URL: "https://www.pulumi.com/docs/get-started/download-install/", MinimumVersion: "3.245.0", Install: pulumiInstallCmd},
 }
 
 func CheckPrerequisite(name string) error {
