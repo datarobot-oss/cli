@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ func Cmd() *cobra.Command {
 		name         string
 		description  string
 		rawPackages  []string
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -46,7 +47,9 @@ Example:
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if name == "" {
 				return errors.New("--name is required")
 			}
@@ -65,15 +68,16 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&name, "name", "", "Image name (required)")
 	_ = cmd.MarkFlagRequired("name")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

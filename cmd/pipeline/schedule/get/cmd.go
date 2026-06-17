@@ -21,6 +21,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -31,7 +32,7 @@ func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
 		version      int
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +46,9 @@ Example:
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if version <= 0 {
 				return errors.New("--version is required and must be > 0")
 			}
@@ -59,18 +62,19 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	_ = cmd.MarkFlagRequired("version")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"schedule_id":   telemetry.FirstArg(args),
 			"version":       version,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

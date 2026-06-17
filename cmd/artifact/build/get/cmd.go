@@ -20,13 +20,14 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	var poll pollflags.Set
 
@@ -53,11 +54,14 @@ Examples:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			return runGet(cmd, args, outputFormat, poll)
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	pollflags.Register(cmd, &poll)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
@@ -67,7 +71,7 @@ Examples:
 			"artifact_id":   artifactID,
 			"build_id":      buildID,
 			"wait":          poll.Wait,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 
@@ -77,7 +81,7 @@ Examples:
 func runGet(
 	cmd *cobra.Command,
 	args []string,
-	outputFormat workload.OutputFormat,
+	outputFormat outputformat.OutputFormat,
 	poll pollflags.Set,
 ) error {
 	artifactID, buildID, err := buildargs.ResolvePositional(args)

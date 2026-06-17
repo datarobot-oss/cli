@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +44,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if flags.PipelineID == "" {
 				return errors.New("--pipeline is required")
 			}
@@ -61,9 +64,10 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -71,7 +75,7 @@ Example:
 			"run_id":        telemetry.FirstArg(args),
 			"scope":         flags.Scope,
 			"version":       flags.Version,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

@@ -16,13 +16,14 @@ package lock
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat pipeline.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	cmd := &cobra.Command{
 		Use:   "lock <pipeline-id>",
@@ -36,7 +37,9 @@ Example:
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			result, err := pipeline.LockPipeline(args[0])
 			if err != nil {
 				return err
@@ -46,12 +49,12 @@ Example:
 		},
 	}
 
-	pipeline.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

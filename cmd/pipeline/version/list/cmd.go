@@ -16,6 +16,7 @@ package list
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -26,7 +27,7 @@ func Cmd() *cobra.Command {
 		pipelineID   string
 		offset       int
 		limit        int
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -40,7 +41,9 @@ Example:
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			items, err := pipeline.ListVersions(pipelineID, offset, limit)
 			if err != nil {
 				return err
@@ -50,18 +53,19 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of versions to return")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"offset":        offset,
 			"limit":         limit,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

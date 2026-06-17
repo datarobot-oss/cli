@@ -22,6 +22,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -31,7 +32,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +46,9 @@ Example:
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			versionID, err := strconv.Atoi(args[0])
 			if err != nil || versionID <= 0 {
 				return fmt.Errorf("invalid version: %q (expected a positive integer)", args[0])
@@ -60,15 +63,16 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"version":       telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

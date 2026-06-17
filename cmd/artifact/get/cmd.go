@@ -16,13 +16,14 @@ package get
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	cmd := &cobra.Command{
 		Use:   "get <artifact-id>",
@@ -41,7 +42,9 @@ Example:
   dr artifact get art-abc-123 --output-format json`,
 		Args:    cobra.ExactArgs(1),
 		PreRunE: auth.EnsureAuthenticatedE,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			artifact, err := workload.GetArtifact(args[0])
 			if err != nil {
 				return err
@@ -51,12 +54,12 @@ Example:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
@@ -35,7 +36,7 @@ var validLevels = map[string]bool{
 
 func Cmd() *cobra.Command {
 	var (
-		outputFormat workload.OutputFormat
+		outputFormat outputformat.OutputFormat
 		level        string
 	)
 
@@ -62,7 +63,9 @@ Examples:
 		Args:         cobra.RangeArgs(1, 2),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			lower := strings.ToLower(level)
 			if !validLevels[lower] {
 				return fmt.Errorf("invalid --level %q: use debug, info, warn, or error", level)
@@ -84,7 +87,8 @@ Examples:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&level, "level", "info", "Minimum log level to show (debug, info, warn, error).")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
@@ -94,7 +98,7 @@ Examples:
 			"artifact_id":   artifactID,
 			"build_id":      buildID,
 			"level":         level,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

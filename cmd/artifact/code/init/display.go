@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/tui"
 )
@@ -47,8 +48,8 @@ func newInitResult(art workload.Artifact, dir string) initResult {
 	return r
 }
 
-func renderInitResult(format workload.OutputFormat, result initResult) error {
-	if format == workload.OutputFormatJSON {
+func renderInitResult(format outputformat.OutputFormat, result initResult) error {
+	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return err

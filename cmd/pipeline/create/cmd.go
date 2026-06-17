@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/pipeline/fileutil"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ func Cmd() *cobra.Command {
 	var (
 		description  string
 		mode         string
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 		fromFile     string
 	)
 
@@ -51,7 +52,9 @@ Example:
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if mode != "" && mode != pipeline.ModeDraft && mode != pipeline.ModeLocked {
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
 			}
@@ -70,15 +73,16 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the Python file to upload, e.g. --from-file=./my_pipeline.py (alternative to the positional argument)")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"mode":          mode,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 

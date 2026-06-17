@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ func Cmd() *cobra.Command {
 		mode         string
 		offset       int
 		limit        int
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -45,7 +46,9 @@ Example:
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if mode != "" && mode != pipeline.ModeDraft && mode != pipeline.ModeLocked {
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
 			}
@@ -59,17 +62,18 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 50, "Pagination limit (1-200)")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"mode":          mode,
 			"offset":        offset,
 			"limit":         limit,
-			"output_format": string(outputFormat),
+			"output_format": string(outputformat.GetFormat(cmd)),
 		}
 	})
 
