@@ -21,7 +21,7 @@ top-level `dr pipeline` subcommand operates on one of four resources:
 - pipeline **inputs** — JSON payloads supplied to a run,
 - pipeline **runs** — concrete executions on Covalent,
 - pipeline **schedules** — recurring runs on a cron expression,
-- pipeline **environments** — named, immutable-versioned bags of pip
+- pipeline **images** — named, immutable-versioned bags of pip
   packages that pipelines can be built against,
 - pipeline **tasks** — source code, function signature, and input payload
   for individual `@task`-decorated functions.
@@ -83,7 +83,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
 | `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
 | `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
-| `dr pipeline environment …` | `/pipelines/environments[/{id}]` | Manage named, versioned pip-package environments. |
+| `dr pipeline image …` | `/pipelines/images[/{id}]` | Manage named, versioned pip-package images. |
 | `dr pipeline task …`        | `…/tasks/{task_id}` (draft or locked) | Inspect individual task source, signature, and inputs. |
 
 ## Subcommands
@@ -370,23 +370,23 @@ the run ID, status, and Covalent dispatch ID.
 
 `run cancel` returns `409 Conflict` if the run is already terminal.
 
-### `environment`
+### `image`
 
-Manage pipeline execution environments — named, immutable-versioned bags of pip packages
+Manage pipeline execution images — named, immutable-versioned bags of pip packages
 that pipelines can be built against. Each `update` appends a new version; individual
-older versions can be removed with `environment version delete`.
+older versions can be removed with `image version delete`.
 
 ```bash
-dr pipeline environment create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output-format json]
-dr pipeline environment list   [--offset N] [--limit N] [--output-format json]
-dr pipeline environment update <environment-id> --package <pkg> [--package <pkg> …] [--output-format json]
-dr pipeline environment delete <environment-id>
-dr pipeline environment version delete --environment <environment-id> <version>
+dr pipeline image create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output-format json]
+dr pipeline image list   [--offset N] [--limit N] [--output-format json]
+dr pipeline image update <image-id> --package <pkg> [--package <pkg> …] [--output-format json]
+dr pipeline image delete <image-id>
+dr pipeline image version delete --image <image-id> <version>
 ```
 
-`environment create` registers a new environment; `environment update` appends a new
-immutable version. `environment delete` soft-deletes the latest active version (cascading
-to the parent if no active versions remain). `environment version delete` targets a
+`image create` registers a new image; `image update` appends a new
+immutable version. `image delete` soft-deletes the latest active version (cascading
+to the parent if no active versions remain). `image version delete` targets a
 specific version by its integer number.
 
 ### `task`

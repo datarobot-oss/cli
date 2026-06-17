@@ -30,31 +30,31 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List pipeline execution environments",
-		Long: `List pipeline execution environments.
+		Short: "List pipeline execution images",
+		Long: `List pipeline execution images.
 
-Returns a tabular view of registered environments, newest first. Each
-row reflects the latest version's status only; per-version details are
-returned by ` + "`environment create`" + ` and ` + "`environment update`" + `.
+Returns a tabular view of registered images, newest first. Each row
+reflects the latest version's status only; per-version details are
+returned by ` + "`image create`" + ` and ` + "`image update`" + `.
 
 Example:
-  dr pipeline environment list
-  dr pipeline environment list --offset 50 --limit 10 --output-format json`,
+  dr pipeline image list
+  dr pipeline image list --offset 50 --limit 10 --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			items, err := pipeline.ListEnvironments(offset, limit)
+			items, err := pipeline.ListImages(offset, limit)
 			if err != nil {
 				return err
 			}
 
-			return pipeline.RenderEnvironments(outputFormat, items)
+			return pipeline.RenderImages(outputFormat, items)
 		},
 	}
 
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of environments to return")
+	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of images to return")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {

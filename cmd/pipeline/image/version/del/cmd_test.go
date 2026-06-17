@@ -34,27 +34,27 @@ func runCmd(t *testing.T, args ...string) error {
 	return cmd.Execute()
 }
 
-func TestCmd_RejectsMissingEnvironment(t *testing.T) {
+func TestCmd_RejectsMissingImage(t *testing.T) {
 	err := runCmd(t, "1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "environment")
+	assert.Contains(t, err.Error(), "image")
 }
 
 func TestCmd_RejectsBadVersion(t *testing.T) {
-	err := runCmd(t, "--environment", "env-1", "abc")
+	err := runCmd(t, "--image", "img-1", "abc")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid version")
 
-	err = runCmd(t, "--environment", "env-1", "0")
+	err = runCmd(t, "--image", "img-1", "0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid version")
 }
 
 func TestCmd_RequiresPositionalArg(t *testing.T) {
-	err := runCmd(t, "--environment", "env-1")
+	err := runCmd(t, "--image", "img-1")
 	require.Error(t, err)
 }
 
-func TestCmd_HasEnvironmentFlag(t *testing.T) {
-	assert.NotNil(t, Cmd().Flags().Lookup("environment"))
+func TestCmd_HasImageFlag(t *testing.T) {
+	assert.NotNil(t, Cmd().Flags().Lookup("image"))
 }

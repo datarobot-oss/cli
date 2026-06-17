@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package del implements `dr pipeline environment version delete`.
-// Directory is named `del` to avoid shadowing Go's built-in `delete()`.
+// Package del implements `dr pipeline image delete`. Directory is named
+// `del` rather than `delete` to avoid shadowing Go's built-in `delete()`
+// in importing files.
 
 package del
 
@@ -21,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -32,45 +32,36 @@ import (
 )
 
 func Cmd() *cobra.Command {
-	var environmentID string
-
 	cmd := &cobra.Command{
-		Use:   "delete <version>",
-		Short: "Delete a specific version of a pipeline execution environment",
-		Long: `Soft-delete a specific version of a pipeline execution environment
-without touching the parent environment.
+		Use:   "delete <image-id>",
+		Short: "Delete a pipeline execution image",
+		Long: `Soft-delete the most recent active version of a pipeline
+execution image. If no active versions remain after the delete, the
+parent image is soft-deleted too.
+
+To delete a specific older version, use:
+  dr pipeline image version delete --image <id> <version>
 
 Example:
-  dr pipeline environment version delete --environment env-123 2`,
+  dr pipeline image delete img-123`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			version, err := strconv.Atoi(args[0])
-			if err != nil || version <= 0 {
-				return fmt.Errorf("invalid version: %q (expected a positive integer)", args[0])
-			}
-
-			err = pipeline.DeleteEnvironmentVersion(environmentID, version)
+			err := pipeline.DeleteImage(args[0])
 			if err != nil {
-				return handleDeleteError(err, environmentID, args[0])
+				return handleDeleteError(err, args[0])
 			}
 
-			fmt.Println(tui.BaseTextStyle.Render(
-				fmt.Sprintf("Deleted environment version: %s v%d", environmentID, version),
-			))
+			fmt.Println(tui.BaseTextStyle.Render("Deleted image: " + args[0]))
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&environmentID, "environment", "", "Environment ID (required)")
-	_ = cmd.MarkFlagRequired("environment")
-
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"environment_id": environmentID,
-			"version":        telemetry.FirstArg(args),
+			"image_id": telemetry.FirstArg(args),
 		}
 	})
 
@@ -80,13 +71,11 @@ Example:
 // handleDeleteError converts a 404 into a friendly informational message
 // (returns nil) so the user does not see a stack-trace-style HTTP error
 // for what is effectively a no-op.
-func handleDeleteError(err error, environmentID, version string) error {
+func handleDeleteError(err error, id string) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render(
-			fmt.Sprintf("No environment version found: %s v%s", environmentID, version),
-		))
+		fmt.Println(tui.DimStyle.Render("No image found with id: " + id))
 
 		return nil
 	}

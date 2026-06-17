@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// environment_output.go centralises the human/JSON output rendering used by
-// the `dr pipelines environment` verbs so each verb file stays focused on
+// image_output.go centralises the human/JSON output rendering used by
+// the `dr pipeline image` verbs so each verb file stays focused on
 // flag wiring.
 package pipeline
 
@@ -33,8 +33,8 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// environmentVersionJSON is the DTO for a single EnvironmentVersion in JSON output.
-type environmentVersionJSON struct {
+// imageVersionJSON is the DTO for a single ImageVersion in JSON output.
+type imageVersionJSON struct {
 	Version     int      `json:"version"`
 	Packages    []string `json:"packages"`
 	Status      string   `json:"status"`
@@ -43,20 +43,20 @@ type environmentVersionJSON struct {
 	UpdatedAt   string   `json:"updated_at"`
 }
 
-// environmentJSON is the CLI-facing DTO for `--output-format json` of an Environment.
-type environmentJSON struct {
-	EnvironmentID string                   `json:"environment_id"`
-	Name          string                   `json:"name"`
-	Description   *string                  `json:"description,omitempty"`
-	LatestVersion int                      `json:"latest_version"`
-	Versions      []environmentVersionJSON `json:"versions"`
-	CreatedAt     string                   `json:"created_at"`
-	UpdatedAt     string                   `json:"updated_at"`
+// imageJSON is the CLI-facing DTO for `--output-format json` of an Image.
+type imageJSON struct {
+	ImageID       string             `json:"image_id"`
+	Name          string             `json:"name"`
+	Description   *string            `json:"description,omitempty"`
+	LatestVersion int                `json:"latest_version"`
+	Versions      []imageVersionJSON `json:"versions"`
+	CreatedAt     string             `json:"created_at"`
+	UpdatedAt     string             `json:"updated_at"`
 }
 
-// environmentSummaryJSON is the CLI-facing DTO for `--output-format json` of an EnvironmentSummary.
-type environmentSummaryJSON struct {
-	EnvironmentID string  `json:"environment_id"`
+// imageSummaryJSON is the CLI-facing DTO for `--output-format json` of an ImageSummary.
+type imageSummaryJSON struct {
+	ImageID       string  `json:"image_id"`
 	Name          string  `json:"name"`
 	Description   *string `json:"description,omitempty"`
 	LatestVersion int     `json:"latest_version"`
@@ -65,11 +65,11 @@ type environmentSummaryJSON struct {
 	UpdatedAt     string  `json:"updated_at"`
 }
 
-func toEnvironmentJSON(env Environment) environmentJSON {
-	versions := make([]environmentVersionJSON, len(env.Versions))
+func toImageJSON(img Image) imageJSON {
+	versions := make([]imageVersionJSON, len(img.Versions))
 
-	for i, v := range env.Versions {
-		versions[i] = environmentVersionJSON{
+	for i, v := range img.Versions {
+		versions[i] = imageVersionJSON{
 			Version:     v.Version,
 			Packages:    v.Packages,
 			Status:      string(v.Status),
@@ -79,54 +79,54 @@ func toEnvironmentJSON(env Environment) environmentJSON {
 		}
 	}
 
-	return environmentJSON{
-		EnvironmentID: env.EnvironmentID,
-		Name:          env.Name,
-		Description:   env.Description,
-		LatestVersion: env.LatestVersion,
+	return imageJSON{
+		ImageID:       img.ImageID,
+		Name:          img.Name,
+		Description:   img.Description,
+		LatestVersion: img.LatestVersion,
 		Versions:      versions,
-		CreatedAt:     env.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:     env.UpdatedAt.UTC().Format(time.RFC3339),
+		CreatedAt:     img.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:     img.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
-func toEnvironmentSummaryJSON(env EnvironmentSummary) environmentSummaryJSON {
-	return environmentSummaryJSON{
-		EnvironmentID: env.EnvironmentID,
-		Name:          env.Name,
-		Description:   env.Description,
-		LatestVersion: env.LatestVersion,
-		LatestStatus:  string(env.LatestStatus),
-		CreatedAt:     env.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:     env.UpdatedAt.UTC().Format(time.RFC3339),
+func toImageSummaryJSON(img ImageSummary) imageSummaryJSON {
+	return imageSummaryJSON{
+		ImageID:       img.ImageID,
+		Name:          img.Name,
+		Description:   img.Description,
+		LatestVersion: img.LatestVersion,
+		LatestStatus:  string(img.LatestStatus),
+		CreatedAt:     img.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:     img.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
-// RenderEnvironment routes a single environment to JSON or human output.
-func RenderEnvironment(format OutputFormat, env Environment) error {
+// RenderImage routes a single image to JSON or human output.
+func RenderImage(format OutputFormat, img Image) error {
 	if format == OutputFormatJSON {
-		return PrintEnvironmentJSON(env)
+		return PrintImageJSON(img)
 	}
 
-	PrintEnvironmentHuman(env)
+	PrintImageHuman(img)
 
 	return nil
 }
 
-// RenderEnvironments routes a list of environments to JSON or human output.
-func RenderEnvironments(format OutputFormat, items []EnvironmentSummary) error {
+// RenderImages routes a list of images to JSON or human output.
+func RenderImages(format OutputFormat, items []ImageSummary) error {
 	if format == OutputFormatJSON {
-		return PrintEnvironmentListJSON(items)
+		return PrintImageListJSON(items)
 	}
 
-	PrintEnvironmentListHuman(items)
+	PrintImageListHuman(items)
 
 	return nil
 }
 
-// PrintEnvironmentJSON marshals an environment record as indented JSON through the DTO.
-func PrintEnvironmentJSON(env Environment) error {
-	data, err := json.MarshalIndent(toEnvironmentJSON(env), "", "  ")
+// PrintImageJSON marshals an image record as indented JSON through the DTO.
+func PrintImageJSON(img Image) error {
+	data, err := json.MarshalIndent(toImageJSON(img), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -136,26 +136,26 @@ func PrintEnvironmentJSON(env Environment) error {
 	return nil
 }
 
-// PrintEnvironmentHuman renders the key facts about a single environment
-// record, including its full version history.
-func PrintEnvironmentHuman(env Environment) {
+// PrintImageHuman renders the key facts about a single image record,
+// including its full version history.
+func PrintImageHuman(img Image) {
 	desc := emptyValuePlaceholder
-	if env.Description != nil && *env.Description != "" {
-		desc = *env.Description
+	if img.Description != nil && *img.Description != "" {
+		desc = *img.Description
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(w, "Environment ID:\t%s\n", env.EnvironmentID)
-	fmt.Fprintf(w, "Name:\t%s\n", env.Name)
+	fmt.Fprintf(w, "Image ID:\t%s\n", img.ImageID)
+	fmt.Fprintf(w, "Name:\t%s\n", img.Name)
 	fmt.Fprintf(w, "Description:\t%s\n", desc)
-	fmt.Fprintf(w, "Latest version:\tv%s\n", strconv.Itoa(env.LatestVersion))
-	fmt.Fprintf(w, "Created:\t%s\n", env.CreatedAt.UTC().Format(timestampFormat))
-	fmt.Fprintf(w, "Updated:\t%s\n", env.UpdatedAt.UTC().Format(timestampFormat))
+	fmt.Fprintf(w, "Latest version:\tv%s\n", strconv.Itoa(img.LatestVersion))
+	fmt.Fprintf(w, "Created:\t%s\n", img.CreatedAt.UTC().Format(timestampFormat))
+	fmt.Fprintf(w, "Updated:\t%s\n", img.UpdatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
 
-	if len(env.Versions) == 0 {
+	if len(img.Versions) == 0 {
 		return
 	}
 
@@ -186,7 +186,7 @@ func PrintEnvironmentHuman(env Environment) {
 		}).
 		Headers(headers...)
 
-	for _, ver := range env.Versions {
+	for _, ver := range img.Versions {
 		t.Row(
 			fmt.Sprintf("v%d", ver.Version),
 			string(ver.Status),
@@ -198,12 +198,12 @@ func PrintEnvironmentHuman(env Environment) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-// PrintEnvironmentListJSON marshals a list of environments as indented JSON through the DTO.
-func PrintEnvironmentListJSON(items []EnvironmentSummary) error {
-	view := make([]environmentSummaryJSON, len(items))
+// PrintImageListJSON marshals a list of images as indented JSON through the DTO.
+func PrintImageListJSON(items []ImageSummary) error {
+	view := make([]imageSummaryJSON, len(items))
 
-	for i, env := range items {
-		view[i] = toEnvironmentSummaryJSON(env)
+	for i, img := range items {
+		view[i] = toImageSummaryJSON(img)
 	}
 
 	data, err := json.MarshalIndent(view, "", "  ")
@@ -216,10 +216,10 @@ func PrintEnvironmentListJSON(items []EnvironmentSummary) error {
 	return nil
 }
 
-// PrintEnvironmentListHuman renders a lipgloss table summary of environments.
-func PrintEnvironmentListHuman(items []EnvironmentSummary) {
+// PrintImageListHuman renders a lipgloss table summary of images.
+func PrintImageListHuman(items []ImageSummary) {
 	if len(items) == 0 {
-		fmt.Println(tui.DimStyle.Render("No environments found"))
+		fmt.Println(tui.DimStyle.Render("No images found"))
 
 		return
 	}
@@ -228,7 +228,7 @@ func PrintEnvironmentListHuman(items []EnvironmentSummary) {
 
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
-	headers := []string{"ENVIRONMENT ID", "NAME", "LATEST", "STATUS", "UPDATED"}
+	headers := []string{"IMAGE ID", "NAME", "LATEST", "STATUS", "UPDATED"}
 
 	updatedCol := slices.Index(headers, "UPDATED")
 
@@ -248,13 +248,13 @@ func PrintEnvironmentListHuman(items []EnvironmentSummary) {
 		}).
 		Headers(headers...)
 
-	for _, env := range items {
+	for _, img := range items {
 		t.Row(
-			env.EnvironmentID,
-			env.Name,
-			fmt.Sprintf("v%d", env.LatestVersion),
-			string(env.LatestStatus),
-			env.UpdatedAt.UTC().Format(timestampFormat),
+			img.ImageID,
+			img.Name,
+			fmt.Sprintf("v%d", img.LatestVersion),
+			string(img.LatestStatus),
+			img.UpdatedAt.UTC().Format(timestampFormat),
 		)
 	}
 
