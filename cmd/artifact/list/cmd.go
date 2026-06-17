@@ -66,8 +66,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	workload.AddStatusFlag(cmd, &status)
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
 

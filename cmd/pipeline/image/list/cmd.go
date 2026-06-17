@@ -56,8 +56,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of images to return")
 

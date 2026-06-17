@@ -80,8 +80,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
 

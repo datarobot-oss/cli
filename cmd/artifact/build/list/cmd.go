@@ -67,8 +67,6 @@ Examples:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of builds to return.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

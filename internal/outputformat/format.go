@@ -62,6 +62,10 @@ func AddFlag(cmd *cobra.Command, dest *OutputFormat) {
 
 // AddPersistentFlag adds the --output-format flag to the given command and all of its subcommands, with the default value of "text".
 func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
+	// The following code could have been inlined into the RootCmd caller,
+	// but I think it's cleaner to have the default value logic encapsulated here in one place.
+	// Otherwise, every caller would need to remember to set the default value, and it's easy to forget.
+
 	*dest = OutputFormatText
 
 	cmd.PersistentFlags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))

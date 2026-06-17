@@ -101,8 +101,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of recent log lines to return")
 	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, warning, error, critical)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream new log lines as they arrive (Ctrl-C to stop).")

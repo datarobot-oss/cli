@@ -87,8 +87,6 @@ Examples:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().StringVar(&level, "level", "info", "Minimum log level to show (debug, info, warn, error).")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

@@ -68,8 +68,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().StringVar(&name, "name", "", "Image name (required)")
 	_ = cmd.MarkFlagRequired("name")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")

@@ -75,8 +75,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(cmd, &outputFormat)
-
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")

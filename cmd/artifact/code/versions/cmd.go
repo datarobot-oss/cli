@@ -83,8 +83,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(c, &outputFormat)
-
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Int("limit", 100, "Maximum number of versions to return.")
 

@@ -68,8 +68,6 @@ Example:
 		},
 	}
 
-	outputformat.AddFlag(c, &outputFormat)
-
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; use defaults.")
 
