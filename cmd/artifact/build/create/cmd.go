@@ -71,7 +71,7 @@ Examples:
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
 			"wait":          poll.Wait,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

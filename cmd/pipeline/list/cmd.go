@@ -71,7 +71,7 @@ Example:
 			"mode":          mode,
 			"offset":        offset,
 			"limit":         limit,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

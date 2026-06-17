@@ -69,7 +69,7 @@ Examples:
 			"artifact_id":   artifactID,
 			"build_id":      buildID,
 			"wait":          poll.Wait,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

@@ -71,7 +71,7 @@ Example:
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"input_id":      telemetry.FirstArg(args),
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

@@ -93,7 +93,7 @@ Example:
 			"task_id":       telemetry.FirstArg(args),
 			"scope":         flags.Scope,
 			"version":       flags.Version,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

@@ -116,7 +116,7 @@ Example:
 			"limit":         limit,
 			"level":         level,
 			"follow":        follow,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

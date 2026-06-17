@@ -76,7 +76,7 @@ Example:
 			"pipeline_id":   pipelineID,
 			"schedule_id":   telemetry.FirstArg(args),
 			"version":       version,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

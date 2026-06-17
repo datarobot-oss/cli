@@ -96,7 +96,7 @@ Examples:
 			"artifact_id":   artifactID,
 			"build_id":      buildID,
 			"level":         level,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

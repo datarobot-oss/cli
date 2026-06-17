@@ -83,7 +83,7 @@ Example:
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
 			"yes":           yes,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 

@@ -81,7 +81,7 @@ Example:
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"version":       version,
-			"output_format": string(outputformat.GetFormat(cmd)),
+			"output_format": string(outputFormat),
 		}
 	})
 
