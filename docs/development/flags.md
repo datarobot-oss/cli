@@ -49,9 +49,9 @@ func Cmd() *cobra.Command {
   `outputformat.AddPersistentFlag(...)`
 - the root binds it with `viperx.BindPFlag("output-format", ...)` so
   `DATAROBOT_CLI_OUTPUT_FORMAT` works
-- commands that render text/JSON wire a local `outputFormat` variable with
-  `outputformat.AddFlag(cmd, &outputFormat)` and read the effective value via
-  `outputformat.GetFormat(cmd)`
+- commands that render text/JSON read the effective value via
+  `outputformat.GetFormat(cmd)` and wire it to a local `outputFormat`
+  variable
 
 Use this pattern for output-aware commands:
 
