@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,7 +78,7 @@ func TestRenderInitResult_TextWithCodeRef(t *testing.T) {
 	versionID := "fedcba0987654321"
 
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(workload.OutputFormatText, initResult{
+		require.NoError(t, renderInitResult(outputformat.OutputFormatText, initResult{
 			ArtifactID:       "art-abc-123",
 			Name:             "my-agent",
 			Status:           "draft",
@@ -93,7 +93,7 @@ func TestRenderInitResult_TextWithCodeRef(t *testing.T) {
 
 func TestRenderInitResult_TextWithoutCodeRef(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(workload.OutputFormatText, initResult{
+		require.NoError(t, renderInitResult(outputformat.OutputFormatText, initResult{
 			ArtifactID: "art-empty-001",
 			Name:       "blank-artifact",
 			Status:     "draft",
@@ -106,7 +106,7 @@ func TestRenderInitResult_TextWithoutCodeRef(t *testing.T) {
 
 func TestRenderInitResult_JSON_NullsForEmpty(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(workload.OutputFormatJSON, initResult{
+		require.NoError(t, renderInitResult(outputformat.OutputFormatJSON, initResult{
 			ArtifactID: "art-empty-001",
 			Name:       "blank-artifact",
 			Status:     "draft",

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,7 +41,7 @@ func sample() pipeline.CreateResponse {
 
 func TestPrintLockJSON(t *testing.T) {
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatJSON, sample()))
+		require.NoError(t, pipeline.RenderCreateResponse(outputformat.OutputFormatJSON, sample()))
 	})
 
 	var parsed map[string]any
@@ -53,7 +54,7 @@ func TestPrintLockJSON(t *testing.T) {
 
 func TestPrintLockHuman(t *testing.T) {
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, sample()))
+		require.NoError(t, pipeline.RenderCreateResponse(outputformat.OutputFormatText, sample()))
 	})
 
 	assert.Contains(t, output, "abc")
@@ -67,7 +68,7 @@ func TestPrintLockHuman_NoTasks(t *testing.T) {
 	resp.TaskNames = nil
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderCreateResponse(pipeline.OutputFormatText, resp))
+		require.NoError(t, pipeline.RenderCreateResponse(outputformat.OutputFormatText, resp))
 	})
 
 	assert.Contains(t, output, "—")

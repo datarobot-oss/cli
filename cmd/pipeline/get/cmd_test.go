@@ -22,6 +22,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,7 +60,7 @@ func TestPrintGetJSON(t *testing.T) {
 	p := samplePipeline()
 
 	output := testutil.CaptureStdout(t, func() {
-		err := pipeline.RenderPipeline(pipeline.OutputFormatJSON, p)
+		err := pipeline.RenderPipeline(outputformat.OutputFormatJSON, p)
 		require.NoError(t, err)
 	})
 
@@ -72,7 +73,7 @@ func TestPrintGetHuman_RendersHeaderAndVersions(t *testing.T) {
 	p := samplePipeline()
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
+		require.NoError(t, pipeline.RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, output, p.PipelineID)
@@ -97,7 +98,7 @@ func TestPrintGetHuman_BlankDescriptionFallsBack(t *testing.T) {
 	p.Description = ""
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
+		require.NoError(t, pipeline.RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, output, "—")
@@ -108,7 +109,7 @@ func TestPrintGetHuman_NoVersions(t *testing.T) {
 	p.Versions = nil
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipeline(pipeline.OutputFormatText, p))
+		require.NoError(t, pipeline.RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.NotContains(t, output, "Versions (")
