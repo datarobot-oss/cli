@@ -15,8 +15,10 @@
 package outputformat
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,4 +75,28 @@ func TestGetFormat_InheritedPersistentFlag(t *testing.T) {
 
 	require.NoError(t, root.Execute())
 	assert.Equal(t, OutputFormatJSON, GetFormat(child))
+}
+
+func TestGetFormat_EnvironmentVariableViaViperBinding(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_OUTPUT_FORMAT", "json")
+
+	viperx.Reset()
+	viperx.SetEnvPrefix("DATAROBOT_CLI")
+	viperx.AutomaticEnv()
+	viperx.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	var format OutputFormat
+
+	cmd := &cobra.Command{Use: "test"}
+	AddPersistentFlag(cmd, &format)
+
+	_ = viperx.BindPFlag("output-format", cmd.PersistentFlags().Lookup("output-format"))
+
+	flag := cmd.PersistentFlags().Lookup("output-format")
+	require.NotNil(t, flag)
+
+	flagValue := viperx.Get("output-format")
+	assert.Equal(t, "json", flagValue)
+
+	viperx.Reset()
 }
