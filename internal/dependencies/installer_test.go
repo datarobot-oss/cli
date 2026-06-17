@@ -167,9 +167,10 @@ func setupFakeRepo(t *testing.T) string {
 }
 
 // prereq builds a Prerequisite with the same install command on all platforms.
-func prereq(name, installCmd string) tools.Prerequisite {
+func prereq(name, installCmd, version string) tools.Prerequisite {
 	return tools.Prerequisite{
-		Name: name,
+		Name:           name,
+		MinimumVersion: version,
 		Install: tools.InstallCommands{
 			MacOS:   installCmd,
 			Linux:   installCmd,
@@ -195,7 +196,7 @@ func TestInstallPrerequisites_Success(t *testing.T) {
 
 	var out bytes.Buffer
 
-	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv", "")})
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"uv"}, installed)
@@ -209,8 +210,8 @@ func TestInstallPrerequisites_ReturnsAllInstalledNames(t *testing.T) {
 	var out bytes.Buffer
 
 	deps := []tools.Prerequisite{
-		prereq("uv", "echo install-uv"),
-		prereq("task", "echo install-task"),
+		prereq("uv", "echo install-uv", ""),
+		prereq("task", "echo install-task", ""),
 	}
 
 	installed, err := InstallPrerequisites(&out, deps)
@@ -223,8 +224,8 @@ func TestInstallPrerequisites_ReturnsPartialInstalledOnFailure(t *testing.T) {
 	var out bytes.Buffer
 
 	deps := []tools.Prerequisite{
-		prereq("uv", "echo install-uv"),
-		prereq("task", "exit 1"),
+		prereq("uv", "echo install-uv", ""),
+		prereq("task", "exit 1", ""),
 	}
 
 	installed, err := InstallPrerequisites(&out, deps)
@@ -248,7 +249,7 @@ func TestInstallPrerequisites_ReturnsEmptyWhenNoPlatformCommand(t *testing.T) {
 func TestInstallPrerequisites_FailureShowsRawCommand(t *testing.T) {
 	var out bytes.Buffer
 
-	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1")})
+	installed, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "exit 1", "")})
 	assert.Empty(t, installed)
 
 	require.Error(t, err)
@@ -300,7 +301,7 @@ func TestInstallPrerequisites_WritesStateOnSuccess(t *testing.T) {
 
 	var out bytes.Buffer
 
-	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv", "")})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
@@ -314,8 +315,8 @@ func TestInstallPrerequisites_PartialFailureDoesNotWriteState(t *testing.T) {
 	var out bytes.Buffer
 
 	deps := []tools.Prerequisite{
-		prereq("failing", "exit 1"),
-		prereq("ok", "echo ok"),
+		prereq("failing", "exit 1", ""),
+		prereq("ok", "echo ok", ""),
 	}
 
 	_, err := InstallPrerequisites(&out, deps)
@@ -330,7 +331,7 @@ func TestLastSuccessDepsCheck_UpdatedByInstallPrerequisites(t *testing.T) {
 
 	var out bytes.Buffer
 
-	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv")})
+	_, err := InstallPrerequisites(&out, []tools.Prerequisite{prereq("uv", "echo install-uv", "")})
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
@@ -405,28 +406,30 @@ func TestExtractFailedManager_EmptyCmd(t *testing.T) {
 // --- buildInstallTip tests ---
 
 func TestBuildInstallTip_PermDenied_ContainsSudo(t *testing.T) {
-	tip := buildInstallTip("uv", "brew install uv", true, map[string]bool{}, "linux")
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), true, map[string]bool{}, "linux")
 
 	assert.Contains(t, tip, "sudo")
 }
 
 func TestBuildInstallTip_EmptyToolKey(t *testing.T) {
-	assert.Empty(t, buildInstallTip("", "brew install uv", false, map[string]bool{"brew": true}, "linux"))
+	assert.Empty(t, buildInstallTip(prereq("", "brew install uv", ""), false, map[string]bool{"brew": true}, "linux"))
 }
 
 func TestBuildInstallTip_UnknownTool(t *testing.T) {
-	assert.Empty(t, buildInstallTip("nonexistent", "brew install nonexistent", false, map[string]bool{"brew": true}, "linux"))
+	p := tools.Prerequisite{Key: "nonexistent-tool", Install: tools.InstallCommands{MacOS: "brew install nonexistent", Linux: "brew install nonexistent", Windows: "brew install nonexistent"}}
+
+	assert.Empty(t, buildInstallTip(p, false, map[string]bool{"brew": true}, "linux"))
 }
 
 func TestBuildInstallTip_ManagerStrategy(t *testing.T) {
-	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"pyenv": true}, "linux")
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), false, map[string]bool{"pyenv": true}, "linux")
 
 	assert.Contains(t, tip, "You have pyenv")
 	assert.Contains(t, tip, "pip install uv")
 }
 
 func TestBuildInstallTip_ManagerStrategyMultipleCommands(t *testing.T) {
-	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"asdf": true}, "linux")
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), false, map[string]bool{"asdf": true}, "linux")
 
 	assert.Contains(t, tip, "You have asdf")
 	assert.Contains(t, tip, "asdf install uv latest")
@@ -434,24 +437,77 @@ func TestBuildInstallTip_ManagerStrategyMultipleCommands(t *testing.T) {
 }
 
 func TestBuildInstallTip_FallbackStrategy(t *testing.T) {
-	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{}, "linux")
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), false, map[string]bool{}, "linux")
 
 	assert.Contains(t, tip, "curl")
 	assert.NotContains(t, tip, "You have")
 }
 
 func TestBuildInstallTip_FallbackStrategyWindows(t *testing.T) {
-	tip := buildInstallTip("uv", "winget install uv", false, map[string]bool{}, "windows")
+	tip := buildInstallTip(prereq("uv", "winget install uv", ""), false, map[string]bool{}, "windows")
 
 	assert.Contains(t, tip, "iex")
 }
 
 func TestBuildInstallTip_SkipsFailedManager(t *testing.T) {
 	// brew failed, pyenv is available — should suggest pyenv, not brew
-	tip := buildInstallTip("uv", "brew install uv", false, map[string]bool{"brew": true, "pyenv": true}, "linux")
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), false, map[string]bool{"brew": true, "pyenv": true}, "linux")
 
 	assert.Contains(t, tip, "pyenv")
 	assert.NotContains(t, tip, "brew")
+}
+
+func TestBuildInstallTip_PermDenied_Windows(t *testing.T) {
+	tip := buildInstallTip(prereq("uv", "winget install uv", ""), true, map[string]bool{}, "windows")
+
+	assert.Contains(t, tip, "Administrator")
+	assert.NotContains(t, tip, "sudo")
+}
+
+func TestBuildInstallTip_PermDenied_Darwin(t *testing.T) {
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), true, map[string]bool{}, "darwin")
+
+	assert.Contains(t, tip, "sudo")
+	assert.NotContains(t, tip, "Administrator")
+}
+
+func TestBuildInstallTip_PermDenied_UnknownOS(t *testing.T) {
+	tip := buildInstallTip(prereq("uv", "brew install uv", ""), true, map[string]bool{}, "plan9")
+
+	assert.NotEmpty(t, tip)
+	assert.NotContains(t, tip, "sudo")
+	assert.NotContains(t, tip, "Administrator")
+}
+
+func TestBuildInstallTip_KeyFieldOverridesName(t *testing.T) {
+	// Key = "uv" with an unrecognizable Name — Key must take precedence so the
+	// correct registry entry is found.
+	p := tools.Prerequisite{
+		Key:  "uv",
+		Name: "SomethingUnrecognized",
+		Install: tools.InstallCommands{
+			MacOS:   "brew install uv",
+			Linux:   "brew install uv",
+			Windows: "brew install uv",
+		},
+	}
+
+	tip := buildInstallTip(p, false, map[string]bool{"pyenv": true}, "linux")
+
+	assert.Contains(t, tip, "pip install uv")
+}
+
+func TestBuildInstallTip_VersionSubstituted_Pyenv(t *testing.T) {
+	tip := buildInstallTip(prereq("python", "brew install python", "3.9.6"), false, map[string]bool{"pyenv": true}, "linux")
+
+	assert.Contains(t, tip, "pyenv install 3.9.6")
+	assert.Contains(t, tip, "pyenv global 3.9.6")
+}
+
+func TestBuildInstallTip_VersionSubstituted_Brew(t *testing.T) {
+	tip := buildInstallTip(prereq("python", "pyenv install 3.9.6", "3.9.6"), false, map[string]bool{"brew": true}, "linux")
+
+	assert.Contains(t, tip, "brew install python@3.9")
 }
 
 // --- buildInstallFailureMsg tests ---
@@ -459,7 +515,7 @@ func TestBuildInstallTip_SkipsFailedManager(t *testing.T) {
 func TestBuildInstallFailureMsg_AlternativeManagerDetected(t *testing.T) {
 	env := map[string]bool{"pyenv": true}
 
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, env, "linux")
 
 	assert.Contains(t, result, "You have pyenv")
 	assert.Contains(t, result, "pip install uv")
@@ -467,7 +523,7 @@ func TestBuildInstallFailureMsg_AlternativeManagerDetected(t *testing.T) {
 }
 
 func TestBuildInstallFailureMsg_NoManagerDetected(t *testing.T) {
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, map[string]bool{}, "linux")
 
 	assert.Contains(t, result, "✗ uv install failed")
 	assert.Contains(t, result, "Raw command if you want to retry")
@@ -475,7 +531,7 @@ func TestBuildInstallFailureMsg_NoManagerDetected(t *testing.T) {
 }
 
 func TestBuildInstallFailureMsg_FallbackShownWhenNoManager(t *testing.T) {
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, map[string]bool{}, "linux")
 
 	assert.Contains(t, result, "curl")
 }
@@ -483,21 +539,21 @@ func TestBuildInstallFailureMsg_FallbackShownWhenNoManager(t *testing.T) {
 func TestBuildInstallFailureMsg_MultiCommandTip(t *testing.T) {
 	env := map[string]bool{"asdf": true}
 
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, env, "linux")
 
 	assert.Contains(t, result, "You have asdf")
 	assert.Contains(t, result, "\t")
 }
 
 func TestBuildInstallFailureMsg_PermissionDenied(t *testing.T) {
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 126, true, map[string]bool{}, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 126, true, map[string]bool{}, "linux")
 
 	assert.Contains(t, result, "permission denied")
 	assert.Contains(t, result, "sudo")
 }
 
 func TestBuildInstallFailureMsg_AlwaysShowsTriedAndRawCommand(t *testing.T) {
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, map[string]bool{}, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, map[string]bool{}, "linux")
 
 	assert.Contains(t, result, "  Tried: brew install uv")
 	assert.Contains(t, result, "  Raw command if you want to retry: brew install uv")
@@ -506,11 +562,36 @@ func TestBuildInstallFailureMsg_AlwaysShowsTriedAndRawCommand(t *testing.T) {
 func TestBuildInstallFailureMsg_AcceptanceCriteria(t *testing.T) {
 	env := map[string]bool{"pyenv": true}
 
-	result := buildInstallFailureMsg(prereq("uv", "brew install uv"), 1, false, env, "linux")
+	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, env, "linux")
 
 	expected := "✗ uv install failed (exit code 1)\n" +
 		"  Tried: brew install uv\n" +
 		"  Tip: You have pyenv — try: pip install uv\n" +
 		"  Raw command if you want to retry: brew install uv\n"
 	assert.Equal(t, expected, result)
+}
+
+func TestBuildInstallFailureMsg_URLShown(t *testing.T) {
+	p := tools.Prerequisite{
+		Name: "uv",
+		URL:  "https://docs.astral.sh/uv/",
+		Install: tools.InstallCommands{
+			MacOS:   "brew install uv",
+			Linux:   "brew install uv",
+			Windows: "brew install uv",
+		},
+	}
+
+	result := buildInstallFailureMsg(p, 1, false, map[string]bool{}, "linux")
+
+	assert.Contains(t, result, "Refer to https://docs.astral.sh/uv/")
+}
+
+func TestBuildInstallFailureMsg_VersionSubstituted_EndToEnd(t *testing.T) {
+	// A prerequisite with MinimumVersion set must produce substituted commands
+	// in the failure tip all the way through buildInstallFailureMsg.
+	result := buildInstallFailureMsg(prereq("python", "brew install python@3.9", "3.9.6"), 1, false, map[string]bool{"pyenv": true}, "linux")
+
+	assert.Contains(t, result, "pyenv install 3.9.6")
+	assert.Contains(t, result, "pyenv global 3.9.6")
 }

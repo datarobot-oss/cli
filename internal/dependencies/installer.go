@@ -129,11 +129,6 @@ func extractFailedManager(cmd string) string {
 func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permDenied bool, env map[string]bool, goos string) string {
 	toolName := prerequisite.Name
 
-	toolKey := prerequisite.Key
-	if toolKey == "" {
-		toolKey = NormalizeToolName(prerequisite.Name)
-	}
-
 	installCmd, _ := prerequisite.PlatformInstallCommand()
 
 	var sb strings.Builder
@@ -146,7 +141,7 @@ func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permD
 
 	fmt.Fprintf(&sb, "  Tried: %s\n", installCmd)
 
-	if tip := buildInstallTip(toolKey, installCmd, permDenied, env, goos); tip != "" {
+	if tip := buildInstallTip(prerequisite, permDenied, env, goos); tip != "" {
 		fmt.Fprintf(&sb, "%s\n", tip)
 	}
 
@@ -161,7 +156,7 @@ func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permD
 
 // buildInstallTip returns the optional tip line for buildInstallFailureMsg, or "" when
 // no actionable suggestion is available.
-func buildInstallTip(toolKey, installCmd string, permDenied bool, env map[string]bool, goos string) string {
+func buildInstallTip(prerequisite tools.Prerequisite, permDenied bool, env map[string]bool, goos string) string {
 	if permDenied {
 		switch goos {
 		case "windows":
@@ -173,10 +168,16 @@ func buildInstallTip(toolKey, installCmd string, permDenied bool, env map[string
 		}
 	}
 
+	toolKey := prerequisite.Key
+	if toolKey == "" {
+		toolKey = NormalizeToolName(prerequisite.Name)
+	}
+
 	if toolKey == "" {
 		return ""
 	}
 
+	installCmd, _ := prerequisite.PlatformInstallCommand()
 	failedMgr := extractFailedManager(installCmd)
 
 	strategy := selectInstallStrategy(toolKey, failedMgr, env)
@@ -184,7 +185,7 @@ func buildInstallTip(toolKey, installCmd string, permDenied bool, env map[string
 		return ""
 	}
 
-	return strategy.getStrategyTip(goos)
+	return strategy.withVersion(prerequisite.MinimumVersion).getStrategyTip(goos)
 }
 
 // ExecuteShLine executes shellCmd via sh -c, streaming stdout and stderr

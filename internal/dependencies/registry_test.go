@@ -160,6 +160,65 @@ func TestDetectEnvironment_AllAbsent(t *testing.T) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// majorMinorVersion
+// ──────────────────────────────────────────────────────────────
+
+func TestMajorMinorVersion(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"3.9.6", "3.9"},
+		{"24.0.0", "24.0"},
+		{"1.2.3", "1.2"},
+		{"3", "3"},
+		{"", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			assert.Equal(t, tc.expected, majorMinorVersion(tc.input))
+		})
+	}
+}
+
+// ──────────────────────────────────────────────────────────────
+// substituteCmds
+// ──────────────────────────────────────────────────────────────
+
+func TestSubstituteCmds_EmptySlice(t *testing.T) {
+	assert.Empty(t, substituteCmds(nil, "3.9.6"))
+}
+
+func TestSubstituteCmds_VersionPlaceholder(t *testing.T) {
+	result := substituteCmds([]string{"pyenv install {version}", "pyenv global {version}"}, "3.9.6")
+
+	assert.Equal(t, []string{"pyenv install 3.9.6", "pyenv global 3.9.6"}, result)
+}
+
+func TestSubstituteCmds_VersionMmPlaceholder(t *testing.T) {
+	result := substituteCmds([]string{"brew install python@{version_mm}"}, "3.9.6")
+
+	assert.Equal(t, []string{"brew install python@3.9"}, result)
+}
+
+func TestSubstituteCmds_BothPlaceholders_OrderSafe(t *testing.T) {
+	// {version_mm} must be replaced before {version} to avoid partial match.
+	// If {version} were replaced first, "python@{version_mm}" would become
+	// "python@{3.9.6_mm}" (corrupted) rather than "python@3.9".
+	result := substituteCmds([]string{"pyenv install {version}", "brew install python@{version_mm}"}, "3.9.6")
+
+	assert.Equal(t, []string{"pyenv install 3.9.6", "brew install python@3.9"}, result)
+}
+
+func TestSubstituteCmds_NoPlaceholders(t *testing.T) {
+	cmds := []string{"brew install uv", "pip install uv"}
+	result := substituteCmds(cmds, "3.9.6")
+
+	assert.Equal(t, cmds, result)
+}
+
+// ──────────────────────────────────────────────────────────────
 // getStrategyTip — ManagerStrategy
 // ──────────────────────────────────────────────────────────────
 
@@ -255,7 +314,8 @@ func TestSelectInstallStrategy_BrewPresent_Python(t *testing.T) {
 	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	assert.Equal(t, []string{"brew install python@3.12"}, ms.Commands)
+	// Without version the placeholder is returned as-is; callers call .withVersion().
+	assert.Equal(t, []string{"brew install python@{version_mm}"}, ms.Commands)
 }
 
 func TestSelectInstallStrategy_FallbackUnix_WhenNoManagerDetected(t *testing.T) {
@@ -301,7 +361,8 @@ func TestSelectInstallStrategy_NVMPresent_Node(t *testing.T) {
 	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	assert.Equal(t, []string{"nvm install 24", "nvm use 24"}, ms.Commands)
+	// Without version the placeholder is returned as-is; callers call .withVersion().
+	assert.Equal(t, []string{"nvm install {version}", "nvm use {version}"}, ms.Commands)
 }
 
 func TestSelectInstallStrategy_AllToolsHaveAtLeastOneFallback(t *testing.T) {
@@ -322,4 +383,125 @@ func TestSelectInstallStrategy_SkipsFailedMgr(t *testing.T) {
 
 	require.True(t, ok)
 	assert.Equal(t, "brew", ms.Manager, "should skip pyenv and return brew")
+}
+
+// ──────────────────────────────────────────────────────────────
+// withVersion
+// ──────────────────────────────────────────────────────────────
+
+func TestWithVersion_ManagerStrategy_Pyenv_Python(t *testing.T) {
+	env := map[string]bool{"pyenv": true}
+
+	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"pyenv install 3.9.6", "pyenv global 3.9.6"}, result.Commands)
+}
+
+func TestWithVersion_ManagerStrategy_Asdf_Python(t *testing.T) {
+	env := map[string]bool{"asdf": true}
+
+	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"asdf install python 3.9.6", "asdf global python 3.9.6"}, result.Commands)
+}
+
+func TestWithVersion_ManagerStrategy_Brew_Python(t *testing.T) {
+	env := map[string]bool{"brew": true}
+
+	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"brew install python@3.9"}, result.Commands)
+}
+
+func TestWithVersion_ManagerStrategy_EmptyVersion_NoSubstitution(t *testing.T) {
+	env := map[string]bool{"pyenv": true}
+
+	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"pyenv install {version}", "pyenv global {version}"}, result.Commands)
+}
+
+func TestWithVersion_FallbackStrategy_Python(t *testing.T) {
+	fs, ok := selectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
+	require.True(t, ok)
+
+	result, ok := fs.withVersion("3.9.6").(FallbackStrategy)
+
+	require.True(t, ok)
+	assert.Contains(t, result.Commands, "pyenv install 3.9.6")
+	assert.Contains(t, result.Commands, "pyenv global 3.9.6")
+}
+
+func TestWithVersion_FallbackStrategy_WindowsCommandsAlsoSubstituted(t *testing.T) {
+	fs, ok := selectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
+	require.True(t, ok)
+
+	result, ok := fs.withVersion("3.9.6").(FallbackStrategy)
+
+	require.True(t, ok)
+	assert.Contains(t, result.CommandsWindows, "pyenv install 3.9.6")
+	assert.Contains(t, result.CommandsWindows, "pyenv global 3.9.6")
+}
+
+func TestWithVersion_FallbackStrategy_URLOnlyUnchanged(t *testing.T) {
+	// git has a URL-only FallbackStrategy — withVersion must not panic and must
+	// leave the URL intact.
+	fs, ok := selectInstallStrategy("git", "", map[string]bool{}).(FallbackStrategy)
+	require.True(t, ok)
+
+	result, ok := fs.withVersion("2.40.0").(FallbackStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, "https://git-scm.com/downloads", result.URL)
+	assert.Empty(t, result.Commands)
+}
+
+func TestWithVersion_ManagerStrategy_NoPlaceholders(t *testing.T) {
+	// uv's brew strategy has no version placeholders — commands must be returned as-is.
+	env := map[string]bool{"brew": true}
+
+	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("0.11.20").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"brew install uv"}, result.Commands)
+}
+
+func TestSelectInstallStrategy_DisplayNameNormalized(t *testing.T) {
+	// selectInstallStrategy calls NormalizeToolName internally, so display names
+	// like "Python" (capital P) must resolve to the "python" registry entry.
+	env := map[string]bool{"brew": true}
+
+	ms, ok := selectInstallStrategy("Python", "", env).(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, "brew", ms.Manager)
+}
+
+func TestSelectInstallStrategy_FailedMgrIsOnlyDetectedMgr_FallsToFallback(t *testing.T) {
+	// brew is the only detected manager but it already failed — must skip it and
+	// return the FallbackStrategy rather than nil.
+	env := map[string]bool{"brew": true}
+
+	_, ok := selectInstallStrategy("uv", "brew", env).(FallbackStrategy)
+
+	require.True(t, ok)
 }

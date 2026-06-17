@@ -26,8 +26,11 @@ import (
 // Strategy is implemented by ManagerStrategy and FallbackStrategy.
 // getStrategyTip returns the user-facing tip line for an install failure, or ""
 // when no actionable suggestion is available.
+// withVersion returns a copy of the strategy with {version} and {version_mm}
+// placeholders in commands replaced by the given version string.
 type Strategy interface {
 	getStrategyTip(goos string) string
+	withVersion(version string) Strategy
 }
 
 // ManagerStrategy provides install commands when a specific package/version manager
@@ -44,6 +47,56 @@ type FallbackStrategy struct {
 	CommandsWindows []string
 	Message         string
 	URL             string
+}
+
+// majorMinorVersion extracts the major.minor portion from a semver string.
+// "3.9.6" → "3.9", "24.0.0" → "24.0", "" → "".
+func majorMinorVersion(v string) string {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return v
+	}
+
+	return parts[0] + "." + parts[1]
+}
+
+// substituteCmds replaces {version_mm} and {version} placeholders in each command.
+// {version_mm} is substituted first to avoid a partial match against {version}.
+func substituteCmds(cmds []string, version string) []string {
+	if len(cmds) == 0 {
+		return cmds
+	}
+
+	out := make([]string, len(cmds))
+	mm := majorMinorVersion(version)
+
+	for i, c := range cmds {
+		c = strings.ReplaceAll(c, "{version_mm}", mm)
+		out[i] = strings.ReplaceAll(c, "{version}", version)
+	}
+
+	return out
+}
+
+func (ms ManagerStrategy) withVersion(version string) Strategy {
+	if version == "" {
+		return ms
+	}
+
+	ms.Commands = substituteCmds(ms.Commands, version)
+
+	return ms
+}
+
+func (fs FallbackStrategy) withVersion(version string) Strategy {
+	if version == "" {
+		return fs
+	}
+
+	fs.Commands = substituteCmds(fs.Commands, version)
+	fs.CommandsWindows = substituteCmds(fs.CommandsWindows, version)
+
+	return fs
 }
 
 func (ms ManagerStrategy) getStrategyTip(_ string) string {
@@ -91,25 +144,25 @@ var ToolRegistry = map[string]ToolInfo{
 	"python": {
 		Name: "Python",
 		Strategies: []Strategy{
-			ManagerStrategy{Manager: "pyenv", Commands: []string{"pyenv install 3.12", "pyenv global 3.12"}},
-			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install python 3.12.0", "asdf global python 3.12.0"}},
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install python@3.12"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Python.Python.3.12"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install python --version=3.12"}},
+			ManagerStrategy{Manager: "pyenv", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
+			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
+			ManagerStrategy{Manager: "brew", Commands: []string{"brew install python@{version_mm}"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Python.Python.{version_mm}"}},
+			ManagerStrategy{Manager: "choco", Commands: []string{"choco install python --version={version}"}},
 			FallbackStrategy{
 				Message: "Install pyenv (recommended for managing Python versions):",
 				Commands: []string{
 					"curl https://pyenv.run | bash",
 					"# Restart terminal, then:",
-					"pyenv install 3.12",
-					"pyenv global 3.12",
+					"pyenv install {version}",
+					"pyenv global {version}",
 				},
 				CommandsWindows: []string{
 					"# Install pyenv-win via PowerShell:",
 					`Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/pyenv-win/pyenv-win/master/pyenv-win/install-pyenv-win.ps1" -OutFile "./install-pyenv-win.ps1"; &"./install-pyenv-win.ps1"`,
 					"# Restart terminal, then:",
-					"pyenv install 3.12",
-					"pyenv global 3.12",
+					"pyenv install {version}",
+					"pyenv global {version}",
 				},
 				URL: "https://www.python.org/downloads/",
 			},
@@ -139,9 +192,9 @@ var ToolRegistry = map[string]ToolInfo{
 	"node": {
 		Name: "Node.js",
 		Strategies: []Strategy{
-			ManagerStrategy{Manager: "nvm", Commands: []string{"nvm install 24", "nvm use 24"}},
-			ManagerStrategy{Manager: "fnm", Commands: []string{"fnm install 24", "fnm use 24"}},
-			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install nodejs 24.0.0", "asdf global nodejs 24.0.0"}},
+			ManagerStrategy{Manager: "nvm", Commands: []string{"nvm install {version}", "nvm use {version}"}},
+			ManagerStrategy{Manager: "fnm", Commands: []string{"fnm install {version}", "fnm use {version}"}},
+			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install nodejs {version}", "asdf global nodejs {version}"}},
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install node"}},
 			ManagerStrategy{Manager: "winget", Commands: []string{"winget install OpenJS.NodeJS"}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install nodejs"}},
@@ -150,8 +203,8 @@ var ToolRegistry = map[string]ToolInfo{
 				Commands: []string{
 					"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash",
 					"# Restart terminal, then:",
-					"nvm install 24",
-					"nvm use 24",
+					"nvm install {version}",
+					"nvm use {version}",
 				},
 				URL: "https://nodejs.org/",
 			},
