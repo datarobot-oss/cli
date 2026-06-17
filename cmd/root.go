@@ -46,8 +46,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configFilePath string
-var rootOutputFormat outputformat.OutputFormat
+var (
+	configFilePath   string
+	rootOutputFormat outputformat.OutputFormat
+)
 
 // telemetryClient holds the active client for the current process. It is set
 // in PersistentPreRunE so that cmd.Exit can flush events when main's error
@@ -186,7 +188,7 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
-	outputformat.AddFlag(RootCmd.Command, &rootOutputFormat)
+	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
 	// Make some of these flags available via Viper
 	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))

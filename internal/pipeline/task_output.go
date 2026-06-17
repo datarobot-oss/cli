@@ -23,6 +23,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -67,8 +68,8 @@ func toTaskJSON(t PipelineTask) taskJSON {
 }
 
 // RenderTask routes a single task to JSON or human output.
-func RenderTask(format OutputFormat, t PipelineTask) error {
-	if format == OutputFormatJSON {
+func RenderTask(format outputformat.OutputFormat, t PipelineTask) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintTaskJSON(t)
 	}
 

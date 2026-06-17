@@ -56,6 +56,12 @@ func (f *OutputFormat) Type() string {
 func AddFlag(cmd *cobra.Command, dest *OutputFormat) {
 	*dest = OutputFormatText
 
+	cmd.Flags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))
+}
+
+func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
+	*dest = OutputFormatText
+
 	cmd.PersistentFlags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))
 }
 
@@ -64,10 +70,20 @@ func GetFormat(cmd *cobra.Command) OutputFormat {
 		return OutputFormatText
 	}
 
-	f := cmd.Flags().Lookup("output-format")
-	if f == nil {
-		return OutputFormatText
+	local := cmd.LocalFlags().Lookup("output-format")
+	if local != nil && local.Changed {
+		return OutputFormat(local.Value.String())
 	}
 
-	return OutputFormat(f.Value.String())
+	inherited := cmd.InheritedFlags().Lookup("output-format")
+	if inherited != nil && inherited.Changed {
+		return OutputFormat(inherited.Value.String())
+	}
+
+	f := cmd.Flags().Lookup("output-format")
+	if f != nil {
+		return OutputFormat(f.Value.String())
+	}
+
+	return OutputFormatText
 }

@@ -27,6 +27,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -62,8 +63,8 @@ func toInputJSON(input Input) inputJSON {
 }
 
 // RenderInput routes a single input to JSON or human output.
-func RenderInput(format OutputFormat, input Input) error {
-	if format == OutputFormatJSON {
+func RenderInput(format outputformat.OutputFormat, input Input) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintInputJSON(input)
 	}
 
@@ -73,8 +74,8 @@ func RenderInput(format OutputFormat, input Input) error {
 }
 
 // RenderInputs routes a list of inputs to JSON or human output.
-func RenderInputs(format OutputFormat, inputs []Input) error {
-	if format == OutputFormatJSON {
+func RenderInputs(format outputformat.OutputFormat, inputs []Input) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintInputListJSON(inputs)
 	}
 

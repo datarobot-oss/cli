@@ -27,6 +27,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -78,8 +79,8 @@ func toRunStatusJSON(s RunStatus) runStatusJSON {
 }
 
 // RenderRun routes a single run to JSON or human output.
-func RenderRun(format OutputFormat, r Run) error {
-	if format == OutputFormatJSON {
+func RenderRun(format outputformat.OutputFormat, r Run) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintRunJSON(r)
 	}
 
@@ -89,8 +90,8 @@ func RenderRun(format OutputFormat, r Run) error {
 }
 
 // RenderRuns routes a list of runs to JSON or human output.
-func RenderRuns(format OutputFormat, items []Run) error {
-	if format == OutputFormatJSON {
+func RenderRuns(format outputformat.OutputFormat, items []Run) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintRunListJSON(items)
 	}
 
@@ -100,8 +101,8 @@ func RenderRuns(format OutputFormat, items []Run) error {
 }
 
 // RenderRunStatus routes a run status to JSON or human output.
-func RenderRunStatus(format OutputFormat, s RunStatus) error {
-	if format == OutputFormatJSON {
+func RenderRunStatus(format outputformat.OutputFormat, s RunStatus) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintStatusJSON(s)
 	}
 

@@ -62,7 +62,7 @@ func TestGetFormat_InheritedPersistentFlag(t *testing.T) {
 	var rootFormat OutputFormat
 
 	root := &cobra.Command{Use: "root"}
-	AddFlag(root, &rootFormat)
+	AddPersistentFlag(root, &rootFormat)
 
 	child := &cobra.Command{
 		Use:  "child",

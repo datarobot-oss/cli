@@ -27,6 +27,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -36,8 +37,8 @@ const (
 )
 
 // RenderPipeline routes a single pipeline to JSON or human output.
-func RenderPipeline(format OutputFormat, p Pipeline) error {
-	if format == OutputFormatJSON {
+func RenderPipeline(format outputformat.OutputFormat, p Pipeline) error {
+	if format == outputformat.OutputFormatJSON {
 		return printPipelineJSON(p)
 	}
 
@@ -47,8 +48,8 @@ func RenderPipeline(format OutputFormat, p Pipeline) error {
 }
 
 // RenderPipelines routes a pipeline list to JSON or human output.
-func RenderPipelines(format OutputFormat, page DataPage[ListItem]) error {
-	if format == OutputFormatJSON {
+func RenderPipelines(format outputformat.OutputFormat, page DataPage[ListItem]) error {
+	if format == outputformat.OutputFormatJSON {
 		return printPipelinesJSON(page)
 	}
 
@@ -58,8 +59,8 @@ func RenderPipelines(format OutputFormat, page DataPage[ListItem]) error {
 }
 
 // RenderCreateResponse routes a CreateResponse to JSON or human output.
-func RenderCreateResponse(format OutputFormat, result CreateResponse) error {
-	if format == OutputFormatJSON {
+func RenderCreateResponse(format outputformat.OutputFormat, result CreateResponse) error {
+	if format == outputformat.OutputFormatJSON {
 		return printCreateResponseJSON(result)
 	}
 
