@@ -25,14 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateEnvironment_PostsBody(t *testing.T) {
+func TestCreateImage_PostsBody(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/environments", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/images", r.URL.Path)
 
-		var body EnvironmentCreateRequest
+		var body ImageCreateRequest
 
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, "ml-base", body.Name)
@@ -46,7 +46,7 @@ func TestCreateEnvironment_PostsBody(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
-			"id":"env-1",
+			"id":"img-1",
 			"name":"ml-base",
 			"description":"for testing",
 			"latestVersion":1,
@@ -59,15 +59,15 @@ func TestCreateEnvironment_PostsBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateEnvironment("ml-base", "for testing", []string{"numpy", "pandas==2.0"})
+	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"})
 	require.NoError(t, err)
-	assert.Equal(t, "env-1", got.EnvironmentID)
+	assert.Equal(t, "img-1", got.ImageID)
 	assert.Equal(t, 1, got.LatestVersion)
 	require.Len(t, got.Versions, 1)
-	assert.Equal(t, EnvironmentStatusCreating, got.Versions[0].Status)
+	assert.Equal(t, ImageStatusCreating, got.Versions[0].Status)
 }
 
-func TestCreateEnvironment_OmitsEmptyDescription(t *testing.T) {
+func TestCreateImage_OmitsEmptyDescription(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,42 +79,42 @@ func TestCreateEnvironment_OmitsEmptyDescription(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":"env-1","name":"x","latestVersion":1,"versions":[],"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"img-1","name":"x","latestVersion":1,"versions":[],"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}`))
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	_, err := CreateEnvironment("x", "", []string{"numpy"})
+	_, err := CreateImage("x", "", []string{"numpy"})
 	require.NoError(t, err)
 }
 
-func TestListEnvironments_AddsPaginationQuery(t *testing.T) {
+func TestListImages_AddsPaginationQuery(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/environments", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/images", r.URL.Path)
 		assert.Equal(t, "5", r.URL.Query().Get("offset"))
 		assert.Equal(t, "20", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"env-1","name":"ml-base","latestVersion":2,"latestStatus":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],"totalCount":1,"count":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"img-1","name":"ml-base","latestVersion":2,"latestStatus":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	items, err := ListEnvironments(5, 20)
+	items, err := ListImages(5, 20)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
-	assert.Equal(t, "env-1", items[0].EnvironmentID)
-	assert.Equal(t, EnvironmentStatusReady, items[0].LatestStatus)
+	assert.Equal(t, "img-1", items[0].ImageID)
+	assert.Equal(t, ImageStatusReady, items[0].LatestStatus)
 }
 
-func TestListEnvironments_OmitsZeroPagination(t *testing.T) {
+func TestListImages_OmitsZeroPagination(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,26 +128,26 @@ func TestListEnvironments_OmitsZeroPagination(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	items, err := ListEnvironments(0, 0)
+	items, err := ListImages(0, 0)
 	require.NoError(t, err)
 	assert.Empty(t, items)
 }
 
-func TestUpdateEnvironment_PatchesBody(t *testing.T) {
+func TestUpdateImage_PatchesBody(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/environments/env-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/images/img-1", r.URL.Path)
 
-		var body EnvironmentUpdateRequest
+		var body ImageUpdateRequest
 
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, []string{"scikit-learn"}, body.Packages)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"id":"env-1","name":"ml-base","latestVersion":2,
+			"id":"img-1","name":"ml-base","latestVersion":2,
 			"versions":[
 				{"version":2,"packages":["scikit-learn"],"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
 				{"version":1,"packages":["numpy"],"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
@@ -160,19 +160,19 @@ func TestUpdateEnvironment_PatchesBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := UpdateEnvironment("env-1", []string{"scikit-learn"})
+	got, err := UpdateImage("img-1", []string{"scikit-learn"})
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.LatestVersion)
 	require.Len(t, got.Versions, 2)
 	assert.Equal(t, 2, got.Versions[0].Version)
 }
 
-func TestDeleteEnvironment_HitsCorrectURL(t *testing.T) {
+func TestDeleteImage_HitsCorrectURL(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/environments/env-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/images/img-1", r.URL.Path)
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -181,15 +181,15 @@ func TestDeleteEnvironment_HitsCorrectURL(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	require.NoError(t, DeleteEnvironment("env-1"))
+	require.NoError(t, DeleteImage("img-1"))
 }
 
-func TestDeleteEnvironmentVersion_HitsCorrectURL(t *testing.T) {
+func TestDeleteImageVersion_HitsCorrectURL(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/environments/env-1/versions/3", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/images/img-1/versions/3", r.URL.Path)
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -198,10 +198,10 @@ func TestDeleteEnvironmentVersion_HitsCorrectURL(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	require.NoError(t, DeleteEnvironmentVersion("env-1", 3))
+	require.NoError(t, DeleteImageVersion("img-1", 3))
 }
 
-func TestDeleteEnvironment_PropagatesNotFound(t *testing.T) {
+func TestDeleteImage_PropagatesNotFound(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +212,7 @@ func TestDeleteEnvironment_PropagatesNotFound(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	err := DeleteEnvironment("nope")
+	err := DeleteImage("nope")
 
 	var httpErr *drapi.HTTPError
 

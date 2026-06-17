@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package create
+package update
 
 import (
-	"errors"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -25,54 +23,45 @@ import (
 
 func Cmd() *cobra.Command {
 	var (
-		name         string
-		description  string
 		rawPackages  []string
 		outputFormat pipeline.OutputFormat
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Create a pipeline execution environment",
-		Long: `Create a new pipeline execution environment.
+		Use:   "update <image-id>",
+		Short: "Add a new version to a pipeline execution image",
+		Long: `Update a pipeline execution image by appending packages.
 
-A new environment is registered with an initial version (v1) containing
-the supplied pip packages. The environment may be referenced by
-pipelines once its first version reaches the READY state.
+Updating creates a new immutable version of the image containing the
+supplied pip packages. Existing versions are unchanged.
 
 Example:
-  dr pipeline environment create --name ml-base --package numpy --package pandas
-  dr pipeline environment create --name ml-base --package numpy,pandas==2.0 --description "training base" --output-format json`,
-		Args:         cobra.NoArgs,
+  dr pipeline image update img-123 --package scikit-learn
+  dr pipeline image update img-123 --package "scikit-learn==1.5,torch" --output-format json`,
+		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if name == "" {
-				return errors.New("--name is required")
-			}
-
+		RunE: func(_ *cobra.Command, args []string) error {
 			packages, err := pipeline.NormalizePackages(rawPackages)
 			if err != nil {
 				return err
 			}
 
-			result, err := pipeline.CreateEnvironment(name, description, packages)
+			result, err := pipeline.UpdateImage(args[0], packages)
 			if err != nil {
 				return err
 			}
 
-			return pipeline.RenderEnvironment(outputFormat, *result)
+			return pipeline.RenderImage(outputFormat, *result)
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Environment name (required)")
-	_ = cmd.MarkFlagRequired("name")
-	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 	pipeline.AddOutputFlag(cmd, &outputFormat)
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
+			"image_id":      telemetry.FirstArg(args),
 			"output_format": string(outputFormat),
 		}
 	})

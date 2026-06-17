@@ -12,31 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package environment
+package image
 
 import (
-	"github.com/datarobot/cli/cmd/pipeline/environment/create"
-	"github.com/datarobot/cli/cmd/pipeline/environment/del"
-	"github.com/datarobot/cli/cmd/pipeline/environment/list"
-	"github.com/datarobot/cli/cmd/pipeline/environment/update"
-	"github.com/datarobot/cli/cmd/pipeline/environment/version"
+	"github.com/datarobot/cli/cmd/pipeline/image/create"
+	"github.com/datarobot/cli/cmd/pipeline/image/del"
+	"github.com/datarobot/cli/cmd/pipeline/image/list"
+	"github.com/datarobot/cli/cmd/pipeline/image/update"
+	"github.com/datarobot/cli/cmd/pipeline/image/version"
 	"github.com/spf13/cobra"
 )
 
-// Cmd returns the parent command for `dr pipeline environment`. It
-// groups the lifecycle verbs that operate on pipeline execution
-// environments (named, immutable-versioned bags of pip packages).
+// Cmd returns the parent command for `dr pipeline image`. It groups the
+// lifecycle verbs that operate on pipeline execution images (named,
+// immutable-versioned bags of pip packages).
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "environment",
-		Aliases: []string{"environments"},
-		Short:   "Manage pipeline execution environments",
-		Long: `Manage pipeline execution environments.
+		Use:     "image",
+		Aliases: []string{"images"},
+		Short:   "Manage pipeline execution images",
+		Long: `Manage pipeline execution images.
 
-Environments are named, immutable-versioned bags of pip packages that
+Images are named, immutable-versioned bags of pip packages that
 pipelines can be built against. Each ` + "`update`" + ` adds packages by
 creating a new version; older versions can be deleted individually with
-` + "`environment version delete`" + `.`,
+` + "`image version delete`" + `.`,
 	}
 
 	cmd.AddCommand(

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package environment
+package image
 
 import (
 	"testing"
@@ -42,5 +42,5 @@ func TestCmd_RegistersAllVerbs(t *testing.T) {
 
 func TestCmd_HasPluralAlias(t *testing.T) {
 	cmd := Cmd()
-	assert.Contains(t, cmd.Aliases, "environments")
+	assert.Contains(t, cmd.Aliases, "images")
 }
