@@ -82,8 +82,17 @@ else
   # Clean any leftover clone from a previous run.
   rm -rf "$AGENTIC_DIR"
 
-  # 1. Clone the Agentic Starter template.
+  # 1. Clone the Agentic Starter template. Check the expect exit status first: a
+  #    failed setup (timeout, wizard error, non-zero `dr templates setup`) can
+  #    still leave a partial directory behind, so directory existence alone is
+  #    not enough to call the clone successful.
   expect ./smoke_test_scripts/expect_templates_setup_agentic.exp
+  setup_rc=$?
+  if [ "$setup_rc" -ne 0 ]; then
+    echo "❌ Assertion failed: 'dr templates setup' (Agentic Starter) failed (expect exit code: $setup_rc)."
+    rm -rf "$AGENTIC_DIR"
+    exit 1
+  fi
   if [ ! -d "$AGENTIC_DIR" ]; then
     echo "❌ Assertion failed: Agentic Starter directory ($AGENTIC_DIR) does not exist after setup."
     exit 1

@@ -143,3 +143,8 @@ if {!$already_finished} {
 }
 
 expect eof
+
+# Propagate the spawned `dr templates setup` exit status so the caller can
+# detect a non-zero exit (e.g. the wizard erroring out) even when EOF is reached.
+catch wait result
+exit [lindex $result 3]
