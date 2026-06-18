@@ -16,35 +16,28 @@ package list
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
-// Run fetches and displays all available DataRobot AI application templates.
-// It queries the DataRobot API to retrieve the list of templates and prints each one
-// in a tab-separated format (ID and Name).
-//
-// Returns:
-//   - error: if the API request fails or if the template list cannot be retrieved
-func Run() error {
-	templateList, err := drapi.GetTemplates()
-	if err != nil {
-		return err
-	}
-
-	for _, template := range templateList.Templates {
-		fmt.Printf("ID: %s\tName: %s\n", template.ID, template.Name)
-	}
-
-	return nil
+// TemplateOutput is the JSON representation of a DataRobot AI application template for --output-format json.
+type TemplateOutput struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-var Cmd = &cobra.Command{
-	Use:   "list",
-	Short: "📋 List all available AI application templates",
-	Long: `List all available AI application templates from DataRobot.
+func Cmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "📋 List all available AI application templates",
+		Long: `List all available AI application templates from DataRobot.
 
 This command shows you all the pre-built templates you can use to quickly
 start building AI applications. Each template includes:
@@ -54,8 +47,54 @@ start building AI applications. Each template includes:
   • Ready-to-deploy setup
 
 💡 Use 'dr templates setup' for an interactive selection experience.`,
-	PreRunE: auth.EnsureAuthenticatedE,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		return Run()
-	},
+		PreRunE: auth.EnsureAuthenticatedE,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			templateList, err := drapi.GetTemplates()
+			if err != nil {
+				return err
+			}
+
+			format := outputformat.GetFormat(cmd)
+			if format == outputformat.OutputFormatJSON {
+				outputs := make([]TemplateOutput, len(templateList.Templates))
+				for i, t := range templateList.Templates {
+					outputs[i] = TemplateOutput{ID: t.ID, Name: t.Name}
+				}
+				return outputformat.PrintJSONEnvelope(os.Stdout, "templates", outputs)
+			}
+
+			if len(templateList.Templates) == 0 {
+				fmt.Println("No templates available.")
+				return nil
+			}
+
+			nameStyle := tui.BaseTextStyle.
+				Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
+				Padding(0, 1)
+
+			descStyle := tui.DimStyle.
+				Padding(0, 1)
+
+			t := table.New().
+				Border(lipgloss.RoundedBorder()).
+				BorderStyle(tui.TableBorderStyle).
+				StyleFunc(func(_, col int) lipgloss.Style {
+					switch col {
+					case 0:
+						return nameStyle
+					default:
+						return descStyle
+					}
+				}).
+				Headers("ID", "NAME")
+
+			for _, template := range templateList.Templates {
+				t.Row(template.ID, template.Name)
+			}
+
+			_, _ = fmt.Fprintln(os.Stdout, t.Render())
+
+			return nil
+		},
+	}
 }
