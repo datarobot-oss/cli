@@ -129,12 +129,23 @@ func TestDetectEnvironment_NVM_ViaEnvVar(t *testing.T) {
 }
 
 func TestDetectEnvironment_NVM_ViaHomeFallback(t *testing.T) {
-	getenv := fakeGetenv(map[string]string{"HOME": "/home/user"})
+	t.Setenv("HOME", "/home/user")
+
 	dirExists := func(p string) bool { return p == "/home/user/.nvm" }
 
-	env := detectEnvironment(fakeLookPath(), getenv, dirExists, "linux")
+	env := detectEnvironment(fakeLookPath(), fakeGetenv(nil), dirExists, "linux")
 
 	assert.True(t, env["nvm"])
+}
+
+func TestDetectEnvironment_NVM_HomeDirError_NVMAbsent(t *testing.T) {
+	// Unset HOME so os.UserHomeDir() cannot resolve a home directory;
+	// nvm must be reported absent rather than panicking.
+	t.Setenv("HOME", "")
+
+	env := detectEnvironment(fakeLookPath(), fakeGetenv(nil), noDirExists, "linux")
+
+	assert.False(t, env["nvm"])
 }
 
 func TestDetectEnvironment_NVM_AbsentOnWindows(t *testing.T) {
@@ -425,7 +436,8 @@ func TestWithVersion_ManagerStrategy_Brew_Python(t *testing.T) {
 	assert.Equal(t, []string{"brew install python@3.9"}, result.Commands)
 }
 
-func TestWithVersion_ManagerStrategy_EmptyVersion_NoSubstitution(t *testing.T) {
+func TestWithVersion_ManagerStrategy_EmptyVersion_UsesDefault(t *testing.T) {
+	// python/pyenv has DefaultVersion "3.14" — used when MinimumVersion is empty.
 	env := map[string]bool{"pyenv": true}
 
 	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
@@ -434,7 +446,7 @@ func TestWithVersion_ManagerStrategy_EmptyVersion_NoSubstitution(t *testing.T) {
 	result, ok := ms.withVersion("").(ManagerStrategy)
 
 	require.True(t, ok)
-	assert.Equal(t, []string{"pyenv install {version}", "pyenv global {version}"}, result.Commands)
+	assert.Equal(t, []string{"pyenv install 3.14", "pyenv global 3.14"}, result.Commands)
 }
 
 func TestWithVersion_FallbackStrategy_Python(t *testing.T) {
@@ -485,6 +497,20 @@ func TestWithVersion_ManagerStrategy_NoPlaceholders(t *testing.T) {
 	assert.Equal(t, []string{"brew install uv"}, result.Commands)
 }
 
+func TestWithVersion_ManagerStrategy_EmptyVersion_NoDefaultVersion_NoPlaceholders(t *testing.T) {
+	// brew/node has no DefaultVersion and no {version} placeholder — commands pass
+	// through substituteCmds unchanged when both version and DefaultVersion are empty.
+	env := map[string]bool{"brew": true}
+
+	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"brew install node"}, result.Commands)
+}
+
 func TestSelectInstallStrategy_DisplayNameNormalized(t *testing.T) {
 	// selectInstallStrategy calls NormalizeToolName internally, so display names
 	// like "Python" (capital P) must resolve to the "python" registry entry.
@@ -504,4 +530,54 @@ func TestSelectInstallStrategy_FailedMgrIsOnlyDetectedMgr_FallsToFallback(t *tes
 	_, ok := selectInstallStrategy("uv", "brew", env).(FallbackStrategy)
 
 	require.True(t, ok)
+}
+
+func TestWithVersion_ManagerStrategy_DefaultVersion_UsedWhenVersionEmpty(t *testing.T) {
+	// nvm strategy for node has DefaultVersion "24" — used when MinimumVersion is empty.
+	env := map[string]bool{"nvm": true}
+
+	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"nvm install 24", "nvm use 24"}, result.Commands)
+}
+
+func TestWithVersion_ManagerStrategy_MinimumVersionOverridesDefault(t *testing.T) {
+	// When MinimumVersion is set, it takes precedence over DefaultVersion.
+	env := map[string]bool{"nvm": true}
+
+	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	require.True(t, ok)
+
+	result, ok := ms.withVersion("20.0.0").(ManagerStrategy)
+
+	require.True(t, ok)
+	assert.Equal(t, []string{"nvm install 20.0.0", "nvm use 20.0.0"}, result.Commands)
+}
+
+func TestWithVersion_FallbackStrategy_DefaultVersionUsed(t *testing.T) {
+	// Node fallback has DefaultVersion "24" — substituted when MinimumVersion is empty.
+	fs, ok := selectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
+	require.True(t, ok)
+
+	result, ok := fs.withVersion("").(FallbackStrategy)
+
+	require.True(t, ok)
+	assert.Contains(t, result.Commands, "nvm install 24")
+	assert.Contains(t, result.Commands, "nvm use 24")
+}
+
+func TestWithVersion_FallbackStrategy_MinimumVersionOverridesDefault(t *testing.T) {
+	// When MinimumVersion is set, it takes precedence over DefaultVersion.
+	fs, ok := selectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
+	require.True(t, ok)
+
+	result, ok := fs.withVersion("20.0.0").(FallbackStrategy)
+
+	require.True(t, ok)
+	assert.Contains(t, result.Commands, "nvm install 20.0.0")
+	assert.Contains(t, result.Commands, "nvm use 20.0.0")
 }

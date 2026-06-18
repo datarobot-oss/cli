@@ -510,6 +510,15 @@ func TestBuildInstallTip_VersionSubstituted_Brew(t *testing.T) {
 	assert.Contains(t, tip, "brew install python@3.9")
 }
 
+func TestBuildInstallTip_EmptyMinimumVersion_DefaultVersionUsed(t *testing.T) {
+	// node with nvm detected and no MinimumVersion — DefaultVersion "24" must be
+	// substituted so the tip is actionable.
+	tip := buildInstallTip(prereq("node", "nvm install 20.0.0", ""), false, map[string]bool{"nvm": true}, "linux")
+
+	assert.Contains(t, tip, "nvm install 24")
+	assert.NotContains(t, tip, "{version}")
+}
+
 // --- buildInstallFailureMsg tests ---
 
 func TestBuildInstallFailureMsg_AlternativeManagerDetected(t *testing.T) {

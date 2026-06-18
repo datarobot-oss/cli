@@ -35,16 +35,20 @@ type Strategy interface {
 
 // ManagerStrategy provides install commands when a specific package/version manager
 // is detected in the environment.
+// DefaultVersion is substituted when the Prerequisite carries no MinimumVersion.
 type ManagerStrategy struct {
-	Manager  string
-	Commands []string
+	Manager        string
+	Commands       []string
+	DefaultVersion string
 }
 
 // FallbackStrategy is used when no manager-specific strategy matches.
 // CommandsWindows overrides Commands on Windows when non-empty.
+// DefaultVersion is substituted when the Prerequisite carries no MinimumVersion.
 type FallbackStrategy struct {
 	Commands        []string
 	CommandsWindows []string
+	DefaultVersion  string
 	Message         string
 	URL             string
 }
@@ -80,7 +84,7 @@ func substituteCmds(cmds []string, version string) []string {
 
 func (ms ManagerStrategy) withVersion(version string) Strategy {
 	if version == "" {
-		return ms
+		version = ms.DefaultVersion
 	}
 
 	ms.Commands = substituteCmds(ms.Commands, version)
@@ -90,7 +94,7 @@ func (ms ManagerStrategy) withVersion(version string) Strategy {
 
 func (fs FallbackStrategy) withVersion(version string) Strategy {
 	if version == "" {
-		return fs
+		version = fs.DefaultVersion
 	}
 
 	fs.Commands = substituteCmds(fs.Commands, version)
@@ -144,13 +148,14 @@ var ToolRegistry = map[string]ToolInfo{
 	"python": {
 		Name: "Python",
 		Strategies: []Strategy{
-			ManagerStrategy{Manager: "pyenv", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
-			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install python@{version_mm}"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Python.Python.{version_mm}"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install python --version={version}"}},
+			ManagerStrategy{Manager: "pyenv", DefaultVersion: "3.14", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
+			ManagerStrategy{Manager: "asdf", DefaultVersion: "3.14", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
+			ManagerStrategy{Manager: "brew", DefaultVersion: "3.14", Commands: []string{"brew install python@{version_mm}"}},
+			ManagerStrategy{Manager: "winget", DefaultVersion: "3.14", Commands: []string{"winget install Python.Python.{version_mm}"}},
+			ManagerStrategy{Manager: "choco", DefaultVersion: "3.14", Commands: []string{"choco install python --version={version}"}},
 			FallbackStrategy{
-				Message: "Install pyenv (recommended for managing Python versions):",
+				DefaultVersion: "3.14",
+				Message:        "Install pyenv (recommended for managing Python versions):",
 				Commands: []string{
 					"curl https://pyenv.run | bash",
 					"# Restart terminal, then:",
@@ -192,14 +197,15 @@ var ToolRegistry = map[string]ToolInfo{
 	"node": {
 		Name: "Node.js",
 		Strategies: []Strategy{
-			ManagerStrategy{Manager: "nvm", Commands: []string{"nvm install {version}", "nvm use {version}"}},
-			ManagerStrategy{Manager: "fnm", Commands: []string{"fnm install {version}", "fnm use {version}"}},
-			ManagerStrategy{Manager: "asdf", Commands: []string{"asdf install nodejs {version}", "asdf global nodejs {version}"}},
+			ManagerStrategy{Manager: "nvm", DefaultVersion: "24", Commands: []string{"nvm install {version}", "nvm use {version}"}},
+			ManagerStrategy{Manager: "fnm", DefaultVersion: "24", Commands: []string{"fnm install {version}", "fnm use {version}"}},
+			ManagerStrategy{Manager: "asdf", DefaultVersion: "24", Commands: []string{"asdf install nodejs {version}", "asdf global nodejs {version}"}},
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install node"}},
 			ManagerStrategy{Manager: "winget", Commands: []string{"winget install OpenJS.NodeJS"}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install nodejs"}},
 			FallbackStrategy{
-				Message: "Install a version manager (recommended):",
+				DefaultVersion: "24",
+				Message:        "Install a version manager (recommended):",
 				Commands: []string{
 					"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash",
 					"# Restart terminal, then:",
