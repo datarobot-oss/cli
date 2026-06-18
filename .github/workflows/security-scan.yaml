@@ -11,6 +11,10 @@ on:
     # Run security scans weekly on Mondays at 9 AM UTC
     # - cron: '0 9 * * 1'
 
+# S5: deny all by default; jobs declare only what they need.
+permissions:
+  contents: read
+
 jobs:
   trivy-scan:
     runs-on: ubuntu-latest
@@ -20,7 +24,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Run Trivy vulnerability scanner in repo mode
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
@@ -32,7 +36,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -54,10 +58,10 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  #       uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
   #     - name: Set up Go
-  #       uses: actions/setup-go@v5
+  #       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
   #       with:
   #         go-version: '1.26.4'
 
@@ -69,7 +73,7 @@ jobs:
   #         gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
 
   #     - name: Upload gosec results to GitHub Security tab
-  #       uses: github/codeql-action/upload-sarif@v3
+  #       uses: github/codeql-action/upload-sarif@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb # v3
   #       if: always()
   #       continue-on-error: true
   #       with:
@@ -79,23 +83,24 @@ jobs:
   #       run: |
   #         gosec -exclude-dir=smoke_test_scripts ./...
 
-  # dependency-review:
-  #   runs-on: ubuntu-latest
-  #   name: Dependency Review
-  #   # Only run on pull requests (not on push or schedule)
-  #   if: github.event_name == 'pull_request'
-  #   permissions:
-  #     contents: read
-  #     pull-requests: write
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  # S6: dependency-review — gates on PRs, fails on moderate+ new vulnerabilities.
+  dependency-review:
+    runs-on: ubuntu-latest
+    name: Dependency Review
+    # Only meaningful on pull requests (compares base vs head).
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-  #     - name: Dependency Review
-  #       uses: actions/dependency-review-action@v4
-  #       with:
-  #         fail-on-severity: moderate
-  #         comment-summary-in-pr: on-failure
+      - name: Dependency Review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
 
   # Phase 0 safety net — non-blocking baseline scan.
   # Promoted to required (remove continue-on-error) in Phase 5.
@@ -108,15 +113,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
       - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
-        with:
-          go-version-file: go.mod
-          go-package: ./...
+        # Run directly rather than via golang/govulncheck-action, which does an
+        # internal checkout and causes a duplicate Authorization header conflict.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

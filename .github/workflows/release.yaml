@@ -15,17 +15,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.4'
 
       - name: Run goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser
           version: latest
@@ -49,7 +49,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0 # v1.27.0
         with:
           payload: |
             {
@@ -93,7 +93,8 @@ jobs:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
     with:
       version: ${{ github.ref_name }}
-    secrets: inherit
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   pre-release-smoke-test:
     needs: verify-installation
@@ -108,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Promote release if stable version
         env:
@@ -143,7 +144,7 @@ jobs:
             /tmp/release-assets/*
 
       - name: Notify Slack on Success
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0 # v1.27.0
         with:
           payload: |
             {
@@ -191,8 +192,8 @@ jobs:
     if: always() && (needs.verify-installation.result == 'failure' || needs.pre-release-smoke-test.result == 'failure')
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Slack of Verification Failure
-        uses: slackapi/slack-github-action@v1.27.0
+      - name: Notify Slack of Installation Failure
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0 # v1.27.0
         with:
           payload: |
             {

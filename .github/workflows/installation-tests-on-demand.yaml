@@ -9,9 +9,13 @@ on:
         type: string
         default: ''
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   installation-tests:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
     with:
       version: ${{ inputs.version }}
-    secrets: inherit
+    # S1: called workflow declares no secrets — omit secrets block.

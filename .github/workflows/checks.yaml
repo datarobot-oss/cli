@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
 
   # This job detects what types of files were changed in the PR and sets outputs
@@ -26,10 +30,10 @@ jobs:
       install_sh: ${{ steps.changes.outputs.install_sh }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Detect file changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@6852f92c20ea7fd3b0c25de3b5112db3a98da050 # v3
         id: changes
         with:
           filters: |
@@ -63,28 +67,28 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.4'
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
           version: v2.11.4
           args: --timeout=5m
 
       - name: GoReleaser Check
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser
           version: latest
           args: check
 
       - name: Install Taskfile
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -101,20 +105,20 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.4'
 
       - name: Install Taskfile
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           # In order:
           # * Module download cache
@@ -141,10 +145,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Check License Header
-        uses: apache/skywalking-eyes/header@main
+        uses: apache/skywalking-eyes/header@8e837beb243c264ffcd5ea3abd3d5d8975cd0077 # main 2025-01-13
         with:
           config: .licenserc.yaml
 
@@ -156,16 +160,16 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install Taskfile
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.4'
 
@@ -191,8 +195,7 @@ jobs:
       go-version: '1.26.4'
       upload-artifact: true
       artifact-name-prefix: 'dr'
-    secrets: inherit
-
+    # S1: called workflow declares no secrets — omit secrets block.
   auto-label:
     needs: detect-changes
     if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository
@@ -202,7 +205,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Add label for Go code changes
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -221,7 +224,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Comment smoke test instructions
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             await github.rest.issues.createComment({
@@ -235,14 +238,12 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.deps == 'true'
     uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
-    secrets: inherit
-
+    # S1: called workflow declares no secrets — omit secrets block.
   install-integration-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.install_sh == 'true'
     uses: ./.github/workflows/.install-integration-tests-matrix.yaml
-    secrets: inherit
-
+    # S1: called workflow declares no secrets — omit secrets block.
   completion-tests:
     needs: [build, detect-changes]
     if: needs.detect-changes.outputs.completion == 'true'
@@ -250,10 +251,10 @@ jobs:
     name: Test Completions
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Download Binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dr-ubuntu
           path: /tmp/dr-bin
@@ -269,7 +270,7 @@ jobs:
           sudo apt-get install -y expect bash-completion
 
       - name: Install Taskfile
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
