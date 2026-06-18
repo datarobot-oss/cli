@@ -43,36 +43,21 @@ func Cmd() *cobra.Command {
 	}
 }
 
-func runList(cmd *cobra.Command, _ []string) error {
-	plugins, err := plugin.GetPlugins()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins: %w", err)
-	}
-
-	format := outputformat.GetFormat(cmd)
-	if format == outputformat.OutputFormatJSON {
-		outputs := make([]PluginOutput, len(plugins))
-		for i, p := range plugins {
-			outputs[i] = PluginOutput{
-				Name:        p.Manifest.Name,
-				Version:     p.Manifest.Version,
-				Description: p.Manifest.Description,
-				Path:        p.Executable,
-			}
+func toPluginOutputs(plugins []plugin.DiscoveredPlugin) []PluginOutput {
+	outputs := make([]PluginOutput, len(plugins))
+	for i, p := range plugins {
+		outputs[i] = PluginOutput{
+			Name:        p.Manifest.Name,
+			Version:     p.Manifest.Version,
+			Description: p.Manifest.Description,
+			Path:        p.Executable,
 		}
-		return outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs)
 	}
 
-	if len(plugins) == 0 {
-		fmt.Println("No plugins discovered.")
-		fmt.Println()
-		fmt.Println("Plugins are discovered from:")
-		fmt.Println("  1. Project-local .dr/plugins/ directory")
-		fmt.Println("  2. Executables named 'dr-*' in PATH")
+	return outputs
+}
 
-		return nil
-	}
-
+func printPluginsTable(plugins []plugin.DiscoveredPlugin) error {
 	fmt.Println(tui.SubTitleStyle.Render("Discovered Plugins"))
 
 	nameStyle := tui.BaseTextStyle.
@@ -118,4 +103,29 @@ func runList(cmd *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintln(os.Stdout, t.Render())
 
 	return nil
+}
+
+func runList(cmd *cobra.Command, _ []string) error {
+	plugins, err := plugin.GetPlugins()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins: %w", err)
+	}
+
+	format := outputformat.GetFormat(cmd)
+	if format == outputformat.OutputFormatJSON {
+		outputs := toPluginOutputs(plugins)
+		return outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs)
+	}
+
+	if len(plugins) == 0 {
+		fmt.Println("No plugins discovered.")
+		fmt.Println()
+		fmt.Println("Plugins are discovered from:")
+		fmt.Println("  1. Project-local .dr/plugins/ directory")
+		fmt.Println("  2. Executables named 'dr-*' in PATH")
+
+		return nil
+	}
+
+	return printPluginsTable(plugins)
 }

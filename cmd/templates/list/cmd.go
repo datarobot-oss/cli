@@ -60,6 +60,7 @@ start building AI applications. Each template includes:
 				for i, t := range templateList.Templates {
 					outputs[i] = TemplateOutput{ID: t.ID, Name: t.Name}
 				}
+
 				return outputformat.PrintJSONEnvelope(os.Stdout, "templates", outputs)
 			}
 

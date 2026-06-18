@@ -114,5 +114,6 @@ func PrintJSONEnvelope(w io.Writer, key string, data any) error {
 	payload := map[string]any{key: data}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+
 	return enc.Encode(payload)
 }

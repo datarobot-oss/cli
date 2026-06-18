@@ -49,6 +49,7 @@ func RunE(cmd *cobra.Command, _ []string) error {
 				Repo: a.Repo,
 			}
 		}
+
 		return outputformat.PrintJSONEnvelope(os.Stdout, "components", outputs)
 	}
 
