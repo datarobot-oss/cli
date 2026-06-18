@@ -92,11 +92,38 @@ func TestGetFormat_EnvironmentVariableViaViperBinding(t *testing.T) {
 
 	_ = viperx.BindPFlag("output-format", cmd.PersistentFlags().Lookup("output-format"))
 
-	flag := cmd.PersistentFlags().Lookup("output-format")
-	require.NotNil(t, flag)
+	// GetFormat must return the env-var value when no CLI flag is passed.
+	assert.Equal(t, OutputFormatJSON, GetFormat(cmd))
 
-	flagValue := viperx.Get("output-format")
-	assert.Equal(t, "json", flagValue)
+	viperx.Reset()
+}
+
+func TestGetFormat_CLIFlagOverridesEnvVar(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_OUTPUT_FORMAT", "json")
+
+	viperx.Reset()
+	viperx.SetEnvPrefix("DATAROBOT_CLI")
+	viperx.AutomaticEnv()
+	viperx.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	var rootFormat OutputFormat
+
+	root := &cobra.Command{Use: "root"}
+	AddPersistentFlag(root, &rootFormat)
+
+	_ = viperx.BindPFlag("output-format", root.PersistentFlags().Lookup("output-format"))
+
+	child := &cobra.Command{
+		Use:  "child",
+		RunE: func(cmd *cobra.Command, _ []string) error { return nil },
+	}
+	root.AddCommand(child)
+	root.SetArgs([]string{"child", "--output-format", "text"})
+
+	require.NoError(t, root.Execute())
+
+	// Explicit CLI flag must override the env var.
+	assert.Equal(t, OutputFormatText, GetFormat(child))
 
 	viperx.Reset()
 }
