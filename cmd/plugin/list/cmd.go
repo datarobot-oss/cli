@@ -20,10 +20,19 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
+
+// PluginOutput is the JSON representation of a discovered plugin for --output-format json.
+type PluginOutput struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Path        string `json:"path"`
+}
 
 func Cmd() *cobra.Command {
 	return &cobra.Command{
@@ -34,10 +43,24 @@ func Cmd() *cobra.Command {
 	}
 }
 
-func runList(_ *cobra.Command, _ []string) error {
+func runList(cmd *cobra.Command, _ []string) error {
 	plugins, err := plugin.GetPlugins()
 	if err != nil {
 		return fmt.Errorf("failed to get plugins: %w", err)
+	}
+
+	format := outputformat.GetFormat(cmd)
+	if format == outputformat.OutputFormatJSON {
+		outputs := make([]PluginOutput, len(plugins))
+		for i, p := range plugins {
+			outputs[i] = PluginOutput{
+				Name:        p.Manifest.Name,
+				Version:     p.Manifest.Version,
+				Description: p.Manifest.Description,
+				Path:        p.Executable,
+			}
+		}
+		return outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs)
 	}
 
 	if len(plugins) == 0 {
