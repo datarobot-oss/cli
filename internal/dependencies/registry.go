@@ -313,8 +313,9 @@ func detectEnvironment(
 	nvmDir := getenv("NVM_DIR")
 
 	if nvmDir == "" {
-		home := getenv("HOME")
-		nvmDir = filepath.Join(home, ".nvm")
+		if home, err := os.UserHomeDir(); err == nil {
+			nvmDir = filepath.Join(home, ".nvm")
+		}
 	}
 
 	nvmPresent := !isWindows && dirExists(nvmDir)
