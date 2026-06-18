@@ -245,7 +245,7 @@ func TestManagerStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
 		Commands: []string{"asdf install uv latest", "asdf global uv latest"},
 	}
 
-	assert.Equal(t, "  Tip: You have asdf — try: \n\tasdf install uv latest\n\tasdf global uv latest", ms.getStrategyTip("linux"))
+	assert.Equal(t, TAB+"Tip: You have asdf — try: \n"+TAB+TAB+"asdf install uv latest\n"+TAB+TAB+"asdf global uv latest", ms.getStrategyTip("linux"))
 }
 
 func TestManagerStrategy_GetStrategyTip_GoosIgnored(t *testing.T) {
@@ -267,7 +267,7 @@ func TestFallbackStrategy_GetStrategyTip_SingleCommand(t *testing.T) {
 func TestFallbackStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
 	fs := FallbackStrategy{Commands: []string{"curl https://pyenv.run | bash", "pyenv install 3.12", "pyenv global 3.12"}}
 
-	assert.Equal(t, "  Try:\n\tcurl https://pyenv.run | bash\n\tpyenv install 3.12\n\tpyenv global 3.12", fs.getStrategyTip("linux"))
+	assert.Equal(t, TAB+"Try:\n"+TAB+TAB+"curl https://pyenv.run | bash\n"+TAB+TAB+"pyenv install 3.12\n"+TAB+TAB+"pyenv global 3.12", fs.getStrategyTip("linux"))
 }
 
 func TestFallbackStrategy_GetStrategyTip_URLOnly(t *testing.T) {

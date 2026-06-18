@@ -433,7 +433,7 @@ func TestBuildInstallTip_ManagerStrategyMultipleCommands(t *testing.T) {
 
 	assert.Contains(t, tip, "You have asdf")
 	assert.Contains(t, tip, "asdf install uv latest")
-	assert.Contains(t, tip, "\t")
+	assert.Contains(t, tip, TAB+TAB)
 }
 
 func TestBuildInstallTip_FallbackStrategy(t *testing.T) {
@@ -551,7 +551,7 @@ func TestBuildInstallFailureMsg_MultiCommandTip(t *testing.T) {
 	result := buildInstallFailureMsg(prereq("uv", "brew install uv", ""), 1, false, env, "linux")
 
 	assert.Contains(t, result, "You have asdf")
-	assert.Contains(t, result, "\t")
+	assert.Contains(t, result, TAB+TAB)
 }
 
 func TestBuildInstallFailureMsg_PermissionDenied(t *testing.T) {

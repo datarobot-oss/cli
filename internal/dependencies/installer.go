@@ -139,16 +139,16 @@ func buildInstallFailureMsg(prerequisite tools.Prerequisite, exitCode int, permD
 		fmt.Fprintf(&sb, "✗ %s install failed (exit code %d)\n", toolName, exitCode)
 	}
 
-	fmt.Fprintf(&sb, "  Tried: %s\n", installCmd)
+	fmt.Fprintf(&sb, TAB+"Tried: %s\n", installCmd)
 
 	if tip := buildInstallTip(prerequisite, permDenied, env, goos); tip != "" {
 		fmt.Fprintf(&sb, "%s\n", tip)
 	}
 
-	fmt.Fprintf(&sb, "  Raw command if you want to retry: %s\n", installCmd)
+	fmt.Fprintf(&sb, TAB+"Raw command if you want to retry: %s\n", installCmd)
 
 	if prerequisite.URL != "" {
-		fmt.Fprintf(&sb, "  Refer to %s for manual installation instructions.\n", prerequisite.URL)
+		fmt.Fprintf(&sb, TAB+"Refer to %s for manual installation instructions.\n", prerequisite.URL)
 	}
 
 	return sb.String()
@@ -160,11 +160,11 @@ func buildInstallTip(prerequisite tools.Prerequisite, permDenied bool, env map[s
 	if permDenied {
 		switch goos {
 		case "windows":
-			return "  Tip: This action requires Administrator privileges. Please restart your terminal/tool as Administrator."
+			return TAB + "Tip: This action requires Administrator privileges. Please restart your terminal/tool as Administrator."
 		case "darwin", "linux":
-			return "  Tip: This action requires root privileges. Please re-run this tool using 'sudo'."
+			return TAB + "Tip: This action requires root privileges. Please re-run this tool using 'sudo'."
 		default:
-			return "  Tip: Administrative or root privileges are required to perform this action."
+			return TAB + "Tip: Administrative or root privileges are required to perform this action."
 		}
 	}
 

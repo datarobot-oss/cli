@@ -23,6 +23,9 @@ import (
 	"strings"
 )
 
+// TAB is the indent prefix used in user-facing tip and failure messages.
+const TAB = "  "
+
 // Strategy is implemented by ManagerStrategy and FallbackStrategy.
 // getStrategyTip returns the user-facing tip line for an install failure, or ""
 // when no actionable suggestion is available.
@@ -107,10 +110,10 @@ func (ms ManagerStrategy) getStrategyTip(_ string) string {
 	tipMsg := ms.Commands[0]
 
 	if len(ms.Commands) > 1 {
-		tipMsg = "\n\t" + strings.Join(ms.Commands, "\n\t")
+		tipMsg = "\n" + TAB + TAB + strings.Join(ms.Commands, "\n"+TAB+TAB)
 	}
 
-	return fmt.Sprintf("  Tip: You have %s — try: %s", ms.Manager, tipMsg)
+	return fmt.Sprintf(TAB+"Tip: You have %s — try: %s", ms.Manager, tipMsg)
 }
 
 func (fs FallbackStrategy) getStrategyTip(goos string) string {
@@ -123,16 +126,16 @@ func (fs FallbackStrategy) getStrategyTip(goos string) string {
 	switch len(cmds) {
 	case 0:
 		if fs.URL != "" {
-			return "  See: " + fs.URL
+			return TAB + "See: " + fs.URL
 		}
 
 		return ""
 
 	case 1:
-		return "  Try: " + cmds[0]
+		return TAB + "Try: " + cmds[0]
 
 	default:
-		return "  Try:\n\t" + strings.Join(cmds, "\n\t")
+		return TAB + "Try:\n" + TAB + TAB + strings.Join(cmds, "\n"+TAB+TAB)
 	}
 }
 
