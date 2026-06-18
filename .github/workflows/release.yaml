@@ -93,7 +93,6 @@ jobs:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
     with:
       version: ${{ github.ref_name }}
-    # S1: called workflow declares no secrets — omit secrets block.
 
   pre-release-smoke-test:
     needs: verify-installation
@@ -103,6 +102,7 @@ jobs:
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
+    # S1: called workflow declares no secrets — omit secrets block.
   promote-release:
     needs: [verify-installation, pre-release-smoke-test]
     runs-on: ubuntu-latest
