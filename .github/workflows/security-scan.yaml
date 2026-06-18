@@ -97,23 +97,26 @@ jobs:
   #         fail-on-severity: moderate
   #         comment-summary-in-pr: on-failure
 
-  # govulncheck:
-  #   runs-on: ubuntu-latest
-  #   name: Go Vulnerability Check
-  #   permissions:
-  #     contents: read
-  #     security-events: write
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  # Phase 0 safety net — non-blocking baseline scan.
+  # Promoted to required (remove continue-on-error) in Phase 5.
+  govulncheck:
+    runs-on: ubuntu-latest
+    name: Go Vulnerability Check
+    # Non-blocking during Phase 0 — results visible in job logs without failing the PR.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
 
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v5
-  #       with:
-  #         go-version: '1.26.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
-  #     - name: Install govulncheck
-  #       run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-  #     - name: Run govulncheck
-  #       run: govulncheck ./...
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          go-package: ./...
