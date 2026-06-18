@@ -61,6 +61,8 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to trigger the run with")

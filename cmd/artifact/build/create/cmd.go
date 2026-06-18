@@ -65,6 +65,8 @@ Examples:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	pollflags.Register(cmd, &poll)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

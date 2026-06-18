@@ -91,6 +91,8 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(c, &outputFormat)
+
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("clean", false, "Remove checkout directories instead of downloading.")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts.")

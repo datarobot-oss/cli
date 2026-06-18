@@ -59,6 +59,8 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {

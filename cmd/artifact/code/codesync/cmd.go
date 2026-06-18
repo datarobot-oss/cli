@@ -133,6 +133,8 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(c, &outputFormat)
+
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
