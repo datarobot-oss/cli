@@ -95,7 +95,8 @@ jobs:
     uses: ./.github/workflows/.installation-tests-matrix.yaml
     with:
       version: ${{ github.ref_name }}
-    # S1: called workflow declares no secrets — omit secrets block.
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   pre-release-smoke-test:
     needs: verify-installation
