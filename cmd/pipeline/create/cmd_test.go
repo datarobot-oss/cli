@@ -153,8 +153,19 @@ func TestCmd_RejectsInvalidMode(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"description", "mode", "output-format", "from-file"} {
+	for _, name := range []string{"description", "name", "mode", "output-format", "from-file"} {
 		flag := cmd.Flags().Lookup(name)
 		assert.NotNilf(t, flag, "expected --%s flag to be registered", name)
 	}
+}
+
+func TestCmd_ParsesNameFlag(t *testing.T) {
+	cmd := Cmd()
+
+	err := cmd.ParseFlags([]string{"--name=My Custom Pipeline"})
+	require.NoError(t, err)
+
+	flag := cmd.Flags().Lookup("name")
+	require.NotNil(t, flag)
+	assert.Equal(t, "My Custom Pipeline", flag.Value.String())
 }
