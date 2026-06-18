@@ -78,6 +78,10 @@ func GetFormat(cmd *cobra.Command) OutputFormat {
 		return OutputFormatText
 	}
 
+	// TODO Remove LocalFlags and InheritedFlags checks
+	// and rely solely on viperx. Current setup works
+	// and makes tests cleaner, but is a bit magical.
+
 	local := cmd.LocalFlags().Lookup("output-format")
 	if local != nil && local.Changed {
 		return OutputFormat(local.Value.String())
