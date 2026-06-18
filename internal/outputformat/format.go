@@ -17,6 +17,7 @@ package outputformat
 import (
 	"fmt"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -53,13 +54,6 @@ func (f *OutputFormat) Type() string {
 	return "format"
 }
 
-// AddFlag adds the --output-format flag to the given command, with the default value of "text".
-func AddFlag(cmd *cobra.Command, dest *OutputFormat) {
-	*dest = OutputFormatText
-
-	cmd.Flags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))
-}
-
 // AddPersistentFlag adds the --output-format flag to the given command and all of its subcommands, with the default value of "text".
 func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
 	*dest = OutputFormatText
@@ -67,29 +61,25 @@ func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
 	cmd.PersistentFlags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))
 }
 
-// GetFormat retrieves the output format from the command's flags.
-// It checks in this order:
-// 1. local flags
-// 2. inherited flags
-// 3. the command's own flags
-//
-//	If no flag is set, it defaults to OutputFormatText.
+// GetFormat retrieves the effective output format. It resolves in this order:
+// 1. explicit CLI flag (inherited persistent flag with Changed=true)
+// 2. viper (env-var / config file, e.g. DATAROBOT_CLI_OUTPUT_FORMAT)
+// 3. flag default value
+// 4. OutputFormatText
 func GetFormat(cmd *cobra.Command) OutputFormat {
 	if cmd == nil {
 		return OutputFormatText
 	}
 
-	local := cmd.LocalFlags().Lookup("output-format")
-	if local != nil && local.Changed {
-		return OutputFormat(local.Value.String())
-	}
-
-	inherited := cmd.InheritedFlags().Lookup("output-format")
-	if inherited != nil && inherited.Changed {
-		return OutputFormat(inherited.Value.String())
-	}
-
 	f := cmd.Flags().Lookup("output-format")
+	if f != nil && f.Changed {
+		return OutputFormat(f.Value.String())
+	}
+
+	if v := viperx.GetString("output-format"); v != "" {
+		return OutputFormat(v)
+	}
+
 	if f != nil {
 		return OutputFormat(f.Value.String())
 	}
