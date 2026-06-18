@@ -15,7 +15,9 @@
 package outputformat
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
@@ -102,4 +104,15 @@ func GetFormat(cmd *cobra.Command) OutputFormat {
 	}
 
 	return OutputFormatText
+}
+
+// PrintJSONEnvelope writes {"<key>": <data>} as indented JSON to w.
+// It ensures output is always a JSON object, never a bare array or value,
+// which makes the output forward-compatible (metadata, pagination, warnings
+// can be added to the envelope without breaking callers).
+func PrintJSONEnvelope(w io.Writer, key string, data any) error {
+	payload := map[string]any{key: data}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(payload)
 }
