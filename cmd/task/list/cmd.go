@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -279,7 +280,7 @@ func Cmd() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
@@ -307,6 +308,11 @@ func Cmd() *cobra.Command {
 				_, _ = fmt.Fprintln(os.Stderr, "listing tasks:", err)
 
 				return cli.ErrSilent
+			}
+
+			format := outputformat.GetFormat(cmd)
+			if format == outputformat.OutputFormatJSON {
+				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", tasks)
 			}
 
 			categories := groupTasksByCategory(tasks, showAll)
