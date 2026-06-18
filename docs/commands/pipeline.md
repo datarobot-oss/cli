@@ -91,8 +91,9 @@ dr pipeline lock <pipeline-id>
 ### `create`
 
 Upload a Python file defining a DataRobot pipeline (one or more tasks) and
-register a new pipeline. The pipeline name is extracted from the file and used as the
-pipeline name.
+register a new pipeline. The display name defaults to the title-cased `@pipeline`
+function name (e.g. `my_workflow` → `My Workflow`); supply `--name` to use a
+custom label instead.
 
 ```bash
 dr pipeline create <file> [flags]
@@ -107,6 +108,8 @@ dr pipeline create --from-file=<file> [flags]
 **Flags:**
 
 - `--from-file <path>` — alternative to the positional file argument.
+- `--name <text>` — optional human-readable display name. Defaults to the
+  title-cased `@pipeline` function name when omitted.
 - `--description <text>` — optional human-readable description stored on
   the pipeline.
 - `--mode <draft|locked>` — pipeline lifecycle mode. Defaults to `draft`.
@@ -118,12 +121,21 @@ dr pipeline create --from-file=<file> [flags]
 ```bash
 $ dr pipeline create ./confluence_to_vdb.py --description "test"
 Pipeline ID:  683c2a1b4f8e1a2b3c4d5e6f
-Name:         confluence_to_vdb
+Name:         Confluence To Vdb
 Version:      1
 Status:       READY
 Mode:         draft
 Tasks:        create_vector_database, ingest_confluence_files, setup_credential_and_datastore
 Created:      2026-04-28T11:42:28Z
+
+$ dr pipeline create ./confluence_to_vdb.py --name "My Confluence VDB Pipeline"
+Pipeline ID:  683c2a1b4f8e1a2b3c4d5e70
+Name:         My Confluence VDB Pipeline
+Version:      1
+Status:       READY
+Mode:         draft
+Tasks:        create_vector_database, ingest_confluence_files, setup_credential_and_datastore
+Created:      2026-04-28T11:43:00Z
 ```
 
 ### `list`
