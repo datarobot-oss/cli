@@ -581,3 +581,4 @@ func TestWithVersion_FallbackStrategy_MinimumVersionOverridesDefault(t *testing.
 	assert.Contains(t, result.Commands, "nvm install 20.0.0")
 	assert.Contains(t, result.Commands, "nvm use 20.0.0")
 }
+
