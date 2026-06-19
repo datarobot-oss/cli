@@ -102,6 +102,9 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Run Tests
+    permissions:
+      contents: read
+      actions: write   # actions/cache (save)
 
     steps:
       - name: Checkout Code
@@ -249,6 +252,10 @@ jobs:
     if: needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
     name: Test Completions
+    permissions:
+      contents: read
+      actions: read    # actions/download-artifact
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
