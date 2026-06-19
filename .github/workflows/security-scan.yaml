@@ -26,14 +26,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Run Trivy vulnerability scanner in repo mode
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: 'json'
+          output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Convert results to SARIF
+        # trivy is in PATH after the action step above.
+        run: trivy convert --format sarif --output trivy-results.sarif trivy-results.json
 
       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
@@ -41,13 +45,8 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
+      - name: Display vulnerability table
+        run: trivy convert --format table trivy-results.json
 
 # Skip this scan for now due to false positives and performance issues
   # gosec-scan:
