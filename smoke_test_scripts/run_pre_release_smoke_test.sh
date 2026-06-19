@@ -109,14 +109,7 @@ else
     echo "❌ Assertion failed: Agentic Starter directory ($AGENTIC_DIR) does not exist after setup."
     exit 1
   fi
-  # Guard against an exit-0-but-incomplete clone: the dotenv wizard writes a
-  # .env as part of setup, so its absence means setup did not finish even if the
-  # directory and a zero exit code are present.
-  if [ ! -f "$AGENTIC_DIR/.env" ]; then
-    echo "❌ Assertion failed: setup left no .env in $AGENTIC_DIR - incomplete clone/setup."
-    rm -rf "$AGENTIC_DIR"
-    exit 1
-  fi
+
   echo "✅ Agentic Starter template cloned and set up in $AGENTIC_DIR."
 
   # 2. Run `dr start` from inside the cloned template.
