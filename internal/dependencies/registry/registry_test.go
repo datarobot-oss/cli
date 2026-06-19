@@ -588,29 +588,29 @@ func TestWithVersion_FallbackStrategy_MinimumVersionOverridesDefault(t *testing.
 // DefaultVersion completeness
 // ──────────────────────────────────────────────────────────────
 
-func TestToolRegistry_VersionPlaceholderRequiresDefaultVersion(t *testing.T) {
-	hasPlaceholder := func(cmds []string) bool {
-		for _, c := range cmds {
-			if strings.Contains(c, "{version}") || strings.Contains(c, "{version_mm}") {
-				return true
-			}
+func hasVersionPlaceholder(cmds []string) bool {
+	for _, c := range cmds {
+		if strings.Contains(c, "{version}") || strings.Contains(c, "{version_mm}") {
+			return true
 		}
-
-		return false
 	}
 
+	return false
+}
+
+func TestToolRegistry_VersionPlaceholderRequiresDefaultVersion(t *testing.T) {
 	for toolKey, info := range ToolRegistry {
 		for i, s := range info.Strategies {
 			switch strategy := s.(type) {
 			case ManagerStrategy:
-				if hasPlaceholder(strategy.Commands) {
+				if hasVersionPlaceholder(strategy.Commands) {
 					assert.NotEmpty(t, strategy.DefaultVersion,
 						"tool %q ManagerStrategy[%d] (manager=%q) has {version} placeholder but no DefaultVersion",
 						toolKey, i, strategy.Manager)
 				}
 
 			case FallbackStrategy:
-				if hasPlaceholder(strategy.Commands) || hasPlaceholder(strategy.CommandsWindows) {
+				if hasVersionPlaceholder(strategy.Commands) || hasVersionPlaceholder(strategy.CommandsWindows) {
 					assert.NotEmpty(t, strategy.DefaultVersion,
 						"tool %q FallbackStrategy[%d] has {version} placeholder but no DefaultVersion",
 						toolKey, i)
