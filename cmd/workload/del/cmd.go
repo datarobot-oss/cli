@@ -42,7 +42,7 @@ func Cmd() *cobra.Command {
 Deleting a running workload is allowed: the platform stops the backing
 replicas first, then removes the workload. The artifact it was created from
 is not deleted with it; remove that separately with
-'dr workload artifact delete <artifact-id>' once no workload references it.
+'dr artifact delete <artifact-id>' once no workload references it.
 
 Without --yes the command asks for confirmation.
 

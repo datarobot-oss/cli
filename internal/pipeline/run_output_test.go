@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +77,7 @@ func TestToRunJSON_JSONKeysUseCliVocabulary(t *testing.T) {
 
 func TestRenderRun_JSON(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderRun(OutputFormatJSON, sampleRun()))
+		require.NoError(t, RenderRun(outputformat.OutputFormatJSON, sampleRun()))
 	})
 
 	var parsed map[string]any
@@ -102,7 +103,7 @@ func TestRenderRunStatus_JSON(t *testing.T) {
 	s := RunStatus{RunID: "d-1", Status: RunStatusRunning, CovalentDispatchID: "cov-42"}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderRunStatus(OutputFormatJSON, s))
+		require.NoError(t, RenderRunStatus(outputformat.OutputFormatJSON, s))
 	})
 
 	var parsed map[string]any

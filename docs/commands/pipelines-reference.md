@@ -142,15 +142,15 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 
 ---
 
-## Environments (`dr pipeline environment …`)
+## Images (`dr pipeline image …`)
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline environment create` | `POST /pipelines/environments` | `dr pipeline environment create --name ml-base --package numpy --package pandas` <br> `dr pipeline environment create --name ml-base --package numpy,pandas==2.0 --description "base" --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--description <text>`, `--output-format json`. |
-| `dr pipeline environment list` | `GET /pipelines/environments` | `dr pipeline environment list` <br> `dr pipeline environment list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
-| `dr pipeline environment update` | `PATCH /pipelines/environments/{id}` | `dr pipeline environment update <env-id> --package scikit-learn` | **Positional:** `<environment-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--output-format json`. |
-| `dr pipeline environment delete` | `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete <env-id>` | **Positional:** `<environment-id>` (required). |
-| `dr pipeline environment version delete` | `DELETE /pipelines/environments/{id}/versions/{n}` | `dr pipeline environment version delete --environment <env-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--environment <env-id>` (required). |
+| `dr pipeline image create` | `POST /pipelines/images` | `dr pipeline image create --name ml-base --package numpy --package pandas` <br> `dr pipeline image create --name ml-base --package numpy,pandas==2.0 --description "base" --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--description <text>`, `--output-format json`. |
+| `dr pipeline image list` | `GET /pipelines/images` | `dr pipeline image list` <br> `dr pipeline image list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
+| `dr pipeline image update` | `PATCH /pipelines/images/{id}` | `dr pipeline image update <img-id> --package scikit-learn` | **Positional:** `<image-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--output-format json`. |
+| `dr pipeline image delete` | `DELETE /pipelines/images/{id}` | `dr pipeline image delete <img-id>` | **Positional:** `<image-id>` (required). |
+| `dr pipeline image version delete` | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete --image <img-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--image <img-id>` (required). |
 
 ---
 
@@ -186,10 +186,10 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `GET /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule get` |
 | `PATCH /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule update` |
 | `DELETE /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule delete` |
-| `POST /pipelines/environments` | `dr pipeline environment create` |
-| `GET /pipelines/environments` | `dr pipeline environment list` |
-| `PATCH /pipelines/environments/{id}` | `dr pipeline environment update` |
-| `DELETE /pipelines/environments/{id}` | `dr pipeline environment delete` |
-| `DELETE /pipelines/environments/{id}/versions/{n}` | `dr pipeline environment version delete` |
+| `POST /pipelines/images` | `dr pipeline image create` |
+| `GET /pipelines/images` | `dr pipeline image list` |
+| `PATCH /pipelines/images/{id}` | `dr pipeline image update` |
+| `DELETE /pipelines/images/{id}` | `dr pipeline image delete` |
+| `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete` |
 | `GET /pipelines/{id}/tasks/{task_id}` | `dr pipeline task get` (draft) |
 | `GET /pipelines/{id}/versions/{ver}/tasks/{task_id}` | `dr pipeline task get` (locked) |

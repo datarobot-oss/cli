@@ -701,3 +701,92 @@ func TestDeleteArtifact_409PropagatesAsHTTPError(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "Delete the workload(s) first")
 }
+
+func TestLockArtifact_SendsStatusLocked(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/artifacts/art-1/", r.URL.Path)
+
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, map[string]any{"status": "locked"}, body)
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"art-1","name":"my-agent","status":"locked"}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	artifact, err := LockArtifact("art-1")
+	require.NoError(t, err)
+	assert.Equal(t, "art-1", artifact.ID)
+	assert.Equal(t, "locked", artifact.Status)
+}
+
+func TestLockArtifact_EscapesIDInPath(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// '?' must arrive escaped inside the path segment, never as a query.
+		assert.Equal(t, "/api/v2/artifacts/art-1%3Fforce=true/", r.URL.EscapedPath())
+		assert.Empty(t, r.URL.RawQuery)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"art-1","status":"locked"}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := LockArtifact("art-1?force=true")
+	require.NoError(t, err)
+}
+
+func TestLockArtifact_422PropagatesDetail(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprint(w, `{"detail":"Cannot lock artifact: imageBuildConfig is set but imageUri is not populated. Trigger and complete an image build before locking."}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := LockArtifact("art-1")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "complete an image build before locking")
+}
+
+func TestLockArtifact_403AlreadyLockedPropagatesAsHTTPError(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"detail":"Cannot update artifact: artifact is locked"}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := LockArtifact("art-1")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusForbidden, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "artifact is locked")
+}

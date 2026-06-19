@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,7 +91,7 @@ func TestToInputJSON_JSONKeysUseCliVocabulary(t *testing.T) {
 
 func TestRenderInput_JSON(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderInput(OutputFormatJSON, sampleInput()))
+		require.NoError(t, RenderInput(outputformat.OutputFormatJSON, sampleInput()))
 	})
 
 	var parsed map[string]any

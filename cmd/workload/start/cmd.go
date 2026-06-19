@@ -18,13 +18,14 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	cmd := &cobra.Command{
 		Use:   "start <workload-id>",
@@ -40,8 +41,7 @@ server replies with a conflict), and the request is rejected when it
 would exceed your concurrent workload limits.
 
 The acknowledgement message is printed on stdout. Use
-'dr workload status <workload-id> --wait' to block until the workload
-has settled.
+'dr workload status <workload-id>' to check the workload's progress.
 
 By default, output is human-readable. Use --output-format json for the
 full acknowledgement document.
@@ -53,6 +53,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			resp, err := workload.StartWorkload(args[0])
 			if err != nil {
 				return err
@@ -64,15 +66,15 @@ Example:
 
 			// The follow-up hint goes to stderr so script captures of stdout
 			// stay limited to the server's acknowledgement message.
-			if outputFormat == workload.OutputFormatText {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Track progress with: dr workload status "+args[0]+" --wait")
+			if outputFormat == outputformat.OutputFormatText {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+args[0])
 			}
 
 			return nil
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

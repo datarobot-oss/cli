@@ -49,7 +49,7 @@ func phase1Gather(e *Engine) error {
 	}
 
 	if art.IsLocked() {
-		return errors.New("artifact is locked (immutable); cannot sync. Create a new draft artifact in the UI to continue")
+		return errors.New("artifact is locked (immutable); cannot sync. Create a new draft with 'dr artifact create' (or in the DataRobot UI) to continue")
 	}
 
 	e.artifact = art

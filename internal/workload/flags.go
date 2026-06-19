@@ -21,47 +21,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type OutputFormat string
-
-const (
-	OutputFormatText OutputFormat = "text"
-	OutputFormatJSON OutputFormat = "json"
-)
-
-var _ pflag.Value = (*OutputFormat)(nil)
-
-func (f *OutputFormat) String() string {
-	if f == nil {
-		return ""
-	}
-
-	return string(*f)
-}
-
-func (f *OutputFormat) Set(s string) error {
-	switch s {
-	case string(OutputFormatText), string(OutputFormatJSON):
-		*f = OutputFormat(s)
-
-		return nil
-	}
-
-	return fmt.Errorf("invalid output format %q: use %s or %s", s, OutputFormatText, OutputFormatJSON)
-}
-
-func (f *OutputFormat) Type() string {
-	return "format"
-}
-
-// AddOutputFlag registers --output-format on cmd, defaulting to OutputFormatText.
-// The default is written to *dest before registration so cobra renders it as
-// the default value in --help.
-func AddOutputFlag(cmd *cobra.Command, dest *OutputFormat) {
-	*dest = OutputFormatText
-
-	cmd.Flags().Var(dest, "output-format", fmt.Sprintf("Output format (%s, %s)", OutputFormatText, OutputFormatJSON))
-}
-
 type Status string
 
 var _ pflag.Value = (*Status)(nil)

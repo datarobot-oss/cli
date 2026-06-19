@@ -79,6 +79,10 @@ that would slurp every subcommand flag (such as `--yes`, `--if-needed`)
 into `viper.AllSettings()` and risk leaking transient flag state into
 `drconfig.yaml`.
 
+`--output-format` is one of these root-bound flags. It is global and supports
+`DATAROBOT_CLI_OUTPUT_FORMAT`, but it is still treated as transient and is not
+written to `drconfig.yaml` (it is not in `config.PersistableKeys`).
+
 ### Subcommand flags
 
 Read subcommand flag values directly from cobra:
@@ -129,17 +133,24 @@ The wrappers in the auth package (`auth.WriteConfigFileSilent`,
 
 When adding a new flag, decide which category it falls into:
 
-| Category                                         | Bind to viper?     | Persist to drconfig.yaml?                |
-| ------------------------------------------------ | ------------------ | ---------------------------------------- |
-| Transient (per-invocation, e.g. `--yes`, `--all`) | No                 | No                                       |
-| Sticky preference (e.g. `--external-editor`)      | Yes (root only)    | Yes &mdash; add to `PersistableKeys`     |
-| Connection credential (e.g. `--token`)            | Yes                | Yes                                      |
+| Category                                                  | Bind to viper?  | Persist to drconfig.yaml?            |
+| --------------------------------------------------------- | --------------- | ------------------------------------ |
+| Transient subcommand flag (e.g. `--yes`, `--all`)          | No              | No                                   |
+| Global transient root flag (e.g. `--output-format`)        | Yes (root only) | No                                   |
+| Sticky preference (e.g. `--external-editor`)               | Yes (root only) | Yes &mdash; add to `PersistableKeys` |
+| Connection credential (e.g. `--token`)                     | Yes             | Yes                                  |
 
-For transient flags:
+For transient subcommand flags:
 
 - Define with `cmd.Flags().Bool(...)`
 - Read with `cmd.Flags().GetBool(...)`
 - Do **not** call `viperx.BindPFlag(...)`
+
+For global transient root flags:
+
+- Register on root with `PersistentFlags()`
+- Bind only on root via `viperx.BindPFlag(...)`
+- Keep the key out of `config.PersistableKeys`
 
 ## Rules for new env vars
 

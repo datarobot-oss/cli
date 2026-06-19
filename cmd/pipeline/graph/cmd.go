@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -35,7 +36,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -57,6 +58,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
 				return err
@@ -67,7 +70,7 @@ Example:
 				return handleGraphError(err, flags.PipelineID)
 			}
 
-			if outputFormat == pipeline.OutputFormatJSON {
+			if outputFormat == outputformat.OutputFormatJSON {
 				return printGraphJSON(*result)
 			}
 
@@ -77,9 +80,10 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

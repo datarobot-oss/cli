@@ -20,7 +20,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run Trivy vulnerability scanner in repo mode
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
@@ -54,7 +54,7 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
 
   #     - name: Set up Go
   #       uses: actions/setup-go@v5
@@ -89,7 +89,7 @@ jobs:
   #     pull-requests: write
   #   steps:
   #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
 
   #     - name: Dependency Review
   #       uses: actions/dependency-review-action@v4
@@ -105,7 +105,7 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
 
   #     - name: Set up Go
   #       uses: actions/setup-go@v5

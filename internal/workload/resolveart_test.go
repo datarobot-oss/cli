@@ -71,7 +71,7 @@ func TestResolveArtifactID_NotInitializedHasUserHint(t *testing.T) {
 	_, _, err := ResolveArtifactID("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no .wapi project")
-	assert.Contains(t, err.Error(), "dr workload code init")
+	assert.Contains(t, err.Error(), "dr artifact code init")
 }
 
 func TestResolveArtifactID_CorruptConfigPropagates(t *testing.T) {

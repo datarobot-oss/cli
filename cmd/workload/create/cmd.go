@@ -16,13 +16,14 @@ package create
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	var specFile string
 
@@ -47,7 +48,7 @@ a 422 with a JSON-path detail on a mismatch.
 
 Two flows:
 
-  1. Deploy an existing artifact (e.g. one built with 'dr workload code sync'
+  1. Deploy an existing artifact (e.g. one built with 'dr artifact code sync'
      and a build):
 
   {
@@ -93,7 +94,9 @@ Example:
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			payload, err := workload.ReadSpecFile(specFile)
 			if err != nil {
 				return err
@@ -112,7 +115,8 @@ Example:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON or YAML spec file (required)")
 	_ = cmd.MarkFlagRequired("spec-file")
 

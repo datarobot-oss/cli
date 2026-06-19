@@ -407,6 +407,29 @@ func isPrimaryContainer(container map[string]any) bool {
 	return ok && primary
 }
 
+// LockArtifact promotes a draft artifact to locked via PATCH {"status": "locked"}
+// and returns the updated artifact (status locked, version assigned). Locking is
+// one-way. The server replies 403 when the artifact is already locked, 404 when
+// it does not exist, and 422 when a source-built container is incomplete (missing
+// codeRef or unbuilt imageUri); the error detail names the missing piece.
+func LockArtifact(artifactID string) (*Artifact, error) {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]string{"status": ArtifactStatusLocked}
+
+	var artifact Artifact
+
+	err = drapi.PatchJSON(url, "artifact", body, &artifact)
+	if err != nil {
+		return nil, err
+	}
+
+	return &artifact, nil
+}
+
 // DeleteArtifact deletes a draft artifact. The server replies 409 when the
 // artifact is locked (locking is one-way; locked artifacts can never be
 // deleted) or still referenced by a workload's proton(s); the 409 detail

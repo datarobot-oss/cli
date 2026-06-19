@@ -26,6 +26,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -55,8 +56,8 @@ func toScheduleJSON(s Schedule) scheduleJSON {
 }
 
 // RenderSchedule routes a single schedule to JSON or human output.
-func RenderSchedule(format OutputFormat, s Schedule) error {
-	if format == OutputFormatJSON {
+func RenderSchedule(format outputformat.OutputFormat, s Schedule) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintScheduleJSON(s)
 	}
 
@@ -66,8 +67,8 @@ func RenderSchedule(format OutputFormat, s Schedule) error {
 }
 
 // RenderSchedules routes a list of schedules to JSON or human output.
-func RenderSchedules(format OutputFormat, items []Schedule) error {
-	if format == OutputFormatJSON {
+func RenderSchedules(format outputformat.OutputFormat, items []Schedule) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintScheduleListJSON(items)
 	}
 

@@ -10,6 +10,7 @@ This document tracks what is covered by smoke tests across all platforms. Use it
 | `windows/run_smoke_test.ps1` | Windows | `task smoke-test-windows` |
 | `run_plugin_update_smoke_test.sh` | Unix | `task smoke-test` |
 | `run_self_update_smoke_test.sh` | Unix (macOS for brew tests) | manual / CI |
+| `run_pre_release_smoke_test.sh` | Unix (Linux / macOS) | `task smoke-test-pre-release` (gates release promotion) |
 
 ---
 
@@ -50,6 +51,10 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | **Dotenv** | | | |
 | `dr dotenv setup` inside template directory | ✅ | ⏭️ | |
 | `DATAROBOT_ENDPOINT` preserved in `.env` | ✅ | ⏭️ | |
+| **Start (`dr start`)** — `run_pre_release_smoke_test.sh` | | | |
+| Clone Agentic Starter (`datarobot-agent-application`) | ✅ | ⏭️ | Pre-release suite; skipped on Windows (no `expect`) |
+| `dr start` reaches start-command execution, no hang/loop | ✅ | ⏭️ | Regression guard; bounded run + hard `timeout` |
+| `dr start` resolves start command exactly once (no loop) | ✅ | ⏭️ | Asserted via `$HOME/.dr-tui-debug.log` step count |
 | **Plugin Auto-Update** (`run_plugin_update_smoke_test.sh`) | | | |
 | Install plugin at pinned version | ✅ | ❌ | |
 | Auto-update prompt appears on plugin run | ✅ | ❌ | |
@@ -68,7 +73,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 ## Known Gaps
 
 ### Windows
-- No interactive testing (no `expect` equivalent): `dr auth setURL`, `dr auth login`, `dr templates setup`, `dr dotenv setup`, and all plugin-update flows are untested or manually simulated.
+- No interactive testing (no `expect` equivalent): `dr auth setURL`, `dr auth login`, `dr templates setup`, `dr dotenv setup`, `dr start`, and all plugin-update flows are untested or manually simulated.
 - `datarobot` alias is not verified.
 - Plugin auto-update and self-update flows are not covered.
 - Shell detection only covers PowerShell (not cmd.exe in the main suite; covered by a standalone `.bat` script).

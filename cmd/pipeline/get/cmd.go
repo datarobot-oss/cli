@@ -21,6 +21,7 @@ import (
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -28,7 +29,7 @@ import (
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat pipeline.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	cmd := &cobra.Command{
 		Use:   "get <pipeline-id>",
@@ -43,7 +44,9 @@ Example:
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			result, err := pipeline.GetPipeline(args[0])
 			if err != nil {
 				return handleGetError(err, args[0])
@@ -53,7 +56,7 @@ Example:
 		},
 	}
 
-	pipeline.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

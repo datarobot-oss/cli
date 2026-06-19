@@ -14,6 +14,10 @@ on:
         description: 'Exact commit SHA from the fork PR to test (leave empty to use PR head)'
         required: false
         type: string
+      approver:
+        description: 'Username of maintainer approving this test. Auto-filled by CI (leave empty for manual runs)'
+        required: false
+        type: string
 
 jobs:
   check-permissions:
@@ -23,24 +27,27 @@ jobs:
       contents: read
     steps:
       - name: Verify maintainer access
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
+            const approver = '${{ inputs.approver }}'.trim();
+            const actorToCheck = approver || context.actor;
+
             const result = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              username: context.actor,
+              username: actorToCheck,
             });
             const allowed = ['write', 'maintain', 'admin'];
             const permission = result.data.permission;
             if (!allowed.includes(permission)) {
               core.setFailed(
-                `@${context.actor} has permission '${permission}' — ` +
+                `@${actorToCheck} has permission '${permission}' — ` +
                 `maintainer access (write/maintain/admin) is required to run fork smoke tests.`
               );
               return;
             }
-            console.log(`@${context.actor} has permission '${permission}' — proceeding.`);
+            console.log(`@${actorToCheck} has permission '${permission}' — proceeding.`);
 
   resolve-pr:
     needs: [check-permissions]
@@ -54,7 +61,7 @@ jobs:
     steps:
       - name: Resolve PR commit SHA
         id: resolve
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -78,7 +85,7 @@ jobs:
     name: Security Scan
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve-pr.outputs.sha }}
           fetch-depth: 0
@@ -130,7 +137,7 @@ jobs:
     steps:
       - name: Notify smoke tests started
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Check if any changed files are under .github/
@@ -192,7 +199,7 @@ jobs:
       statuses: write
     steps:
       - name: Comment on PR with results
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';
@@ -225,7 +232,7 @@ jobs:
             });
 
       - name: Update Smoke Tests commit status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';

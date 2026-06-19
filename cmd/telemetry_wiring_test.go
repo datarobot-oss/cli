@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/artifact"
 	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -74,17 +75,6 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 // findCommandByPath matches against the root's Name(), which is
 // "workload" for the standalone subtree.
 var expectedWorkloadTrackedCommands = []string{
-	"workload code init",
-	"workload code sync",
-	"workload code versions",
-	"workload artifact get",
-	"workload artifact list",
-	"workload artifact create",
-	"workload build trigger",
-	"workload build get",
-	"workload build list",
-	"workload build logs",
-	"workload artifact delete",
 	"workload create",
 	"workload get",
 	"workload list",
@@ -92,6 +82,8 @@ var expectedWorkloadTrackedCommands = []string{
 	"workload start",
 	"workload stop",
 	"workload status",
+	"workload endpoint",
+	"workload logs",
 }
 
 // TestTelemetryWiring_AllWorkloadCommandsTracked walks the workload
@@ -105,6 +97,49 @@ func TestTelemetryWiring_AllWorkloadCommandsTracked(t *testing.T) {
 		t.Run("dr "+path, func(t *testing.T) {
 			cmd := findCommandByPath(workloadRoot, path)
 			require.NotNilf(t, cmd, "command %q not found in workload subtree", path)
+
+			assert.Containsf(t, cmd.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
+		})
+	}
+}
+
+// expectedArtifactTrackedCommands enumerates leaf commands under
+// `dr artifact` that must be wired to fire a telemetry event. Like the
+// workload subtree, `dr artifact` is hidden from the live RootCmd by
+// cli.CommandAdder when DATAROBOT_CLI_FEATURE_WORKLOAD is unset (the
+// default in CI), so this test walks a freshly-built subtree produced by
+// artifact.Cmd() instead of the global RootCmd.
+//
+// Paths are relative to artifact.Cmd() (no "dr" prefix) because
+// findCommandByPath matches against the root's Name(), which is
+// "artifact" for the standalone subtree.
+var expectedArtifactTrackedCommands = []string{
+	"artifact create",
+	"artifact get",
+	"artifact list",
+	"artifact delete",
+	"artifact lock",
+	"artifact build create",
+	"artifact build get",
+	"artifact build list",
+	"artifact build logs",
+	"artifact code init",
+	"artifact code sync",
+	"artifact code versions",
+}
+
+// TestTelemetryWiring_AllArtifactCommandsTracked walks the artifact
+// subtree (built via artifact.Cmd() to bypass the feature-gate filter
+// in cli.CommandAdder) and asserts each entry has the "telemetry"
+// annotation set by telemetry.Track / TrackWith.
+func TestTelemetryWiring_AllArtifactCommandsTracked(t *testing.T) {
+	artifactRoot := artifact.Cmd()
+
+	for _, path := range expectedArtifactTrackedCommands {
+		t.Run("dr "+path, func(t *testing.T) {
+			cmd := findCommandByPath(artifactRoot, path)
+			require.NotNilf(t, cmd, "command %q not found in artifact subtree", path)
 
 			assert.Containsf(t, cmd.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)

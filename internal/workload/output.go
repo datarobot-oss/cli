@@ -24,6 +24,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -32,8 +33,8 @@ const (
 	emptyValuePlaceholder = "—"
 )
 
-func RenderArtifact(format OutputFormat, artifact Artifact) error {
-	if format == OutputFormatJSON {
+func RenderArtifact(format outputformat.OutputFormat, artifact Artifact) error {
+	if format == outputformat.OutputFormatJSON {
 		return printArtifactJSON(artifact)
 	}
 
@@ -42,8 +43,8 @@ func RenderArtifact(format OutputFormat, artifact Artifact) error {
 	return nil
 }
 
-func RenderArtifacts(format OutputFormat, artifacts []Artifact) error {
-	if format == OutputFormatJSON {
+func RenderArtifacts(format outputformat.OutputFormat, artifacts []Artifact) error {
+	if format == outputformat.OutputFormatJSON {
 		return printArtifactsJSON(artifacts)
 	}
 
@@ -143,8 +144,8 @@ func FilterLogsByLevel(entries []BuildLogEntry, minLevel string) []BuildLogEntry
 	return out
 }
 
-func RenderBuild(format OutputFormat, build Build) error {
-	if format == OutputFormatJSON {
+func RenderBuild(format outputformat.OutputFormat, build Build) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(NewBuildOutput(build))
 	}
 
@@ -153,8 +154,8 @@ func RenderBuild(format OutputFormat, build Build) error {
 	return nil
 }
 
-func RenderBuilds(format OutputFormat, builds []Build) error {
-	if format == OutputFormatJSON {
+func RenderBuilds(format outputformat.OutputFormat, builds []Build) error {
+	if format == outputformat.OutputFormatJSON {
 		outputs := make([]BuildOutput, 0, len(builds))
 
 		for _, b := range builds {
@@ -169,8 +170,8 @@ func RenderBuilds(format OutputFormat, builds []Build) error {
 	return nil
 }
 
-func RenderBuildTrigger(format OutputFormat, resp BuildTriggerResponse) error {
-	if format == OutputFormatJSON {
+func RenderBuildTrigger(format outputformat.OutputFormat, resp BuildTriggerResponse) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(resp)
 	}
 
@@ -185,8 +186,8 @@ func RenderBuildTrigger(format OutputFormat, resp BuildTriggerResponse) error {
 // through RenderBuildSummary; JSON mode emits the whole slice as one array
 // document so `--wait` scripts always get a single `jq`-able value even
 // when multiple build IDs were triggered.
-func RenderBuildSummaries(format OutputFormat, summaries []BuildSummary) error {
-	if format == OutputFormatJSON {
+func RenderBuildSummaries(format outputformat.OutputFormat, summaries []BuildSummary) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(summaries)
 	}
 
@@ -204,8 +205,8 @@ func RenderBuildSummaries(format OutputFormat, summaries []BuildSummary) error {
 // (when present) goes to stderr so stdout stays clean for script callers
 // reading both build ID and summary line. JSON mode emits one document on
 // stdout including the LogTail in-document.
-func RenderBuildSummary(format OutputFormat, summary BuildSummary) error {
-	if format == OutputFormatJSON {
+func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(summary)
 	}
 
@@ -228,8 +229,8 @@ func RenderBuildSummary(format OutputFormat, summary BuildSummary) error {
 	return nil
 }
 
-func RenderBuildLogs(format OutputFormat, entries []BuildLogEntry) error {
-	if format == OutputFormatJSON {
+func RenderBuildLogs(format outputformat.OutputFormat, entries []BuildLogEntry) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(entries)
 	}
 
@@ -316,22 +317,26 @@ func printBuildsTable(builds []Build) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-func formatLogLine(entry BuildLogEntry) string {
-	level := entry.Levelname
+// formatLogParts renders the "[LEVEL] timestamp message" line shape shared
+// by build and workload logs, dropping the timestamp segment when absent.
+func formatLogParts(level, timestamp, message string) string {
 	if level == "" {
 		level = "?"
 	}
 
-	asctime := entry.Asctime
-	if asctime == "" {
-		return fmt.Sprintf("[%s] %s", level, entry.Message)
+	if timestamp == "" {
+		return fmt.Sprintf("[%s] %s", level, message)
 	}
 
-	return fmt.Sprintf("[%s] %s %s", level, asctime, entry.Message)
+	return fmt.Sprintf("[%s] %s %s", level, timestamp, message)
 }
 
-func RenderWorkload(format OutputFormat, workload Workload) error {
-	if format == OutputFormatJSON {
+func formatLogLine(entry BuildLogEntry) string {
+	return formatLogParts(entry.Levelname, entry.Asctime, entry.Message)
+}
+
+func RenderWorkload(format outputformat.OutputFormat, workload Workload) error {
+	if format == outputformat.OutputFormatJSON {
 		return printWorkloadJSON(workload)
 	}
 
@@ -340,8 +345,8 @@ func RenderWorkload(format OutputFormat, workload Workload) error {
 	return nil
 }
 
-func RenderWorkloads(format OutputFormat, workloads []Workload) error {
-	if format == OutputFormatJSON {
+func RenderWorkloads(format outputformat.OutputFormat, workloads []Workload) error {
+	if format == outputformat.OutputFormatJSON {
 		return printWorkloadsJSON(workloads)
 	}
 
@@ -490,8 +495,8 @@ func printArtifactsTable(artifacts []Artifact) {
 // start/stop request. Text mode prints the server's human-readable outcome
 // message; JSON mode emits the full operation response document so scripts
 // keep the workloadId and trackVia handles.
-func RenderWorkloadOperation(format OutputFormat, resp WorkloadOperationResponse) error {
-	if format == OutputFormatJSON {
+func RenderWorkloadOperation(format outputformat.OutputFormat, resp WorkloadOperationResponse) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(resp)
 	}
 
@@ -503,12 +508,64 @@ func RenderWorkloadOperation(format OutputFormat, resp WorkloadOperationResponse
 // RenderWorkloadStatus renders just the workload's status. Text mode prints
 // the bare status value so `dr workload status <id>` is directly usable in
 // scripts (symmetric with `dr workload endpoint` printing the bare URL).
-func RenderWorkloadStatus(format OutputFormat, workload Workload) error {
-	if format == OutputFormatJSON {
+func RenderWorkloadStatus(format outputformat.OutputFormat, workload Workload) error {
+	if format == outputformat.OutputFormatJSON {
 		return printJSON(WorkloadStatusOutput{ID: workload.ID, Status: workload.Status})
 	}
 
 	fmt.Println(workload.Status)
+
+	return nil
+}
+
+// RenderWorkloadLogs prints a workload's container logs: one
+// "[LEVEL] timestamp message" line each, or a JSON array (always [], never
+// null, when empty). With no logs in text mode the "No logs found." hint
+// goes to stderr, so stdout stays log lines only and a `logs | grep`/pipe is
+// not polluted by a status line.
+func RenderWorkloadLogs(format outputformat.OutputFormat, entries []WorkloadLogEntry) error {
+	if format == outputformat.OutputFormatJSON {
+		if entries == nil {
+			entries = []WorkloadLogEntry{}
+		}
+
+		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
+	}
+
+	for _, e := range entries {
+		fmt.Println(formatWorkloadLogLine(e))
+	}
+
+	return nil
+}
+
+func formatWorkloadLogLine(e WorkloadLogEntry) string {
+	// OTEL levels arrive lowercase (build logs are already uppercase).
+	return formatLogParts(strings.ToUpper(e.Level), e.Timestamp, e.Message)
+}
+
+// RenderWorkloadLogLine prints a single log entry for the --follow stream:
+// the same text line as RenderWorkloadLogs, or one compact JSON object
+// (JSON Lines), since a never-ending stream cannot be one closed array.
+func RenderWorkloadLogLine(format outputformat.OutputFormat, e WorkloadLogEntry) error {
+	if format == outputformat.OutputFormatJSON {
+		data, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(data))
+
+		return nil
+	}
+
+	fmt.Println(formatWorkloadLogLine(e))
 
 	return nil
 }

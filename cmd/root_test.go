@@ -335,3 +335,21 @@ func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
 
 	assert.False(t, found, "workload command should not be present when feature gate is not enabled")
 }
+
+func TestArtifactCommandNotPresentByDefault(t *testing.T) {
+	// The artifact command shares the "workload" feature gate, so it is
+	// filtered out by cli.CommandAdder during init() when the gate is not
+	// enabled (the default).
+	cmd := RootCmd
+
+	var found bool
+
+	for _, subCmd := range cmd.Commands() {
+		if subCmd.Name() == "artifact" {
+			found = true
+			break
+		}
+	}
+
+	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
+}

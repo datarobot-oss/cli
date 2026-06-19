@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +61,7 @@ func TestRenderCreateResponse_JSON(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderCreateResponse(OutputFormatJSON, result))
+		require.NoError(t, RenderCreateResponse(outputformat.OutputFormatJSON, result))
 	})
 
 	var parsed map[string]any
@@ -85,7 +86,7 @@ func TestRenderCreateResponse_Human(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderCreateResponse(OutputFormatText, result))
+		require.NoError(t, RenderCreateResponse(outputformat.OutputFormatText, result))
 	})
 
 	assert.Contains(t, out, "abc123")
@@ -106,7 +107,7 @@ func TestRenderCreateResponse_Human_NoTasks(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderCreateResponse(OutputFormatText, result))
+		require.NoError(t, RenderCreateResponse(outputformat.OutputFormatText, result))
 	})
 
 	assert.Contains(t, out, emptyValuePlaceholder)
@@ -138,7 +139,7 @@ func TestRenderPipeline_JSON(t *testing.T) {
 	p := samplePipeline()
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipeline(OutputFormatJSON, p))
+		require.NoError(t, RenderPipeline(outputformat.OutputFormatJSON, p))
 	})
 
 	var parsed map[string]any
@@ -153,7 +154,7 @@ func TestRenderPipeline_Human(t *testing.T) {
 	p := samplePipeline()
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipeline(OutputFormatText, p))
+		require.NoError(t, RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, out, "pid1")
@@ -170,7 +171,7 @@ func TestRenderPipeline_Human_ErrorDetail(t *testing.T) {
 	p.Versions[0].ErrorDetail = "compilation failed"
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipeline(OutputFormatText, p))
+		require.NoError(t, RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, out, "compilation failed")
@@ -181,7 +182,7 @@ func TestRenderPipeline_Human_NoVersions(t *testing.T) {
 	p.Versions = nil
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipeline(OutputFormatText, p))
+		require.NoError(t, RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, out, "pid1")
@@ -193,7 +194,7 @@ func TestRenderPipeline_Human_NoDescription(t *testing.T) {
 	p.Description = ""
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipeline(OutputFormatText, p))
+		require.NoError(t, RenderPipeline(outputformat.OutputFormatText, p))
 	})
 
 	assert.Contains(t, out, emptyValuePlaceholder)
@@ -222,7 +223,7 @@ func TestRenderPipelines_JSON(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipelines(OutputFormatJSON, page))
+		require.NoError(t, RenderPipelines(outputformat.OutputFormatJSON, page))
 	})
 
 	var parsed []any
@@ -238,7 +239,7 @@ func TestRenderPipelines_Human(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipelines(OutputFormatText, page))
+		require.NoError(t, RenderPipelines(outputformat.OutputFormatText, page))
 	})
 
 	assert.Contains(t, out, "pid1")
@@ -251,7 +252,7 @@ func TestRenderPipelines_Human_Empty(t *testing.T) {
 	page := DataPage[ListItem]{}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipelines(OutputFormatText, page))
+		require.NoError(t, RenderPipelines(outputformat.OutputFormatText, page))
 	})
 
 	assert.Contains(t, out, "No pipelines found.")
@@ -264,7 +265,7 @@ func TestRenderPipelines_Human_NoLatestVersion(t *testing.T) {
 	page := DataPage[ListItem]{Data: []ListItem{item}, TotalCount: 1}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderPipelines(OutputFormatText, page))
+		require.NoError(t, RenderPipelines(outputformat.OutputFormatText, page))
 	})
 
 	assert.Contains(t, out, emptyValuePlaceholder)
