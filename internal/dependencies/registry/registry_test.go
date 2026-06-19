@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dependencies
+package registry
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -236,7 +238,7 @@ func TestSubstituteCmds_NoPlaceholders(t *testing.T) {
 func TestManagerStrategy_GetStrategyTip_SingleCommand(t *testing.T) {
 	ms := ManagerStrategy{Manager: "pyenv", Commands: []string{"pip install uv"}}
 
-	assert.Equal(t, "  Tip: You have pyenv — try: pip install uv", ms.getStrategyTip("linux"))
+	assert.Equal(t, "  Tip: You have pyenv — try: pip install uv", ms.GetStrategyTip("linux"))
 }
 
 func TestManagerStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
@@ -245,13 +247,13 @@ func TestManagerStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
 		Commands: []string{"asdf install uv latest", "asdf global uv latest"},
 	}
 
-	assert.Equal(t, TAB+"Tip: You have asdf — try: \n"+TAB+TAB+"asdf install uv latest\n"+TAB+TAB+"asdf global uv latest", ms.getStrategyTip("linux"))
+	assert.Equal(t, TAB+"Tip: You have asdf — try: \n"+TAB+TAB+"asdf install uv latest\n"+TAB+TAB+"asdf global uv latest", ms.GetStrategyTip("linux"))
 }
 
 func TestManagerStrategy_GetStrategyTip_GoosIgnored(t *testing.T) {
 	ms := ManagerStrategy{Manager: "brew", Commands: []string{"brew install uv"}}
 
-	assert.Equal(t, ms.getStrategyTip("linux"), ms.getStrategyTip("windows"), "goos must not affect ManagerStrategy tip")
+	assert.Equal(t, ms.GetStrategyTip("linux"), ms.GetStrategyTip("windows"), "goos must not affect ManagerStrategy tip")
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -261,23 +263,23 @@ func TestManagerStrategy_GetStrategyTip_GoosIgnored(t *testing.T) {
 func TestFallbackStrategy_GetStrategyTip_SingleCommand(t *testing.T) {
 	fs := FallbackStrategy{Commands: []string{"curl -LsSf https://astral.sh/uv/install.sh | sh"}}
 
-	assert.Equal(t, "  Try: curl -LsSf https://astral.sh/uv/install.sh | sh", fs.getStrategyTip("linux"))
+	assert.Equal(t, "  Try: curl -LsSf https://astral.sh/uv/install.sh | sh", fs.GetStrategyTip("linux"))
 }
 
 func TestFallbackStrategy_GetStrategyTip_MultipleCommands(t *testing.T) {
 	fs := FallbackStrategy{Commands: []string{"curl https://pyenv.run | bash", "pyenv install 3.12", "pyenv global 3.12"}}
 
-	assert.Equal(t, TAB+"Try:\n"+TAB+TAB+"curl https://pyenv.run | bash\n"+TAB+TAB+"pyenv install 3.12\n"+TAB+TAB+"pyenv global 3.12", fs.getStrategyTip("linux"))
+	assert.Equal(t, TAB+"Try:\n"+TAB+TAB+"curl https://pyenv.run | bash\n"+TAB+TAB+"pyenv install 3.12\n"+TAB+TAB+"pyenv global 3.12", fs.GetStrategyTip("linux"))
 }
 
 func TestFallbackStrategy_GetStrategyTip_URLOnly(t *testing.T) {
 	fs := FallbackStrategy{URL: "https://git-scm.com/downloads"}
 
-	assert.Equal(t, "  See: https://git-scm.com/downloads", fs.getStrategyTip("linux"))
+	assert.Equal(t, "  See: https://git-scm.com/downloads", fs.GetStrategyTip("linux"))
 }
 
 func TestFallbackStrategy_GetStrategyTip_Empty(t *testing.T) {
-	assert.Empty(t, FallbackStrategy{}.getStrategyTip("linux"))
+	assert.Empty(t, FallbackStrategy{}.GetStrategyTip("linux"))
 }
 
 func TestFallbackStrategy_GetStrategyTip_WindowsOverride(t *testing.T) {
@@ -286,8 +288,8 @@ func TestFallbackStrategy_GetStrategyTip_WindowsOverride(t *testing.T) {
 		CommandsWindows: []string{`powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`},
 	}
 
-	assert.Contains(t, fs.getStrategyTip("windows"), "iex")
-	assert.Contains(t, fs.getStrategyTip("linux"), "curl")
+	assert.Contains(t, fs.GetStrategyTip("windows"), "iex")
+	assert.Contains(t, fs.GetStrategyTip("linux"), "curl")
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -295,7 +297,7 @@ func TestFallbackStrategy_GetStrategyTip_WindowsOverride(t *testing.T) {
 // ──────────────────────────────────────────────────────────────
 
 // TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV is the acceptance-criteria test:
-// with pyenv on PATH and brew absent, selectInstallStrategy("uv") must return the
+// with pyenv on PATH and brew absent, SelectInstallStrategy("uv") must return the
 // pyenv ManagerStrategy (pip install uv).
 func TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV(t *testing.T) {
 	env := map[string]bool{
@@ -303,7 +305,7 @@ func TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV(t *testing.T) {
 		"brew":  false,
 	}
 
-	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("uv", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, "pyenv", ms.Manager)
@@ -313,7 +315,7 @@ func TestSelectInstallStrategy_PyenvPresentBrewAbsent_UV(t *testing.T) {
 func TestSelectInstallStrategy_BrewPresent_UV(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("uv", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"brew install uv"}, ms.Commands)
@@ -322,17 +324,17 @@ func TestSelectInstallStrategy_BrewPresent_UV(t *testing.T) {
 func TestSelectInstallStrategy_BrewPresent_Python(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("python", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	// Without version the placeholder is returned as-is; callers call .withVersion().
+	// Without version the placeholder is returned as-is; callers call .WithVersion().
 	assert.Equal(t, []string{"brew install python@{version_mm}"}, ms.Commands)
 }
 
 func TestSelectInstallStrategy_FallbackUnix_WhenNoManagerDetected(t *testing.T) {
 	env := map[string]bool{}
 
-	fs, ok := selectInstallStrategy("uv", "", env).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("uv", "", env).(FallbackStrategy)
 
 	require.True(t, ok)
 	require.NotEmpty(t, fs.Commands)
@@ -342,7 +344,7 @@ func TestSelectInstallStrategy_FallbackUnix_WhenNoManagerDetected(t *testing.T) 
 func TestSelectInstallStrategy_FallbackWindows(t *testing.T) {
 	env := map[string]bool{"is_windows": true}
 
-	fs, ok := selectInstallStrategy("uv", "", env).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("uv", "", env).(FallbackStrategy)
 
 	require.True(t, ok)
 	require.NotEmpty(t, fs.CommandsWindows)
@@ -352,7 +354,7 @@ func TestSelectInstallStrategy_FallbackWindows(t *testing.T) {
 func TestSelectInstallStrategy_UnknownTool(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	result := selectInstallStrategy("nonexistent-tool", "", env)
+	result := SelectInstallStrategy("nonexistent-tool", "", env)
 
 	assert.Nil(t, result)
 }
@@ -360,7 +362,7 @@ func TestSelectInstallStrategy_UnknownTool(t *testing.T) {
 func TestSelectInstallStrategy_WingetPresent_Task(t *testing.T) {
 	env := map[string]bool{"winget": true, "is_windows": true}
 
-	ms, ok := selectInstallStrategy("task", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("task", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"winget install Task.Task"}, ms.Commands)
@@ -369,10 +371,10 @@ func TestSelectInstallStrategy_WingetPresent_Task(t *testing.T) {
 func TestSelectInstallStrategy_NVMPresent_Node(t *testing.T) {
 	env := map[string]bool{"nvm": true}
 
-	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("node", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	// Without version the placeholder is returned as-is; callers call .withVersion().
+	// Without version the placeholder is returned as-is; callers call .WithVersion().
 	assert.Equal(t, []string{"nvm install {version}", "nvm use {version}"}, ms.Commands)
 }
 
@@ -381,7 +383,7 @@ func TestSelectInstallStrategy_AllToolsHaveAtLeastOneFallback(t *testing.T) {
 
 	for key := range ToolRegistry {
 		t.Run(key, func(t *testing.T) {
-			result := selectInstallStrategy(key, "", emptyEnv)
+			result := SelectInstallStrategy(key, "", emptyEnv)
 			assert.NotNil(t, result, "tool %q must have a fallback strategy", key)
 		})
 	}
@@ -390,7 +392,7 @@ func TestSelectInstallStrategy_AllToolsHaveAtLeastOneFallback(t *testing.T) {
 func TestSelectInstallStrategy_SkipsFailedMgr(t *testing.T) {
 	env := map[string]bool{"pyenv": true, "brew": true}
 
-	ms, ok := selectInstallStrategy("uv", "pyenv", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("uv", "pyenv", env).(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, "brew", ms.Manager, "should skip pyenv and return brew")
@@ -403,10 +405,10 @@ func TestSelectInstallStrategy_SkipsFailedMgr(t *testing.T) {
 func TestWithVersion_ManagerStrategy_Pyenv_Python(t *testing.T) {
 	env := map[string]bool{"pyenv": true}
 
-	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("python", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+	result, ok := ms.WithVersion("3.9.6").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"pyenv install 3.9.6", "pyenv global 3.9.6"}, result.Commands)
@@ -415,10 +417,10 @@ func TestWithVersion_ManagerStrategy_Pyenv_Python(t *testing.T) {
 func TestWithVersion_ManagerStrategy_Asdf_Python(t *testing.T) {
 	env := map[string]bool{"asdf": true}
 
-	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("python", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+	result, ok := ms.WithVersion("3.9.6").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"asdf install python 3.9.6", "asdf global python 3.9.6"}, result.Commands)
@@ -427,10 +429,10 @@ func TestWithVersion_ManagerStrategy_Asdf_Python(t *testing.T) {
 func TestWithVersion_ManagerStrategy_Brew_Python(t *testing.T) {
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("python", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("3.9.6").(ManagerStrategy)
+	result, ok := ms.WithVersion("3.9.6").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"brew install python@3.9"}, result.Commands)
@@ -440,20 +442,20 @@ func TestWithVersion_ManagerStrategy_EmptyVersion_UsesDefault(t *testing.T) {
 	// python/pyenv has DefaultVersion "3.14" — used when MinimumVersion is empty.
 	env := map[string]bool{"pyenv": true}
 
-	ms, ok := selectInstallStrategy("python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("python", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("").(ManagerStrategy)
+	result, ok := ms.WithVersion("").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"pyenv install 3.14", "pyenv global 3.14"}, result.Commands)
 }
 
 func TestWithVersion_FallbackStrategy_Python(t *testing.T) {
-	fs, ok := selectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
 	require.True(t, ok)
 
-	result, ok := fs.withVersion("3.9.6").(FallbackStrategy)
+	result, ok := fs.WithVersion("3.9.6").(FallbackStrategy)
 
 	require.True(t, ok)
 	assert.Contains(t, result.Commands, "pyenv install 3.9.6")
@@ -461,10 +463,10 @@ func TestWithVersion_FallbackStrategy_Python(t *testing.T) {
 }
 
 func TestWithVersion_FallbackStrategy_WindowsCommandsAlsoSubstituted(t *testing.T) {
-	fs, ok := selectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("python", "", map[string]bool{}).(FallbackStrategy)
 	require.True(t, ok)
 
-	result, ok := fs.withVersion("3.9.6").(FallbackStrategy)
+	result, ok := fs.WithVersion("3.9.6").(FallbackStrategy)
 
 	require.True(t, ok)
 	assert.Contains(t, result.CommandsWindows, "pyenv install 3.9.6")
@@ -474,10 +476,10 @@ func TestWithVersion_FallbackStrategy_WindowsCommandsAlsoSubstituted(t *testing.
 func TestWithVersion_FallbackStrategy_URLOnlyUnchanged(t *testing.T) {
 	// git has a URL-only FallbackStrategy — withVersion must not panic and must
 	// leave the URL intact.
-	fs, ok := selectInstallStrategy("git", "", map[string]bool{}).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("git", "", map[string]bool{}).(FallbackStrategy)
 	require.True(t, ok)
 
-	result, ok := fs.withVersion("2.40.0").(FallbackStrategy)
+	result, ok := fs.WithVersion("2.40.0").(FallbackStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, "https://git-scm.com/downloads", result.URL)
@@ -488,10 +490,10 @@ func TestWithVersion_ManagerStrategy_NoPlaceholders(t *testing.T) {
 	// uv's brew strategy has no version placeholders — commands must be returned as-is.
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("uv", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("uv", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("0.11.20").(ManagerStrategy)
+	result, ok := ms.WithVersion("0.11.20").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"brew install uv"}, result.Commands)
@@ -502,10 +504,10 @@ func TestWithVersion_ManagerStrategy_EmptyVersion_NoDefaultVersion_NoPlaceholder
 	// through substituteCmds unchanged when both version and DefaultVersion are empty.
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("node", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("").(ManagerStrategy)
+	result, ok := ms.WithVersion("").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"brew install node"}, result.Commands)
@@ -516,7 +518,7 @@ func TestSelectInstallStrategy_DisplayNameNormalized(t *testing.T) {
 	// like "Python" (capital P) must resolve to the "python" registry entry.
 	env := map[string]bool{"brew": true}
 
-	ms, ok := selectInstallStrategy("Python", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("Python", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, "brew", ms.Manager)
@@ -527,7 +529,7 @@ func TestSelectInstallStrategy_FailedMgrIsOnlyDetectedMgr_FallsToFallback(t *tes
 	// return the FallbackStrategy rather than nil.
 	env := map[string]bool{"brew": true}
 
-	_, ok := selectInstallStrategy("uv", "brew", env).(FallbackStrategy)
+	_, ok := SelectInstallStrategy("uv", "brew", env).(FallbackStrategy)
 
 	require.True(t, ok)
 }
@@ -536,10 +538,10 @@ func TestWithVersion_ManagerStrategy_DefaultVersion_UsedWhenVersionEmpty(t *test
 	// nvm strategy for node has DefaultVersion "24" — used when MinimumVersion is empty.
 	env := map[string]bool{"nvm": true}
 
-	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("node", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("").(ManagerStrategy)
+	result, ok := ms.WithVersion("").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"nvm install 24", "nvm use 24"}, result.Commands)
@@ -549,10 +551,10 @@ func TestWithVersion_ManagerStrategy_MinimumVersionOverridesDefault(t *testing.T
 	// When MinimumVersion is set, it takes precedence over DefaultVersion.
 	env := map[string]bool{"nvm": true}
 
-	ms, ok := selectInstallStrategy("node", "", env).(ManagerStrategy)
+	ms, ok := SelectInstallStrategy("node", "", env).(ManagerStrategy)
 	require.True(t, ok)
 
-	result, ok := ms.withVersion("20.0.0").(ManagerStrategy)
+	result, ok := ms.WithVersion("20.0.0").(ManagerStrategy)
 
 	require.True(t, ok)
 	assert.Equal(t, []string{"nvm install 20.0.0", "nvm use 20.0.0"}, result.Commands)
@@ -560,10 +562,10 @@ func TestWithVersion_ManagerStrategy_MinimumVersionOverridesDefault(t *testing.T
 
 func TestWithVersion_FallbackStrategy_DefaultVersionUsed(t *testing.T) {
 	// Node fallback has DefaultVersion "24" — substituted when MinimumVersion is empty.
-	fs, ok := selectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
 	require.True(t, ok)
 
-	result, ok := fs.withVersion("").(FallbackStrategy)
+	result, ok := fs.WithVersion("").(FallbackStrategy)
 
 	require.True(t, ok)
 	assert.Contains(t, result.Commands, "nvm install 24")
@@ -572,12 +574,72 @@ func TestWithVersion_FallbackStrategy_DefaultVersionUsed(t *testing.T) {
 
 func TestWithVersion_FallbackStrategy_MinimumVersionOverridesDefault(t *testing.T) {
 	// When MinimumVersion is set, it takes precedence over DefaultVersion.
-	fs, ok := selectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
+	fs, ok := SelectInstallStrategy("node", "", map[string]bool{}).(FallbackStrategy)
 	require.True(t, ok)
 
-	result, ok := fs.withVersion("20.0.0").(FallbackStrategy)
+	result, ok := fs.WithVersion("20.0.0").(FallbackStrategy)
 
 	require.True(t, ok)
 	assert.Contains(t, result.Commands, "nvm install 20.0.0")
 	assert.Contains(t, result.Commands, "nvm use 20.0.0")
+}
+
+// ──────────────────────────────────────────────────────────────
+// DefaultVersion completeness
+// ──────────────────────────────────────────────────────────────
+
+func TestToolRegistry_VersionPlaceholderRequiresDefaultVersion(t *testing.T) {
+	hasPlaceholder := func(cmds []string) bool {
+		for _, c := range cmds {
+			if strings.Contains(c, "{version}") || strings.Contains(c, "{version_mm}") {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	for toolKey, info := range ToolRegistry {
+		for i, s := range info.Strategies {
+			switch strategy := s.(type) {
+			case ManagerStrategy:
+				if hasPlaceholder(strategy.Commands) {
+					assert.NotEmpty(t, strategy.DefaultVersion,
+						"tool %q ManagerStrategy[%d] (manager=%q) has {version} placeholder but no DefaultVersion",
+						toolKey, i, strategy.Manager)
+				}
+
+			case FallbackStrategy:
+				if hasPlaceholder(strategy.Commands) || hasPlaceholder(strategy.CommandsWindows) {
+					assert.NotEmpty(t, strategy.DefaultVersion,
+						"tool %q FallbackStrategy[%d] has {version} placeholder but no DefaultVersion",
+						toolKey, i)
+				}
+			}
+		}
+	}
+}
+
+var versionPattern = regexp.MustCompile(`^\d+(\.\d+)*$`)
+
+func TestToolRegistry_DefaultVersionIsValidVersion(t *testing.T) {
+	for toolKey, info := range ToolRegistry {
+		for i, s := range info.Strategies {
+			switch strategy := s.(type) {
+			case ManagerStrategy:
+				if strategy.DefaultVersion != "" {
+					assert.True(t, versionPattern.MatchString(strategy.DefaultVersion),
+						"tool %q ManagerStrategy[%d] (manager=%q) DefaultVersion %q is not a valid version",
+						toolKey, i, strategy.Manager, strategy.DefaultVersion)
+				}
+
+			case FallbackStrategy:
+				if strategy.DefaultVersion != "" {
+					assert.True(t, versionPattern.MatchString(strategy.DefaultVersion),
+						"tool %q FallbackStrategy[%d] DefaultVersion %q is not a valid version",
+						toolKey, i, strategy.DefaultVersion)
+				}
+			}
+		}
+	}
 }

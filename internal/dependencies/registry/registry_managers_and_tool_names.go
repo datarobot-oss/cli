@@ -1,0 +1,40 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package registry
+
+// KnownManagers lists package/version manager names used by extractFailedManager
+// to identify which manager was referenced in a failed install command.
+var KnownManagers = []string{"brew", "pyenv", "asdf", "nvm", "fnm", "winget", "choco", "scoop"}
+
+// toolNameMap maps lowercase dr CLI display names to ToolRegistry keys.
+var toolNameMap = map[string]string{
+	// Canonical keys
+	"python":                             "python",
+	"uv":                                 "uv",
+	"node":                               "node",
+	"node.js":                            "node",
+	"nodejs":                             "node",
+	"pulumi":                             "pulumi",
+	"pulumi infrastructure as code tool": "pulumi",
+	"task":                               "task",
+	"taskfile task runner":               "task",
+	"git":                                "git",
+	"git source control management tool": "git",
+	// Python aliases
+	"py":       "python",
+	"py3":      "python",
+	"python3":  "python",
+	"python@3": "python",
+}

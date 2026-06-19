@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dependencies
+package registry
 
 import (
 	"fmt"
@@ -32,8 +32,8 @@ const TAB = "  "
 // withVersion returns a copy of the strategy with {version} and {version_mm}
 // placeholders in commands replaced by the given version string.
 type Strategy interface {
-	getStrategyTip(goos string) string
-	withVersion(version string) Strategy
+	GetStrategyTip(goos string) string
+	WithVersion(version string) Strategy
 }
 
 // ManagerStrategy provides install commands when a specific package/version manager
@@ -85,7 +85,7 @@ func substituteCmds(cmds []string, version string) []string {
 	return out
 }
 
-func (ms ManagerStrategy) withVersion(version string) Strategy {
+func (ms ManagerStrategy) WithVersion(version string) Strategy {
 	if version == "" {
 		version = ms.DefaultVersion
 	}
@@ -95,7 +95,7 @@ func (ms ManagerStrategy) withVersion(version string) Strategy {
 	return ms
 }
 
-func (fs FallbackStrategy) withVersion(version string) Strategy {
+func (fs FallbackStrategy) WithVersion(version string) Strategy {
 	if version == "" {
 		version = fs.DefaultVersion
 	}
@@ -106,7 +106,7 @@ func (fs FallbackStrategy) withVersion(version string) Strategy {
 	return fs
 }
 
-func (ms ManagerStrategy) getStrategyTip(_ string) string {
+func (ms ManagerStrategy) GetStrategyTip(_ string) string {
 	tipMsg := ms.Commands[0]
 
 	if len(ms.Commands) > 1 {
@@ -116,7 +116,7 @@ func (ms ManagerStrategy) getStrategyTip(_ string) string {
 	return fmt.Sprintf(TAB+"Tip: You have %s — try: %s", ms.Manager, tipMsg)
 }
 
-func (fs FallbackStrategy) getStrategyTip(goos string) string {
+func (fs FallbackStrategy) GetStrategyTip(goos string) string {
 	cmds := fs.Commands
 
 	if goos == "windows" && len(fs.CommandsWindows) > 0 {
@@ -147,141 +147,7 @@ type ToolInfo struct {
 
 // ToolRegistry maps tool keys (e.g. "python", "uv") to their installation info.
 // Strategies are evaluated in order; the first matching one wins.
-var ToolRegistry = map[string]ToolInfo{
-	"python": {
-		Name: "Python",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "pyenv", DefaultVersion: "3.14", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
-			ManagerStrategy{Manager: "asdf", DefaultVersion: "3.14", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
-			ManagerStrategy{Manager: "brew", DefaultVersion: "3.14", Commands: []string{"brew install python@{version_mm}"}},
-			ManagerStrategy{Manager: "winget", DefaultVersion: "3.14", Commands: []string{"winget install Python.Python.{version_mm}"}},
-			ManagerStrategy{Manager: "choco", DefaultVersion: "3.14", Commands: []string{"choco install python --version={version}"}},
-			FallbackStrategy{
-				DefaultVersion: "3.14",
-				Message:        "Install pyenv (recommended for managing Python versions):",
-				Commands: []string{
-					"curl https://pyenv.run | bash",
-					"# Restart terminal, then:",
-					"pyenv install {version}",
-					"pyenv global {version}",
-				},
-				CommandsWindows: []string{
-					"# Install pyenv-win via PowerShell:",
-					`Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/pyenv-win/pyenv-win/master/pyenv-win/install-pyenv-win.ps1" -OutFile "./install-pyenv-win.ps1"; &"./install-pyenv-win.ps1"`,
-					"# Restart terminal, then:",
-					"pyenv install {version}",
-					"pyenv global {version}",
-				},
-				URL: "https://www.python.org/downloads/",
-			},
-		},
-	},
-	// uv: pyenv strategy first — if the user manages Python via pyenv, pip install
-	// is the most natural path; brew/asdf/curl follow in priority order.
-	"uv": {
-		Name: "uv",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "pyenv", Commands: []string{"pip install uv"}},
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install uv"}},
-			ManagerStrategy{Manager: "asdf", Commands: []string{
-				"asdf plugin add uv https://github.com/asdf-community/asdf-uv.git",
-				"asdf install uv latest",
-				"asdf global uv latest",
-			}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install astral-sh.uv"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install uv"}},
-			FallbackStrategy{
-				Commands:        []string{"curl -LsSf https://astral.sh/uv/install.sh | sh"},
-				CommandsWindows: []string{`powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`},
-				URL:             "https://docs.astral.sh/uv/getting-started/installation/",
-			},
-		},
-	},
-	"node": {
-		Name: "Node.js",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "nvm", DefaultVersion: "24", Commands: []string{"nvm install {version}", "nvm use {version}"}},
-			ManagerStrategy{Manager: "fnm", DefaultVersion: "24", Commands: []string{"fnm install {version}", "fnm use {version}"}},
-			ManagerStrategy{Manager: "asdf", DefaultVersion: "24", Commands: []string{"asdf install nodejs {version}", "asdf global nodejs {version}"}},
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install node"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install OpenJS.NodeJS"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install nodejs"}},
-			FallbackStrategy{
-				DefaultVersion: "24",
-				Message:        "Install a version manager (recommended):",
-				Commands: []string{
-					"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash",
-					"# Restart terminal, then:",
-					"nvm install {version}",
-					"nvm use {version}",
-				},
-				URL: "https://nodejs.org/",
-			},
-		},
-	},
-	"pulumi": {
-		Name: "Pulumi",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install pulumi"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Pulumi.Pulumi"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install pulumi"}},
-			FallbackStrategy{
-				Commands:        []string{"curl -fsSL https://get.pulumi.com | sh"},
-				CommandsWindows: []string{"iwr -useb https://get.pulumi.com/install.ps1 | iex"},
-				URL:             "https://www.pulumi.com/docs/install/",
-			},
-		},
-	},
-	"task": {
-		Name: "Task",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install go-task"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Task.Task"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install go-task"}},
-			ManagerStrategy{Manager: "scoop", Commands: []string{"scoop install task"}},
-			FallbackStrategy{
-				Commands:        []string{`sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d`},
-				CommandsWindows: []string{"# Download the executable from the releases page:"},
-				URL:             "https://taskfile.dev/installation/",
-			},
-		},
-	},
-	"git": {
-		Name: "Git",
-		Strategies: []Strategy{
-			ManagerStrategy{Manager: "brew", Commands: []string{"brew install git"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Git.Git"}},
-			ManagerStrategy{Manager: "choco", Commands: []string{"choco install git"}},
-			FallbackStrategy{
-				URL: "https://git-scm.com/downloads",
-			},
-		},
-	},
-}
-
-// knownManagers lists manager names checked by extractFailedManager.
-var knownManagers = []string{"brew", "pyenv", "asdf", "nvm", "fnm", "winget", "choco", "scoop"}
-
-// toolNameMap maps lowercase dr CLI display names to ToolRegistry keys.
-var toolNameMap = map[string]string{
-	// Canonical keys
-	"python":                             "python",
-	"uv":                                 "uv",
-	"node":                               "node",
-	"node.js":                            "node",
-	"nodejs":                             "node",
-	"pulumi":                             "pulumi",
-	"pulumi infrastructure as code tool": "pulumi",
-	"task":                               "task",
-	"taskfile task runner":               "task",
-	"git":                                "git",
-	"git source control management tool": "git",
-	// Python aliases
-	"py":       "python",
-	"py3":      "python",
-	"python3":  "python",
-	"python@3": "python",
-}
+var ToolRegistry = map[string]ToolInfo{}
 
 // NormalizeToolName maps a dr CLI display name (e.g. "Taskfile task runner") to
 // the corresponding ToolRegistry key (e.g. "task").
@@ -342,11 +208,11 @@ func detectEnvironment(
 	}
 }
 
-// selectInstallStrategy returns the first matching Strategy for toolKey.
+// SelectInstallStrategy returns the first matching Strategy for toolKey.
 // ManagerStrategy entries whose Manager equals failedMgr are skipped.
 // Returns ManagerStrategy when a detected manager matches, FallbackStrategy
 // as last resort, or nil when toolKey is unknown.
-func selectInstallStrategy(toolKey, failedMgr string, env map[string]bool) Strategy {
+func SelectInstallStrategy(toolKey, failedMgr string, env map[string]bool) Strategy {
 	toolKey = NormalizeToolName(toolKey)
 
 	tool, ok := ToolRegistry[toolKey]
