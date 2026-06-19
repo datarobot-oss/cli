@@ -95,8 +95,16 @@ jobs:
       version: ${{ github.ref_name }}
     secrets: inherit
 
-  promote-release:
+  pre-release-smoke-test:
     needs: verify-installation
+    uses: ./.github/workflows/.pre-release-smoke-tests-matrix.yaml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+
+  promote-release:
+    needs: [verify-installation, pre-release-smoke-test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -175,11 +183,15 @@ jobs:
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   notify-verification-failure:
-    needs: verify-installation
-    if: failure()
+    needs: [verify-installation, pre-release-smoke-test]
+    # Use always() + explicit result checks so the alert fires when EITHER gate
+    # fails. A bare failure() is unreliable here: when verify-installation fails,
+    # pre-release-smoke-test is skipped, and the skipped dependency can cause this
+    # job to be skipped too — silencing installation-only failures.
+    if: always() && (needs.verify-installation.result == 'failure' || needs.pre-release-smoke-test.result == 'failure')
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Slack of Installation Failure
+      - name: Notify Slack of Verification Failure
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -197,7 +209,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "Release was published but *installation verification failed*. The release remains marked as a pre-release."
+                    "text": "Release was published but *installation verification or pre-release smoke tests failed*. The release remains marked as a pre-release."
                   }
                 },
                 {
