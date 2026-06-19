@@ -19,6 +19,18 @@ if [[ -z "$DR_API_TOKEN" ]]; then
   exit 1
 fi
 
+# Preflight: required tooling. Failing here with a clear message beats a cryptic
+# downstream failure (e.g. a missing `yq` silently leaves the endpoint unset, so
+# `dr templates setup` shows the URL picker instead of the template list).
+for _tool in dr expect yq wget; do
+  if ! command -v "$_tool" >/dev/null 2>&1; then
+    echo "❌ Required tool '$_tool' not found on PATH."
+    echo "   Local setup: build & install the CLI ('task build' && 'LOCAL_BINARY=./dist/dr sh install.sh'),"
+    echo "   then install deps (macOS: 'brew install expect yq coreutils wget')."
+    exit 1
+  fi
+done
+
 export TERM="dumb"
 
 # Timing helpers

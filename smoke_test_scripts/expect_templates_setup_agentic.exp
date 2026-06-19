@@ -51,94 +51,46 @@ sleep 1
 expect "datarobot-agent-application"
 send -- "\r\n"
 
-# Phase 0: Handle Pulumi setup if it appears before the dotenv wizard.
-# The Pulumi State Backend Selection screen may appear before the wizard if the
-# template includes PULUMI_CONFIG_PASSPHRASE and Pulumi is installed but not
-# logged in on the runner.
+# Drive whatever setup screens appear after selecting the template, accepting
+# defaults / auto-generating throughout, until the wizard offers to finish.
+# These screens (Pulumi state-backend selection, the Pulumi passphrase prompt,
+# the dotenv variable wizard, multi-select component lists) can appear in
+# different orders depending on the template and runner state, so we respond to
+# whichever prompt shows up rather than assuming a fixed sequence. `exp_continue`
+# keeps the same expect running after each match; only "enter to finish", EOF, or
+# a timeout ends the loop.
+set timeout 360
 expect {
     "Pulumi State Backend Selection" {
-        puts "Pulumi setup screen detected - selecting Login locally"
-
-        # "Login locally" is the first option, already highlighted — press enter
-        send -- "\r\n"
-
-        # After local login, a passphrase prompt may appear
-        set timeout 60
-        expect {
-            "PULUMI_CONFIG_PASSPHRASE" {
-                puts "Passphrase prompt appeared - accepting auto-generate"
-                # Press enter/y to auto-generate passphrase
-                send -- "\r\n"
-            }
-            "Variable:" {
-                # Pulumi completed without passphrase, wizard started directly
-                puts "Pulumi done, wizard started"
-                send -- "\r\n"
-            }
-            "Skipped" {
-                # Pulumi done, prompts auto-skipped
-                puts "Pulumi done, prompts auto-skipped"
-            }
-            timeout {
-                puts "ERROR: Timeout after Pulumi login"
-                exit 1
-            }
-        }
+        puts "Pulumi backend selection - choosing 'Login locally'"
+        send -- "\r"
+        exp_continue
+    }
+    -re {generate passphrase|PULUMI_CONFIG_PASSPHRASE} {
+        puts "Pulumi passphrase prompt - auto-generating"
+        send -- "\r"
+        exp_continue
+    }
+    "space to toggle" {
+        puts "Multi-select list - accepting defaults"
+        send -- "\r"
+        exp_continue
     }
     "Variable:" {
-        # No Pulumi setup needed — wizard started directly
-        send -- "\r\n"
-    }
-    "Skipped" {
-        # No Pulumi setup needed — prompts auto-skipped
-    }
-    timeout {
-        puts "ERROR: Timeout waiting for wizard or Pulumi setup"
-        exit 1
-    }
-}
-
-# Phase 1: Wait for the wizard to actually start ("Variable:" is wizard-only text)
-# or for the wizard to auto-complete all prompts ("Skipped"), mirroring the
-# transient-screen handling in expect_templates_setup.exp.
-set already_finished 0
-set timeout 60
-expect {
-    "Variable:" {
-        send -- "\r\n"
-    }
-    "Skipped" {
+        puts "Wizard variable prompt - accepting default"
+        send -- "\r"
+        exp_continue
     }
     "enter to finish" {
-        send -- "\r\n"
-        set already_finished 1
+        puts "Wizard complete - finishing"
+        send -- "\r"
+    }
+    eof {
+        # Setup process exited on its own.
     }
     timeout {
-        puts "ERROR: Timeout waiting for wizard to start"
+        puts "ERROR: Timeout waiting for the setup wizard to progress"
         exit 1
-    }
-}
-
-# Phase 2: Handle remaining wizard prompts, then exit the menu.
-if {!$already_finished} {
-    set done 0
-    while {!$done} {
-        expect {
-            "space to toggle" {
-                send -- "\r\n"
-            }
-            "Variable:" {
-                send -- "\r\n"
-            }
-            "enter to finish" {
-                send -- "\r\n"
-                set done 1
-            }
-            timeout {
-                puts "ERROR: Timeout waiting for next variable prompt or menu"
-                exit 1
-            }
-        }
     }
 }
 

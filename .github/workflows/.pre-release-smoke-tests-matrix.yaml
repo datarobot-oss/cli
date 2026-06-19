@@ -57,6 +57,16 @@ jobs:
           version: '3.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Node.js is the one template prerequisite the CLI cannot auto-install
+      # (no install command for it on any platform), so it must be provisioned
+      # here. uv / task / pulumi are auto-installed by `dr start --yes`.
+      # NOTE: keep this version in sync with the Agentic Starter template's
+      # required Node version (currently 24).
+      - name: Set up Node.js (template prerequisite)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
