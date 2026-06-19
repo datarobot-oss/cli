@@ -13,9 +13,6 @@ on:
         required: false
         type: string
         default: ''
-    secrets:
-      DR_API_TOKEN:
-        required: true
 
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
