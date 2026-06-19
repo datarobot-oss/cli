@@ -252,7 +252,7 @@ func TestInstallPrerequisites_FailureShowsRawCommand(t *testing.T) {
 	assert.Empty(t, installed)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exit 1")
+	assert.Contains(t, out.String(), "exit 1")
 }
 
 func TestInstallPrerequisites_NoPlatformCommand(t *testing.T) {
