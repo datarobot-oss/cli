@@ -64,11 +64,7 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 		if exitCode != 0 {
 			log.Debug("deps: install exited non-zero", "name", prerequisite.Name, "exit_code", exitCode)
 
-<<<<<<< HEAD
 			env := registry.DetectEnvironment()
-=======
-			env := DetectEnvironment()
->>>>>>> main
 			permDenied := isPermissionDenied(exitCode, cmdBuf.String())
 			msg := buildInstallFailureMsg(prerequisite, exitCode, permDenied, env, runtime.GOOS)
 
