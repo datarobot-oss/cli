@@ -45,7 +45,7 @@ func (c *httpClient) UploadFromZipExisting(catalogID, name, overwrite string, si
 	q.Set("useArchiveContents", "true")
 	q.Set("overwrite", overwrite)
 
-	requestURL, err := drapi.EndpointURL("/files/"+catalogID+"/fromFile/", q)
+	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/fromFile/", q)
 	if err != nil {
 		return nil, fmt.Errorf("build fromFile url: %w", err)
 	}
@@ -83,7 +83,7 @@ func uploadZipMultipart(requestURL, name string, size int64, body io.Reader) (*F
 }
 
 func (c *httpClient) PollStatus(statusID string) (*StatusResp, error) {
-	requestURL, err := drapi.EndpointURL("/status/"+statusID+"/", nil)
+	requestURL, err := drapi.EndpointURL("/status/"+url.PathEscape(statusID)+"/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build status url: %w", err)
 	}
