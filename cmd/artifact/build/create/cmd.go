@@ -21,13 +21,14 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	var poll pollflags.Set
 
@@ -58,11 +59,14 @@ Examples:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			return runTrigger(cmd, args, outputFormat, poll)
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	pollflags.Register(cmd, &poll)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
@@ -79,7 +83,7 @@ Examples:
 func runTrigger(
 	cmd *cobra.Command,
 	args []string,
-	outputFormat workload.OutputFormat,
+	outputFormat outputformat.OutputFormat,
 	poll pollflags.Set,
 ) error {
 	artifactID, err := buildargs.ResolveOptional(args)
@@ -109,7 +113,7 @@ func runTrigger(
 	// emitted after polling. Print the loose IDs to stderr so Ctrl-C
 	// users keep the handle (per RAPTOR-17387) but the captured stdout
 	// stream stays uncontaminated and `jq` works in JSON mode.
-	if outputFormat == workload.OutputFormatText {
+	if outputFormat == outputformat.OutputFormatText {
 		for _, id := range resp.BuildIDs {
 			fmt.Fprintln(cmd.ErrOrStderr(), id)
 		}

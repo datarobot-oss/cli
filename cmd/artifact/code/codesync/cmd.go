@@ -28,8 +28,8 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
-	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -98,7 +98,7 @@ func Cmd() *cobra.Command {
 }
 
 func cmdWithDeps(deps Deps) *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	c := &cobra.Command{
 		Use:          "sync",
@@ -127,17 +127,19 @@ Example:
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			return runSync(cmd, outputFormat, deps)
 		},
 	}
+
+	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; auto-confirm.")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
-
-	workload.AddOutputFlag(c, &outputFormat)
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		flags := parseRunFlags(cmd)
@@ -153,7 +155,7 @@ Example:
 	return c
 }
 
-func runSync(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) error {
+func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps Deps) error {
 	flags := parseRunFlags(cmd)
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
@@ -208,10 +210,10 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 // finishSync handles the render → optional prompt → execute → render
 // tail of the command. Pulled out so runSync's early-return paths
 // (auth, lock, plan errors) stay flat.
-func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat workload.OutputFormat, flags runFlags, deps Deps) error {
+func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, outputFormat outputformat.OutputFormat, flags runFlags, deps Deps) error {
 	out := cmd.OutOrStdout()
 
-	if outputFormat == workload.OutputFormatJSON {
+	if outputFormat == outputformat.OutputFormatJSON {
 		return finishJSON(engine, plan, out, flags)
 	}
 

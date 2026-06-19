@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
@@ -26,7 +27,7 @@ import (
 
 func Cmd() *cobra.Command {
 	var (
-		outputFormat workload.OutputFormat
+		outputFormat outputformat.OutputFormat
 		limit        int
 	)
 
@@ -45,7 +46,9 @@ Examples:
 		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if limit <= 0 {
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
@@ -64,7 +67,8 @@ Examples:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of builds to return.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

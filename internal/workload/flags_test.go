@@ -21,36 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOutputFormat_Set(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    OutputFormat
-		wantErr bool
-	}{
-		{"text", OutputFormatText, false},
-		{"json", OutputFormatJSON, false},
-		{"yaml", "", true},
-		{"", "", true},
-	}
-
-	for _, c := range cases {
-		t.Run(c.in, func(t *testing.T) {
-			var f OutputFormat
-
-			err := f.Set(c.in)
-			if c.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "invalid output format")
-
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, c.want, f)
-		})
-	}
-}
-
 func TestStatus_Set(t *testing.T) {
 	var s Status
 

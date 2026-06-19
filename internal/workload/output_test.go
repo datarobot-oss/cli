@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -248,7 +249,7 @@ func makeTestBuild(id, status string) Build {
 
 func TestRenderBuild_Text(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuild(OutputFormatText, makeTestBuild("b-1", BuildStatusCompleted)))
+		require.NoError(t, RenderBuild(outputformat.OutputFormatText, makeTestBuild("b-1", BuildStatusCompleted)))
 	})
 
 	assert.Contains(t, out, "ID:")
@@ -259,7 +260,7 @@ func TestRenderBuild_Text(t *testing.T) {
 
 func TestRenderBuild_JSON(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuild(OutputFormatJSON, makeTestBuild("b-1", BuildStatusCompleted)))
+		require.NoError(t, RenderBuild(outputformat.OutputFormatJSON, makeTestBuild("b-1", BuildStatusCompleted)))
 	})
 
 	var got map[string]any
@@ -273,7 +274,7 @@ func TestRenderBuilds_TextTable(t *testing.T) {
 	builds := []Build{makeTestBuild("b-1", BuildStatusCompleted), makeTestBuild("b-2", BuildStatusFailed)}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuilds(OutputFormatText, builds))
+		require.NoError(t, RenderBuilds(outputformat.OutputFormatText, builds))
 	})
 
 	assert.Contains(t, out, "BUILD ID")
@@ -284,7 +285,7 @@ func TestRenderBuilds_TextTable(t *testing.T) {
 
 func TestRenderBuilds_TextEmpty(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuilds(OutputFormatText, nil))
+		require.NoError(t, RenderBuilds(outputformat.OutputFormatText, nil))
 	})
 
 	assert.Equal(t, "No builds found.\n", out)
@@ -292,7 +293,7 @@ func TestRenderBuilds_TextEmpty(t *testing.T) {
 
 func TestRenderBuilds_JSONAlwaysArray(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuilds(OutputFormatJSON, []Build{makeTestBuild("b-1", BuildStatusCompleted)}))
+		require.NoError(t, RenderBuilds(outputformat.OutputFormatJSON, []Build{makeTestBuild("b-1", BuildStatusCompleted)}))
 	})
 
 	var got []map[string]any
@@ -304,7 +305,7 @@ func TestRenderBuilds_JSONAlwaysArray(t *testing.T) {
 
 func TestRenderBuildTrigger_TextOneIDPerLine(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildTrigger(OutputFormatText, BuildTriggerResponse{BuildIDs: []string{"b-1", "b-2"}}))
+		require.NoError(t, RenderBuildTrigger(outputformat.OutputFormatText, BuildTriggerResponse{BuildIDs: []string{"b-1", "b-2"}}))
 	})
 
 	assert.Equal(t, "b-1\nb-2\n", out, "exact one-id-per-line format is the BID=$(...) script contract")
@@ -312,7 +313,7 @@ func TestRenderBuildTrigger_TextOneIDPerLine(t *testing.T) {
 
 func TestRenderBuildTrigger_JSONPassthrough(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildTrigger(OutputFormatJSON, BuildTriggerResponse{BuildIDs: []string{"b-1"}}))
+		require.NoError(t, RenderBuildTrigger(outputformat.OutputFormatJSON, BuildTriggerResponse{BuildIDs: []string{"b-1"}}))
 	})
 
 	var got map[string]any
@@ -333,7 +334,7 @@ func TestRenderBuildSummary_TextSuccessIncludesImage(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+		require.NoError(t, RenderBuildSummary(outputformat.OutputFormatText, summary))
 	})
 
 	assert.Equal(t, "Build b-1: COMPLETED in 12s (image: ecr/img:tag)\n", out)
@@ -347,7 +348,7 @@ func TestRenderBuildSummary_TextSuccessWithoutImageURI(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+		require.NoError(t, RenderBuildSummary(outputformat.OutputFormatText, summary))
 	})
 
 	assert.Equal(t, "Build b-1: COMPLETED in 12s\n", out)
@@ -371,7 +372,7 @@ func TestRenderBuildSummary_TextFailureDumpsTailToStderr(t *testing.T) {
 
 	stderrOut = captureStderr(t, func() {
 		stdoutOut = captureStdout(t, func() {
-			require.NoError(t, RenderBuildSummary(OutputFormatText, summary))
+			require.NoError(t, RenderBuildSummary(outputformat.OutputFormatText, summary))
 		})
 	})
 
@@ -392,7 +393,7 @@ func TestRenderBuildSummary_JSONIncludesTail(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildSummary(OutputFormatJSON, summary))
+		require.NoError(t, RenderBuildSummary(outputformat.OutputFormatJSON, summary))
 	})
 
 	var got map[string]any
@@ -413,7 +414,7 @@ func TestRenderBuildLogs_TextFormat(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildLogs(OutputFormatText, entries))
+		require.NoError(t, RenderBuildLogs(outputformat.OutputFormatText, entries))
 	})
 
 	assert.Contains(t, out, "[INFO] t1 started")
@@ -430,7 +431,7 @@ func TestRenderBuildLogs_JSONPassthroughPreservesRaw(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderBuildLogs(OutputFormatJSON, entries))
+		require.NoError(t, RenderBuildLogs(outputformat.OutputFormatJSON, entries))
 	})
 
 	var got []map[string]any
@@ -622,7 +623,7 @@ func TestRenderWorkloadOperation_TextPrintsServerMessage(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadOperation(OutputFormatText, resp))
+		require.NoError(t, RenderWorkloadOperation(outputformat.OutputFormatText, resp))
 	})
 
 	assert.Equal(t, "Proton is already stopped\n", output)
@@ -636,7 +637,7 @@ func TestRenderWorkloadOperation_JSON(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadOperation(OutputFormatJSON, resp))
+		require.NoError(t, RenderWorkloadOperation(outputformat.OutputFormatJSON, resp))
 	})
 
 	assert.JSONEq(t,
@@ -646,7 +647,7 @@ func TestRenderWorkloadOperation_JSON(t *testing.T) {
 
 func TestRenderWorkloadStatus_TextBare(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadStatus(OutputFormatText, makeTestWorkload("wl-1", "a", "running")))
+		require.NoError(t, RenderWorkloadStatus(outputformat.OutputFormatText, makeTestWorkload("wl-1", "a", "running")))
 	})
 
 	// The bare status value is the script-capture contract.
@@ -655,7 +656,7 @@ func TestRenderWorkloadStatus_TextBare(t *testing.T) {
 
 func TestRenderWorkloadStatus_JSONShape(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadStatus(OutputFormatJSON, makeTestWorkload("wl-1", "a", "errored")))
+		require.NoError(t, RenderWorkloadStatus(outputformat.OutputFormatJSON, makeTestWorkload("wl-1", "a", "errored")))
 	})
 
 	assert.JSONEq(t, `{"id": "wl-1", "status": "errored"}`, output)
@@ -672,7 +673,7 @@ func TestRenderWorkloadLogs_TextFormat(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogs(OutputFormatText, entries))
+		require.NoError(t, RenderWorkloadLogs(outputformat.OutputFormatText, entries))
 	})
 
 	assert.Contains(t, output, "[INFO] 2026-06-11 14:04:14+00:00 started")
@@ -684,7 +685,7 @@ func TestRenderWorkloadLogs_TextEmpty(t *testing.T) {
 
 	stdout := captureStdout(t, func() {
 		stderr = captureStderr(t, func() {
-			require.NoError(t, RenderWorkloadLogs(OutputFormatText, nil))
+			require.NoError(t, RenderWorkloadLogs(outputformat.OutputFormatText, nil))
 		})
 	})
 
@@ -695,7 +696,7 @@ func TestRenderWorkloadLogs_TextEmpty(t *testing.T) {
 
 func TestRenderWorkloadLogs_JSONAlwaysArray(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogs(OutputFormatJSON, nil))
+		require.NoError(t, RenderWorkloadLogs(outputformat.OutputFormatJSON, nil))
 	})
 
 	// A regression that emits `null` instead of a JSON array must fail here.
@@ -706,7 +707,7 @@ func TestRenderWorkloadLogs_JSONPassthrough(t *testing.T) {
 	entries := []WorkloadLogEntry{makeTestLogEntry("2026-06-11 14:04:14+00:00", "INFO", "hi")}
 
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogs(OutputFormatJSON, entries))
+		require.NoError(t, RenderWorkloadLogs(outputformat.OutputFormatJSON, entries))
 	})
 
 	assert.JSONEq(t,
@@ -716,7 +717,7 @@ func TestRenderWorkloadLogs_JSONPassthrough(t *testing.T) {
 
 func TestRenderWorkloadLogLine_Text(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogLine(OutputFormatText,
+		require.NoError(t, RenderWorkloadLogLine(outputformat.OutputFormatText,
 			makeTestLogEntry("2026-06-11 14:04:14+00:00", "info", "hello")))
 	})
 
@@ -725,7 +726,7 @@ func TestRenderWorkloadLogLine_Text(t *testing.T) {
 
 func TestRenderWorkloadLogLine_JSONLineCompact(t *testing.T) {
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadLogLine(OutputFormatJSON,
+		require.NoError(t, RenderWorkloadLogLine(outputformat.OutputFormatJSON,
 			makeTestLogEntry("2026-06-11 14:04:14+00:00", "INFO", "hello")))
 	})
 

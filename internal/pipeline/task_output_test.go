@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,7 +117,7 @@ func TestToTaskJSON_NewFieldsPassedThrough(t *testing.T) {
 
 func TestRenderTask_JSON(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, RenderTask(OutputFormatJSON, sampleTask()))
+		require.NoError(t, RenderTask(outputformat.OutputFormatJSON, sampleTask()))
 	})
 
 	var parsed map[string]any

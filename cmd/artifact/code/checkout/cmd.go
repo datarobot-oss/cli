@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -55,7 +56,7 @@ func Cmd() *cobra.Command {
 }
 
 func cmdWithDeps(deps Deps) *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	c := &cobra.Command{
 		Use:          "checkout [<ver>]",
@@ -84,20 +85,22 @@ Example:
   dr artifact code checkout abcdef12 --clean`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			return runCheckout(cmd, args, outputFormat, deps)
 		},
 	}
+
+	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("clean", false, "Remove checkout directories instead of downloading.")
 	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts.")
 
-	workload.AddOutputFlag(c, &outputFormat)
-
 	return c
 }
 
-func runCheckout(cmd *cobra.Command, args []string, outputFormat workload.OutputFormat, deps Deps) error {
+func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.OutputFormat, deps Deps) error {
 	yesFlag, _ := cmd.Flags().GetBool("yes")
 	yes := yesFlag || viperx.GetBool("yes")
 

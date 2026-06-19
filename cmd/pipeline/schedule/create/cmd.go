@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ func Cmd() *cobra.Command {
 		cron         string
 		inputID      string
 		timezone     string
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -44,7 +45,9 @@ Example:
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if version <= 0 {
 				return errors.New("--version is required and must be > 0")
 			}
@@ -64,6 +67,8 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
@@ -73,7 +78,6 @@ Example:
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
 	_ = cmd.MarkFlagRequired("input")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

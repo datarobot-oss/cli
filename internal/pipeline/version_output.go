@@ -28,6 +28,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -55,8 +56,8 @@ func toVersionJSON(v PipelineVersion) versionJSON {
 }
 
 // RenderVersion routes a single version to JSON or human output.
-func RenderVersion(format OutputFormat, v PipelineVersion) error {
-	if format == OutputFormatJSON {
+func RenderVersion(format outputformat.OutputFormat, v PipelineVersion) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintVersionJSON(v)
 	}
 
@@ -66,8 +67,8 @@ func RenderVersion(format OutputFormat, v PipelineVersion) error {
 }
 
 // RenderVersions routes a list of versions to JSON or human output.
-func RenderVersions(format OutputFormat, items []PipelineVersion) error {
-	if format == OutputFormatJSON {
+func RenderVersions(format outputformat.OutputFormat, items []PipelineVersion) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintVersionListJSON(items)
 	}
 

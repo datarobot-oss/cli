@@ -30,6 +30,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -103,8 +104,8 @@ func toImageSummaryJSON(img ImageSummary) imageSummaryJSON {
 }
 
 // RenderImage routes a single image to JSON or human output.
-func RenderImage(format OutputFormat, img Image) error {
-	if format == OutputFormatJSON {
+func RenderImage(format outputformat.OutputFormat, img Image) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintImageJSON(img)
 	}
 
@@ -114,8 +115,8 @@ func RenderImage(format OutputFormat, img Image) error {
 }
 
 // RenderImages routes a list of images to JSON or human output.
-func RenderImages(format OutputFormat, items []ImageSummary) error {
-	if format == OutputFormatJSON {
+func RenderImages(format outputformat.OutputFormat, items []ImageSummary) error {
+	if format == outputformat.OutputFormatJSON {
 		return PrintImageListJSON(items)
 	}
 

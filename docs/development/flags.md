@@ -7,6 +7,7 @@ This guide covers best practices for defining and managing **command-line flags*
 ## Table of contents
 
 - [Define flags clearly](#define-flags-clearly)
+- [Global output-format pattern](#global-output-format-pattern)
 - [Mark flag groups](#mark-flag-groups)
 - [Flag naming conventions](#flag-naming-conventions)
 - [Examples from the codebase](#examples-from-the-codebase)
@@ -39,6 +40,47 @@ func Cmd() *cobra.Command {
     return cmd
 }
 ```
+
+## Global output-format pattern
+
+`--output-format` is implemented as a shared flag strategy:
+
+- `cmd/root.go` registers it once as a persistent root flag via
+  `outputformat.AddPersistentFlag(...)`
+- the root binds it with `viperx.BindPFlag("output-format", ...)` so
+  `DATAROBOT_CLI_OUTPUT_FORMAT` works
+- commands that render text/JSON read the effective value via
+  `outputformat.GetFormat(cmd)` and wire it to a local `outputFormat`
+  variable
+
+Use this pattern for output-aware commands:
+
+```go
+import "github.com/datarobot/cli/internal/outputformat"
+
+func Cmd() *cobra.Command {
+    var outputFormat outputformat.OutputFormat
+
+    cmd := &cobra.Command{
+        Use: "list",
+        RunE: func(cmd *cobra.Command, _ []string) error {
+            outputFormat = outputformat.GetFormat(cmd)
+
+            return render(outputFormat)
+        },
+    }
+
+    outputformat.AddFlag(cmd, &outputFormat)
+
+    return cmd
+}
+```
+
+Why `GetFormat(cmd)` instead of reading the variable directly:
+
+- it correctly handles local flag usage (`dr <cmd> --output-format json`)
+- it correctly handles inherited root usage (`dr --output-format json <cmd>`)
+- it keeps telemetry extraction consistent in command closures
 
 ## Mark flag groups
 

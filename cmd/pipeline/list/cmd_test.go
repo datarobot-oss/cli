@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,7 @@ func TestPrintListJSON(t *testing.T) {
 	list := sampleListResponse()
 
 	output := testutil.CaptureStdout(t, func() {
-		err := pipeline.RenderPipelines(pipeline.OutputFormatJSON, list)
+		err := pipeline.RenderPipelines(outputformat.OutputFormatJSON, list)
 		require.NoError(t, err)
 	})
 
@@ -69,7 +70,7 @@ func TestPrintListJSON(t *testing.T) {
 
 func TestPrintListHuman_Empty(t *testing.T) {
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, pipeline.DataPage[pipeline.ListItem]{}))
+		require.NoError(t, pipeline.RenderPipelines(outputformat.OutputFormatText, pipeline.DataPage[pipeline.ListItem]{}))
 	})
 
 	assert.Contains(t, output, "No pipelines found.")
@@ -79,7 +80,7 @@ func TestPrintListHuman_RendersHeaderAndRow(t *testing.T) {
 	list := sampleListResponse()
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, list))
+		require.NoError(t, pipeline.RenderPipelines(outputformat.OutputFormatText, list))
 	})
 
 	assert.Contains(t, output, "Showing 1 of 1")
@@ -102,7 +103,7 @@ func TestPrintListHuman_NoLatestVersion(t *testing.T) {
 	list.Data[0].LatestVersion = nil
 
 	output := testutil.CaptureStdout(t, func() {
-		require.NoError(t, pipeline.RenderPipelines(pipeline.OutputFormatText, list))
+		require.NoError(t, pipeline.RenderPipelines(outputformat.OutputFormatText, list))
 	})
 
 	assert.Contains(t, output, "—")

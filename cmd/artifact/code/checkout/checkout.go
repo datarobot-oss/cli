@@ -28,6 +28,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -51,7 +52,7 @@ type checkoutMeta struct {
 	TotalSize    int64     `json:"totalSize"`
 }
 
-func runDownload(out io.Writer, format workload.OutputFormat, dir, verArg string, deps Deps) error {
+func runDownload(out io.Writer, format outputformat.OutputFormat, dir, verArg string, deps Deps) error {
 	startedAt := time.Now()
 
 	pre, err := preflight(dir, verArg, deps)
@@ -346,7 +347,7 @@ func writeCheckoutMeta(checkoutDir string, meta checkoutMeta) error {
 	return nil
 }
 
-func runClean(out io.Writer, format workload.OutputFormat, dir, arg string) error {
+func runClean(out io.Writer, format outputformat.OutputFormat, dir, arg string) error {
 	checkoutsDir := wapi.CheckoutsDir(dir)
 
 	names, err := listCheckoutNames(checkoutsDir)

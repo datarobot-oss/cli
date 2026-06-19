@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
@@ -25,7 +26,7 @@ import (
 
 func Cmd() *cobra.Command {
 	var (
-		outputFormat workload.OutputFormat
+		outputFormat outputformat.OutputFormat
 		status       workload.Status
 		limit        int
 	)
@@ -49,7 +50,9 @@ Example:
   dr artifact list --output-format json`,
 		Args:    cobra.NoArgs,
 		PreRunE: auth.EnsureAuthenticatedE,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if limit <= 0 {
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
@@ -63,7 +66,8 @@ Example:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	workload.AddStatusFlag(cmd, &status)
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
 

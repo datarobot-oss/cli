@@ -38,6 +38,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
@@ -45,7 +46,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configFilePath string
+var (
+	configFilePath   string
+	rootOutputFormat outputformat.OutputFormat
+)
 
 // telemetryClient holds the active client for the current process. It is set
 // in PersistentPreRunE so that cmd.Exit can flush events when main's error
@@ -184,6 +188,7 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
+	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
 	// Make some of these flags available via Viper
 	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
@@ -195,6 +200,7 @@ func init() {
 	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
 	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
 	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
+	_ = viperx.BindPFlag("output-format", RootCmd.PersistentFlags().Lookup("output-format"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(

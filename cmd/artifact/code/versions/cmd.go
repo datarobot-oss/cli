@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -50,7 +51,7 @@ func Cmd() *cobra.Command {
 }
 
 func cmdWithDeps(deps Deps) *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	c := &cobra.Command{
 		Use:          "versions",
@@ -76,14 +77,16 @@ Example:
   dr artifact code versions --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			return runVersions(cmd, outputFormat, deps)
 		},
 	}
 
+	outputformat.AddFlag(c, &outputFormat)
+
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Int("limit", 100, "Maximum number of versions to return.")
-
-	workload.AddOutputFlag(c, &outputFormat)
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		limit, _ := cmd.Flags().GetInt("limit")
@@ -97,7 +100,7 @@ Example:
 	return c
 }
 
-func runVersions(cmd *cobra.Command, outputFormat workload.OutputFormat, deps Deps) error {
+func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps Deps) error {
 	dirFlag, _ := cmd.Flags().GetString("dir")
 	limit, _ := cmd.Flags().GetInt("limit")
 
@@ -179,8 +182,8 @@ func buildView(cfg wapi.Config, limit int, deps Deps) (view, error) {
 	return newView(*art, versions, currentVersionID, syncedVersionID), nil
 }
 
-func render(out io.Writer, format workload.OutputFormat, v view) error {
-	if format == workload.OutputFormatJSON {
+func render(out io.Writer, format outputformat.OutputFormat, v view) error {
+	if format == outputformat.OutputFormatJSON {
 		return renderJSON(out, v)
 	}
 

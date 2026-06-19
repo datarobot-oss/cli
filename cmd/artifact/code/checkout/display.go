@@ -23,7 +23,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
-	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/outputformat"
 )
 
 type downloadResult struct {
@@ -72,8 +72,8 @@ func downloadView(projectDir, versionID, checkoutDir string, files map[string]fi
 	}
 }
 
-func renderDownloadResult(out io.Writer, outFmt workload.OutputFormat, r downloadResult) error {
-	if outFmt == workload.OutputFormatJSON {
+func renderDownloadResult(out io.Writer, outFmt outputformat.OutputFormat, r downloadResult) error {
+	if outFmt == outputformat.OutputFormatJSON {
 		return encodeJSON(out, r)
 	}
 
@@ -90,8 +90,8 @@ func renderDownloadResult(out io.Writer, outFmt workload.OutputFormat, r downloa
 	return nil
 }
 
-func renderCleanResult(out io.Writer, outFmt workload.OutputFormat, r cleanResult) error {
-	if outFmt == workload.OutputFormatJSON {
+func renderCleanResult(out io.Writer, outFmt outputformat.OutputFormat, r cleanResult) error {
+	if outFmt == outputformat.OutputFormatJSON {
 		return encodeJSON(out, r)
 	}
 

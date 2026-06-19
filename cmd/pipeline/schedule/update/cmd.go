@@ -18,6 +18,7 @@ import (
 	"errors"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -29,7 +30,7 @@ func Cmd() *cobra.Command {
 		version      int
 		cron         string
 		timezone     string
-		outputFormat pipeline.OutputFormat
+		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -47,6 +48,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			body, err := buildUpdateBody(cmd, pipelineID, version, cron, timezone)
 			if err != nil {
 				return err
@@ -61,13 +64,14 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
 	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().StringVar(&cron, "cron", "", "New cron expression")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "New IANA timezone name")
-	pipeline.AddOutputFlag(cmd, &outputFormat)
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

@@ -20,6 +20,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ import (
 const followPollInterval = 2 * time.Second
 
 func Cmd() *cobra.Command {
-	var outputFormat workload.OutputFormat
+	var outputFormat outputformat.OutputFormat
 
 	var (
 		limit    int
@@ -68,6 +69,8 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			if limit <= 0 {
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
@@ -98,7 +101,8 @@ Example:
 		},
 	}
 
-	workload.AddOutputFlag(cmd, &outputFormat)
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of recent log lines to return")
 	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, warning, error, critical)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream new log lines as they arrive (Ctrl-C to stop).")
