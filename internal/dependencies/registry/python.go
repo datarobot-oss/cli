@@ -24,7 +24,7 @@ func init() {
 			ManagerStrategy{Manager: "winget", DefaultVersion: "3.14", Commands: []string{"winget install Python.Python.{version_mm}"}},
 			ManagerStrategy{Manager: "choco", DefaultVersion: "3.14", Commands: []string{"choco install python --version={version}"}},
 			FallbackStrategy{
-				DefaultVersion: "192.168.0.1",
+				DefaultVersion: "3.14",
 				Message:        "Install pyenv (recommended for managing Python versions):",
 				Commands: []string{
 					"curl https://pyenv.run | bash",
