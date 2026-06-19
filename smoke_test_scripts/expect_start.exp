@@ -41,13 +41,23 @@ set reached_execution 0
 set saw_error 0
 
 expect {
-    -re {Running 'task start'} {
-        puts "\nOK: dr start reached 'task start' execution."
+    "Choose your agentic framework" {
+        # Success signal: dr start -> task start -> the Agentic Starter quickstart
+        # actually launched and reached its first interactive prompt. A loop/hang
+        # regression could never get this far.
+        puts "\nOK: agentic starter quickstart reached the framework selection prompt."
         set reached_execution 1
     }
+    -re {Running 'task start'} {
+        # dr resolved to running `task start`; keep reading until the task itself
+        # produces output / a prompt (the real proof that execution happened).
+        puts "dr start is launching 'task start'..."
+        exp_continue
+    }
     "Found quickstart script at:" {
-        puts "\nOK: dr start found and is executing a quickstart script."
-        set reached_execution 1
+        # dr resolved to a quickstart script; keep reading until it runs.
+        puts "dr start found a quickstart script; waiting for it to run..."
+        exp_continue
     }
     "No start command or quickstart script found" {
         # Flow completed (no loop) but the template exposed no start command.
@@ -74,12 +84,12 @@ expect {
         set saw_error 1
     }
     timeout {
-        puts "\nERROR: Timeout waiting for dr start to reach the start command."
+        puts "\nERROR: Timeout waiting for the start command to actually run."
         puts "       This may indicate an infinite-loop / hang regression."
         exit 1
     }
     eof {
-        puts "\nERROR: dr start exited before reaching the start command."
+        puts "\nERROR: dr start exited before the start command produced output."
         exit 4
     }
 }
