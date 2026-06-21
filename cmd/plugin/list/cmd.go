@@ -35,12 +35,18 @@ type PluginOutput struct {
 }
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	var outputFormat outputformat.OutputFormat
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "📋 List discovered plugins",
 		Long:  "List all discovered plugins with their paths and versions. Uses cached results from CLI startup.",
 		RunE:  runList,
 	}
+
+	outputformat.AddFlag(cmd, &outputFormat)
+
+	return cmd
 }
 
 func toPluginOutputs(plugins []plugin.DiscoveredPlugin) []PluginOutput {

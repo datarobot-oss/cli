@@ -94,9 +94,15 @@ func RunE(cmd *cobra.Command, _ []string) error {
 }
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	var outputFormat outputformat.OutputFormat
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "📋 List installed components",
 		RunE:  RunE,
 	}
+
+	outputformat.AddFlag(cmd, &outputFormat)
+
+	return cmd
 }

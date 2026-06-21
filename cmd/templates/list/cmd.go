@@ -34,7 +34,9 @@ type TemplateOutput struct {
 }
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	var outputFormat outputformat.OutputFormat
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "📋 List all available AI application templates",
 		Long: `List all available AI application templates from DataRobot.
@@ -98,4 +100,8 @@ start building AI applications. Each template includes:
 			return nil
 		},
 	}
+
+	outputformat.AddFlag(cmd, &outputFormat)
+
+	return cmd
 }

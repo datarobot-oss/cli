@@ -273,6 +273,8 @@ func Cmd() *cobra.Command {
 
 	var showAll bool
 
+	var outputFormat outputformat.OutputFormat
+
 	cmd := &cobra.Command{
 		Use:           "list",
 		Aliases:       []string{"l"},
@@ -334,6 +336,8 @@ func Cmd() *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("dir", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveFilterDirs
 	})
+
+	outputformat.AddFlag(cmd, &outputFormat)
 
 	return cmd
 }
