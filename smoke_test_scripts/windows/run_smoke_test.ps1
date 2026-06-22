@@ -175,10 +175,55 @@ if ($config_content -match "endpoint: `"${testing_url}/api/v2`"") {
 Write-End
 
 # Test auth login
+#
+# This mirrors the bash expect test (expect_auth_login.exp): it does NOT verify a
+# live token (that is what 'dr auth check' does, and it requires a valid token +
+# reachable server). Instead it confirms that 'dr auth login' starts up and prints
+# the OAuth redirect URL, then terminates the process. PowerShell has no 'expect',
+# so we launch the command in the background, poll its output for the auth URL, and
+# kill it once seen.
 Write-Delimiter "Testing dr auth login"
-Write-InfoMsg "Testing dr auth login command (non-interactive)..."
-# Note: Full interactive testing would require a Windows expect equivalent
-dr auth check
+Write-InfoMsg "Testing dr auth login command..."
+
+$auth_out = Join-Path (Get-Location) "auth_login_stdout.txt"
+$auth_err = Join-Path (Get-Location) "auth_login_stderr.txt"
+
+$auth_proc = Start-Process -FilePath "dr" -ArgumentList "auth", "login" `
+    -RedirectStandardOutput $auth_out -RedirectStandardError $auth_err `
+    -PassThru -NoNewWindow
+
+# Poll for the auth redirect URL (same marker the bash expect script matches).
+$auth_url_shown = $false
+for ($i = 0; $i -lt 20; $i++) {
+    Start-Sleep -Milliseconds 500
+    if (Test-Path $auth_out) {
+        if ((Get-Content $auth_out -Raw) -match "cliRedirect=true") {
+            $auth_url_shown = $true
+            break
+        }
+    }
+    if ($auth_proc.HasExited) { break }
+}
+
+# No browser round-trip happens in tests, so stop the waiting process. Guard the
+# kill: the process may exit between the check and the Kill() call, which would
+# otherwise throw under $ErrorActionPreference = "Stop".
+if (-not $auth_proc.HasExited) {
+    try {
+        $auth_proc.Kill()
+        $auth_proc.WaitForExit()
+    } catch {
+        # Process already exited; nothing to clean up.
+    }
+}
+
+Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
+
+if ($auth_url_shown) {
+    Write-SuccessMsg "Assertion passed: 'dr auth login' displayed the OAuth redirect URL."
+} else {
+    Write-ErrorMsg "Assertion failed: 'dr auth login' did not display the auth URL (cliRedirect=true)."
+}
 Write-End
 
 # Test templates (if URL is accessible)
