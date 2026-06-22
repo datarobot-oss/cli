@@ -79,6 +79,11 @@ jobs:
   build-windows:
     needs: check-fork
     if: needs.check-fork.outputs.is_fork == 'false'
+    # S5: caller job must grant at least what the reusable workflow requests.
+    # .build-windows.yaml needs contents:read (checkout) and actions:write (upload-artifact).
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/.build-windows.yaml
     with:
       go-version: '1.26.4'
