@@ -73,8 +73,8 @@ func TestBuildToolNameMap_RegistryKeysMapToThemselves(t *testing.T) {
 	toolNameMap := buildToolNameMap()
 
 	for key := range ToolRegistry {
-		assert.Equal(t, key, toolNameMap[key],
-			"registry key %q should map to itself", key)
+		assert.Equal(t, key, toolNameMap[strings.ToLower(key)],
+			"registry key %q should be reachable via its lowercase form", key)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestBuildToolNameMap_AliasesAreRegistered(t *testing.T) {
 
 	for key, info := range ToolRegistry {
 		for _, alias := range info.Aliases {
-			assert.Equal(t, key, toolNameMap[alias],
+			assert.Equal(t, key, toolNameMap[strings.ToLower(alias)],
 				"alias %q should resolve to key %q", alias, key)
 		}
 	}

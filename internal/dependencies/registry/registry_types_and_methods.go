@@ -158,11 +158,11 @@ var buildToolNameMap = sync.OnceValue(func() map[string]string {
 	toolNameMap := make(map[string]string)
 
 	for key, info := range ToolRegistry {
-		toolNameMap[key] = key
+		toolNameMap[strings.ToLower(key)] = key
 		toolNameMap[strings.ToLower(info.Name)] = key
 
 		for _, alias := range info.Aliases {
-			toolNameMap[alias] = key
+			toolNameMap[strings.ToLower(alias)] = key
 		}
 	}
 
