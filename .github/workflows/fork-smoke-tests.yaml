@@ -19,6 +19,9 @@ on:
         required: false
         type: string
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions: {}
+
 jobs:
   check-permissions:
     runs-on: ubuntu-latest
@@ -27,7 +30,7 @@ jobs:
       contents: read
     steps:
       - name: Verify maintainer access
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const approver = '${{ inputs.approver }}'.trim();
@@ -61,7 +64,7 @@ jobs:
     steps:
       - name: Resolve PR commit SHA
         id: resolve
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -83,9 +86,13 @@ jobs:
     if: needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
     name: Security Scan
+    # S5: minimum permissions for SARIF upload
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ needs.resolve-pr.outputs.sha }}
           fetch-depth: 0
@@ -101,22 +108,12 @@ jobs:
           exit-code: '1'  # Fail if vulnerabilities found
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
-
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-
-      - name: Run gosec security scanner
-        run: |
-          gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
+      # S6: gosec removed — it ran with || true (can never fail) and was pure noise.
+      # govulncheck in security-scan.yaml covers Go CVEs more reliably.
 
   build-windows:
     needs: [resolve-pr, security-scan]
@@ -125,7 +122,7 @@ jobs:
       go-version: '1.26.4'
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}
-    secrets: inherit
+    # S1: .build-windows.yaml declares no secrets — omit secrets entirely.
 
   notify-start:
     needs: [resolve-pr, security-scan]
@@ -137,7 +134,7 @@ jobs:
     steps:
       - name: Notify smoke tests started
         continue-on-error: true
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             // Check if any changed files are under .github/
@@ -179,7 +176,9 @@ jobs:
     with:
       go-version: '1.26.4'
       ref: ${{ needs.resolve-pr.outputs.sha }}
-    secrets: inherit
+    # S1: pass only the one secret that smoke tests actually require.
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   windows-smoke-tests:
     needs: [resolve-pr, security-scan, build-windows]
@@ -187,7 +186,9 @@ jobs:
     with:
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}
-    secrets: inherit
+    # S1: pass only the one secret that smoke tests actually require.
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   notify-results:
     needs: [resolve-pr, security-scan, notify-start, linux-smoke-tests, windows-smoke-tests]
@@ -199,7 +200,7 @@ jobs:
       statuses: write
     steps:
       - name: Comment on PR with results
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';
@@ -232,7 +233,7 @@ jobs:
             });
 
       - name: Update Smoke Tests commit status
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';

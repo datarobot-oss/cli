@@ -14,6 +14,10 @@ on:
         type: string
         default: ''
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   installation-tests:
     strategy:

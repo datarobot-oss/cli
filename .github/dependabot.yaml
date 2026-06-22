@@ -5,4 +5,11 @@ updates:
     schedule:
       interval: daily
     commit-message:
-      prefix: "⬆️ sec(deps): "
+      prefix: "⬆️ SEC(Deps): "
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "⬆️ CI(Actions): "
