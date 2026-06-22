@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,4 +66,46 @@ func TestPluginListText(t *testing.T) {
 
 	// Test passes if command executes successfully with default (text) format
 	// (actual output is tested via manual smoke tests)
+}
+
+func TestToPluginOutputs(t *testing.T) {
+	plugins := []plugin.DiscoveredPlugin{
+		{
+			Manifest: plugin.PluginManifest{
+				BasicPluginManifest: plugin.BasicPluginManifest{
+					Name:        "my-plugin",
+					Version:     "1.0.0",
+					Description: "A plugin",
+				},
+			},
+			Executable: "/path/to/plugin",
+		},
+		{
+			Manifest: plugin.PluginManifest{
+				BasicPluginManifest: plugin.BasicPluginManifest{
+					Name:        "empty-plugin",
+					Version:     "",
+					Description: "",
+				},
+			},
+			Executable: "/path/to/empty",
+		},
+	}
+
+	outputs := toPluginOutputs(plugins)
+
+	require.Len(t, outputs, 2)
+	assert.Equal(t, "my-plugin", outputs[0].Name)
+	assert.Equal(t, "1.0.0", outputs[0].Version)
+	assert.Equal(t, "A plugin", outputs[0].Description)
+	assert.Equal(t, "/path/to/plugin", outputs[0].Path)
+	assert.Equal(t, "empty-plugin", outputs[1].Name)
+	assert.Equal(t, "-", outputs[1].Version)
+	assert.Equal(t, "-", outputs[1].Description)
+	assert.Equal(t, "/path/to/empty", outputs[1].Path)
+}
+
+func TestToPluginOutputsEmpty(t *testing.T) {
+	assert.Empty(t, toPluginOutputs(nil))
+	assert.Empty(t, toPluginOutputs([]plugin.DiscoveredPlugin{}))
 }

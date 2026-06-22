@@ -17,8 +17,10 @@ package list
 import (
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,4 +70,24 @@ func TestTemplateListText(t *testing.T) {
 
 	// Test passes if command executes successfully with default (text) format
 	// (actual output is tested via manual smoke tests)
+}
+
+func TestToTemplateOutputs(t *testing.T) {
+	templates := []drapi.Template{
+		{ID: "tmpl-1", Name: "Template One"},
+		{ID: "tmpl-2", Name: "Template Two"},
+	}
+
+	outputs := toTemplateOutputs(templates)
+
+	require.Len(t, outputs, 2)
+	assert.Equal(t, "tmpl-1", outputs[0].ID)
+	assert.Equal(t, "Template One", outputs[0].Name)
+	assert.Equal(t, "tmpl-2", outputs[1].ID)
+	assert.Equal(t, "Template Two", outputs[1].Name)
+}
+
+func TestToTemplateOutputsEmpty(t *testing.T) {
+	assert.Empty(t, toTemplateOutputs(nil))
+	assert.Empty(t, toTemplateOutputs([]drapi.Template{}))
 }

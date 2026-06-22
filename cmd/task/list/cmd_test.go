@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/task"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,4 +70,33 @@ func TestTaskListText(t *testing.T) {
 
 	// Test passes if command executes successfully with default (text) format
 	// (actual output is tested via manual smoke tests)
+}
+
+func TestToTaskOutputs(t *testing.T) {
+	tasks := []task.Task{
+		{
+			Name:    "build",
+			Aliases: []string{"b", "compile"},
+			Desc:    "Build the application\nwith all dependencies",
+		},
+		{
+			Name: "test",
+			Desc: "Run tests",
+		},
+	}
+
+	outputs := toTaskOutputs(tasks)
+
+	require.Len(t, outputs, 2)
+	assert.Equal(t, "build", outputs[0].Name)
+	assert.Equal(t, []string{"b", "compile"}, outputs[0].Aliases)
+	assert.Equal(t, "Build the application with all dependencies", outputs[0].Description)
+	assert.Equal(t, "test", outputs[1].Name)
+	assert.Empty(t, outputs[1].Aliases)
+	assert.Equal(t, "Run tests", outputs[1].Description)
+}
+
+func TestToTaskOutputsEmpty(t *testing.T) {
+	assert.Empty(t, toTaskOutputs(nil))
+	assert.Empty(t, toTaskOutputs([]task.Task{}))
 }

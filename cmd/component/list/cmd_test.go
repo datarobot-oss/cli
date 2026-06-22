@@ -17,8 +17,10 @@ package list
 import (
 	"testing"
 
+	"github.com/datarobot/cli/internal/copier"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,4 +66,34 @@ func TestComponentListText(t *testing.T) {
 
 	// Test passes if command executes successfully with default (text) format
 	// (actual output is tested via manual smoke tests)
+}
+
+func TestToComponentOutputs(t *testing.T) {
+	answers := []copier.Answers{
+		{
+			FileName:         "comp1.yaml",
+			ComponentDetails: copier.Details{Name: "component-one"},
+			Repo:             "https://github.com/example/one",
+		},
+		{
+			FileName:         "comp2.yaml",
+			ComponentDetails: copier.Details{Name: "component-two"},
+			Repo:             "",
+		},
+	}
+
+	outputs := toComponentOutputs(answers)
+
+	require.Len(t, outputs, 2)
+	assert.Equal(t, "component-one", outputs[0].Name)
+	assert.Equal(t, "comp1.yaml", outputs[0].File)
+	assert.Equal(t, "https://github.com/example/one", outputs[0].Repo)
+	assert.Equal(t, "component-two", outputs[1].Name)
+	assert.Equal(t, "comp2.yaml", outputs[1].File)
+	assert.Empty(t, outputs[1].Repo)
+}
+
+func TestToComponentOutputsEmpty(t *testing.T) {
+	assert.Empty(t, toComponentOutputs(nil))
+	assert.Empty(t, toComponentOutputs([]copier.Answers{}))
 }
