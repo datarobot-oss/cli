@@ -52,12 +52,25 @@ func fakeGetenv(env map[string]string) func(string) string {
 // noDirExists is a dirExists stub that always returns false.
 func noDirExists(_ string) bool { return false }
 
+// buildEnv runs manager detection with injectable dependencies (test helper).
+func buildEnv(lookPath func(string) (string, error), getenv func(string) string, dirExists func(string) bool, goos string) map[string]bool {
+	ctx := detectionCtx{lookPath: lookPath, getenv: getenv, dirExists: dirExists, goos: goos}
+
+	env := make(map[string]bool, len(knownManagers))
+
+	for _, m := range knownManagers {
+		env[m.Name] = m.present(ctx)
+	}
+
+	return env
+}
+
 // ──────────────────────────────────────────────────────────────
 // initToolNameMap
 // ──────────────────────────────────────────────────────────────
 
-func TestInitToolNameMap_RegistryKeysMapToThemselves(t *testing.T) {
-	initToolNameMap()
+func TestBuildToolNameMap_RegistryKeysMapToThemselves(t *testing.T) {
+	toolNameMap := buildToolNameMap()
 
 	for key := range ToolRegistry {
 		assert.Equal(t, key, toolNameMap[key],
@@ -65,8 +78,8 @@ func TestInitToolNameMap_RegistryKeysMapToThemselves(t *testing.T) {
 	}
 }
 
-func TestInitToolNameMap_NameLowercasedIsRegistered(t *testing.T) {
-	initToolNameMap()
+func TestBuildToolNameMap_NameLowercasedIsRegistered(t *testing.T) {
+	toolNameMap := buildToolNameMap()
 
 	for key, info := range ToolRegistry {
 		lower := strings.ToLower(info.Name)
@@ -76,8 +89,8 @@ func TestInitToolNameMap_NameLowercasedIsRegistered(t *testing.T) {
 	}
 }
 
-func TestInitToolNameMap_AliasesAreRegistered(t *testing.T) {
-	initToolNameMap()
+func TestBuildToolNameMap_AliasesAreRegistered(t *testing.T) {
+	toolNameMap := buildToolNameMap()
 
 	for key, info := range ToolRegistry {
 		for _, alias := range info.Aliases {
@@ -87,14 +100,12 @@ func TestInitToolNameMap_AliasesAreRegistered(t *testing.T) {
 	}
 }
 
-func TestInitToolNameMap_ProducesNonEmptyMap(t *testing.T) {
-	initToolNameMap()
-
-	assert.NotEmpty(t, toolNameMap)
+func TestBuildToolNameMap_ProducesNonEmptyMap(t *testing.T) {
+	assert.NotEmpty(t, buildToolNameMap())
 }
 
-func TestInitToolNameMap_UnknownNameNotPresent(t *testing.T) {
-	initToolNameMap()
+func TestBuildToolNameMap_UnknownNameNotPresent(t *testing.T) {
+	toolNameMap := buildToolNameMap()
 
 	_, ok := toolNameMap["this-tool-does-not-exist"]
 
@@ -146,25 +157,23 @@ func TestNormalizeToolName(t *testing.T) {
 // ──────────────────────────────────────────────────────────────
 
 func TestDetectEnvironment_BrewPresentOnDarwin(t *testing.T) {
-	env := detectEnvironment(fakeLookPath("brew"), fakeGetenv(nil), noDirExists, "darwin")
+	env := buildEnv(fakeLookPath("brew"), fakeGetenv(nil), noDirExists, "darwin")
 
 	assert.True(t, env["brew"])
 	assert.False(t, env["winget"])
-	assert.False(t, env["is_windows"])
 }
 
 func TestDetectEnvironment_BrewSuppressedOnWindows(t *testing.T) {
 	// Even if brew is on PATH, it must not be treated as available on Windows.
-	env := detectEnvironment(fakeLookPath("brew", "winget", "choco"), fakeGetenv(nil), noDirExists, "windows")
+	env := buildEnv(fakeLookPath("brew", "winget", "choco"), fakeGetenv(nil), noDirExists, "windows")
 
 	assert.False(t, env["brew"])
 	assert.True(t, env["winget"])
 	assert.True(t, env["choco"])
-	assert.True(t, env["is_windows"])
 }
 
 func TestDetectEnvironment_PyenvDetected(t *testing.T) {
-	env := detectEnvironment(fakeLookPath("pyenv"), fakeGetenv(nil), noDirExists, "linux")
+	env := buildEnv(fakeLookPath("pyenv"), fakeGetenv(nil), noDirExists, "linux")
 
 	assert.True(t, env["pyenv"])
 	assert.False(t, env["brew"])
@@ -174,7 +183,7 @@ func TestDetectEnvironment_NVM_ViaEnvVar(t *testing.T) {
 	getenv := fakeGetenv(map[string]string{"NVM_DIR": "/home/user/.nvm"})
 	dirExists := func(p string) bool { return p == "/home/user/.nvm" }
 
-	env := detectEnvironment(fakeLookPath(), getenv, dirExists, "linux")
+	env := buildEnv(fakeLookPath(), getenv, dirExists, "linux")
 
 	assert.True(t, env["nvm"])
 }
@@ -184,7 +193,7 @@ func TestDetectEnvironment_NVM_ViaHomeFallback(t *testing.T) {
 
 	dirExists := func(p string) bool { return p == "/home/user/.nvm" }
 
-	env := detectEnvironment(fakeLookPath(), fakeGetenv(nil), dirExists, "linux")
+	env := buildEnv(fakeLookPath(), fakeGetenv(nil), dirExists, "linux")
 
 	assert.True(t, env["nvm"])
 }
@@ -194,7 +203,7 @@ func TestDetectEnvironment_NVM_HomeDirError_NVMAbsent(t *testing.T) {
 	// nvm must be reported absent rather than panicking.
 	t.Setenv("HOME", "")
 
-	env := detectEnvironment(fakeLookPath(), fakeGetenv(nil), noDirExists, "linux")
+	env := buildEnv(fakeLookPath(), fakeGetenv(nil), noDirExists, "linux")
 
 	assert.False(t, env["nvm"])
 }
@@ -204,19 +213,15 @@ func TestDetectEnvironment_NVM_AbsentOnWindows(t *testing.T) {
 	dirExists := func(p string) bool { return true }
 
 	// nvm must never be reported on Windows even if the directory exists.
-	env := detectEnvironment(fakeLookPath(), getenv, dirExists, "windows")
+	env := buildEnv(fakeLookPath(), getenv, dirExists, "windows")
 
 	assert.False(t, env["nvm"])
 }
 
 func TestDetectEnvironment_AllAbsent(t *testing.T) {
-	env := detectEnvironment(fakeLookPath(), fakeGetenv(nil), noDirExists, "linux")
+	env := buildEnv(fakeLookPath(), fakeGetenv(nil), noDirExists, "linux")
 
 	for key, val := range env {
-		if key == "is_windows" {
-			continue
-		}
-
 		assert.False(t, val, "expected %q to be false when nothing is installed", key)
 	}
 }

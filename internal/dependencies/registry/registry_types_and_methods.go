@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -153,15 +152,8 @@ type ToolInfo struct {
 // Strategies are evaluated in order; the first matching one wins.
 var ToolRegistry = map[string]ToolInfo{}
 
-var (
-	toolNameMap     map[string]string
-	toolNameMapOnce sync.Once
-)
-
-// initToolNameMap builds toolNameMap from ToolRegistry. Called once via sync.Once
-// after all init() functions have populated ToolRegistry.
-func initToolNameMap() {
-	toolNameMap = make(map[string]string)
+var buildToolNameMap = sync.OnceValue(func() map[string]string {
+	toolNameMap := make(map[string]string)
 
 	for key, info := range ToolRegistry {
 		toolNameMap[key] = key
@@ -171,68 +163,44 @@ func initToolNameMap() {
 			toolNameMap[alias] = key
 		}
 	}
-}
+
+	return toolNameMap
+})
 
 // NormalizeToolName maps a dr CLI display name (e.g. "Taskfile task runner") to
 // the corresponding ToolRegistry key (e.g. "task").
 // Returns an empty string if the name is not recognized.
 func NormalizeToolName(displayName string) string {
-	// Build the lookup map lazily on first call, after all init() functions have run.
-	toolNameMapOnce.Do(initToolNameMap)
-
-	return toolNameMap[strings.ToLower(strings.TrimSpace(displayName))]
+	return buildToolNameMap()[strings.ToLower(strings.TrimSpace(displayName))]
 }
 
-// DetectEnvironment checks for available package/version managers and platform flags.
-// The returned map uses manager names as keys (e.g. "brew", "pyenv") plus "is_windows".
-func DetectEnvironment() map[string]bool {
-	return detectEnvironment(
-		exec.LookPath,
-		os.Getenv,
-		func(p string) bool {
+// detectEnvironment is the cached result of a single real environment probe.
+var detectEnvironment = sync.OnceValue(func() map[string]bool {
+	ctx := detectionCtx{
+		lookPath: exec.LookPath,
+		getenv:   os.Getenv,
+		dirExists: func(p string) bool {
 			info, err := os.Stat(p)
 
 			return err == nil && info.IsDir()
 		},
-		runtime.GOOS,
-	)
-}
-
-func detectEnvironment(
-	lookPath func(string) (string, error),
-	getenv func(string) string,
-	dirExists func(string) bool,
-	goos string,
-) map[string]bool {
-	isWindows := goos == "windows"
-
-	present := func(name string) bool {
-		_, err := lookPath(name)
-
-		return err == nil
+		goos: runtime.GOOS,
 	}
 
-	nvmDir := getenv("NVM_DIR")
+	env := make(map[string]bool, len(knownManagers))
 
-	if nvmDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			nvmDir = filepath.Join(home, ".nvm")
-		}
+	for _, m := range knownManagers {
+		env[m.Name] = m.present(ctx)
 	}
 
-	nvmPresent := !isWindows && dirExists(nvmDir)
+	return env
+})
 
-	return map[string]bool{
-		"pyenv":      present("pyenv"),
-		"nvm":        nvmPresent,
-		"fnm":        present("fnm"),
-		"asdf":       present("asdf"),
-		"brew":       present("brew") && !isWindows,
-		"winget":     present("winget") && isWindows,
-		"choco":      present("choco") && isWindows,
-		"scoop":      present("scoop") && isWindows,
-		"is_windows": isWindows,
-	}
+// DetectEnvironment checks for available package/version managers.
+// The returned map uses manager names as keys (e.g. "brew", "pyenv").
+// Result is cached after the first call.
+func DetectEnvironment() map[string]bool {
+	return detectEnvironment()
 }
 
 // SelectInstallStrategy returns the first matching Strategy for toolKey.
