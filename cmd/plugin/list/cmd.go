@@ -52,10 +52,20 @@ func Cmd() *cobra.Command {
 func toPluginOutputs(plugins []plugin.DiscoveredPlugin) []PluginOutput {
 	outputs := make([]PluginOutput, len(plugins))
 	for i, p := range plugins {
+		version := p.Manifest.Version
+		if version == "" {
+			version = "-"
+		}
+
+		desc := p.Manifest.Description
+		if desc == "" {
+			desc = "-"
+		}
+
 		outputs[i] = PluginOutput{
 			Name:        p.Manifest.Name,
-			Version:     p.Manifest.Version,
-			Description: p.Manifest.Description,
+			Version:     version,
+			Description: desc,
 			Path:        p.Executable,
 		}
 	}
