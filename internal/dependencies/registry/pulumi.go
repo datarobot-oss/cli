@@ -16,7 +16,8 @@ package registry
 
 func init() {
 	ToolRegistry["pulumi"] = ToolInfo{
-		Name: "Pulumi",
+		Name:    "Pulumi",
+		Aliases: []string{"pulumi infrastructure as code tool"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install pulumi"}},
 			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Pulumi.Pulumi"}},

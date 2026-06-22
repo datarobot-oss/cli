@@ -53,6 +53,55 @@ func fakeGetenv(env map[string]string) func(string) string {
 func noDirExists(_ string) bool { return false }
 
 // ──────────────────────────────────────────────────────────────
+// initToolNameMap
+// ──────────────────────────────────────────────────────────────
+
+func TestInitToolNameMap_RegistryKeysMapToThemselves(t *testing.T) {
+	initToolNameMap()
+
+	for key := range ToolRegistry {
+		assert.Equal(t, key, toolNameMap[key],
+			"registry key %q should map to itself", key)
+	}
+}
+
+func TestInitToolNameMap_NameLowercasedIsRegistered(t *testing.T) {
+	initToolNameMap()
+
+	for key, info := range ToolRegistry {
+		lower := strings.ToLower(info.Name)
+
+		assert.Equal(t, key, toolNameMap[lower],
+			"lowercased Name %q should resolve to key %q", lower, key)
+	}
+}
+
+func TestInitToolNameMap_AliasesAreRegistered(t *testing.T) {
+	initToolNameMap()
+
+	for key, info := range ToolRegistry {
+		for _, alias := range info.Aliases {
+			assert.Equal(t, key, toolNameMap[alias],
+				"alias %q should resolve to key %q", alias, key)
+		}
+	}
+}
+
+func TestInitToolNameMap_ProducesNonEmptyMap(t *testing.T) {
+	initToolNameMap()
+
+	assert.NotEmpty(t, toolNameMap)
+}
+
+func TestInitToolNameMap_UnknownNameNotPresent(t *testing.T) {
+	initToolNameMap()
+
+	_, ok := toolNameMap["this-tool-does-not-exist"]
+
+	assert.False(t, ok)
+}
+
+// ──────────────────────────────────────────────────────────────
 // NormalizeToolName
 // ──────────────────────────────────────────────────────────────
 

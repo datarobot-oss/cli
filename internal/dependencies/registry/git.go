@@ -16,7 +16,8 @@ package registry
 
 func init() {
 	ToolRegistry["git"] = ToolInfo{
-		Name: "Git",
+		Name:    "Git",
+		Aliases: []string{"git source control management tool"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install git"}},
 			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Git.Git"}},

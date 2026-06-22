@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // TAB is the indent prefix used in user-facing tip and failure messages.
@@ -140,8 +141,11 @@ func (fs FallbackStrategy) GetStrategyTip(goos string) string {
 }
 
 // ToolInfo holds installation information for a dependency.
+// Aliases contains lowercase alternate names (beyond the registry key and
+// lowercased Name) that NormalizeToolName should resolve to this tool's key.
 type ToolInfo struct {
 	Name       string
+	Aliases    []string
 	Strategies []Strategy
 }
 
@@ -149,10 +153,33 @@ type ToolInfo struct {
 // Strategies are evaluated in order; the first matching one wins.
 var ToolRegistry = map[string]ToolInfo{}
 
+var (
+	toolNameMap     map[string]string
+	toolNameMapOnce sync.Once
+)
+
+// initToolNameMap builds toolNameMap from ToolRegistry. Called once via sync.Once
+// after all init() functions have populated ToolRegistry.
+func initToolNameMap() {
+	toolNameMap = make(map[string]string)
+
+	for key, info := range ToolRegistry {
+		toolNameMap[key] = key
+		toolNameMap[strings.ToLower(info.Name)] = key
+
+		for _, alias := range info.Aliases {
+			toolNameMap[alias] = key
+		}
+	}
+}
+
 // NormalizeToolName maps a dr CLI display name (e.g. "Taskfile task runner") to
 // the corresponding ToolRegistry key (e.g. "task").
 // Returns an empty string if the name is not recognized.
 func NormalizeToolName(displayName string) string {
+	// Build the lookup map lazily on first call, after all init() functions have run.
+	toolNameMapOnce.Do(initToolNameMap)
+
 	return toolNameMap[strings.ToLower(strings.TrimSpace(displayName))]
 }
 

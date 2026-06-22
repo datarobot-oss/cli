@@ -16,7 +16,8 @@ package registry
 
 func init() {
 	ToolRegistry["node"] = ToolInfo{
-		Name: "Node.js",
+		Name:    "Node.js",
+		Aliases: []string{"node.js", "nodejs"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "nvm", DefaultVersion: "24", Commands: []string{"nvm install {version}", "nvm use {version}"}},
 			ManagerStrategy{Manager: "fnm", DefaultVersion: "24", Commands: []string{"fnm install {version}", "fnm use {version}"}},

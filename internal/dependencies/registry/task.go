@@ -16,7 +16,8 @@ package registry
 
 func init() {
 	ToolRegistry["task"] = ToolInfo{
-		Name: "Task",
+		Name:    "Task",
+		Aliases: []string{"taskfile task runner"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install go-task"}},
 			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Task.Task"}},

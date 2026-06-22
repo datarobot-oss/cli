@@ -17,24 +17,3 @@ package registry
 // KnownManagers lists package/version manager names used by extractFailedManager
 // to identify which manager was referenced in a failed install command.
 var KnownManagers = []string{"brew", "pyenv", "asdf", "nvm", "fnm", "winget", "choco", "scoop"}
-
-// toolNameMap maps lowercase dr CLI display names to ToolRegistry keys.
-var toolNameMap = map[string]string{
-	// Canonical keys
-	"python":                             "python",
-	"uv":                                 "uv",
-	"node":                               "node",
-	"node.js":                            "node",
-	"nodejs":                             "node",
-	"pulumi":                             "pulumi",
-	"pulumi infrastructure as code tool": "pulumi",
-	"task":                               "task",
-	"taskfile task runner":               "task",
-	"git":                                "git",
-	"git source control management tool": "git",
-	// Python aliases
-	"py":       "python",
-	"py3":      "python",
-	"python3":  "python",
-	"python@3": "python",
-}

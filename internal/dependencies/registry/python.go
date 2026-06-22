@@ -16,7 +16,8 @@ package registry
 
 func init() {
 	ToolRegistry["python"] = ToolInfo{
-		Name: "Python",
+		Name:    "Python",
+		Aliases: []string{"python3", "py", "py3", "python@3"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "pyenv", DefaultVersion: "3.14", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
 			ManagerStrategy{Manager: "asdf", DefaultVersion: "3.14", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
