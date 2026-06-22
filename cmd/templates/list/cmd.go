@@ -71,11 +71,11 @@ start building AI applications. Each template includes:
 				return nil
 			}
 
-			nameStyle := tui.BaseTextStyle.
-				Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
+			idStyle := tui.DimStyle.
 				Padding(0, 1)
 
-			descStyle := tui.DimStyle.
+			nameStyle := tui.BaseTextStyle.
+				Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
 				Padding(0, 1)
 
 			t := table.New().
@@ -84,9 +84,9 @@ start building AI applications. Each template includes:
 				StyleFunc(func(_, col int) lipgloss.Style {
 					switch col {
 					case 0:
-						return nameStyle
+						return idStyle
 					default:
-						return descStyle
+						return nameStyle
 					}
 				}).
 				Headers("ID", "NAME")
