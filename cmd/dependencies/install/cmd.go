@@ -60,7 +60,7 @@ func Cmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprintln(cmd.OutOrStderr(), tools.PrerequisitesMsg(checkResult.MissingMsgs, checkResult.WrongVersionMsgs))
+			fmt.Fprintln(cmd.OutOrStderr(), tools.PrerequisitesMsg(checkResult))
 
 			prerequisites := append(checkResult.MissingTools, checkResult.WrongVersionTools...)
 

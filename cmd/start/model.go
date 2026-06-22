@@ -558,7 +558,7 @@ func checkPrerequisites(m *Model) tea.Msg {
 	}
 
 	prerequisites := append(result.MissingTools, result.WrongVersionTools...)
-	message := tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs)
+	message := tools.PrerequisitesMsg(result)
 
 	log.Debug("start: deps to install/update", "count", len(prerequisites))
 

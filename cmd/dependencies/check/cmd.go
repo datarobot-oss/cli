@@ -40,7 +40,7 @@ func Cmd() *cobra.Command {
 			if len(result.MissingMsgs) > 0 || len(result.WrongVersionMsgs) > 0 {
 				cmd.SilenceUsage = true
 
-				return errors.New(tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs))
+				return errors.New(tools.PrerequisitesMsg(result))
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "✅ All dependencies are already up to date.")

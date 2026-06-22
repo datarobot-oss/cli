@@ -156,32 +156,68 @@ func TestSufficientSelfVersion(t *testing.T) {
 }
 
 func TestPrerequisitesMsg_BothEmpty(t *testing.T) {
-	out := PrerequisitesMsg(nil, nil)
+	out := PrerequisitesMsg(CheckResult{})
 
-	assert.Equal(t, "\n", out)
+	assert.Contains(t, out, "dr dependency install")
 }
 
 func TestPrerequisitesMsg_MissingOnly(t *testing.T) {
-	out := PrerequisitesMsg([]string{"uv 0.4.0 (https://example.com)"}, nil)
+	result := CheckResult{
+		MissingTools: []Prerequisite{
+			{Name: "uv", MinimumVersion: "0.4.0", URL: "https://example.com"},
+		},
+	}
+
+	out := PrerequisitesMsg(result)
 
 	assert.Contains(t, out, "Missing required tools")
 	assert.Contains(t, out, "uv 0.4.0")
+	assert.Contains(t, out, "https://example.com")
 	assert.NotContains(t, out, "Wrong versions")
+	assert.Contains(t, out, "dr dependency install")
+}
+
+func TestPrerequisitesMsg_MissingOnly_WithInstallCmd(t *testing.T) {
+	result := CheckResult{
+		MissingTools: []Prerequisite{
+			{
+				Name:           "uv",
+				MinimumVersion: "0.4.0",
+				URL:            "https://example.com",
+				Install:        InstallCommands{MacOS: "brew install uv", Linux: "curl -Ls https://astral.sh/uv/install.sh | sh"},
+			},
+		},
+	}
+
+	out := PrerequisitesMsg(result)
+
+	assert.Contains(t, out, "Install:")
 }
 
 func TestPrerequisitesMsg_WrongVersionOnly(t *testing.T) {
-	out := PrerequisitesMsg(nil, []string{"task (minimal: v3.35.0, installed: v3.32.0)"})
+	result := CheckResult{
+		WrongVersionTools: []Prerequisite{{Name: "task"}},
+		WrongVersionMsgs:  []string{"task (minimal: v3.35.0, installed: v3.32.0)"},
+	}
+
+	out := PrerequisitesMsg(result)
 
 	assert.Contains(t, out, "Wrong versions of tools")
 	assert.Contains(t, out, "task (minimal: v3.35.0")
 	assert.NotContains(t, out, "Missing required")
+	assert.Contains(t, out, "dr dependency install")
 }
 
 func TestPrerequisitesMsg_Both(t *testing.T) {
-	out := PrerequisitesMsg(
-		[]string{"uv 0.4.0 (https://example.com)"},
-		[]string{"task (minimal: v3.35.0, installed: v3.32.0)"},
-	)
+	result := CheckResult{
+		MissingTools: []Prerequisite{
+			{Name: "uv", MinimumVersion: "0.4.0", URL: "https://example.com"},
+		},
+		WrongVersionTools: []Prerequisite{{Name: "task"}},
+		WrongVersionMsgs:  []string{"task (minimal: v3.35.0, installed: v3.32.0)"},
+	}
+
+	out := PrerequisitesMsg(result)
 
 	assert.Contains(t, out, "Missing required tools")
 	assert.Contains(t, out, "uv 0.4.0")
@@ -190,15 +226,28 @@ func TestPrerequisitesMsg_Both(t *testing.T) {
 }
 
 func TestPrerequisitesMsg_MultipleEntries(t *testing.T) {
-	out := PrerequisitesMsg([]string{"uv", "pulumi"}, []string{"task"})
+	result := CheckResult{
+		MissingTools: []Prerequisite{
+			{Name: "uv"},
+			{Name: "pulumi"},
+		},
+		WrongVersionTools: []Prerequisite{{Name: "task"}},
+		WrongVersionMsgs:  []string{"task"},
+	}
 
-	assert.Contains(t, out, "\t- uv")
-	assert.Contains(t, out, "\t- pulumi")
-	assert.Contains(t, out, "\t- task")
+	out := PrerequisitesMsg(result)
+
+	assert.Contains(t, out, "uv")
+	assert.Contains(t, out, "pulumi")
+	assert.Contains(t, out, "task")
 }
 
 func TestPrerequisitesMsg_EndsWithNewline(t *testing.T) {
-	out := PrerequisitesMsg([]string{"uv"}, nil)
+	result := CheckResult{
+		MissingTools: []Prerequisite{{Name: "uv"}},
+	}
+
+	out := PrerequisitesMsg(result)
 
 	assert.True(t, len(out) > 0 && out[len(out)-1] == '\n')
 }

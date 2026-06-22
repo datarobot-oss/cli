@@ -165,26 +165,43 @@ func CheckPrerequisites() CheckResult {
 }
 
 // PrerequisitesMsg formats the message to display to the user about missing/wrong-version prerequisites.
-func PrerequisitesMsg(missingMsgs []string, wrongVersionMsgs []string) string {
-	result := make([]string, 0)
+// It includes per-tool install commands and a resolution hint.
+func PrerequisitesMsg(result CheckResult) string {
+	parts := make([]string, 0)
 
-	if len(missingMsgs) > 0 {
-		result = append(result, "\n ❌ Missing required tools:\n")
+	if len(result.MissingTools) > 0 {
+		parts = append(parts, "\n ❌ Missing required tools:\n")
 
-		for _, msg := range missingMsgs {
-			result = append(result, "\t- "+msg)
+		for _, tool := range result.MissingTools {
+			line := fmt.Sprintf("\t- %s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL)
+
+			if installCmd, err := tool.PlatformInstallCommand(); err == nil {
+				line += "\n\t  Install: " + installCmd
+			}
+
+			parts = append(parts, line)
 		}
 	}
 
-	if len(wrongVersionMsgs) > 0 {
-		result = append(result, "\n ⚠️ Wrong versions of tools:\n")
+	if len(result.WrongVersionMsgs) > 0 {
+		parts = append(parts, "\n ⚠️ Wrong versions of tools:\n")
 
-		for _, msg := range wrongVersionMsgs {
-			result = append(result, "\t- "+msg)
+		for i, msg := range result.WrongVersionMsgs {
+			line := "\t- " + strings.TrimRight(msg, "\n")
+
+			if i < len(result.WrongVersionTools) {
+				if installCmd, err := result.WrongVersionTools[i].PlatformInstallCommand(); err == nil {
+					line += "\n\t  Install: " + installCmd
+				}
+			}
+
+			parts = append(parts, line)
 		}
 	}
 
-	return strings.Join(result, "\n") + "\n"
+	parts = append(parts, "\nRun 'dr dependency install' to install missing dependencies automatically.")
+
+	return strings.Join(parts, "\n") + "\n"
 }
 
 func commandArgs(fullCommand string) (string, []string) {
