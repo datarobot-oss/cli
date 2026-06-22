@@ -152,6 +152,8 @@ type ToolInfo struct {
 // Strategies are evaluated in order; the first matching one wins.
 var ToolRegistry = map[string]ToolInfo{}
 
+// buildToolNameMap lazily builds a lookup map from all display names and aliases to
+// registry keys. Cached after the first call, after all init() functions have populated ToolRegistry.
 var buildToolNameMap = sync.OnceValue(func() map[string]string {
 	toolNameMap := make(map[string]string)
 

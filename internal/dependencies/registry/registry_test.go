@@ -443,6 +443,49 @@ func TestSelectInstallStrategy_AllToolsHaveAtLeastOneFallback(t *testing.T) {
 	}
 }
 
+// ──────────────────────────────────────────────────────────────
+// ToolRegistry structural rules
+// ──────────────────────────────────────────────────────────────
+
+func TestToolRegistry_KeysAreLowercase(t *testing.T) {
+	for key := range ToolRegistry {
+		assert.Equal(t, strings.ToLower(key), key, "registry key %q must be lowercase", key)
+	}
+}
+
+func TestToolRegistry_LastStrategyIsFallback(t *testing.T) {
+	for key, info := range ToolRegistry {
+		require.NotEmpty(t, info.Strategies, "tool %q has no strategies", key)
+
+		last := info.Strategies[len(info.Strategies)-1]
+
+		_, ok := last.(FallbackStrategy)
+
+		assert.True(t, ok, "tool %q: last strategy must be FallbackStrategy, got %T", key, last)
+	}
+}
+
+func TestToolRegistry_ManagerStrategiesReferenceKnownManagers(t *testing.T) {
+	known := make(map[string]bool, len(knownManagers))
+
+	for _, m := range knownManagers {
+		known[m.Name] = true
+	}
+
+	for key, info := range ToolRegistry {
+		for i, s := range info.Strategies {
+			ms, ok := s.(ManagerStrategy)
+
+			if !ok {
+				continue
+			}
+
+			assert.True(t, known[ms.Manager],
+				"tool %q ManagerStrategy[%d]: manager %q is not in knownManagers", key, i, ms.Manager)
+		}
+	}
+}
+
 func TestSelectInstallStrategy_SkipsFailedMgr(t *testing.T) {
 	env := map[string]bool{"pyenv": true, "brew": true}
 
