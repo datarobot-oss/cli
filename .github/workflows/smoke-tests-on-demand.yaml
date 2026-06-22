@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [labeled]
 
+# P3: cancel superseded runs on rapid pushes/labels for the same PR.
+concurrency:
+  group: smoke-on-demand-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
   contents: read
@@ -14,6 +19,7 @@ jobs:
       github.event.label.name == 'run-smoke-tests' ||
       github.event.label.name == 'go'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     outputs:
@@ -62,6 +68,7 @@ jobs:
     needs: check-fork
     if: needs.check-fork.outputs.is_fork == 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
@@ -86,15 +93,12 @@ jobs:
       actions: write
     uses: ./.github/workflows/.build-windows.yaml
     with:
-      go-version: '1.26.4'
       artifact-name: 'dr-windows'
     # S1: called workflow declares no secrets — omit secrets block.
   linux-smoke-tests:
     needs: [check-fork, notify-start]
     if: needs.check-fork.outputs.is_fork == 'false'
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
-    with:
-      go-version: '1.26.4'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
@@ -111,6 +115,7 @@ jobs:
     needs: [check-fork, linux-smoke-tests, windows-smoke-tests]
     if: always() && needs.check-fork.outputs.is_fork == 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
