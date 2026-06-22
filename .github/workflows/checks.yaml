@@ -93,6 +93,7 @@ jobs:
         with:
           path: |
             tmp/bin/golangci-lint
+            tmp/bin/goreleaser
             ~/.cache/golangci-lint
           key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yaml') }}
           restore-keys: |
