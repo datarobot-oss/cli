@@ -63,7 +63,7 @@ jobs:
       # NOTE: keep this version in sync with the Agentic Starter template's
       # required Node version (currently 24).
       - name: Set up Node.js (template prerequisite)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
 
