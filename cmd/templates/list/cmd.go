@@ -58,12 +58,7 @@ start building AI applications. Each template includes:
 
 			format := outputformat.GetFormat(cmd)
 			if format == outputformat.OutputFormatJSON {
-				outputs := make([]TemplateOutput, len(templateList.Templates))
-				for i, t := range templateList.Templates {
-					outputs[i] = TemplateOutput{ID: t.ID, Name: t.Name}
-				}
-
-				return outputformat.PrintJSONEnvelope(os.Stdout, "templates", outputs)
+				return outputformat.PrintJSONEnvelope(os.Stdout, "templates", toTemplateOutputs(templateList.Templates))
 			}
 
 			if len(templateList.Templates) == 0 {
@@ -104,4 +99,16 @@ start building AI applications. Each template includes:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	return cmd
+}
+
+func toTemplateOutputs(templates []drapi.Template) []TemplateOutput {
+	outputs := make([]TemplateOutput, len(templates))
+	for i, t := range templates {
+		outputs[i] = TemplateOutput{
+			ID:   t.ID,
+			Name: t.Name,
+		}
+	}
+
+	return outputs
 }

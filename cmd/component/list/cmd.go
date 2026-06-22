@@ -33,7 +33,7 @@ type ComponentOutput struct {
 	Repo string `json:"repo"`
 }
 
-func RunE(cmd *cobra.Command, _ []string) error {
+func runE(cmd *cobra.Command, _ []string) error {
 	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
 		return err
@@ -41,18 +41,26 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {
-		outputs := make([]ComponentOutput, len(answers))
-		for i, a := range answers {
-			outputs[i] = ComponentOutput{
-				Name: a.ComponentDetails.Name,
-				File: a.FileName,
-				Repo: a.Repo,
-			}
-		}
-
-		return outputformat.PrintJSONEnvelope(os.Stdout, "components", outputs)
+		return outputformat.PrintJSONEnvelope(os.Stdout, "components", toComponentOutputs(answers))
 	}
 
+	return printComponentsTable(answers)
+}
+
+func toComponentOutputs(answers []copier.Answers) []ComponentOutput {
+	outputs := make([]ComponentOutput, len(answers))
+	for i, a := range answers {
+		outputs[i] = ComponentOutput{
+			Name: a.ComponentDetails.Name,
+			File: a.FileName,
+			Repo: a.Repo,
+		}
+	}
+
+	return outputs
+}
+
+func printComponentsTable(answers []copier.Answers) error {
 	if len(answers) == 0 {
 		fmt.Println("No components installed.")
 		return nil
@@ -99,7 +107,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "📋 List installed components",
-		RunE:  RunE,
+		RunE:  runE,
 	}
 
 	outputformat.AddFlag(cmd, &outputFormat)
