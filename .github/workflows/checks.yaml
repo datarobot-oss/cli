@@ -80,6 +80,21 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get golangci-lint version
+        id: golangci-version
+        run: |
+          echo "version=$(grep 'GOLANGCI_LINT_VERSION' Taskfile.yaml | grep -oP 'v[\d.]+')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache golangci-lint binary and analysis
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            tmp/bin/golangci-lint
+            ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yml') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-
+
       - name: Run all checks
         run: |
           task lint

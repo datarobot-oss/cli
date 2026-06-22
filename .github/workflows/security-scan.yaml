@@ -37,6 +37,9 @@ jobs:
 
       - name: Convert results to SARIF
         # trivy is in PATH after the action step above.
+        # if: always() mirrors the upload step — ensures SARIF conversion is attempted even if the
+        # scan step fails, so the upload step can still run (and report what it can).
+        if: always()
         run: trivy convert --format sarif --output trivy-results.sarif trivy-results.json
 
       - name: Upload Trivy results to GitHub Security tab
