@@ -318,14 +318,17 @@ func Cmd() *cobra.Command {
 				// For now, respecting it for consistency with text output, but
 				// JSON consumers typically want all available data unfiltered.
 				filteredTasks := tasks
+
 				if !showAll {
 					// Filter to only common tasks when --all is not set
 					var filtered []task.Task
+
 					for _, t := range tasks {
 						if categorizeTask(t, showAll) != nil {
 							filtered = append(filtered, t)
 						}
 					}
+
 					filteredTasks = filtered
 				}
 
