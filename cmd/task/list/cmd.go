@@ -45,6 +45,13 @@ type Category struct {
 	Priority int // Lower numbers appear first
 }
 
+// TaskOutput is the JSON representation of a task for --output-format json.
+type TaskOutput struct {
+	Name        string   `json:"name"`
+	Aliases     []string `json:"aliases"`
+	Description string   `json:"description"`
+}
+
 // getCategoryStyle returns the appropriate style for a category name with adaptive colors
 func getCategoryStyle(categoryName string) lipgloss.Style {
 	switch {
@@ -314,9 +321,6 @@ func Cmd() *cobra.Command {
 
 			format := outputformat.GetFormat(cmd)
 			if format == outputformat.OutputFormatJSON {
-				// TODO: Consider whether JSON should filter by --all flag.
-				// For now, respecting it for consistency with text output, but
-				// JSON consumers typically want all available data unfiltered.
 				filteredTasks := tasks
 
 				if !showAll {
@@ -332,7 +336,7 @@ func Cmd() *cobra.Command {
 					filteredTasks = filtered
 				}
 
-				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", filteredTasks)
+				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", toTaskOutputs(filteredTasks))
 			}
 
 			categories := groupTasksByCategory(tasks, showAll)
@@ -358,4 +362,17 @@ func Cmd() *cobra.Command {
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	return cmd
+}
+
+func toTaskOutputs(tasks []task.Task) []TaskOutput {
+	outputs := make([]TaskOutput, len(tasks))
+	for i, t := range tasks {
+		outputs[i] = TaskOutput{
+			Name:        t.Name,
+			Aliases:     t.Aliases,
+			Description: strings.ReplaceAll(t.Desc, "\n", " "),
+		}
+	}
+
+	return outputs
 }
