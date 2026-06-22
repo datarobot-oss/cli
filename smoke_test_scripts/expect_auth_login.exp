@@ -1,22 +1,49 @@
 #!/usr/local/bin/expect -f
 
-set timeout 20
+set timeout 10
 
 # Use TERM=dumb to prevent terminal color probing which causes OSC sequences
 set env(TERM) dumb
 
+# Force non-interactive mode so the CLI skips the animated Bubble Tea spinner
+# (which otherwise burns CPU redrawing every frame) and prints a single static
+# "Waiting for browser authorization…" line instead. Ctrl-C is delivered as a
+# real SIGINT, which cancels the root context and unblocks the auth wait via the
+# normal signal path (fast, deterministic exit).
+set env(DATAROBOT_CLI_NON_INTERACTIVE) 1
+
 spawn dr auth login
 
-# If we get an prompt for needed URL be sure to set it first
+# In the re-auth path the URL is already configured, so the set-url prompt never
+# appears and we go straight to the redirect URL. Handle both branches in a
+# single expect block so we don't sit through the full timeout waiting for a
+# prompt that won't show up. As soon as the auth URL is printed the CLI starts
+# waiting for browser authorization — there is no browser round-trip in tests,
+# so we interrupt immediately rather than waiting on the (unbounded) callback.
 expect {
     "Check your DataRobot login page" {
-        send -- "https://app.datarobot.com\r\n"
+        send -- "https://app.datarobot.com\r"
+        exp_continue
     }
-    timeout
+    "cliRedirect=true" {
+        # Auth URL displayed; the CLI is now waiting for browser authorization.
+        # SIGINT unblocks the wait at once (root context cancellation), so no
+        # sleep is needed before interrupting.
+        send -- "\x03"
+    }
+    timeout {
+        puts "ERROR: timed out waiting for the auth URL"
+        exit 1
+    }
 }
 
-expect "https://app.datarobot.com/account/developer-tools?cliRedirect=true"
-sleep 3
-# ctrl-c
-send -- {^C}
-expect eof
+# The process should exit promptly after the interrupt. If it somehow doesn't,
+# force it closed so the test can never hang for the full smoke-test budget.
+expect {
+    eof {}
+    timeout {
+        puts "WARN: process did not exit after interrupt; forcing close"
+        close
+        wait
+    }
+}
