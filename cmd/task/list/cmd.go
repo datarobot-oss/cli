@@ -314,7 +314,22 @@ func Cmd() *cobra.Command {
 
 			format := outputformat.GetFormat(cmd)
 			if format == outputformat.OutputFormatJSON {
-				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", tasks)
+				// TODO: Consider whether JSON should filter by --all flag.
+				// For now, respecting it for consistency with text output, but
+				// JSON consumers typically want all available data unfiltered.
+				filteredTasks := tasks
+				if !showAll {
+					// Filter to only common tasks when --all is not set
+					var filtered []task.Task
+					for _, t := range tasks {
+						if categorizeTask(t, showAll) != nil {
+							filtered = append(filtered, t)
+						}
+					}
+					filteredTasks = filtered
+				}
+
+				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", filteredTasks)
 			}
 
 			categories := groupTasksByCategory(tasks, showAll)
