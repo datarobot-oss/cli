@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Check if PR is from fork and commenter permissions
         id: check-fork
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -49,7 +49,7 @@ jobs:
           (contains(github.event.comment.body, '/trigger-smoke-test') ||
            contains(github.event.comment.body, '/trigger-test-smoke')) &&
           steps.check-fork.outputs.is_fork == 'false'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -73,7 +73,7 @@ jobs:
           (contains(github.event.comment.body, '/trigger-install-test') ||
            contains(github.event.comment.body, '/trigger-test-install')) &&
           steps.check-fork.outputs.is_fork == 'false'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -98,7 +98,7 @@ jobs:
            contains(github.event.comment.body, '/approve-fork-tests')) &&
           steps.check-fork.outputs.is_fork == 'true' &&
           steps.check-fork.outputs.is_maintainer == 'true'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -162,7 +162,7 @@ jobs:
         if: |
           contains(github.event.comment.body, '/skip-smoke-tests') &&
           steps.check-fork.outputs.is_maintainer == 'true'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -194,7 +194,7 @@ jobs:
         if: |
           contains(github.event.comment.body, '/skip-smoke-tests') &&
           steps.check-fork.outputs.is_maintainer == 'false'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -219,7 +219,7 @@ jobs:
           (contains(github.event.comment.body, '/approve-smoke-tests') ||
            contains(github.event.comment.body, '/approve-fork-tests')) &&
           steps.check-fork.outputs.is_maintainer == 'false'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction

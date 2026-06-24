@@ -30,7 +30,7 @@ jobs:
       contents: read
     steps:
       - name: Verify maintainer access
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const approver = '${{ inputs.approver }}'.trim();
@@ -64,7 +64,7 @@ jobs:
     steps:
       - name: Resolve PR commit SHA
         id: resolve
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -139,7 +139,7 @@ jobs:
     steps:
       - name: Notify smoke tests started
         continue-on-error: true
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Check if any changed files are under .github/
@@ -211,7 +211,7 @@ jobs:
       statuses: write
     steps:
       - name: Comment on PR with results
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';
@@ -244,7 +244,7 @@ jobs:
             });
 
       - name: Update Smoke Tests commit status
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const securityStatus = '${{ needs.security-scan.result }}';
