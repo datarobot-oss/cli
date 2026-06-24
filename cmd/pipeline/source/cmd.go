@@ -12,37 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package create
+package source
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
-		inputID      string
-		imageID      string
 		outputFormat outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Trigger a pipeline run",
-		Long: `Trigger a new run (single execution) of a pipeline.
+		Use:   "source",
+		Short: "Display the source code of a pipeline",
+		Long: `Display the full source.py content of a pipeline.
 
-The run is created in PENDING state. Use ` + "`dr pipeline run get`" + `
-or ` + "`dr pipeline run status`" + ` to follow its progress.
+Scope is selected from the --scope/--version flags:
+  - no flags                   -> draft source (latest version)
+  - --version=N                -> locked source for version N (scope auto-set)
+  - --scope=draft              -> draft source
+  - --scope=locked --version=N -> locked source for version N
 
 Example:
-  dr pipeline run create --pipeline <id> --input <input-id>
-  dr pipeline run create --pipeline <id> --input <input-id> --image <image-id>
-  dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json`,
+  dr pipeline source --pipeline <id>
+  dr pipeline source --pipeline <id> --version=2
+  dr pipeline source --pipeline <id> --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -54,12 +62,18 @@ Example:
 				return err
 			}
 
-			result, err := pipeline.CreateRun(flags.PipelineID, scope, version, inputID, imageID)
+			result, err := pipeline.GetPipelineSource(flags.PipelineID, scope, version)
 			if err != nil {
-				return err
+				return handleSourceError(err, flags.PipelineID)
 			}
 
-			return pipeline.RenderRun(outputFormat, *result)
+			if outputFormat == outputformat.OutputFormatJSON {
+				return printSourceJSON(*result)
+			}
+
+			fmt.Print(result.Source)
+
+			return nil
 		},
 	}
 
@@ -67,18 +81,36 @@ Example:
 
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to trigger the run with")
-	_ = cmd.MarkFlagRequired("input")
-	cmd.Flags().StringVar(&imageID, "image", "", "Override the pipeline's linked execution image for this run")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   flags.PipelineID,
-			"scope":         flags.Scope,
-			"version":       flags.Version,
 			"output_format": string(outputFormat),
 		}
 	})
 
 	return cmd
+}
+
+func handleSourceError(err error, pipelineID string) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		fmt.Println(tui.DimStyle.Render("No source available for pipeline: " + pipelineID))
+
+		return nil
+	}
+
+	return err
+}
+
+func printSourceJSON(s pipeline.PipelineSourceResponse) error {
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+
+	return nil
 }

@@ -59,7 +59,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"})
+	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"}, nil, "", false)
 	require.NoError(t, err)
 	assert.Equal(t, "img-1", got.ImageID)
 	assert.Equal(t, 1, got.LatestVersion)
@@ -86,7 +86,7 @@ func TestCreateImage_OmitsEmptyDescription(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := CreateImage("x", "", []string{"numpy"})
+	_, err := CreateImage("x", "", []string{"numpy"}, nil, "", false)
 	require.NoError(t, err)
 }
 
@@ -176,7 +176,7 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := UpdateImage("img-1", []string{"scikit-learn"})
+	got, err := UpdateImage("img-1", []string{"scikit-learn"}, nil, "", false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.LatestVersion)
 	require.Len(t, got.Versions, 2)

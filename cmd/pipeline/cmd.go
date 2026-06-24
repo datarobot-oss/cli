@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/lock"
 	"github.com/datarobot/cli/cmd/pipeline/run"
 	"github.com/datarobot/cli/cmd/pipeline/schedule"
+	"github.com/datarobot/cli/cmd/pipeline/source"
 	"github.com/datarobot/cli/cmd/pipeline/task"
 	"github.com/datarobot/cli/cmd/pipeline/update"
 	"github.com/datarobot/cli/cmd/pipeline/version"
@@ -60,6 +61,7 @@ input payloads, runs, and recurring schedules.`,
 		input.Cmd(),
 		schedule.Cmd(),
 		image.Cmd(),
+		source.Cmd(),
 		task.Cmd(),
 	)
 
