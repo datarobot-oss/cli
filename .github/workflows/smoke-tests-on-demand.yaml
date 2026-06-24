@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Check if PR is from fork
         id: check
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -32,7 +32,7 @@ jobs:
 
       - name: Notify fork PR cannot use this workflow
         if: steps.check.outputs.is_fork == 'true'
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             await github.rest.issues.createComment({
@@ -66,7 +66,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Notify smoke tests starting
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             await github.rest.issues.createComment({
@@ -115,7 +115,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Comment on PR with results
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const linuxStatus = '${{ needs.linux-smoke-tests.result }}';
@@ -139,7 +139,7 @@ jobs:
             });
 
       - name: Remove run-smoke-tests label
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Only remove run-smoke-tests label, keep 'go' label for categorization
