@@ -44,7 +44,7 @@ func TestCreateRun_DraftURLAndBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateRun("p-1", ScopeDraft, nil, "in-1")
+	got, err := CreateRun("p-1", ScopeDraft, nil, "in-1", "")
 	require.NoError(t, err)
 	assert.Equal(t, "d-1", got.RunID)
 	assert.Equal(t, RunStatusPending, got.Status)
@@ -65,7 +65,7 @@ func TestCreateRun_LockedURL(t *testing.T) {
 	installEndpoint(t, srv.URL)
 
 	v := 2
-	got, err := CreateRun("p-1", ScopeLocked, &v, "in-1")
+	got, err := CreateRun("p-1", ScopeLocked, &v, "in-1", "")
 	require.NoError(t, err)
 	require.NotNil(t, got.VersionID)
 	assert.Equal(t, 2, *got.VersionID)

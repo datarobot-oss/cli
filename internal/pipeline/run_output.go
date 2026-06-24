@@ -40,6 +40,8 @@ type runJSON struct {
 	PipelineID    string `json:"pipeline_id"`
 	VersionID     *int   `json:"version_id,omitempty"`
 	InputID       string `json:"input_id"`
+	ImageID       string `json:"image_id,omitempty"`
+	ImageVersion  *int   `json:"image_version,omitempty"`
 	CovalentRunID string `json:"covalent_run_id,omitempty"`
 	TriggeredBy   string `json:"triggered_by"`
 	Status        string `json:"status"`
@@ -49,11 +51,12 @@ type runJSON struct {
 }
 
 func toRunJSON(r Run) runJSON {
-	return runJSON{
+	j := runJSON{
 		RunID:         r.RunID,
 		PipelineID:    r.PipelineID,
 		VersionID:     r.VersionID,
 		InputID:       r.InputID,
+		ImageVersion:  r.ImageVersion,
 		CovalentRunID: r.CovalentDispatchID,
 		TriggeredBy:   r.TriggeredBy,
 		Status:        r.Status,
@@ -61,6 +64,12 @@ func toRunJSON(r Run) runJSON {
 		CreatedAt:     r.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:     r.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+
+	if r.ImageID != nil {
+		j.ImageID = *r.ImageID
+	}
+
+	return j
 }
 
 // runStatusJSON mirrors RunStatus with CLI-vocabulary keys.
@@ -145,6 +154,16 @@ func PrintRunHuman(r Run) {
 	fmt.Fprintf(w, "Scope:\t%s\n", scope)
 	fmt.Fprintf(w, "Version:\t%s\n", versionDisplay)
 	fmt.Fprintf(w, "Input ID:\t%s\n", r.InputID)
+
+	if r.ImageID != nil && *r.ImageID != "" {
+		imageVersionStr := emptyValuePlaceholder
+		if r.ImageVersion != nil {
+			imageVersionStr = "v" + strconv.Itoa(*r.ImageVersion)
+		}
+
+		fmt.Fprintf(w, "Image ID:\t%s (%s)\n", *r.ImageID, imageVersionStr)
+	}
+
 	fmt.Fprintf(w, "Status:\t%s\n", r.Status)
 	fmt.Fprintf(w, "Triggered By:\t%s\n", r.TriggeredBy)
 	fmt.Fprintf(w, "Covalent Run:\t%s\n", covalent)

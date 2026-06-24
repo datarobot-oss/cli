@@ -46,6 +46,8 @@ type Run struct {
 	PipelineID         string    `json:"pipelineId"`
 	VersionID          *int      `json:"versionId,omitempty"`
 	InputID            string    `json:"inputId"`
+	ImageID            *string   `json:"imageId,omitempty"`
+	ImageVersion       *int      `json:"imageVersion,omitempty"`
 	CovalentDispatchID string    `json:"covalentDispatchId,omitempty"`
 	TriggeredBy        string    `json:"triggeredBy"`
 	Status             string    `json:"status"`
@@ -64,18 +66,23 @@ type RunStatus struct {
 
 // RunCreateRequest mirrors PipelineDispatchCreateRequest.
 type RunCreateRequest struct {
-	InputID string `json:"inputId"`
+	InputID string  `json:"inputId"`
+	ImageID *string `json:"imageId,omitempty"`
 }
 
 // CreateRun starts a new run for the given input. Returns the
 // freshly-created Run (status PENDING).
-func CreateRun(pipelineID string, scope Scope, version *int, inputID string) (*Run, error) {
+func CreateRun(pipelineID string, scope Scope, version *int, inputID, imageID string) (*Run, error) {
 	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches")
 	if err != nil {
 		return nil, err
 	}
 
 	body := RunCreateRequest{InputID: inputID}
+
+	if imageID != "" {
+		body.ImageID = &imageID
+	}
 
 	var result Run
 

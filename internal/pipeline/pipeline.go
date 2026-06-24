@@ -52,19 +52,32 @@ type PipelineVersion struct {
 	CreatedAt      time.Time      `json:"createdAt"`
 }
 
+// LinkedImageBlock mirrors LinkedImageBlock from the pipelines-api:
+// a snapshot of the execution image bound to a pipeline.
+type LinkedImageBlock struct {
+	ImageID     string  `json:"imageId"`
+	Name        string  `json:"name"`
+	Version     int     `json:"version"`
+	Status      string  `json:"status"`
+	ErrorDetail *string `json:"errorDetail,omitempty"`
+}
+
 // Pipeline mirrors PipelineDetailResponse from the pipelines-api.
 type Pipeline struct {
-	PipelineID     string            `json:"id"`
-	Name           string            `json:"name"`
-	Description    string            `json:"description,omitempty"`
-	Mode           string            `json:"mode"`
-	IsActive       bool              `json:"isActive"`
-	TaskNames      []string          `json:"taskNames,omitempty"`
-	PythonVersion  string            `json:"pythonVersion,omitempty"`
-	ResourceBundle map[string]any    `json:"resourceBundle,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
-	UpdatedAt      time.Time         `json:"updatedAt"`
-	Versions       []PipelineVersion `json:"versions"`
+	PipelineID       string            `json:"id"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description,omitempty"`
+	Mode             string            `json:"mode"`
+	IsActive         bool              `json:"isActive"`
+	TaskNames        []string          `json:"taskNames,omitempty"`
+	InputSetTemplate *string           `json:"inputSetTemplate,omitempty"`
+	ImageID          *string           `json:"imageId,omitempty"`
+	LinkedImage      *LinkedImageBlock `json:"linkedImage,omitempty"`
+	PythonVersion    string            `json:"pythonVersion,omitempty"`
+	ResourceBundle   map[string]any    `json:"resourceBundle,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	UpdatedAt        time.Time         `json:"updatedAt"`
+	Versions         []PipelineVersion `json:"versions"`
 }
 
 // CreateResponse mirrors PipelineCreateResponse from the pipelines-api.
@@ -76,6 +89,7 @@ type CreateResponse struct {
 	Status     string    `json:"status"`
 	Mode       string    `json:"mode"`
 	TaskNames  []string  `json:"taskNames,omitempty"`
+	ImageID    *string   `json:"imageId,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
@@ -92,7 +106,7 @@ type ListItem struct {
 }
 
 // CreatePipeline uploads a Python file to POST /api/v2/pipelines.
-func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, error) {
+func CreatePipeline(filePath, description, name, mode, imageID string) (*CreateResponse, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -109,6 +123,10 @@ func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, 
 
 	if mode != "" {
 		fields["mode"] = mode
+	}
+
+	if imageID != "" {
+		fields["image_id"] = imageID
 	}
 
 	var result CreateResponse
@@ -173,15 +191,21 @@ func GetPipeline(pipelineID string) (*Pipeline, error) {
 }
 
 // UpdatePipeline re-uploads a Python file to PATCH /api/v2/pipelines/{pipeline_id}.
-func UpdatePipeline(pipelineID, filePath string) (*CreateResponse, error) {
+func UpdatePipeline(pipelineID, filePath, imageID string) (*CreateResponse, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID)
 	if err != nil {
 		return nil, err
 	}
 
+	fields := map[string]string{}
+
+	if imageID != "" {
+		fields["image_id"] = imageID
+	}
+
 	var result CreateResponse
 
-	err = doMultipart(http.MethodPatch, endpoint, filePath, nil, "update pipeline", &result)
+	err = doMultipart(http.MethodPatch, endpoint, filePath, fields, "update pipeline", &result)
 	if err != nil {
 		return nil, err
 	}

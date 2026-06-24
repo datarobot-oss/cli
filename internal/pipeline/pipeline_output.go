@@ -164,17 +164,41 @@ func printPipelineHuman(p Pipeline) {
 	fmt.Fprintf(w, "Description:\t%s\n", description)
 	fmt.Fprintf(w, "Mode:\t%s\n", p.Mode)
 	fmt.Fprintf(w, "Active:\t%t\n", p.IsActive)
+	printLinkedImageLine(w, p)
 	fmt.Fprintf(w, "Created:\t%s\n", p.CreatedAt.UTC().Format(timestampFormat))
 	fmt.Fprintf(w, "Updated:\t%s\n", p.UpdatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
 
-	if len(p.Versions) == 0 {
+	printInputTemplateSectionIfPresent(p)
+	printPipelineVersionsHuman(p.Versions)
+}
+
+func printLinkedImageLine(w *tabwriter.Writer, p Pipeline) {
+	if p.LinkedImage != nil {
+		fmt.Fprintf(w, "Image:\t%s (v%d, %s)\n", p.LinkedImage.ImageID, p.LinkedImage.Version, p.LinkedImage.Status)
+	} else if p.ImageID != nil && *p.ImageID != "" {
+		fmt.Fprintf(w, "Image ID:\t%s\n", *p.ImageID)
+	}
+}
+
+func printInputTemplateSectionIfPresent(p Pipeline) {
+	if p.InputSetTemplate == nil {
 		return
 	}
 
 	fmt.Println()
-	fmt.Println(tui.BaseTextStyle.Render(fmt.Sprintf("Versions (%d):", len(p.Versions))))
+	fmt.Println(tui.BaseTextStyle.Render("Input template:"))
+	fmt.Println(tui.DimStyle.Render(*p.InputSetTemplate))
+}
+
+func printPipelineVersionsHuman(versions []PipelineVersion) {
+	if len(versions) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(tui.BaseTextStyle.Render(fmt.Sprintf("Versions (%d):", len(versions))))
 
 	cellStyle := tui.BaseTextStyle.Padding(0, 1)
 
@@ -200,7 +224,7 @@ func printPipelineHuman(p Pipeline) {
 		}).
 		Headers(headers...)
 
-	for _, ver := range p.Versions {
+	for _, ver := range versions {
 		tasks := emptyValuePlaceholder
 		if len(ver.TaskNames) > 0 {
 			tasks = strings.Join(ver.TaskNames, ", ")
@@ -222,7 +246,7 @@ func printPipelineHuman(p Pipeline) {
 
 	fmt.Fprintln(os.Stdout, t.Render())
 
-	for _, ver := range p.Versions {
+	for _, ver := range versions {
 		if ver.ErrorDetail == "" {
 			continue
 		}
@@ -245,6 +269,11 @@ func printCreateResponseHuman(result CreateResponse) {
 	fmt.Fprintf(w, "Status:\t%s\n", result.Status)
 	fmt.Fprintf(w, "Mode:\t%s\n", result.Mode)
 	fmt.Fprintf(w, "Tasks:\t%s\n", tasks)
+
+	if result.ImageID != nil && *result.ImageID != "" {
+		fmt.Fprintf(w, "Image ID:\t%s\n", *result.ImageID)
+	}
+
 	fmt.Fprintf(w, "Created:\t%s\n", result.CreatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
