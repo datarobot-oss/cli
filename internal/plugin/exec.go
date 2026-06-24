@@ -23,16 +23,92 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"syscall"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/dependencies"
+	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/tools"
 )
+
+// checkAndInstallPluginPrereqs reads the plugin's versions.yaml, checks prerequisites,
+// and prompts the user to install any missing or outdated tools before the plugin runs.
+// Returns true if execution should proceed, false if it should be aborted.
+// Skips silently when no versions.yaml is present (PATH-based plugins, no declared deps).
+//
+// Confirmation modes (in order of precedence):
+//  1. -y / --yes present in args
+//  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
+//  3. Interactive [Y/n] prompt
+func checkAndInstallPluginPrereqs(manifest PluginManifest, args []string) bool {
+	managedDir, err := ManagedPluginsDir()
+	if err != nil {
+		log.Debug("Plugin prereq check skipped: could not resolve managed plugins dir", "error", err)
+
+		return true
+	}
+
+	pluginDir := filepath.Join(managedDir, manifest.Name)
+
+	prereqs, _, err := tools.GetRequirementsFromDir(pluginDir)
+	if err != nil {
+		log.Debug("Plugin prereq check skipped: no versions.yaml found", "plugin", manifest.Name, "error", err)
+
+		return true
+	}
+
+	if len(prereqs) == 0 {
+		return true
+	}
+
+	result := tools.CheckPrerequisiteList(prereqs)
+
+	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
+		return true
+	}
+
+	fmt.Fprintln(os.Stderr, tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs))
+
+	if !confirmPluginDepsInstall(args) {
+		return false
+	}
+
+	toInstall := append(result.MissingTools, result.WrongVersionTools...)
+
+	if _, err := dependencies.InstallPrerequisites(os.Stdout, toInstall); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to install plugin dependencies: %v\n", err)
+
+		return false
+	}
+
+	return true
+}
+
+// confirmPluginDepsInstall returns true when the user consents to installing
+// missing plugin dependencies. Consent is granted automatically when -y/--yes
+// is present in args or DATAROBOT_CLI_NON_INTERACTIVE is set; otherwise the
+// user is prompted interactively.
+func confirmPluginDepsInstall(args []string) bool {
+	if slices.Contains(args, "-y") || slices.Contains(args, "--yes") || reader.IsNonInteractive() {
+		return true
+	}
+
+	fmt.Fprint(os.Stdout, "Install missing dependencies? [Y/n]: ")
+
+	return reader.AskYesNo()
+}
 
 // ExecutePlugin runs a plugin and returns its exit code
 // If the plugin manifest requires authentication, it will check/prompt for auth first
 func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
+	if !checkAndInstallPluginPrereqs(manifest, args) {
+		return 1
+	}
+
 	// Check authentication if required by the plugin
 	if manifest.Authentication {
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)

@@ -32,7 +32,13 @@ func GetRequirements() ([]Prerequisite, []string, error) {
 		return nil, nil, err
 	}
 
-	yamlFile := filepath.Join(repoRoot, ".datarobot", "cli", "versions.yaml")
+	return GetRequirementsFromDir(filepath.Join(repoRoot, ".datarobot", "cli"))
+}
+
+// GetRequirementsFromDir reads prerequisites from a versions.yaml file in the given directory.
+// Used by plugin execution to load plugin-specific dependency requirements.
+func GetRequirementsFromDir(dir string) ([]Prerequisite, []string, error) {
+	yamlFile := filepath.Join(dir, "versions.yaml")
 
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {

@@ -16,10 +16,16 @@ package install
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/dependencies"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -31,6 +37,7 @@ var (
 	listVersions      bool
 	filePath          string
 	pluginURL         string
+	yesFlag           bool
 )
 
 func Cmd() *cobra.Command {
@@ -66,11 +73,14 @@ Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 	cmd.Flags().StringVar(&filePath, "file", "", "Install from a local .tar.xz archive instead of the registry")
 	cmd.Flags().StringVar(&pluginURL, "url", "", "Install from an HTTP/HTTPS URL instead of the registry")
+	cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version", "file", "url")
 	cmd.MarkFlagsMutuallyExclusive("file", "registry-url")
 	cmd.MarkFlagsMutuallyExclusive("url", "registry-url")
+
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		ver, _ := c.Flags().GetString("version")
@@ -174,7 +184,7 @@ func runInstallFromRegistry(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
 
-	return nil
+	return checkAndInstallPluginDeps(pluginEntry.Name)
 }
 
 func runInstallFromFile(args []string) error {
@@ -206,7 +216,7 @@ func runInstallFromFile(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
-	return nil
+	return checkAndInstallPluginDeps(resolvedName)
 }
 
 func runInstallFromURL(args []string) error {
@@ -238,7 +248,54 @@ func runInstallFromURL(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
-	return nil
+	return checkAndInstallPluginDeps(resolvedName)
+}
+
+// checkAndInstallPluginDeps reads the plugin's versions.yaml, checks prerequisites,
+// and prompts the user to install any missing or outdated tools.
+// Skips silently when no versions.yaml is present.
+func checkAndInstallPluginDeps(pluginName string) error {
+	managedDir, err := plugin.ManagedPluginsDir()
+	if err != nil {
+		return nil
+	}
+
+	pluginDir := filepath.Join(managedDir, pluginName)
+
+	prereqs, _, err := tools.GetRequirementsFromDir(pluginDir)
+	if err != nil {
+		return nil
+	}
+
+	if len(prereqs) == 0 {
+		return nil
+	}
+
+	result := tools.CheckPrerequisiteList(prereqs)
+
+	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SubTitleStyle.Render("Plugin Dependencies"))
+	fmt.Print(tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs))
+
+	nonInteractive := viperx.GetBool("yes")
+
+	if !yesFlag && !nonInteractive {
+		fmt.Fprint(os.Stdout, "\nInstall missing dependencies? [Y/n]: ")
+
+		if !reader.AskYesNo() {
+			return nil
+		}
+	}
+
+	prerequisites := append(result.MissingTools, result.WrongVersionTools...)
+
+	_, err = dependencies.InstallPrerequisites(os.Stdout, prerequisites)
+
+	return err
 }
 
 func printAvailablePlugins(registry *plugin.PluginRegistry) {
