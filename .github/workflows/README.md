@@ -53,8 +53,7 @@ One extension everywhere: **`.yaml`**.
 | File | Trigger | Purpose |
 | --- | --- | --- |
 | `pr-checks.yaml` | `pull_request → main` | Lint, test, copyright, code-gen, cross-compile build, auto-label; conditional deps/install/completion tests. |
-| `pr-security.yaml` | `pull_request`, `push → main` | Trivy scan, govulncheck, dependency-review. |
-| `codeql.yaml` | `pull_request`, `push → main` | CodeQL (Go) analysis. Non-blocking until Phase 5. |
+| `pr-security.yaml` | `pull_request`, `push → main` | Trivy scan, govulncheck, dependency-review, CodeQL (Go) analysis (`analyze` job, non-blocking until Phase 5). |
 | `smoke-gate.yaml` | `pull_request → main` | Sets the required **Smoke Tests** commit status (see below). |
 | `smoke-on-demand.yaml` | `pull_request [labeled]` | Label-triggered smoke tests for **non-fork** PRs. |
 | `comment-commands.yaml` | `issue_comment` | Slash-commands (trigger/approve/skip smoke & install tests). |
