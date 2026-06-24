@@ -64,6 +64,9 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Lint Code
+    permissions:
+      contents: read
+      actions: write   # actions/cache (save)
 
     steps:
       - name: Checkout Code
@@ -74,24 +77,27 @@ jobs:
         with:
           go-version: '1.26.4'
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
-        with:
-          version: v2.11.4
-          args: --timeout=5m
-
-      - name: GoReleaser Check
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: check
-
       - name: Install Taskfile
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get golangci-lint version
+        id: golangci-version
+        run: |
+          echo "version=$(grep 'GOLANGCI_LINT_VERSION' Taskfile.yaml | grep -oP 'v[\d.]+')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache golangci-lint binary and analysis
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            tmp/bin/golangci-lint
+            tmp/bin/goreleaser
+            ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yaml') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-
 
       - name: Run all checks
         run: |
@@ -191,14 +197,35 @@ jobs:
   build:
     needs: detect-changes
     name: Build Binaries
-    # Completion-tests is dependent on Build, so we need to build binaries if either code or completion-related files changed.
+    # Cross-compile all platforms on a single Ubuntu runner (cheaper than 3-OS matrix).
+    # Completion-tests depends on this job for the dr-ubuntu artifact.
     if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
-    uses: ./.github/workflows/.build-matrix.yaml
-    with:
-      go-version: '1.26.4'
-      upload-artifact: true
-      artifact-name-prefix: 'dr'
-    # S1: called workflow declares no secrets — omit secrets block.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.4'
+
+      - name: Build all platforms with GoReleaser
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: build --snapshot --clean
+
+      - name: Verify Linux binary runs
+        run: ./dist/linux_linux_amd64_v1/dr --help
+
+      - name: Upload Linux binary (used by completion-tests)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dr-ubuntu
+          path: dist/linux_linux_amd64_v1/dr
+          retention-days: 1
   auto-label:
     needs: detect-changes
     if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository

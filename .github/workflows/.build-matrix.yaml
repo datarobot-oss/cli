@@ -7,7 +7,8 @@ on:
         description: 'OS matrix for builds'
         required: false
         type: string
-        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+        # Windows is intentionally excluded — use .build-windows.yaml (GoReleaser cross-compile) for Windows binaries.
+        default: '["ubuntu-latest", "macos-latest"]'
       go-version:
         description: 'Go version to use'
         required: false
