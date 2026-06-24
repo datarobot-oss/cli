@@ -16,14 +16,13 @@
 // execution-image endpoints described under the
 // `pipeline-execution-images` tag of the pipelines-api OpenAPI spec.
 //
-// Images are named, immutable-versioned bags of pip packages that
-// pipelines can be built against. They live at the top of the pipelines
-// namespace (not nested under a specific pipeline) and have their own
-// lifecycle:
+// Images are named, immutable-versioned execution environments backed by
+// pip packages. They live at the top of the pipelines namespace (not
+// nested under a specific pipeline) and have their own lifecycle:
 //
 //	POST   /api/v2/pipelines/images
 //	GET    /api/v2/pipelines/images
-//	PATCH  /api/v2/pipelines/images/{id}              (adds packages -> new version)
+//	PATCH  /api/v2/pipelines/images/{id}              (replacement -> new version)
 //	DELETE /api/v2/pipelines/images/{id}              (soft-deletes latest version, cascades parent)
 //	DELETE /api/v2/pipelines/images/{id}/versions/{n} (soft-deletes a specific version)
 package pipeline
@@ -46,14 +45,24 @@ const (
 	ImageStatusError    ImageStatus = "ERROR"
 )
 
+// ImageDefinition mirrors PipelineImageDefinition — the canonical
+// definition stored on a PipelineImageVersion row and round-tripped
+// verbatim on every read.
+type ImageDefinition struct {
+	Name      string   `json:"name"`
+	Pip       []string `json:"pip"`
+	BaseImage *string  `json:"baseImage,omitempty"`
+	Nvidia    bool     `json:"nvidia"`
+}
+
 // ImageVersion mirrors PipelineImageVersionResponse.
 type ImageVersion struct {
-	Version     int         `json:"version"`
-	Packages    []string    `json:"packages"`
-	Status      ImageStatus `json:"status"`
-	ErrorDetail *string     `json:"errorDetail,omitempty"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
+	Version     int             `json:"version"`
+	Definition  ImageDefinition `json:"definition"`
+	Status      ImageStatus     `json:"status"`
+	ErrorDetail *string         `json:"errorDetail,omitempty"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
 }
 
 // Image mirrors PipelineImageResponse (full detail).
@@ -82,12 +91,15 @@ type ImageSummary struct {
 type ImageCreateRequest struct {
 	Name        string   `json:"name"`
 	Description *string  `json:"description,omitempty"`
-	Packages    []string `json:"packages"`
+	Pip         []string `json:"pip"`
 }
 
 // ImageUpdateRequest mirrors PipelineImageUpdateRequest.
+// Name is required by the API; the server overrides it with the parent
+// image's canonical name so all versions share the same name.
 type ImageUpdateRequest struct {
-	Packages []string `json:"packages"`
+	Name string   `json:"name"`
+	Pip  []string `json:"pip"`
 }
 
 // CreateImage POSTs a new image with an initial set of pip packages.
@@ -101,8 +113,8 @@ func CreateImage(name, description string, packages []string) (*Image, error) {
 	}
 
 	body := ImageCreateRequest{
-		Name:     name,
-		Packages: packages,
+		Name: name,
+		Pip:  packages,
 	}
 	if description != "" {
 		body.Description = &description
@@ -149,16 +161,31 @@ func ListImages(offset, limit int) ([]ImageSummary, error) {
 	return page.Data, nil
 }
 
-// UpdateImage PATCHes an image with additional packages, creating a new
-// immutable version. The response includes the full Image with all
-// versions ordered newest-first.
+// UpdateImage PATCHes an image with a new complete definition, creating a
+// new immutable version. The packages list is a full replacement — not an
+// append — of the previous version's pip list. The response includes the
+// full Image with all versions ordered newest-first.
+//
+// The API requires the image name in the body; UpdateImage fetches it
+// first so callers only need to supply the image ID.
 func UpdateImage(imageID string, packages []string) (*Image, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
 	if err != nil {
 		return nil, err
 	}
 
-	body := ImageUpdateRequest{Packages: packages}
+	// Fetch the current image to resolve its canonical name — required by
+	// the update request body even though the server overrides it with the
+	// stored name anyway.
+	var current Image
+	if err = doJSON(http.MethodGet, endpoint, nil, "get image for update", &current); err != nil {
+		return nil, err
+	}
+
+	body := ImageUpdateRequest{
+		Name: current.Name,
+		Pip:  packages,
+	}
 
 	var result Image
 

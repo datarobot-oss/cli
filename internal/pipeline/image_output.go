@@ -37,7 +37,7 @@ import (
 // imageVersionJSON is the DTO for a single ImageVersion in JSON output.
 type imageVersionJSON struct {
 	Version     int      `json:"version"`
-	Packages    []string `json:"packages"`
+	Pip         []string `json:"pip"`
 	Status      string   `json:"status"`
 	ErrorDetail *string  `json:"error_detail,omitempty"`
 	CreatedAt   string   `json:"created_at"`
@@ -72,7 +72,7 @@ func toImageJSON(img Image) imageJSON {
 	for i, v := range img.Versions {
 		versions[i] = imageVersionJSON{
 			Version:     v.Version,
-			Packages:    v.Packages,
+			Pip:         v.Definition.Pip,
 			Status:      string(v.Status),
 			ErrorDetail: v.ErrorDetail,
 			CreatedAt:   v.CreatedAt.UTC().Format(time.RFC3339),
@@ -191,7 +191,7 @@ func PrintImageHuman(img Image) {
 		t.Row(
 			fmt.Sprintf("v%d", ver.Version),
 			string(ver.Status),
-			joinPackages(ver.Packages),
+			joinPackages(ver.Definition.Pip),
 			ver.UpdatedAt.UTC().Format(timestampFormat),
 		)
 	}

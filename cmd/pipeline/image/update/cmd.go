@@ -31,10 +31,12 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <image-id>",
 		Short: "Add a new version to a pipeline execution image",
-		Long: `Update a pipeline execution image by appending packages.
+		Long: `Update a pipeline execution image by creating a new version with the supplied pip packages.
 
-Updating creates a new immutable version of the image containing the
-supplied pip packages. Existing versions are unchanged.
+Each update creates a new immutable version. The supplied packages become
+the complete pip list for that version — existing packages are not carried
+over automatically. To add a package, include all desired packages in the
+new version's list.
 
 Example:
   dr pipeline image update img-123 --package scikit-learn
