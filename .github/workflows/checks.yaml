@@ -30,7 +30,7 @@ jobs:
       install_sh: ${{ steps.changes.outputs.install_sh }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Detect file changes
         uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
@@ -70,7 +70,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -114,7 +114,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -154,7 +154,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Check License Header
         uses: apache/skywalking-eyes/header@8e837beb243c264ffcd5ea3abd3d5d8975cd0077 # main 2025-01-13
@@ -169,7 +169,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Taskfile
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
@@ -203,7 +203,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -285,7 +285,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download Binary
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
