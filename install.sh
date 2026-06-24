@@ -199,7 +199,7 @@ check_existing_installation() {
             # Ensure datarobot alias symlink exists
             if [ ! -L "$INSTALL_DIR/datarobot" ]; then
                 step "Creating missing 'datarobot' alias..."
-                ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
+                ensure_datarobot_alias
             fi
 
             if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
@@ -312,7 +312,21 @@ download_and_install() {
 
     # Create datarobot alias
     step "Creating 'datarobot' alias..."
-    ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
+    ensure_datarobot_alias
+}
+
+# Create or refresh the 'datarobot' alias symlink (datarobot -> dr).
+#
+# Uses `ln -sfn` (no-dereference; supported by both GNU and BSD/macOS ln) and
+# removes any existing entry first. This is critical: if `dr` is installed as a
+# directory on PATH (as in DataRobot Codespaces, where the binary lives at
+# dr/dr) then a prior run leaves `datarobot` as a symlink to that directory.
+# A plain `ln -sf dr datarobot` would follow that symlink and create the new
+# link *inside* the directory, clobbering the real binary at dr/dr with a
+# self-referential `dr -> dr` symlink ("too many levels of symbolic links").
+ensure_datarobot_alias() {
+    rm -f "$INSTALL_DIR/datarobot"
+    ln -sfn "$BINARY_NAME" "$INSTALL_DIR/datarobot"
 }
 
 # Show PATH configuration instructions
@@ -548,4 +562,7 @@ EOF
     echo ""
 }
 
-main "$@"
+# Allow sourcing individual functions in tests without running the installer.
+if [ -z "${DR_INSTALL_SH_NO_MAIN:-}" ]; then
+    main "$@"
+fi
