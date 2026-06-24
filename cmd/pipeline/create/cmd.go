@@ -15,7 +15,9 @@
 package create
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/pipeline/fileutil"
 	"github.com/datarobot/cli/internal/auth"
@@ -59,6 +61,12 @@ Example:
 
 			if mode != "" && mode != pipeline.ModeDraft && mode != pipeline.ModeLocked {
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
+			}
+
+			name = strings.TrimSpace(name)
+
+			if cmd.Flags().Changed("name") && name == "" {
+				return errors.New("--name must not be blank")
 			}
 
 			filePath, err := fileutil.ResolveFilePath(args, fromFile)

@@ -169,3 +169,27 @@ func TestCmd_ParsesNameFlag(t *testing.T) {
 	require.NotNil(t, flag)
 	assert.Equal(t, "My Custom Pipeline", flag.Value.String())
 }
+
+func TestCmd_RejectsBlankName(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{"some-file.py", "--name", "   "})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not be blank")
+}
+
+func TestCmd_RejectsTabOnlyName(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{"some-file.py", "--name", "\t"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not be blank")
+}
