@@ -1,0 +1,138 @@
+name: Smoke Tests (Reusable)
+
+# Parameterized smoke-test scaffold. Replaces the four near-identical matrix
+# reusables (.smoke-tests-matrix, .deps-install-smoke-tests-matrix,
+# .install-integration-tests-matrix, .self-update-tests-matrix). Each caller
+# selects the preparation steps it needs via boolean inputs and passes the
+# command to run via `test-script`.
+
+on:
+  workflow_call:
+    inputs:
+      test-script:
+        description: 'Command run as the smoke-test step.'
+        required: true
+        type: string
+      job-name:
+        description: 'Display name for the matrix job (the matrix OS is appended).'
+        required: false
+        type: string
+        default: 'Run Smoke Tests'
+      ref:
+        description: 'Git ref to checkout (for fork PRs). Defaults to the triggering ref.'
+        required: false
+        type: string
+      os-matrix:
+        description: 'JSON array of {os, shell} objects for the test matrix.'
+        required: false
+        type: string
+        default: '[{"os":"ubuntu-latest","shell":"bash"},{"os":"macos-latest","shell":"zsh {0}"}]'
+      install-deps:
+        description: 'Run the install-deps composite (expect, bash-completion, yq).'
+        required: false
+        type: boolean
+        default: false
+      setup:
+        description: 'Run the setup composite (Go + Task).'
+        required: false
+        type: boolean
+        default: true
+      install-bin:
+        description: 'Build + install the dr CLI via install-dr-bin (build + install.sh + PATH).'
+        required: false
+        type: boolean
+        default: false
+      build:
+        description: 'Run `task build` to produce ./dist/dr.'
+        required: false
+        type: boolean
+        default: false
+      debug-brew:
+        description: 'Run the verbose macOS Homebrew debug step before the test (self-update suite).'
+        required: false
+        type: boolean
+        default: false
+      needs-token:
+        description: 'Expose DR_API_TOKEN to the test step.'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      DR_API_TOKEN:
+        required: false
+
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    strategy:
+      matrix:
+        sys: ${{ fromJSON(inputs.os-matrix) }}
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+    runs-on: ${{ matrix.sys.os }}
+    name: ${{ inputs.job-name }} (${{ matrix.sys.os }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Install smoke-test dependencies
+        if: ${{ inputs.install-deps }}
+        uses: ./.github/actions/install-deps
+
+      - name: Debug brew environment (macOS only)
+        if: ${{ runner.os == 'macOS' && inputs.debug-brew }}
+        run: |
+          echo "=== Homebrew version ==="
+          brew --version
+          echo "=== Homebrew prefix ==="
+          brew --prefix
+          echo "=== brew tap list ==="
+          brew tap list
+          echo "=== brew list (casks) ==="
+          brew list --cask 2>/dev/null || true
+          echo "=== PATH ==="
+          echo "$PATH"
+          echo "=== Shell ==="
+          echo "$SHELL"
+          echo "=== uname ==="
+          uname -a
+          echo ""
+          echo "=== Attempting brew tap + install dr-cli (verbose) ==="
+          brew tap datarobot-oss/taps || true
+          brew install --cask dr-cli --verbose 2>&1 || true
+          echo ""
+          echo "=== Checking binary locations after install ==="
+          ls -la "$(brew --prefix)/bin/dr" 2>/dev/null || echo "$(brew --prefix)/bin/dr not found"
+          ls -la "$(brew --prefix)/bin/datarobot" 2>/dev/null || echo "$(brew --prefix)/bin/datarobot not found"
+          which dr 2>/dev/null || echo "dr not on PATH"
+          echo ""
+          echo "=== brew info dr-cli ==="
+          brew info --cask dr-cli 2>&1 || true
+
+      - name: Set up Go and Task
+        if: ${{ inputs.setup }}
+        uses: ./.github/actions/setup
+
+      - name: Build and Install the DR CLI Binary
+        if: ${{ inputs.install-bin }}
+        uses: ./.github/actions/install-dr-bin
+
+      - name: Build binary
+        if: ${{ inputs.build }}
+        run: task build
+
+      - name: Run smoke tests
+        env:
+          DR_API_TOKEN: ${{ inputs.needs-token && secrets.DR_API_TOKEN || '' }}
+        run: ${{ inputs.test-script }}

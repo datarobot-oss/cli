@@ -121,15 +121,15 @@ jobs:
   build-windows:
     needs: [resolve-pr, security-scan]
     # S5: caller job must grant at least the permissions the reusable workflow requests.
-    # The nested build-windows job needs contents:read (checkout) and actions:write (upload-artifact).
+    # The nested build job needs contents:read (checkout) and actions:write (upload-artifact).
     permissions:
       contents: read
       actions: write
-    uses: ./.github/workflows/.build-windows.yaml
+    uses: ./.github/workflows/_build.yaml
     with:
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}
-    # S1: .build-windows.yaml declares no secrets — omit secrets entirely.
+    # S1: _build.yaml declares no secrets — omit secrets entirely.
 
   notify-start:
     needs: [resolve-pr, security-scan]
@@ -183,9 +183,13 @@ jobs:
     # S5: caller job must grant at least what the reusable workflow requests (contents:read).
     permissions:
       contents: read
-    uses: ./.github/workflows/.smoke-tests-matrix.yaml
+    uses: ./.github/workflows/_smoke.yaml
     with:
       ref: ${{ needs.resolve-pr.outputs.sha }}
+      install-deps: true
+      install-bin: true
+      needs-token: true
+      test-script: 'task smoke-test DR_API_TOKEN="$DR_API_TOKEN"'
     # S1: pass only the one secret that smoke tests actually require.
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
@@ -195,7 +199,7 @@ jobs:
     # S5: caller job must grant at least what the reusable workflow requests (contents:read).
     permissions:
       contents: read
-    uses: ./.github/workflows/.windows-smoke-test.yaml
+    uses: ./.github/workflows/_smoke-windows.yaml
     with:
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}

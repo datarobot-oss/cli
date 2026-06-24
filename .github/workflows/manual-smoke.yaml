@@ -1,0 +1,60 @@
+name: Manual Smoke Tests (Dispatch)
+
+# Folds the three former on-demand dispatch shims (deps-install,
+# install-integration, installation) into one workflow. Pick a suite with the
+# `suite` input; `all` runs every suite.
+#
+# NOTE: renamed in Phase 4 — workflow_dispatch run history and bookmarks for the
+# old per-suite workflows do not carry over.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which smoke suite to run.'
+        required: true
+        type: choice
+        options:
+          - all
+          - deps
+          - install-integration
+          - installation
+        default: all
+      version:
+        description: 'installation suite only — specific version to install (e.g. v0.2.49). Empty installs latest.'
+        required: false
+        type: string
+        default: ''
+
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
+jobs:
+  deps:
+    if: ${{ inputs.suite == 'deps' || inputs.suite == 'all' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_smoke.yaml
+    with:
+      job-name: 'Dependency Install Smoke Tests'
+      build: true
+      test-script: 'DR_BIN=./dist/dr bash smoke_test_scripts/run_deps_install_smoke_test.sh'
+
+  install-integration:
+    if: ${{ inputs.suite == 'install-integration' || inputs.suite == 'all' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_smoke.yaml
+    with:
+      job-name: 'Install Integration Tests'
+      build: true
+      test-script: 'LOCAL_BINARY=./dist/dr bash smoke_test_scripts/run_install_integration_test.sh'
+
+  installation:
+    if: ${{ inputs.suite == 'installation' || inputs.suite == 'all' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_install-tests.yaml
+    with:
+      version: ${{ inputs.version }}

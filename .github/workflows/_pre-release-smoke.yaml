@@ -16,6 +16,10 @@ on:
       DR_API_TOKEN:
         required: true
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   pre-release-smoke-test:
     strategy:
