@@ -88,6 +88,53 @@ The CLI currently understands the following fields:
 - The manifest should be deterministic and should not require network access.
 - The plugin should handle `--dr-plugin-manifest` before doing any other work (and should not print extra output in this mode).
 
+## Plugin dependencies
+
+A managed plugin can declare the external tools it requires by shipping a `versions.yaml` file at the root of its `.tar.xz` archive. The format is identical to the project-level `.datarobot/cli/versions.yaml`.
+
+### File format
+
+```yaml
+docker:
+  name: Docker
+  minimum-version: "20.10.0"
+  command: "docker --version"
+  url: https://docs.docker.com/get-docker/
+  install:
+    macos: "brew install --cask docker"
+    linux: "curl -fsSL https://get.docker.com | sh"
+    windows: "winget install Docker.DockerDesktop"
+
+kubectl:
+  name: kubectl
+  minimum-version: "1.28.0"
+  command: "kubectl version --client --output=yaml"
+  url: https://kubernetes.io/docs/tasks/tools/
+  install:
+    macos: "brew install kubectl"
+    linux: "curl -LO https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/"
+    windows: "winget install Kubernetes.kubectl"
+```
+
+Each key is a unique tool identifier. Required fields are `name`, `minimum-version`, `command`, `url`, and platform install commands (`install.macos`, `install.linux`, `install.windows`).
+
+### When checks run
+
+The CLI checks plugin dependencies at two points:
+
+1. **After `dr plugin install`** — once the archive is extracted, the CLI reads `versions.yaml` from the installed plugin directory and prompts the user to install any missing or outdated tools.
+2. **Before each plugin invocation** — when the user runs `dr <plugin-name> [args...]`, the CLI performs the same check before launching the plugin binary.
+
+Both checks are silently skipped when no `versions.yaml` is present (PATH-based and project-local plugins are never checked).
+
+### Confirmation modes
+
+Users can confirm dependency installation in three ways (checked in this order):
+
+1. **`-y` / `--yes` argument** — pass `-y` or `--yes` when running a plugin (`dr <plugin> -y`) or when installing (`dr plugin install <name> -y`).
+2. **`DATAROBOT_CLI_NON_INTERACTIVE=1`** — set this environment variable to auto-confirm in CI or automation scripts.
+3. **Interactive prompt** — the default: the CLI prints the missing tools and asks `Install missing dependencies? [Y/n]:`. Pressing Enter (or typing `y`) proceeds; typing `n` skips.
+
 ## Execution
 
 When a user runs:
@@ -98,11 +145,12 @@ dr <plugin-name> [args...]
 
 The CLI:
 
-1. Prints a short info line indicating which plugin is being run.
-2. If the plugin manifest has `"authentication": true`, checks for valid authentication and prompts for login if needed.
-3. Executes the plugin binary.
-4. Passes all remaining arguments to the plugin verbatim.
-5. Exits with the same exit code as the plugin.
+1. Checks plugin dependencies (see [Plugin dependencies](#plugin-dependencies)) and prompts to install any missing tools.
+2. Prints a short info line indicating which plugin is being run.
+3. If the plugin manifest has `"authentication": true`, checks for valid authentication and prompts for login if needed.
+4. Executes the plugin binary.
+5. Passes all remaining arguments to the plugin verbatim.
+6. Exits with the same exit code as the plugin.
 
 Because plugin commands are registered as top-level commands, a plugin cannot conflict with an existing built-in command name.
 
