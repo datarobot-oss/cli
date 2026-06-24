@@ -21,8 +21,9 @@ top-level `dr pipeline` subcommand operates on one of four resources:
 - pipeline **inputs** — JSON payloads supplied to a run,
 - pipeline **runs** — concrete executions on Covalent,
 - pipeline **schedules** — recurring runs on a cron expression,
-- pipeline **images** — named, immutable-versioned bags of pip
-  packages that pipelines can be built against,
+- pipeline **images** — named, immutable-versioned execution environments (pip
+  packages, conda packages, base image, NVIDIA GPU support) that pipelines can
+  be built against,
 - pipeline **tasks** — source code, function signature, and input payload
   for individual `@task`-decorated functions.
 
@@ -80,6 +81,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
 | `dr pipeline version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
 | `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
+| `dr pipeline source`    | `…/source` (draft or locked)         | Retrieve the pipeline's Python source code.      |
 | `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
 | `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
 | `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
@@ -113,6 +115,8 @@ dr pipeline create --from-file=<file> [flags]
 - `--description <text>` — optional human-readable description stored on
   the pipeline.
 - `--mode <draft|locked>` — pipeline lifecycle mode. Defaults to `draft`.
+- `--image <image-id>` — optional execution image to associate with the
+  pipeline. The pipeline's runs will use this image's environment.
 - `--output-format <json>` — emit machine-parseable JSON instead of the
   human-readable summary.
 
@@ -136,6 +140,20 @@ Status:       READY
 Mode:         draft
 Tasks:        create_vector_database, ingest_confluence_files, setup_credential_and_datastore
 Created:      2026-04-28T11:43:00Z
+```
+
+When `--image` is supplied, an `Image ID:` row is shown in the response.
+
+```bash
+$ dr pipeline create ./confluence_to_vdb.py --image 683c000000000000000000ab
+Pipeline ID:  683c2a1b4f8e1a2b3c4d5e6f
+Name:         confluence_to_vdb
+Version:      1
+Status:       READY
+Mode:         draft
+Tasks:        create_vector_database, ingest_confluence_files, setup_credential_and_datastore
+Image ID:     683c000000000000000000ab
+Created:      2026-04-28T11:42:28Z
 ```
 
 ### `list`
@@ -198,6 +216,10 @@ Versions (3):
   v3       READY   3.12    2026-04-28T12:25:11Z  create_vector_database
 ```
 
+When a pipeline has a linked execution image, an `Image:` row is shown
+(format: `<imageId> (v<n>, <status>)`). When an `inputSetTemplate` is set,
+an `Input template:` section is printed below the header block.
+
 If the pipeline doesn't exist, `get` prints
 `No pipeline found with id: <id>` and exits 0.
 
@@ -220,6 +242,8 @@ dr pipeline update <pipeline-id> --from-file=<file> [flags]
 **Flags:**
 
 - `--from-file <path>` — alternative to the positional file argument.
+- `--image <image-id>` — optional execution image to associate with the
+  pipeline.
 - `--output-format <json>` — emit machine-parseable JSON.
 
 ### `delete`
@@ -267,6 +291,23 @@ dr pipeline graph --pipeline <id> --version=N           # locked-version graph
 dr pipeline graph --pipeline <id> --output-format json  # includes taskId on each node
 ```
 
+### `source`
+
+Retrieve the Python source file of a pipeline as uploaded.
+
+```bash
+dr pipeline source --pipeline <id>                       # draft source
+dr pipeline source --pipeline <id> --version=N           # locked-version source
+dr pipeline source --pipeline <id> --output-format json  # returns {"source": "..."}
+```
+
+**Flags:**
+
+- `--pipeline <id>` — pipeline ObjectId (required).
+- `--scope <draft|locked>` — scope selector. Default `draft`.
+- `--version <n>` — locked version number; implies `--scope=locked`.
+- `--output-format <json>` — emit the source wrapped in a JSON object.
+
 ## Shared flags
 
 ### `--from-file` / positional file
@@ -313,12 +354,14 @@ dr pipeline lock   <pipeline-id>
 dr pipeline delete <pipeline-id>
 ```
 
-### Inspect versions and graph
+### Inspect versions, graph, and source
 
 ```bash
 dr pipeline version list --pipeline <pipeline-id>
 dr pipeline version get  --pipeline <pipeline-id> 2
 dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
+dr pipeline source       --pipeline <pipeline-id>             # draft source
+dr pipeline source       --pipeline <pipeline-id> --version=2 # locked version source
 ```
 
 ### Inspect a task
@@ -371,11 +414,15 @@ Trigger, inspect, and cancel pipeline executions.
 ```bash
 dr pipeline run create --pipeline <id> --input <input-id>              # draft
 dr pipeline run create --pipeline <id> --version=N --input <input-id>  # locked
+dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>  # override image
 dr pipeline run list   --pipeline <id> [--scope|--version]
 dr pipeline run get    --pipeline <id> <run-id> [--scope|--version]
 dr pipeline run status --pipeline <id> <run-id> [--scope|--version]
 dr pipeline run cancel --pipeline <id> <run-id> [--scope|--version]
 ```
+
+`run create` accepts an optional `--image <image-id>` flag to override the
+execution image linked to the pipeline for this specific run.
 
 `run status` is a lighter-weight call intended for polling — returns just
 the run ID, status, and Covalent dispatch ID.
@@ -384,22 +431,44 @@ the run ID, status, and Covalent dispatch ID.
 
 ### `image`
 
-Manage pipeline execution images — named, immutable-versioned bags of pip packages
-that pipelines can be built against. Each `update` appends a new version; individual
-older versions can be removed with `image version delete`.
+Manage pipeline execution images — named, immutable-versioned environments (pip
+packages, conda packages, base Docker image, NVIDIA GPU support) that pipelines
+can be built against. Each `update` appends a new version; individual older versions
+can be removed with `image version delete`.
 
 ```bash
+# pip-only image
 dr pipeline image create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output-format json]
+
+# conda image (channels optional; --conda-channel requires at least one --conda)
+dr pipeline image create --name <name> --conda <pkg> [--conda <pkg> …] [--conda-channel <ch>]
+
+# combined pip + conda + base image + nvidia
+dr pipeline image create --name gpu-base --package torch --conda scipy \
+    --base-image nvcr.io/nvidia/pytorch:24.01-py3 --nvidia
+
 dr pipeline image list   [--offset N] [--limit N] [--output-format json]
 dr pipeline image update <image-id> --package <pkg> [--package <pkg> …] [--output-format json]
+dr pipeline image update <image-id> --conda <pkg> [--conda-channel <ch>] [--base-image <uri>] [--nvidia]
 dr pipeline image delete <image-id>
 dr pipeline image version delete --image <image-id> <version>
 ```
 
-`image create` registers a new image; `image update` appends a new
-immutable version. `image delete` soft-deletes the latest active version (cascading
-to the parent if no active versions remain). `image version delete` targets a
-specific version by its integer number.
+`image create` registers a new image with an initial version (v1). At least one of
+`--package` (pip) or `--conda` must be supplied; `--conda-channel` requires at
+least one `--conda` package. `image update` appends a new immutable version with
+the supplied definition — all fields must be re-specified since the server does not
+carry over the previous version's packages. `image delete` soft-deletes the latest
+active version (cascading to the parent if no active versions remain).
+`image version delete` targets a specific version by its integer number.
+
+**`image create` / `image update` flags:**
+
+- `--package <spec>` — pip package spec (repeatable, also accepts comma-separated values).
+- `--conda <spec>` — conda package spec (repeatable).
+- `--conda-channel <channel>` — conda channel (repeatable); requires at least one `--conda`.
+- `--base-image <uri>` — Docker base image URI (e.g. `python:3.12`).
+- `--nvidia` — enable NVIDIA GPU support.
 
 ### `task`
 
