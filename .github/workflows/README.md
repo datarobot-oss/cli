@@ -75,6 +75,78 @@ the caller's job, so the repo must be checked out **before** they are used.
 - **`install-dr-bin`** — build `dr`, install via `install.sh`, add `~/.local/bin`
   to PATH (Unix only).
 
+## Flow diagrams
+
+How the entrypoints wire to the reusables, plus the fork-PR gate. Full per-flow
+diagrams (regular PR, on-demand / nightly / manual smoke, release, pages) live in
+[`docs/development/ci-workflow-flows.md`](../../docs/development/ci-workflow-flows.md).
+
+**Entrypoints → reusable building blocks:**
+
+```mermaid
+graph LR
+  subgraph Entrypoints
+    PRC["pr-checks.yaml"]
+    NS["nightly-smoke.yaml"]
+    SOD["smoke-on-demand.yaml"]
+    FST["fork-smoke-tests.yaml"]
+    MS["manual-smoke.yaml"]
+    REL["release.yaml"]
+  end
+  subgraph Reusables
+    B["_build.yaml"]
+    SM["_smoke.yaml"]
+    SW["_smoke-windows.yaml"]
+    IT["_install-tests.yaml"]
+    PRS["_pre-release-smoke.yaml"]
+  end
+  PRC --> SM
+  NS --> B
+  NS --> SM
+  NS --> SW
+  NS --> IT
+  SOD --> B
+  SOD --> SM
+  SOD --> SW
+  FST --> B
+  FST --> SM
+  FST --> SW
+  MS --> SM
+  MS --> IT
+  REL --> IT
+  REL --> PRS
+```
+
+**Forked PR (the `Smoke Tests` gate):**
+
+```mermaid
+flowchart TD
+  A["Contributor opens PR from a fork"] --> G["smoke-gate.yaml (pull_request)"]
+  G -->|fork detected| GP["Does NOT set 'Smoke Tests' status"]
+  GP --> GATE{{"Required check 'Smoke Tests'<br/>stays pending → merge blocked"}}
+
+  M["Maintainer reviews the diff"] --> C{"Comment on PR"}
+  C -->|"/approve-smoke-tests"| CC["comment-commands.yaml"]
+  C -->|"/skip-smoke-tests"| SK["comment-commands.yaml<br/>sets 'Smoke Tests' = success"]
+  CC --> PERM["check author has write/maintain/admin"]
+  PERM --> DISP["workflow_dispatch → fork-smoke-tests.yaml"]
+
+  subgraph FST["fork-smoke-tests.yaml"]
+    P1["check-permissions"] --> P2["resolve-pr (SHA, is_fork)"]
+    P2 --> SEC["security-scan: Trivy CRITICAL/HIGH (exit 1)"]
+    SEC --> BW["build-windows → _build.yaml"]
+    SEC --> LST["linux-smoke-tests → _smoke.yaml (DR_API_TOKEN)"]
+    BW --> WST["windows-smoke-tests → _smoke-windows.yaml"]
+    LST --> NR["notify-results"]
+    WST --> NR
+    NR --> STAT["set 'Smoke Tests' commit status<br/>success / failure"]
+  end
+
+  DISP --> P1
+  STAT --> GATE
+  SK --> GATE
+```
+
 ## The `Smoke Tests` required check
 
 `smoke-gate.yaml` sets a hand-rolled **`Smoke Tests`** commit status (the exact
