@@ -208,8 +208,8 @@ func printImageVersionsHuman(versions []ImageVersion) {
 		}
 
 		condaStr := emptyValuePlaceholder
-		if ver.Definition.Conda != nil && len(ver.Definition.Conda.Deps) > 0 {
-			condaStr = joinPackages(ver.Definition.Conda.Deps)
+		if ver.Definition.Conda != nil && (len(ver.Definition.Conda.Deps) > 0 || len(ver.Definition.Conda.Channels) > 0) {
+			condaStr = formatCondaCell(ver.Definition.Conda)
 		}
 
 		t.Row(
@@ -286,6 +286,32 @@ func PrintImageListHuman(items []ImageSummary) {
 	}
 
 	fmt.Fprintln(os.Stdout, t.Render())
+}
+
+// formatCondaCell renders a CondaValue for the human-readable versions table.
+// When channels are present they are shown as a bracketed prefix so the user
+// can see the full structured spec, not just the dependency list.
+//
+//	plain list form:        "scipy, numpy"
+//	CondaSpec (no deps):    "[conda-forge]"
+//	CondaSpec (with deps):  "[conda-forge] scipy, numpy"
+func formatCondaCell(conda *CondaValue) string {
+	chanPart := ""
+	if len(conda.Channels) > 0 {
+		chanPart = "[" + strings.Join(conda.Channels, ",") + "]"
+	}
+
+	depPart := joinPackages(conda.Deps)
+
+	if chanPart == "" {
+		return depPart
+	}
+
+	if depPart == "" {
+		return chanPart
+	}
+
+	return chanPart + " " + depPart
 }
 
 // joinPackages collapses a package slice into a single comma-separated
