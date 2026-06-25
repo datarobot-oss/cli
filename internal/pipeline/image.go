@@ -16,8 +16,8 @@
 // execution-image endpoints described under the
 // `pipeline-execution-images` tag of the pipelines-api OpenAPI spec.
 //
-// Images are named, immutable-versioned execution environments backed by
-// pip packages. They live at the top of the pipelines namespace (not
+// Images are named, immutable-versioned execution environments (pip/conda
+// packages, base image, NVIDIA GPU support). They live at the top of the pipelines namespace (not
 // nested under a specific pipeline) and have their own lifecycle:
 //
 //	POST   /api/v2/pipelines/images
@@ -74,6 +74,7 @@ func (c *CondaValue) UnmarshalJSON(data []byte) error {
 	var deps []string
 
 	if err := json.Unmarshal(data, &deps); err == nil {
+		c.Channels = nil
 		c.Deps = deps
 
 		return nil
