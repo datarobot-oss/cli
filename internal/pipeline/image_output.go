@@ -83,7 +83,7 @@ func toImageJSON(img Image) imageJSON {
 			UpdatedAt:   v.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 
-		if v.Definition.Conda != nil {
+		if v.Definition.Conda != nil && (len(v.Definition.Conda.Deps) > 0 || len(v.Definition.Conda.Channels) > 0) {
 			ver.Conda = v.Definition.Conda
 		}
 
