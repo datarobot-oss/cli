@@ -69,7 +69,7 @@ ManagerStrategy{
 ### Rules
 
 - The registry key (e.g. `"mytool"`) must be lowercase.
-- Always include a `FallbackStrategy` as the last entry — the test `TestAllToolsHaveAtLeastOneFallback` enforces this.
+- Always include a `FallbackStrategy` as the last entry — the test `TestToolRegistry_LastStrategyIsFallback` enforces this.
 - `Manager` in `ManagerStrategy` must match a name in `knownManagers` (see `registry_managers.go`).
 
 ---
