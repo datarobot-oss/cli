@@ -61,6 +61,10 @@ type FallbackStrategy struct {
 // majorMinorVersion extracts the major.minor portion from a semver string.
 // "3.9.6" → "3.9", "24.0.0" → "24.0", "" → "".
 func majorMinorVersion(v string) string {
+	if !strings.Contains(v, ".") {
+		return v
+	}
+
 	sv, err := semver.NewVersion(v)
 	if err != nil {
 		return v
