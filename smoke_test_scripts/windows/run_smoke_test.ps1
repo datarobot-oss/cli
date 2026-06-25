@@ -150,6 +150,54 @@ if (Test-Path $completion_file) {
 }
 Write-End
 
+# Test completion install under a fresh-machine execution policy.
+# This intentionally exposes the bug: dr self completion install writes a
+# profile that PowerShell refuses to load when the default Restricted policy
+# is in effect. The CLI does not yet fix the policy, so the assertion below
+# expects the policy to remain Restricted after install.
+Write-Delimiter "Testing dr self completion install (Restricted execution policy)"
+
+$originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
+
+# Simulate a fresh Windows machine where the default execution policy is Restricted.
+Set-ExecutionPolicy Restricted -Scope CurrentUser -Force
+
+# Run the completion installer. This is the exact user path that is broken.
+dr self completion install powershell --yes
+if ($LASTEXITCODE -ne 0) {
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Write-ErrorMsg "dr self completion install powershell --yes failed"
+}
+
+# Verify the completion profile was written.
+$profilePath = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
+if (-not (Test-Path $profilePath)) {
+    $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+}
+if (-not (Test-Path $profilePath)) {
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Write-ErrorMsg "Assertion failed: PowerShell profile was not created"
+}
+$profileContent = Get-Content $profilePath -Raw
+if ($profileContent -notmatch "dr completion powershell") {
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Write-ErrorMsg "Assertion failed: profile does not contain completion block"
+}
+Write-SuccessMsg "Assertion passed: profile written and contains completion block"
+
+# Verify the bug: the installer does NOT change the execution policy, so a
+# fresh machine remains Restricted and the profile will not load next session.
+$policy = Get-ExecutionPolicy -Scope CurrentUser
+if ($policy -ne "Restricted") {
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Write-ErrorMsg "Assertion failed: expected execution policy to remain Restricted (proving the bug), but it is '$policy'"
+}
+Write-SuccessMsg "Assertion passed: execution policy remains '$policy' after install, confirming the bug"
+
+# Restore the original policy so the rest of the smoke test is not affected.
+Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+Write-End
+
 # Test dr run command
 Write-Delimiter "Testing dr run command"
 dr run
