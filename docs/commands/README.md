@@ -317,15 +317,15 @@ For detailed documentation on each command, see:
   - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
-- **[artifact](artifact.md)** - build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
-  - `create` / `get` / `list` / `lock` / `delete` - the draft-to-locked artifact lifecycle.
-  - `build` - `create` / `get` / `list` / `logs` for container image builds.
-  - `code` - `init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.wapi/` state directory.
+- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+  - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
+  - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
+  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.wapi/` state directory.
 
-- **[workload](workload.md)** - deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
-  - `create` / `get` / `list` / `delete` - the workload lifecycle.
-  - `start` / `stop` / `status` - run-state control and status polling.
-  - `endpoint` / `logs` - print the endpoint URL and stream container logs.
+- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+  - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.
+  - `start` / `stop` / `status`&mdash;run-state control and status polling.
+  - `endpoint` / `logs`&mdash;print the endpoint URL and stream container logs.
 
 ## Getting help
 
