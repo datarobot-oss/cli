@@ -307,7 +307,7 @@ func formatCondaCell(conda *CondaValue) string {
 		return depPart
 	}
 
-	if depPart == "" {
+	if depPart == "" || depPart == emptyValuePlaceholder {
 		return chanPart
 	}
 
@@ -319,6 +319,10 @@ func formatCondaCell(conda *CondaValue) string {
 // table stays readable in a typical terminal.
 func joinPackages(packages []string) string {
 	const maxLen = 60
+
+	if len(packages) == 0 {
+		return emptyValuePlaceholder
+	}
 
 	joined := strings.Join(packages, ",")
 	if len(joined) <= maxLen {
