@@ -21,6 +21,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 // TAB is the indent prefix used in user-facing tip and failure messages.
@@ -59,12 +61,12 @@ type FallbackStrategy struct {
 // majorMinorVersion extracts the major.minor portion from a semver string.
 // "3.9.6" → "3.9", "24.0.0" → "24.0", "" → "".
 func majorMinorVersion(v string) string {
-	parts := strings.SplitN(v, ".", 3)
-	if len(parts) < 2 {
+	sv, err := semver.NewVersion(v)
+	if err != nil {
 		return v
 	}
 
-	return parts[0] + "." + parts[1]
+	return fmt.Sprintf("%d.%d", sv.Major(), sv.Minor())
 }
 
 // substituteCmds replaces {version_mm} and {version} placeholders in each command.
@@ -107,9 +109,16 @@ func (fs FallbackStrategy) WithVersion(version string) Strategy {
 }
 
 func (ms ManagerStrategy) GetStrategyTip(_ string) string {
-	tipMsg := ms.Commands[0]
+	var tipMsg string
 
-	if len(ms.Commands) > 1 {
+	switch len(ms.Commands) {
+	case 0:
+		return ""
+
+	case 1:
+		tipMsg = ms.Commands[0]
+
+	default:
 		tipMsg = "\n" + TAB + TAB + strings.Join(ms.Commands, "\n"+TAB+TAB)
 	}
 
