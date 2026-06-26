@@ -151,10 +151,9 @@ if (Test-Path $completion_file) {
 Write-End
 
 # Test completion install under a fresh-machine execution policy.
-# This intentionally exposes the bug: dr self completion install writes a
-# profile that PowerShell refuses to load when the default Restricted policy
-# is in effect. The CLI does not yet fix the policy, so the assertion below
-# expects the policy to remain Restricted after install.
+# The installer should warn the user that the profile will not load under the
+# default Restricted policy and print the exact command to fix it, but it should
+# not modify the policy itself.
 Write-Delimiter "Testing dr self completion install (Restricted execution policy)"
 
 $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
@@ -162,12 +161,20 @@ $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
 # Simulate a fresh Windows machine where the default execution policy is Restricted.
 Set-ExecutionPolicy Restricted -Scope CurrentUser -Force
 
-# Run the completion installer. This is the exact user path that is broken.
-dr self completion install powershell --yes
-if ($LASTEXITCODE -ne 0) {
+# Run the completion installer and capture its output so we can verify the warning.
+$installOutput = (dr self completion install powershell --yes 2>&1 | Out-String)
+$installExitCode = $LASTEXITCODE
+if ($installExitCode -ne 0) {
     Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "dr self completion install powershell --yes failed"
+    Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCode"
 }
+
+# Verify the installer warned the user with the exact fix command.
+if ($installOutput -notmatch "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser") {
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Write-ErrorMsg "Assertion failed: installer did not warn user with the execution policy fix command"
+}
+Write-SuccessMsg "Assertion passed: installer warned about Restricted execution policy"
 
 # Verify the completion profile was written.
 $profilePath = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
@@ -185,14 +192,13 @@ if ($profileContent -notmatch "dr completion powershell") {
 }
 Write-SuccessMsg "Assertion passed: profile written and contains completion block"
 
-# Verify the bug: the installer does NOT change the execution policy, so a
-# fresh machine remains Restricted and the profile will not load next session.
+# Verify the policy remains unchanged (warn-only behavior; the fix is left to the user).
 $policy = Get-ExecutionPolicy -Scope CurrentUser
 if ($policy -ne "Restricted") {
     Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: expected execution policy to remain Restricted (proving the bug), but it is '$policy'"
+    Write-ErrorMsg "Assertion failed: expected execution policy to remain Restricted (warn-only), but it is '$policy'"
 }
-Write-SuccessMsg "Assertion passed: execution policy remains '$policy' after install, confirming the bug"
+Write-SuccessMsg "Assertion passed: execution policy remains '$policy' (installer only warned)"
 
 # Restore the original policy so the rest of the smoke test is not affected.
 Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
