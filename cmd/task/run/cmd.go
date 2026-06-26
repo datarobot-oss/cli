@@ -23,7 +23,6 @@ import (
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -71,45 +70,11 @@ func splitTaskArgs(args []string) (taskNames []string, taskArgs []string) {
 	return taskNames, taskArgs
 }
 
-func rootTaskfilePath(dir string) (string, error) {
-	if os.Getenv(taskRunFromRootEnv) != "" {
-		return "", os.ErrNotExist
-	}
-
-	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
-		path := filepath.Join(dir, name)
-
-		_, err := os.Stat(path)
-		if err == nil {
-			return path, nil
-		}
-
-		if !os.IsNotExist(err) {
-			return "", err
-		}
-	}
-
-	return "", os.ErrNotExist
-}
-
 func taskfileForRun(dir string) (string, bool, error) {
-	if !repo.IsTemplateDir(dir) {
-		return "", false, task.ErrNotInTemplate
-	}
-
-	rootTaskfile, err := rootTaskfilePath(dir)
-	if err == nil {
-		return rootTaskfile, true, nil
-	}
-
-	if !os.IsNotExist(err) {
-		return "", false, err
-	}
-
 	if os.Getenv(taskRunFromRootEnv) != "" {
 		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
-		rootTaskfile, err = discovery.Discover(dir, 2)
+		rootTaskfile, err := discovery.Discover(dir, 2)
 
 		return rootTaskfile, false, err
 	}
@@ -119,9 +84,16 @@ func taskfileForRun(dir string) (string, bool, error) {
 		return "", false, err
 	}
 
-	rootTaskfile, err = discovery.Discover(dir, 2)
+	discovery.PreferRootTaskfile = true
 
-	return rootTaskfile, false, err
+	rootTaskfile, err := discovery.Discover(dir, 2)
+	if err != nil {
+		return "", false, err
+	}
+
+	usingRootTaskfile := filepath.Base(rootTaskfile) != "Taskfile.gen.yaml"
+
+	return rootTaskfile, usingRootTaskfile, nil
 }
 
 func Cmd() *cobra.Command {

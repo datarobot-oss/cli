@@ -111,11 +111,11 @@ func (suite *DotenvModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 
-	datarobotDir := filepath.Join(dir, ".datarobot")
+	datarobotDir := filepath.Join(dir, ".datarobot", "cli")
 
 	err := os.MkdirAll(datarobotDir, os.ModePerm)
 	if err != nil {
-		suite.T().Errorf("Failed to create .datarobot directory: %v", err)
+		suite.T().Errorf("Failed to create .datarobot/cli directory: %v", err)
 	}
 
 	parakeetYamlName := filepath.Join(datarobotDir, "parakeet.yaml")

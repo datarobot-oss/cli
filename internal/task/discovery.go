@@ -26,7 +26,6 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -99,6 +98,7 @@ type Discovery struct {
 	RootTaskfileName   string
 	TemplatePath       string
 	UseProjectTemplate bool
+	PreferRootTaskfile bool // if true, return any existing Taskfile.yaml/yml at root instead of generating
 }
 
 func NewTaskDiscovery(rootTaskfileName string) *Discovery {
@@ -136,28 +136,26 @@ func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
 	return NewComposeDiscovery(taskfileName, absPath), nil
 }
 
-func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
-	if !repo.IsTemplateDir(root) {
-		return "", ErrNotInTemplate
+// IsTemplateDir reports whether dir is a DataRobot template directory
+// (i.e. it contains a ".datarobot" folder).
+func IsTemplateDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".datarobot"))
+
+	return err == nil
+}
+
+func (d *Discovery) existingRootTaskfile(root string) string {
+	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
+		path := filepath.Join(root, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
 	}
 
-	includes, err := d.findComponents(root, maxDepth)
-	if err != nil {
-		return "", fmt.Errorf("Failed to discover components: %w", err)
-	}
+	return ""
+}
 
-	if len(includes) == 0 {
-		return "", ErrNoTaskFilesFound
-	}
-
-	// Check if any discovered Taskfiles already have a dotenv directive
-	if err := d.checkForDotenvConflicts(root, includes); err != nil {
-		return "", err
-	}
-
-	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
-
-	// Auto-detect .Taskfile.template in the project root when no explicit template is configured
+func (d *Discovery) generateTaskfile(root string, includes []componentInclude) (string, error) {
 	if d.UseProjectTemplate && d.TemplatePath == "" {
 		candidate := filepath.Join(root, ".Taskfile.template")
 		if _, statErr := os.Stat(candidate); statErr == nil {
@@ -170,12 +168,40 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		return "", fmt.Errorf("failed to build compose data: %w", err)
 	}
 
-	err = d.genRootTaskfile(rootTaskfilePath, composeData)
-	if err != nil {
+	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
+
+	if err = d.genRootTaskfile(rootTaskfilePath, composeData); err != nil {
 		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
 	}
 
 	return rootTaskfilePath, nil
+}
+
+func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
+	if !IsTemplateDir(root) {
+		return "", ErrNotInTemplate
+	}
+
+	if d.PreferRootTaskfile {
+		if path := d.existingRootTaskfile(root); path != "" {
+			return path, nil
+		}
+	}
+
+	includes, err := d.findComponents(root, maxDepth)
+	if err != nil {
+		return "", fmt.Errorf("Failed to discover components: %w", err)
+	}
+
+	if len(includes) == 0 {
+		return "", ErrNoTaskFilesFound
+	}
+
+	if err := d.checkForDotenvConflicts(root, includes); err != nil {
+		return "", err
+	}
+
+	return d.generateTaskfile(root, includes)
 }
 
 // FormatDiscoveryError formats a discovery error into a user-friendly message string.
