@@ -189,8 +189,10 @@ test_brew_self_update() {
     cleanup_curl_install
 
     echo "Installing dr-cli via brew..."
-    brew tap datarobot-oss/taps 2>/dev/null || true
-    brew install --cask dr-cli 2>/dev/null || brew upgrade --cask dr-cli 2>/dev/null || true
+    brew tap datarobot-oss/taps || true
+    # Homebrew 6.0+ requires explicit trust for third-party taps
+    brew trust datarobot-oss/taps 2>/dev/null || true
+    brew install --cask dr-cli || brew upgrade --cask dr-cli || true
 
     # Find the brew-installed binary (cask installs to a predictable location)
     brew_dr=$(brew --prefix 2>/dev/null)/bin/dr
