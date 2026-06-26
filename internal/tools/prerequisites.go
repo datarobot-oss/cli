@@ -149,7 +149,6 @@ func CheckPrerequisites() CheckResult {
 }
 
 // CheckPrerequisiteList checks an arbitrary list of prerequisites and returns the result.
-// Used by plugin execution to check plugin-specific dependency requirements.
 func CheckPrerequisiteList(prereqs []Prerequisite) CheckResult {
 	var result CheckResult
 

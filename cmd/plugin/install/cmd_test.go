@@ -65,6 +65,66 @@ func writePluginVersionsYAML(t *testing.T, pluginName, yamlContent string) {
 	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "versions.yaml"), []byte(yamlContent), 0o644))
 }
 
+// --- confirmPluginDepsInstall ---
+
+func TestConfirmPluginDepsInstall_YesFlag(t *testing.T) {
+	origYesFlag := yesFlag
+
+	defer func() { yesFlag = origYesFlag }()
+
+	yesFlag = true
+
+	assert.True(t, confirmPluginDepsInstall())
+}
+
+func TestConfirmPluginDepsInstall_ViperYes(t *testing.T) {
+	defer viperx.Reset()
+
+	viperx.Set("yes", true)
+
+	assert.True(t, confirmPluginDepsInstall())
+}
+
+func TestConfirmPluginDepsInstall_UserAnswersY(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	_, _ = w.WriteString("y\n")
+	w.Close()
+
+	origStdin := os.Stdin
+	os.Stdin = r
+
+	defer func() {
+		os.Stdin = origStdin
+
+		r.Close()
+	}()
+
+	assert.True(t, confirmPluginDepsInstall())
+}
+
+func TestConfirmPluginDepsInstall_UserAnswersN(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	_, _ = w.WriteString("n\n")
+	w.Close()
+
+	origStdin := os.Stdin
+	os.Stdin = r
+
+	defer func() {
+		os.Stdin = origStdin
+
+		r.Close()
+	}()
+
+	assert.False(t, confirmPluginDepsInstall())
+}
+
+// --- checkAndInstallPluginDeps ---
+
 func TestCheckAndInstallPluginDeps_SkipsWhenNoVersionsYaml(t *testing.T) {
 	err := checkAndInstallPluginDeps("nonexistent-test-dr-cli-install-plugin-xyz")
 

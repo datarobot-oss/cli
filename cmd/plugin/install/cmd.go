@@ -15,17 +15,15 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
-	"github.com/datarobot/cli/internal/tools"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -251,51 +249,53 @@ func runInstallFromURL(args []string) error {
 	return checkAndInstallPluginDeps(resolvedName)
 }
 
+// headingWriter is an io.Writer that prepends a styled heading the first time
+// any bytes are written to it, so the heading appears before the prereq message.
+type headingWriter struct {
+	w       *os.File
+	heading string
+	written bool
+}
+
+func (h *headingWriter) Write(p []byte) (int, error) {
+	if !h.written {
+		h.written = true
+
+		fmt.Println()
+		fmt.Println(tui.SubTitleStyle.Render(h.heading))
+	}
+
+	return h.w.Write(p)
+}
+
+// confirmPluginDepsInstall returns true when the user consents to installing
+// missing plugin dependencies. Consent is granted automatically when -y/--yes
+// is set; otherwise the user is prompted interactively.
+func confirmPluginDepsInstall() bool {
+	if yesFlag || viperx.GetBool("yes") {
+		return true
+	}
+
+	fmt.Fprint(os.Stdout, "\nInstall missing dependencies? [Y/n]: ")
+
+	return reader.AskYesNo()
+}
+
 // checkAndInstallPluginDeps reads the plugin's versions.yaml, checks prerequisites,
 // and prompts the user to install any missing or outdated tools.
 // Skips silently when no versions.yaml is present.
 func checkAndInstallPluginDeps(pluginName string) error {
-	managedDir, err := plugin.ManagedPluginsDir()
-	if err != nil {
-		return nil
-	}
+	out := &headingWriter{w: os.Stdout, heading: "Plugin Dependencies"}
 
-	pluginDir := filepath.Join(managedDir, pluginName)
-
-	prereqs, _, err := tools.GetRequirementsFromDir(pluginDir)
-	if err != nil {
-		return nil
-	}
-
-	if len(prereqs) == 0 {
-		return nil
-	}
-
-	result := tools.CheckPrerequisiteList(prereqs)
-
-	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
-		return nil
-	}
-
-	fmt.Println()
-	fmt.Println(tui.SubTitleStyle.Render("Plugin Dependencies"))
-	fmt.Print(tools.PrerequisitesMsg(result.MissingMsgs, result.WrongVersionMsgs))
-
-	nonInteractive := viperx.GetBool("yes")
-
-	if !yesFlag && !nonInteractive {
-		fmt.Fprint(os.Stdout, "\nInstall missing dependencies? [Y/n]: ")
-
-		if !reader.AskYesNo() {
+	if err := plugin.CheckAndInstallDeps(pluginName, confirmPluginDepsInstall, out); err != nil {
+		if errors.Is(err, plugin.ErrDepsDeclined) {
 			return nil
 		}
+
+		return err
 	}
 
-	prerequisites := append(result.MissingTools, result.WrongVersionTools...)
-
-	_, err = dependencies.InstallPrerequisites(os.Stdout, prerequisites)
-
-	return err
+	return nil
 }
 
 func printAvailablePlugins(registry *plugin.PluginRegistry) {

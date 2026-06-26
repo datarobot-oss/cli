@@ -213,7 +213,7 @@ func TestCheckAndInstallPluginPrereqs_SkipsWhenNoVersionsYaml(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "nonexistent-test-dr-cli-plugin-xyz"},
 	}
 
-	result := checkAndInstallPluginPrereqs(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{})
 
 	assert.True(t, result)
 }
@@ -246,7 +246,7 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: pluginName},
 	}
 
-	result := checkAndInstallPluginPrereqs(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{})
 
 	assert.True(t, result)
 }
