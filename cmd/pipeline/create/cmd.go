@@ -15,7 +15,9 @@
 package create
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/pipeline/fileutil"
 	"github.com/datarobot/cli/internal/auth"
@@ -28,6 +30,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		description  string
+		name         string
 		mode         string
 		outputFormat outputformat.OutputFormat
 		fromFile     string
@@ -38,7 +41,8 @@ func Cmd() *cobra.Command {
 		Short: "Upload a Python file to create a pipeline.",
 		Long: `Upload a Python file containing a DataRobot pipeline (one or more tasks) to register a new pipeline.
 
-The pipeline name is extracted from the file and used as the pipeline's resource name.
+The pipeline display name is derived from the @pipeline function name by default (e.g. my_workflow → My Workflow).
+Supply --name to use a custom human-readable label instead.
 By default, output is human-readable. Use --output-format json for machine-parseable output.
 
 The path to the Python file can be supplied either as a positional argument
@@ -47,7 +51,7 @@ or via the --from-file=<path> flag. Exactly one of the two must be provided.
 Example:
   dr pipeline create ./my_pipeline.py
   dr pipeline create --from-file=./my_pipeline.py
-  dr pipeline create ./my_pipeline.py --description "First draft" --mode draft
+  dr pipeline create ./my_pipeline.py --name "My Pipeline" --description "First draft" --mode draft
   dr pipeline create --from-file=./my_pipeline.py --output-format json`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
@@ -59,12 +63,18 @@ Example:
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
 			}
 
+			name = strings.TrimSpace(name)
+
+			if cmd.Flags().Changed("name") && name == "" {
+				return errors.New("--name must not be blank")
+			}
+
 			filePath, err := fileutil.ResolveFilePath(args, fromFile)
 			if err != nil {
 				return err
 			}
 
-			result, err := pipeline.CreatePipeline(filePath, description, mode)
+			result, err := pipeline.CreatePipeline(filePath, description, name, mode)
 			if err != nil {
 				return err
 			}
@@ -76,6 +86,7 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
+	cmd.Flags().StringVar(&name, "name", "", "Optional human-readable display name; defaults to the title-cased @pipeline function name")
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the Python file to upload, e.g. --from-file=./my_pipeline.py (alternative to the positional argument)")
 

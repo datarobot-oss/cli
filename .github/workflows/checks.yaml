@@ -20,6 +20,7 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     name: Detect Changes
+    timeout-minutes: 5
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
@@ -64,6 +65,7 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Lint Code
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: write   # actions/cache (save)
@@ -72,16 +74,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.26.4'
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Get golangci-lint version
         id: golangci-version
@@ -108,41 +102,17 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Run Tests
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: write   # actions/cache (save)
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.26.4'
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          # * Build cache (Mac)
-          # * Build cache (Windows)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/Library/Caches/go-build
-            %LocalAppData%\go-build
-            bin
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      # P1: setup-go's built-in cache replaces the manual actions/cache step.
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Run Golang Test Command
         run: |
@@ -151,6 +121,7 @@ jobs:
   copyright:
     runs-on: ubuntu-latest
     name: Copyrights
+    timeout-minutes: 5
 
     steps:
       - name: Checkout Code
@@ -166,21 +137,14 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Ensure Code Generated
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Taskfile
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.26.4'
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Install Envdoc
         run: |
@@ -201,14 +165,16 @@ jobs:
     # Completion-tests depends on this job for the dr-ubuntu artifact.
     if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # GoReleaser drives the build, so Task is not needed here.
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: ./.github/actions/setup
         with:
-          go-version: '1.26.4'
+          install-task: 'false'
 
       - name: Build all platforms with GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
@@ -231,6 +197,7 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     name: Auto Label Go Changes
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
@@ -250,6 +217,7 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: Dependabot Smoke Test Reminder
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
@@ -279,6 +247,7 @@ jobs:
     if: needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
     name: Test Completions
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read    # actions/download-artifact

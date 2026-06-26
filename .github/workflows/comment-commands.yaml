@@ -4,6 +4,13 @@ on:
   issue_comment:
     types: [created]
 
+# NOTE: intentionally NO `concurrency` here. Each run handles a distinct comment,
+# so there is no redundant work to dedupe. A `cancel-in-progress` group keyed by
+# PR/issue would let an ordinary follow-up comment cancel an in-flight maintainer
+# command (e.g. /approve-smoke-tests, /skip-smoke-tests) before it dispatches the
+# fork smoke tests or sets the required "Smoke Tests" commit status. Comment
+# handling is cheap, so every run is allowed to finish.
+
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
   contents: read
@@ -14,6 +21,7 @@ jobs:
     # Note: issue_comment events don't have pull_request context, need to check differently
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: write
       pull-requests: write

@@ -23,6 +23,7 @@ jobs:
   analyze:
     name: Analyze (Go)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Non-blocking during Phase 0 — results flow to the Security tab without
     # failing the PR. Remove continue-on-error in Phase 5.
     continue-on-error: true

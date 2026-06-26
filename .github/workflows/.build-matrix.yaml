@@ -9,11 +9,6 @@ on:
         type: string
         # Windows is intentionally excluded — use .build-windows.yaml (GoReleaser cross-compile) for Windows binaries.
         default: '["ubuntu-latest", "macos-latest"]'
-      go-version:
-        description: 'Go version to use'
-        required: false
-        type: string
-        default: '1.26.4'
       upload-artifact:
         description: 'Whether to upload artifacts'
         required: false
@@ -36,20 +31,13 @@ jobs:
         os: ${{ fromJSON(inputs.os-matrix) }}
     runs-on: ${{ matrix.os }}
     name: (${{ matrix.os }})
+    timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Taskfile
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: ${{ inputs.go-version }}
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Build the DR CLI Binary
         run: task build

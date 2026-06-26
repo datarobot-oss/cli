@@ -39,7 +39,7 @@ Manage DataRobot AI application templates:
 
 	cmd.AddCommand(
 		// clone.Cmd,  # CFX-3969 disabled for now
-		list.Cmd,
+		list.Cmd(),
 		setup.Cmd,
 	)
 

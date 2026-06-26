@@ -92,7 +92,7 @@ type ListItem struct {
 }
 
 // CreatePipeline uploads a Python file to POST /api/v2/pipelines.
-func CreatePipeline(filePath, description, mode string) (*CreateResponse, error) {
+func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -101,6 +101,10 @@ func CreatePipeline(filePath, description, mode string) (*CreateResponse, error)
 	fields := map[string]string{}
 	if description != "" {
 		fields["description"] = description
+	}
+
+	if name != "" {
+		fields["name"] = name
 	}
 
 	if mode != "" {
