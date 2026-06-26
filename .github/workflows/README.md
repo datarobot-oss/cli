@@ -9,6 +9,26 @@ reusable workflows (which share whole jobs), composite actions share *steps*, so
 they replace the copy-pasted checkout→Go→Task setup across jobs. They run in the
 caller's job, so the repo must be checked out **before** they are used.
 
+> **Important: reusable workflows must use the full repo path.**
+>
+> In top-level workflows (e.g. `checks.yaml`), reference composite actions with
+> the local path: `./.github/actions/setup`. In **reusable workflows** (those
+> with `on: workflow_call`), use the full repo path instead:
+> `datarobot-oss/cli/.github/actions/setup@main`.
+>
+> GitHub resolves `uses:` paths **before** `actions/checkout` runs, so local
+> paths (`./`) don't work in reusable workflows — the `.github/actions/`
+> directory isn't populated yet. This is a known GitHub Actions limitation
+> ([community discussion #18601](https://github.com/orgs/community/discussions/18601)).
+>
+> We use `@main` rather than pinning to a SHA because these are internal
+> same-repo utility actions. SHA pinning creates a chicken-and-egg problem:
+> you can't know the new SHA until the change merges to `main`, so PR CI would
+> test against the old version. The GitHub Actions Team is developing a native
+> `$/` syntax ([discussion #26245](https://github.com/orgs/community/discussions/26245))
+> to resolve same-repo actions at the same SHA automatically, but it hasn't
+> shipped yet.
+
 ### `setup`
 Sets up Go (version pinned by `go.mod` via `go-version-file`) and, optionally,
 Taskfile, with `setup-go`'s built-in module/build caching.
