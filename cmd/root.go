@@ -17,8 +17,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,7 +41,6 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
-	internaltls "github.com/datarobot/cli/internal/tls"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -197,7 +194,7 @@ func init() {
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
 	RootCmd.PersistentFlags().String("ca-cert", "", "path to a PEM-encoded CA certificate bundle")
-	RootCmd.PersistentFlags().Bool("export-windows-certs", false, "export Windows certificate store to the DataRobot CA bundle (Windows only)")
+	registerExportWindowsCertsFlag(RootCmd.Command)
 	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
 	// Make some of these flags available via Viper
@@ -300,38 +297,6 @@ func setUnknownArgGuards(root *cobra.Command) {
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	}
-}
-
-// setupTLS configures http.DefaultTransport based on TLS-related flags and
-// the persisted ca-cert config value. Must run after initializeConfig so that
-// the ca-cert value from drconfig.yaml is available via viper.
-func setupTLS(cmd *cobra.Command) error {
-	skipVerify, _ := cmd.Flags().GetBool("skip-certificate-check")
-	exportCerts, _ := cmd.Flags().GetBool("export-windows-certs")
-	caCert := viperx.GetString("ca-cert")
-
-	if exportCerts {
-		dest := windowsCACertPath()
-
-		if err := internaltls.ExportWindowsCerts(dest); err != nil {
-			return fmt.Errorf("--export-windows-certs: %w", err)
-		}
-
-		caCert = dest
-	}
-
-	return internaltls.Apply(internaltls.Options{
-		SkipVerify: skipVerify,
-		CACertPath: caCert,
-	})
-}
-
-// windowsCACertPath returns the well-known path where DR tooling writes the
-// exported Windows certificate store bundle.
-func windowsCACertPath() string {
-	appData := os.Getenv("APPDATA")
-
-	return filepath.Join(appData, "DataRobot", "ca-bundle.pem")
 }
 
 // initializeConfig initializes the configuration by reading from
