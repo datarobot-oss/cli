@@ -36,7 +36,7 @@ func (c *httpClient) ListVersions(catalogID string, limit int) ([]CatalogVersion
 	q.Set("orderBy", "-created")
 	q.Set("limit", strconv.Itoa(versionsPageSize))
 
-	pageURL, err := drapi.EndpointURL("/files/"+catalogID+"/versions/", q)
+	pageURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/versions/", q)
 	if err != nil {
 		return nil, err
 	}

@@ -20,36 +20,60 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
+// PluginOutput is the JSON representation of a discovered plugin for --output-format json.
+type PluginOutput struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Path        string `json:"path"`
+}
+
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	var outputFormat outputformat.OutputFormat
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "📋 List discovered plugins",
 		Long:  "List all discovered plugins with their paths and versions. Uses cached results from CLI startup.",
 		RunE:  runList,
 	}
+
+	outputformat.AddFlag(cmd, &outputFormat)
+
+	return cmd
 }
 
-func runList(_ *cobra.Command, _ []string) error {
-	plugins, err := plugin.GetPlugins()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins: %w", err)
+func toPluginOutputs(plugins []plugin.DiscoveredPlugin) []PluginOutput {
+	outputs := make([]PluginOutput, len(plugins))
+	for i, p := range plugins {
+		version := p.Manifest.Version
+		if version == "" {
+			version = "-"
+		}
+
+		desc := p.Manifest.Description
+		if desc == "" {
+			desc = "-"
+		}
+
+		outputs[i] = PluginOutput{
+			Name:        p.Manifest.Name,
+			Version:     version,
+			Description: desc,
+			Path:        p.Executable,
+		}
 	}
 
-	if len(plugins) == 0 {
-		fmt.Println("No plugins discovered.")
-		fmt.Println()
-		fmt.Println("Plugins are discovered from:")
-		fmt.Println("  1. Project-local .dr/plugins/ directory")
-		fmt.Println("  2. Executables named 'dr-*' in PATH")
+	return outputs
+}
 
-		return nil
-	}
-
+func printPluginsTable(plugins []plugin.DiscoveredPlugin) error {
 	fmt.Println(tui.SubTitleStyle.Render("Discovered Plugins"))
 
 	nameStyle := tui.BaseTextStyle.
@@ -95,4 +119,29 @@ func runList(_ *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintln(os.Stdout, t.Render())
 
 	return nil
+}
+
+func runList(cmd *cobra.Command, _ []string) error {
+	plugins, err := plugin.GetPlugins()
+	if err != nil {
+		return fmt.Errorf("failed to get plugins: %w", err)
+	}
+
+	format := outputformat.GetFormat(cmd)
+	if format == outputformat.OutputFormatJSON {
+		outputs := toPluginOutputs(plugins)
+		return outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs)
+	}
+
+	if len(plugins) == 0 {
+		fmt.Println("No plugins discovered.")
+		fmt.Println()
+		fmt.Println("Plugins are discovered from:")
+		fmt.Println("  1. Project-local .dr/plugins/ directory")
+		fmt.Println("  2. Executables named 'dr-*' in PATH")
+
+		return nil
+	}
+
+	return printPluginsTable(plugins)
 }

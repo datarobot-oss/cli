@@ -11,39 +11,51 @@ on:
     # Run security scans weekly on Mondays at 9 AM UTC
     # - cron: '0 9 * * 1'
 
+# P3: cancel superseded runs on rapid pushes for the same ref.
+concurrency:
+  group: security-scan-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+# S5: deny all by default; jobs declare only what they need.
+permissions:
+  contents: read
+
 jobs:
   trivy-scan:
     runs-on: ubuntu-latest
     name: Trivy Vulnerability Scan
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Run Trivy vulnerability scanner in repo mode
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 #v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: 'json'
+          output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
+      - name: Convert results to SARIF
+        # trivy is in PATH after the action step above.
+        # if: always() mirrors the upload step — ensures SARIF conversion is attempted even if the
+        # scan step fails, so the upload step can still run (and report what it can).
+        if: always()
+        run: trivy convert --format sarif --output trivy-results.sarif trivy-results.json
+
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
+      - name: Display vulnerability table
+        run: trivy convert --format table trivy-results.json
 
 # Skip this scan for now due to false positives and performance issues
   # gosec-scan:
@@ -54,12 +66,12 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
   #     - name: Set up Go
-  #       uses: actions/setup-go@v5
+  #       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
   #       with:
-  #         go-version: '1.26.4'
+  #         go-version-file: go.mod
 
   #     - name: Install gosec
   #       run: go install github.com/securego/gosec/v2/cmd/gosec@latest
@@ -69,7 +81,7 @@ jobs:
   #         gosec -fmt=sarif -out=gosec-results.sarif -exclude-dir=smoke_test_scripts ./... || true
 
   #     - name: Upload gosec results to GitHub Security tab
-  #       uses: github/codeql-action/upload-sarif@v3
+  #       uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
   #       if: always()
   #       continue-on-error: true
   #       with:
@@ -79,41 +91,48 @@ jobs:
   #       run: |
   #         gosec -exclude-dir=smoke_test_scripts ./...
 
-  # dependency-review:
-  #   runs-on: ubuntu-latest
-  #   name: Dependency Review
-  #   # Only run on pull requests (not on push or schedule)
-  #   if: github.event_name == 'pull_request'
-  #   permissions:
-  #     contents: read
-  #     pull-requests: write
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  # S6: dependency-review — gates on PRs, fails on moderate+ new vulnerabilities.
+  dependency-review:
+    runs-on: ubuntu-latest
+    name: Dependency Review
+    # Only meaningful on pull requests (compares base vs head).
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-  #     - name: Dependency Review
-  #       uses: actions/dependency-review-action@v4
-  #       with:
-  #         fail-on-severity: moderate
-  #         comment-summary-in-pr: on-failure
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
 
-  # govulncheck:
-  #   runs-on: ubuntu-latest
-  #   name: Go Vulnerability Check
-  #   permissions:
-  #     contents: read
-  #     security-events: write
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v6
+  # Phase 0 safety net — non-blocking baseline scan.
+  # Promoted to required (remove continue-on-error) in Phase 5.
+  govulncheck:
+    runs-on: ubuntu-latest
+    name: Go Vulnerability Check
+    timeout-minutes: 15
+    # Non-blocking during Phase 0 — results visible in job logs without failing the PR.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v5
-  #       with:
-  #         go-version: '1.26.4'
+      - name: Set up Go
+        uses: ./.github/actions/setup
+        with:
+          install-task: 'false'
 
-  #     - name: Install govulncheck
-  #       run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-  #     - name: Run govulncheck
-  #       run: govulncheck ./...
+      - name: Run govulncheck
+        # Run directly rather than via golang/govulncheck-action, which does an
+        # internal checkout and causes a duplicate Authorization header conflict.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

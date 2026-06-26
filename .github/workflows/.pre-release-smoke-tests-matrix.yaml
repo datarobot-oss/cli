@@ -31,31 +31,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.version }}
 
-      - name: Ubuntu - Install dependencies w/ apt-get
-        if: matrix.sys.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y expect bash-completion
+      - name: Install smoke-test dependencies
+        uses: ./.github/actions/install-deps
 
-      - name: MacOS - Install dependencies w/ homebrew
+      - name: MacOS - Install coreutils (gtimeout)
         if: matrix.sys.os == 'macos-latest'
-        run: |
-          # coreutils provides `gtimeout`, which the script uses as the hard
-          # wall-clock cap on `dr start` (macOS has no native `timeout`).
-          brew install expect bash-completion coreutils
-
-      - name: Install yq
-        uses: dcarbone/install-yq-action@v1.3.1
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: '3.x'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        # coreutils provides `gtimeout`, which the script uses as the hard
+        # wall-clock cap on `dr start` (macOS has no native `timeout`).
+        run: brew install coreutils
 
       # Node.js is the one template prerequisite the CLI cannot auto-install
       # (no install command for it on any platform), so it must be provisioned
@@ -63,21 +50,15 @@ jobs:
       # NOTE: keep this version in sync with the Agentic Starter template's
       # required Node version (currently 24).
       - name: Set up Node.js (template prerequisite)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Build and Install the DR CLI Binary
-        run: |
-          set -e
-          task build
-          LOCAL_BINARY=./dist/dr sh install.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-dr-bin
 
       - name: Run Pre-Release Smoke Tests
         env:

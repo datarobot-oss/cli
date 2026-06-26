@@ -7,12 +7,8 @@ on:
         description: 'OS matrix for builds'
         required: false
         type: string
-        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
-      go-version:
-        description: 'Go version to use'
-        required: false
-        type: string
-        default: '1.26.4'
+        # Windows is intentionally excluded — use .build-windows.yaml (GoReleaser cross-compile) for Windows binaries.
+        default: '["ubuntu-latest", "macos-latest"]'
       upload-artifact:
         description: 'Whether to upload artifacts'
         required: false
@@ -24,6 +20,10 @@ on:
         type: string
         default: 'dr'
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -31,20 +31,13 @@ jobs:
         os: ${{ fromJSON(inputs.os-matrix) }}
     runs-on: ${{ matrix.os }}
     name: (${{ matrix.os }})
+    timeout-minutes: 20
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ inputs.go-version }}
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Build the DR CLI Binary
         run: task build
@@ -56,7 +49,7 @@ jobs:
 
       - name: Upload Binary Artifact (Ubuntu)
         if: inputs.upload-artifact && matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact-name-prefix }}-ubuntu
           path: dist/dr
@@ -64,7 +57,7 @@ jobs:
 
       - name: Upload Binary Artifact (macOS)
         if: inputs.upload-artifact && matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact-name-prefix }}-macos
           path: dist/dr
@@ -72,7 +65,7 @@ jobs:
 
       - name: Upload Binary Artifact (Windows)
         if: inputs.upload-artifact && matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact-name-prefix }}-windows
           path: dist/dr.exe

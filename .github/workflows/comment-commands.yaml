@@ -4,12 +4,24 @@ on:
   issue_comment:
     types: [created]
 
+# NOTE: intentionally NO `concurrency` here. Each run handles a distinct comment,
+# so there is no redundant work to dedupe. A `cancel-in-progress` group keyed by
+# PR/issue would let an ordinary follow-up comment cancel an in-flight maintainer
+# command (e.g. /approve-smoke-tests, /skip-smoke-tests) before it dispatches the
+# fork smoke tests or sets the required "Smoke Tests" commit status. Comment
+# handling is cheap, so every run is allowed to finish.
+
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   handle-comment:
     # Only run on PRs (not issues) and not from forks
     # Note: issue_comment events don't have pull_request context, need to check differently
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: write
       pull-requests: write
@@ -18,7 +30,7 @@ jobs:
     steps:
       - name: Check if PR is from fork and commenter permissions
         id: check-fork
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -45,7 +57,7 @@ jobs:
           (contains(github.event.comment.body, '/trigger-smoke-test') ||
            contains(github.event.comment.body, '/trigger-test-smoke')) &&
           steps.check-fork.outputs.is_fork == 'false'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -69,7 +81,7 @@ jobs:
           (contains(github.event.comment.body, '/trigger-install-test') ||
            contains(github.event.comment.body, '/trigger-test-install')) &&
           steps.check-fork.outputs.is_fork == 'false'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -94,7 +106,7 @@ jobs:
            contains(github.event.comment.body, '/approve-fork-tests')) &&
           steps.check-fork.outputs.is_fork == 'true' &&
           steps.check-fork.outputs.is_maintainer == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -158,7 +170,7 @@ jobs:
         if: |
           contains(github.event.comment.body, '/skip-smoke-tests') &&
           steps.check-fork.outputs.is_maintainer == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -190,7 +202,7 @@ jobs:
         if: |
           contains(github.event.comment.body, '/skip-smoke-tests') &&
           steps.check-fork.outputs.is_maintainer == 'false'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction
@@ -215,7 +227,7 @@ jobs:
           (contains(github.event.comment.body, '/approve-smoke-tests') ||
            contains(github.event.comment.body, '/approve-fork-tests')) &&
           steps.check-fork.outputs.is_maintainer == 'false'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             // Add reaction

@@ -45,13 +45,9 @@ func Cmd() *cobra.Command {
 
 `--output-format` is implemented as a shared flag strategy:
 
-- `cmd/root.go` registers it once as a persistent root flag via
-  `outputformat.AddPersistentFlag(...)`
-- the root binds it with `viperx.BindPFlag("output-format", ...)` so
-  `DATAROBOT_CLI_OUTPUT_FORMAT` works
-- commands that render text/JSON read the effective value via
-  `outputformat.GetFormat(cmd)` and wire it to a local `outputFormat`
-  variable
+- `cmd/root.go` registers it once as a persistent root flag via `outputformat.AddPersistentFlag(...)`
+- The root flag is inherited by all subcommands, so no per-command registration is needed
+- Commands that render text/JSON read the effective value via `outputformat.GetFormat(cmd)` to resolve format from CLI flags or environment variables
 
 Use this pattern for output-aware commands:
 
@@ -59,18 +55,14 @@ Use this pattern for output-aware commands:
 import "github.com/datarobot/cli/internal/outputformat"
 
 func Cmd() *cobra.Command {
-    var outputFormat outputformat.OutputFormat
-
     cmd := &cobra.Command{
         Use: "list",
         RunE: func(cmd *cobra.Command, _ []string) error {
-            outputFormat = outputformat.GetFormat(cmd)
-
-            return render(outputFormat)
+            // --output-format is a global persistent flag; no local AddFlag needed.
+            format := outputformat.GetFormat(cmd)
+            return render(format)
         },
     }
-
-    outputformat.AddFlag(cmd, &outputFormat)
 
     return cmd
 }
@@ -78,9 +70,25 @@ func Cmd() *cobra.Command {
 
 Why `GetFormat(cmd)` instead of reading the variable directly:
 
-- it correctly handles local flag usage (`dr <cmd> --output-format json`)
-- it correctly handles inherited root usage (`dr --output-format json <cmd>`)
-- it keeps telemetry extraction consistent in command closures
+- It correctly handles local flag usage (`dr <cmd> --output-format json`)
+- It correctly handles inherited root usage (`dr --output-format json <cmd>`)
+- It respects environment variable overrides (`DATAROBOT_CLI_OUTPUT_FORMAT`)
+
+### PrintJSONEnvelope
+
+When outputting JSON, use `outputformat.PrintJSONEnvelope` to wrap data in a consistent envelope:
+
+```go
+if format == outputformat.OutputFormatJSON {
+    outputs := make([]MyOutput, len(items))
+    for i, item := range items {
+        outputs[i] = MyOutput{/* ... */}
+    }
+    return outputformat.PrintJSONEnvelope(os.Stdout, "items", outputs)
+}
+```
+
+The envelope format is `{"<key>": <data>}`, which ensures output is always a JSON object (never a bare array). This makes the output forward-compatible for adding metadata, pagination, or warnings without breaking callers.
 
 ## Mark flag groups
 

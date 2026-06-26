@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
 
   # This job detects what types of files were changed in the PR and sets outputs
@@ -16,6 +20,7 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     name: Detect Changes
+    timeout-minutes: 5
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
@@ -26,10 +31,10 @@ jobs:
       install_sh: ${{ steps.changes.outputs.install_sh }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Detect file changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: changes
         with:
           filters: |
@@ -60,34 +65,33 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Lint Code
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write   # actions/cache (save)
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.11.4
-          args: --timeout=5m
+      - name: Get golangci-lint version
+        id: golangci-version
+        run: |
+          echo "version=$(grep 'GOLANGCI_LINT_VERSION' Taskfile.yaml | grep -oP 'v[\d.]+')" >> "$GITHUB_OUTPUT"
 
-      - name: GoReleaser Check
-        uses: goreleaser/goreleaser-action@v6
+      - name: Cache golangci-lint binary and analysis
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          distribution: goreleaser
-          version: latest
-          args: check
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          path: |
+            tmp/bin/golangci-lint
+            tmp/bin/goreleaser
+            ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yaml') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-
 
       - name: Run all checks
         run: |
@@ -98,38 +102,17 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Run Tests
+    timeout-minutes: 20
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
-
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/cache@v4
-        with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          # * Build cache (Mac)
-          # * Build cache (Windows)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/Library/Caches/go-build
-            %LocalAppData%\go-build
-            bin
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      # P1: setup-go's built-in cache replaces the manual actions/cache step.
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Run Golang Test Command
         run: |
@@ -138,13 +121,14 @@ jobs:
   copyright:
     runs-on: ubuntu-latest
     name: Copyrights
+    timeout-minutes: 5
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Check License Header
-        uses: apache/skywalking-eyes/header@main
+        uses: apache/skywalking-eyes/header@8e837beb243c264ffcd5ea3abd3d5d8975cd0077 # main 2025-01-13
         with:
           config: .licenserc.yaml
 
@@ -153,21 +137,14 @@ jobs:
     if: needs.detect-changes.outputs.go_code == 'true'
     runs-on: ubuntu-latest
     name: Ensure Code Generated
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Taskfile
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Install Envdoc
         run: |
@@ -184,25 +161,48 @@ jobs:
   build:
     needs: detect-changes
     name: Build Binaries
-    # Completion-tests is dependent on Build, so we need to build binaries if either code or completion-related files changed.
+    # Cross-compile all platforms on a single Ubuntu runner (cheaper than 3-OS matrix).
+    # Completion-tests depends on this job for the dr-ubuntu artifact.
     if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
-    uses: ./.github/workflows/.build-matrix.yaml
-    with:
-      go-version: '1.26.4'
-      upload-artifact: true
-      artifact-name-prefix: 'dr'
-    secrets: inherit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # GoReleaser drives the build, so Task is not needed here.
+      - name: Set up Go
+        uses: ./.github/actions/setup
+        with:
+          install-task: 'false'
+
+      - name: Build all platforms with GoReleaser
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: build --snapshot --clean
+
+      - name: Verify Linux binary runs
+        run: ./dist/linux_linux_amd64_v1/dr --help
+
+      - name: Upload Linux binary (used by completion-tests)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dr-ubuntu
+          path: dist/linux_linux_amd64_v1/dr
+          retention-days: 1
   auto-label:
     needs: detect-changes
     if: needs.detect-changes.outputs.go_code == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     name: Auto Label Go Changes
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
       - name: Add label for Go code changes
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -217,11 +217,12 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: Dependabot Smoke Test Reminder
+    timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
       - name: Comment smoke test instructions
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             await github.rest.issues.createComment({
@@ -235,25 +236,28 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.deps == 'true'
     uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
-    secrets: inherit
-
+    # S1: called workflow declares no secrets — omit secrets block.
   install-integration-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.install_sh == 'true'
     uses: ./.github/workflows/.install-integration-tests-matrix.yaml
-    secrets: inherit
-
+    # S1: called workflow declares no secrets — omit secrets block.
   completion-tests:
     needs: [build, detect-changes]
     if: needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
     name: Test Completions
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read    # actions/download-artifact
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Download Binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dr-ubuntu
           path: /tmp/dr-bin
@@ -269,7 +273,7 @@ jobs:
           sudo apt-get install -y expect bash-completion
 
       - name: Install Taskfile
-        uses: arduino/setup-task@v2
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}

@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -42,6 +43,13 @@ type Category struct {
 	Name     string
 	Tasks    []task.Task
 	Priority int // Lower numbers appear first
+}
+
+// TaskOutput is the JSON representation of a task for --output-format json.
+type TaskOutput struct {
+	Name        string   `json:"name"`
+	Aliases     []string `json:"aliases"`
+	Description string   `json:"description"`
 }
 
 // getCategoryStyle returns the appropriate style for a category name with adaptive colors
@@ -272,6 +280,8 @@ func Cmd() *cobra.Command {
 
 	var showAll bool
 
+	var outputFormat outputformat.OutputFormat
+
 	cmd := &cobra.Command{
 		Use:           "list",
 		Aliases:       []string{"l"},
@@ -279,7 +289,7 @@ func Cmd() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			binaryName := "task"
 			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
@@ -309,6 +319,26 @@ func Cmd() *cobra.Command {
 				return cli.ErrSilent
 			}
 
+			format := outputformat.GetFormat(cmd)
+			if format == outputformat.OutputFormatJSON {
+				filteredTasks := tasks
+
+				if !showAll {
+					// Filter to only common tasks when --all is not set
+					var filtered []task.Task
+
+					for _, t := range tasks {
+						if categorizeTask(t, showAll) != nil {
+							filtered = append(filtered, t)
+						}
+					}
+
+					filteredTasks = filtered
+				}
+
+				return outputformat.PrintJSONEnvelope(os.Stdout, "tasks", toTaskOutputs(filteredTasks))
+			}
+
 			categories := groupTasksByCategory(tasks, showAll)
 
 			if err = printCategorizedTasks(categories, showAll); err != nil {
@@ -329,5 +359,20 @@ func Cmd() *cobra.Command {
 		return nil, cobra.ShellCompDirectiveFilterDirs
 	})
 
+	outputformat.AddFlag(cmd, &outputFormat)
+
 	return cmd
+}
+
+func toTaskOutputs(tasks []task.Task) []TaskOutput {
+	outputs := make([]TaskOutput, len(tasks))
+	for i, t := range tasks {
+		outputs[i] = TaskOutput{
+			Name:        t.Name,
+			Aliases:     t.Aliases,
+			Description: strings.ReplaceAll(t.Desc, "\n", " "),
+		}
+	}
+
+	return outputs
 }

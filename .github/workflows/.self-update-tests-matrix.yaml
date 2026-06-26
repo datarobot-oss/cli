@@ -8,6 +8,10 @@ on:
         type: boolean
         default: false
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   self-update-tests:
     strategy:
@@ -27,7 +31,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Debug brew environment (macOS only)
         if: runner.os == 'macOS' && inputs.debug_brew

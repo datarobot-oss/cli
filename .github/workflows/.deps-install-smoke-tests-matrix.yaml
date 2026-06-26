@@ -3,6 +3,10 @@ name: Dependency Install Smoke Tests Matrix
 on:
   workflow_call:
 
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
 jobs:
   deps-install-smoke-tests:
     strategy:
@@ -20,19 +24,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Go and Task
+        uses: ./.github/actions/setup
 
       - name: Build binary
         run: task build

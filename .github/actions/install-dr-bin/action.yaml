@@ -1,0 +1,16 @@
+name: Build and install the dr CLI
+description: >
+  Build the dr CLI from source, install it via install.sh, and add the install
+  directory (~/.local/bin) to PATH. Unix only (Linux/macOS); Windows smoke tests
+  download a prebuilt artifact instead.
+
+runs:
+  using: composite
+  steps:
+    - name: Build and install the DR CLI binary
+      shell: bash
+      run: |
+        set -e
+        task build
+        LOCAL_BINARY=./dist/dr sh install.sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
