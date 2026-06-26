@@ -17,6 +17,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,6 +43,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
+	internaltls "github.com/datarobot/cli/internal/tls"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -89,6 +92,10 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			err := initializeConfig(cmd)
 			if err != nil {
+				return err
+			}
+
+			if err := setupTLS(cmd); err != nil {
 				return err
 			}
 
@@ -188,6 +195,9 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
+	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
+	RootCmd.PersistentFlags().String("ca-cert", "", "path to a PEM-encoded CA certificate bundle")
+	RootCmd.PersistentFlags().Bool("export-windows-certs", false, "export Windows certificate store to the DataRobot CA bundle (Windows only)")
 	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
 	// Make some of these flags available via Viper
@@ -201,6 +211,7 @@ func init() {
 	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
 	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 	_ = viperx.BindPFlag("output-format", RootCmd.PersistentFlags().Lookup("output-format"))
+	_ = viperx.BindPFlag("ca-cert", RootCmd.PersistentFlags().Lookup("ca-cert"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
@@ -289,6 +300,38 @@ func setUnknownArgGuards(root *cobra.Command) {
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	}
+}
+
+// setupTLS configures http.DefaultTransport based on TLS-related flags and
+// the persisted ca-cert config value. Must run after initializeConfig so that
+// the ca-cert value from drconfig.yaml is available via viper.
+func setupTLS(cmd *cobra.Command) error {
+	skipVerify, _ := cmd.Flags().GetBool("skip-certificate-check")
+	exportCerts, _ := cmd.Flags().GetBool("export-windows-certs")
+	caCert := viperx.GetString("ca-cert")
+
+	if exportCerts {
+		dest := windowsCACertPath()
+
+		if err := internaltls.ExportWindowsCerts(dest); err != nil {
+			return fmt.Errorf("--export-windows-certs: %w", err)
+		}
+
+		caCert = dest
+	}
+
+	return internaltls.Apply(internaltls.Options{
+		SkipVerify: skipVerify,
+		CACertPath: caCert,
+	})
+}
+
+// windowsCACertPath returns the well-known path where DR tooling writes the
+// exported Windows certificate store bundle.
+func windowsCACertPath() string {
+	appData := os.Getenv("APPDATA")
+
+	return filepath.Join(appData, "DataRobot", "ca-bundle.pem")
 }
 
 // initializeConfig initializes the configuration by reading from
