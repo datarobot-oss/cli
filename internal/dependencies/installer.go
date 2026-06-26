@@ -23,11 +23,15 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/datarobot/cli/internal/dependencies/registry"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/tools"
 )
+
+// TAB is the indent prefix used in user-facing tip and failure messages.
+const TAB = registry.TAB
 
 // InstallPrerequisites installs each prerequisite sequentially. It returns the names
 // of tools successfully installed before any failure, plus the first error encountered.
@@ -60,7 +64,7 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 		if exitCode != 0 {
 			log.Debug("deps: install exited non-zero", "name", prerequisite.Name, "exit_code", exitCode)
 
-			env := DetectEnvironment()
+			env := registry.DetectEnvironment()
 			permDenied := isPermissionDenied(exitCode, cmdBuf.String())
 			msg := buildInstallFailureMsg(prerequisite, exitCode, permDenied, env, runtime.GOOS)
 
@@ -115,7 +119,7 @@ func isPermissionDenied(exitCode int, stderr string) bool {
 // extractFailedManager heuristically identifies the package/version manager
 // referenced in cmd (e.g. "brew" in "brew install uv"). Returns "" if none found.
 func extractFailedManager(cmd string) string {
-	for _, m := range knownManagers {
+	for _, m := range registry.KnownManagers {
 		if strings.Contains(cmd, m) {
 			return m
 		}
@@ -170,7 +174,7 @@ func buildInstallTip(prerequisite tools.Prerequisite, permDenied bool, env map[s
 
 	toolKey := prerequisite.Key
 	if toolKey == "" {
-		toolKey = NormalizeToolName(prerequisite.Name)
+		toolKey = registry.NormalizeToolName(prerequisite.Name)
 	}
 
 	if toolKey == "" {
@@ -180,12 +184,12 @@ func buildInstallTip(prerequisite tools.Prerequisite, permDenied bool, env map[s
 	installCmd, _ := prerequisite.PlatformInstallCommand()
 	failedMgr := extractFailedManager(installCmd)
 
-	strategy := selectInstallStrategy(toolKey, failedMgr, env)
+	strategy := registry.SelectInstallStrategy(toolKey, failedMgr, env)
 	if strategy == nil {
 		return ""
 	}
 
-	return strategy.withVersion(prerequisite.MinimumVersion).getStrategyTip(goos)
+	return strategy.WithVersion(prerequisite.MinimumVersion).GetStrategyTip(goos)
 }
 
 // ExecuteShLine executes shellCmd via sh -c, streaming stdout and stderr
