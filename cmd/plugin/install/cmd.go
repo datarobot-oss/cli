@@ -15,9 +15,13 @@
 package install
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -31,6 +35,7 @@ var (
 	listVersions      bool
 	filePath          string
 	pluginURL         string
+	yesFlag           bool
 )
 
 func Cmd() *cobra.Command {
@@ -66,11 +71,14 @@ Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 	cmd.Flags().StringVar(&filePath, "file", "", "Install from a local .tar.xz archive instead of the registry")
 	cmd.Flags().StringVar(&pluginURL, "url", "", "Install from an HTTP/HTTPS URL instead of the registry")
+	cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version", "file", "url")
 	cmd.MarkFlagsMutuallyExclusive("file", "registry-url")
 	cmd.MarkFlagsMutuallyExclusive("url", "registry-url")
+
+	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		ver, _ := c.Flags().GetString("version")
@@ -174,7 +182,7 @@ func runInstallFromRegistry(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
 
-	return nil
+	return checkAndInstallPluginDeps(pluginEntry.Name)
 }
 
 func runInstallFromFile(args []string) error {
@@ -206,7 +214,7 @@ func runInstallFromFile(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
-	return nil
+	return checkAndInstallPluginDeps(resolvedName)
 }
 
 func runInstallFromURL(args []string) error {
@@ -237,6 +245,55 @@ func runInstallFromURL(args []string) error {
 	fmt.Println(tui.SuccessStyle.Render("✓ Successfully installed " + resolvedName))
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
+
+	return checkAndInstallPluginDeps(resolvedName)
+}
+
+// headingWriter is an io.Writer that prepends a styled heading the first time
+// any bytes are written to it, so the heading appears before the prereq message.
+type headingWriter struct {
+	w       *os.File
+	heading string
+	written bool
+}
+
+func (h *headingWriter) Write(p []byte) (int, error) {
+	if !h.written {
+		h.written = true
+
+		fmt.Println()
+		fmt.Println(tui.SubTitleStyle.Render(h.heading))
+	}
+
+	return h.w.Write(p)
+}
+
+// confirmPluginDepsInstall returns true when the user consents to installing
+// missing plugin dependencies. Consent is granted automatically when -y/--yes
+// is set; otherwise the user is prompted interactively.
+func confirmPluginDepsInstall() bool {
+	if yesFlag || viperx.GetBool("yes") {
+		return true
+	}
+
+	fmt.Fprint(os.Stdout, "\nInstall missing dependencies? [Y/n]: ")
+
+	return reader.AskYesNo()
+}
+
+// checkAndInstallPluginDeps reads the plugin's versions.yaml, checks prerequisites,
+// and prompts the user to install any missing or outdated tools.
+// Skips silently when no versions.yaml is present.
+func checkAndInstallPluginDeps(pluginName string) error {
+	out := &headingWriter{w: os.Stdout, heading: "Plugin Dependencies"}
+
+	if err := plugin.CheckAndInstallDeps(pluginName, confirmPluginDepsInstall, out); err != nil {
+		if errors.Is(err, plugin.ErrDepsDeclined) {
+			return nil
+		}
+
+		return err
+	}
 
 	return nil
 }

@@ -130,11 +130,29 @@ func CheckPrerequisites() CheckResult {
 
 	log.Debug("deps: checking prerequisites", "count", len(RequiredTools))
 
-	var result CheckResult
+	result := CheckPrerequisiteList(RequiredTools)
 
 	result.ValidationViolations = violations
 
-	for _, tool := range RequiredTools {
+	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
+		log.Debug("deps: all prerequisites satisfied")
+
+		if repoRoot, err := repo.FindRepoRoot(); err == nil {
+			err := state.UpdateAfterSuccessDepsCheck(repoRoot)
+			if err != nil {
+				log.Errorf("Failed to update state AfterSuccessDepsCheck: %v", err)
+			}
+		}
+	}
+
+	return result
+}
+
+// CheckPrerequisiteList checks an arbitrary list of prerequisites and returns the result.
+func CheckPrerequisiteList(prereqs []Prerequisite) CheckResult {
+	var result CheckResult
+
+	for _, tool := range prereqs {
 		if !isInstalled(tool.Command) {
 			log.Debug("deps: tool missing", "name", tool.Name)
 
@@ -147,17 +165,6 @@ func CheckPrerequisites() CheckResult {
 			result.WrongVersionMsgs = append(result.WrongVersionMsgs, ver)
 		} else {
 			log.Debug("deps: tool ok", "name", tool.Name)
-		}
-	}
-
-	if len(result.MissingMsgs) == 0 && len(result.WrongVersionMsgs) == 0 {
-		log.Debug("deps: all prerequisites satisfied")
-
-		if repoRoot, err := repo.FindRepoRoot(); err == nil {
-			err := state.UpdateAfterSuccessDepsCheck(repoRoot)
-			if err != nil {
-				log.Errorf("Failed to update state AfterSuccessDepsCheck: %v", err)
-			}
 		}
 	}
 

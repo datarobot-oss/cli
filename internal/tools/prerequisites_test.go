@@ -395,3 +395,95 @@ func TestCheckPrerequisites_FailureDoesNotWriteState(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(repoRoot, ".datarobot", "cli", "state.yaml"))
 	assert.NotContains(t, string(data), "last_success_deps_check")
 }
+
+func TestCheckPrerequisiteList_Empty(t *testing.T) {
+	result := CheckPrerequisiteList(nil)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Empty(t, result.MissingMsgs)
+	assert.Empty(t, result.WrongVersionMsgs)
+	assert.Empty(t, result.ValidationViolations)
+}
+
+func TestCheckPrerequisiteList_AllSatisfied(t *testing.T) {
+	prereqs := []Prerequisite{{Name: "sh", Command: "sh"}}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Empty(t, result.MissingMsgs)
+	assert.Empty(t, result.WrongVersionMsgs)
+}
+
+func TestCheckPrerequisiteList_MissingTool(t *testing.T) {
+	prereqs := []Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	require.Len(t, result.MissingTools, 1)
+	assert.Equal(t, "FakeTool", result.MissingTools[0].Name)
+	assert.Empty(t, result.WrongVersionTools)
+	require.Len(t, result.MissingMsgs, 1)
+	assert.Contains(t, result.MissingMsgs[0], "FakeTool")
+	assert.Contains(t, result.MissingMsgs[0], "https://example.com")
+	assert.Empty(t, result.WrongVersionMsgs)
+}
+
+func TestCheckPrerequisiteList_MissingToolMessageFormat(t *testing.T) {
+	prereqs := []Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz", MinimumVersion: "1.2.3", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	require.Len(t, result.MissingMsgs, 1)
+	assert.Contains(t, result.MissingMsgs[0], "FakeTool")
+	assert.Contains(t, result.MissingMsgs[0], "1.2.3")
+	assert.Contains(t, result.MissingMsgs[0], "https://example.com")
+}
+
+func TestCheckPrerequisiteList_WrongVersion(t *testing.T) {
+	prereqs := []Prerequisite{
+		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.MissingMsgs)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "Echo", result.WrongVersionTools[0].Name)
+	assert.Len(t, result.WrongVersionMsgs, 1)
+	assert.Contains(t, result.WrongVersionMsgs[0], "Echo")
+}
+
+func TestCheckPrerequisiteList_Mixed(t *testing.T) {
+	prereqs := []Prerequisite{
+		{Name: "sh", Command: "sh"},
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz"},
+		{Name: "Echo", Command: "echo 1.0.0", MinimumVersion: "2.0.0"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	require.Len(t, result.MissingTools, 1)
+	assert.Equal(t, "FakeTool", result.MissingTools[0].Name)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "Echo", result.WrongVersionTools[0].Name)
+	assert.Len(t, result.MissingMsgs, 1)
+	assert.Len(t, result.WrongVersionMsgs, 1)
+}
+
+func TestCheckPrerequisiteList_NeverSetsValidationViolations(t *testing.T) {
+	prereqs := []Prerequisite{
+		{Name: "FakeTool", Command: "nonexistent_dr_fake_tool_xyz"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.ValidationViolations)
+}

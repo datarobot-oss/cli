@@ -35,6 +35,7 @@ When you run the command without arguments, it displays the list of available pl
 - `--list`&mdash;list available plugins from the registry without installing.
 - `--file`&mdash;install from a local `.tar.xz` archive instead of the registry.
 - `--url`&mdash;install from an HTTP/HTTPS URL instead of the registry.
+- `-y`, `--yes`&mdash;automatically confirm installation of missing plugin dependencies without prompting.
 
 `--file` and `--url` are mutually exclusive with each other and with `--version`, `--versions`, `--list`, and `--registry-url`.
 
@@ -80,6 +81,32 @@ dr plugin install --url https://example.com/assist-0.2.0.tar.xz
 # Install from an HTTP/HTTPS URL with an explicit plugin name.
 dr plugin install assist --url https://example.com/assist-0.2.0.tar.xz
 ```
+
+## Plugin dependency checks
+
+If a plugin ships a `versions.yaml` file in its archive, the CLI uses it to declare the external tools the plugin requires. After installation, and again each time you invoke the plugin, the CLI checks whether those tools are present and at the required version.
+
+If any dependency is missing or outdated you will see a message and a prompt:
+
+```
+ ❌ Missing required tools:
+
+    - Docker 20.10.0 (https://docs.docker.com/get-docker/)
+
+Install missing dependencies? [Y/n]:
+```
+
+### Confirmation modes
+
+| Method | Effect |
+|---|---|
+| Press **Enter** or type **y** | Install the missing tools |
+| Type **n** | Skip installation and continue |
+| `dr plugin install --yes` / `-y` | Auto-confirm during install |
+| `dr <plugin> -y` or `dr <plugin> --yes` | Auto-confirm at run time |
+| `DATAROBOT_CLI_NON_INTERACTIVE=1` | Auto-confirm in CI / automation |
+
+> **Note:** Dependency checks only apply to managed plugins installed via `dr plugin install`. PATH-based and project-local plugins are not checked.
 
 ## dr plugin uninstall
 
