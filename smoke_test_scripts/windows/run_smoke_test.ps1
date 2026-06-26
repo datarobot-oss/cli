@@ -25,6 +25,7 @@ function Write-InfoMsg {
     Write-Host $Message
 }
 
+# Prints a section header banner centered around the given message.
 function Write-Delimiter {
     param([string]$Message)
     Write-Host ""
@@ -35,6 +36,7 @@ function Write-Delimiter {
     Write-Host ("=" * 20)
 }
 
+# Prints a closing END banner to delimit test sections.
 function Write-End {
     Write-Host ("=" * 20) -NoNewline
     Write-Host " END " -NoNewline
@@ -51,6 +53,7 @@ function Test-URLAccessible {
     }
 }
 
+# Installs PowerShell completions under a given execution policy and asserts warning behavior, profile contents, and policy preservation.
 function Test-DRCompletionInstallWithExecutionPolicy {
     param(
         [string]$TestName,
@@ -59,9 +62,11 @@ function Test-DRCompletionInstallWithExecutionPolicy {
         [bool]$ExpectWarning
     )
 
+    # Save the current policy so it can be restored after the test, then apply the policy under test.
     $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
     Set-ExecutionPolicy $Policy -Scope CurrentUser -Force
 
+    # Run the installer and fail fast if it exits non-zero.
     $installOutput = (dr self completion install powershell --yes 2>&1 | Out-String)
     $installExitCode = $LASTEXITCODE
     if ($installExitCode -ne 0) {
@@ -69,6 +74,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
         Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCode"
     }
 
+    # Assert the installer warned (or did not warn) about the execution policy fix command.
     $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
     $hasWarning = $installOutput -match $fixCommand
 
@@ -84,8 +90,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
 
-    # Match the order used by the Go installer: prefer PowerShell Core if the
-    # directory exists, otherwise fall back to Windows PowerShell.
+    # Resolve the PowerShell profile path, preferring PowerShell Core over Windows PowerShell (matches the Go installer).
     $documentsPath = "$env:USERPROFILE\Documents"
     $psCoreDir = Join-Path $documentsPath "PowerShell"
     $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
@@ -96,6 +101,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
         $profilePath = Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
     }
 
+    # Assert the profile exists and contains the dr completion block.
     if (-not (Test-Path $profilePath)) {
         Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
@@ -109,6 +115,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     Write-SuccessMsg "Assertion passed: profile contains completion block"
 
+    # Assert the execution policy was not modified by the installer.
     $actualPolicy = Get-ExecutionPolicy -Scope CurrentUser
     if ($actualPolicy -ne $ExpectedPolicy) {
         Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
@@ -117,6 +124,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
 
+    # Restore the original execution policy.
     Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
 }
 
