@@ -553,6 +553,36 @@ func (suite *BuilderTestSuite) TestShouldAsk_ShowsPromptWithoutDefault() {
 	suite.True(prompt.ShouldAsk(false), "Should show prompt when no default is set")
 }
 
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsOptionalWithNonEmptyDefaultAndMatchingValue() {
+	// ENABLE_DRAGENT_SERVER case: optional: true, default: "true", value: "true" — already works, must not regress
+	prompt := UserPrompt{Active: true, Hidden: false, Optional: true, Default: "true", Value: "true"}
+	suite.False(prompt.ShouldAsk(false), "Should skip optional prompt when value equals non-empty default")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsOptionalWithEmptyDefaultAndEmptyValue() {
+	// OTEL_SDK_DISABLED case: optional: true, default: ""
+	prompt := UserPrompt{Active: true, Hidden: false, Optional: true, Default: "", Value: ""}
+	suite.False(prompt.ShouldAsk(false), "Should skip optional prompt with empty default and empty value")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_SkipsOptionalWithNullDefault() {
+	// DATAROBOT_DEFAULT_USE_CASE case: optional: true, default: (omitted in YAML)
+	prompt := UserPrompt{Active: true, Hidden: false, Optional: true, Value: ""}
+	suite.False(prompt.ShouldAsk(false), "Should skip optional prompt with null/omitted default and empty value")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowsOptionalWithValueSetAndEmptyDefault() {
+	// Optional + empty default, but user already has a value — show it for confirmation
+	prompt := UserPrompt{Active: true, Hidden: false, Optional: true, Default: "", Value: "some_value"}
+	suite.True(prompt.ShouldAsk(false), "Should show optional prompt when a value is set even if default is empty")
+}
+
+func (suite *BuilderTestSuite) TestShouldAsk_ShowAllOverridesOptionalEmptyDefault() {
+	// showAll forces all active non-hidden prompts to show, even optional+empty-default
+	prompt := UserPrompt{Active: true, Hidden: false, Optional: true, Default: "", Value: ""}
+	suite.True(prompt.ShouldAsk(true), "showAll should override optional+empty-default skip")
+}
+
 func (suite *BuilderTestSuite) TestShouldAsk_AlwaysPromptOverridesDefault() {
 	prompt := UserPrompt{Active: true, Hidden: false, Default: "default_value", Value: "default_value", AlwaysPrompt: true}
 	suite.True(prompt.ShouldAsk(false), "Should show prompt when always_prompt is true even if value equals default")
