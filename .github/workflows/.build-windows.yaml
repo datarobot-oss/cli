@@ -32,7 +32,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Go and Task
-        uses: ./.github/actions/setup
+        uses: datarobot-oss/cli/.github/actions/setup@main
 
       - name: Build Windows Binary with GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6

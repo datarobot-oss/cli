@@ -36,7 +36,7 @@ jobs:
           ref: ${{ inputs.version }}
 
       - name: Install smoke-test dependencies
-        uses: ./.github/actions/install-deps
+        uses: datarobot-oss/cli/.github/actions/install-deps@main
 
       - name: MacOS - Install coreutils (gtimeout)
         if: matrix.sys.os == 'macos-latest'
@@ -55,10 +55,10 @@ jobs:
           node-version: '24'
 
       - name: Set up Go and Task
-        uses: ./.github/actions/setup
+        uses: datarobot-oss/cli/.github/actions/setup@main
 
       - name: Build and Install the DR CLI Binary
-        uses: ./.github/actions/install-dr-bin
+        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
 
       - name: Run Pre-Release Smoke Tests
         env:

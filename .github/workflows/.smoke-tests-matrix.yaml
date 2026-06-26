@@ -41,13 +41,13 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Install smoke-test dependencies
-        uses: ./.github/actions/install-deps
+        uses: datarobot-oss/cli/.github/actions/install-deps@main
 
       - name: Set up Go and Task
-        uses: ./.github/actions/setup
+        uses: datarobot-oss/cli/.github/actions/setup@main
 
       - name: Build and Install the DR CLI Binary
-        uses: ./.github/actions/install-dr-bin
+        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
 
       - name: Run Smoke Tests for Binary
         env:
