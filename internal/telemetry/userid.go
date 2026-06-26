@@ -92,7 +92,7 @@ func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 
 	var info AccountInfo
 
-	if err := drapi.GetJSON(url, "", &info); err != nil { //nolint:contextcheck // drapi.GetJSON does not accept a context; propagation requires a larger refactor
+	if err := drapi.GetJSON(url, "", &info); err != nil { //nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
 		return nil, err
 	}
 
