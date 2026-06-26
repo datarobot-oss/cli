@@ -426,9 +426,10 @@ func (suite *DotenvModelTestSuite) Test__externalEditorCmd() {
 }
 
 func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
-	// This test validates that prompts with default values are skipped
-	// The first prompt (PULUMI_CONFIG_PASSPHRASE) has default: 123, so it should be skipped
-	// The wizard should start directly at DATAROBOT_DEFAULT_USE_CASE
+	// This test validates that prompts are skipped when:
+	//   - they have a default value (PULUMI_CONFIG_PASSPHRASE: default: 123)
+	//   - they are optional with an empty default (DATAROBOT_DEFAULT_USE_CASE: optional: true, default: "")
+	// The wizard should skip both and start directly at data_source.
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
 		initialScreen:  wizardScreen,
@@ -436,11 +437,8 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
 		ShowAllPrompts: false, // Default behavior - skip prompts with defaults
 	})
 
-	// Should skip PULUMI_CONFIG_PASSPHRASE and start at DATAROBOT_DEFAULT_USE_CASE
-	suite.WaitFor(tm, "The default use case for this application")
-	suite.Send(tm, "my_use_case", "enter")
-
-	// Leave data source blank
+	// Should skip PULUMI_CONFIG_PASSPHRASE (has default) and DATAROBOT_DEFAULT_USE_CASE
+	// (optional + empty default), starting directly at data_source.
 	suite.WaitFor(tm, "The data source to use for this application")
 	suite.Send(tm, "enter")
 
@@ -464,7 +462,8 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
 
 	// PULUMI_CONFIG_PASSPHRASE should still have the default value written
 	suite.Contains(actualContentsStr, "PULUMI_CONFIG_PASSPHRASE=\"123\"\n", "Expected env file to contain the default passphrase")
-	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"my_use_case\"\n", "Expected env file to contain the entered use case")
+	// DATAROBOT_DEFAULT_USE_CASE was skipped (optional + empty default) so its value is empty
+	suite.Contains(actualContentsStr, "DATAROBOT_DEFAULT_USE_CASE=\"\"\n", "Expected env file to contain empty use case since it was skipped")
 
 	os.Remove(fm.DotenvFile)
 }

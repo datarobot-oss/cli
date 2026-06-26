@@ -201,12 +201,26 @@ func (up UserPrompt) ShouldAsk(showAll bool) bool {
 		return false
 	}
 
-	// Skip prompts that have a default and value equals default (not user-modified)
-	if up.Default != "" && up.Value == up.Default {
+	// Skip when the current value matches the effective default.
+	// For optional prompts with no explicit default, empty string is the implicit default.
+	if up.valueIsAtEffectiveDefault() {
 		return false
 	}
 
 	return true
+}
+
+// valueIsAtEffectiveDefault reports whether the prompt's value should be treated
+// as "already answered by the default", meaning there is nothing to ask the user.
+//
+//   - Non-empty default: skip when value equals the explicit default.
+//   - Optional + empty default: skip when value is also empty (blank is the implicit answer).
+func (up UserPrompt) valueIsAtEffectiveDefault() bool {
+	if up.Default != "" {
+		return up.Value == up.Default
+	}
+
+	return up.Optional && up.Value == ""
 }
 
 // GenerateRandomSecret creates a cryptographically random base64-encoded secret of the specified length.
