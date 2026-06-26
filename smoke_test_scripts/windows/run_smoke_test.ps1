@@ -51,6 +51,86 @@ function Test-URLAccessible {
     }
 }
 
+function Get-DRCompletionProfilePath {
+    # Match the order used by the Go installer: prefer PowerShell Core if the
+    # directory exists, otherwise fall back to Windows PowerShell.
+    $documentsPath = "$env:USERPROFILE\Documents"
+    $psCoreDir = Join-Path $documentsPath "PowerShell"
+    $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
+
+    if (Test-Path $psCoreDir) {
+        return Join-Path $psCoreDir "Microsoft.PowerShell_profile.ps1"
+    }
+    return Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
+}
+
+function Test-DRCompletionProfile {
+    param(
+        [string]$ProfilePath,
+        [string]$OriginalPolicy
+    )
+
+    if (-not (Test-Path $ProfilePath)) {
+        Set-ExecutionPolicy $OriginalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $ProfilePath"
+    }
+
+    $profileContent = Get-Content $ProfilePath -Raw
+    if ($profileContent -notmatch "dr completion powershell") {
+        Set-ExecutionPolicy $OriginalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: profile does not contain completion block"
+    }
+
+    Write-SuccessMsg "Assertion passed: profile contains completion block"
+}
+
+function Test-DRCompletionInstallWithExecutionPolicy {
+    param(
+        [string]$TestName,
+        [string]$Policy,
+        [string]$ExpectedPolicy,
+        [bool]$ExpectWarning
+    )
+
+    $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
+    Set-ExecutionPolicy $Policy -Scope CurrentUser -Force
+
+    $installOutput = (dr self completion install powershell --yes 2>&1 | Out-String)
+    $installExitCode = $LASTEXITCODE
+    if ($installExitCode -ne 0) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCode"
+    }
+
+    $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    $hasWarning = $installOutput -match $fixCommand
+
+    if ($ExpectWarning -and -not $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
+    }
+
+    if (-not $ExpectWarning -and $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
+
+    $profilePath = Get-DRCompletionProfilePath
+    Test-DRCompletionProfile -ProfilePath $profilePath -OriginalPolicy $originalPolicy
+
+    $actualPolicy = Get-ExecutionPolicy -Scope CurrentUser
+    if ($actualPolicy -ne $ExpectedPolicy) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: expected execution policy to be $ExpectedPolicy, but it is '$actualPolicy'"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
+
+    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+}
+
 # Main execution
 Write-Host 'Running smoke tests for Windows...'
 
@@ -155,105 +235,13 @@ Write-End
 # default Restricted policy and print the exact command to fix it, but it should
 # not modify the policy itself.
 Write-Delimiter "Testing dr self completion install (Restricted execution policy)"
-
-$originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
-
-# Simulate a fresh Windows machine where the default execution policy is Restricted.
-Set-ExecutionPolicy Restricted -Scope CurrentUser -Force
-
-# Run the completion installer and capture its output so we can verify the warning.
-$installOutput = (dr self completion install powershell --yes 2>&1 | Out-String)
-$installExitCode = $LASTEXITCODE
-if ($installExitCode -ne 0) {
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCode"
-}
-
-# Verify the installer warned the user with the exact fix command.
-if ($installOutput -notmatch "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser") {
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: installer did not warn user with the execution policy fix command"
-}
-Write-SuccessMsg "Assertion passed: installer warned about Restricted execution policy"
-
-# Verify the completion profile was written.
-$profilePath = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-if (-not (Test-Path $profilePath)) {
-    $profilePath = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-}
-if (-not (Test-Path $profilePath)) {
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: PowerShell profile was not created"
-}
-$profileContent = Get-Content $profilePath -Raw
-if ($profileContent -notmatch "dr completion powershell") {
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: profile does not contain completion block"
-}
-Write-SuccessMsg "Assertion passed: profile written and contains completion block"
-
-# Verify the policy remains unchanged (warn-only behavior; the fix is left to the user).
-$policy = Get-ExecutionPolicy -Scope CurrentUser
-if ($policy -ne "Restricted") {
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: expected execution policy to remain Restricted (warn-only), but it is '$policy'"
-}
-Write-SuccessMsg "Assertion passed: execution policy remains '$policy' (installer only warned)"
-
-# Restore the original policy so the rest of the smoke test is not affected.
-Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+Test-DRCompletionInstallWithExecutionPolicy -TestName "Restricted" -Policy "Restricted" -ExpectedPolicy "Restricted" -ExpectWarning $true
 Write-End
 
 # Test completion install under a permissive execution policy.
 # The installer should complete silently without warning the user.
 Write-Delimiter "Testing dr self completion install (permissive execution policy)"
-
-$originalPolicyPermissive = Get-ExecutionPolicy -Scope CurrentUser
-
-# Simulate a machine where the user has already relaxed the execution policy.
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-
-# Run the completion installer and capture its output.
-$installOutputPermissive = (dr self completion install powershell --yes 2>&1 | Out-String)
-$installExitCodePermissive = $LASTEXITCODE
-if ($installExitCodePermissive -ne 0) {
-    Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCodePermissive"
-}
-
-# Verify the installer did NOT warn about execution policy.
-if ($installOutputPermissive -match "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser") {
-    Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: installer warned about execution policy when policy was already permissive"
-}
-Write-SuccessMsg "Assertion passed: installer did not warn when execution policy is permissive"
-
-# Verify the completion profile exists and contains the completion block.
-$profilePathPermissive = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-if (-not (Test-Path $profilePathPermissive)) {
-    $profilePathPermissive = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-}
-if (-not (Test-Path $profilePathPermissive)) {
-    Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: PowerShell profile was not found"
-}
-$profileContentPermissive = Get-Content $profilePathPermissive -Raw
-if ($profileContentPermissive -notmatch "dr completion powershell") {
-    Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: profile does not contain completion block"
-}
-Write-SuccessMsg "Assertion passed: profile contains completion block"
-
-# Verify the policy remains unchanged.
-$policyPermissive = Get-ExecutionPolicy -Scope CurrentUser
-if ($policyPermissive -ne "RemoteSigned") {
-    Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-    Write-ErrorMsg "Assertion failed: expected execution policy to remain RemoteSigned, but it is '$policyPermissive'"
-}
-Write-SuccessMsg "Assertion passed: execution policy remains '$policyPermissive'"
-
-# Restore the original policy.
-Set-ExecutionPolicy $originalPolicyPermissive -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+Test-DRCompletionInstallWithExecutionPolicy -TestName "RemoteSigned" -Policy "RemoteSigned" -ExpectedPolicy "RemoteSigned" -ExpectWarning $false
 Write-End
 
 # Test dr run command
