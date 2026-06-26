@@ -51,39 +51,6 @@ function Test-URLAccessible {
     }
 }
 
-function Get-DRCompletionProfilePath {
-    # Match the order used by the Go installer: prefer PowerShell Core if the
-    # directory exists, otherwise fall back to Windows PowerShell.
-    $documentsPath = "$env:USERPROFILE\Documents"
-    $psCoreDir = Join-Path $documentsPath "PowerShell"
-    $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
-
-    if (Test-Path $psCoreDir) {
-        return Join-Path $psCoreDir "Microsoft.PowerShell_profile.ps1"
-    }
-    return Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
-}
-
-function Test-DRCompletionProfile {
-    param(
-        [string]$ProfilePath,
-        [string]$OriginalPolicy
-    )
-
-    if (-not (Test-Path $ProfilePath)) {
-        Set-ExecutionPolicy $OriginalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-        Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $ProfilePath"
-    }
-
-    $profileContent = Get-Content $ProfilePath -Raw
-    if ($profileContent -notmatch "dr completion powershell") {
-        Set-ExecutionPolicy $OriginalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-        Write-ErrorMsg "Assertion failed: profile does not contain completion block"
-    }
-
-    Write-SuccessMsg "Assertion passed: profile contains completion block"
-}
-
 function Test-DRCompletionInstallWithExecutionPolicy {
     param(
         [string]$TestName,
@@ -117,8 +84,30 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
 
-    $profilePath = Get-DRCompletionProfilePath
-    Test-DRCompletionProfile -ProfilePath $profilePath -OriginalPolicy $originalPolicy
+    # Match the order used by the Go installer: prefer PowerShell Core if the
+    # directory exists, otherwise fall back to Windows PowerShell.
+    $documentsPath = "$env:USERPROFILE\Documents"
+    $psCoreDir = Join-Path $documentsPath "PowerShell"
+    $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
+
+    if (Test-Path $psCoreDir) {
+        $profilePath = Join-Path $psCoreDir "Microsoft.PowerShell_profile.ps1"
+    } else {
+        $profilePath = Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
+    }
+
+    if (-not (Test-Path $profilePath)) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
+    }
+
+    $profileContent = Get-Content $profilePath -Raw
+    if ($profileContent -notmatch "dr completion powershell") {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: profile does not contain completion block"
+    }
+
+    Write-SuccessMsg "Assertion passed: profile contains completion block"
 
     $actualPolicy = Get-ExecutionPolicy -Scope CurrentUser
     if ($actualPolicy -ne $ExpectedPolicy) {
