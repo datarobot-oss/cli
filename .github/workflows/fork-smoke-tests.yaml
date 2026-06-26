@@ -26,6 +26,7 @@ jobs:
   check-permissions:
     runs-on: ubuntu-latest
     name: Check Caller Permissions
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -56,6 +57,7 @@ jobs:
     needs: [check-permissions]
     runs-on: ubuntu-latest
     name: Resolve PR Details
+    timeout-minutes: 5
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
       is_fork: ${{ steps.resolve.outputs.is_fork }}
@@ -86,6 +88,7 @@ jobs:
     if: needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
     name: Security Scan
+    timeout-minutes: 15
     # S5: minimum permissions for SARIF upload
     permissions:
       contents: read
@@ -124,7 +127,6 @@ jobs:
       actions: write
     uses: ./.github/workflows/.build-windows.yaml
     with:
-      go-version: '1.26.4'
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}
     # S1: .build-windows.yaml declares no secrets — omit secrets entirely.
@@ -133,6 +135,7 @@ jobs:
     needs: [resolve-pr, security-scan]
     if: needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
       issues: write
@@ -182,7 +185,6 @@ jobs:
       contents: read
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
     with:
-      go-version: '1.26.4'
       ref: ${{ needs.resolve-pr.outputs.sha }}
     # S1: pass only the one secret that smoke tests actually require.
     secrets:
@@ -205,6 +207,7 @@ jobs:
     needs: [resolve-pr, security-scan, notify-start, linux-smoke-tests, windows-smoke-tests]
     if: always() && needs.resolve-pr.outputs.is_fork == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: write
       issues: write

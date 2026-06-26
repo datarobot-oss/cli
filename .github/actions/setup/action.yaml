@@ -1,0 +1,33 @@
+name: Setup Go and Task
+description: >
+  Set up Go (version pinned by go.mod) and, optionally, Taskfile — with
+  setup-go's built-in module/build caching. Requires the repo to be checked out
+  first (this is a local composite action).
+
+inputs:
+  cache:
+    description: Enable setup-go module/build caching.
+    required: false
+    default: 'true'
+  install-task:
+    description: Whether to install Taskfile.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        # M1: single Go-version source of truth.
+        go-version-file: go.mod
+        # P1: rely on setup-go's built-in cache (keyed on go.sum).
+        cache: ${{ inputs.cache }}
+
+    - name: Install Taskfile
+      if: inputs.install-task == 'true'
+      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      with:
+        version: 3.x
+        repo-token: ${{ github.token }}

@@ -1,36 +1,48 @@
 # GitHub Actions Workflows
 
-This directory contains GitHub Actions workflows for the DR CLI project. We use reusable workflows to reduce duplication and improve maintainability.
+This directory contains GitHub Actions workflows for the DR CLI project. We use composite actions and reusable workflows to reduce duplication and improve maintainability.
+
+## Composite Actions
+
+Step-level building blocks live under [`.github/actions/`](../actions/). Unlike
+reusable workflows (which share whole jobs), composite actions share *steps*, so
+they replace the copy-pasted checkout→Go→Task setup across jobs. They run in the
+caller's job, so the repo must be checked out **before** they are used.
+
+### `setup`
+Sets up Go (version pinned by `go.mod` via `go-version-file`) and, optionally,
+Taskfile, with `setup-go`'s built-in module/build caching.
+
+**Inputs:**
+- `cache` (string, default: `'true'`) - Enable `setup-go` caching
+- `install-task` (string, default: `'true'`) - Whether to install Taskfile
+
+```yaml
+steps:
+  - uses: actions/checkout@<sha>
+  - uses: ./.github/actions/setup          # go + task + cache
+  # or, when Task isn't needed (e.g. GoReleaser-driven builds):
+  - uses: ./.github/actions/setup
+    with:
+      install-task: 'false'
+```
+
+### `install-deps`
+OS-aware install of the smoke-test prerequisites: `expect` + `bash-completion`
+(apt-get on Linux, Homebrew on macOS) and `yq`.
+
+### `install-dr-bin`
+Builds the `dr` CLI, installs it via `install.sh`, and adds `~/.local/bin` to
+PATH (Unix only — Windows smoke tests download a prebuilt artifact instead).
 
 ## Reusable Workflows
 
-Reusable workflows (prefixed with `.`) contain common patterns used across multiple workflows:
-
-### `.build-matrix.yaml`
-Builds the DR CLI binary across multiple operating systems (Linux, macOS, Windows).
-
-**Inputs:**
-- `os-matrix` (string, default: `["ubuntu-latest", "macos-latest", "windows-latest"]`) - OS matrix for builds
-- `go-version` (string, default: `1.26.4`) - Go version to use
-- `upload-artifact` (boolean, default: `false`) - Whether to upload artifacts
-- `artifact-name-prefix` (string, default: `dr`) - Prefix for artifact names
-
-**Usage:**
-```yaml
-jobs:
-  build:
-    uses: ./.github/workflows/.build-matrix.yaml
-    with:
-      go-version: '1.26.4'
-      upload-artifact: true
-    secrets: inherit
-```
+Reusable workflows (prefixed with `.`) contain common patterns used across multiple workflows. All Go setup goes through the `setup` composite action, so the Go version comes from `go.mod` and is no longer a workflow input.
 
 ### `.build-windows.yaml`
 Builds Windows binary using GoReleaser (cross-compiled from Ubuntu).
 
 **Inputs:**
-- `go-version` (string, default: `1.26.4`) - Go version to use
 - `artifact-name` (string, default: `dr-windows`) - Name for the artifact
 - `ref` (string, optional) - Git ref to checkout (useful for fork PRs)
 
@@ -41,7 +53,6 @@ jobs:
     uses: ./.github/workflows/.build-windows.yaml
     with:
       artifact-name: 'dr-windows'
-    secrets: inherit
 ```
 
 ### `.smoke-tests-matrix.yaml`
@@ -49,7 +60,6 @@ Runs smoke tests on Linux and macOS.
 
 **Inputs:**
 - `os-matrix` (string, default: `["ubuntu-latest", "macos-latest"]`) - OS matrix
-- `go-version` (string, default: `1.26.4`) - Go version to use
 - `ref` (string, optional) - Git ref to checkout
 
 **Secrets (required):**
@@ -61,11 +71,8 @@ Runs smoke tests on Linux and macOS.
 jobs:
   smoke-test:
     uses: ./.github/workflows/.smoke-tests-matrix.yaml
-    with:
-      go-version: '1.26.4'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### `.windows-smoke-test.yaml`
@@ -110,15 +117,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### `.setup.yaml`
-Basic environment setup (checkout, Go, Taskfile, caching).
-
-**Inputs:**
-- `go-version` (string, default: `1.26.4`) - Go version to use
-- `install-taskfile` (boolean, default: `true`) - Whether to install Taskfile
-- `setup-cache` (boolean, default: `false`) - Whether to setup Go cache
-
-**Note:** This workflow is currently not heavily used as most workflows need more specialized setup steps.
+> **Note:** environment setup (checkout-less Go + Task + cache) now lives in the
+> [`setup` composite action](#setup), which replaced the former `.setup.yaml`
+> reusable workflow.
 
 ## Main Workflows
 
@@ -128,7 +129,7 @@ Runs on pull requests to main. Performs:
 - Unit tests
 - Copyright/license checks
 - Code generation verification
-- Multi-platform builds (using `.build-matrix.yaml`)
+- Multi-platform build (single Ubuntu runner cross-compiling all targets via GoReleaser)
 - Conditional completion tests (when completion code changes)
 
 ### `smoke-tests.yaml`

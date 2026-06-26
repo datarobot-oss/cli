@@ -10,6 +10,11 @@ on:
     branches:
       - main
 
+# P3: cancel superseded runs on rapid pushes for the same PR.
+concurrency:
+  group: smoke-gate-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
   contents: read
@@ -17,6 +22,7 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       statuses: write
     steps:

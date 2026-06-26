@@ -1,0 +1,23 @@
+name: Install smoke-test dependencies
+description: >
+  OS-aware install of the tools the smoke tests need: expect + bash-completion
+  (apt-get on Linux, Homebrew on macOS) and yq.
+
+runs:
+  using: composite
+  steps:
+    - name: Ubuntu - install dependencies w/ apt-get
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y expect bash-completion
+
+    - name: macOS - install dependencies w/ Homebrew
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew install expect bash-completion
+
+    - name: Install yq
+      uses: dcarbone/install-yq-action@4075b4dca348d74bd83f2bf82d30f25d7c54539b # v1.3.1
