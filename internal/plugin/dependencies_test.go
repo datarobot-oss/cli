@@ -15,7 +15,6 @@
 package plugin
 
 import (
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -122,7 +121,7 @@ func TestCheckAndInstallDeps_ErrDeclinedWhenConfirmFalse(t *testing.T) {
 
 	err := CheckAndInstallDeps(pluginName, func() bool { return false }, io.Discard)
 
-	assert.True(t, errors.Is(err, ErrDepsDeclined))
+	assert.ErrorIs(t, err, ErrDepsDeclined)
 }
 
 func TestCheckAndInstallDeps_NilAfterSuccessfulInstall(t *testing.T) {
@@ -151,6 +150,6 @@ func TestCheckAndInstallDeps_PropagatesInvalidYAML(t *testing.T) {
 
 	err = CheckAndInstallDeps(pluginName, neverConfirm(t), io.Discard)
 
-	assert.Error(t, err)
-	assert.False(t, errors.Is(err, ErrDepsDeclined))
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrDepsDeclined)
 }
