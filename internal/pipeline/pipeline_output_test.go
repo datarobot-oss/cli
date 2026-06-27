@@ -226,10 +226,13 @@ func TestRenderPipelines_JSON(t *testing.T) {
 		require.NoError(t, RenderPipelines(outputformat.OutputFormatJSON, page))
 	})
 
-	var parsed []any
+	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(out), &parsed))
-	assert.Len(t, parsed, 1)
+
+	items, ok := parsed["pipelines"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, items, 1)
 }
 
 func TestRenderPipelines_Human(t *testing.T) {

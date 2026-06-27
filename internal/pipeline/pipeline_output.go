@@ -81,14 +81,9 @@ func printPipelineJSON(p Pipeline) error {
 }
 
 func printPipelinesJSON(page DataPage[ListItem]) error {
-	data, err := json.MarshalIndent(page.Data, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
+	// TODO: Consider including pagination metadata (totalCount, count, next, previous)
+	// from DataPage in the JSON envelope for richer output.
+	return outputformat.PrintJSONEnvelope(os.Stdout, "pipelines", page.Data)
 }
 
 func printCreateResponseJSON(result CreateResponse) error {
