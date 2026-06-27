@@ -70,6 +70,25 @@ func Apply(opts Options) error {
 	return nil
 }
 
+// PropagateEnv sets TLS-related env vars so child processes (e.g. Node.js/Bun
+// plugins) inherit the same TLS configuration as the current process.
+// Call after Apply.
+func PropagateEnv(opts Options) error {
+	if opts.SkipVerify {
+		return os.Setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0")
+	}
+
+	if opts.CACertPath != "" {
+		if err := os.Setenv("NODE_EXTRA_CA_CERTS", opts.CACertPath); err != nil {
+			return err
+		}
+
+		return os.Setenv("SSL_CERT_FILE", opts.CACertPath)
+	}
+
+	return nil
+}
+
 func loadCACert(path string) (*x509.CertPool, error) {
 	pem, err := os.ReadFile(path)
 	if err != nil {

@@ -31,8 +31,14 @@ func setupTLS(cmd *cobra.Command) error {
 		return err
 	}
 
-	return internaltls.Apply(internaltls.Options{
+	opts := internaltls.Options{
 		SkipVerify: skipVerify,
 		CACertPath: caCert,
-	})
+	}
+
+	if err := internaltls.Apply(opts); err != nil {
+		return err
+	}
+
+	return internaltls.PropagateEnv(opts)
 }
