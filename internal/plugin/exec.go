@@ -55,8 +55,7 @@ func executePluginCommand(ctx context.Context, executable string, args []string,
 
 	err := cmd.Run()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return exitErr.ExitCode()
 		}
 
