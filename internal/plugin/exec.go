@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
@@ -67,60 +67,36 @@ func confirmPluginDepsInstall(args []string) bool {
 	return reader.AskYesNo()
 }
 
-// ExecutePlugin runs a plugin and returns its exit code
-// If the plugin manifest requires authentication, it will check/prompt for auth first
-func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
+// ExecutePlugin runs a plugin and returns its exit code.
+// If the plugin manifest requires authentication, it will check/prompt for auth first.
+// ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
+func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string) int {
 	if !checkAndInstallPluginDeps(manifest, args) {
 		return 1
 	}
 
-	// Check authentication if required by the plugin
 	if manifest.Authentication {
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
-		ctx := config.WithUserAgent(context.Background(), userAgent)
+		authCtx := config.WithUserAgent(ctx, userAgent)
 
-		if !auth.EnsureAuthenticated(ctx) {
+		if !auth.EnsureAuthenticated(authCtx) {
 			return 1
 		}
 	}
 
-	return executePluginCommand(executable, args, manifest.Authentication)
+	return executePluginCommand(ctx, executable, args, manifest.Authentication)
 }
 
-// executePluginCommand runs the actual plugin command
-func executePluginCommand(executable string, args []string, requireAuth bool) int {
-	cmd := buildPluginCommand(executable, args, requireAuth)
+// executePluginCommand runs the actual plugin command.
+func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) int {
+	cmd := buildPluginCommand(ctx, executable, args, requireAuth)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Forward signals to child process with cleanup
-	sigChan := make(chan os.Signal, 1)
-	done := make(chan struct{})
-
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		select {
-		case sig := <-sigChan:
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
-			}
-		case <-done:
-			// Command completed, exit goroutine cleanly
-			return
-		}
-	}()
-
 	err := cmd.Run()
-
-	// Signal goroutine to exit and cleanup
-	close(done)
-	signal.Stop(sigChan)
-
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return exitErr.ExitCode()
 		}
 
@@ -130,22 +106,28 @@ func executePluginCommand(executable string, args []string, requireAuth bool) in
 	return 0
 }
 
-// buildPluginCommand creates the appropriate exec.Cmd for the given executable
-// On Windows, .ps1 files are executed via PowerShell
-func buildPluginCommand(executable string, args []string, requireAuth bool) *exec.Cmd {
+// buildPluginCommand creates the appropriate exec.Cmd for the given executable.
+// On Windows, .ps1 files are executed via PowerShell.
+// ctx cancellation sends SIGTERM to the process, with a 5-second grace
+// period before SIGKILL.
+func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) *exec.Cmd {
 	ext := filepath.Ext(executable)
 
 	// On Windows, execute .ps1 files through PowerShell
 	if runtime.GOOS == "windows" && ext == ".ps1" {
 		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
 
-		cmd := exec.Command("powershell.exe", psArgs...)
+		cmd := exec.CommandContext(ctx, "powershell.exe", psArgs...)
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+		cmd.WaitDelay = 5 * time.Second
 		cmd.Env = buildPluginEnv(executable, requireAuth)
 
 		return cmd
 	}
 
-	cmd := exec.Command(executable, args...)
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Env = buildPluginEnv(executable, requireAuth)
 
 	return cmd
