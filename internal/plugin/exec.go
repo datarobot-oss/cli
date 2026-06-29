@@ -22,18 +22,59 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"syscall"
 	"time"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 )
+
+// checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
+// before execution. Returns false if the check fails or the user declines installation.
+//
+// Confirmation modes (in order of precedence):
+//  1. -y / --yes present in args
+//  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
+//  3. Interactive [Y/n] prompt
+func checkAndInstallPluginDeps(manifest PluginManifest, args []string) bool {
+	confirm := func() bool { return confirmPluginDepsInstall(args) }
+
+	if err := CheckAndInstallDeps(manifest.Name, confirm, os.Stderr); err != nil {
+		if !errors.Is(err, ErrDepsDeclined) {
+			fmt.Fprintf(os.Stderr, "plugin dependency check failed: %v\n", err)
+		}
+
+		return false
+	}
+
+	return true
+}
+
+// confirmPluginDepsInstall returns true when the user consents to installing
+// missing plugin dependencies. Consent is granted automatically when -y/--yes
+// is present in args or DATAROBOT_CLI_NON_INTERACTIVE is set; otherwise the
+// user is prompted interactively.
+func confirmPluginDepsInstall(args []string) bool {
+	if slices.Contains(args, "-y") || slices.Contains(args, "--yes") || reader.IsNonInteractive() {
+		return true
+	}
+
+	fmt.Fprint(os.Stdout, "Install missing dependencies? [Y/n]: ")
+
+	return reader.AskYesNo()
+}
 
 // ExecutePlugin runs a plugin and returns its exit code.
 // If the plugin manifest requires authentication, it will check/prompt for auth first.
 // ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
 func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string) int {
+	if !checkAndInstallPluginDeps(manifest, args) {
+		return 1
+	}
+
 	if manifest.Authentication {
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
 		authCtx := config.WithUserAgent(ctx, userAgent)
