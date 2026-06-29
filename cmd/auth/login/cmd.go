@@ -89,6 +89,12 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return waitErr
 	})
 	if err != nil {
+		if errors.Is(err, auth.ErrInterrupt) {
+			log.Info("Authentication cancelled.")
+
+			return cli.ErrSilent
+		}
+
 		log.Error(err)
 
 		cmd.SilenceUsage = true

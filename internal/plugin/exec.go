@@ -79,7 +79,12 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
 		authCtx := config.WithUserAgent(ctx, userAgent)
 
-		if !auth.EnsureAuthenticated(authCtx) {
+		ok, err := auth.EnsureAuthenticated(authCtx)
+		if !ok {
+			if errors.Is(err, auth.ErrInterrupt) {
+				return 130
+			}
+
 			return 1
 		}
 	}

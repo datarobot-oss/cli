@@ -54,6 +54,9 @@ func PrintAuthInstructions(authURL string) {
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
 var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
 
+// ErrInterrupt is returned when the user cancels the authentication flow.
+var ErrInterrupt = errors.New("Authentication cancelled.")
+
 // PrintUnsetTokenInstructions prints platform-specific instructions for unsetting DATAROBOT_API_TOKEN.
 func PrintUnsetTokenInstructions() {
 	fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
@@ -99,21 +102,26 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 // triggers the login flow automatically. Returns an error if authentication
 // fails, suitable for use in Cobra PreRunE hooks.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
-	if !EnsureAuthenticated(cmd.Context()) {
-		return errors.New("Authentication failed.")
+	ok, err := EnsureAuthenticated(cmd.Context())
+	if ok {
+		return nil
 	}
 
-	return nil
+	if errors.Is(err, ErrInterrupt) {
+		return err
+	}
+
+	return errors.New("Authentication failed.")
 }
 
 // EnsureAuthenticated checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns true if authentication
-// is valid or was successfully obtained.
-func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
+// is valid or was successfully obtained, and an error describing why it failed.
+func EnsureAuthenticated(ctx context.Context) (bool, error) { //nolint: cyclop
 	if viperx.GetBool("skip_auth") {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
 
-		return true
+		return true, nil
 	}
 
 	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
@@ -126,19 +134,19 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
 		_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
 
-		return true
+		return true, nil
 	}
 
 	datarobotHost := GetBaseURLOrAsk()
 	if datarobotHost == "" {
 		// Appropriate error message was already displayed in GetBaseURLOrAsk() and SetURLAction()
-		return false
+		return false, nil
 	}
 
 	_, viperErr := config.GetAPIKey(ctx)
 	if viperErr == nil {
 		// Valid token exists in viper config file
-		return true
+		return true, nil
 	}
 
 	skipAuthFlow := false
@@ -170,7 +178,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	}
 
 	if skipAuthFlow {
-		return false
+		return false, nil
 	}
 
 	// No valid token, attempt to get one
@@ -183,8 +191,15 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	key, err := APIKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
+		if errors.Is(err, ErrInterrupt) {
+			log.Info("Authentication cancelled.")
+
+			return false, ErrInterrupt
+		}
+
 		log.Error("Failed to retrieve API key.", "error", err)
-		return false
+
+		return false, err
 	}
 
 	viperx.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
@@ -192,12 +207,13 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	err = WriteConfigFileSilent()
 	if err != nil {
 		log.Error("Failed to write config file.", "error", err)
-		return false
+
+		return false, err
 	}
 
 	log.Info("Authentication successful")
 
-	return true
+	return true, nil
 }
 
 func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, error) {
@@ -255,7 +271,7 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 
 		// empty apiKey means we need to interrupt current auth flow
 		if apiKey == "" {
-			return "", errors.New("Interrupt request received.")
+			return "", ErrInterrupt
 		}
 
 		log.Debug("Successfully consumed API key from API request")
@@ -263,7 +279,8 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 		return apiKey, nil
 	case <-ctx.Done():
 		log.Debug("Ctrl-C received, exiting auth wait")
-		return "", errors.New("Interrupt request received.")
+
+		return "", ErrInterrupt
 	}
 }
 

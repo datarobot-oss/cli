@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
@@ -332,4 +333,33 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 	result := checkAndInstallPluginDeps(manifest, []string{})
 
 	assert.True(t, result)
+}
+
+// TestExecutePluginAuthCancelled verifies that cancelling the auth flow returns
+// the conventional SIGINT exit code (130) instead of treating it as a failure.
+func TestExecutePluginAuthCancelled(t *testing.T) {
+	originalCallback := auth.APIKeyCallbackFunc
+	auth.APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		return "", auth.ErrInterrupt
+	}
+
+	defer func() { auth.APIKeyCallbackFunc = originalCallback }()
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, "https://app.datarobot.com")
+	viperx.Set(config.DataRobotAPIKey, "")
+
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := filepath.Join(t.TempDir(), "test.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "cancelled-plugin", Version: "1.0.0", Authentication: true},
+	}
+
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+
+	assert.Equal(t, 130, exitCode, "Expected exit code 130 when auth is cancelled")
 }
