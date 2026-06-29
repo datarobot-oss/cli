@@ -270,3 +270,66 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
+
+func TestConfirmPluginDepsInstall_YFlag(t *testing.T) {
+	result := confirmPluginDepsInstall([]string{"-y"})
+
+	assert.True(t, result)
+}
+
+func TestConfirmPluginDepsInstall_YesFlag(t *testing.T) {
+	result := confirmPluginDepsInstall([]string{"--yes"})
+
+	assert.True(t, result)
+}
+
+func TestConfirmPluginDepsInstall_NonInteractiveEnv(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	result := confirmPluginDepsInstall([]string{})
+
+	assert.True(t, result)
+}
+
+func TestCheckAndInstallPluginDeps_SkipsWhenNoVersionsYaml(t *testing.T) {
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "nonexistent-test-dr-cli-plugin-xyz"},
+	}
+
+	result := checkAndInstallPluginDeps(manifest, []string{})
+
+	assert.True(t, result)
+}
+
+func TestCheckAndInstallPluginDeps_TrueWhenAllDepsSatisfied(t *testing.T) {
+	const versionsYAML = `echo-tool:
+  name: Echo tool
+  minimum-version: "1.0.0"
+  command: "echo 1.0.0"
+  url: https://example.com
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	managedDir, err := ManagedPluginsDir()
+	require.NoError(t, err)
+
+	pluginName := "test-dr-cli-prereq-plugin-xyz"
+
+	pluginDir := filepath.Join(managedDir, pluginName)
+
+	require.NoError(t, os.MkdirAll(pluginDir, 0o755))
+
+	t.Cleanup(func() { _ = os.RemoveAll(pluginDir) })
+
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "versions.yaml"), []byte(versionsYAML), 0o644))
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: pluginName},
+	}
+
+	result := checkAndInstallPluginDeps(manifest, []string{})
+
+	assert.True(t, result)
+}
