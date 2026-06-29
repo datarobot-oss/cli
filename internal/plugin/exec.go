@@ -20,104 +20,39 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"slices"
-	"syscall"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/misc/reader"
 )
 
-// checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
-// before execution. Returns false if the check fails or the user declines installation.
-//
-// Confirmation modes (in order of precedence):
-//  1. -y / --yes present in args
-//  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
-//  3. Interactive [Y/n] prompt
-func checkAndInstallPluginDeps(manifest PluginManifest, args []string) bool {
-	confirm := func() bool { return confirmPluginDepsInstall(args) }
-
-	if err := CheckAndInstallDeps(manifest.Name, confirm, os.Stderr); err != nil {
-		if !errors.Is(err, ErrDepsDeclined) {
-			fmt.Fprintf(os.Stderr, "plugin dependency check failed: %v\n", err)
-		}
-
-		return false
-	}
-
-	return true
-}
-
-// confirmPluginDepsInstall returns true when the user consents to installing
-// missing plugin dependencies. Consent is granted automatically when -y/--yes
-// is present in args or DATAROBOT_CLI_NON_INTERACTIVE is set; otherwise the
-// user is prompted interactively.
-func confirmPluginDepsInstall(args []string) bool {
-	if slices.Contains(args, "-y") || slices.Contains(args, "--yes") || reader.IsNonInteractive() {
-		return true
-	}
-
-	fmt.Fprint(os.Stdout, "Install missing dependencies? [Y/n]: ")
-
-	return reader.AskYesNo()
-}
-
-// ExecutePlugin runs a plugin and returns its exit code
-// If the plugin manifest requires authentication, it will check/prompt for auth first
-func ExecutePlugin(manifest PluginManifest, executable string, args []string) int {
-	if !checkAndInstallPluginDeps(manifest, args) {
-		return 1
-	}
-
-	// Check authentication if required by the plugin
+// ExecutePlugin runs a plugin and returns its exit code.
+// If the plugin manifest requires authentication, it will check/prompt for auth first.
+// ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
+func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string) int {
 	if manifest.Authentication {
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
-		ctx := config.WithUserAgent(context.Background(), userAgent)
+		authCtx := config.WithUserAgent(ctx, userAgent)
 
-		if !auth.EnsureAuthenticated(ctx) {
+		if !auth.EnsureAuthenticated(authCtx) {
 			return 1
 		}
 	}
 
-	return executePluginCommand(executable, args, manifest.Authentication)
+	return executePluginCommand(ctx, executable, args, manifest.Authentication)
 }
 
-// executePluginCommand runs the actual plugin command
-func executePluginCommand(executable string, args []string, requireAuth bool) int {
-	cmd := buildPluginCommand(executable, args, requireAuth)
+// executePluginCommand runs the actual plugin command.
+// ctx cancellation kills the subprocess (e.g. on Ctrl-C).
+func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) int {
+	cmd := buildPluginCommand(ctx, executable, args, requireAuth)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Forward signals to child process with cleanup
-	sigChan := make(chan os.Signal, 1)
-	done := make(chan struct{})
-
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		select {
-		case sig := <-sigChan:
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
-			}
-		case <-done:
-			// Command completed, exit goroutine cleanly
-			return
-		}
-	}()
-
 	err := cmd.Run()
-
-	// Signal goroutine to exit and cleanup
-	close(done)
-	signal.Stop(sigChan)
-
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -130,22 +65,23 @@ func executePluginCommand(executable string, args []string, requireAuth bool) in
 	return 0
 }
 
-// buildPluginCommand creates the appropriate exec.Cmd for the given executable
-// On Windows, .ps1 files are executed via PowerShell
-func buildPluginCommand(executable string, args []string, requireAuth bool) *exec.Cmd {
+// buildPluginCommand creates the appropriate exec.Cmd for the given executable.
+// On Windows, .ps1 files are executed via PowerShell.
+// ctx cancellation sends SIGKILL to the process.
+func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) *exec.Cmd {
 	ext := filepath.Ext(executable)
 
 	// On Windows, execute .ps1 files through PowerShell
 	if runtime.GOOS == "windows" && ext == ".ps1" {
 		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
 
-		cmd := exec.Command("powershell.exe", psArgs...)
+		cmd := exec.CommandContext(ctx, "powershell.exe", psArgs...)
 		cmd.Env = buildPluginEnv(executable, requireAuth)
 
 		return cmd
 	}
 
-	cmd := exec.Command(executable, args...)
+	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Env = buildPluginEnv(executable, requireAuth)
 
 	return cmd
