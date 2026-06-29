@@ -291,7 +291,7 @@ func TestConfirmPluginDepsInstall_NonInteractiveEnv(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestCheckAndInstallPluginDeps_SkipsWhenNoVersionsYaml(t *testing.T) {
+func TestCheckAndInstallPluginPrereps_SkipsWhenNoVersionsYaml(t *testing.T) {
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "nonexistent-test-dr-cli-plugin-xyz"},
 	}
@@ -301,7 +301,7 @@ func TestCheckAndInstallPluginDeps_SkipsWhenNoVersionsYaml(t *testing.T) {
 	assert.True(t, result)
 }
 
-func TestCheckAndInstallPluginDeps_TrueWhenAllDepsSatisfied(t *testing.T) {
+func TestCheckAndInstallPluginPrereps_TrueWhenAllDepsSatisfied(t *testing.T) {
 	const versionsYAML = `echo-tool:
   name: Echo tool
   minimum-version: "1.0.0"
