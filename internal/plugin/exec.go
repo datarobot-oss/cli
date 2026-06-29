@@ -22,6 +22,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
+	"time"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
@@ -45,7 +47,6 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 }
 
 // executePluginCommand runs the actual plugin command.
-// ctx cancellation kills the subprocess (e.g. on Ctrl-C).
 func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) int {
 	cmd := buildPluginCommand(ctx, executable, args, requireAuth)
 	cmd.Stdin = os.Stdin
@@ -67,7 +68,8 @@ func executePluginCommand(ctx context.Context, executable string, args []string,
 
 // buildPluginCommand creates the appropriate exec.Cmd for the given executable.
 // On Windows, .ps1 files are executed via PowerShell.
-// ctx cancellation sends SIGKILL to the process.
+// ctx cancellation sends SIGTERM to the process, with a 5-second grace
+// period before SIGKILL.
 func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) *exec.Cmd {
 	ext := filepath.Ext(executable)
 
@@ -76,12 +78,16 @@ func buildPluginCommand(ctx context.Context, executable string, args []string, r
 		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
 
 		cmd := exec.CommandContext(ctx, "powershell.exe", psArgs...)
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+		cmd.WaitDelay = 5 * time.Second
 		cmd.Env = buildPluginEnv(executable, requireAuth)
 
 		return cmd
 	}
 
 	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Env = buildPluginEnv(executable, requireAuth)
 
 	return cmd
