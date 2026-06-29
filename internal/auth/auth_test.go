@@ -103,10 +103,30 @@ func TestEnsureAuthenticated_MissingCredentials(t *testing.T) {
 	}
 
 	// EnsureAuthenticated should detect missing credentials.
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false with missing credentials")
 
 	// Verify the URL is properly configured.
+	baseURL := config.GetBaseURL()
+	assert.Equal(t, server.URL, baseURL, "Expected base URL to be set from test server")
+}
+
+func TestEnsureAuthenticated_Interrupted(t *testing.T) {
+	server, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	// Mock the callback to simulate the user cancelling the auth flow.
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		return "", ErrInterrupt
+	}
+
+	result, err := EnsureAuthenticated(context.Background())
+	assert.False(t, result, "Expected EnsureAuthenticated to return false when interrupted")
+	require.ErrorIs(t, err, ErrInterrupt, "Expected ErrInterrupt to be returned")
+
 	baseURL := config.GetBaseURL()
 	assert.Equal(t, server.URL, baseURL, "Expected base URL to be set from test server")
 }
@@ -126,7 +146,7 @@ func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 		return "", errors.New("simulated authentication failure")
 	}
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false with expired credentials")
 }
 
@@ -140,7 +160,7 @@ func TestEnsureAuthenticated_ValidCredentials(t *testing.T) {
 	apiKey, _ := config.GetAPIKey(context.Background())
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey to return valid token")
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid credentials")
 }
 
@@ -154,7 +174,7 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 	apiKey, _ := config.GetAPIKey(context.Background())
 	assert.Empty(t, apiKey, "Expected GetAPIKey before EnsureAuthenticated to return empty string")
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true with valid environment credentials")
 
 	apiKey, _ = config.GetAPIKey(context.Background())
@@ -177,14 +197,14 @@ func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 
 	defer os.Setenv("DATAROBOT_API_TOKEN", existingToken)
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via config")
 
 	os.Setenv("DATAROBOT_CLI_SKIP_AUTH", "true")
 
 	defer os.Unsetenv("DATAROBOT_CLI_SKIP_AUTH")
 
-	result = EnsureAuthenticated(context.Background())
+	result, _ = EnsureAuthenticated(context.Background())
 	assert.True(t, result, "Expected EnsureAuthenticated to return true when skip_auth is enabled via environment variable")
 }
 
@@ -208,7 +228,7 @@ func TestEnsureAuthenticated_DefaultUserAgent(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.True(t, result)
 
 	expectedUserAgent := "DataRobot CLI version: dev"
@@ -234,7 +254,7 @@ func TestEnsureAuthenticated_NoURL(t *testing.T) {
 	baseURL := config.GetBaseURL()
 	assert.Empty(t, baseURL, "Expected GetBaseURL to return empty string")
 
-	result := EnsureAuthenticated(context.Background())
+	result, _ := EnsureAuthenticated(context.Background())
 	assert.False(t, result, "Expected EnsureAuthenticated to return false without configured URL")
 }
 

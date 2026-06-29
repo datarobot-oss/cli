@@ -145,7 +145,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		// empty apiKey means we need to interrupt current auth flow
 		if apiKey == "" {
-			return errMsg{errors.New("Interrupt request received.")}
+			return errMsg{auth.ErrInterrupt}
 		}
 
 		viperx.Set(config.DataRobotAPIKey, apiKey)
