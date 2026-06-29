@@ -57,13 +57,16 @@ func TestPrintListJSON(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	var parsed []interface{}
+	var parsed map[string]interface{}
 
 	err := json.Unmarshal([]byte(output), &parsed)
 	require.NoError(t, err)
-	require.Len(t, parsed, 1)
 
-	item := parsed[0].(map[string]interface{})
+	items, ok := parsed["pipelines"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, items, 1)
+
+	item := items[0].(map[string]interface{})
 	assert.Equal(t, "confluence_to_vdb", item["name"])
 	assert.Equal(t, "draft", item["mode"])
 }
