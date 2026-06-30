@@ -316,14 +316,9 @@ download_and_install() {
 }
 
 # Create or refresh the 'datarobot' alias symlink (datarobot -> dr).
-#
-# Uses `ln -sfn` (no-dereference; supported by both GNU and BSD/macOS ln) and
-# removes any existing entry first. This is critical: if `dr` is installed as a
-# directory on PATH (as in DataRobot Codespaces, where the binary lives at
-# dr/dr) then a prior run leaves `datarobot` as a symlink to that directory.
-# A plain `ln -sf dr datarobot` would follow that symlink and create the new
-# link *inside* the directory, clobbering the real binary at dr/dr with a
-# self-referential `dr -> dr` symlink ("too many levels of symbolic links").
+# Removes the existing entry first to avoid ln following a symlink into a
+# directory (e.g. Codespaces installs dr as dr/dr) and creating a
+# self-referential link inside it.
 ensure_datarobot_alias() {
     rm -f "$INSTALL_DIR/datarobot"
     ln -sfn "$BINARY_NAME" "$INSTALL_DIR/datarobot"
