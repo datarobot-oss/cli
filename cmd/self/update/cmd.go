@@ -125,18 +125,14 @@ with your default shell.
 			execCmd.Stdout = os.Stdout
 			execCmd.Stderr = os.Stderr
 
-			// On Linux/macOS the install script (install.sh, see
-			// https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh)
-			// defaults INSTALL_DIR to
-			// ~/.local/bin, ignoring where dr is actually installed. Point it at
-			// the running binary's directory so the update lands in place instead
-			// of scattering files (e.g. DataRobot Codespaces install dr under a
+			// The install scripts (install.sh, install.ps1) default INSTALL_DIR to
+			// ~/.local/bin or %LOCALAPPDATA%\Programs\dr, ignoring where dr is
+			// actually installed. Point it at the running binary's directory so the
+			// update lands in place (e.g. DataRobot Codespaces install dr under a
 			// dr/ directory on PATH). Respect a user-provided INSTALL_DIR.
-			if runtime.GOOS != "windows" {
-				if _, ok := os.LookupEnv("INSTALL_DIR"); !ok {
-					if dir, ok := resolveInstallDir(); ok {
-						execCmd.Env = append(os.Environ(), "INSTALL_DIR="+dir)
-					}
+			if _, ok := os.LookupEnv("INSTALL_DIR"); !ok {
+				if dir, ok := resolveInstallDir(); ok {
+					execCmd.Env = append(os.Environ(), "INSTALL_DIR="+dir)
 				}
 			}
 
