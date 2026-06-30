@@ -88,7 +88,7 @@ jobs:
 
       - name: Install smoke-test dependencies
         if: ${{ inputs.install-deps }}
-        uses: ./.github/actions/install-deps
+        uses: datarobot-oss/cli/.github/actions/install-deps@main
 
       - name: Debug brew environment (macOS only)
         if: ${{ runner.os == 'macOS' && inputs.debug-brew }}
@@ -122,11 +122,11 @@ jobs:
 
       - name: Set up Go and Task
         if: ${{ inputs.setup }}
-        uses: ./.github/actions/setup
+        uses: datarobot-oss/cli/.github/actions/setup@main
 
       - name: Build and Install the DR CLI Binary
         if: ${{ inputs.install-bin }}
-        uses: ./.github/actions/install-dr-bin
+        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
 
       - name: Build binary
         if: ${{ inputs.build }}
