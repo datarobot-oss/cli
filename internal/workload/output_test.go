@@ -124,14 +124,21 @@ func TestPrintArtifactsJSON(t *testing.T) {
 		require.NoError(t, printArtifactsJSON(artifacts))
 	})
 
-	var parsed []map[string]any
+	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
-	assert.Len(t, parsed, 2)
-	assert.Equal(t, "art-001", parsed[0]["id"])
-	assert.Equal(t, "ver-001", parsed[0]["versionId"])
-	assert.Equal(t, "art-002", parsed[1]["id"])
-	assert.Empty(t, parsed[1]["versionId"])
+
+	items, ok := parsed["artifacts"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, items, 2)
+
+	item0 := items[0].(map[string]interface{})
+	assert.Equal(t, "art-001", item0["id"])
+	assert.Equal(t, "ver-001", item0["versionId"])
+
+	item1 := items[1].(map[string]interface{})
+	assert.Equal(t, "art-002", item1["id"])
+	assert.Empty(t, item1["versionId"])
 }
 
 func TestPrintArtifactsJSON_Empty(t *testing.T) {
@@ -139,10 +146,13 @@ func TestPrintArtifactsJSON_Empty(t *testing.T) {
 		require.NoError(t, printArtifactsJSON([]Artifact{}))
 	})
 
-	var parsed []any
+	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
-	assert.Empty(t, parsed)
+
+	items, ok := parsed["artifacts"].([]interface{})
+	require.True(t, ok)
+	assert.Empty(t, items)
 }
 
 func TestPrintArtifactDetails_WithCodeRef(t *testing.T) {

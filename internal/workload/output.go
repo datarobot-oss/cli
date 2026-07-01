@@ -71,14 +71,7 @@ func printArtifactsJSON(artifacts []Artifact) error {
 		outputs = append(outputs, NewArtifactOutput(a))
 	}
 
-	data, err := json.MarshalIndent(outputs, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
+	return outputformat.PrintJSONEnvelope(os.Stdout, "artifacts", outputs)
 }
 
 func printArtifactDetails(artifact Artifact) {
