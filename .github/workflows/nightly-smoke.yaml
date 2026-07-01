@@ -24,34 +24,42 @@ permissions:
 jobs:
   build-windows:
     # S5: caller job must grant at least what the reusable workflow requests.
-    # .build-windows.yaml needs contents:read (checkout) and actions:write (upload-artifact).
+    # _build.yaml needs contents:read (checkout) and actions:write (upload-artifact).
     permissions:
       contents: read
       actions: write
-    uses: ./.github/workflows/.build-windows.yaml
+    uses: ./.github/workflows/_build.yaml
     with:
       artifact-name: 'dr-windows'
     # S1: called workflow declares no secrets — omit secrets block.
   smoke-test:
-    uses: ./.github/workflows/.smoke-tests-matrix.yaml
+    uses: ./.github/workflows/_smoke.yaml
+    with:
+      install-deps: true
+      install-bin: true
+      needs-token: true
+      test-script: 'task smoke-test DR_API_TOKEN="$DR_API_TOKEN"'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   windows-smoke-test:
     needs: build-windows
-    uses: ./.github/workflows/.windows-smoke-test.yaml
+    uses: ./.github/workflows/_smoke-windows.yaml
     with:
       artifact-name: 'dr-windows'
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
 
   installs-smoke-test:
-    uses: ./.github/workflows/.installation-tests-matrix.yaml
+    uses: ./.github/workflows/_install-tests.yaml
 
   self-update-smoke-test:
-    uses: ./.github/workflows/.self-update-tests-matrix.yaml
+    uses: ./.github/workflows/_smoke.yaml
     with:
-      debug_brew: ${{ inputs.debug_brew || false }}
+      job-name: 'Self-Update Smoke Tests'
+      setup: false
+      debug-brew: ${{ inputs.debug_brew || false }}
+      test-script: './smoke_test_scripts/run_self_update_smoke_test.sh'
 
   notify-failure:
     needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test]

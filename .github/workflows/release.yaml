@@ -92,14 +92,14 @@ jobs:
 
   verify-installation:
     needs: release
-    uses: ./.github/workflows/.installation-tests-matrix.yaml
+    uses: ./.github/workflows/_install-tests.yaml
     with:
       version: ${{ github.ref_name }}
     # S1: called workflow declares no secrets — omit secrets block.
 
   pre-release-smoke-test:
     needs: verify-installation
-    uses: ./.github/workflows/.pre-release-smoke-tests-matrix.yaml
+    uses: ./.github/workflows/_pre-release-smoke.yaml
     with:
       version: ${{ github.ref_name }}
     secrets:

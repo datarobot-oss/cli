@@ -1,15 +1,20 @@
-name: Build Windows Binary
+name: Build (Reusable)
+
+# Single cross-compile build path. Merges the former native build matrix
+# (.build-matrix.yaml) and the GoReleaser Windows build (.build-windows.yaml):
+# GoReleaser cross-compiles every target on one ubuntu runner. The Windows
+# binary is uploaded as an artifact for the Windows smoke-test job to consume.
 
 on:
   workflow_call:
     inputs:
       artifact-name:
-        description: 'Name for the artifact'
+        description: 'Name for the uploaded Windows binary artifact.'
         required: false
         type: string
         default: 'dr-windows'
       ref:
-        description: 'Git ref to checkout (for fork PRs)'
+        description: 'Git ref to checkout (for fork PRs). Defaults to the triggering ref.'
         required: false
         type: string
 
@@ -18,9 +23,9 @@ permissions:
   contents: read
 
 jobs:
-  build-windows:
+  build:
     runs-on: ubuntu-latest
-    name: Build Windows Binary with GoReleaser
+    name: Cross-compile Binaries with GoReleaser
     timeout-minutes: 20
     permissions:
       contents: read
@@ -34,7 +39,7 @@ jobs:
       - name: Set up Go and Task
         uses: datarobot-oss/cli/.github/actions/setup@main
 
-      - name: Build Windows Binary with GoReleaser
+      - name: Cross-compile binaries with GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser

@@ -1,13 +1,18 @@
 # GitHub Actions Workflows
 
-This directory contains GitHub Actions workflows for the DR CLI project. We use composite actions and reusable workflows to reduce duplication and improve maintainability.
+This directory holds the CI/CD workflows for the DR CLI. GitHub Actions does not
+support subdirectories here — every workflow lives flat — so files are grouped by
+a **naming convention** instead, and repeated *step* logic lives in composite
+actions under [`.github/actions/`](../actions/).
 
-## Composite Actions
+## Naming convention
 
-Step-level building blocks live under [`.github/actions/`](../actions/). Unlike
-reusable workflows (which share whole jobs), composite actions share *steps*, so
-they replace the copy-pasted checkout→Go→Task setup across jobs. They run in the
-caller's job, so the repo must be checked out **before** they are used.
+| Prefix | Kind | Trigger | Sorts as |
+| --- | --- | --- | --- |
+| `_` | **Reusable** building block | `workflow_call` only | grouped at top |
+| `pr-` | **PR entrypoint** | `pull_request` | grouped together |
+| `manual-` | **Manual entrypoint** | `workflow_dispatch` | grouped together |
+| none | **Event entrypoint** | push / schedule / tag | — |
 
 > **Important: reusable workflows must use the full repo path.**
 >
@@ -29,226 +34,159 @@ caller's job, so the repo must be checked out **before** they are used.
 > to resolve same-repo actions at the same SHA automatically, but it hasn't
 > shipped yet.
 
-### `setup`
-Sets up Go (version pinned by `go.mod` via `go-version-file`) and, optionally,
-Taskfile, with `setup-go`'s built-in module/build caching.
+One extension everywhere: **`.yaml`**.
 
-**Inputs:**
-- `cache` (string, default: `'true'`) - Enable `setup-go` caching
-- `install-task` (string, default: `'true'`) - Whether to install Taskfile
+## File index
 
-```yaml
-steps:
-  - uses: actions/checkout@<sha>
-  - uses: ./.github/actions/setup          # go + task + cache
-  # or, when Task isn't needed (e.g. GoReleaser-driven builds):
-  - uses: ./.github/actions/setup
-    with:
-      install-task: 'false'
+**Reusables (`_*.yaml`)** — called by entrypoints, never triggered directly:
+
+| File | Purpose |
+| --- | --- |
+| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. |
+| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. |
+| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. |
+| `_install-tests.yaml` | Installation-script tests across Linux/macOS/Windows. |
+| `_pre-release-smoke.yaml` | Heavier end-to-end smoke tests that gate release promotion. |
+
+**Entrypoints:**
+
+| File | Trigger | Purpose |
+| --- | --- | --- |
+| `pr-checks.yaml` | `pull_request → main` | Lint, test, copyright, code-gen, cross-compile build, auto-label; conditional deps/install/completion tests. |
+| `pr-security.yaml` | `pull_request`, `push → main` | Trivy scan, govulncheck, dependency-review, CodeQL (Go) analysis (`analyze` job, non-blocking until Phase 5). |
+| `smoke-gate.yaml` | `pull_request → main` | Sets the required **Smoke Tests** commit status (see below). |
+| `smoke-on-demand.yaml` | `pull_request [labeled]` | Label-triggered smoke tests for **non-fork** PRs. |
+| `comment-commands.yaml` | `issue_comment` | Slash-commands (trigger/approve/skip smoke & install tests). |
+| `fork-smoke-tests.yaml` | `workflow_dispatch` | Maintainer-approved fork smoke tests with a security pre-scan. |
+| `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites (`suite` input). |
+| `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + install/self-update tests + Slack on failure. |
+| `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. |
+| `pages.yaml` | `push → main`, `dispatch` | Build and deploy the MkDocs site to GitHub Pages. |
+
+## Composite actions
+
+Step-level building blocks under [`.github/actions/`](../actions/). They run in
+the caller's job, so the repo must be checked out **before** they are used.
+
+- **`setup`** — Go (version from `go.mod` via `go-version-file`) + optional
+  Taskfile, with `setup-go`'s built-in module/build caching. Inputs: `cache`,
+  `install-task`.
+- **`install-deps`** — OS-aware install of `expect`, `bash-completion`, and `yq`.
+- **`install-dr-bin`** — build `dr`, install via `install.sh`, add `~/.local/bin`
+  to PATH (Unix only).
+
+## Flow diagrams
+
+How the entrypoints wire to the reusables, plus the fork-PR gate. Full per-flow
+diagrams (regular PR, on-demand / nightly / manual smoke, release, pages) live in
+[`docs/development/ci-workflow-flows.md`](../../docs/development/ci-workflow-flows.md).
+
+**Entrypoints → reusable building blocks:**
+
+```mermaid
+graph LR
+  subgraph Entrypoints
+    PRC["pr-checks.yaml"]
+    NS["nightly-smoke.yaml"]
+    SOD["smoke-on-demand.yaml"]
+    FST["fork-smoke-tests.yaml"]
+    MS["manual-smoke.yaml"]
+    REL["release.yaml"]
+  end
+  subgraph Reusables
+    B["_build.yaml"]
+    SM["_smoke.yaml"]
+    SW["_smoke-windows.yaml"]
+    IT["_install-tests.yaml"]
+    PRS["_pre-release-smoke.yaml"]
+  end
+  PRC --> SM
+  NS --> B
+  NS --> SM
+  NS --> SW
+  NS --> IT
+  SOD --> B
+  SOD --> SM
+  SOD --> SW
+  FST --> B
+  FST --> SM
+  FST --> SW
+  MS --> SM
+  MS --> IT
+  REL --> IT
+  REL --> PRS
 ```
 
-### `install-deps`
-OS-aware install of the smoke-test prerequisites: `expect` + `bash-completion`
-(apt-get on Linux, Homebrew on macOS) and `yq`.
+**Forked PR (the `Smoke Tests` gate):**
 
-### `install-dr-bin`
-Builds the `dr` CLI, installs it via `install.sh`, and adds `~/.local/bin` to
-PATH (Unix only — Windows smoke tests download a prebuilt artifact instead).
+```mermaid
+flowchart TD
+  A["Contributor opens PR from a fork"] --> G["smoke-gate.yaml (pull_request)"]
+  G -->|fork detected| GP["Does NOT set 'Smoke Tests' status"]
+  GP --> GATE{{"Required check 'Smoke Tests'<br/>stays pending → merge blocked"}}
 
-## Reusable Workflows
+  M["Maintainer reviews the diff"] --> C{"Comment on PR"}
+  C -->|"/approve-smoke-tests"| CC["comment-commands.yaml"]
+  C -->|"/skip-smoke-tests"| SK["comment-commands.yaml<br/>sets 'Smoke Tests' = success"]
+  CC --> PERM["check author has write/maintain/admin"]
+  PERM --> DISP["workflow_dispatch → fork-smoke-tests.yaml"]
 
-Reusable workflows (prefixed with `.`) contain common patterns used across multiple workflows. All Go setup goes through the `setup` composite action, so the Go version comes from `go.mod` and is no longer a workflow input.
+  subgraph FST["fork-smoke-tests.yaml"]
+    P1["check-permissions"] --> P2["resolve-pr (SHA, is_fork)"]
+    P2 --> SEC["security-scan: Trivy CRITICAL/HIGH (exit 1)"]
+    SEC --> BW["build-windows → _build.yaml"]
+    SEC --> LST["linux-smoke-tests → _smoke.yaml (DR_API_TOKEN)"]
+    BW --> WST["windows-smoke-tests → _smoke-windows.yaml"]
+    LST --> NR["notify-results"]
+    WST --> NR
+    NR --> STAT["set 'Smoke Tests' commit status<br/>success / failure"]
+  end
 
-### `.build-windows.yaml`
-Builds Windows binary using GoReleaser (cross-compiled from Ubuntu).
-
-**Inputs:**
-- `artifact-name` (string, default: `dr-windows`) - Name for the artifact
-- `ref` (string, optional) - Git ref to checkout (useful for fork PRs)
-
-**Usage:**
-```yaml
-jobs:
-  build-windows:
-    uses: ./.github/workflows/.build-windows.yaml
-    with:
-      artifact-name: 'dr-windows'
+  DISP --> P1
+  STAT --> GATE
+  SK --> GATE
 ```
 
-### `.smoke-tests-matrix.yaml`
-Runs smoke tests on Linux and macOS.
+## The `Smoke Tests` required check
 
-**Inputs:**
-- `os-matrix` (string, default: `["ubuntu-latest", "macos-latest"]`) - OS matrix
-- `ref` (string, optional) - Git ref to checkout
+`smoke-gate.yaml` sets a hand-rolled **`Smoke Tests`** commit status (the exact
+string is a branch-protection required check):
 
-**Secrets (required):**
-- `DR_API_TOKEN` - DataRobot API token for testing
-- `GITHUB_TOKEN` - GitHub token for authentication
+- **Non-fork PRs** — auto-set to `success` (smoke tests are opt-in via labels/commands).
+- **Fork PRs** — the status is *not* set; the missing required check blocks merge
+  until a maintainer runs or skips the tests.
 
-**Usage:**
-```yaml
-jobs:
-  smoke-test:
-    uses: ./.github/workflows/.smoke-tests-matrix.yaml
-    secrets:
-      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-```
+> ⚠️ The `Smoke Tests` context string is set by name in a script, so it is immune
+> to file renames. Keep it unchanged, and update branch-protection required-check
+> names in lockstep with any job/workflow rename, or fork PRs will hang.
 
-### `.windows-smoke-test.yaml`
-Runs smoke tests on Windows using a pre-built binary artifact.
+## PR automation: commands & labels
 
-**Inputs:**
-- `artifact-name` (string, default: `dr-windows`) - Name of the Windows binary artifact
-- `ref` (string, optional) - Git ref to checkout
+Slash-commands (comment on a PR — `comment-commands.yaml`):
 
-**Secrets (required):**
-- `DR_API_TOKEN` - DataRobot API token for testing
-- `GITHUB_TOKEN` - GitHub token for authentication
+- `/trigger-smoke-test` — run smoke tests on this PR (non-fork only).
+- `/trigger-install-test` — run installation tests on this PR (non-fork only).
+- `/approve-smoke-tests` (or `/approve-fork-tests`) — run fork smoke tests (maintainers).
+- `/skip-smoke-tests` — mark the **Smoke Tests** check passed without running (maintainers).
 
-**Usage:**
-```yaml
-jobs:
-  windows-smoke-test:
-    needs: build-windows
-    uses: ./.github/workflows/.windows-smoke-test.yaml
-    with:
-      artifact-name: 'dr-windows'
-    secrets:
-      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-### `.installation-tests-matrix.yaml`
-Tests installation scripts across all platforms (Linux, macOS, Windows).
-
-**Inputs:**
-- `os-matrix` (string, default: `["ubuntu-latest", "macos-latest", "windows-latest"]`) - OS matrix
-
-**Secrets (required):**
-- `GITHUB_TOKEN` - GitHub token for authentication
-
-**Usage:**
-```yaml
-jobs:
-  installation-tests:
-    uses: ./.github/workflows/.installation-tests-matrix.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-> **Note:** environment setup (checkout-less Go + Task + cache) now lives in the
-> [`setup` composite action](#setup), which replaced the former `.setup.yaml`
-> reusable workflow.
-
-## Main Workflows
-
-### `checks.yaml`
-Runs on pull requests to main. Performs:
-- Linting (golangci-lint, goreleaser check)
-- Unit tests
-- Copyright/license checks
-- Code generation verification
-- Multi-platform build (single Ubuntu runner cross-compiling all targets via GoReleaser)
-- Conditional completion tests (when completion code changes)
-
-### `smoke-tests.yaml`
-Daily smoke tests (every 4 hours on weekdays) and runs on pushes to main:
-- Builds Windows binary with GoReleaser
-- Runs smoke tests on Linux and macOS
-- Runs smoke tests on Windows
-- **Tests installation scripts on all platforms** (validates the public install scripts)
-- **Notifies Slack on failure** - Sends alert when any smoke test job fails
-
-### `smoke-tests-on-demand.yaml`
-Triggered by PR labels (`run-smoke-tests` or `go`):
-- Builds Windows binary
-- Runs smoke tests on Linux and Windows
-- Posts results as PR comments
-- Auto-removes `run-smoke-tests` label after completion
-- **Note:** Does NOT run installation tests (those run only on main/schedule to avoid testing unreleased code)
-
-### `smoke-tests-gate.yaml`
-Runs on all PRs targeting `main` to set the required **Smoke Tests** commit status:
-- **Non-fork PRs**: auto-sets status to `success` (smoke tests are optional, run via labels/commands)
-- **Fork PRs**: skips status creation (read-only token). The missing required check blocks merge until a maintainer runs (`/approve-smoke-tests`) or skips (`/skip-smoke-tests`) the tests
-
-### `fork-smoke-tests.yaml`
-Triggered manually via `workflow_dispatch` by a maintainer (from the Actions tab):
-- Accepts a PR number and optional commit SHA as inputs
-- Performs security scans (Trivy, gosec)
-- Builds Windows binary from fork PR code
-- Runs smoke tests on Linux and Windows
-- Posts results as PR comments
-- Updates the **Smoke Tests** commit status to `success` or `failure`
-
-### `release.yaml`
-Triggered by version tags (`v*.*.*`):
-- Builds and releases binaries with GoReleaser
-- Updates Homebrew tap
-- Creates GitHub release
-- **Notifies Slack on success** - Announces new release with version and release notes link
-- **Notifies Slack on failure** - Alerts when release process fails
-
-### `security-scan.yaml`
-Runs on PRs and pushes to main:
-- Trivy vulnerability scanning
-- Uploads results to GitHub Security tab
-
-## Slack Notifications
-
-Several workflows send Slack notifications to keep the team informed:
-
-- **`release.yaml`**: Sends notifications on both successful releases and failures
-- **`smoke-tests.yaml`**: Sends notifications only when smoke tests fail on main/schedule
-
-To enable Slack notifications, add `SLACK_WEBHOOK_URL` as a repository secret:
-1. Go to your Slack workspace → Apps → Incoming Webhooks
-2. Create a new webhook for your desired channel
-3. Add the webhook URL as `SLACK_WEBHOOK_URL` in GitHub repository secrets (Settings → Secrets and variables → Actions → New repository secret)
-
-## PR Automation: Comment-Commands and Labels
-
-This repository supports automation for PRs using comment-commands (slash commands) and labels.
-
-### Comment-Commands (Slash Commands)
-
-Trigger workflows by commenting on a PR:
-
-- `/trigger-smoke-test` or `/trigger-test-smoke` - Run smoke tests on this PR (non-fork PRs only)
-- `/trigger-install-test` or `/trigger-test-install` - Run installation tests on this PR (non-fork PRs only)
-- `/approve-smoke-tests` or `/approve-fork-tests` - Run smoke tests for a fork PR (maintainers only)
-- `/skip-smoke-tests` - Mark the **Smoke Tests** required check as passed without running tests (maintainers only)
-
-### Labels for Regular PRs
-
-Apply labels to PRs to trigger workflows:
-
-- `run-smoke-tests` or `go` - Triggers `smoke-tests-on-demand.yaml`
-  - Builds Windows binary
-  - Runs smoke tests on Linux and Windows
-  - Posts results as PR comments
-  - Auto-removes label after completion
-  - **Note:** This only works for PRs from the main repository, not forked PRs
+Labels: `run-smoke-tests` or `go` trigger `smoke-on-demand.yaml` (non-fork PRs only).
 
 ### Forked PRs
 
-Forked PRs block merge via a required **Smoke Tests** commit status that is never auto-set. The `fork-smoke-tests.yaml` workflow uses `workflow_dispatch` (not `pull_request_target`) to avoid secrets leakage:
+Fork PRs use `workflow_dispatch` (never `pull_request_target`) to avoid secrets
+leakage. A maintainer reviews the diff, then comments `/approve-smoke-tests` to
+run a security pre-scan plus smoke tests (results update the **Smoke Tests**
+status), or `/skip-smoke-tests` to bypass it. The `run-smoke-tests` label and
+`/trigger-smoke-test` command do not work on fork PRs.
 
-**Process for Forked PRs:**
-1. External contributor opens a PR from their fork
-2. The **Smoke Tests** required check appears as "Expected — Waiting for status to be reported", blocking merge
-3. Maintainer reviews the code changes for security concerns, then either:
-   - Comments `/approve-smoke-tests` to trigger security scans + smoke tests (results auto-update the check)
-   - Comments `/skip-smoke-tests` to bypass the check without running tests
-4. Results are posted as PR comments and the commit status is updated
+## Slack notifications
 
-**For external contributors:** the `run-smoke-tests` label and `/trigger-smoke-test` command won't work on fork PRs. Please comment requesting a maintainer review.
+`release.yaml` (success + failure) and `nightly-smoke.yaml` (failure only) post to
+Slack via the `SLACK_WEBHOOK_URL` repository secret.
 
-## Benefits of Reusable Workflows
+## Conventions for editing
 
-1. **DRY Principle**: Common patterns defined once, used everywhere
-2. **Consistency**: All workflows use the same setup steps and configurations
-3. **Maintainability**: Update once, apply everywhere
-4. **Readability**: Main workflows focus on orchestration, not implementation details
-5. **Testing**: Reusable workflows can be tested independently
+- Reusables only share whole jobs; share *steps* via composite actions instead.
+- Set top-level `permissions: contents: read` and grant per-job minimums (S5).
+- SHA-pin third-party actions with a `# vX.Y.Z` comment; Dependabot bumps them.
+- `workflow_dispatch` run history does not carry across file renames.

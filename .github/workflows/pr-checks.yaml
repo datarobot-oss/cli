@@ -235,13 +235,25 @@ jobs:
   deps-install-smoke-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.deps == 'true'
-    uses: ./.github/workflows/.deps-install-smoke-tests-matrix.yaml
-    # S1: called workflow declares no secrets — omit secrets block.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_smoke.yaml
+    with:
+      job-name: 'Dependency Install Smoke Tests'
+      build: true
+      test-script: 'DR_BIN=./dist/dr bash smoke_test_scripts/run_deps_install_smoke_test.sh'
+    # S1: _smoke.yaml's DR_API_TOKEN secret is optional; this suite needs none.
   install-integration-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.install_sh == 'true'
-    uses: ./.github/workflows/.install-integration-tests-matrix.yaml
-    # S1: called workflow declares no secrets — omit secrets block.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_smoke.yaml
+    with:
+      job-name: 'Install Integration Tests'
+      build: true
+      test-script: 'LOCAL_BINARY=./dist/dr bash smoke_test_scripts/run_install_integration_test.sh'
+    # S1: _smoke.yaml's DR_API_TOKEN secret is optional; this suite needs none.
   completion-tests:
     needs: [build, detect-changes]
     if: needs.detect-changes.outputs.completion == 'true'
