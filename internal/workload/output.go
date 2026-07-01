@@ -366,14 +366,7 @@ func printWorkloadsJSON(workloads []Workload) error {
 		outputs = append(outputs, NewWorkloadOutput(w))
 	}
 
-	data, err := json.MarshalIndent(outputs, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(data))
-
-	return nil
+	return outputformat.PrintJSONEnvelope(os.Stdout, "workloads", outputs)
 }
 
 func printWorkloadDetails(workload Workload) {
