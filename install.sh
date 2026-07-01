@@ -199,7 +199,7 @@ check_existing_installation() {
             # Ensure datarobot alias symlink exists
             if [ ! -L "$INSTALL_DIR/datarobot" ]; then
                 step "Creating missing 'datarobot' alias..."
-                ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
+                ensure_datarobot_alias
             fi
 
             if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
@@ -312,7 +312,16 @@ download_and_install() {
 
     # Create datarobot alias
     step "Creating 'datarobot' alias..."
-    ln -sf "$BINARY_NAME" "$INSTALL_DIR/datarobot"
+    ensure_datarobot_alias
+}
+
+# Create or refresh the 'datarobot' alias symlink (datarobot -> dr).
+# Removes the existing entry first to avoid ln following a symlink into a
+# directory (e.g. Codespaces installs dr as dr/dr) and creating a
+# self-referential link inside it.
+ensure_datarobot_alias() {
+    rm -f "$INSTALL_DIR/datarobot"
+    ln -sfn "$BINARY_NAME" "$INSTALL_DIR/datarobot"
 }
 
 # Show PATH configuration instructions
@@ -548,4 +557,7 @@ EOF
     echo ""
 }
 
-main "$@"
+# Allow sourcing individual functions in tests without running the installer.
+if [ -z "${DR_INSTALL_SH_NO_MAIN:-}" ]; then
+    main "$@"
+fi

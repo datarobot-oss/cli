@@ -125,6 +125,17 @@ with your default shell.
 			execCmd.Stdout = os.Stdout
 			execCmd.Stderr = os.Stderr
 
+			// The install scripts (install.sh, install.ps1) default INSTALL_DIR to
+			// ~/.local/bin or %LOCALAPPDATA%\Programs\dr, ignoring where dr is
+			// actually installed. Point it at the running binary's directory so the
+			// update lands in place (e.g. DataRobot Codespaces install dr under a
+			// dr/ directory on PATH). Respect a user-provided INSTALL_DIR.
+			if _, ok := os.LookupEnv("INSTALL_DIR"); !ok {
+				if dir, ok := resolveInstallDir(); ok {
+					execCmd.Env = append(os.Environ(), "INSTALL_DIR="+dir)
+				}
+			}
+
 			if err := execCmd.Run(); err != nil {
 				if runtime.GOOS == "windows" {
 					// rename back if update failed
@@ -144,6 +155,24 @@ with your default shell.
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update to latest version")
 
 	return cmd
+}
+
+// resolveInstallDir returns the directory of the currently running executable,
+// resolving any symlinks first so the path points at the real binary. It is used
+// to tell the install script where dr actually lives. The boolean is false when
+// the executable path cannot be determined, in which case callers should fall
+// back to the install script's default location.
+func resolveInstallDir() (string, bool) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+
+	return filepath.Dir(executable), true
 }
 
 // backupExecutable creates a backup of the current CLI executable before updating.
