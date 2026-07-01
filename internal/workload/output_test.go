@@ -544,12 +544,19 @@ func TestPrintWorkloadsJSON(t *testing.T) {
 		require.NoError(t, printWorkloadsJSON(workloads))
 	})
 
-	var parsed []map[string]any
+	var parsed map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
-	assert.Len(t, parsed, 2)
-	assert.Equal(t, "wl-1", parsed[0]["id"])
-	assert.Equal(t, "errored", parsed[1]["status"])
+
+	items, ok := parsed["workloads"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, items, 2)
+
+	item0 := items[0].(map[string]interface{})
+	assert.Equal(t, "wl-1", item0["id"])
+
+	item1 := items[1].(map[string]interface{})
+	assert.Equal(t, "errored", item1["status"])
 }
 
 func TestPrintWorkloadsJSON_Empty(t *testing.T) {
@@ -557,8 +564,13 @@ func TestPrintWorkloadsJSON_Empty(t *testing.T) {
 		require.NoError(t, printWorkloadsJSON(nil))
 	})
 
-	// A regression that emits `null` instead of a JSON array must fail here.
-	assert.JSONEq(t, `[]`, output)
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(output), &parsed))
+
+	items, ok := parsed["workloads"].([]interface{})
+	require.True(t, ok)
+	assert.Empty(t, items)
 }
 
 func TestPrintWorkloadDetails(t *testing.T) {
