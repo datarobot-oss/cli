@@ -53,6 +53,7 @@ jobs:
         if: failure()
         uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "❌ DR CLI Release Failed",
@@ -88,7 +89,6 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   verify-installation:
     needs: release
@@ -148,6 +148,7 @@ jobs:
       - name: Notify Slack on Success
         uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "✅ New DR CLI Release Published!",
@@ -183,7 +184,6 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   notify-verification-failure:
     needs: [verify-installation, pre-release-smoke-test]
@@ -198,6 +198,7 @@ jobs:
       - name: Notify Slack of Installation Failure
         uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "⚠️ DR CLI Release Requires Review",
@@ -240,4 +241,3 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
