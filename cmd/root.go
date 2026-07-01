@@ -63,6 +63,13 @@ var RootCmd = &cli.CommandAdder{
 		Use:     internalVersion.CliName,
 		Version: internalVersion.Version,
 		Short:   "Build AI Applications Faster",
+		// TraverseChildren causes cobra to parse persistent flags left-to-right
+		// before descending into each subcommand. This lets universal flags such
+		// as --debug be placed before a plugin name (e.g. "dr --debug myplugin")
+		// and still be consumed by core. Plugin commands set DisableFlagParsing:true
+		// so args appearing AFTER the plugin name are never seen by core —
+		// preserving the kubectl/helm "core stays blind to plugin args" model.
+		TraverseChildren: true,
 		Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
