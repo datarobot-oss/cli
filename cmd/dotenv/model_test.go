@@ -363,23 +363,18 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 
 	suite.WaitFor(tm, "Default: 123")
 
-	err := tm.Quit()
-	if err != nil {
-		suite.T().Error(err)
-	}
+	m := suite.FinalModel(tm)
 
-	m := tm.FinalModel(suite.T())
-
-	usecaseIndex := slices.IndexFunc(m.(Model).prompts, func(p envbuilder.UserPrompt) bool {
+	usecaseIndex := slices.IndexFunc(m.prompts, func(p envbuilder.UserPrompt) bool {
 		return p.Env == "DATAROBOT_DEFAULT_USE_CASE"
 	})
-	usecaseValue := m.(Model).prompts[usecaseIndex].Value
+	usecaseValue := m.prompts[usecaseIndex].Value
 	suite.Equal("existing_use_case", usecaseValue, "Expected existing use case to be detected")
 
-	pulumiIndex := slices.IndexFunc(m.(Model).prompts, func(p envbuilder.UserPrompt) bool {
+	pulumiIndex := slices.IndexFunc(m.prompts, func(p envbuilder.UserPrompt) bool {
 		return p.Env == "PULUMI_CONFIG_PASSPHRASE"
 	})
-	pulumiValue := m.(Model).prompts[pulumiIndex].Value
+	pulumiValue := m.prompts[pulumiIndex].Value
 	suite.Equal("existing_passphrase", pulumiValue, "Expected existing passphrase to be detected")
 }
 
