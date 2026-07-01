@@ -69,7 +69,7 @@ jobs:
   #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
   #     - name: Set up Go
-  #       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+  #       uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
   #       with:
   #         go-version-file: go.mod
 
@@ -111,14 +111,10 @@ jobs:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure
 
-  # Phase 0 safety net — non-blocking baseline scan.
-  # Promoted to required (remove continue-on-error) in Phase 5.
   govulncheck:
     runs-on: ubuntu-latest
     name: Go Vulnerability Check
     timeout-minutes: 15
-    # Non-blocking during Phase 0 — results visible in job logs without failing the PR.
-    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -139,15 +135,10 @@ jobs:
 
   # CodeQL (Go) SAST. Folded in from the former codeql.yaml in Phase 4 — the
   # triggers (pull_request + push → main) already match this workflow.
-  # Phase 0 safety net — non-blocking baseline scan.
-  # Promoted to required (remove continue-on-error) in Phase 5.
   analyze:
     name: Analyze (Go)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Non-blocking during Phase 0 — results flow to the Security tab without
-    # failing the PR. Remove continue-on-error in Phase 5.
-    continue-on-error: true
     permissions:
       contents: read
       security-events: write
@@ -156,7 +147,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
@@ -164,7 +155,6 @@ jobs:
         uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         with:
           languages: go
-          # Default query suite; upgrade to security-extended in Phase 5
           queries: security-and-quality
 
       - name: Autobuild
