@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: Set up Go
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         # M1: single Go-version source of truth.
         go-version-file: go.mod
@@ -27,7 +27,7 @@ runs:
 
     - name: Install Taskfile
       if: inputs.install-task == 'true'
-      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
       with:
         version: 3.x
         repo-token: ${{ github.token }}
