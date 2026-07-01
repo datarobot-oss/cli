@@ -136,6 +136,11 @@ func buildPluginCommand(ctx context.Context, executable string, args []string, r
 func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 	env := os.Environ()
 
+	// Forward universal root flags (e.g. --debug, --disable-telemetry) as
+	// DATAROBOT_CLI_* env vars so plugins can optionally honour them.
+	// These override any inherited env vars of the same name.
+	env = append(env, universalFlagEnv()...)
+
 	// Always set plugin mode flag so plugins can detect they were invoked by dr CLI
 	env = append(env, "DR_PLUGIN_MODE=1")
 
