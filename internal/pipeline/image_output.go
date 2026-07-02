@@ -42,6 +42,7 @@ type imageVersionJSON struct {
 	Nvidia      bool     `json:"nvidia,omitempty"`
 	Status      string   `json:"status"`
 	ErrorDetail *string  `json:"error_detail,omitempty"`
+	ImageURI    *string  `json:"image_uri,omitempty"`
 	CreatedAt   string   `json:"created_at"`
 	UpdatedAt   string   `json:"updated_at"`
 }
@@ -79,6 +80,7 @@ func toImageJSON(img Image) imageJSON {
 			Nvidia:      v.Definition.Nvidia,
 			Status:      string(v.Status),
 			ErrorDetail: v.ErrorDetail,
+			ImageURI:    v.ImageURI,
 			CreatedAt:   v.CreatedAt.UTC().Format(time.RFC3339),
 			UpdatedAt:   v.UpdatedAt.UTC().Format(time.RFC3339),
 		}

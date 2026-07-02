@@ -17,6 +17,7 @@ package image
 import (
 	"github.com/datarobot/cli/cmd/pipeline/image/create"
 	"github.com/datarobot/cli/cmd/pipeline/image/del"
+	"github.com/datarobot/cli/cmd/pipeline/image/get"
 	"github.com/datarobot/cli/cmd/pipeline/image/list"
 	"github.com/datarobot/cli/cmd/pipeline/image/update"
 	"github.com/datarobot/cli/cmd/pipeline/image/version"
@@ -42,6 +43,7 @@ deleted individually with ` + "`image version delete`" + `.`,
 
 	cmd.AddCommand(
 		create.Cmd(),
+		get.Cmd(),
 		list.Cmd(),
 		update.Cmd(),
 		del.Cmd(),

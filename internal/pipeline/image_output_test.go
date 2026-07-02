@@ -149,6 +149,43 @@ func TestPrintImageHuman_HidesCondaWhenEmpty(t *testing.T) {
 	assert.Contains(t, out, emptyValuePlaceholder, "conda cell should show placeholder when no conda packages")
 }
 
+// --- imageJSON includes imageUri ---
+
+func TestPrintImageJSON_ImageURIIncluded(t *testing.T) {
+	imageURI := "registry.example.com/img-1:v2"
+	img := Image{
+		ImageID:       "img-1",
+		Name:          "ml-base",
+		LatestVersion: 1,
+		CreatedAt:     time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		Versions: []ImageVersion{
+			{
+				Version:  1,
+				Status:   ImageStatusReady,
+				ImageURI: &imageURI,
+				Definition: ImageDefinition{
+					Name: "ml-base",
+					Pip:  []string{"numpy"},
+				},
+				CreatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+				UpdatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderImage(outputformat.OutputFormatJSON, img))
+	})
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &parsed))
+	versions := parsed["versions"].([]any)
+	got := versions[0].(map[string]any)["image_uri"]
+	assert.Equal(t, imageURI, got)
+}
+
 // --- imageJSON preserves conda channels ---
 
 func TestPrintImageJSON_CondaChannelsPreserved(t *testing.T) {

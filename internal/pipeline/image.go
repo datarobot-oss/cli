@@ -22,9 +22,11 @@
 //
 //	POST   /api/v2/pipelines/images
 //	GET    /api/v2/pipelines/images
+//	GET    /api/v2/pipelines/images/{id}
 //	PATCH  /api/v2/pipelines/images/{id}              (replacement -> new version)
 //	DELETE /api/v2/pipelines/images/{id}              (soft-deletes latest version, cascades parent)
 //	DELETE /api/v2/pipelines/images/{id}/versions/{n} (soft-deletes a specific version)
+//	GET    /api/v2/pipelines/images/{id}/versions/{n}/logs
 package pipeline
 
 import (
@@ -101,11 +103,15 @@ const (
 // ImageDefinition mirrors PipelineImageDefinition — the canonical
 // definition stored on a PipelineImageVersion row and round-tripped
 // verbatim on every read.
+//
+// JSON tags match the response wire format: "packages" and "pythonBaseImage".
+// Request structs (ImageCreateRequest, ImageUpdateRequest) use the "pip" /
+// "baseImage" aliases accepted by the API's backward-compat validator.
 type ImageDefinition struct {
 	Name      string      `json:"name"`
-	Pip       []string    `json:"pip"`
+	Pip       []string    `json:"packages"`
 	Conda     *CondaValue `json:"conda,omitempty"`
-	BaseImage *string     `json:"baseImage,omitempty"`
+	BaseImage *string     `json:"pythonBaseImage,omitempty"`
 	Nvidia    bool        `json:"nvidia"`
 }
 
@@ -115,6 +121,7 @@ type ImageVersion struct {
 	Definition  ImageDefinition `json:"definition"`
 	Status      ImageStatus     `json:"status"`
 	ErrorDetail *string         `json:"errorDetail,omitempty"`
+	ImageURI    *string         `json:"imageUri,omitempty"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 }
@@ -230,6 +237,48 @@ func ListImages(offset, limit int) ([]ImageSummary, error) {
 	return page.Data, nil
 }
 
+// ImageLogsResponse mirrors PipelineImageLogsResponse from the API.
+type ImageLogsResponse struct {
+	Logs string `json:"logs"`
+}
+
+// GetImage fetches a single image by ID from GET /api/v2/pipelines/images/{image_id}.
+func GetImage(imageID string) (*Image, error) {
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result Image
+
+	err = doJSON(http.MethodGet, endpoint, nil, "get image", &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// GetImageBuildLogs fetches build logs for a specific image version from
+// GET /api/v2/pipelines/images/{image_id}/versions/{version_id}/logs.
+func GetImageBuildLogs(imageID string, version int) (*ImageLogsResponse, error) {
+	endpoint, err := config.GetEndpointURL(
+		"/api/v2/pipelines/images/" + imageID + "/versions/" + strconv.Itoa(version) + "/logs",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ImageLogsResponse
+
+	err = doJSON(http.MethodGet, endpoint, nil, "image build logs", &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 // UpdateImage PATCHes an image with a new complete definition, creating a
 // new immutable version. The supplied definition is a full replacement.
 // The response includes the full Image with all versions ordered newest-first.
@@ -245,9 +294,8 @@ func UpdateImage(imageID string, pip []string, conda *CondaValue, baseImage stri
 	// Fetch the current image to resolve its canonical name — required by
 	// the update request body even though the server overrides it with the
 	// stored name anyway.
-	var current Image
-
-	if err = doJSON(http.MethodGet, endpoint, nil, "get image for update", &current); err != nil {
+	current, err := GetImage(imageID)
+	if err != nil {
 		return nil, err
 	}
 

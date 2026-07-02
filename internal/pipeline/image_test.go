@@ -50,7 +50,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 			"name":"ml-base",
 			"description":"for testing",
 			"latestVersion":1,
-			"versions":[{"version":1,"definition":{"name":"ml-base","pip":["numpy","pandas==2.0"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
+			"versions":[{"version":1,"definition":{"name":"ml-base","packages":["numpy","pandas==2.0"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
 			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
 	}))
@@ -147,7 +147,7 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"img-1","name":"ml-base","latestVersion":1,
 				"versions":[
-					{"version":1,"definition":{"name":"ml-base","pip":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 				],
 				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 			}`))
@@ -161,8 +161,8 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"img-1","name":"ml-base","latestVersion":2,
 				"versions":[
-					{"version":2,"definition":{"name":"ml-base","pip":["scikit-learn"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
-					{"version":1,"definition":{"name":"ml-base","pip":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+					{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 				],
 				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 			}`))
@@ -230,6 +230,147 @@ func TestDeleteImage_PropagatesNotFound(t *testing.T) {
 	installEndpoint(t, srv.URL)
 
 	err := DeleteImage("nope")
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+}
+
+func TestGetImage_ReturnsFullDetail(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v2/pipelines/images/img-1", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"img-1",
+			"name":"ml-base",
+			"description":"test image",
+			"latestVersion":2,
+			"versions":[
+				{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"pythonBaseImage":"python:3.12","nvidia":false},"status":"READY","imageUri":"registry.example.com/img-1:v2","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+				{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+			],
+			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	got, err := GetImage("img-1")
+	require.NoError(t, err)
+	assert.Equal(t, "img-1", got.ImageID)
+	assert.Equal(t, "ml-base", got.Name)
+	assert.Equal(t, 2, got.LatestVersion)
+	require.Len(t, got.Versions, 2)
+
+	v2 := got.Versions[0]
+	assert.Equal(t, []string{"scikit-learn"}, v2.Definition.Pip)
+
+	if assert.NotNil(t, v2.Definition.BaseImage) {
+		assert.Equal(t, "python:3.12", *v2.Definition.BaseImage)
+	}
+
+	if assert.NotNil(t, v2.ImageURI) {
+		assert.Equal(t, "registry.example.com/img-1:v2", *v2.ImageURI)
+	}
+}
+
+func TestGetImage_DefinitionUsesCanonicalKeys(t *testing.T) {
+	installSkipAuth(t)
+
+	// Verifies the read-path JSON tag fix: API returns "packages" and
+	// "pythonBaseImage" (camelCase aliases), not the old "pip"/"baseImage".
+	baseImage := "my-registry/python:3.11"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"img-2","name":"base","latestVersion":1,
+			"versions":[{
+				"version":1,
+				"definition":{"name":"base","packages":["torch","transformers"],"pythonBaseImage":"my-registry/python:3.11","nvidia":true},
+				"status":"READY",
+				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
+			}],
+			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	got, err := GetImage("img-2")
+	require.NoError(t, err)
+	require.Len(t, got.Versions, 1)
+
+	def := got.Versions[0].Definition
+	assert.Equal(t, []string{"torch", "transformers"}, def.Pip, "packages key must unmarshal into Pip field")
+
+	if assert.NotNil(t, def.BaseImage, "pythonBaseImage key must unmarshal into BaseImage field") {
+		assert.Equal(t, baseImage, *def.BaseImage)
+	}
+
+	assert.True(t, def.Nvidia)
+}
+
+func TestGetImage_PropagatesNotFound(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := GetImage("missing")
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+}
+
+func TestGetImageBuildLogs_ReturnsLogs(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v2/pipelines/images/img-1/versions/2/logs", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"logs":"Step 1/5: FROM python:3.12\nStep 2/5: RUN pip install numpy\nBuild complete."}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	got, err := GetImageBuildLogs("img-1", 2)
+	require.NoError(t, err)
+	assert.Contains(t, got.Logs, "Step 1/5")
+	assert.Contains(t, got.Logs, "Build complete.")
+}
+
+func TestGetImageBuildLogs_PropagatesNotFound(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := GetImageBuildLogs("nope", 1)
 
 	var httpErr *drapi.HTTPError
 
