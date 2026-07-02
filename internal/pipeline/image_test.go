@@ -41,7 +41,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 			assert.Equal(t, "for testing", *body.Description)
 		}
 
-		assert.Equal(t, []string{"numpy", "pandas==2.0"}, body.Packages)
+		assert.Equal(t, []string{"numpy", "pandas==2.0"}, body.Pip)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -50,7 +50,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 			"name":"ml-base",
 			"description":"for testing",
 			"latestVersion":1,
-			"versions":[{"version":1,"packages":["numpy","pandas==2.0"],"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
+			"versions":[{"version":1,"definition":{"name":"ml-base","pip":["numpy","pandas==2.0"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
 			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
 	}))
@@ -59,7 +59,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"})
+	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"}, nil, "", false)
 	require.NoError(t, err)
 	assert.Equal(t, "img-1", got.ImageID)
 	assert.Equal(t, 1, got.LatestVersion)
@@ -86,7 +86,7 @@ func TestCreateImage_OmitsEmptyDescription(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := CreateImage("x", "", []string{"numpy"})
+	_, err := CreateImage("x", "", []string{"numpy"}, nil, "", false)
 	require.NoError(t, err)
 }
 
@@ -136,35 +136,52 @@ func TestListImages_OmitsZeroPagination(t *testing.T) {
 func TestUpdateImage_PatchesBody(t *testing.T) {
 	installSkipAuth(t)
 
+	// UpdateImage does a GET first to resolve the canonical name, then PATCHes.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPatch, r.Method)
 		assert.Equal(t, "/api/v2/pipelines/images/img-1", r.URL.Path)
 
-		var body ImageUpdateRequest
-
-		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		assert.Equal(t, []string{"scikit-learn"}, body.Packages)
-
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id":"img-1","name":"ml-base","latestVersion":2,
-			"versions":[
-				{"version":2,"packages":["scikit-learn"],"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
-				{"version":1,"packages":["numpy"],"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
-			],
-			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
-		}`))
+
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{
+				"id":"img-1","name":"ml-base","latestVersion":1,
+				"versions":[
+					{"version":1,"definition":{"name":"ml-base","pip":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+				],
+				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
+			}`))
+		case http.MethodPatch:
+			var body ImageUpdateRequest
+
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal(t, "ml-base", body.Name)
+			assert.Equal(t, []string{"scikit-learn"}, body.Pip)
+
+			_, _ = w.Write([]byte(`{
+				"id":"img-1","name":"ml-base","latestVersion":2,
+				"versions":[
+					{"version":2,"definition":{"name":"ml-base","pip":["scikit-learn"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+					{"version":1,"definition":{"name":"ml-base","pip":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+				],
+				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
+			}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	got, err := UpdateImage("img-1", []string{"scikit-learn"})
+	got, err := UpdateImage("img-1", []string{"scikit-learn"}, nil, "", false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.LatestVersion)
 	require.Len(t, got.Versions, 2)
 	assert.Equal(t, 2, got.Versions[0].Version)
+	assert.Equal(t, []string{"scikit-learn"}, got.Versions[0].Definition.Pip)
 }
 
 func TestDeleteImage_HitsCorrectURL(t *testing.T) {

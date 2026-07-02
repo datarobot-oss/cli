@@ -25,6 +25,7 @@ import (
 
 func Cmd() *cobra.Command {
 	var (
+		imageID      string
 		outputFormat outputformat.OutputFormat
 		fromFile     string
 	)
@@ -46,6 +47,7 @@ By default, output is human-readable. Use --output-format json for machine-parse
 Example:
   dr pipeline update 507f1f77bcf86cd799439011 ./my_pipeline.py
   dr pipeline update 507f1f77bcf86cd799439011 --from-file=./my_pipeline.py
+  dr pipeline update 507f1f77bcf86cd799439011 --image <image-id> --from-file=./my_pipeline.py
   dr pipeline update 507f1f77bcf86cd799439011 --from-file=./my_pipeline.py --output-format json`,
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
@@ -60,7 +62,7 @@ Example:
 				return err
 			}
 
-			result, err := pipeline.UpdatePipeline(pipelineID, filePath)
+			result, err := pipeline.UpdatePipeline(pipelineID, filePath, imageID)
 			if err != nil {
 				return err
 			}
@@ -71,6 +73,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
+	cmd.Flags().StringVar(&imageID, "image", "", "Execution image ID to associate with this pipeline")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the Python file to upload, e.g. --from-file=./my_pipeline.py (alternative to the positional argument)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

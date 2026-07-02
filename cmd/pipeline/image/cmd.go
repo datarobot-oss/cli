@@ -25,7 +25,7 @@ import (
 
 // Cmd returns the parent command for `dr pipeline image`. It groups the
 // lifecycle verbs that operate on pipeline execution images (named,
-// immutable-versioned bags of pip packages).
+// immutable-versioned execution environments).
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "image",
@@ -33,10 +33,11 @@ func Cmd() *cobra.Command {
 		Short:   "Manage pipeline execution images",
 		Long: `Manage pipeline execution images.
 
-Images are named, immutable-versioned bags of pip packages that
-pipelines can be built against. Each ` + "`update`" + ` adds packages by
-creating a new version; older versions can be deleted individually with
-` + "`image version delete`" + `.`,
+Images are named, immutable-versioned execution environments backed by
+pip packages, conda packages, a base Docker image, and optional NVIDIA GPU
+support. Pipelines can be built against them. Each ` + "`update`" + ` creates
+a new version with a complete replacement definition; older versions can be
+deleted individually with ` + "`image version delete`" + `.`,
 	}
 
 	cmd.AddCommand(
