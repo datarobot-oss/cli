@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
+	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
@@ -115,6 +116,27 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
 		Run: func(pluginCmd *cobra.Command, args []string) {
+			// DisableFlagParsing means Cobra never processes persistent flags,
+			// so -k/--skip-certificate-check/--ca-cert land in raw args unparsed.
+			// Apply TLS here so the auth check in ExecutePlugin and the subprocess
+			// both see the correct configuration.
+			skipVerify, caCert := scanTLSArgs(args)
+			tlsOpts := internaltls.Options{SkipVerify: skipVerify, CACertPath: caCert}
+
+			if err := internaltls.Apply(tlsOpts); err != nil {
+				fmt.Fprintf(pluginCmd.ErrOrStderr(), "error: %v\n", err)
+				telemetry.ExitWithContext(pluginCmd.Context(), 1)
+
+				return
+			}
+
+			if err := internaltls.PropagateEnv(tlsOpts); err != nil {
+				fmt.Fprintf(pluginCmd.ErrOrStderr(), "error: %v\n", err)
+				telemetry.ExitWithContext(pluginCmd.Context(), 1)
+
+				return
+			}
+
 			checkAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
@@ -220,4 +242,26 @@ func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
 	}
 
 	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + result.PluginName + " to " + result.LatestVersion.Version))
+}
+
+// scanTLSArgs extracts TLS flags from raw args passed to plugin commands.
+// DisableFlagParsing: true means Cobra never processes persistent root flags,
+// so -k/--skip-certificate-check and --ca-cert arrive here unprocessed.
+// Uses pflag to correctly handle --flag=value syntax, -- terminators, and
+// dash-leading paths. Unknown flags are whitelisted so plugin-specific args
+// pass through without error.
+func scanTLSArgs(args []string) (skipVerify bool, caCert string) {
+    // NOTE This code and behavior is likely to change
+	fs := pflag.NewFlagSet("tls-args", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+
+	fs.BoolP("skip-certificate-check", "k", false, "")
+	fs.String("ca-cert", "", "")
+
+	_ = fs.Parse(args)
+
+	skipVerify, _ = fs.GetBool("skip-certificate-check")
+	caCert, _ = fs.GetString("ca-cert")
+
+	return
 }

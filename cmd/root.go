@@ -92,6 +92,10 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 				return err
 			}
 
+			if err := setupTLS(cmd); err != nil {
+				return err
+			}
+
 			// Initialize telemetry client
 			// Always collect common properties for logging (even in dry-run mode),
 			// but only send to Amplitude if enabled.
@@ -188,6 +192,9 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
+	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
+	RootCmd.PersistentFlags().String("ca-cert", "", "path to a PEM-encoded CA certificate bundle")
+	registerExportWindowsCertsFlag(RootCmd.Command)
 	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
 	// Make some of these flags available via Viper
@@ -201,6 +208,7 @@ func init() {
 	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
 	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 	_ = viperx.BindPFlag("output-format", RootCmd.PersistentFlags().Lookup("output-format"))
+	_ = viperx.BindPFlag("ca-cert", RootCmd.PersistentFlags().Lookup("ca-cert"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)
 	RootCmd.AddGroup(
