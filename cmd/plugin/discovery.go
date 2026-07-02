@@ -247,18 +247,21 @@ func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
 // scanTLSArgs extracts TLS flags from raw args passed to plugin commands.
 // DisableFlagParsing: true means Cobra never processes persistent root flags,
 // so -k/--skip-certificate-check and --ca-cert arrive here unprocessed.
+// Uses pflag to correctly handle --flag=value syntax, -- terminators, and
+// dash-leading paths. Unknown flags are whitelisted so plugin-specific args
+// pass through without error.
 func scanTLSArgs(args []string) (skipVerify bool, caCert string) {
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-k", "--skip-certificate-check":
-			skipVerify = true
-		case "--ca-cert":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				caCert = args[i+1]
-				i++
-			}
-		}
-	}
+    // NOTE This code and behavior is likely to change
+	fs := pflag.NewFlagSet("tls-args", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+
+	fs.BoolP("skip-certificate-check", "k", false, "")
+	fs.String("ca-cert", "", "")
+
+	_ = fs.Parse(args)
+
+	skipVerify, _ = fs.GetBool("skip-certificate-check")
+	caCert, _ = fs.GetString("ca-cert")
 
 	return
 }
