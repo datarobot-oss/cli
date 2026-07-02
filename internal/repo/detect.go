@@ -40,8 +40,7 @@ func FindRepoRoot() (string, error) {
 	}
 
 	for {
-		// Check if .datarobot/answers exists in current directory
-		if detectTemplate(currentDir) {
+		if IsTemplateDir(currentDir) {
 			return currentDir, nil
 		}
 
@@ -62,8 +61,10 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
-// detectTemplate checks if .datarobot/answers or .datarobot/cli exists in dir directory
-func detectTemplate(dir string) bool {
+// IsTemplateDir reports whether dir is the root of a DataRobot template project.
+// It checks for .datarobot/answers or a non-trivial .datarobot/cli directory.
+// Use this instead of ad-hoc os.Stat(".datarobot") checks.
+func IsTemplateDir(dir string) bool {
 	answersDirPresent := fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectAnswersPath))
 	if answersDirPresent {
 		log.Debugf("Directory %s exists, treating %s as template", DataRobotTemplateDetectAnswersPath, dir)
