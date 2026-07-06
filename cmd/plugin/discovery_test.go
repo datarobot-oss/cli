@@ -32,16 +32,18 @@ func TestIsManagedPlugin(t *testing.T) {
 		assert.True(t, isManagedPlugin(pluginPath))
 	})
 
-	t.Run("returns true for plugin in fallback ~/.config dir when XDG is set", func(t *testing.T) {
+	t.Run("returns true for plugin in XDG_CONFIG_DIRS", func(t *testing.T) {
 		tmpHome := t.TempDir()
 		tmpXDG := t.TempDir()
+		tmpConfigDir := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
 		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+		t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
 
-		fallbackPath := filepath.Join(tmpHome, ".config", "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
+		configDirPath := filepath.Join(tmpConfigDir, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
 
-		assert.True(t, isManagedPlugin(fallbackPath))
+		assert.True(t, isManagedPlugin(configDirPath))
 	})
 
 	t.Run("returns false for plugin on PATH outside managed dirs", func(t *testing.T) {

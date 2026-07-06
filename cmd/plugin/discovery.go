@@ -182,8 +182,8 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	fmt.Println()
 }
 
-// isManagedPlugin returns true if the plugin executable lives under any managed plugins directory,
-// including the ~/.config fallback when XDG_CONFIG_HOME is set.
+// isManagedPlugin returns true if the plugin executable lives under any managed plugins directory.
+// Checks the primary directory (XDG_CONFIG_HOME) and any directories listed in XDG_CONFIG_DIRS.
 func isManagedPlugin(pluginPath string) bool {
 	managedDirs, err := internalPlugin.ManagedPluginsDirs()
 	if err != nil {

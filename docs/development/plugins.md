@@ -19,14 +19,16 @@ At CLI startup, plugins are discovered from the following locations, in priority
 
 1. **Managed plugins directories** (highest priority) — plugins installed via `dr plugin install`.
    - Primary: `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/` when `XDG_CONFIG_HOME` is not set).
-   - Fallback: when `XDG_CONFIG_HOME` is set, `~/.config/datarobot/plugins/` is also searched so that plugins installed before `XDG_CONFIG_HOME` was configured remain discoverable.
-   - The XDG path always takes precedence: if the same plugin name exists in both locations, the XDG version is used and the fallback copy is skipped.
+   - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
+   - The primary directory always takes precedence: if the same plugin name exists in multiple locations, the first discovered one wins and later ones are skipped.
 2. **Project-local** `.dr/plugins/` directory.
-3. **Every directory on your `PATH`**.
+3. **Every directory on your `PATH``.
 
 Only files whose filename begins with `dr-` are considered.
 
 The CLI also verifies the candidate is executable (via Go's runtime `exec.LookPath`).
+
+**Note**: `XDG_CONFIG_DIRS` is only used when explicitly set by the user (no default system paths). This allows system administrators to provide plugins for all users while maintaining security: `export XDG_CONFIG_DIRS=/etc/xdg:/usr/local/etc`.
 
 ### Deduplication
 

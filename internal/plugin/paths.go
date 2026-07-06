@@ -33,8 +33,10 @@ func ManagedPluginsDir() (string, error) {
 }
 
 // ManagedPluginsDirs returns all managed plugin directories to search, in priority order.
-// When XDG_CONFIG_HOME is set, the XDG path is checked first, then ~/.config/datarobot/plugins
-// as a fallback so plugins installed without XDG_CONFIG_HOME remain discoverable.
+// Respects XDG_CONFIG_DIRS for additional search paths (only when explicitly set by the user).
+// Priority order:
+//  1. Primary directory from XDG_CONFIG_HOME (or ~/.config/datarobot/plugins)
+//  2. Directories from XDG_CONFIG_DIRS environment variable (if set)
 func ManagedPluginsDirs() ([]string, error) {
 	primaryDir, err := ManagedPluginsDir()
 	if err != nil {
@@ -42,14 +44,18 @@ func ManagedPluginsDirs() ([]string, error) {
 	}
 
 	dirs := []string{primaryDir}
+	seen := map[string]bool{primaryDir: true}
 
-	if os.Getenv("XDG_CONFIG_HOME") != "" {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			defaultDir := filepath.Join(homeDir, ".config", "datarobot", "plugins")
+	// Add directories from XDG_CONFIG_DIRS (only if explicitly set)
+	configDirs := os.Getenv("XDG_CONFIG_DIRS")
+	if configDirs != "" {
+		for _, dir := range filepath.SplitList(configDirs) {
+			pluginDir := filepath.Join(dir, "datarobot", "plugins")
 
-			if defaultDir != primaryDir {
-				dirs = append(dirs, defaultDir)
+			// Deduplicate
+			if !seen[pluginDir] {
+				dirs = append(dirs, pluginDir)
+				seen[pluginDir] = true
 			}
 		}
 	}

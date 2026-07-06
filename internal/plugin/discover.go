@@ -56,7 +56,7 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 	seen := make(map[string]bool)
 
 	// 1. Check managed plugins directories first (highest priority).
-	// Includes XDG path and ~/.config fallback when XDG_CONFIG_HOME is set.
+	// Includes primary dir (XDG_CONFIG_HOME) and XDG_CONFIG_DIRS if set.
 	managedDirs, err := ManagedPluginsDirs()
 	if err == nil {
 		for _, managedDir := range managedDirs {

@@ -304,25 +304,27 @@ func createManagedTestPlugin(t *testing.T, pluginsDir, dirName, pluginName strin
 	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.ps1"), []byte("exit 0"), 0o644))
 }
 
-func TestDiscoverPlugins_FindsPluginsInBothXDGAndFallbackDirs(t *testing.T) {
+func TestDiscoverPlugins_FindsPluginsInXDGConfigDirs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("HOME env override is Unix-specific")
 	}
 
 	tmpHome := t.TempDir()
 	tmpXDG := t.TempDir()
+	tmpConfigDir := t.TempDir()
 
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+	t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
 
 	viperx.Reset()
 	viperx.Set("plugin.manifest_timeout_ms", 5000)
 
 	xdgPluginsDir := filepath.Join(tmpXDG, "datarobot", "plugins")
-	fallbackPluginsDir := filepath.Join(tmpHome, ".config", "datarobot", "plugins")
+	configDirPluginsDir := filepath.Join(tmpConfigDir, "datarobot", "plugins")
 
 	createManagedTestPlugin(t, xdgPluginsDir, "xdg-plugin", "xdg-plugin")
-	createManagedTestPlugin(t, fallbackPluginsDir, "fallback-plugin", "fallback-plugin")
+	createManagedTestPlugin(t, configDirPluginsDir, "config-dir-plugin", "config-dir-plugin")
 
 	plugins, err := discoverPlugins()
 
@@ -334,6 +336,6 @@ func TestDiscoverPlugins_FindsPluginsInBothXDGAndFallbackDirs(t *testing.T) {
 		names[p.Manifest.Name] = true
 	}
 
-	assert.True(t, names["xdg-plugin"], "plugin in XDG directory should be discovered")
-	assert.True(t, names["fallback-plugin"], "plugin in fallback ~/.config directory should be discovered")
+	assert.True(t, names["xdg-plugin"], "plugin in XDG_CONFIG_HOME directory should be discovered")
+	assert.True(t, names["config-dir-plugin"], "plugin in XDG_CONFIG_DIRS directory should be discovered")
 }
