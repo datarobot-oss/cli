@@ -264,7 +264,7 @@ func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
 // instead and delete this function.
 func scanTLSArgs(args []string) (skipVerify bool, caCert string) {
 	fs := pflag.NewFlagSet("tls-args", pflag.ContinueOnError)
-	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+	fs.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
 
 	fs.BoolP("skip-certificate-check", "k", false, "")
 	fs.String("ca-cert", "", "")
