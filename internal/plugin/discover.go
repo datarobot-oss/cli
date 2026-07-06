@@ -18,11 +18,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -43,14 +45,17 @@ var registry = &DiscoveredPluginsRegistry{}
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
 func GetPlugins() ([]DiscoveredPlugin, error) {
 	registry.once.Do(func() {
-		registry.plugins, registry.err = discoverPlugins()
+		registry.plugins = DiscoverPluginsWithContext(context.Background())
 	})
 
 	return registry.plugins, registry.err
 }
 
-// TODO: Consider parallel manifest fetching using errgroup for better performance with many PATH directories
-func discoverPlugins() ([]DiscoveredPlugin, error) {
+// DiscoverPluginsWithContext discovers all plugins under the given context deadline.
+// Managed and local plugins (file I/O only) always complete before PATH scanning starts,
+// so they are always returned even when ctx is cancelled mid-discovery. PATH plugins
+// return whatever finished before ctx is done.
+func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 	plugins := make([]DiscoveredPlugin, 0)
 
 	seen := make(map[string]bool)
@@ -68,28 +73,82 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 
 	// 2. Check project-local directory (higher priority than PATH)
 	// TODO: LocalPluginDir shares path with QuickstartScriptPath - consider dedicated plugin directory
-	localPlugins, errs := discoverInDir(repo.LocalPluginDir, seen)
+	localPlugins, errs := discoverInDir(ctx, repo.LocalPluginDir, seen)
 	plugins = append(plugins, localPlugins...)
 
 	for _, err := range errs {
 		log.Debug("Plugin discovery error in local dir", "dir", repo.LocalPluginDir, "error", err)
 	}
 
-	// 3. Check PATH directories
-	pathEnv := os.Getenv("PATH")
+	// 3. Check PATH directories in parallel.
+	// Snapshot seen after managed+local so each goroutine can filter conflicts
+	// without sharing mutable state. Cross-dir dedup is handled inside the helper.
+	baseSeen := maps.Clone(seen)
 
-	for _, dir := range filepath.SplitList(pathEnv) {
-		dirPlugins, errs := discoverInDir(dir, seen)
-		plugins = append(plugins, dirPlugins...)
-
-		for _, err := range errs {
-			log.Debug("Plugin discovery error", "dir", dir, "error", err)
-		}
-	}
+	plugins = append(plugins, discoverPathDirsParallel(ctx, filepath.SplitList(os.Getenv("PATH")), baseSeen)...)
 
 	log.Debug("Plugin discovery complete", "count", len(plugins))
 
-	return plugins, nil
+	return plugins
+}
+
+// discoverPathDirsParallel runs discoverInDir for each PATH directory concurrently.
+// Each goroutine receives its own copy of baseSeen so managed/local plugins are filtered
+// without cross-goroutine map races. Goroutines not yet started are skipped when ctx is done.
+// Results are merged in directory order and cross-dir duplicates are skipped.
+func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen map[string]bool) []DiscoveredPlugin {
+	type dirResult struct {
+		plugins []DiscoveredPlugin
+		errs    []error
+	}
+
+	dirResults := make([]dirResult, len(pathDirs))
+
+	var wg sync.WaitGroup
+
+	for i, dir := range pathDirs {
+		localSeen := maps.Clone(baseSeen)
+
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			p, e := discoverInDir(ctx, dir, localSeen)
+			dirResults[i] = dirResult{plugins: p, errs: e}
+		})
+	}
+
+	wg.Wait()
+
+	// Merge in directory order; cross-dir dedup starts from baseSeen.
+	crossDirSeen := maps.Clone(baseSeen)
+
+	var plugins []DiscoveredPlugin
+
+	for i, dr := range dirResults {
+		for _, e := range dr.errs {
+			log.Debug("Plugin discovery error", "dir", pathDirs[i], "error", e)
+		}
+
+		for _, p := range dr.plugins {
+			if crossDirSeen[p.Manifest.Name] {
+				log.Warn("Plugin name already registered, skipping",
+					"name", p.Manifest.Name,
+					"path", p.Executable)
+
+				continue
+			}
+
+			crossDirSeen[p.Manifest.Name] = true
+
+			plugins = append(plugins, p)
+		}
+	}
+
+	return plugins
 }
 
 // discoverManagedPlugins discovers plugins installed via `dr plugin install`
@@ -205,11 +264,7 @@ func errMissingManifestField(field string) error {
 	return errors.New("plugin manifest missing required field: " + field)
 }
 
-func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
-	plugins := make([]DiscoveredPlugin, 0)
-
-	var errors []error
-
+func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
 	// Check if directory exists
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
@@ -221,6 +276,9 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 	if err != nil {
 		return nil, []error{err}
 	}
+
+	// Phase 1: collect valid executables (fast, no goroutines)
+	var executables []string
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -235,45 +293,90 @@ func discoverInDir(dir string, seen map[string]bool) ([]DiscoveredPlugin, []erro
 		// Validate plugin is executable by Go runtime
 		if _, err := exec.LookPath(fullPath); err != nil {
 			log.Debug("Plugin not executable by Go runtime", "path", fullPath, "error", err)
-			continue
-		}
-
-		// Try to get manifest
-		manifest, err := getManifest(fullPath)
-		if err != nil {
-			errors = append(errors, err)
 
 			continue
 		}
 
-		// Deduplicate on manifest.Name (the actual command name)
-		if seen[manifest.Name] {
-			log.Warn("Plugin name already registered, skipping",
-				"name", manifest.Name,
-				"path", fullPath)
+		executables = append(executables, fullPath)
+	}
 
-			continue
-		}
+	// Phase 2 & 3: fetch manifests in parallel and deduplicate on manifest.Name.
+	return getManifestsParallel(ctx, executables, seen)
+}
 
-		seen[manifest.Name] = true
+// getManifestsParallel calls getManifest concurrently for each executable, then
+// deduplicates results against seen in lexicographic (input) order. Preserves the
+// "first binary wins" guarantee that os.ReadDir's alphabetical ordering provides.
+// Goroutines that have not yet called getManifest are skipped when ctx is done.
+func getManifestsParallel(ctx context.Context, executables []string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+	type result struct {
+		path     string
+		manifest *PluginManifest
+		err      error
+	}
 
-		plugins = append(plugins, DiscoveredPlugin{
-			Manifest:   *manifest,
-			Executable: fullPath,
+	results := make([]result, len(executables))
+
+	var wg sync.WaitGroup
+
+	for i, fullPath := range executables {
+		wg.Go(func() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			manifest, err := getManifest(ctx, fullPath)
+			results[i] = result{path: fullPath, manifest: manifest, err: err}
 		})
 	}
 
-	return plugins, errors
+	wg.Wait()
+
+	// Deduplicate on manifest.Name (the actual command name), preserving lexicographic order
+	var plugins []DiscoveredPlugin
+
+	var errs []error
+
+	for _, r := range results {
+		if r.err != nil {
+			errs = append(errs, r.err)
+
+			continue
+		}
+
+		if r.manifest == nil {
+			continue // goroutine skipped due to context cancellation
+		}
+
+		if seen[r.manifest.Name] {
+			log.Warn("Plugin name already registered, skipping",
+				"name", r.manifest.Name,
+				"path", r.path)
+
+			continue
+		}
+
+		seen[r.manifest.Name] = true
+
+		plugins = append(plugins, DiscoveredPlugin{
+			Manifest:   *r.manifest,
+			Executable: r.path,
+		})
+	}
+
+	return plugins, errs
 }
 
-func getManifest(executable string) (*PluginManifest, error) {
+func getManifest(ctx context.Context, executable string) (*PluginManifest, error) {
 	// Default timeout if not configured
 	timeout := 500 * time.Millisecond
 	if viperx.IsSet("plugin.manifest_timeout_ms") {
 		timeout = time.Duration(viperx.GetInt("plugin.manifest_timeout_ms")) * time.Millisecond
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, executable, PluginManifestFlag)

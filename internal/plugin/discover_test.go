@@ -15,10 +15,12 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -84,7 +86,7 @@ func (s *DiscoverTestSuite) TearDownTest() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Empty(errs)
@@ -92,7 +94,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirNonExistent() {
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(filepath.Join(s.tempDir, "nonexistent"), seen)
+	plugins, errs := discoverInDir(context.Background(), filepath.Join(s.tempDir, "nonexistent"), seen)
 
 	s.Nil(plugins)
 	s.Nil(errs)
@@ -102,7 +104,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirValidPlugin() {
 	createMockPlugin(s.T(), s.tempDir, "dr-testplugin", validManifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin")
 	s.Empty(errs)
@@ -121,7 +123,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
 	s.Require().NoError(os.WriteFile(filepath.Join(s.tempDir, "random.txt"), []byte("text"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, _ := discoverInDir(s.tempDir, seen)
+	plugins, _ := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin (non-dr files should be skipped)")
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
@@ -133,7 +135,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonExecutable() {
 	s.Require().NoError(os.WriteFile(path, []byte("not executable"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Empty(errs)
@@ -147,7 +149,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 		"test-plugin": true, // validManifest has name: "test-plugin"
 	}
 
-	plugins, _ := discoverInDir(s.tempDir, seen)
+	plugins, _ := discoverInDir(context.Background(), s.tempDir, seen)
 
 	// Should be skipped due to duplicate manifest name
 	s.Empty(plugins)
@@ -160,7 +162,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	createMockPlugin(s.T(), s.tempDir, "dr-second", manifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	// Log manifest-fetch errors so future test failures show *why* discovery
 	// returned zero plugins instead of only asserting *that* it did.
@@ -178,7 +180,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirInvalidManifest() {
 	createMockPlugin(s.T(), s.tempDir, "dr-invalid", invalidManifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Len(errs, 1) // JSON parse error logged
@@ -192,7 +194,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirMultipleValidPlugins() {
 	createMockPlugin(s.T(), s.tempDir, "dr-two", manifest2)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Len(plugins, 2)
 	s.Empty(errs)
@@ -205,6 +207,145 @@ func (s *DiscoverTestSuite) TestDiscoverInDirMultipleValidPlugins() {
 
 	s.True(names["plugin-one"])
 	s.True(names["plugin-two"])
+}
+
+func (s *DiscoverTestSuite) TestDiscoverInDirCancelledContext() {
+	createMockPlugin(s.T(), s.tempDir, "dr-testplugin", validManifest)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	seen := make(map[string]bool)
+	plugins, errs := discoverInDir(ctx, s.tempDir, seen)
+
+	s.Empty(plugins)
+	s.Empty(errs)
+}
+
+// PathDirsTestSuite tests discoverPathDirsParallel
+type PathDirsTestSuite struct {
+	suite.Suite
+	dir1 string
+	dir2 string
+}
+
+func TestPathDirsTestSuite(t *testing.T) {
+	suite.Run(t, new(PathDirsTestSuite))
+}
+
+func (s *PathDirsTestSuite) SetupTest() {
+	var err error
+
+	s.dir1, err = os.MkdirTemp("", "plugin-path-dir1")
+	s.Require().NoError(err)
+
+	s.dir2, err = os.MkdirTemp("", "plugin-path-dir2")
+	s.Require().NoError(err)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+}
+
+func (s *PathDirsTestSuite) TearDownTest() {
+	_ = os.RemoveAll(s.dir1)
+	_ = os.RemoveAll(s.dir2)
+	viperx.Reset()
+}
+
+func (s *PathDirsTestSuite) TestEmptyPathDirs() {
+	plugins := discoverPathDirsParallel(context.Background(), []string{}, map[string]bool{})
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestMultipleDirsCollectsAll() {
+	m1 := `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`
+	m2 := `{"name":"plugin-beta","version":"1.0.0","description":"Beta"}`
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
+	createMockPlugin(s.T(), s.dir2, "dr-beta", m2)
+
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+
+	s.Len(plugins, 2)
+
+	names := make(map[string]bool)
+	for _, p := range plugins {
+		names[p.Manifest.Name] = true
+	}
+
+	s.True(names["plugin-alpha"])
+	s.True(names["plugin-beta"])
+}
+
+func (s *PathDirsTestSuite) TestCrossDirDeduplicationFirstDirWins() {
+	// Same manifest name in both dirs — dir1 must win because results are
+	// merged in directory order after all goroutines complete.
+	manifest := `{"name":"shared-plugin","version":"1.0.0","description":"Shared"}`
+	createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
+	createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
+
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+
+	s.Require().Len(plugins, 1)
+	s.Equal("shared-plugin", plugins[0].Manifest.Name)
+	s.Equal(filepath.Join(s.dir1, "dr-shared"), plugins[0].Executable)
+}
+
+func (s *PathDirsTestSuite) TestBaseSeenFiltersPlugins() {
+	// validManifest has name "test-plugin" — pre-populate baseSeen so it is skipped.
+	createMockPlugin(s.T(), s.dir1, "dr-testplugin", validManifest)
+
+	baseSeen := map[string]bool{"test-plugin": true}
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestBaseSeenNotMutated() {
+	// discoverPathDirsParallel must not modify the caller's baseSeen map.
+	m1 := `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
+
+	baseSeen := map[string]bool{}
+	_ = discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+
+	s.Empty(baseSeen)
+}
+
+func (s *PathDirsTestSuite) TestCancelledContextReturnsEmpty() {
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	plugins := discoverPathDirsParallel(ctx, []string{s.dir1}, map[string]bool{})
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin() {
+	// dir1: fast plugin — responds immediately.
+	createMockPlugin(s.T(), s.dir1, "dr-fast", `{"name":"fast-plugin","version":"1.0.0","description":"Fast"}`)
+
+	// dir2: slow plugin — blocks well beyond the context deadline before emitting its manifest.
+	// Use "exec sleep" so the shell is replaced by sleep itself: Go's SIGKILL lands on the
+	// sleep process directly, stdout closes immediately, and cmd.Output() returns without
+	// waiting for an orphaned child to finish.
+	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir2, "dr-slow"), []byte(slowScript), 0o755))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	plugins := discoverPathDirsParallel(ctx, []string{s.dir1, s.dir2}, map[string]bool{})
+
+	names := make(map[string]bool)
+	for _, p := range plugins {
+		names[p.Manifest.Name] = true
+	}
+
+	s.True(names["fast-plugin"], "fast plugin should be discovered before deadline")
+	s.False(names["slow-plugin"], "slow plugin should be skipped after deadline expires")
 }
 
 // TestGetManifest tests manifest retrieval
@@ -238,7 +379,7 @@ func (s *ManifestTestSuite) TearDownTest() {
 func (s *ManifestTestSuite) TestGetManifestValid() {
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().NoError(err)
 	s.NotNil(manifest)
 	s.Equal("test-plugin", manifest.Name)
@@ -249,13 +390,13 @@ func (s *ManifestTestSuite) TestGetManifestValid() {
 func (s *ManifestTestSuite) TestGetManifestInvalidJSON() {
 	path := createMockPlugin(s.T(), s.tempDir, "dr-invalid", invalidManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
 	s.Nil(manifest)
 }
 
 func (s *ManifestTestSuite) TestGetManifestNonExistent() {
-	manifest, err := getManifest(filepath.Join(s.tempDir, "nonexistent"))
+	manifest, err := getManifest(context.Background(), filepath.Join(s.tempDir, "nonexistent"))
 	s.Require().Error(err)
 	s.Nil(manifest)
 }
@@ -266,7 +407,7 @@ func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().NoError(err)
 	s.NotNil(manifest)
 }
@@ -279,7 +420,7 @@ exit 1
 	path := filepath.Join(s.tempDir, "dr-failing")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
 	s.Nil(manifest)
 }
