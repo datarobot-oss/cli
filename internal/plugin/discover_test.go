@@ -249,6 +249,7 @@ func (s *PathDirsTestSuite) SetupTest() {
 func (s *PathDirsTestSuite) TearDownTest() {
 	_ = os.RemoveAll(s.dir1)
 	_ = os.RemoveAll(s.dir2)
+
 	viperx.Reset()
 }
 
@@ -261,6 +262,7 @@ func (s *PathDirsTestSuite) TestEmptyPathDirs() {
 func (s *PathDirsTestSuite) TestMultipleDirsCollectsAll() {
 	m1 := `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`
 	m2 := `{"name":"plugin-beta","version":"1.0.0","description":"Beta"}`
+
 	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
 	createMockPlugin(s.T(), s.dir2, "dr-beta", m2)
 
