@@ -29,6 +29,7 @@ import (
 	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
