@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -282,4 +284,56 @@ exit 1
 	manifest, err := getManifest(path)
 	s.Require().Error(err)
 	s.Nil(manifest)
+}
+
+// createManagedTestPlugin creates a minimal managed plugin directory structure under pluginsDir.
+func createManagedTestPlugin(t *testing.T, pluginsDir, dirName, pluginName string) {
+	t.Helper()
+
+	pluginDir := filepath.Join(pluginsDir, dirName)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(pluginDir, "scripts"), 0o755))
+
+	manifestJSON := fmt.Sprintf(
+		`{"name":%q,"version":"1.0.0","scripts":{"posix":"scripts/run.sh","windows":"scripts/run.ps1"}}`,
+		pluginName,
+	)
+
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.ps1"), []byte("exit 0"), 0o644))
+}
+
+func TestDiscoverPlugins_FindsPluginsInBothXDGAndFallbackDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME env override is Unix-specific")
+	}
+
+	tmpHome := t.TempDir()
+	tmpXDG := t.TempDir()
+
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+
+	xdgPluginsDir := filepath.Join(tmpXDG, "datarobot", "plugins")
+	fallbackPluginsDir := filepath.Join(tmpHome, ".config", "datarobot", "plugins")
+
+	createManagedTestPlugin(t, xdgPluginsDir, "xdg-plugin", "xdg-plugin")
+	createManagedTestPlugin(t, fallbackPluginsDir, "fallback-plugin", "fallback-plugin")
+
+	plugins, err := discoverPlugins()
+
+	require.NoError(t, err)
+
+	names := make(map[string]bool)
+
+	for _, p := range plugins {
+		names[p.Manifest.Name] = true
+	}
+
+	assert.True(t, names["xdg-plugin"], "plugin in XDG directory should be discovered")
+	assert.True(t, names["fallback-plugin"], "plugin in fallback ~/.config directory should be discovered")
 }

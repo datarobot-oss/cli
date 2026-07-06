@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/datarobot/cli/internal/config"
@@ -29,4 +30,29 @@ func ManagedPluginsDir() (string, error) {
 	}
 
 	return filepath.Join(configDir, "plugins"), nil
+}
+
+// ManagedPluginsDirs returns all managed plugin directories to search, in priority order.
+// When XDG_CONFIG_HOME is set, the XDG path is checked first, then ~/.config/datarobot/plugins
+// as a fallback so plugins installed without XDG_CONFIG_HOME remain discoverable.
+func ManagedPluginsDirs() ([]string, error) {
+	primaryDir, err := ManagedPluginsDir()
+	if err != nil {
+		return nil, err
+	}
+
+	dirs := []string{primaryDir}
+
+	if os.Getenv("XDG_CONFIG_HOME") != "" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			defaultDir := filepath.Join(homeDir, ".config", "datarobot", "plugins")
+
+			if defaultDir != primaryDir {
+				dirs = append(dirs, defaultDir)
+			}
+		}
+	}
+
+	return dirs, nil
 }

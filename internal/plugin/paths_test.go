@@ -66,3 +66,46 @@ func TestManagedPluginsDir(t *testing.T) {
 		assert.Equal(t, expected, dir)
 	})
 }
+
+func TestManagedPluginsDirs(t *testing.T) {
+	t.Run("returns only default dir when XDG_CONFIG_HOME is not set", func(t *testing.T) {
+		tmpHome := t.TempDir()
+
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("XDG_CONFIG_HOME", "")
+
+		dirs, err := ManagedPluginsDirs()
+
+		require.NoError(t, err)
+		require.Len(t, dirs, 1)
+		assert.Equal(t, filepath.Join(tmpHome, ".config", "datarobot", "plugins"), dirs[0])
+	})
+
+	t.Run("returns XDG dir first then default fallback when XDG_CONFIG_HOME is set", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		tmpXDG := t.TempDir()
+
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+
+		dirs, err := ManagedPluginsDirs()
+
+		require.NoError(t, err)
+		require.Len(t, dirs, 2)
+		assert.Equal(t, filepath.Join(tmpXDG, "datarobot", "plugins"), dirs[0])
+		assert.Equal(t, filepath.Join(tmpHome, ".config", "datarobot", "plugins"), dirs[1])
+	})
+
+	t.Run("deduplicates when XDG_CONFIG_HOME points to the same location as default", func(t *testing.T) {
+		tmpHome := t.TempDir()
+
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpHome, ".config"))
+
+		dirs, err := ManagedPluginsDirs()
+
+		require.NoError(t, err)
+		require.Len(t, dirs, 1)
+		assert.Equal(t, filepath.Join(tmpHome, ".config", "datarobot", "plugins"), dirs[0])
+	})
+}

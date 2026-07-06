@@ -55,14 +55,17 @@ func discoverPlugins() ([]DiscoveredPlugin, error) {
 
 	seen := make(map[string]bool)
 
-	// 1. Check managed plugins directory first (highest priority)
-	managedDir, err := ManagedPluginsDir()
+	// 1. Check managed plugins directories first (highest priority).
+	// Includes XDG path and ~/.config fallback when XDG_CONFIG_HOME is set.
+	managedDirs, err := ManagedPluginsDirs()
 	if err == nil {
-		managedPlugins, errs := discoverManagedPlugins(managedDir, seen)
-		plugins = append(plugins, managedPlugins...)
+		for _, managedDir := range managedDirs {
+			managedPlugins, errs := discoverManagedPlugins(managedDir, seen)
+			plugins = append(plugins, managedPlugins...)
 
-		for _, err := range errs {
-			log.Debug("Plugin discovery error in managed dir", "dir", managedDir, "error", err)
+			for _, err := range errs {
+				log.Debug("Plugin discovery error in managed dir", "dir", managedDir, "error", err)
+			}
 		}
 	}
 
