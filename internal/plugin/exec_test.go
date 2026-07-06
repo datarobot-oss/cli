@@ -161,6 +161,28 @@ exit %d
 	}
 }
 
+// waitForTrapInstalledSentinel polls until the given sentinel file exists or the
+// timeout elapses. The SIGTERM tests below use this instead of a fixed
+// time.Sleep to wait for their subprocess to install its trap handler: a fixed
+// sleep is a race under system load, since the subprocess may not have started
+// and installed the trap by the time the sleep elapses, causing the test's
+// later cancel() to kill the subprocess before it can react to SIGTERM.
+func waitForTrapInstalledSentinel(t *testing.T, sentinelPath string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sentinelPath); err == nil {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for trap-installed sentinel file %s", sentinelPath)
+}
+
 // TestExecutePluginContextCancellation verifies that cancelling the context sends
 // SIGTERM to the plugin subprocess (not SIGKILL), allowing graceful shutdown.
 func TestExecutePluginContextCancellation(t *testing.T) {
@@ -168,14 +190,20 @@ func TestExecutePluginContextCancellation(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that traps SIGTERM, writes a marker, and exits cleanly
-	markerFile := filepath.Join(t.TempDir(), "sigterm-received")
+	tmpDir := t.TempDir()
+
+	// trapInstalledSentinel is touched by the script right after it installs its
+	// SIGTERM trap, letting the test wait deterministically for that point
+	// instead of guessing with a fixed sleep (see waitForTrapInstalledSentinel).
+	trapInstalledSentinel := filepath.Join(tmpDir, "trap-installed.sentinel")
+	markerFile := filepath.Join(tmpDir, "sigterm-received")
 	script := fmt.Sprintf(`#!/bin/sh
 trap 'touch %s; exit 55' TERM
+touch %s
 while true; do sleep 0.1; done
-`, markerFile)
+`, markerFile, trapInstalledSentinel)
 
-	scriptPath := filepath.Join(t.TempDir(), "trap-term.sh")
+	scriptPath := filepath.Join(tmpDir, "trap-term.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -186,8 +214,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
 	}()
 
-	// Give the subprocess time to start and install its signal handler
-	time.Sleep(500 * time.Millisecond)
+	waitForTrapInstalledSentinel(t, trapInstalledSentinel, 5*time.Second)
 
 	cancel()
 
@@ -210,13 +237,19 @@ func TestExecutePluginContextCancellationKillsUnresponsive(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that ignores SIGTERM entirely
-	script := `#!/bin/sh
-trap '' TERM
-while true; do sleep 0.1; done
-`
+	tmpDir := t.TempDir()
 
-	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
+	// trapInstalledSentinel is touched by the script right after it installs its
+	// no-op SIGTERM trap, letting the test wait deterministically for that point
+	// instead of guessing with a fixed sleep (see waitForTrapInstalledSentinel).
+	trapInstalledSentinel := filepath.Join(tmpDir, "trap-installed.sentinel")
+	script := fmt.Sprintf(`#!/bin/sh
+trap '' TERM
+touch %s
+while true; do sleep 0.1; done
+`, trapInstalledSentinel)
+
+	scriptPath := filepath.Join(tmpDir, "ignore-term.sh")
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -227,8 +260,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
 	}()
 
-	// Give the subprocess time to start
-	time.Sleep(500 * time.Millisecond)
+	waitForTrapInstalledSentinel(t, trapInstalledSentinel, 5*time.Second)
 
 	cancel()
 
