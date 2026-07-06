@@ -17,11 +17,10 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/datarobot/cli/internal/config"
 	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/spf13/cobra"
 )
@@ -31,13 +30,16 @@ func registerExportWindowsCertsFlag(cmd *cobra.Command) {
 		"export Windows certificate store to the DataRobot CA bundle")
 }
 
+// windowsCACertPath returns the path where the exported CA bundle is
+// written, reusing the same config directory as drconfig.yaml
+// (config.GetConfigDir()) instead of a separate %APPDATA%-derived path.
 func windowsCACertPath() (string, error) {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		return "", errors.New("APPDATA environment variable is not set")
+	dir, err := config.GetConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("determining CA bundle path: %w", err)
 	}
 
-	return filepath.Join(appData, "DataRobot", "ca-bundle.pem"), nil
+	return filepath.Join(dir, "ca-bundle.pem"), nil
 }
 
 func applyWindowsCerts(cmd *cobra.Command, caCert *string) error {
