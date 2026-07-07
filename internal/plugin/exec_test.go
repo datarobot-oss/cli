@@ -27,6 +27,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -332,4 +333,160 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 	result := checkAndInstallPluginDeps(manifest, []string{})
 
 	assert.True(t, result)
+}
+
+// --- universalFlagEnv unit tests ---
+
+func TestUniversalFlagEnv_AllUnset(t *testing.T) {
+	viperx.Reset()
+
+	result := universalFlagEnv()
+
+	assert.Empty(t, result, "no env vars should be emitted when no universal flags are set")
+}
+
+func TestUniversalFlagEnv_DebugSet(t *testing.T) {
+	viperx.Reset()
+	viperx.Set("debug", true)
+
+	result := universalFlagEnv()
+
+	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
+	assert.NotContains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+}
+
+func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
+	viperx.Reset()
+	viperx.Set("disable-telemetry", true)
+
+	result := universalFlagEnv()
+
+	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+	assert.NotContains(t, result, config.EnvPrefix+"DEBUG=1")
+}
+
+func TestUniversalFlagEnv_BothSet(t *testing.T) {
+	viperx.Reset()
+	viperx.Set("debug", true)
+	viperx.Set("disable-telemetry", true)
+
+	result := universalFlagEnv()
+
+	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
+	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+}
+
+func TestUniversalFlagEnv_BoolFalseOmitted(t *testing.T) {
+	viperx.Reset()
+	viperx.Set("debug", false)
+	viperx.Set("disable-telemetry", false)
+
+	result := universalFlagEnv()
+
+	assert.Empty(t, result, "false bool flags must not be emitted")
+}
+
+// --- TraverseChildren / core-blind invariant tests ---
+
+// buildTestTree returns an isolated cobra command tree that mirrors the real CLI
+// wiring: root with TraverseChildren + two persistent flags, and a plugin-style
+// child with DisableFlagParsing:true that records the args it receives.
+func buildTestTree(t *testing.T) (root *cobra.Command, receivedArgs *[]string, debugSet *bool, skipUpdateSet *bool) {
+	t.Helper()
+
+	var got []string
+
+	var dbg bool
+
+	var skip bool
+
+	child := &cobra.Command{
+		Use:                "plug",
+		DisableFlagParsing: true,
+		DisableSuggestions: true,
+		Run: func(_ *cobra.Command, args []string) {
+			got = args
+		},
+	}
+
+	root = &cobra.Command{
+		Use:              "dr",
+		TraverseChildren: true,
+		SilenceErrors:    true,
+		SilenceUsage:     true,
+	}
+	root.PersistentFlags().Bool("debug", false, "debug output")
+	root.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks")
+
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		dbg, _ = root.PersistentFlags().GetBool("debug")
+		skip, _ = root.PersistentFlags().GetBool("skip-plugin-update-check")
+
+		return nil
+	}
+
+	// Mirror setUnknownArgGuards: make root runnable so unknown positional args
+	// produce a clear error rather than silently showing help.
+	root.Args = func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+
+		return fmt.Errorf("unknown command: %s", args[0])
+	}
+
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	}
+
+	root.AddCommand(child)
+
+	return root, &got, &dbg, &skip
+}
+
+// TestTraverseChildren_PrePluginFlagConsumedByCore verifies that --debug placed
+// BEFORE the plugin name is parsed by core (debug set) and NOT forwarded to the
+// plugin as a literal arg.
+func TestTraverseChildren_PrePluginFlagConsumedByCore(t *testing.T) {
+	root, receivedArgs, debugSet, _ := buildTestTree(t)
+	root.SetArgs([]string{"--debug", "plug", "foo", "bar"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.True(t, *debugSet, "core must see --debug when it appears before plugin name")
+	assert.Equal(t, []string{"foo", "bar"}, *receivedArgs,
+		"plugin must receive only its own args, not the consumed --debug flag")
+}
+
+// TestTraverseChildren_MultipleFlagsConsumedByCore verifies that multiple
+// persistent flags placed BEFORE the plugin name are all consumed by core
+// and none leak into the plugin's raw args.
+func TestTraverseChildren_MultipleFlagsConsumedByCore(t *testing.T) {
+	root, receivedArgs, debugSet, skipUpdateSet := buildTestTree(t)
+	root.SetArgs([]string{"--skip-plugin-update-check", "--debug", "plug", "foo", "bar"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.True(t, *debugSet, "core must see --debug when it appears before plugin name")
+	assert.True(t, *skipUpdateSet, "core must see --skip-plugin-update-check when it appears before plugin name")
+	assert.Equal(t, []string{"foo", "bar"}, *receivedArgs,
+		"plugin must receive only its own args, not any consumed root flags")
+}
+
+// TestTraverseChildren_PostPluginFlagsInvisibleToCore is the hard invariant:
+// core stays BLIND to any args after the plugin name (kubectl/helm model).
+// --debug after the plugin name must NOT set core debug, and must pass through
+// to the plugin verbatim.
+func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
+	root, receivedArgs, debugSet, _ := buildTestTree(t)
+	root.SetArgs([]string{"plug", "--debug", "foo"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.False(t, *debugSet, "core must NOT see --debug when it appears after plugin name")
+	assert.Equal(t, []string{"--debug", "foo"}, *receivedArgs,
+		"plugin must receive --debug verbatim when it appears after the plugin name")
 }

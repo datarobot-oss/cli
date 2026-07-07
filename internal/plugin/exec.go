@@ -133,6 +133,24 @@ func buildPluginCommand(ctx context.Context, executable string, args []string, r
 	return cmd
 }
 
+// universalFlagEnv returns "KEY=VALUE" environment variable strings for root
+// flags that must be forwarded to plugin subprocesses. Values are read from
+// viper (the authoritative source after flag parsing). To add a new universal
+// flag, append a branch here and register it in cmd/root.go.
+func universalFlagEnv() []string {
+	var env []string
+
+	if viperx.GetBool("debug") {
+		env = append(env, config.EnvPrefix+"DEBUG=1")
+	}
+
+	if viperx.GetBool("disable-telemetry") {
+		env = append(env, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+	}
+
+	return env
+}
+
 func buildPluginEnv(pluginPath string, requireAuth bool) []string {
 	env := os.Environ()
 

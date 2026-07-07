@@ -19,4 +19,8 @@ const (
 	DataRobotAPIKey = "token"
 
 	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
+
+	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment
+	// variables. Use this constant instead of hard-coding the string literal.
+	EnvPrefix = "DATAROBOT_CLI_"
 )

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/muesli/cancelreader"
 	"golang.org/x/term"
 )
@@ -83,7 +84,7 @@ func IsStdinTerminal() bool {
 // NonInteractiveEnv is the env var users set to force non-interactive mode
 // (e.g. Agent Assist). It is also bound to the viper "yes" key in commands
 // that support a --yes flag.
-const NonInteractiveEnv = "DATAROBOT_CLI_NON_INTERACTIVE"
+const NonInteractiveEnv = config.EnvPrefix + "NON_INTERACTIVE"
 
 // IsNonInteractive reports whether DATAROBOT_CLI_NON_INTERACTIVE is set to a
 // truthy value. Callers should use this to skip animations, prompts, and other
