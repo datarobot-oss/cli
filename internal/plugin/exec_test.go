@@ -518,4 +518,52 @@ func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
 	assert.False(t, *debugSet, "core must NOT see --debug when it appears after plugin name")
 	assert.Equal(t, []string{"--debug", "foo"}, *receivedArgs,
 		"plugin must receive --debug verbatim when it appears after the plugin name")
+func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
+	viperx.Reset()
+	viperx.Set("skip-auth", true)
+
+	// Deliberately leave no credentials configured — if auth were attempted it would fail.
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := filepath.Join(t.TempDir(), "skip-auth-test.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
+	}
+
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+
+	assert.Equal(t, 0, exitCode, "plugin should run successfully when --skip-auth bypasses the auth check")
+}
+
+func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
+	authContacted := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authContacted = true
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, server.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := filepath.Join(t.TempDir(), "no-skip-auth-test.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
+	}
+
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+
+	assert.Equal(t, 0, exitCode)
+	assert.True(t, authContacted, "auth server should be contacted when --skip-auth is not set")
 }

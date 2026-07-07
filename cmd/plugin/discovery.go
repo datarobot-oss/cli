@@ -211,20 +211,26 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	fmt.Println()
 }
 
-// isManagedPlugin returns true if the plugin executable lives under the managed plugins directory.
+// isManagedPlugin returns true if the plugin executable lives under any managed plugins directory.
+// Checks the primary directory (XDG_CONFIG_HOME) and any directories listed in XDG_CONFIG_DIRS.
 func isManagedPlugin(pluginPath string) bool {
-	managedDir, err := internalPlugin.ManagedPluginsDir()
+	managedDirs, err := internalPlugin.ManagedPluginsDirs()
 	if err != nil {
 		return false
 	}
 
-	rel, err := filepath.Rel(managedDir, pluginPath)
-	if err != nil {
-		return false
+	for _, managedDir := range managedDirs {
+		rel, err := filepath.Rel(managedDir, pluginPath)
+		if err != nil {
+			continue
+		}
+
+		if !strings.HasPrefix(rel, "..") {
+			return true
+		}
 	}
 
-	// If the relative path starts with ".." the plugin is outside the managed dir
-	return !strings.HasPrefix(rel, "..")
+	return false
 }
 
 // askYesNo reads a single line from stdin and returns true unless the user explicitly declines.
