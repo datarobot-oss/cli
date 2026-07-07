@@ -15,14 +15,20 @@ Plugins are external executables that extend the `dr` CLI with additional top-le
 
 ## Discovery
 
-At CLI startup, plugins are discovered from:
+At CLI startup, plugins are discovered from the following locations, in priority order:
 
-1. Project-local `.dr/plugins/` directory (highest priority)
-2. Every directory on your `PATH`
+1. **Managed plugins directories** (highest priority) — plugins installed via `dr plugin install`.
+   - Primary: `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/` when `XDG_CONFIG_HOME` is not set).
+   - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
+   - The primary directory always takes precedence: if the same plugin name exists in multiple locations, the first discovered one wins and later ones are skipped.
+2. **Project-local** `.dr/plugins/` directory.
+3. **Every directory on your `PATH``.
 
 Only files whose filename begins with `dr-` are considered.
 
 The CLI also verifies the candidate is executable (via Go's runtime `exec.LookPath`).
+
+**Note**: `XDG_CONFIG_DIRS` is only used when explicitly set by the user (no default system paths). This allows system administrators to provide plugins for all users while maintaining security: `export XDG_CONFIG_DIRS=/etc/xdg:/usr/local/etc`.
 
 ### Deduplication
 
@@ -222,8 +228,9 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 
    If the plugin is not listed, it was not discovered during startup.
 
-2. **Is the plugin executable accessible on `PATH`?** The CLI discovers plugins from `.dr/plugins/` and from `PATH`.
-   - Ensure the plugin binary is named `dr-<something>` and is executable.
+2. **Is the plugin executable accessible?** The CLI discovers plugins from managed plugin directories, `.dr/plugins/`, and `PATH`.
+   - For managed plugins (installed via `dr plugin install`), they live under `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/`).
+   - For PATH-based plugins, ensure the plugin binary is named `dr-<something>` and is executable.
    - Ensure the directory containing `dr-<something>` is on your `PATH`.
    - You can verify with your shell, e.g.:
 

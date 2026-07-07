@@ -153,3 +153,23 @@ func TestCheckAndInstallDeps_PropagatesInvalidYAML(t *testing.T) {
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrDepsDeclined)
 }
+
+func TestCheckAndInstallDeps_FallbackDirChecked(t *testing.T) {
+	tmpHome := t.TempDir()
+	tmpXDG := t.TempDir()
+
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+
+	const pluginName = "test-dr-cli-deps-fallback"
+
+	// Install the plugin only in the ~/.config fallback dir, not in XDG.
+	fallbackPluginDir := filepath.Join(tmpHome, ".config", "datarobot", "plugins", pluginName)
+
+	require.NoError(t, os.MkdirAll(fallbackPluginDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(fallbackPluginDir, "versions.yaml"), []byte(depsSatisfied), 0o644))
+
+	err := CheckAndInstallDeps(pluginName, neverConfirm(t), io.Discard)
+
+	assert.NoError(t, err, "deps in fallback dir should be checked and satisfied")
+}

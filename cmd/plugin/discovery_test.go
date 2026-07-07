@@ -15,10 +15,49 @@
 package plugin
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsManagedPlugin(t *testing.T) {
+	t.Run("returns true for plugin in primary XDG dir", func(t *testing.T) {
+		tmpXDG := t.TempDir()
+
+		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+
+		pluginPath := filepath.Join(tmpXDG, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
+
+		assert.True(t, isManagedPlugin(pluginPath))
+	})
+
+	t.Run("returns true for plugin in XDG_CONFIG_DIRS", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		tmpXDG := t.TempDir()
+		tmpConfigDir := t.TempDir()
+
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+		t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
+
+		configDirPath := filepath.Join(tmpConfigDir, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
+
+		assert.True(t, isManagedPlugin(configDirPath))
+	})
+
+	t.Run("returns false for plugin on PATH outside managed dirs", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		tmpXDG := t.TempDir()
+
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+
+		pathPlugin := filepath.Join("/usr", "local", "bin", "dr-myplugin")
+
+		assert.False(t, isManagedPlugin(pathPlugin))
+	})
+}
 
 func TestScanTLSArgs(t *testing.T) {
 	tests := []struct {
