@@ -17,7 +17,6 @@ package tools
 import (
 	"bytes"
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/log"
@@ -56,229 +55,157 @@ func captureLog(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// TestVersionsYamlSchemaDefinition verifies the authoritative schema has the expected field rules.
-func TestVersionsYamlSchemaDefinition(t *testing.T) {
-	assert.True(t, versionsYamlSchema.Name.Required, "name must be required")
-	assert.True(t, versionsYamlSchema.MinimumVersion.Required, "minimum-version must be required")
-	assert.Equal(t, formatSemver, versionsYamlSchema.MinimumVersion.Format, "minimum-version must use semver format")
-	assert.True(t, versionsYamlSchema.Command.Required, "command must be required")
-	assert.True(t, versionsYamlSchema.URL.Required, "url must be required")
+func validPrerequisite() Prerequisite {
+	return Prerequisite{
+		Name:           "Python",
+		MinimumVersion: "3.9.0",
+		Command:        "python3 --version",
+		URL:            "https://python.org",
+		Install:        InstallCommands{MacOS: "brew install python", Linux: "apt install python3"},
+	}
 }
 
-// TestInstallCommandsSchemaDefinition verifies platform rules: macOS and Linux required, Windows optional.
-func TestInstallCommandsSchemaDefinition(t *testing.T) {
-	assert.True(t, installCommandsSchema.MacOS.Required, "macOS install command must be required")
-	assert.True(t, installCommandsSchema.Linux.Required, "Linux install command must be required")
-	assert.False(t, installCommandsSchema.Windows.Required, "Windows install command must be optional")
+func TestValidatePrerequisite_ValidEntry(t *testing.T) {
+	violations := validatePrerequisite("python", validPrerequisite())
+
+	assert.Empty(t, violations)
 }
 
-func TestFieldRuleValidate(t *testing.T) {
-	t.Run("required field missing — WARN logged", func(t *testing.T) {
-		rule := FieldRule{Required: true}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "name", "")
-		})
-
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "[tool]")
-		assert.Contains(t, output, "'name' is required")
-	})
-
-	t.Run("required field present — nothing logged", func(t *testing.T) {
-		rule := FieldRule{Required: true}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "name", "Python")
-		})
-
-		assert.Empty(t, output)
-	})
-
-	t.Run("semver field with invalid version — WARN logged", func(t *testing.T) {
-		rule := FieldRule{Format: formatSemver}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "minimum-version", "not-a-version")
-		})
-
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "[tool]")
-		assert.Contains(t, output, "'minimum-version'")
-		assert.Contains(t, output, "not a valid semantic version")
-	})
-
-	t.Run("semver field with valid version — nothing logged", func(t *testing.T) {
-		rule := FieldRule{Format: formatSemver}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "minimum-version", "3.9.0")
-		})
-
-		assert.Empty(t, output)
-	})
-
-	t.Run("semver field empty and not required — nothing logged", func(t *testing.T) {
-		rule := FieldRule{Format: formatSemver}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "minimum-version", "")
-		})
-
-		assert.Empty(t, output)
-	})
-
-	t.Run("optional field empty — nothing logged", func(t *testing.T) {
-		rule := FieldRule{}
-
-		output := captureLog(t, func() {
-			rule.validate("tool", "command", "")
-		})
-
-		assert.Empty(t, output)
-	})
-}
-
-func TestInstallCommandsSchemaValidate(t *testing.T) {
-	schema := InstallCommandsSchema{
-		MacOS:   FieldRule{Required: true},
-		Linux:   FieldRule{Required: true},
-		Windows: FieldRule{Required: false},
+func TestValidatePrerequisite_RequiredFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Prerequisite)
+		wantMsg string
+	}{
+		{
+			name:    "missing name",
+			mutate:  func(p *Prerequisite) { p.Name = "" },
+			wantMsg: "'name' is required",
+		},
+		{
+			name:    "missing minimum-version",
+			mutate:  func(p *Prerequisite) { p.MinimumVersion = "" },
+			wantMsg: "'minimum-version' is required",
+		},
+		{
+			name:    "missing command",
+			mutate:  func(p *Prerequisite) { p.Command = "" },
+			wantMsg: "'command' is required",
+		},
+		{
+			name:    "missing url",
+			mutate:  func(p *Prerequisite) { p.URL = "" },
+			wantMsg: "'url' is required",
+		},
 	}
 
-	t.Run("all platforms absent — WARN 'install is not defined'", func(t *testing.T) {
-		output := captureLog(t, func() {
-			schema.validate("tool", InstallCommands{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := validPrerequisite()
+			tt.mutate(&p)
+
+			var violations []string
+
+			output := captureLog(t, func() {
+				violations = validatePrerequisite("tool", p)
+			})
+
+			assert.Contains(t, output, "WARN")
+			assert.Contains(t, output, "[tool]")
+
+			found := false
+
+			for _, v := range violations {
+				if assert.Contains(t, v, tt.wantMsg) {
+					found = true
+
+					break
+				}
+			}
+
+			assert.True(t, found, "expected violation containing %q", tt.wantMsg)
 		})
-
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "[tool]")
-		assert.Contains(t, output, "'install' is not defined")
-	})
-
-	t.Run("all required platforms present — nothing logged", func(t *testing.T) {
-		ic := InstallCommands{MacOS: "brew install x", Linux: "apt install x"}
-
-		output := captureLog(t, func() {
-			schema.validate("tool", ic)
-		})
-
-		assert.Empty(t, output)
-	})
-
-	t.Run("Windows optional and absent — nothing logged for Windows", func(t *testing.T) {
-		ic := InstallCommands{MacOS: "brew install x", Linux: "apt install x"}
-
-		output := captureLog(t, func() {
-			schema.validate("tool", ic)
-		})
-
-		assert.NotContains(t, output, "install.windows")
-	})
-
-	t.Run("current platform missing — ERROR logged", func(t *testing.T) {
-		var ic InstallCommands
-
-		switch runtime.GOOS {
-		case "darwin":
-			ic = InstallCommands{Linux: "apt install x"}
-		case "linux":
-			ic = InstallCommands{MacOS: "brew install x"}
-		default:
-			t.Skip("current platform not covered by required fields in this schema")
-		}
-
-		output := captureLog(t, func() {
-			schema.validate("tool", ic)
-		})
-
-		assert.Contains(t, output, "ERRO")
-		assert.Contains(t, output, "[tool]")
-		assert.Contains(t, output, "required for the current platform")
-	})
-
-	t.Run("non-current platform missing — WARN logged", func(t *testing.T) {
-		var ic InstallCommands
-
-		switch runtime.GOOS {
-		case "darwin":
-			ic = InstallCommands{MacOS: "brew install x"}
-		case "linux":
-			ic = InstallCommands{Linux: "apt install x"}
-		default:
-			t.Skip("current platform not covered by required fields in this schema")
-		}
-
-		output := captureLog(t, func() {
-			schema.validate("tool", ic)
-		})
-
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "[tool]")
-		assert.Contains(t, output, "is required")
-	})
+	}
 }
 
-func TestYAMLSchemaValidate(t *testing.T) {
-	t.Run("fully valid entry — nothing logged, nil returned", func(t *testing.T) {
-		input := versionsYaml{
-			"python": {
-				Name: "Python", MinimumVersion: "3.9.0", Command: "python3", URL: "https://python.org",
-				Install: InstallCommands{MacOS: "brew install python", Linux: "apt install python3"},
-			},
-		}
+func TestValidatePrerequisite_InvalidSemver(t *testing.T) {
+	p := validPrerequisite()
+	p.MinimumVersion = "not-a-version"
 
-		output := captureLog(t, func() {
-			versionsYamlSchema.Validate(input)
-		})
+	var violations []string
 
-		assert.Empty(t, output)
+	output := captureLog(t, func() {
+		violations = validatePrerequisite("python", p)
 	})
 
-	t.Run("missing required fields — WARN logged, nil returned", func(t *testing.T) {
-		input := versionsYaml{
-			"python": {},
-		}
+	assert.Contains(t, output, "WARN")
+	assert.Contains(t, output, "[python]")
+	assert.Contains(t, output, "not a valid semantic version")
 
-		output := captureLog(t, func() {
-			versionsYamlSchema.Validate(input)
-		})
+	assert.NotEmpty(t, violations)
+	assert.Contains(t, violations[0], "not a valid semantic version")
+}
 
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "[python]")
+func TestValidatePrerequisite_InstallMacOSRequired(t *testing.T) {
+	p := validPrerequisite()
+	p.Install.MacOS = ""
+
+	var violations []string
+
+	output := captureLog(t, func() {
+		violations = validatePrerequisite("tool", p)
 	})
 
-	t.Run("invalid semver — WARN logged, nil returned", func(t *testing.T) {
-		input := versionsYaml{
-			"python": {Name: "Python", Command: "python3", URL: "https://python.org", MinimumVersion: "bad"},
-		}
+	assert.Contains(t, output, "WARN")
+	assert.NotEmpty(t, violations)
+	assert.Contains(t, violations[0], "macos")
+}
 
-		output := captureLog(t, func() {
-			versionsYamlSchema.Validate(input)
-		})
+func TestValidatePrerequisite_InstallLinuxRequired(t *testing.T) {
+	p := validPrerequisite()
+	p.Install.Linux = ""
 
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "not a valid semantic version")
+	var violations []string
+
+	output := captureLog(t, func() {
+		violations = validatePrerequisite("tool", p)
 	})
 
-	t.Run("no install commands — WARN 'install is not defined', nil returned", func(t *testing.T) {
-		input := versionsYaml{
-			"python": {Name: "Python", MinimumVersion: "3.9.0", Command: "python3", URL: "https://python.org"},
-		}
+	assert.Contains(t, output, "WARN")
+	assert.NotEmpty(t, violations)
+	assert.Contains(t, violations[0], "linux")
+}
 
-		output := captureLog(t, func() {
-			versionsYamlSchema.Validate(input)
-		})
+func TestValidatePrerequisite_WindowsOptional(t *testing.T) {
+	p := validPrerequisite()
+	p.Install.Windows = ""
 
-		assert.Contains(t, output, "WARN")
-		assert.Contains(t, output, "'install' is not defined")
+	output := captureLog(t, func() {
+		violations := validatePrerequisite("tool", p)
+		assert.Empty(t, violations)
 	})
 
-	t.Run("empty map — nothing logged, nil returned", func(t *testing.T) {
-		output := captureLog(t, func() {
-			versionsYamlSchema.Validate(versionsYaml{})
-		})
+	assert.Empty(t, output)
+}
 
-		assert.Empty(t, output)
+func TestValidatePrerequisite_ViolationsLoggedAsWarn(t *testing.T) {
+	p := validPrerequisite()
+	p.Name = ""
+
+	output := captureLog(t, func() {
+		validatePrerequisite("tool", p)
 	})
+
+	assert.Contains(t, output, "WARN")
+	assert.NotContains(t, output, "ERRO")
+}
+
+func TestValidatePrerequisite_MessageContainsKey(t *testing.T) {
+	p := validPrerequisite()
+	p.Name = ""
+
+	violations := validatePrerequisite("my-tool", p)
+
+	assert.NotEmpty(t, violations)
+	assert.Contains(t, violations[0], "[my-tool]")
 }

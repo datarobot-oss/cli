@@ -15,142 +15,76 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
-	"runtime"
+	"reflect"
+	"sync"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/go-playground/validator/v10"
 
 	"github.com/datarobot/cli/internal/log"
 )
 
-const formatSemver = "semver"
+// createPrereqValidatorOnce initializes the shared validator exactly once.
+// validator.New() is expensive (allocates reflection caches) and RegisterValidation /
+// RegisterTagNameFunc are not safe to call concurrently, so we use sync.OnceValue
+// to guarantee a single, goroutine-safe initialization.
+var createPrereqValidatorOnce = sync.OnceValue(func() *validator.Validate {
+	v := validator.New()
 
-// FieldRule defines validation constraints for a single string field.
-type FieldRule struct {
-	Required bool
-	Format   string // "semver" validates semantic version format when non-empty
-}
-
-// InstallCommandsSchema defines validation constraints for InstallCommands fields.
-type InstallCommandsSchema struct {
-	MacOS   FieldRule
-	Linux   FieldRule
-	Windows FieldRule
-}
-
-// YAMLSchema defines the expected structure and constraints for versions.yaml entries.
-type YAMLSchema struct {
-	Name           FieldRule
-	MinimumVersion FieldRule
-	Command        FieldRule
-	URL            FieldRule
-	Install        InstallCommandsSchema
-}
-
-// installCommandsSchema is the authoritative schema for InstallCommands in versions.yaml.
-// As for Milestone 1, we decided to make Windows install command optional .
-// We can always add a warning in validation if Windows command is not provided, but it won't be a hard requirement.
-var installCommandsSchema = InstallCommandsSchema{
-	MacOS: FieldRule{Required: true},
-	Linux: FieldRule{Required: true},
-	// InstallCommands for Windows is optional for now.
-	Windows: FieldRule{Required: false},
-}
-
-// versionsYamlSchema is the authoritative schema for versions.yaml.
-var versionsYamlSchema = YAMLSchema{
-	Name:           FieldRule{Required: true},
-	MinimumVersion: FieldRule{Required: true, Format: formatSemver},
-	Command:        FieldRule{Required: true},
-	URL:            FieldRule{Required: true},
-	Install:        installCommandsSchema,
-}
-
-// validate logs a warning if value violates the field rule and returns the violation message.
-func (r FieldRule) validate(key, fieldName, value string) string {
-	if r.Required && value == "" {
-		msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required", key, fieldName)
-		log.Warn(msg)
-
-		return msg
-	}
-
-	if r.Format == formatSemver && value != "" {
-		if _, err := semver.NewVersion(value); err != nil {
-			msg := fmt.Sprintf("versions.yaml [%s]: '%s' %q is not a valid semantic version", key, fieldName, value)
-			log.Warn(msg)
-
-			return msg
-		}
-	}
-
-	return ""
-}
-
-// Validate checks every entry in the parsed versions.yaml, logs warnings for violations,
-// and returns the list of violation messages.
-func (s YAMLSchema) Validate(data versionsYaml) []string {
-	var violations []string
-
-	for key, p := range data {
-		for _, v := range []string{
-			s.Name.validate(key, "name", p.Name),
-			s.MinimumVersion.validate(key, "minimum-version", p.MinimumVersion),
-			s.Command.validate(key, "command", p.Command),
-			s.URL.validate(key, "url", p.URL),
-		} {
-			if v != "" {
-				violations = append(violations, v)
-			}
+	// Use the yaml struct tag as the field name in validation errors so that
+	// messages reference YAML keys ("minimum-version") rather than Go field
+	// names ("MinimumVersion"), matching what users see in versions.yaml.
+	v.RegisterTagNameFunc(func(f reflect.StructField) string {
+		if name := f.Tag.Get("yaml"); name != "" && name != "-" {
+			return name
 		}
 
-		violations = append(violations, s.Install.validate(key, p.Install)...)
+		return f.Name
+	})
+
+	_ = v.RegisterValidation("semver", func(fl validator.FieldLevel) bool {
+		_, err := semver.NewVersion(fl.Field().String())
+
+		return err == nil
+	})
+
+	return v
+})
+
+// validatePrerequisite validates a single Prerequisite entry from versions.yaml.
+// Violations are returned as human-readable strings and logged as warnings.
+func validatePrerequisite(key string, p Prerequisite) []string {
+	var errs validator.ValidationErrors
+
+	prereqValidator := createPrereqValidatorOnce()
+
+	if err := prereqValidator.Struct(p); !errors.As(err, &errs) {
+		return nil
+	}
+
+	violations := make([]string, 0, len(errs))
+
+	for _, fe := range errs {
+		violations = append(violations, fieldViolationMsg(key, fe))
 	}
 
 	return violations
 }
 
-// validate checks that install commands are provided
-// according to the InstallCommandsSchema rules, with special attention to the current platform.
-func (s InstallCommandsSchema) validate(key string, ic InstallCommands) []string {
-	if ic.MacOS == "" && ic.Linux == "" && ic.Windows == "" {
-		msg := fmt.Sprintf("versions.yaml [%s]: 'install' is not defined", key)
-		log.Warn(msg)
+func fieldViolationMsg(key string, fe validator.FieldError) string {
+	var msg string
 
-		return []string{msg}
+	switch fe.Tag() {
+	case "required":
+		msg = fmt.Sprintf("versions.yaml [%s]: '%s' is required", key, fe.Field())
+	case "semver":
+		msg = fmt.Sprintf("versions.yaml [%s]: '%s' %q is not a valid semantic version", key, fe.Field(), fe.Value())
+	default:
+		msg = fmt.Sprintf("versions.yaml [%s]: '%s' failed validation (%s)", key, fe.Field(), fe.Tag())
 	}
 
-	var violations []string
-
-	for _, v := range []string{
-		s.validatePlatform(key, "install.macos", ic.MacOS, s.MacOS, "darwin"),
-		s.validatePlatform(key, "install.linux", ic.Linux, s.Linux, "linux"),
-		s.validatePlatform(key, "install.windows", ic.Windows, s.Windows, "windows"),
-	} {
-		if v != "" {
-			violations = append(violations, v)
-		}
-	}
-
-	return violations
-}
-
-// validatePlatform logs Error if the install command for the current platform is missing and it's required, otherwise logs a warning.
-// Returns the violation message, or "" if no violation.
-func (s InstallCommandsSchema) validatePlatform(key, fieldName, value string, rule FieldRule, goos string) string {
-	if !rule.Required || value != "" {
-		return ""
-	}
-
-	// For now it's only warning if the install command for the current platform is missing
-	if runtime.GOOS == goos {
-		msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required for the current platform", key, fieldName)
-		log.Error(msg)
-
-		return msg
-	}
-
-	msg := fmt.Sprintf("versions.yaml [%s]: '%s' is required", key, fieldName)
 	log.Warn(msg)
 
 	return msg
