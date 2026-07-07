@@ -281,6 +281,11 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Runner image pre-seeds these MS apt sources; we don't use them and they're
+          # a source of flaky/noisy apt-get update failures (packages.microsoft.com
+          # sporadically serves a corrupted InRelease file). Removed for that reason only —
+          # if we ever actually need an MS package repo, re-add it explicitly for that job.
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
 
