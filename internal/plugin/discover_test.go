@@ -571,6 +571,8 @@ func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
 	plugins := DiscoverPluginsWithContext(ctx)
 
 	s.Nil(pluginByName(plugins, "ctx-skip"), "cancelled context must skip PATH plugins")
+}
+
 // createManagedTestPlugin creates a minimal managed plugin directory structure under pluginsDir.
 func createManagedTestPlugin(t *testing.T, pluginsDir, dirName, pluginName string) {
 	t.Helper()
@@ -611,9 +613,7 @@ func TestDiscoverPlugins_FindsPluginsInXDGConfigDirs(t *testing.T) {
 	createManagedTestPlugin(t, xdgPluginsDir, "xdg-plugin", "xdg-plugin")
 	createManagedTestPlugin(t, configDirPluginsDir, "config-dir-plugin", "config-dir-plugin")
 
-	plugins, err := discoverPlugins()
-
-	require.NoError(t, err)
+	plugins := DiscoverPluginsWithContext(context.Background())
 
 	names := make(map[string]bool)
 
