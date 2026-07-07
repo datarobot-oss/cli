@@ -518,6 +518,8 @@ func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
 	assert.False(t, *debugSet, "core must NOT see --debug when it appears after plugin name")
 	assert.Equal(t, []string{"--debug", "foo"}, *receivedArgs,
 		"plugin must receive --debug verbatim when it appears after the plugin name")
+}
+
 func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	viperx.Reset()
 	viperx.Set("skip-auth", true)
@@ -533,7 +535,7 @@ func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
 	}
 
-	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, 0, exitCode, "plugin should run successfully when --skip-auth bypasses the auth check")
 }
@@ -562,7 +564,7 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
 	}
 
-	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, 0, exitCode)
 	assert.True(t, authContacted, "auth server should be contacted when --skip-auth is not set")
