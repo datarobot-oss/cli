@@ -189,7 +189,7 @@ func bindUniversal(name string) {
 		flag.Annotations = map[string][]string{}
 	}
 
-	flag.Annotations[internalPlugin.UniversalAnnotationKey] = []string{strings.ToUpper(strings.ReplaceAll(name, "-", "_"))}
+	flag.Annotations[config.UniversalAnnotationKey] = []string{strings.ToUpper(strings.ReplaceAll(name, "-", "_"))}
 }
 
 func init() {

@@ -23,4 +23,9 @@ const (
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment
 	// variables. Use this constant instead of hard-coding the string literal.
 	EnvPrefix = "DATAROBOT_CLI_"
+
+	// UniversalAnnotationKey is the pflag annotation key used to mark a
+	// persistent root flag for forwarding to plugin subprocesses as a
+	// DATAROBOT_CLI_<suffix> env var. cmd/root.go writes it; internal/plugin reads it.
+	UniversalAnnotationKey = "plugin-universal"
 )

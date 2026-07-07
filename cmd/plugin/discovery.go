@@ -36,10 +36,6 @@ import (
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
 // on rootCmd. The plugin group is only added when at least one plugin is found.
 func RegisterPluginCommands(rootCmd *cobra.Command) {
-	// Hand the root persistent flagset to internal/plugin so universalFlagEnv
-	// can walk it and forward annotated flags to plugin subprocesses.
-	internalPlugin.SetRootFlags(rootCmd.PersistentFlags())
-
 	timeout := viperx.GetDuration("plugin-discovery-timeout")
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
@@ -153,7 +149,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
-			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args)
+			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args, pluginCmd.Root().PersistentFlags())
 			telemetry.ExitWithContext(pluginCmd.Context(), exitCode)
 		},
 	}

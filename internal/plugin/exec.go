@@ -30,6 +30,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/spf13/pflag"
 )
 
 // checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
@@ -70,7 +71,9 @@ func confirmPluginDepsInstall(args []string) bool {
 // ExecutePlugin runs a plugin and returns its exit code.
 // If the plugin manifest requires authentication, it will check/prompt for auth first.
 // ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
-func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string) int {
+// rootFlags is the root command's persistent flagset, used to forward annotated
+// universal flags (e.g. --debug) to the plugin subprocess as DATAROBOT_CLI_* env vars.
+func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string, rootFlags *pflag.FlagSet) int {
 	if !checkAndInstallPluginDeps(manifest, args) {
 		return 1
 	}
@@ -84,12 +87,12 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 		}
 	}
 
-	return executePluginCommand(ctx, executable, args, manifest.Authentication)
+	return executePluginCommand(ctx, executable, args, manifest.Authentication, rootFlags)
 }
 
 // executePluginCommand runs the actual plugin command.
-func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) int {
-	cmd := buildPluginCommand(ctx, executable, args, requireAuth)
+func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) int {
+	cmd := buildPluginCommand(ctx, executable, args, requireAuth, rootFlags)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -110,7 +113,7 @@ func executePluginCommand(ctx context.Context, executable string, args []string,
 // On Windows, .ps1 files are executed via PowerShell.
 // ctx cancellation sends SIGTERM to the process, with a 5-second grace
 // period before SIGKILL.
-func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool) *exec.Cmd {
+func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) *exec.Cmd {
 	ext := filepath.Ext(executable)
 
 	// On Windows, execute .ps1 files through PowerShell
@@ -120,7 +123,7 @@ func buildPluginCommand(ctx context.Context, executable string, args []string, r
 		cmd := exec.CommandContext(ctx, "powershell.exe", psArgs...)
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		cmd.WaitDelay = 5 * time.Second
-		cmd.Env = buildPluginEnv(executable, requireAuth)
+		cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)
 
 		return cmd
 	}
@@ -128,18 +131,52 @@ func buildPluginCommand(ctx context.Context, executable string, args []string, r
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
-	cmd.Env = buildPluginEnv(executable, requireAuth)
+	cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)
 
 	return cmd
 }
 
-func buildPluginEnv(pluginPath string, requireAuth bool) []string {
+// universalFlagEnv returns "KEY=VALUE" strings for every persistent root flag
+// carrying a config.UniversalAnnotationKey annotation. Values are read from
+// viper (the authoritative source after flag parsing).
+func universalFlagEnv(fs *pflag.FlagSet) []string {
+	if fs == nil {
+		return nil
+	}
+
+	var env []string
+
+	fs.VisitAll(func(flag *pflag.Flag) {
+		suffixes, ok := flag.Annotations[config.UniversalAnnotationKey]
+		if !ok || len(suffixes) == 0 {
+			return
+		}
+
+		envKey := config.EnvPrefix + suffixes[0]
+
+		if flag.Value.Type() == "bool" {
+			if viperx.GetBool(flag.Name) {
+				env = append(env, envKey+"=1")
+			}
+
+			return
+		}
+
+		if val := viperx.GetString(flag.Name); val != "" {
+			env = append(env, envKey+"="+val)
+		}
+	})
+
+	return env
+}
+
+func buildPluginEnv(pluginPath string, requireAuth bool, rootFlags *pflag.FlagSet) []string {
 	env := os.Environ()
 
 	// Forward universal root flags (e.g. --debug, --disable-telemetry) as
 	// DATAROBOT_CLI_* env vars so plugins can optionally honour them.
 	// These override any inherited env vars of the same name.
-	env = append(env, universalFlagEnv()...)
+	env = append(env, universalFlagEnv(rootFlags)...)
 
 	// Always set plugin mode flag so plugins can detect they were invoked by dr CLI
 	env = append(env, "DR_PLUGIN_MODE=1")

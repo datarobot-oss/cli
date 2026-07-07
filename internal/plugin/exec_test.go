@@ -73,26 +73,26 @@ exit %d
 func (s *ExecTestSuite) TestExecutePluginSuccessfulExecution() {
 	path := s.createScript("success", 0)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeOne() {
 	path := s.createScript("fail-one", 1)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(1, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeFortyTwo() {
 	path := s.createScript("fail-42", 42)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(42, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginCommandNotFound() {
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, filepath.Join(s.tempDir, "nonexistent"), []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, filepath.Join(s.tempDir, "nonexistent"), []string{}, nil)
 	s.Equal(1, exitCode)
 }
 
@@ -108,7 +108,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"}, nil)
 	s.Equal(0, exitCode)
 }
 
@@ -124,7 +124,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args-fail")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"}, nil)
 	s.Equal(1, exitCode)
 }
 
@@ -157,7 +157,7 @@ exit %d
 			path := filepath.Join(tempDir, fmt.Sprintf("exit-%d", tt.exitCode))
 			require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 
-			result := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+			result := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 			require.Equal(t, tt.expectedCode, result)
 		})
 	}
@@ -185,7 +185,7 @@ while true; do sleep 0.1; done
 	done := make(chan int, 1)
 
 	go func() {
-		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
+		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
 	// Give the subprocess time to start and install its signal handler
@@ -226,7 +226,7 @@ while true; do sleep 0.1; done
 	done := make(chan int, 1)
 
 	go func() {
-		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
+		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
 	// Give the subprocess time to start
@@ -268,7 +268,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
 	}
 
-	ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
@@ -339,37 +339,37 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 // --- universalFlagEnv unit tests ---
 
 // setupUniversalTestFlags creates an isolated flagset with the standard
-// universal flags annotated and registered, restoring state on cleanup.
-func setupUniversalTestFlags(t *testing.T) {
+// universal flags annotated, for passing directly to universalFlagEnv.
+func setupUniversalTestFlags(t *testing.T) *pflag.FlagSet {
 	t.Helper()
 
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.Bool("debug", false, "")
 	fs.Bool("disable-telemetry", false, "")
-	fs.Lookup("debug").Annotations = map[string][]string{UniversalAnnotationKey: {"DEBUG"}}
-	fs.Lookup("disable-telemetry").Annotations = map[string][]string{UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
+	fs.Lookup("debug").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DEBUG"}}
+	fs.Lookup("disable-telemetry").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
 
-	prev := rootFlags
-
-	SetRootFlags(fs)
-	t.Cleanup(func() { rootFlags = prev })
+	return fs
 }
 
 func TestUniversalFlagEnv_AllUnset(t *testing.T) {
 	viperx.Reset()
-	setupUniversalTestFlags(t)
 
-	result := universalFlagEnv()
+	fs := setupUniversalTestFlags(t)
+
+	result := universalFlagEnv(fs)
 
 	assert.Empty(t, result, "no env vars should be emitted when no universal flags are set")
 }
 
 func TestUniversalFlagEnv_DebugSet(t *testing.T) {
 	viperx.Reset()
-	setupUniversalTestFlags(t)
+
+	fs := setupUniversalTestFlags(t)
+
 	viperx.Set("debug", true)
 
-	result := universalFlagEnv()
+	result := universalFlagEnv(fs)
 
 	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
 	assert.NotContains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
@@ -377,10 +377,12 @@ func TestUniversalFlagEnv_DebugSet(t *testing.T) {
 
 func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
 	viperx.Reset()
-	setupUniversalTestFlags(t)
+
+	fs := setupUniversalTestFlags(t)
+
 	viperx.Set("disable-telemetry", true)
 
-	result := universalFlagEnv()
+	result := universalFlagEnv(fs)
 
 	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
 	assert.NotContains(t, result, config.EnvPrefix+"DEBUG=1")
@@ -388,11 +390,13 @@ func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
 
 func TestUniversalFlagEnv_BothSet(t *testing.T) {
 	viperx.Reset()
-	setupUniversalTestFlags(t)
+
+	fs := setupUniversalTestFlags(t)
+
 	viperx.Set("debug", true)
 	viperx.Set("disable-telemetry", true)
 
-	result := universalFlagEnv()
+	result := universalFlagEnv(fs)
 
 	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
 	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
@@ -400,11 +404,13 @@ func TestUniversalFlagEnv_BothSet(t *testing.T) {
 
 func TestUniversalFlagEnv_BoolFalseOmitted(t *testing.T) {
 	viperx.Reset()
-	setupUniversalTestFlags(t)
+
+	fs := setupUniversalTestFlags(t)
+
 	viperx.Set("debug", false)
 	viperx.Set("disable-telemetry", false)
 
-	result := universalFlagEnv()
+	result := universalFlagEnv(fs)
 
 	assert.Empty(t, result, "false bool flags must not be emitted")
 }
