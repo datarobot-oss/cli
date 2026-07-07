@@ -58,3 +58,64 @@ func TestIsManagedPlugin(t *testing.T) {
 		assert.False(t, isManagedPlugin(pathPlugin))
 	})
 }
+
+func TestScanTLSArgs(t *testing.T) {
+	tests := []struct {
+		name               string
+		args               []string
+		expectedSkipVerify bool
+		expectedCACert     string
+	}{
+		{
+			name:               "no flags",
+			args:               []string{"foo", "bar"},
+			expectedSkipVerify: false,
+			expectedCACert:     "",
+		},
+		{
+			name:               "short skip-verify flag",
+			args:               []string{"-k", "foo"},
+			expectedSkipVerify: true,
+			expectedCACert:     "",
+		},
+		{
+			name:               "long skip-verify flag",
+			args:               []string{"--skip-certificate-check", "foo"},
+			expectedSkipVerify: true,
+			expectedCACert:     "",
+		},
+		{
+			name:               "ca-cert space-separated form",
+			args:               []string{"--ca-cert", "/path/to/ca.pem"},
+			expectedSkipVerify: false,
+			expectedCACert:     "/path/to/ca.pem",
+		},
+		{
+			name:               "ca-cert equals form",
+			args:               []string{"--ca-cert=/path/to/ca.pem"},
+			expectedSkipVerify: false,
+			expectedCACert:     "/path/to/ca.pem",
+		},
+		{
+			name:               "ca-cert with dash-leading value",
+			args:               []string{"--ca-cert", "-my-cert.pem"},
+			expectedSkipVerify: false,
+			expectedCACert:     "-my-cert.pem",
+		},
+		{
+			name:               "unknown flags pass through without error",
+			args:               []string{"--some-plugin-flag", "value", "-k"},
+			expectedSkipVerify: true,
+			expectedCACert:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			skipVerify, caCert := scanTLSArgs(tt.args)
+
+			assert.Equal(t, tt.expectedSkipVerify, skipVerify)
+			assert.Equal(t, tt.expectedCACert, caCert)
+		})
+	}
+}

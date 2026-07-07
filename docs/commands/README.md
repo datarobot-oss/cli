@@ -26,6 +26,24 @@ These flags are available for all commands:
 > [!NOTE]
 > The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
 
+### Private CA / TLS flags (experimental, feature-gated)
+
+```bash
+  -k, --skip-certificate-check    Skip TLS certificate verification (insecure)
+      --ca-cert string           Path to a PEM-encoded CA certificate bundle
+      --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
+```
+
+> [!NOTE]
+> These flags only exist when the `private-ca` feature gate is enabled via
+> `DATAROBOT_CLI_FEATURE_PRIVATE_CA=true`. They are not available by default,
+> and the underlying mechanism is subject to change (see
+> [Feature gates](../development/feature-gates.md)) as the design evolves.
+
+> [!WARNING]
+> `--skip-certificate-check` disables TLS certificate verification entirely
+> and should only be used against known, trusted endpoints for testing.
+
 ## Commands
 
 ### Main commands
