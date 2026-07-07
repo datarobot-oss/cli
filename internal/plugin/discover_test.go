@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -425,4 +426,147 @@ exit 1
 	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
 	s.Nil(manifest)
+}
+
+// captureLogOutput redirects os.Stderr to a pipe, reinitialises the logger,
+// runs fn, then returns everything written during fn's execution.
+func captureLogOutput(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	log.StartStderr()
+
+	fn()
+
+	w.Close()
+
+	os.Stderr = origStderr
+
+	t.Cleanup(log.StopStderr)
+
+	var buf bytes.Buffer
+
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	r.Close()
+
+	return buf.String()
+}
+
+// pluginByName returns the first plugin with the given manifest name, or nil.
+func pluginByName(plugins []DiscoveredPlugin, name string) *DiscoveredPlugin {
+	for i := range plugins {
+		if plugins[i].Manifest.Name == name {
+			return &plugins[i]
+		}
+	}
+
+	return nil
+}
+
+// DiscoverWithContextSuite tests DiscoverPluginsWithContext end-to-end.
+// Tests control the PATH env var so only known plugins are discovered from PATH.
+// Managed-plugin and local-plugin directories are not controlled here and are
+// typically empty in CI.
+type DiscoverWithContextSuite struct {
+	suite.Suite
+	pluginDir string
+}
+
+func TestDiscoverWithContextSuite(t *testing.T) {
+	suite.Run(t, new(DiscoverWithContextSuite))
+}
+
+func (s *DiscoverWithContextSuite) SetupTest() {
+	var err error
+
+	s.pluginDir, err = os.MkdirTemp("", "plugin-discoverctx-test")
+	s.Require().NoError(err)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+}
+
+func (s *DiscoverWithContextSuite) TearDownTest() {
+	_ = os.RemoveAll(s.pluginDir)
+
+	viperx.Reset()
+}
+
+func (s *DiscoverWithContextSuite) TestDiscoversPATHPlugin() {
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-alpha",
+		`{"name":"ctx-alpha","version":"1.0.0","description":"Alpha"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	plugins := DiscoverPluginsWithContext(context.Background())
+
+	s.NotNil(pluginByName(plugins, "ctx-alpha"), "plugin from controlled PATH dir must be discovered")
+}
+
+func (s *DiscoverWithContextSuite) TestPartialResultsOnTimeout() {
+	// Fast plugin: responds immediately.
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-fast",
+		`{"name":"ctx-fast","version":"1.0.0","description":"Fast"}`)
+
+	// Slow plugin: blocks well past any reasonable deadline.
+	// exec replaces the shell so SIGKILL from exec.CommandContext lands directly
+	// on sleep, closing stdout immediately without orphan processes.
+	slowDir, err := os.MkdirTemp("", "plugin-discoverctx-slow")
+	s.Require().NoError(err)
+
+	defer os.RemoveAll(slowDir)
+
+	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
+	s.Require().NoError(os.WriteFile(filepath.Join(slowDir, "dr-ctx-slow"), []byte(slowScript), 0o755))
+
+	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+slowDir)
+
+	// 2 s gives the fast plugin plenty of time to respond; the slow plugin is
+	// killed by the per-manifest timeout (5 s set in SetupTest capped by the
+	// outer ctx) or the outer ctx itself — either way it is absent.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	plugins := DiscoverPluginsWithContext(ctx)
+
+	s.NotNil(pluginByName(plugins, "ctx-fast"), "fast plugin must be returned before deadline")
+	s.Nil(pluginByName(plugins, "ctx-slow"), "slow plugin must be absent after deadline")
+}
+
+func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
+	// A pre-cancelled context immediately satisfies ctx.Err() != nil after
+	// discoverPathDirsParallel returns (goroutines bail on the first Done check),
+	// which is the condition that triggers the WARN — no real-time dependency.
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-warn",
+		`{"name":"ctx-warn","version":"1.0.0","description":"Warn"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	output := captureLogOutput(s.T(), func() {
+		DiscoverPluginsWithContext(ctx)
+	})
+
+	s.Contains(output, "timed out")
+	s.Contains(output, "--plugin-discovery-timeout")
+}
+
+func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-skip",
+		`{"name":"ctx-skip","version":"1.0.0","description":"Skip"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	plugins := DiscoverPluginsWithContext(ctx)
+
+	s.Nil(pluginByName(plugins, "ctx-skip"), "cancelled context must skip PATH plugins")
 }
