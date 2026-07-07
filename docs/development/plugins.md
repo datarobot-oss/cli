@@ -268,21 +268,22 @@ DEBUG = os.getenv("DATAROBOT_CLI_DEBUG") == "1"
 
 ##### Adding a new universal flag (for CLI contributors)
 
-To forward a new root-level flag to plugins in the future:
+To forward a new root-level flag to plugins, only two files need to change:
 
-1. **Define and bind the flag** — add it as a persistent flag on `RootCmd` in
-   `cmd/root.go` and bind it to viper with `viperx.BindPFlag`.
-2. **Register it in the forwarding table** — add one entry to `universalFlags` in
-   `internal/plugin/universalenv.go`:
-   - `IsBool: true` for boolean flags (emits `=1` when true, omitted when false).
-   - `IsBool: false` for string flags (emits `=<value>` when non-empty, omitted
-     otherwise).
-3. **Update this document** — add a row to the table above.
-4. **Update the user-facing doc** — add the same row to the table in
-   `docs/commands/plugins.md` under "Passing global flags to plugins".
+1. **Register the flag and mark it universal** — in `cmd/root.go`, add it as a
+   persistent flag on `RootCmd` and call `bindUniversal` in the universal flags
+   block. That single call binds it to viper and annotates it for forwarding:
 
-No other changes are needed; `buildPluginEnv` in `internal/plugin/exec.go` picks
-up new entries automatically.
+   ```go
+   RootCmd.PersistentFlags().Bool("my-flag", false, "description")
+   // ...
+   bindUniversal("my-flag")  // emits DATAROBOT_CLI_MY_FLAG=1
+   ```
+
+   `internal/plugin` discovers the annotation automatically — no changes needed there.
+
+2. **Update the docs** — add a row to the table above and the same row to the
+   table in `docs/commands/plugins.md` under "Passing global flags to plugins".
 
 ## Developing a plugin
 

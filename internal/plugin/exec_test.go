@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -337,8 +338,26 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 
 // --- universalFlagEnv unit tests ---
 
+// setupUniversalTestFlags creates an isolated flagset with the standard
+// universal flags annotated and registered, restoring state on cleanup.
+func setupUniversalTestFlags(t *testing.T) {
+	t.Helper()
+
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	fs.Bool("debug", false, "")
+	fs.Bool("disable-telemetry", false, "")
+	fs.Lookup("debug").Annotations = map[string][]string{UniversalAnnotationKey: {"DEBUG"}}
+	fs.Lookup("disable-telemetry").Annotations = map[string][]string{UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
+
+	prev := rootFlags
+
+	SetRootFlags(fs)
+	t.Cleanup(func() { rootFlags = prev })
+}
+
 func TestUniversalFlagEnv_AllUnset(t *testing.T) {
 	viperx.Reset()
+	setupUniversalTestFlags(t)
 
 	result := universalFlagEnv()
 
@@ -347,6 +366,7 @@ func TestUniversalFlagEnv_AllUnset(t *testing.T) {
 
 func TestUniversalFlagEnv_DebugSet(t *testing.T) {
 	viperx.Reset()
+	setupUniversalTestFlags(t)
 	viperx.Set("debug", true)
 
 	result := universalFlagEnv()
@@ -357,6 +377,7 @@ func TestUniversalFlagEnv_DebugSet(t *testing.T) {
 
 func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
 	viperx.Reset()
+	setupUniversalTestFlags(t)
 	viperx.Set("disable-telemetry", true)
 
 	result := universalFlagEnv()
@@ -367,6 +388,7 @@ func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
 
 func TestUniversalFlagEnv_BothSet(t *testing.T) {
 	viperx.Reset()
+	setupUniversalTestFlags(t)
 	viperx.Set("debug", true)
 	viperx.Set("disable-telemetry", true)
 
@@ -378,6 +400,7 @@ func TestUniversalFlagEnv_BothSet(t *testing.T) {
 
 func TestUniversalFlagEnv_BoolFalseOmitted(t *testing.T) {
 	viperx.Reset()
+	setupUniversalTestFlags(t)
 	viperx.Set("debug", false)
 	viperx.Set("disable-telemetry", false)
 
