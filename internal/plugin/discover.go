@@ -87,6 +87,10 @@ func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 
 	plugins = append(plugins, discoverPathDirsParallel(ctx, filepath.SplitList(os.Getenv("PATH")), baseSeen)...)
 
+	if ctx.Err() != nil {
+		log.Warn("Plugin discovery timed out; some PATH plugins may be missing — use --plugin-discovery-timeout to adjust", "discovered", len(plugins))
+	}
+
 	log.Debug("Plugin discovery complete", "count", len(plugins))
 
 	return plugins
