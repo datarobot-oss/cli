@@ -30,3 +30,9 @@ Ensure consistency and maintainability.
 
 - **bugbot-testing.md** — Race detector, error paths, test seams, mocking
 - **bugbot-cmd.md** — Table rendering, file organization, output consistency
+
+## CI & Workflow Rules
+
+Informational callouts about GitHub Actions workflows and composite actions.
+
+- **bugbot-ci.md** — Composite action changes can't be validated by their own PR's CI

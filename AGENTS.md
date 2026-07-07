@@ -146,6 +146,9 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Testing** — Test coverage, mocking, pagination tests
 - **Commands** — Table rendering, file organization, output formatting
 
+**CI & Workflows** (informational callouts, not correctness bugs):
+- **Composite Actions** — Changes to `.github/actions/*/action.yaml` can't be validated by their own PR's CI
+
 **When working on code**, apply these quick principles:
 - **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
 - **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
@@ -153,6 +156,15 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Platforms**: Add build tags, match signatures, test on target platforms
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
+
+> [!NOTE]
+> **Composite action changes need special testing.** Workflows like `_smoke.yaml` and
+> `_pre-release-smoke.yaml` reference `.github/actions/*` via a pinned `@main` ref, not
+> the calling ref — so a PR that edits a composite action's `action.yaml` does not
+> exercise that change in its own CI run; the fix only takes effect after merge. Either
+> temporarily point the ref at the PR branch to get a real CI run (reverting before
+> merge), or verify immediately after merge via a manual `workflow_dispatch` run. See
+> [.cursor/bugbot-ci.md](.cursor/bugbot-ci.md).
 
 ## Feature Gates
 
