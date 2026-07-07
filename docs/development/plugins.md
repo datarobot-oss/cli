@@ -15,14 +15,20 @@ Plugins are external executables that extend the `dr` CLI with additional top-le
 
 ## Discovery
 
-At CLI startup, plugins are discovered from:
+At CLI startup, plugins are discovered from the following locations, in priority order:
 
-1. Project-local `.dr/plugins/` directory (highest priority)
-2. Every directory on your `PATH`
+1. **Managed plugins directories** (highest priority) — plugins installed via `dr plugin install`.
+   - Primary: `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/` when `XDG_CONFIG_HOME` is not set).
+   - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
+   - The primary directory always takes precedence: if the same plugin name exists in multiple locations, the first discovered one wins and later ones are skipped.
+2. **Project-local** `.dr/plugins/` directory.
+3. **Every directory on your `PATH``.
 
 Only files whose filename begins with `dr-` are considered.
 
 The CLI also verifies the candidate is executable (via Go's runtime `exec.LookPath`).
+
+**Note**: `XDG_CONFIG_DIRS` is only used when explicitly set by the user (no default system paths). This allows system administrators to provide plugins for all users while maintaining security: `export XDG_CONFIG_DIRS=/etc/xdg:/usr/local/etc`.
 
 ### Deduplication
 
@@ -175,6 +181,32 @@ When `authentication` is enabled:
 - Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
 - Your plugin will receive a clean environment with authentication already validated
 
+### Private CA / TLS support (experimental, feature-gated)
+
+> **Subject to change:** this mechanism is gated behind
+> `DATAROBOT_CLI_FEATURE_PRIVATE_CA=true` and is expected to be reworked
+> once the CLI's generic root-flag-forwarding mechanism (a `DATAROBOT_CLI_*`
+> env var table for flags placed before the plugin name) lands. Do not treat
+> the exact env vars below as a stable contract yet.
+
+When the `private-ca` feature gate is enabled and a user passes
+`-k`/`--skip-certificate-check` or `--ca-cert <path>` before your plugin's
+name (e.g. `dr --ca-cert /path/to/ca.pem myplugin [args...]`), the CLI
+forwards the equivalent runtime configuration to your plugin subprocess via
+these environment variables:
+
+| Variable | Set when | Value |
+|---|---|---|
+| `NODE_TLS_REJECT_UNAUTHORIZED` | `--skip-certificate-check`/`-k` is used | `0` |
+| `NODE_EXTRA_CA_CERTS` | `--ca-cert <path>` is used | `<path>` |
+| `SSL_CERT_FILE` | `--ca-cert <path>` is used | `<path>` |
+
+Plugins written in Node.js/Bun automatically honour `NODE_TLS_REJECT_UNAUTHORIZED`
+and `NODE_EXTRA_CA_CERTS` without any extra code. Other runtimes that respect
+`SSL_CERT_FILE` (e.g. many Go/OpenSSL-based tools) will pick up the custom CA
+bundle the same way. If your plugin uses a different HTTP client, read these
+variables at startup and configure your client's TLS trust store accordingly.
+
 ## Developing a plugin
 
 Minimum requirements:
@@ -196,8 +228,9 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 
    If the plugin is not listed, it was not discovered during startup.
 
-2. **Is the plugin executable accessible on `PATH`?** The CLI discovers plugins from `.dr/plugins/` and from `PATH`.
-   - Ensure the plugin binary is named `dr-<something>` and is executable.
+2. **Is the plugin executable accessible?** The CLI discovers plugins from managed plugin directories, `.dr/plugins/`, and `PATH`.
+   - For managed plugins (installed via `dr plugin install`), they live under `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/`).
+   - For PATH-based plugins, ensure the plugin binary is named `dr-<something>` and is executable.
    - Ensure the directory containing `dr-<something>` is on your `PATH`.
    - You can verify with your shell, e.g.:
 

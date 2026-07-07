@@ -30,6 +30,26 @@ import (
 // declines to install missing plugin dependencies.
 var ErrDepsDeclined = errors.New("plugin dependency installation declined by user")
 
+// resolveInstalledPluginDir returns the directory where pluginName is installed,
+// searching all managed plugin directories in priority order.
+// Returns ("", nil) when the plugin is not found in any managed directory.
+func resolveInstalledPluginDir(pluginName string) (string, error) {
+	managedDirs, err := ManagedPluginsDirs()
+	if err != nil {
+		return "", err
+	}
+
+	for _, dir := range managedDirs {
+		candidate := filepath.Join(dir, pluginName)
+
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", nil
+}
+
 // CheckAndInstallDeps reads the plugin's versions.yaml, checks prerequisites,
 // and installs any missing or outdated tools.
 //
@@ -41,14 +61,18 @@ var ErrDepsDeclined = errors.New("plugin dependency installation declined by use
 // Returns os.ErrNotExist (wrapped) errors silently — a missing versions.yaml is normal.
 // Returns any other GetRequirementsFromDir error (bad YAML, permission denied, etc.) to the caller.
 func CheckAndInstallDeps(pluginName string, confirm func() bool, out io.Writer) error {
-	managedDir, err := ManagedPluginsDir()
+	pluginDir, err := resolveInstalledPluginDir(pluginName)
 	if err != nil {
-		log.Debug("plugin dep check skipped: could not resolve managed plugins dir", "error", err)
+		log.Debug("plugin dep check skipped: could not resolve managed plugins dirs", "error", err)
 
 		return err
 	}
 
-	pluginDir := filepath.Join(managedDir, pluginName)
+	if pluginDir == "" {
+		log.Debug("plugin dep check skipped: plugin not found in any managed dir", "plugin", pluginName)
+
+		return nil
+	}
 
 	prereqs, _, err := tools.GetRequirementsFromDir(pluginDir)
 	if err != nil {

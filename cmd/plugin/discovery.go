@@ -22,12 +22,15 @@ import (
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
+	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
@@ -90,6 +93,32 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		DisableFlagParsing: true, // Pass all args to plugin
 		DisableSuggestions: true,
 		Run: func(pluginCmd *cobra.Command, args []string) {
+			// Gated behind "private-ca" (DATAROBOT_CLI_FEATURE_PRIVATE_CA) so
+			// plugin invocations are byte-for-byte unchanged when the feature
+			// is disabled (the default).
+			if features.Enabled("private-ca") {
+				// DisableFlagParsing means Cobra never processes persistent flags,
+				// so -k/--skip-certificate-check/--ca-cert land in raw args unparsed.
+				// Apply TLS here so the auth check in ExecutePlugin and the subprocess
+				// both see the correct configuration.
+				skipVerify, caCert := scanTLSArgs(args)
+				tlsOpts := internaltls.Options{SkipVerify: skipVerify, CACertPath: caCert}
+
+				if err := internaltls.Apply(tlsOpts); err != nil {
+					fmt.Fprintf(pluginCmd.ErrOrStderr(), "error: %v\n", err)
+					telemetry.ExitWithContext(pluginCmd.Context(), 1)
+
+					return
+				}
+
+				if err := internaltls.PropagateEnv(tlsOpts); err != nil {
+					fmt.Fprintf(pluginCmd.ErrOrStderr(), "error: %v\n", err)
+					telemetry.ExitWithContext(pluginCmd.Context(), 1)
+
+					return
+				}
+			}
+
 			checkAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
 			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
@@ -157,20 +186,26 @@ func checkAndPromptPluginUpdate(pluginName, installedVersion, pluginPath string)
 	fmt.Println()
 }
 
-// isManagedPlugin returns true if the plugin executable lives under the managed plugins directory.
+// isManagedPlugin returns true if the plugin executable lives under any managed plugins directory.
+// Checks the primary directory (XDG_CONFIG_HOME) and any directories listed in XDG_CONFIG_DIRS.
 func isManagedPlugin(pluginPath string) bool {
-	managedDir, err := internalPlugin.ManagedPluginsDir()
+	managedDirs, err := internalPlugin.ManagedPluginsDirs()
 	if err != nil {
 		return false
 	}
 
-	rel, err := filepath.Rel(managedDir, pluginPath)
-	if err != nil {
-		return false
+	for _, managedDir := range managedDirs {
+		rel, err := filepath.Rel(managedDir, pluginPath)
+		if err != nil {
+			continue
+		}
+
+		if !strings.HasPrefix(rel, "..") {
+			return true
+		}
 	}
 
-	// If the relative path starts with ".." the plugin is outside the managed dir
-	return !strings.HasPrefix(rel, "..")
+	return false
 }
 
 // askYesNo reads a single line from stdin and returns true unless the user explicitly declines.
@@ -195,4 +230,30 @@ func performPluginUpdate(result *internalPlugin.UpdateCheckResult) {
 	}
 
 	fmt.Println(tui.SuccessStyle.Render("✓ Updated " + result.PluginName + " to " + result.LatestVersion.Version))
+}
+
+// scanTLSArgs extracts TLS flags from raw args passed to plugin commands.
+// DisableFlagParsing: true means Cobra never processes persistent root flags,
+// so -k/--skip-certificate-check and --ca-cert arrive here unprocessed.
+// Uses pflag to correctly handle --flag=value syntax, -- terminators, and
+// dash-leading paths. Unknown flags are whitelisted so plugin-specific args
+// pass through without error.
+//
+// TODO(CFX-6668): This raw-arg scan is a stopgap gated behind the
+// "private-ca" feature. Once #625's TraverseChildren + universalFlags
+// forwarding table lands, register ca-cert/skip-certificate-check there
+// instead and delete this function.
+func scanTLSArgs(args []string) (skipVerify bool, caCert string) {
+	fs := pflag.NewFlagSet("tls-args", pflag.ContinueOnError)
+	fs.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	fs.BoolP("skip-certificate-check", "k", false, "")
+	fs.String("ca-cert", "", "")
+
+	_ = fs.Parse(args)
+
+	skipVerify, _ = fs.GetBool("skip-certificate-check")
+	caCert, _ = fs.GetString("ca-cert")
+
+	return
 }
