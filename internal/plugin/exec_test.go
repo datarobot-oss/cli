@@ -27,6 +27,8 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -71,26 +73,26 @@ exit %d
 func (s *ExecTestSuite) TestExecutePluginSuccessfulExecution() {
 	path := s.createScript("success", 0)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeOne() {
 	path := s.createScript("fail-one", 1)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(1, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeFortyTwo() {
 	path := s.createScript("fail-42", 42)
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(42, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginCommandNotFound() {
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, filepath.Join(s.tempDir, "nonexistent"), []string{})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, filepath.Join(s.tempDir, "nonexistent"), []string{}, nil)
 	s.Equal(1, exitCode)
 }
 
@@ -106,7 +108,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"}, nil)
 	s.Equal(0, exitCode)
 }
 
@@ -122,7 +124,7 @@ fi
 	path := filepath.Join(s.tempDir, "with-args-fail")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"})
+	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"}, nil)
 	s.Equal(1, exitCode)
 }
 
@@ -155,7 +157,7 @@ exit %d
 			path := filepath.Join(tempDir, fmt.Sprintf("exit-%d", tt.exitCode))
 			require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 
-			result := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{})
+			result := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 			require.Equal(t, tt.expectedCode, result)
 		})
 	}
@@ -183,7 +185,7 @@ while true; do sleep 0.1; done
 	done := make(chan int, 1)
 
 	go func() {
-		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
+		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
 	// Give the subprocess time to start and install its signal handler
@@ -224,7 +226,7 @@ while true; do sleep 0.1; done
 	done := make(chan int, 1)
 
 	go func() {
-		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{})
+		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
 	// Give the subprocess time to start
@@ -266,7 +268,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
 	}
 
-	ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
@@ -334,6 +336,190 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 	assert.True(t, result)
 }
 
+// --- universalFlagEnv unit tests ---
+
+// setupUniversalTestFlags creates an isolated flagset with the standard
+// universal flags annotated, for passing directly to universalFlagEnv.
+func setupUniversalTestFlags(t *testing.T) *pflag.FlagSet {
+	t.Helper()
+
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	fs.Bool("debug", false, "")
+	fs.Bool("disable-telemetry", false, "")
+	fs.Lookup("debug").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DEBUG"}}
+	fs.Lookup("disable-telemetry").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
+
+	return fs
+}
+
+func TestUniversalFlagEnv_AllUnset(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	result := universalFlagEnv(fs)
+
+	assert.Empty(t, result, "no env vars should be emitted when no universal flags are set")
+}
+
+func TestUniversalFlagEnv_DebugSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("debug", true)
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
+	assert.NotContains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+}
+
+func TestUniversalFlagEnv_DisableTelemetrySet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("disable-telemetry", true)
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+	assert.NotContains(t, result, config.EnvPrefix+"DEBUG=1")
+}
+
+func TestUniversalFlagEnv_BothSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("debug", true)
+	viperx.Set("disable-telemetry", true)
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"DEBUG=1")
+	assert.Contains(t, result, config.EnvPrefix+"DISABLE_TELEMETRY=1")
+}
+
+func TestUniversalFlagEnv_BoolFalseOmitted(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("debug", false)
+	viperx.Set("disable-telemetry", false)
+
+	result := universalFlagEnv(fs)
+
+	assert.Empty(t, result, "false bool flags must not be emitted")
+}
+
+// --- TraverseChildren / core-blind invariant tests ---
+
+// buildTestTree returns an isolated cobra command tree that mirrors the real CLI
+// wiring: root with TraverseChildren + two persistent flags, and a plugin-style
+// child with DisableFlagParsing:true that records the args it receives.
+func buildTestTree(t *testing.T) (root *cobra.Command, receivedArgs *[]string, debugSet *bool, skipUpdateSet *bool) {
+	t.Helper()
+
+	var got []string
+
+	var dbg bool
+
+	var skip bool
+
+	child := &cobra.Command{
+		Use:                "plug",
+		DisableFlagParsing: true,
+		DisableSuggestions: true,
+		Run: func(_ *cobra.Command, args []string) {
+			got = args
+		},
+	}
+
+	root = &cobra.Command{
+		Use:              "dr",
+		TraverseChildren: true,
+		SilenceErrors:    true,
+		SilenceUsage:     true,
+	}
+	root.PersistentFlags().Bool("debug", false, "debug output")
+	root.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks")
+
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		dbg, _ = root.PersistentFlags().GetBool("debug")
+		skip, _ = root.PersistentFlags().GetBool("skip-plugin-update-check")
+
+		return nil
+	}
+
+	// Mirror setUnknownArgGuards: make root runnable so unknown positional args
+	// produce a clear error rather than silently showing help.
+	root.Args = func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+
+		return fmt.Errorf("unknown command: %s", args[0])
+	}
+
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	}
+
+	root.AddCommand(child)
+
+	return root, &got, &dbg, &skip
+}
+
+// TestTraverseChildren_PrePluginFlagConsumedByCore verifies that --debug placed
+// BEFORE the plugin name is parsed by core (debug set) and NOT forwarded to the
+// plugin as a literal arg.
+func TestTraverseChildren_PrePluginFlagConsumedByCore(t *testing.T) {
+	root, receivedArgs, debugSet, _ := buildTestTree(t)
+	root.SetArgs([]string{"--debug", "plug", "foo", "bar"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.True(t, *debugSet, "core must see --debug when it appears before plugin name")
+	assert.Equal(t, []string{"foo", "bar"}, *receivedArgs,
+		"plugin must receive only its own args, not the consumed --debug flag")
+}
+
+// TestTraverseChildren_MultipleFlagsConsumedByCore verifies that multiple
+// persistent flags placed BEFORE the plugin name are all consumed by core
+// and none leak into the plugin's raw args.
+func TestTraverseChildren_MultipleFlagsConsumedByCore(t *testing.T) {
+	root, receivedArgs, debugSet, skipUpdateSet := buildTestTree(t)
+	root.SetArgs([]string{"--skip-plugin-update-check", "--debug", "plug", "foo", "bar"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.True(t, *debugSet, "core must see --debug when it appears before plugin name")
+	assert.True(t, *skipUpdateSet, "core must see --skip-plugin-update-check when it appears before plugin name")
+	assert.Equal(t, []string{"foo", "bar"}, *receivedArgs,
+		"plugin must receive only its own args, not any consumed root flags")
+}
+
+// TestTraverseChildren_PostPluginFlagsInvisibleToCore is the hard invariant:
+// core stays BLIND to any args after the plugin name (kubectl/helm model).
+// --debug after the plugin name must NOT set core debug, and must pass through
+// to the plugin verbatim.
+func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
+	root, receivedArgs, debugSet, _ := buildTestTree(t)
+	root.SetArgs([]string{"plug", "--debug", "foo"})
+
+	err := root.Execute()
+	require.NoError(t, err)
+
+	assert.False(t, *debugSet, "core must NOT see --debug when it appears after plugin name")
+	assert.Equal(t, []string{"--debug", "foo"}, *receivedArgs,
+		"plugin must receive --debug verbatim when it appears after the plugin name")
+}
+
 func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	viperx.Reset()
 	viperx.Set("skip-auth", true)
@@ -349,7 +535,7 @@ func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
 	}
 
-	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, 0, exitCode, "plugin should run successfully when --skip-auth bypasses the auth check")
 }
@@ -378,7 +564,7 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
 	}
 
-	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{})
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{}, nil)
 
 	assert.Equal(t, 0, exitCode)
 	assert.True(t, authContacted, "auth server should be contacted when --skip-auth is not set")

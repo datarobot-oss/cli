@@ -64,6 +64,13 @@ var RootCmd = &cli.CommandAdder{
 		Use:     internalVersion.CliName,
 		Version: internalVersion.Version,
 		Short:   "Build AI Applications Faster",
+		// TraverseChildren causes cobra to parse persistent flags left-to-right
+		// before descending into each subcommand. This lets universal flags such
+		// as --debug be placed before a plugin name (e.g. "dr --debug myplugin")
+		// and still be consumed by core. Plugin commands set DisableFlagParsing:true
+		// so args appearing AFTER the plugin name are never seen by core —
+		// preserving the kubectl/helm "core stays blind to plugin args" model.
+		TraverseChildren: true,
 		Long: `
 The DataRobot CLI helps you quickly set up, configure, and deploy AI applications
 using pre-built templates. Get from idea to production in minutes, not hours.
@@ -170,6 +177,21 @@ func ExecuteContext(ctx context.Context) error {
 	return RootCmd.ExecuteContext(ctx)
 }
 
+// bindUniversal binds name to viper and annotates the flag for forwarding to
+// plugin subprocesses as DATAROBOT_CLI_<NAME>. The suffix is derived from the
+// flag name (uppercased, hyphens → underscores). This is the single
+// registration point — adding a new universal flag only requires one call here.
+func bindUniversal(name string) {
+	flag := RootCmd.PersistentFlags().Lookup(name)
+	_ = viperx.BindPFlag(name, flag)
+
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+
+	flag.Annotations[config.UniversalAnnotationKey] = []string{strings.ToUpper(strings.ReplaceAll(name, "-", "_"))}
+}
+
 func init() {
 	// Allow invoking commands in a case-insensitive manner
 	cobra.EnableCaseInsensitive = true
@@ -209,16 +231,19 @@ func init() {
 
 	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
-	// Make some of these flags available via Viper
+	// Universal flags: bound to viper AND forwarded to plugin subprocesses as DATAROBOT_CLI_* env vars.
+	// To add a new universal flag, call bindUniversal here next to its registration above.
+	bindUniversal("debug")
+	bindUniversal("disable-telemetry")
+	bindUniversal("verbose")
+
+	// Non-universal flags: bound to viper only.
 	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
-	_ = viperx.BindPFlag("verbose", RootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viperx.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 	_ = viperx.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
 	_ = viperx.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 	_ = viperx.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
 	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
-	_ = viperx.BindPFlag("disable-telemetry", RootCmd.PersistentFlags().Lookup("disable-telemetry"))
 	_ = viperx.BindPFlag("output-format", RootCmd.PersistentFlags().Lookup("output-format"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)

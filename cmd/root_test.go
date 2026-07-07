@@ -365,3 +365,52 @@ func TestPrivateCATLSFlagsNotPresentByDefault(t *testing.T) {
 			"flag --%s should not be registered when the private-ca feature gate is not enabled", name)
 	}
 }
+
+// TestRootCmdTraverseChildrenEnabled is a guard that fails immediately if
+// TraverseChildren is ever removed from RootCmd. Without it, universal flags
+// placed before a plugin name (e.g. "dr --debug myplugin") would be silently
+// swallowed into the plugin's raw args instead of being parsed by core.
+func TestRootCmdTraverseChildrenEnabled(t *testing.T) {
+	assert.True(t, RootCmd.TraverseChildren,
+		"RootCmd must have TraverseChildren:true so universal flags (--debug, etc.) "+
+			"placed before a plugin name are consumed by core and not forwarded as raw args")
+}
+
+// TestUniversalFlagsParsedOnCoreSubcommand verifies that a universal flag such as
+// --debug is parsed correctly when it appears after a core subcommand and that
+// subcommand's own flags (e.g. "dr <cmd> --set-url http://x --debug").
+// This guards the TraverseChildren behaviour for core commands: unlike plugins,
+// core subcommands have no DisableFlagParsing so cobra continues to parse flags
+// after the command name, including persistent flags from root.
+func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
+	var parsedDebug bool
+
+	sentinel := &cobra.Command{
+		Use:           "sentinel-universal-flags-test",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Read via the persistent flag on the root command.
+			parsedDebug, _ = cmd.Root().PersistentFlags().GetBool("debug")
+
+			return nil
+		},
+	}
+	sentinel.Flags().String("set-url", "", "test flag")
+
+	RootCmd.AddCommand(sentinel)
+
+	defer func() {
+		RootCmd.RemoveCommand(sentinel)
+		// Reset the debug persistent flag so it does not bleed into other tests.
+		_ = RootCmd.PersistentFlags().Set("debug", "false")
+	}()
+
+	RootCmd.SetArgs([]string{"sentinel-universal-flags-test", "--set-url", "http://example.com", "--debug"})
+
+	err := RootCmd.Execute()
+	require.NoError(t, err)
+
+	assert.True(t, parsedDebug,
+		"--debug must be parsed by core when it appears after a core subcommand and its own flags")
+}
