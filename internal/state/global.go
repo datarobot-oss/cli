@@ -31,8 +31,8 @@ type globalState struct {
 	fullPath string
 	// PluginUpdateChecks maps plugin name → last check timestamp (UTC).
 	PluginUpdateChecks map[string]time.Time `yaml:"plugin_update_checks,omitempty"`
-	// FirstAnimationShown tracks whether the welcome animation has been displayed.
-	FirstAnimationShown bool `yaml:"first_animation_shown,omitempty"`
+	// WelcomeAnimationShown tracks whether the welcome animation has been displayed.
+	WelcomeAnimationShown bool `yaml:"welcome_animation_shown,omitempty"`
 }
 
 // globalStatePath returns the path to the global state file.
@@ -98,7 +98,7 @@ func IsFirstRun() bool {
 		return false
 	}
 
-	return !gs.FirstAnimationShown
+	return !gs.WelcomeAnimationShown
 }
 
 // MarkAnimationShown records that the welcome animation has been displayed.
@@ -108,7 +108,7 @@ func MarkAnimationShown() {
 		return
 	}
 
-	gs.FirstAnimationShown = true
+	gs.WelcomeAnimationShown = true
 
 	_ = gs.save()
 }

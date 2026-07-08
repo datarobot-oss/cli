@@ -49,7 +49,7 @@ export NO_COLOR=1
 dr_state_dir="${XDG_CONFIG_HOME:-$HOME/.config}/datarobot"
 mkdir -p "$dr_state_dir"
 touch "$dr_state_dir/state.yaml"
-yq -i '.first_animation_shown = true' "$dr_state_dir/state.yaml"
+yq -i '.welcome_animation_shown = true' "$dr_state_dir/state.yaml"
 
 # Timing helpers
 SCRIPT_START=$(date +%s)

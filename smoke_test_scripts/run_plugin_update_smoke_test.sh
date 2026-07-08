@@ -40,7 +40,7 @@ INSTALLED_META="$DR_CONFIG_DIR/plugins/$PLUGIN_NAME/.installed.json"
 # pattern-matching. Pre-mark it as already shown; re-seeded again after the
 # state-file reset below (step 4), which would otherwise clear this too.
 mkdir -p "$DR_CONFIG_DIR"
-printf 'first_animation_shown: true\n' > "$STATE_FILE"
+printf 'welcome_animation_shown: true\n' > "$STATE_FILE"
 
 cleanup() {
   # Remove only after unsetting so DR_CONFIG_DIR is no longer live
@@ -106,7 +106,7 @@ echo ""
 
 # ── Step 3: Verify cooldown was recorded ──────────────────────────────────────
 # Checks for the plugin_update_checks key specifically, not mere file
-# existence — state.yaml already exists from the first_animation_shown seed
+# existence — state.yaml already exists from the welcome_animation_shown seed
 # above regardless of whether the cooldown was actually recorded.
 echo "── Step 3: Verify state file (cooldown) ──"
 if grep -q "plugin_update_checks" "$STATE_FILE" 2>/dev/null; then
@@ -120,9 +120,9 @@ echo ""
 # ── Step 4: Reset cooldown by deleting state file ─────────────────────────────
 echo "── Step 4: Clear state file to reset cooldown ──"
 rm "$STATE_FILE"
-# Re-seed first_animation_shown (cleared by the rm above) so the next `dr
+# Re-seed welcome_animation_shown (cleared by the rm above) so the next `dr
 # assist` invocation in step 5 doesn't retrigger the first-run animation.
-printf 'first_animation_shown: true\n' > "$STATE_FILE"
+printf 'welcome_animation_shown: true\n' > "$STATE_FILE"
 echo "✅ Cooldown reset"
 echo ""
 
