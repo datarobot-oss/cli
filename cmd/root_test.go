@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -412,4 +413,17 @@ func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 
 	assert.True(t, parsedDebug,
 		"--debug must be parsed by core when it appears after a core subcommand and its own flags")
+}
+
+// TestShowFirstRunAnimationSkipsWhenNonInteractive guards against tools like
+// `expect` (used by the smoke test suite) attaching a real pty to dr's
+// stdout: that would satisfy the TTY check and trigger the animation right
+// in the middle of output another tool is pattern-matching. The
+// non-interactive check must short-circuit before any state-file or TTY
+// check runs, so this must return promptly regardless of terminal or
+// first-run state.
+func TestShowFirstRunAnimationSkipsWhenNonInteractive(t *testing.T) {
+	t.Setenv(reader.NonInteractiveEnv, "1")
+
+	assert.NotPanics(t, showFirstRunAnimation)
 }

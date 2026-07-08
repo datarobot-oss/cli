@@ -10,6 +10,18 @@ fi
 
 export TERM="dumb"
 
+# Several steps below spawn `dr` under `expect`, which always allocates a real
+# pty for the child — satisfying dr's TTY check and, on a fresh CI $HOME,
+# triggering the first-run welcome animation right in the middle of output an
+# expect script is pattern-matching against. Pre-mark it as already shown
+# (rather than forcing DATAROBOT_CLI_NON_INTERACTIVE, which is also the
+# fallback for several --yes-gated prompts this suite exercises for real,
+# e.g. `dr dotenv setup`) so only the animation is affected.
+dr_state_dir="${XDG_CONFIG_HOME:-$HOME/.config}/datarobot"
+mkdir -p "$dr_state_dir"
+touch "$dr_state_dir/state.yaml"
+yq -i '.first_animation_shown = true' "$dr_state_dir/state.yaml"
+
 # Timing helpers
 SCRIPT_START=$(date +%s)
 TEST_TIMINGS=""

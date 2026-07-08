@@ -15,20 +15,26 @@
 package tui
 
 import (
+	"io"
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewLogoAnimationModel(t *testing.T) {
 	m := NewLogoAnimationModel()
 
 	assert.Len(t, m.bars, len(pictogramLines), "one spring per pictogram line")
-	assert.Equal(t, 0, m.phase)
+	assert.Equal(t, phaseIntro, m.phase)
 	assert.False(t, m.Done)
 	assert.False(t, m.bars[0].started)
-	assert.False(t, m.bars[1].started)
+	assert.False(t, m.welcomeStarted)
+	assert.InDelta(t, 0.0, m.textOpacity(), 0.001)
 }
 
 func TestLogoAnimationSkipOnKeyPress(t *testing.T) {
@@ -39,63 +45,141 @@ func TestLogoAnimationSkipOnKeyPress(t *testing.T) {
 	result := updated.(LogoAnimationModel)
 
 	assert.True(t, result.Done)
-	assert.Equal(t, 4, result.phase)
-	assert.NotNil(t, cmd)
+	assert.Equal(t, phaseDone, result.phase)
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	_, isQuit := msg.(tea.QuitMsg)
+	assert.True(t, isQuit, "skip should issue a real tea.Quit command")
 
 	for _, bar := range result.bars {
 		assert.InDelta(t, 0.0, bar.pos, 0.001)
 		assert.InDelta(t, 0.0, bar.vel, 0.001)
 	}
 
-	assert.InDelta(t, 1.0, result.textOpacity, 0.001)
-	assert.InDelta(t, 0.0, result.welcomePos, 0.001)
+	assert.InDelta(t, 1.0, result.textOpacity(), 0.001)
+
+	view := result.View()
+	assert.NotContains(t, view, "Press any key to skip")
+	assert.Contains(t, view, "DataRobot")
+	assert.Contains(t, view, "Welcome to DataRobot CLI")
+	assert.Contains(t, view, "Build AI Applications Faster")
 }
 
-func TestLogoAnimationBarsConverge(t *testing.T) {
+func TestLogoAnimationBarsCascadeAndSettle(t *testing.T) {
 	m := NewLogoAnimationModel()
 
-	for i := 0; i < 500; i++ {
-		updated, _ := m.Update(logoTickMsg{})
+	terminated := false
 
+	for i := 0; i < 300; i++ {
+		updated, _ := m.Update(logoTickMsg{})
 		m = updated.(LogoAnimationModel)
 
-		if m.phase > 0 {
+		if m.phase != phaseIntro {
+			terminated = true
+
 			break
 		}
 	}
 
-	assert.GreaterOrEqual(t, m.phase, 1)
+	require.True(t, terminated, "bar cascade should settle within a bounded number of ticks")
 
 	for _, bar := range m.bars {
-		assert.InDelta(t, 0.0, bar.pos, 0.001)
+		assert.InDelta(t, 0.0, bar.pos, barsSettledThresh)
 	}
 }
 
-func TestLogoAnimationTextFadesWithBars(t *testing.T) {
+func TestLogoAnimationWelcomeOverlapsBars(t *testing.T) {
 	m := NewLogoAnimationModel()
 
-	assert.Zero(t, m.textOpacity)
+	var progressAtStart float64
 
-	// Text opacity increases during phase 0 alongside bar animation.
+	triggered := false
+
+	for i := 0; i < 300; i++ {
+		wasStarted := m.welcomeStarted
+
+		updated, _ := m.Update(logoTickMsg{})
+		m = updated.(LogoAnimationModel)
+
+		if !wasStarted && m.welcomeStarted {
+			progressAtStart = m.barsSettleProgress()
+			triggered = true
+
+			break
+		}
+
+		if m.phase != phaseIntro {
+			break
+		}
+	}
+
+	require.True(t, triggered, "welcome line should start during the intro phase")
+	assert.GreaterOrEqual(t, progressAtStart, barsOverlapProgress)
+	assert.Less(t, progressAtStart, 1.0, "welcome line should overlap the bar cascade, not wait for it to finish")
+}
+
+func TestLogoAnimationTextOpacitySpringDriven(t *testing.T) {
+	m := NewLogoAnimationModel()
+
+	assert.InDelta(t, 0.0, m.textOpacity(), 0.001)
+
 	for i := 0; i < 10; i++ {
 		updated, _ := m.Update(logoTickMsg{})
 		m = updated.(LogoAnimationModel)
 	}
 
-	assert.Greater(t, m.textOpacity, 0.0)
-	assert.Equal(t, 0, m.phase, "still in phase 0 during early ticks")
+	assert.Greater(t, m.textOpacity(), 0.0, "opacity should be moving early in the intro")
+
+	for i := 0; i < 300 && m.phase == phaseIntro; i++ {
+		updated, _ := m.Update(logoTickMsg{})
+		m = updated.(LogoAnimationModel)
+	}
+
+	assert.GreaterOrEqual(t, m.textOpacity(), 1.0-opacitySettledThresh, "opacity should have settled near 1 by the time the intro ends")
 }
 
-func TestLogoAnimationDonePhase(t *testing.T) {
+func TestLogoAnimationSettleGraceThenDone(t *testing.T) {
 	m := NewLogoAnimationModel()
-	m.phase = 4
+	m.phase = phaseSettled
 
-	updated, cmd := m.Update(logoTickMsg{})
+	ticks := 0
+	done := false
 
-	result := updated.(LogoAnimationModel)
+	for i := 0; i < graceFrames+5; i++ {
+		updated, _ := m.Update(logoTickMsg{})
+		m = updated.(LogoAnimationModel)
+		ticks++
 
-	assert.True(t, result.Done)
-	assert.NotNil(t, cmd)
+		if m.Done {
+			done = true
+
+			break
+		}
+	}
+
+	require.True(t, done)
+	assert.Equal(t, graceFrames+1, ticks, "should take graceFrames ticks to settle plus one to process phaseDone")
+}
+
+func TestLogoAnimationFullRunTerminates(t *testing.T) {
+	m := NewLogoAnimationModel()
+
+	done := false
+
+	for i := 0; i < 400; i++ {
+		updated, _ := m.Update(logoTickMsg{})
+		m = updated.(LogoAnimationModel)
+
+		if m.Done {
+			done = true
+
+			break
+		}
+	}
+
+	require.True(t, done, "animation should reach Done within a bounded number of ticks")
+	assert.NotContains(t, m.View(), "Press any key to skip")
 }
 
 func TestLogoAnimationViewShowsPictogram(t *testing.T) {
@@ -113,32 +197,40 @@ func TestLogoAnimationViewShowsPictogram(t *testing.T) {
 	assert.Contains(t, view, "Press any key to skip")
 }
 
-func TestLogoAnimationViewShowsTextAndWelcome(t *testing.T) {
+func TestLogoAnimationViewIsLeftAligned(t *testing.T) {
 	m := NewLogoAnimationModel()
 
 	for i := range m.bars {
+		m.bars[i].started = true
 		m.bars[i].pos = 0
 		m.bars[i].vel = 0
 	}
 
-	m.phase = 2
-	m.textOpacity = 1.0
-	m.welcomePos = 0
+	for _, line := range strings.Split(m.View(), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 
-	view := m.View()
-
-	assert.Contains(t, view, "DataRobot")
-	assert.Contains(t, view, "Welcome to DataRobot CLI")
-	assert.Contains(t, view, "Build AI Applications Faster")
+		assert.True(t, strings.HasPrefix(line, leftMargin), "line should start with the shared left margin: %q", line)
+	}
 }
 
-func TestLogoAnimationViewNoSkipWhenDone(t *testing.T) {
-	m := NewLogoAnimationModel()
-	m.phase = 4
+func TestLogoAnimationIntegrationSkipViaKeypress(t *testing.T) {
+	tm := teatest.NewTestModel(t, NewLogoAnimationModel(), teatest.WithInitialTermSize(80, 24))
 
-	view := m.View()
+	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 
-	assert.NotContains(t, view, "Press any key to skip")
+	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+
+	fm := tm.FinalModel(t)
+	result, ok := fm.(LogoAnimationModel)
+	require.True(t, ok, "final model is not LogoAnimationModel")
+	assert.True(t, result.Done)
+
+	out, err := io.ReadAll(tm.FinalOutput(t))
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "DataRobot")
+	assert.NotContains(t, string(out), "Press any key to skip")
 }
 
 func TestLerpColor(t *testing.T) {
