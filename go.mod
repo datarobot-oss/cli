@@ -15,7 +15,6 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/gitsight/go-vcsurl v1.0.1
 	github.com/go-playground/validator/v10 v10.30.3
-	github.com/google/go-cmp v0.7.0
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
 	github.com/joho/godotenv v1.5.1
 	github.com/muesli/cancelreader v0.2.2
