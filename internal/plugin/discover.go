@@ -43,12 +43,12 @@ var registry = &DiscoveredPluginsRegistry{}
 
 // GetPlugins returns discovered plugins, discovering lazily on first call
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
-func GetPlugins() ([]DiscoveredPlugin, error) {
+func GetPlugins() []DiscoveredPlugin {
 	registry.once.Do(func() {
 		registry.plugins = DiscoverPluginsWithContext(context.Background())
 	})
 
-	return registry.plugins, registry.err
+	return registry.plugins
 }
 
 // DiscoverPluginsWithContext discovers all plugins under the given context deadline.
