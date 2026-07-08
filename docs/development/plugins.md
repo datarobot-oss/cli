@@ -181,19 +181,13 @@ When `authentication` is enabled:
 - Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
 - Your plugin will receive a clean environment with authentication already validated
 
-### Private CA / TLS support (experimental, feature-gated)
+### Private CA / TLS support
 
-> **Subject to change:** this mechanism is gated behind
-> `DATAROBOT_CLI_FEATURE_PRIVATE_CA=true` and is expected to be reworked
-> once the CLI's generic root-flag-forwarding mechanism (a `DATAROBOT_CLI_*`
-> env var table for flags placed before the plugin name) lands. Do not treat
-> the exact env vars below as a stable contract yet.
-
-When the `private-ca` feature gate is enabled and a user passes
-`-k`/`--skip-certificate-check` or `--ca-cert <path>` before your plugin's
-name (e.g. `dr --ca-cert /path/to/ca.pem myplugin [args...]`), the CLI
-forwards the equivalent runtime configuration to your plugin subprocess via
-these environment variables:
+When a user passes `-k`/`--skip-certificate-check` or `--ca-cert <path>` before
+your plugin's name (e.g. `dr --ca-cert /path/to/ca.pem myplugin [args...]`), the
+CLI applies the TLS configuration to its own HTTP client and forwards the
+equivalent runtime configuration to your plugin subprocess via these environment
+variables:
 
 | Variable | Set when | Value |
 |---|---|---|
@@ -248,12 +242,14 @@ dr myplugin --debug [args...]
 |---|---|---|
 | `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
 | `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
+| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
+| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
 
 The `DATAROBOT_CLI_` prefix is the canonical namespace for flags forwarded from
 the core CLI. As new universal flags are added, they follow the same convention:
 the flag name is upper-cased and hyphens are replaced with underscores
-(e.g. a future `--cacert <path>` flag would produce
-`DATAROBOT_CLI_CACERT=<path>`).
+(e.g. `--ca-cert <path>` produces `DATAROBOT_CLI_CA_CERT=<path>`).
 
 ##### Consuming forwarded flags in your plugin
 

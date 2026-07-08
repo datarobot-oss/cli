@@ -275,6 +275,9 @@ consenting it internally:
 |---|---|---|
 | `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
 | `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
+| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
+| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
 
 Plugins that want to honour these flags can read the environment variables at
 startup. See [Plugin environment variables](../development/plugins.md#environment-variables)
