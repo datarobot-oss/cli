@@ -51,8 +51,8 @@ These flags are available for all commands:
 | Command                           | Description                                                 |
 | --------------------------------- | ----------------------------------------------------------- |
 | [`auth`](auth.md)                 | Authenticate with DataRobot.                                |
-| `component`                       | Manage template components.                                 |
-| `templates`                       | Manage application templates.                               |
+| [`component`](component.md)       | Manage template components.                                 |
+| [`templates`](templates.md)       | Manage application templates.                               |
 | [`start`](start.md)               | Run the application quickstart process.                     |
 | [`run`](run.md)                   | Execute application tasks.                                  |
 | [`task`](task.md)                 | Manage Taskfile composition and task execution.             |
@@ -124,12 +124,12 @@ dr
 │   │   ├── get        Display a single schedule
 │   │   ├── update     Change cron expression / timezone
 │   │   └── delete     Delete a schedule
-│   ├── environment    Manage named, versioned pip-package environments
-│   │   ├── create     Register a new environment with an initial version
-│   │   ├── list       List registered environments
-│   │   ├── update     Append a new version to an environment
-│   │   ├── delete     Soft-delete the latest active version of an environment
-│   │   └── version    Manage environment versions
+│   ├── image          Manage named, versioned pip-package images
+│   │   ├── create     Register a new image with an initial version
+│   │   ├── list       List registered images
+│   │   ├── update     Append a new version to an image
+│   │   ├── delete     Soft-delete the latest active version of an image
+│   │   └── version    Manage image versions
 │   │       └── delete Delete a specific version
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
@@ -281,13 +281,13 @@ For detailed documentation on each command, see:
   - `logout`&mdash;remove credentials.
   - `set-url`&mdash;configure DataRobot URL.
 
-- **component**&mdash;component management (alias: `c`).
+- **[component](component.md)**&mdash;component management (alias: `c`).
   - `add`&mdash;add a component to your template.
   - `list`&mdash;list installed components.
   - `update`&mdash;update a component.
   - Note: Components are reusable pieces that can be added to templates to extend functionality.
 
-- **templates**&mdash;template operations.
+- **[templates](templates.md)**&mdash;template operations.
   - `list`&mdash;list available templates.
   - `setup`&mdash;interactive wizard for full setup.
 
@@ -332,7 +332,7 @@ For detailed documentation on each command, see:
   - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
-  - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
+  - `image`&mdash;`create`/`list`/`update`/`delete` named pip-package images; `version delete` removes a specific version.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
 - **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).

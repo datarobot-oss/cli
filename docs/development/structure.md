@@ -8,34 +8,55 @@ This page describes the organization of the DataRobot CLI codebase.
 cli/
 ├── cmd/                     # Command implementations (Cobra)
 │   ├── root.go              # Root command and global flags
+│   ├── artifact/            # Artifact management commands (feature-gated)
 │   ├── auth/                # Authentication commands
 │   ├── component/           # Component management commands
+│   ├── dependencies/        # Dependency check and install commands
 │   ├── dotenv/              # Environment variable management
-│   ├── run/                 # Task execution
+│   ├── pipeline/            # Pipeline management commands (feature-gated)
+│   ├── plugin/              # Plugin management commands
 │   ├── self/                # Self-management commands
 │   ├── start/               # Application startup
-│   ├── task/                # Task commands
-│   └── templates/           # Template management
+│   ├── task/                # Task commands (compose, list, run)
+│   ├── templates/           # Template management
+│   └── workload/            # Workload management commands (feature-gated)
 ├── internal/                # Private application code
 │   ├── assets/              # Embedded assets
-│   ├── cli/                 # CLI infrastructure (GatedCommand, etc.)
+│   ├── auth/                # Authentication logic
+│   ├── cli/                 # CLI infrastructure (CommandAdder, etc.)
 │   ├── config/              # Configuration management
 │   ├── copier/              # Template copying utilities
+│   ├── dependencies/        # Dependency resolution
 │   ├── drapi/               # DataRobot API client
 │   ├── envbuilder/          # Environment builder
 │   ├── features/            # Feature flag system
+│   ├── fsutil/              # Filesystem utilities
+│   ├── log/                 # Logging utilities
 │   ├── misc/                # Miscellaneous utilities
+│   ├── outputformat/        # Output format helpers
+│   ├── pipeline/            # Pipeline API client
+│   ├── plugin/              # Plugin discovery and execution
 │   ├── repo/                # Repository detection
 │   ├── shell/               # Shell utilities
+│   ├── state/               # Persistent state (cooldowns, etc.)
 │   ├── task/                # Task discovery and execution
 │   ├── telemetry/           # Anonymous usage analytics (Amplitude)
+│   ├── testutil/            # Test helpers
+│   ├── tls/                 # TLS configuration
 │   ├── tools/               # Tool prerequisites
-│   └── version/             # Version information
+│   ├── validate/            # Validation helpers
+│   ├── version/             # Version information
+│   └── workload/            # Workload API client
 ├── tui/                     # Terminal UI components
 │   ├── banner.go            # Banner display
+│   ├── colors.go            # Color definitions
+│   ├── effects.go           # Visual effects
+│   ├── elements.go          # Reusable UI elements
 │   ├── interrupt.go         # Interrupt handling
 │   ├── program.go           # TUI execution wrapper
-│   └── theme.go             # Visual theme
+│   ├── spinner.go           # Spinner component
+│   ├── statusbar.go         # Status bar component
+│   └── styles.go            # Visual styles and theme
 ├── docs/                    # Documentation
 │   ├── commands/            # Command reference
 │   ├── development/         # Development guides

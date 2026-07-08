@@ -58,14 +58,17 @@ import (
 )
 
 func Cmd() *cobra.Command {
-    return &cobra.Command{
+    cmd := &cobra.Command{
         Use:     "workload",
         GroupID: "core",
         Short:   "Workload management commands",
-        Annotations: map[string]string{
-            features.AnnotationKey: "workload",
-        },
     }
+
+    features.SetGate(cmd, "workload")
+
+    // ... add subcommands ...
+
+    return cmd
 }
 ```
 
@@ -110,17 +113,18 @@ When a feature is ready for general availability:
 
 ```go
 // Before (gated)
-&cobra.Command{
-    Use:     "workload",
-    Annotations: map[string]string{
-        features.AnnotationKey: "workload",
-    },
+func Cmd() *cobra.Command {
+    cmd := &cobra.Command{
+        Use: "workload",
+    }
+    features.SetGate(cmd, "workload")
+    return cmd
 }
 
 // After (GA)
 &cobra.Command{
-    Use:     "workload",
-    // No annotations
+    Use: "workload",
+    // No feature gate
 }
 ```
 

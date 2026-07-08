@@ -50,7 +50,7 @@ task build              # Build the CLI binary
 task test               # Run all tests
 task test-coverage      # Run tests with coverage
 task lint               # Run linters (includes formatting)
-task clean              # Clean build artifacts
+task delint             # Auto-fix lint and formatting issues
 task dev-init           # Setup development environment
 task install-tools      # Install development tools
 task run                # Run CLI without building
@@ -83,50 +83,69 @@ For cross-platform builds and releases, task build includes GoReleaser (see [Rel
 cli/
 ├── cmd/                     # Command implementations (Cobra)
 │   ├── root.go              # Root command and global flags
+│   ├── artifact/            # Artifact management commands (feature-gated)
 │   ├── auth/                # Authentication commands
 │   │   ├── cmd.go           # Auth command group
-│   │   ├── login.go         # Login command
-│   │   ├── logout.go        # Logout command
-│   │   └── setURL.go        # Set URL command
+│   │   ├── check/           # Check subcommand
+│   │   ├── login/           # Login subcommand
+│   │   ├── logout/          # Logout subcommand
+│   │   └── seturl/          # Set URL subcommand
+│   ├── component/           # Component management commands
+│   ├── dependencies/        # Dependency check and install commands
 │   ├── dotenv/              # Environment variable management
-│   │   ├── cmd.go           # Dotenv command
-│   │   ├── model.go         # TUI model (Bubble Tea)
-│   │   ├── promptModel.go   # Prompt handling
-│   │   ├── template.go      # Template parsing
-│   │   └── variables.go     # Variable handling
-│   ├── run/                 # Task execution
-│   │   └── cmd.go           # Run command
+│   ├── pipeline/            # Pipeline management commands (feature-gated)
+│   ├── plugin/              # Plugin management commands
+│   ├── self/                # CLI utility commands
+│   │   ├── cmd.go           # Self command group
+│   │   ├── completion/      # Shell completion commands
+│   │   ├── config/          # Config display command
+│   │   ├── plugin/          # Plugin packaging tools
+│   │   ├── update/          # Self-update command
+│   │   └── version/         # Version command
+│   ├── start/               # Application startup
+│   ├── task/                # Task commands (compose, list, run)
 │   ├── templates/           # Template management
 │   │   ├── cmd.go           # Template command group
-│   │   ├── clone/           # Clone subcommand
 │   │   ├── list/            # List subcommand
-│   │   ├── setup/           # Setup wizard
-│   │   └── status.go        # Status command
-│   └── self/                # CLI utility commands
-│       ├── cmd.go           # Self command group
-│       ├── completion.go    # Completion generation
-│       └── version.go       # Version command
+│   │   └── setup/           # Setup wizard
+│   └── workload/            # Workload management commands (feature-gated)
 ├── internal/                # Private packages (not importable)
 │   ├── assets/              # Embedded assets
-│   │   └── templates/       # HTML templates
+│   ├── auth/                # Authentication logic
+│   ├── cli/                 # CLI infrastructure (CommandAdder, etc.)
 │   ├── config/              # Configuration management
 │   │   ├── config.go        # Config loading/saving
-│   │   ├── auth.go          # Auth config
-│   │   └── constants.go     # Constants
+│   │   ├── constants.go     # Constants and key names
+│   │   ├── write.go         # Allowlisted config writer
+│   │   └── viperx/          # Safe viper wrapper
+│   ├── dependencies/        # Dependency resolution
 │   ├── drapi/               # DataRobot API client
-│   │   ├── llmGateway.go    # LLM Gateway API
-│   │   └── templates.go     # Templates API
 │   ├── envbuilder/          # Environment configuration
 │   │   ├── builder.go       # Env file building
 │   │   └── discovery.go     # Prompt discovery
+│   ├── features/            # Feature flag system
+│   ├── log/                 # Logging utilities
+│   ├── outputformat/        # Output format helpers
+│   ├── pipeline/            # Pipeline API client
+│   ├── plugin/              # Plugin discovery and execution
+│   ├── state/               # Persistent state (cooldowns, etc.)
 │   ├── task/                # Task runner integration
 │   │   ├── discovery.go     # Taskfile discovery
 │   │   └── runner.go        # Task execution
-│   └── version/             # Version information
-│       └── version.go
+│   ├── telemetry/           # Anonymous usage analytics (Amplitude)
+│   ├── version/             # Version information
+│   │   └── version.go
+│   └── workload/            # Workload API client
 ├── tui/                     # Terminal UI shared components
 │   ├── banner.go            # ASCII banner
-│   └── theme.go             # Color theme
+│   ├── colors.go            # Color definitions
+│   ├── effects.go           # Visual effects
+│   ├── elements.go          # Reusable UI elements
+│   ├── interrupt.go         # Interrupt handling
+│   ├── program.go           # TUI execution wrapper
+│   ├── spinner.go           # Spinner component
+│   ├── statusbar.go         # Status bar component
+│   └── styles.go            # Visual styles and theme
 ├── docs/                    # Documentation
 ├── main.go                  # Application entry point
 ├── go.mod                   # Go module dependencies
@@ -147,13 +166,14 @@ Code in the `cmd/` folder should primarily handle command-line parsing, argument
 
 ```go
 // cmd/root.go - Root command definition
-var RootCmd = &cobra.Command{
-    Use:   "dr",
-    Short: "DataRobot CLI",
-    Long:  "Command-line interface for DataRobot",
+var RootCmd = &cli.CommandAdder{
+    Command: &cobra.Command{
+        Use:   "dr",
+        Short: "DataRobot CLI",
+    },
 }
 
-// Register subcommands
+// Register subcommands (CommandAdder filters feature-gated commands automatically)
 RootCmd.AddCommand(
     auth.Cmd(),
     templates.Cmd(),
@@ -188,17 +208,14 @@ Internal packages (`internal/`) house core business logic, API clients, configur
 
 #### Configuration
 
-Configuration is found in `internal/config/`. The CLI uses [Viper](https://github.com/spf13/viper) for configuration as well as a state registry.
+Configuration is found in `internal/config/`. The CLI uses [Viper](https://github.com/spf13/viper) for configuration, accessed exclusively through the `internal/config/viperx` wrapper (direct `viper` imports are blocked by `depguard` outside `internal/config/`).
 
 ```go
-// Load config
-viper.SetConfigName("config")
-viper.SetConfigType("yaml")
-viper.AddConfigPath("~/.datarobot")
-viper.ReadInConfig()
+import "github.com/datarobot/cli/internal/config/viperx"
 
 // Access values
-endpoint := viper.GetString("datarobot.endpoint")
+endpoint := viperx.GetString("endpoint")
+token := viperx.GetString("token")
 ```
 
 #### API client

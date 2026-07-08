@@ -8,17 +8,15 @@ The CLI provides a reusable authentication mechanism that you can use with any c
 
 ### PreRunE hook
 
-Use the `auth.EnsureAuthenticatedE(ctx)` function in your command's `PreRunE` hook.
+Use the `auth.EnsureAuthenticatedE` function as your command's `PreRunE` hook.
 
 ```go
-import "github.com/datarobot/cli/cmd/auth"
+import "github.com/datarobot/cli/internal/auth"
 
 var MyCmd = &cobra.Command{
     Use:   "mycommand",
     Short: "My command description",
-    PreRunE: func(cmd *cobra.Command, _ []string) error {
-        return auth.EnsureAuthenticatedE(cmd.Context())
-    },
+    PreRunE: auth.EnsureAuthenticatedE,
     Run: func(_ *cobra.Command, _ []string) {
         // Command implementation
         // Authentication is guaranteed to be valid here
@@ -37,14 +35,17 @@ The hook functions are outlined below.
 
 ### Direct call for non-command code
 
-For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated()` directly.
+For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated(ctx)` directly.
 
 ```go
-import "github.com/datarobot/cli/cmd/auth"
+import (
+    "context"
+    "github.com/datarobot/cli/internal/auth"
+)
 
-func MyFunction() error {
+func MyFunction(ctx context.Context) error {
     // Ensure valid authentication before proceeding.
-    if !auth.EnsureAuthenticated() {
+    if !auth.EnsureAuthenticated(ctx) {
         return errors.New("authentication failed")
     }
 

@@ -399,14 +399,8 @@ After authentication, credentials are stored in:
 **Format:**
 
 ```yaml
-datarobot:
-  endpoint: https://app.datarobot.com
-  token: <encrypted_key>
-
-# User preferences
-preferences:
-  default_timeout: 30
-  verify_ssl: true
+endpoint: https://app.datarobot.com
+token: <api_key>
 ```
 
 **Permissions:**
