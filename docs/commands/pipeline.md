@@ -116,7 +116,8 @@ dr pipeline create --from-file=<file> [flags]
   the pipeline.
 - `--mode <draft|locked>` — pipeline lifecycle mode. Defaults to `draft`.
 - `--image <image-id>` — optional execution image to associate with the
-  pipeline. The pipeline's runs will use this image's environment.
+  pipeline. The pipeline's runs will use this image's environment. Image IDs
+  are obtained from `dr pipeline image create` or `dr pipeline image list`.
 - `--output-format <json>` — emit machine-parseable JSON instead of the
   human-readable summary.
 
@@ -242,8 +243,10 @@ dr pipeline update <pipeline-id> --from-file=<file> [flags]
 **Flags:**
 
 - `--from-file <path>` — alternative to the positional file argument.
-- `--image <image-id>` — optional execution image to associate with the
-  pipeline.
+- `--name <text>` — new display name for the pipeline.
+- `--description <text>` — new description for the pipeline.
+- `--image <image-id>` — execution image to associate with the pipeline.
+  Image IDs are obtained from `dr pipeline image create` or `dr pipeline image list`.
 - `--output-format <json>` — emit machine-parseable JSON.
 
 ### `delete`
@@ -412,17 +415,17 @@ dr pipeline schedule delete --pipeline <id> --version=N <schedule-id>
 Trigger, inspect, and cancel pipeline executions.
 
 ```bash
-dr pipeline run create --pipeline <id> --input <input-id>              # draft
-dr pipeline run create --pipeline <id> --version=N --input <input-id>  # locked
-dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>  # override image
+dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>              # draft
+dr pipeline run create --pipeline <id> --version=N --input <input-id> --image <img-id>  # locked
 dr pipeline run list   --pipeline <id> [--scope|--version]
 dr pipeline run get    --pipeline <id> <run-id> [--scope|--version]
 dr pipeline run status --pipeline <id> <run-id> [--scope|--version]
 dr pipeline run cancel --pipeline <id> <run-id> [--scope|--version]
 ```
 
-`run create` accepts an optional `--image <image-id>` flag to override the
-execution image linked to the pipeline for this specific run.
+`run create` requires `--image <image-id>` — the execution image to use for
+this run. Image IDs are obtained from `dr pipeline image create` or
+`dr pipeline image list`.
 
 `run status` is a lighter-weight call intended for polling — returns just
 the run ID, status, and Covalent dispatch ID.
