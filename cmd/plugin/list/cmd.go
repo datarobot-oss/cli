@@ -122,10 +122,7 @@ func printPluginsTable(plugins []plugin.DiscoveredPlugin) error {
 }
 
 func runList(cmd *cobra.Command, _ []string) error {
-	plugins, err := plugin.GetPlugins()
-	if err != nil {
-		return fmt.Errorf("failed to get plugins: %w", err)
-	}
+	plugins := plugin.GetPlugins()
 
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {

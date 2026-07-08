@@ -15,10 +15,10 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -43,41 +43,16 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// Get list of builtin command names FIRST (before adding plugins)
 	builtinNames := make(map[string]bool)
 	for _, cmd := range rootCmd.Commands() {
 		builtinNames[cmd.Name()] = true
 	}
 
-	type pluginDiscoveryResult struct {
-		plugins []internalPlugin.DiscoveredPlugin
-		err     error
-	}
-
-	resultCh := make(chan pluginDiscoveryResult, 1)
-
-	go func() {
-		plugins, err := internalPlugin.GetPlugins()
-		resultCh <- pluginDiscoveryResult{plugins: plugins, err: err}
-	}()
-
-	var plugins []internalPlugin.DiscoveredPlugin
-
-	select {
-	case r := <-resultCh:
-		if r.err != nil {
-			log.Debug("Plugin discovery failed", "error", r.err)
-
-			return
-		}
-
-		plugins = r.plugins
-	case <-time.After(timeout):
-		log.Info("Plugin discovery timed out", "timeout", timeout)
-		log.Info("Consider increasing timeout using --plugin-discovery-timeout flag")
-
-		return
-	}
+	plugins := internalPlugin.DiscoverPluginsWithContext(ctx)
 
 	if len(plugins) == 0 {
 		// No plugins found, don't add empty group header

@@ -15,11 +15,14 @@
 package plugin
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -86,7 +89,7 @@ func (s *DiscoverTestSuite) TearDownTest() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Empty(errs)
@@ -94,7 +97,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirNonExistent() {
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(filepath.Join(s.tempDir, "nonexistent"), seen)
+	plugins, errs := discoverInDir(context.Background(), filepath.Join(s.tempDir, "nonexistent"), seen)
 
 	s.Nil(plugins)
 	s.Nil(errs)
@@ -104,7 +107,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirValidPlugin() {
 	createMockPlugin(s.T(), s.tempDir, "dr-testplugin", validManifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin")
 	s.Empty(errs)
@@ -123,7 +126,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
 	s.Require().NoError(os.WriteFile(filepath.Join(s.tempDir, "random.txt"), []byte("text"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, _ := discoverInDir(s.tempDir, seen)
+	plugins, _ := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin (non-dr files should be skipped)")
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
@@ -135,7 +138,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonExecutable() {
 	s.Require().NoError(os.WriteFile(path, []byte("not executable"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Empty(errs)
@@ -149,7 +152,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 		"test-plugin": true, // validManifest has name: "test-plugin"
 	}
 
-	plugins, _ := discoverInDir(s.tempDir, seen)
+	plugins, _ := discoverInDir(context.Background(), s.tempDir, seen)
 
 	// Should be skipped due to duplicate manifest name
 	s.Empty(plugins)
@@ -162,7 +165,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	createMockPlugin(s.T(), s.tempDir, "dr-second", manifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	// Log manifest-fetch errors so future test failures show *why* discovery
 	// returned zero plugins instead of only asserting *that* it did.
@@ -180,7 +183,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirInvalidManifest() {
 	createMockPlugin(s.T(), s.tempDir, "dr-invalid", invalidManifest)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Empty(plugins)
 	s.Len(errs, 1) // JSON parse error logged
@@ -194,7 +197,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirMultipleValidPlugins() {
 	createMockPlugin(s.T(), s.tempDir, "dr-two", manifest2)
 
 	seen := make(map[string]bool)
-	plugins, errs := discoverInDir(s.tempDir, seen)
+	plugins, errs := discoverInDir(context.Background(), s.tempDir, seen)
 
 	s.Len(plugins, 2)
 	s.Empty(errs)
@@ -207,6 +210,147 @@ func (s *DiscoverTestSuite) TestDiscoverInDirMultipleValidPlugins() {
 
 	s.True(names["plugin-one"])
 	s.True(names["plugin-two"])
+}
+
+func (s *DiscoverTestSuite) TestDiscoverInDirCancelledContext() {
+	createMockPlugin(s.T(), s.tempDir, "dr-testplugin", validManifest)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	seen := make(map[string]bool)
+	plugins, errs := discoverInDir(ctx, s.tempDir, seen)
+
+	s.Empty(plugins)
+	s.Empty(errs)
+}
+
+// PathDirsTestSuite tests discoverPathDirsParallel
+type PathDirsTestSuite struct {
+	suite.Suite
+	dir1 string
+	dir2 string
+}
+
+func TestPathDirsTestSuite(t *testing.T) {
+	suite.Run(t, new(PathDirsTestSuite))
+}
+
+func (s *PathDirsTestSuite) SetupTest() {
+	var err error
+
+	s.dir1, err = os.MkdirTemp("", "plugin-path-dir1")
+	s.Require().NoError(err)
+
+	s.dir2, err = os.MkdirTemp("", "plugin-path-dir2")
+	s.Require().NoError(err)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+}
+
+func (s *PathDirsTestSuite) TearDownTest() {
+	_ = os.RemoveAll(s.dir1)
+	_ = os.RemoveAll(s.dir2)
+
+	viperx.Reset()
+}
+
+func (s *PathDirsTestSuite) TestEmptyPathDirs() {
+	plugins := discoverPathDirsParallel(context.Background(), []string{}, map[string]bool{})
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestMultipleDirsCollectsAll() {
+	m1 := `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`
+	m2 := `{"name":"plugin-beta","version":"1.0.0","description":"Beta"}`
+
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
+	createMockPlugin(s.T(), s.dir2, "dr-beta", m2)
+
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+
+	s.Len(plugins, 2)
+
+	names := make(map[string]bool)
+	for _, p := range plugins {
+		names[p.Manifest.Name] = true
+	}
+
+	s.True(names["plugin-alpha"])
+	s.True(names["plugin-beta"])
+}
+
+func (s *PathDirsTestSuite) TestCrossDirDeduplicationFirstDirWins() {
+	// Same manifest name in both dirs — dir1 must win because results are
+	// merged in directory order after all goroutines complete.
+	manifest := `{"name":"shared-plugin","version":"1.0.0","description":"Shared"}`
+	createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
+	createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
+
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+
+	s.Require().Len(plugins, 1)
+	s.Equal("shared-plugin", plugins[0].Manifest.Name)
+	s.Equal(filepath.Join(s.dir1, "dr-shared"), plugins[0].Executable)
+}
+
+func (s *PathDirsTestSuite) TestBaseSeenFiltersPlugins() {
+	// validManifest has name "test-plugin" — pre-populate baseSeen so it is skipped.
+	createMockPlugin(s.T(), s.dir1, "dr-testplugin", validManifest)
+
+	baseSeen := map[string]bool{"test-plugin": true}
+	plugins := discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestBaseSeenNotMutated() {
+	// discoverPathDirsParallel must not modify the caller's baseSeen map.
+	m1 := `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
+
+	baseSeen := map[string]bool{}
+	_ = discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+
+	s.Empty(baseSeen)
+}
+
+func (s *PathDirsTestSuite) TestCancelledContextReturnsEmpty() {
+	createMockPlugin(s.T(), s.dir1, "dr-alpha", `{"name":"plugin-alpha","version":"1.0.0","description":"Alpha"}`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	plugins := discoverPathDirsParallel(ctx, []string{s.dir1}, map[string]bool{})
+
+	s.Empty(plugins)
+}
+
+func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin() {
+	// dir1: fast plugin — responds immediately.
+	createMockPlugin(s.T(), s.dir1, "dr-fast", `{"name":"fast-plugin","version":"1.0.0","description":"Fast"}`)
+
+	// dir2: slow plugin — blocks well beyond the context deadline before emitting its manifest.
+	// Use "exec sleep" so the shell is replaced by sleep itself: Go's SIGKILL lands on the
+	// sleep process directly, stdout closes immediately, and cmd.Output() returns without
+	// waiting for an orphaned child to finish.
+	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir2, "dr-slow"), []byte(slowScript), 0o755))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	plugins := discoverPathDirsParallel(ctx, []string{s.dir1, s.dir2}, map[string]bool{})
+
+	names := make(map[string]bool)
+	for _, p := range plugins {
+		names[p.Manifest.Name] = true
+	}
+
+	s.True(names["fast-plugin"], "fast plugin should be discovered before deadline")
+	s.False(names["slow-plugin"], "slow plugin should be skipped after deadline expires")
 }
 
 // TestGetManifest tests manifest retrieval
@@ -240,7 +384,7 @@ func (s *ManifestTestSuite) TearDownTest() {
 func (s *ManifestTestSuite) TestGetManifestValid() {
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().NoError(err)
 	s.NotNil(manifest)
 	s.Equal("test-plugin", manifest.Name)
@@ -251,13 +395,13 @@ func (s *ManifestTestSuite) TestGetManifestValid() {
 func (s *ManifestTestSuite) TestGetManifestInvalidJSON() {
 	path := createMockPlugin(s.T(), s.tempDir, "dr-invalid", invalidManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
 	s.Nil(manifest)
 }
 
 func (s *ManifestTestSuite) TestGetManifestNonExistent() {
-	manifest, err := getManifest(filepath.Join(s.tempDir, "nonexistent"))
+	manifest, err := getManifest(context.Background(), filepath.Join(s.tempDir, "nonexistent"))
 	s.Require().Error(err)
 	s.Nil(manifest)
 }
@@ -268,7 +412,7 @@ func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().NoError(err)
 	s.NotNil(manifest)
 }
@@ -281,9 +425,152 @@ exit 1
 	path := filepath.Join(s.tempDir, "dr-failing")
 	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
 
-	manifest, err := getManifest(path)
+	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
 	s.Nil(manifest)
+}
+
+// captureLogOutput redirects os.Stderr to a pipe, reinitialises the logger,
+// runs fn, then returns everything written during fn's execution.
+func captureLogOutput(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	log.StartStderr()
+
+	fn()
+
+	w.Close()
+
+	os.Stderr = origStderr
+
+	t.Cleanup(log.StopStderr)
+
+	var buf bytes.Buffer
+
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	r.Close()
+
+	return buf.String()
+}
+
+// pluginByName returns the first plugin with the given manifest name, or nil.
+func pluginByName(plugins []DiscoveredPlugin, name string) *DiscoveredPlugin {
+	for i := range plugins {
+		if plugins[i].Manifest.Name == name {
+			return &plugins[i]
+		}
+	}
+
+	return nil
+}
+
+// DiscoverWithContextSuite tests DiscoverPluginsWithContext end-to-end.
+// Tests control the PATH env var so only known plugins are discovered from PATH.
+// Managed-plugin and local-plugin directories are not controlled here and are
+// typically empty in CI.
+type DiscoverWithContextSuite struct {
+	suite.Suite
+	pluginDir string
+}
+
+func TestDiscoverWithContextSuite(t *testing.T) {
+	suite.Run(t, new(DiscoverWithContextSuite))
+}
+
+func (s *DiscoverWithContextSuite) SetupTest() {
+	var err error
+
+	s.pluginDir, err = os.MkdirTemp("", "plugin-discoverctx-test")
+	s.Require().NoError(err)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+}
+
+func (s *DiscoverWithContextSuite) TearDownTest() {
+	_ = os.RemoveAll(s.pluginDir)
+
+	viperx.Reset()
+}
+
+func (s *DiscoverWithContextSuite) TestDiscoversPATHPlugin() {
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-alpha",
+		`{"name":"ctx-alpha","version":"1.0.0","description":"Alpha"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	plugins := DiscoverPluginsWithContext(context.Background())
+
+	s.NotNil(pluginByName(plugins, "ctx-alpha"), "plugin from controlled PATH dir must be discovered")
+}
+
+func (s *DiscoverWithContextSuite) TestPartialResultsOnTimeout() {
+	// Fast plugin: responds immediately.
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-fast",
+		`{"name":"ctx-fast","version":"1.0.0","description":"Fast"}`)
+
+	// Slow plugin: blocks well past any reasonable deadline.
+	// exec replaces the shell so SIGKILL from exec.CommandContext lands directly
+	// on sleep, closing stdout immediately without orphan processes.
+	slowDir, err := os.MkdirTemp("", "plugin-discoverctx-slow")
+	s.Require().NoError(err)
+
+	defer os.RemoveAll(slowDir)
+
+	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
+	s.Require().NoError(os.WriteFile(filepath.Join(slowDir, "dr-ctx-slow"), []byte(slowScript), 0o755))
+
+	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+slowDir)
+
+	// 2 s gives the fast plugin plenty of time to respond; the slow plugin is
+	// killed by the per-manifest timeout (5 s set in SetupTest capped by the
+	// outer ctx) or the outer ctx itself — either way it is absent.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	plugins := DiscoverPluginsWithContext(ctx)
+
+	s.NotNil(pluginByName(plugins, "ctx-fast"), "fast plugin must be returned before deadline")
+	s.Nil(pluginByName(plugins, "ctx-slow"), "slow plugin must be absent after deadline")
+}
+
+func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
+	// A pre-cancelled context immediately satisfies ctx.Err() != nil after
+	// discoverPathDirsParallel returns (goroutines bail on the first Done check),
+	// which is the condition that triggers the WARN — no real-time dependency.
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-warn",
+		`{"name":"ctx-warn","version":"1.0.0","description":"Warn"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	output := captureLogOutput(s.T(), func() {
+		DiscoverPluginsWithContext(ctx)
+	})
+
+	s.Contains(output, "timed out")
+	s.Contains(output, "--plugin-discovery-timeout")
+}
+
+func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
+	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-skip",
+		`{"name":"ctx-skip","version":"1.0.0","description":"Skip"}`)
+	s.T().Setenv("PATH", s.pluginDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	plugins := DiscoverPluginsWithContext(ctx)
+
+	s.Nil(pluginByName(plugins, "ctx-skip"), "cancelled context must skip PATH plugins")
 }
 
 // createManagedTestPlugin creates a minimal managed plugin directory structure under pluginsDir.
@@ -326,9 +613,7 @@ func TestDiscoverPlugins_FindsPluginsInXDGConfigDirs(t *testing.T) {
 	createManagedTestPlugin(t, xdgPluginsDir, "xdg-plugin", "xdg-plugin")
 	createManagedTestPlugin(t, configDirPluginsDir, "config-dir-plugin", "config-dir-plugin")
 
-	plugins, err := discoverPlugins()
-
-	require.NoError(t, err)
+	plugins := DiscoverPluginsWithContext(context.Background())
 
 	names := make(map[string]bool)
 

@@ -84,5 +84,4 @@ type DiscoveredPlugin struct {
 type DiscoveredPluginsRegistry struct {
 	plugins []DiscoveredPlugin
 	once    sync.Once
-	err     error
 }
