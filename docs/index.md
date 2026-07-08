@@ -129,7 +129,7 @@ Then open `http://localhost:8000` in your browser.
 
 ### Contributing to documentation
 
-Found an error or want to improve the docs? Please see our [Contributing Guidelines](../CONTRIBUTING.md) for information on submitting documentation improvements.
+Found an error or want to improve the docs? See our [Contributing guidelines](../CONTRIBUTING.md) for information on submitting documentation improvements.
 
 ---
 

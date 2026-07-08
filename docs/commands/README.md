@@ -163,7 +163,7 @@ dr
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
     │   ├── uninstall  Uninstall completions
-    │   └── <shell>    Generate script (bash|zsh|fish|powershell)
+    │   └── SHELL    Generate script (bash|zsh|fish|powershell)
     ├── config         Display configuration settings
     ├── plugin         Plugin packaging and development tools
     │   ├── add        Add a packaged plugin version to a registry file
@@ -203,7 +203,7 @@ dr templates setup
 dr component list
 
 # Add a component
-dr component add <component-url>
+dr component add COMPONENT_URL
 
 # Update a component
 dr component update

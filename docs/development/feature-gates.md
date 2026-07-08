@@ -12,7 +12,7 @@ Feature flags in this CLI serve to:
 
 **Security Note:** Feature flags are **not** an access control mechanism. Any user with shell access can enable a disabled feature via environment variable. They exist to prevent casual discovery of unfinished features.
 
-## How It Works
+## How it works
 
 Commands can declare a feature gate using Cobra's built-in `Annotations` map. During CLI initialization, any command with a disabled feature annotation is removed from the command tree.
 
@@ -27,9 +27,9 @@ When a command is removed, it:
 - Returns "unknown command" error if invoked directly
 - Is implicitly unavailable for subcommands if its parent is removed
 
-## Enabling a Feature
+## Enabling a feature
 
-### Environment Variable (Primary Method)
+### Environment variable (primary method)
 
 Set the env var `DATAROBOT_CLI_FEATURE_<FEATURE_NAME>=true` or `=1`:
 
@@ -41,11 +41,11 @@ Feature names are converted from lowercase with hyphens to uppercase with unders
 - `workload` → `DATAROBOT_CLI_FEATURE_WORKLOAD`
 - `my-feature` → `DATAROBOT_CLI_FEATURE_MY_FEATURE`
 
-### Config File (Future)
+### Config file (future)
 
 Config file support (e.g., `drconfig.yaml`) is not yet implemented. See the TODO in `internal/features/features.go`. Currently, only environment variables work because feature gating happens during command registration (`init()`), before Viper configuration is loaded.
 
-## Adding a Feature-Gated Command
+## Adding a feature-gated command
 
 1. **Create the command package** (e.g., `cmd/workload/cmd.go`):
 
@@ -81,7 +81,7 @@ RootCmd.AddCommand(
 
 That's it. `RootCmd` is a `cli.CommandAdder`, so `AddCommand` automatically filters any gated command whose feature is disabled.
 
-## Gating Subcommands
+## Gating subcommands
 
 To gate a subcommand, the **parent** command must also use `cli.CommandAdder` so that filtering applies when its children are registered:
 
@@ -101,7 +101,7 @@ func Cmd() *cobra.Command {
 
 When the parent command itself is gated and disabled, child commands are implicitly unavailable because the parent is never added to the tree.
 
-## Removing a Feature Gate (GA Release)
+## Removing a feature gate (GA release)
 
 When a feature is ready for general availability:
 
@@ -131,7 +131,7 @@ Feature flags are tested via:
 - Unit tests in `internal/features/features_test.go` covering `Enabled()`
 - Unit tests in `internal/cli/command_test.go` covering `CommandAdder`
 - Integration tests in `cmd/root_test.go` verifying runtime behavior
-- Manual testing with env vars: `DATAROBOT_CLI_FEATURE_<NAME>=true dr <command>`
+- Manual testing with env vars: `DATAROBOT_CLI_FEATURE_NAME=true dr COMMAND`
 
 ## Limitations
 

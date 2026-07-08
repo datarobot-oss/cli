@@ -12,23 +12,23 @@ DataRobot templates are pre-configured application scaffolds that help you quick
 
 ### Core concepts
 
-- [Template structure](structure.md): How templates are organized.
-  - Repository layout
-  - Metadata files
-  - Multi-component templates
-  - Best practices
+- [Template structure](structure.md)&mdash;how templates are organized.
+  - Repository layout.
+  - Metadata files.
+  - Multi-component templates.
+  - Best practices.
 
-- [Interactive configuration](interactive-config.md): The configuration wizard.
-  - Prompt system architecture
-  - Input types (text, selection, multi-select)
-  - Conditional prompts
-  - Validation and error handling
+- [Interactive configuration](interactive-config.md)&mdash;the configuration wizard.
+  - Prompt system architecture.
+  - Input types (text, selection, multi-select).
+  - Conditional prompts.
+  - Validation and error handling.
 
-- [Environment variables](environment-variables.md): Managing .env files.
-  - .env.template format
-  - Variable types (required, optional, secret)
-  - Security best practices
-  - Advanced features
+- [Environment variables](environment-variables.md)&mdash;managing .env files.
+  - .env.template format.
+  - Variable types (required, optional, secret).
+  - Security best practices.
+  - Advanced features.
 
 ## Quickstart
 
@@ -239,13 +239,13 @@ src/
 
 Browse the [DataRobot template gallery](https://github.com/datarobot/templates) to view example templates:
 
-- **python-streamlit**: Streamlit dashboard
-- **react-frontend**: React web application
-- **fastapi-backend**: FastAPI REST API
-- **full-stack-app**: complete web application
+- **python-streamlit**&mdash;Streamlit dashboard.
+- **react-frontend**&mdash;React web application.
+- **fastapi-backend**&mdash;FastAPI REST API.
+- **full-stack-app**&mdash;complete web application.
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)&mdash;installation and initial setup
-- [User guide](../user-guide/README.md)&mdash;complete usage guide
-- [Command reference: dotenv](../commands/dotenv.md)&mdash;environment variable management
+- [Quick start](../../README.md#quick-start)&mdash;installation and initial setup.
+- [User guide](../user-guide/README.md)&mdash;complete usage guide.
+- [Command reference: dotenv](../commands/dotenv.md)&mdash;environment variable management.

@@ -321,7 +321,7 @@ Outside `internal/config/...`, all viper interaction goes through the
 
 Quick rules for new flags:
 
-- **Transient flags** (per-invocation): read directly via
+- **Transient flags** (per-invocation)&mdash;read directly via
   `cmd.Flags().GetBool(...)`. Do not bind to viper.
 - **Env-var override needed?** Register only the env var with
   `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources in your
@@ -332,7 +332,7 @@ Quick rules for new flags:
   yes := yesFlag || viperx.GetBool("yes")
   ```
 
-- **Sticky CLI preferences** (rare): bind via `viperx.BindPFlag` *and*
+- **Sticky CLI preferences** (rare)&mdash;bind via `viperx.BindPFlag` *and*
   add the key to `config.PersistableKeys` in `internal/config/write.go`.
 
 For full details and test patterns, see the

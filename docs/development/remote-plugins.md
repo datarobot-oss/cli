@@ -114,11 +114,11 @@ The `manifest.json` inside each package defines platform-specific executables:
 ## Semver support
 
 Version constraints supported:
-- **Exact**: `1.2.3` - Match exactly this version
-- **Caret**: `^1.2.3` - Any version compatible with major (1.x.x >= 1.2.3)
-- **Tilde**: `~1.2.3` - Any version compatible with minor (1.2.x >= 1.2.3)
-- **Range**: `>=1.0.0` - Any version at or above
-- **Latest**: `latest` or empty - Most recent version
+- **Exact** (`1.2.3`)&mdash;match exactly this version.
+- **Caret** (`^1.2.3`)&mdash;any version compatible with major (1.x.x >= 1.2.3).
+- **Tilde** (`~1.2.3`)&mdash;any version compatible with minor (1.2.x >= 1.2.3).
+- **Range** (`>=1.0.0`)&mdash;any version at or above.
+- **Latest** (`latest` or empty)&mdash;most recent version.
 
 ## Directory structure
 

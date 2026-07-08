@@ -39,8 +39,8 @@ The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `Account
 
 To avoid an API call on every CLI invocation, the `uid` is cached to disk alongside `device_id` and `drconfig.yaml`:
 
-- **Cache file**: `$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`)
-- **File permissions**: `0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`
+- **Cache file**&mdash;`$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`).
+- **File permissions**&mdash;`0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`.
 - **Cache format** (JSON):
 
   ```json
@@ -55,8 +55,8 @@ To avoid an API call on every CLI invocation, the `uid` is cached to disk alongs
 
 On subsequent invocations, when no fresh API `uid` is available, the cache is validated against both the current endpoint and the current token fingerprint:
 
-- **Endpoint match**: the cached `endpoint` must equal the current `viperx.GetString(config.DataRobotURL)` (scheme+host only)
-- **Token fingerprint match**: the cached `token_fingerprint` must equal the SHA-256 hex of the current API token
+- **Endpoint match**&mdash;the cached `endpoint` must equal the current `viperx.GetString(config.DataRobotURL)` (scheme+host only).
+- **Token fingerprint match**&mdash;the cached `token_fingerprint` must equal the SHA-256 hex of the current API token.
 
 If either check fails, the cache is treated as stale and the `user_id` is left empty (anonymous tracking). This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
 
@@ -72,7 +72,7 @@ If either check fails, the cache is treated as stale and the `user_id` is left e
 | Network error, same endpoint + token | Return cached `uid` |
 | Network error, endpoint/token changed | Empty `user_id`, anonymous tracking |
 
-## Common Properties
+## Common properties
 
 The following are attached to every event:
 
@@ -105,7 +105,7 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 | `command_kind`       | `"core"` or `"plugin"` — automatically set by the root command dispatcher |
 
 
-## Event Wiring
+## Event wiring
 
 Telemetry events are wired declaratively at command-construction time using a small API exported by `internal/telemetry`:
 
@@ -119,10 +119,10 @@ Each helper sets a `"telemetry"` annotation on the cobra command. After RunE com
 
 This approach ensures:
 
-- **Local**: Wiring lives next to the command it tracks, not in a central map.
-- **Late-bound**: Events fire after RunE, so PropExtractors can read results computed during command execution (see [Reading RunE results in a PropExtractor](#reading-rune-results-in-a-propextractor)).
-- **Extensible**: Adding a new event requires one call where the command is built.
-- **Self-documenting**: The cobra command itself carries its telemetry intent.
+- **Local**&mdash;wiring lives next to the command it tracks, not in a central map.
+- **Late-bound**&mdash;events fire after RunE, so PropExtractors can read results computed during command execution (see [Reading RunE results in a PropExtractor](#reading-rune-results-in-a-propextractor)).
+- **Extensible**&mdash;adding a new event requires one call where the command is built.
+- **Self-documenting**&mdash;the cobra command itself carries its telemetry intent.
 
 ## Process exit and telemetry flush
 
@@ -326,7 +326,7 @@ dr foo --debug
 # .dr-tui-debug.log will include "Telemetry event (dry-run)" entries
 ```
 
-## Plugin Commands
+## Plugin commands
 
 Plugin commands are discovered at runtime by `cmd/plugin/discovery.go::createPluginCommand`, which calls `telemetry.TrackPlugin(cmd, manifest.Version)`. This:
 

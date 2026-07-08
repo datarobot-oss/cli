@@ -39,7 +39,7 @@ The `self` command provides utility functions for managing the CLI tool itself, 
 Generate or manage shell completion scripts for command auto-completion.
 
 ```bash
-dr self completion <shell>
+dr self completion SHELL
 ```
 
 See the [completion documentation](completion.md) for detailed usage.
@@ -106,8 +106,8 @@ Plugin packaging and development tools for creating and publishing CLI plugins. 
 | Subcommand | Description |
 |------------|-------------|
 | `add <path-to-index.json>` | Add a packaged plugin version to a registry file (index.json). |
-| `publish <plugin-dir>` | Package and publish a plugin in one step (package, copy to plugins dir, update index). |
-| `package <plugin-dir>` | Package a plugin directory into a distributable .tar.xz archive. |
+| `publish PLUGIN_DIR` | Package and publish a plugin in one step (package, copy to plugins dir, update index). |
+| `package PLUGIN_DIR` | Package a plugin directory into a distributable .tar.xz archive. |
 
 See the [Plugin development](../development/plugins.md) guide for details. For installing and managing plugins as a user, use the top-level [`dr plugin`](plugins.md) command.
 
@@ -172,7 +172,7 @@ All `dr` global options are available:
 ### Update CLI to latest version
 
 ```bash
-$ dr self update
+dr self update
 Downloading latest version...
 Installing DataRobot CLI...
 ✓ Successfully updated to v0.2.55
@@ -181,14 +181,14 @@ Installing DataRobot CLI...
 ### Check CLI version
 
 ```bash
-$ dr self version
+dr self version
 DataRobot CLI version: v0.2.55
 ```
 
 ### View current configuration
 
 ```bash
-$ dr self config
+dr self config
 Configuration initialized. Using config file: /Users/username/.config/datarobot/drconfig.yaml
 
   debug: false
@@ -202,19 +202,19 @@ Configuration initialized. Using config file: /Users/username/.config/datarobot/
 
 ```bash
 # Interactive installation
-$ dr self completion install
+dr self completion install
 ✓ Detected shell: zsh
 ✓ Installing completions to: ~/.zsh/completions/_dr
 ✓ Completions installed successfully!
 
 # Manual installation
-$ dr self completion bash | sudo tee /etc/bash_completion.d/dr
+dr self completion bash | sudo tee /etc/bash_completion.d/dr
 ```
 
 ### Get version in JSON
 
 ```bash
-$ dr self version --format json
+dr self version --format json
 {
   "version": "v0.2.55",
   "commit": "abc1234def5678",

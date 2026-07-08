@@ -18,8 +18,8 @@ An **artifact** is a versioned container spec made up of one or more container g
 
 Each container in the spec is one of two kinds:
 
-- **Prebuilt**: set `imageUri` to an existing image. There is nothing to build.
-- **Built from source**: set `imageBuildConfig`, push your code with `dr artifact code sync`, and produce an image with `dr artifact build create`. The Dockerfile is either one you provide (`./Dockerfile`) or one the server generates from a base environment.
+- **Prebuilt**&mdash;set `imageUri` to an existing image. There is nothing to build.
+- **Built from source**&mdash;set `imageBuildConfig`, push your code with `dr artifact code sync`, and produce an image with `dr artifact build create`. The Dockerfile is either one you provide (`./Dockerfile`) or one the server generates from a base environment.
 
 The `code` subcommands keep a local directory in sync with an artifact's source. They store a `.wapi/` state directory at the project root, much like `.git/`: local work happens in the project root while `.wapi/` records the remote binding and last-synced state. Once a directory is linked with `dr artifact code init`, the `build` and `code` subcommands read the artifact id from `.wapi/config.json`, so you can leave it off.
 
@@ -37,14 +37,14 @@ A locked, fully built artifact is what you hand to `dr workload create` to deplo
 dr artifact create --spec-file spec.yaml
 
 # Link the current directory to it, then push your code
-dr artifact code init <artifact-id>
+dr artifact code init ARTIFACT_ID
 dr artifact code sync
 
 # Build the container image and wait for it to finish
 dr artifact build create --wait
 
 # Lock the artifact once the build succeeds
-dr artifact lock <artifact-id>
+dr artifact lock ARTIFACT_ID
 ```
 
 ## Command groups
@@ -66,12 +66,12 @@ dr artifact lock <artifact-id>
 Register a new draft artifact from a JSON or YAML spec file. The spec needs a `name` and at least one container group with at least one container. JSON is sent to the server byte-for-byte; YAML is converted to JSON first, so quote any value that must stay a string (for example `"0644"`). On a shape mismatch the server returns a `422` naming the offending JSON path.
 
 ```bash
-dr artifact create --spec-file <path> [--output-format text|json]
+dr artifact create --spec-file FILE_PATH [--output-format text|json]
 ```
 
 **Flags:**
 
-- `--spec-file <path>`: path to the JSON or YAML spec (required).
+- `--spec-file FILE_PATH`&mdash;path to the JSON or YAML spec (required).
 - `--output-format <text|json>`: output format. Defaults to `text`.
 
 **Example:**
@@ -110,7 +110,7 @@ spec:
 Show a single artifact: its name, status, code reference, and timestamps.
 
 ```bash
-dr artifact get <artifact-id> [--output-format text|json]
+dr artifact get ARTIFACT_ID [--output-format text|json]
 ```
 
 ### `list`
@@ -132,7 +132,7 @@ dr artifact list [--status draft|locked] [--limit N] [--output-format text|json]
 Promote a draft artifact to locked. Before locking, the server checks that every container built from source has its code uploaded and an image build completed; otherwise the lock is rejected and the error names what is missing. Locking is one-way.
 
 ```bash
-dr artifact lock <artifact-id> [--output-format text|json]
+dr artifact lock ARTIFACT_ID [--output-format text|json]
 ```
 
 ### `delete`
@@ -140,7 +140,7 @@ dr artifact lock <artifact-id> [--output-format text|json]
 Delete an artifact by id. Locked artifacts cannot be deleted, and an artifact still referenced by a workload cannot be deleted either (the error names the blocking workloads, so delete those first). You are asked to confirm unless `--yes` is set.
 
 ```bash
-dr artifact delete <artifact-id> [--yes]
+dr artifact delete ARTIFACT_ID [--yes]
 ```
 
 **Flags:**
@@ -149,13 +149,13 @@ dr artifact delete <artifact-id> [--yes]
 
 ### `build`
 
-Trigger and inspect container image builds for an artifact. Inside a linked directory the `<artifact-id>` argument can be omitted; it is read from `.wapi/config.json`.
+Trigger and inspect container image builds for an artifact. Inside a linked directory the `ARTIFACT_ID` argument can be omitted; it is read from `.wapi/config.json`.
 
 ```bash
-dr artifact build create [<artifact-id>] [--wait]             # trigger a build
-dr artifact build list   [<artifact-id>] [--limit N]          # list builds, newest first
-dr artifact build get    [<artifact-id>] <build-id> [--wait]  # show one build
-dr artifact build logs   [<artifact-id>] <build-id> [--level debug|info|warn|error]
+dr artifact build create [ARTIFACT_ID] [--wait]             # trigger a build
+dr artifact build list   [ARTIFACT_ID] [--limit N]          # list builds, newest first
+dr artifact build get    [ARTIFACT_ID] BUILD_ID [--wait]  # show one build
+dr artifact build logs   [ARTIFACT_ID] BUILD_ID [--level debug|info|warn|error]
 ```
 
 `build create` prints the new build id(s) and returns right away. With `--wait` it polls until each build reaches a terminal status (`COMPLETED`, `FAILED`, or `CANCELLED`), prints a summary with the duration and resulting image, and on failure dumps the tail of the build log. `build logs` shows one structured record per line and hides anything below `info` unless you lower `--level`.
@@ -165,10 +165,10 @@ dr artifact build logs   [<artifact-id>] <build-id> [--level debug|info|warn|err
 Synchronize a local project directory with an artifact's source code. Run `init` once to link a directory, then `sync` to push and pull changes.
 
 ```bash
-dr artifact code init     [<artifact-id>] [--dir <path>] [--yes]
-dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--yes]
-dr artifact code versions [--dir <path>] [--limit N]
-dr artifact code checkout [<ver>] [--dir <path>] [--clean]
+dr artifact code init     [ARTIFACT_ID] [--dir FILE_PATH] [--yes]
+dr artifact code sync     [--dir FILE_PATH] [--dry-run | --diff] [--yes]
+dr artifact code versions [--dir FILE_PATH] [--limit N]
+dr artifact code checkout [VERSION] [--dir FILE_PATH] [--clean]
 ```
 
 - `init` creates the `.wapi/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle.
@@ -196,18 +196,18 @@ All [global flags](README.md#global-flags) are available, notably `--debug` for 
 
 ```bash
 dr artifact create --spec-file spec.yaml   # prints the new artifact id
-dr artifact code init <artifact-id>
+dr artifact code init ARTIFACT_ID
 dr artifact code sync                       # upload your code
 dr artifact build create --wait             # build the image, wait for it
-dr artifact lock <artifact-id>              # freeze it for deployment
+dr artifact lock ARTIFACT_ID              # freeze it for deployment
 ```
 
 ### Inspect builds and logs
 
 ```bash
-dr artifact build list <artifact-id>
-dr artifact build get  <artifact-id> <build-id> --wait
-dr artifact build logs <artifact-id> <build-id> --level debug
+dr artifact build list ARTIFACT_ID
+dr artifact build get  ARTIFACT_ID BUILD_ID --wait
+dr artifact build logs ARTIFACT_ID BUILD_ID --level debug
 ```
 
 ## Error handling
@@ -220,7 +220,7 @@ dr artifact build logs <artifact-id> <build-id> --level debug
 
 ## See also
 
-- [`dr workload`](workload.md): deploy a locked artifact as a running workload.
-- [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
-- [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
-- [Feature gates](../development/feature-gates.md): turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.
+- [`dr workload`](workload.md)&mdash;deploy a locked artifact as a running workload.
+- [Authentication](auth.md)&mdash;how `dr auth login` and `--skip-auth` interact.
+- [Configuration](../user-guide/configuration.md)&mdash;config file and environment-variable precedence.
+- [Feature gates](../development/feature-gates.md)&mdash;turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.

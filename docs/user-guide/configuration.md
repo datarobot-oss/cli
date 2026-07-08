@@ -172,7 +172,7 @@ dr --plugin-discovery-timeout 2s --help
 
 When the CLI needs configuration settings, it looks for them in this order (highest to lowest priority):
 
-1. **Command-line flags** (e.g., `--config <path>`)&mdash;overrides everything.
+1. **Command-line flags** (e.g., `--config FILE_PATH`)&mdash;overrides everything.
 2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`)&mdash;overrides config files.
 3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default location.
 4. **Built-in defaults**&mdash;fallback values.
@@ -379,7 +379,7 @@ dr templates list --config ~/.config/datarobot/drconfig.yaml
 
 ```bash
 # The CLI will report syntax errors with line numbers
-$ dr templates list
+dr templates list
 Error: Failed to parse config file: yaml: line 5: could not find expected ':'
 
 # Fix syntax and try again
@@ -512,9 +512,9 @@ The CLI stores state locally within each repository:
 
 The state file tracks:
 
-- **CLI version**: Version of the CLI used for the last successful execution
-- **Last start**: Timestamp of the last successful `dr start` execution
-- **Last dotenv setup**: Timestamp of the last successful `dr dotenv setup` execution
+- **CLI version**&mdash;version of the CLI used for the last successful execution.
+- **Last start**&mdash;timestamp of the last successful `dr start` execution.
+- **Last dotenv setup**&mdash;timestamp of the last successful `dr dotenv setup` execution.
 
 ### State file format
 
@@ -528,9 +528,9 @@ All timestamps are in ISO 8601 format (UTC).
 
 ### How state is used
 
-- **`dr start`**: Updates state after successful execution
-- **`dr dotenv setup`**: Records when environment setup was completed
-- **`dr templates setup`**: Skips dotenv setup if it was already completed (based on state)
+- **`dr start`**&mdash;updates state after successful execution.
+- **`dr dotenv setup`**&mdash;records when environment setup was completed.
+- **`dr templates setup`**&mdash;skips dotenv setup if it was already completed (based on state).
 
 ### Managing state
 

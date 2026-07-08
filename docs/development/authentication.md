@@ -99,10 +99,10 @@ When `--skip-auth` is enabled, it expect the following behavior:
 
 The `--skip-auth` flag is intended for advanced scenarios such as:
 
-- **Testing**: Test command logic without requiring valid credentials.
-- **CI/CD pipelines**: Use when authentication is managed through environment variables (`DATAROBOT_API_TOKEN`).
-- **Offline development**: When working in environments without internet access or access to DataRobot.
-- **Debugging**: Isolate authentication issues from other command behavior.
+- **Testing**&mdash;test command logic without requiring valid credentials.
+- **CI/CD pipelines**&mdash;use when authentication is managed through environment variables (`DATAROBOT_API_TOKEN`).
+- **Offline development**&mdash;when working in environments without internet access or access to DataRobot.
+- **Debugging**&mdash;isolate authentication issues from other command behavior.
 
 > [!WARNING]
 > The `--skip-auth` flag should only be used when you understand the implications. Most users should rely on the standard authentication flow via `dr auth login`.

@@ -12,7 +12,7 @@ When working with copier-based components, you often need to provide the same an
 
 ## CLI usage
 
-### Component Add
+### Component add
 
 Use `dr component add` to add a component repository to your application. This will launch an interactive wizard unless you provide answers via CLI arguments or a data file.
 
@@ -42,7 +42,7 @@ After the CLI adds a component, it validates your `.env` file.
 This behavior helps keep your application configuration in sync when a new component introduces new required environment variables.
 ```
 
-### Component Update
+### Component update
 
 Update a component with specific answers:
 
@@ -98,7 +98,7 @@ defaults:
     use_low_code_interface: false
 ```
 
-### How It Works
+### How it works
 
 1. When you run `dr component add` or `dr component update`, the CLI:
    - Reads the copier answers file to determine the component's repository URL
@@ -109,7 +109,7 @@ defaults:
 
 3. Any questions not covered by defaults or CLI arguments will be prompted interactively (unless you use copier's `-A` flag, which is included in `dr component update`)
 
-### Recommended Setup
+### Recommended setup
 
 **For team-wide defaults** (committed to the repository):
 
@@ -133,7 +133,7 @@ defaults:
     agent_template_framework: langgraph
 ```
 
-### Example Workflow
+### Example workflow
 
 With the repository data file shown above, running:
 
@@ -179,13 +179,13 @@ dr component add https://github.com/datarobot-community/af-component-agent.git \
 
 The data file and `--data` arguments support all copier question types:
 
-- **Strings**: `key: value` or `--data key=value`
-- **Booleans**: `key: true` or `--data use_feature=false`
-- **Integers**: `key: 42` or `--data count=42`
-- **Floats**: `key: 3.14` or `--data height=1.83`
-- **Lists** (for multiselect): `key: [item1, item2]` or `--data items=[1, 2, 3]`
-- **Objects/Maps**: `key: {nested: value}` or `--data config={key: value}`
-- **Null**: `key: null` or `--data optional=null`
-- **YAML/JSON** complex types: Any valid YAML structure in the data file
+- **Strings**&mdash;`key: value` or `--data key=value`.
+- **Booleans**&mdash;`key: true` or `--data use_feature=false`.
+- **Integers**&mdash;`key: 42` or `--data count=42`.
+- **Floats**&mdash;`key: 3.14` or `--data height=1.83`.
+- **Lists** (for multiselect)&mdash;`key: [item1, item2]` or `--data items=[1, 2, 3]`.
+- **Objects/Maps**&mdash;`key: {nested: value}` or `--data config={key: value}`.
+- **Null**&mdash;`key: null` or `--data optional=null`.
+- **YAML/JSON** complex types&mdash;any valid YAML structure in the data file.
 
 The data file uses standard YAML syntax. CLI `--data` arguments are parsed according to the question's type defined in the copier template.

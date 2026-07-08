@@ -6,11 +6,11 @@ The DataRobot CLI features a powerful interactive configuration system that guid
 
 The interactive configuration system is built using [Bubble Tea](https://github.com/charmbracelet/bubbletea), a Go framework for building terminal user interfaces. It provides:
 
-- Guided setup: A step-by-step wizard for configuration
-- Smart prompts: Context-aware questions with validation
-- Conditional logic: Show/hide prompts based on previous answers
-- Multiple input types: Text fields, checkboxes, and selection lists
-- Visual feedback: Beautiful terminal UI with progress indicators
+- **Guided setup**&mdash;a step-by-step wizard for configuration.
+- **Smart prompts**&mdash;context-aware questions with validation.
+- **Conditional logic**&mdash;show/hide prompts based on previous answers.
+- **Multiple input types**&mdash;text fields, checkboxes, and selection lists.
+- **Visual feedback**&mdash;beautiful terminal UI with progress indicators.
 
 ## Architecture
 
@@ -33,10 +33,10 @@ The configuration system consists of three main layers:
 
 ### Key files
 
-- `cmd/dotenv/model.go`: The main dotenv editor model
-- `cmd/dotenv/promptModel.go`: Individual prompt handling
-- `internal/envbuilder/discovery.go`: Prompt discovery from templates
-- `cmd/templates/setup/model.go`: Template setup wizard orchestration
+- `cmd/dotenv/model.go`&mdash;the main dotenv editor model.
+- `cmd/dotenv/promptModel.go`&mdash;individual prompt handling.
+- `internal/envbuilder/discovery.go`&mdash;prompt discovery from templates.
+- `cmd/templates/setup/model.go`&mdash;template setup wizard orchestration.
 
 ## Configuration flow
 
@@ -415,23 +415,23 @@ type Model struct {
 
 ### List navigation
 
-- `↑/↓` or `j/k` - Navigate list items
-- `Space` - Toggle checkbox (multiple selection)
-- `Enter` - Confirm selection
-- `Esc` - Go back to previous screen
+- `↑/↓` or `j/k`&mdash;navigate list items.
+- `Space`&mdash;toggle checkbox (multiple selection).
+- `Enter`&mdash;confirm selection.
+- `Esc`&mdash;go back to previous screen.
 
 ### Text input
 
 - Type normally to enter text
-- `Enter` - Confirm input
-- `Esc` - Go back to previous screen
+- `Enter`&mdash;confirm input.
+- `Esc`&mdash;go back to previous screen.
 
 ### Editor mode
 
-- `w` - Start wizard mode
-- `e` - Open text editor
-- `Enter` - Finish and save
-- `Esc` - Save and exit editor
+- `w`&mdash;start wizard mode.
+- `e`&mdash;open text editor.
+- `Enter`&mdash;finish and save.
+- `Esc`&mdash;save and exit editor.
 
 ## Advanced features
 
@@ -749,6 +749,6 @@ cat .env
 
 ## See also
 
-- [Template structure](structure.md): How templates are organized
-- [Environment variables](environment-variables.md): Manage .env files
-- [Command reference: dotenv](../commands/dotenv.md): dotenv command documentation
+- [Template structure](structure.md)&mdash;how templates are organized.
+- [Environment variables](environment-variables.md)&mdash;manage .env files.
+- [Command reference: dotenv](../commands/dotenv.md)&mdash;dotenv command documentation.

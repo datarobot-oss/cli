@@ -145,10 +145,10 @@ See [Building](building.md#testing) for comprehensive testing documentation.
 
 ## Getting help
 
-- **Documentation**: Review the guides linked above
-- **Issues**: Check existing [GitHub issues](https://github.com/datarobot-oss/cli/issues)
-- **Discussions**: Ask questions in [GitHub discussions](https://github.com/datarobot-oss/cli/discussions)
-- **Contributing**: Read the [contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)
+- **Documentation**&mdash;review the guides linked above.
+- **Issues**&mdash;check existing [GitHub issues](https://github.com/datarobot-oss/cli/issues).
+- **Discussions**&mdash;ask questions in [GitHub discussions](https://github.com/datarobot-oss/cli/discussions).
+- **Contributing**&mdash;read the [contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md).
 
 ## See also
 

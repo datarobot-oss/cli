@@ -27,7 +27,7 @@ After installation, reload your shell to activate completions.
 
 ```bash
 # Generate script for a shell (redirect to install)
-dr self completion <shell>
+dr self completion SHELL
 
 # Interactive install or uninstall
 dr self completion install [shell]
@@ -213,25 +213,25 @@ dr self completion fish > ~/.config/fish/completions/dr.fish
 ### Command completion
 
 ```bash
-$ dr <Tab>
+dr <Tab>
 auth       completion dotenv     run        templates  version
 
-$ dr auth <Tab>
+dr auth <Tab>
 check      login      logout     set-url
 
-$ dr templates <Tab>
+dr templates <Tab>
 list       setup
 ```
 
 ### Flag completion
 
 ```bash
-$ dr run --<Tab>
+dr run --<Tab>
 --concurrency  --dir         --exit-code   --help
 --list         --parallel    --silent      --watch
 --yes
 
-$ dr --<Tab>
+dr --<Tab>
 --debug    --help     --verbose
 ```
 
@@ -241,7 +241,7 @@ Some commands support argument completion:
 
 ```bash
 # Task names (when in a template directory)
-$ dr run <Tab>
+dr run <Tab>
 build  dev  deploy  lint  test
 ```
 
@@ -407,7 +407,7 @@ dr run --l<Tab>
 In Fish and PowerShell, completions include descriptions:
 
 ```fish
-$ dr templates <Tab>
+dr templates <Tab>
 list    (List available templates)
 setup   (Interactive template setup wizard)
 ```

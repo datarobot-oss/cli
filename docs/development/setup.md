@@ -153,6 +153,6 @@ golangci-lint is installed as a pre-built binary, so version mismatches with you
 
 ## Next steps
 
-- [Project structure](structure.md): Understand the codebase organization.
-- [Build guide](building.md): Detailed build information and architecture.
-- [Release process](releasing.md): Create and publish releases.
+- [Project structure](structure.md)&mdash;understand the codebase organization.
+- [Build guide](building.md)&mdash;detailed build information and architecture.
+- [Release process](releasing.md)&mdash;create and publish releases.

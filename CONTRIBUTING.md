@@ -2,20 +2,20 @@
 
 Thank you for your interest in contributing to the DataRobot CLI! This document provides guidelines for contributing to this project.
 
-## Table of Contents
+## Table of contents
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Workflow](#development-workflow)
-- [Opening Issues](#opening-issues)
-- [Submitting Pull Requests](#submitting-pull-requests)
-- [Project Maintainers](#project-maintainers)
+- [Code of conduct](#code-of-conduct)
+- [Getting started](#getting-started)
+- [Development workflow](#development-workflow)
+- [Opening issues](#opening-issues)
+- [Submitting pull requests](#submitting-pull-requests)
+- [Project maintainers](#project-maintainers)
 
-## Code of Conduct
+## Code of conduct
 
 This project follows the DataRobot Code of Conduct. Please be respectful and constructive in all interactions.
 
-## GitHub CLI Recommendation
+## GitHub CLI recommendation
 
 DataRobot recommends using the [GitHub CLI](https://cli.github.com/) (`gh`) for fork management. All examples in this guide use `gh` commands, which streamline the fork, clone, and pull request workflow.
 
@@ -29,16 +29,16 @@ After installation, authenticate with: `gh auth login`
 
 **Manual Git workflow**: If you prefer not to use `gh`, you can manually fork on GitHub, clone your fork, and configure remotes. The `gh` commands shown can be replaced with equivalent `git` commands.
 
-## Getting Started
+## Getting started
 
-### Development Setup
+### Development setup
 
 To start contributing, you'll need to set up your development environment:
 
 1. **Read the [Development Setup Guide](docs/development/setup.md)** for detailed instructions on:
-   - Installing prerequisites (Go, Task, etc.)
-   - Building the CLI from source
-   - Running tests and linters
+   - Installing prerequisites (Go, Task, etc.).
+   - Building the CLI from source.
+   - Running tests and linters.
 
 2. **Understand the [Project Structure](docs/development/structure.md)** to familiarize yourself with:
    - Code organization
@@ -50,7 +50,7 @@ To start contributing, you'll need to set up your development environment:
    - Architecture overview
    - Coding standards and quality tools
 
-### Documentation Preview
+### Documentation preview
 
 To preview the documentation site locally:
 
@@ -62,9 +62,9 @@ uv run mkdocs serve
 
 Then open `http://localhost:8000` in your browser. The preview will auto-reload when you edit markdown files.
 
-## Development Workflow
+## Development workflow
 
-### Fork the Repository
+### Fork the repository
 
 External contributors should work from a fork of the repository:
 
@@ -76,7 +76,7 @@ gh repo fork datarobot-oss/cli --clone --default-branch-only
 
 > **Note**: If you prefer manual fork management, fork the repository on GitHub, then clone your fork and add the upstream remote manually.
 
-### Quick Start
+### Quick start
 
 ```bash
 # Fork and clone the repository
@@ -96,7 +96,7 @@ task test
 task lint
 ```
 
-### Making Changes
+### Making changes
 
 1. **Sync with upstream before starting work**
 
@@ -144,15 +144,15 @@ task lint
    git push origin feature/your-feature-name
    ```
 
-## Opening Issues
+## Opening issues
 
-### Before Opening an Issue
+### Before opening an issue
 
 - Check if there are any existing issues or pull requests that match your case
 - Review any FAQ documentation if available
 - Search closed issues as your question may have been answered before
 
-### Creating an Issue
+### Creating an issue
 
 When opening an issue:
 
@@ -162,16 +162,16 @@ When opening an issue:
    - For features: describe the use case and proposed solution
    - Include relevant code snippets, error messages, or screenshots
 
-### Security Vulnerabilities
+### Security vulnerabilities
 
 **Do not open a GitHub issue for security vulnerabilities.** Instead:
 
 1. Email the maintainers directly (see [Project Maintainers](#project-maintainers))
 2. If maintainers don't respond within seven days, email <oss-community-management@datarobot.com>
 
-## Submitting Pull Requests
+## Submitting pull requests
 
-### Pull Request Process
+### Pull request process
 
 After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
 
@@ -204,7 +204,7 @@ After pushing your changes to your fork, create a pull request from your fork to
    - Address any feedback or requested changes
    - Once approved, a maintainer will merge your PR
 
-### Quality Standards
+### Quality standards
 
 All code must:
 
@@ -216,21 +216,21 @@ All code must:
 
 See [building.md](docs/development/building.md) for detailed coding standards.
 
-## Release Process
+## Release process
 
 For information on creating releases, see the [Release Process Guide](docs/development/releasing.md).
 
-## Project Maintainers
+## Project maintainers
 
 - AJ Alon <aj.alon@datarobot.com>
 - Carson Gee <carson.gee@datarobot.com>
 - Yuriy Hrytsyuk <yuriy.hrytsyuk@datarobot.com>
 
-## Getting Help
+## Getting help
 
 If you don't get a response within seven days of creating your issue or pull request, please send us an email at <oss-community-management@datarobot.com>.
 
-## Additional Resources
+## Additional resources
 
 - [Development Setup](docs/development/setup.md)
 - [Project Structure](docs/development/structure.md)

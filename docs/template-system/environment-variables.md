@@ -519,12 +519,12 @@ Error: required variable DATABASE_URL is not set
 Commands like `dr run` automatically validate required variables.
 
 ```bash
-$ dr run dev
+dr run dev
 Error: Missing required environment variables:
   - APP_NAME
   - DATAROBOT_API_TOKEN
 
-Please run: dr dotenv setup
+Run: dr dotenv setup
 ```
 
 ### Format validation
@@ -694,6 +694,6 @@ dr dotenv validate
 
 ## See also
 
-- [Interactive configuration](interactive-config.md): Configuration wizard details.
-- [Template structure](structure.md): Template organization.
-- [dotenv command](../commands/dotenv.md): dotenv command reference.
+- [Interactive configuration](interactive-config.md)&mdash;configuration wizard details.
+- [Template structure](structure.md)&mdash;template organization.
+- [dotenv command](../commands/dotenv.md)&mdash;dotenv command reference.

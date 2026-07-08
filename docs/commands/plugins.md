@@ -103,7 +103,7 @@ Install missing dependencies? [Y/n]:
 | Press **Enter** or type **y** | Install the missing tools |
 | Type **n** | Skip installation and continue |
 | `dr plugin install --yes` / `-y` | Auto-confirm during install |
-| `dr <plugin> -y` or `dr <plugin> --yes` | Auto-confirm at run time |
+| `dr PLUGIN -y` or `dr PLUGIN --yes` | Auto-confirm at run time |
 | `DATAROBOT_CLI_NON_INTERACTIVE=1` | Auto-confirm in CI / automation |
 
 > **Note:** Dependency checks only apply to managed plugins installed via `dr plugin install`. PATH-based and project-local plugins are not checked.

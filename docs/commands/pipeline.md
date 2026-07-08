@@ -18,12 +18,12 @@ top-level `dr pipeline` subcommand operates on one of four resources:
 
 - the **pipeline** itself (create, list, get, update, delete, lock),
 - pipeline **versions** (list, get, graph),
-- pipeline **inputs** — JSON payloads supplied to a run,
-- pipeline **runs** — concrete executions on Covalent,
-- pipeline **schedules** — recurring runs on a cron expression,
-- pipeline **images** — named, immutable-versioned bags of pip
+- pipeline **inputs**&mdash;JSON payloads supplied to a run,
+- pipeline **runs**&mdash;concrete executions on Covalent,
+- pipeline **schedules**&mdash;recurring runs on a cron expression,
+- pipeline **images**&mdash;named, immutable-versioned bags of pip
   packages that pipelines can be built against,
-- pipeline **tasks** — source code, function signature, and input payload
+- pipeline **tasks**&mdash;source code, function signature, and input payload
   for individual `@task`-decorated functions.
 
 Versions are created automatically:
@@ -38,7 +38,7 @@ Versions are created automatically:
 
 Inputs, runs, and the graph endpoint exist in two scopes —
 **draft** (mutable, no version pinned) and **locked** (immutable, tied
-to a frozen version) — selected via the shared `--scope` and
+to a frozen version)&mdash;selected via the shared `--scope` and
 `--version` flags. Schedules are locked-only.
 
 > [!NOTE]
@@ -62,10 +62,10 @@ dr pipeline list
 dr pipeline create ./my_pipeline.py --description "First draft"
 
 # Append a new version after editing the file
-dr pipeline update <pipeline-id> ./my_pipeline.py
+dr pipeline update PIPELINE_ID ./my_pipeline.py
 
 # Promote the draft to locked when you are happy with it
-dr pipeline lock <pipeline-id>
+dr pipeline lock PIPELINE_ID
 ```
 
 ## Command groups
@@ -96,30 +96,30 @@ function name (e.g. `my_workflow` → `My Workflow`); supply `--name` to use a
 custom label instead.
 
 ```bash
-dr pipeline create <file> [flags]
-dr pipeline create --from-file=<file> [flags]
+dr pipeline create FILE [flags]
+dr pipeline create --from-file=FILE [flags]
 ```
 
 **Arguments:**
 
-- `<file>` — path to a `.py` file containing a single DataRobot pipeline.
+- `FILE`&mdash;path to a `.py` file containing a single DataRobot pipeline.
   Mutually exclusive with `--from-file`.
 
 **Flags:**
 
-- `--from-file <path>` — alternative to the positional file argument.
-- `--name <text>` — optional human-readable display name. Defaults to the
+- `--from-file FILE_PATH`&mdash;alternative to the positional file argument.
+- `--name TEXT`&mdash;optional human-readable display name. Defaults to the
   title-cased `@pipeline` function name when omitted.
-- `--description <text>` — optional human-readable description stored on
+- `--description TEXT`&mdash;optional human-readable description stored on
   the pipeline.
-- `--mode <draft|locked>` — pipeline lifecycle mode. Defaults to `draft`.
-- `--output-format <json>` — emit machine-parseable JSON instead of the
+- `--mode <draft|locked>`&mdash;pipeline lifecycle mode. Defaults to `draft`.
+- `--output-format json`&mdash;emit machine-parseable JSON instead of the
   human-readable summary.
 
 **Example:**
 
 ```bash
-$ dr pipeline create ./confluence_to_vdb.py --description "test"
+dr pipeline create ./confluence_to_vdb.py --description "test"
 Pipeline ID:  683c2a1b4f8e1a2b3c4d5e6f
 Name:         Confluence To Vdb
 Version:      1
@@ -128,7 +128,7 @@ Mode:         draft
 Tasks:        create_vector_database, ingest_confluence_files, setup_credential_and_datastore
 Created:      2026-04-28T11:42:28Z
 
-$ dr pipeline create ./confluence_to_vdb.py --name "My Confluence VDB Pipeline"
+dr pipeline create ./confluence_to_vdb.py --name "My Confluence VDB Pipeline"
 Pipeline ID:  683c2a1b4f8e1a2b3c4d5e70
 Name:         My Confluence VDB Pipeline
 Version:      1
@@ -149,15 +149,15 @@ dr pipeline list [flags]
 
 **Flags:**
 
-- `--mode <draft|locked>` — filter by pipeline mode.
-- `--offset <N>` — pagination offset. Default `0`.
-- `--limit <N>` — pagination limit (1-200). Default `50`.
-- `--output-format <json>` — emit machine-parseable JSON instead of a table.
+- `--mode <draft|locked>`&mdash;filter by pipeline mode.
+- `--offset <N>`&mdash;pagination offset. Default `0`.
+- `--limit <N>`&mdash;pagination limit (1-200). Default `50`.
+- `--output-format json`&mdash;emit machine-parseable JSON instead of a table.
 
 **Example:**
 
 ```bash
-$ dr pipeline list
+dr pipeline list
 Showing 1 of 1 (offset=0 limit=50)
 
 ID                        NAME               MODE   ACTIVE  VERSION  UPDATED
@@ -169,21 +169,21 @@ ID                        NAME               MODE   ACTIVE  VERSION  UPDATED
 Display full details of a single pipeline including all versions.
 
 ```bash
-dr pipeline get <pipeline-id> [flags]
+dr pipeline get PIPELINE_ID [flags]
 ```
 
 **Arguments:**
 
-- `<pipeline-id>` — the ObjectId returned by `create` / shown in `pipeline list`.
+- `PIPELINE_ID`&mdash;the ObjectId returned by `create` / shown in `pipeline list`.
 
 **Flags:**
 
-- `--output-format <json>` — emit machine-parseable JSON.
+- `--output-format json`&mdash;emit machine-parseable JSON.
 
 **Example:**
 
 ```bash
-$ dr pipeline get 683c2a1b4f8e1a2b3c4d5e6f
+dr pipeline get 683c2a1b4f8e1a2b3c4d5e6f
 ID:          683c2a1b4f8e1a2b3c4d5e6f
 Name:        confluence_to_vdb
 Mode:        draft
@@ -199,7 +199,7 @@ Versions (3):
 ```
 
 If the pipeline doesn't exist, `get` prints
-`No pipeline found with id: <id>` and exits 0.
+`No pipeline found with id: PIPELINE_ID` and exits 0.
 
 ### `update`
 
@@ -207,8 +207,8 @@ Re-upload a Python file to update a draft pipeline. A new version is
 appended.
 
 ```bash
-dr pipeline update <pipeline-id> <file> [flags]
-dr pipeline update <pipeline-id> --from-file=<file> [flags]
+dr pipeline update PIPELINE_ID FILE [flags]
+dr pipeline update PIPELINE_ID --from-file=FILE [flags]
 ```
 
 **Constraints:**
@@ -219,19 +219,19 @@ dr pipeline update <pipeline-id> --from-file=<file> [flags]
 
 **Flags:**
 
-- `--from-file <path>` — alternative to the positional file argument.
-- `--output-format <json>` — emit machine-parseable JSON.
+- `--from-file FILE_PATH`&mdash;alternative to the positional file argument.
+- `--output-format json`&mdash;emit machine-parseable JSON.
 
 ### `delete`
 
 Delete a pipeline and all of its versions.
 
 ```bash
-dr pipeline delete <pipeline-id>
+dr pipeline delete PIPELINE_ID
 ```
 
 If the pipeline doesn't exist, `delete` prints
-`No pipeline found with id: <id>` and exits 0.
+`No pipeline found with id: PIPELINE_ID` and exits 0.
 
 ### `lock`
 
@@ -239,20 +239,20 @@ Promote a draft pipeline to locked mode. Once locked, the pipeline can
 no longer be updated.
 
 ```bash
-dr pipeline lock <pipeline-id> [flags]
+dr pipeline lock PIPELINE_ID [flags]
 ```
 
 **Flags:**
 
-- `--output-format <json>` — emit machine-parseable JSON.
+- `--output-format json`&mdash;emit machine-parseable JSON.
 
 ### `version`
 
 Read-only access to pipeline versions.
 
 ```bash
-dr pipeline version list --pipeline <id> [--offset N] [--limit N] [--output-format json]
-dr pipeline version get  --pipeline <id> <version-id>     [--output-format json]
+dr pipeline version list --pipeline PIPELINE_ID [--offset N] [--limit N] [--output-format json]
+dr pipeline version get  --pipeline PIPELINE_ID VERSION_ID     [--output-format json]
 ```
 
 ### `graph`
@@ -262,9 +262,9 @@ The human table includes a **TASK ID** column showing the stable identifier for 
 task node (populated once CMPT-6040 is deployed; `—` for legacy pipelines).
 
 ```bash
-dr pipeline graph --pipeline <id>                       # draft graph
-dr pipeline graph --pipeline <id> --version=N           # locked-version graph
-dr pipeline graph --pipeline <id> --output-format json  # includes taskId on each node
+dr pipeline graph --pipeline PIPELINE_ID                       # draft graph
+dr pipeline graph --pipeline PIPELINE_ID --version=N           # locked-version graph
+dr pipeline graph --pipeline PIPELINE_ID --output-format json  # includes taskId on each node
 ```
 
 ## Shared flags
@@ -308,30 +308,30 @@ export DATAROBOT_CLI_SKIP_AUTH=true
 ```bash
 # Register a draft, append a version, lock it, then delete it
 dr pipeline create ./my_pipeline.py --description "Initial draft"
-dr pipeline update <pipeline-id> ./my_pipeline.py
-dr pipeline lock   <pipeline-id>
-dr pipeline delete <pipeline-id>
+dr pipeline update PIPELINE_ID ./my_pipeline.py
+dr pipeline lock   PIPELINE_ID
+dr pipeline delete PIPELINE_ID
 ```
 
 ### Inspect versions and graph
 
 ```bash
-dr pipeline version list --pipeline <pipeline-id>
-dr pipeline version get  --pipeline <pipeline-id> 2
-dr pipeline graph        --pipeline <pipeline-id> --version=2 --output-format json
+dr pipeline version list --pipeline PIPELINE_ID
+dr pipeline version get  --pipeline PIPELINE_ID 2
+dr pipeline graph        --pipeline PIPELINE_ID --version=2 --output-format json
 ```
 
 ### Inspect a task
 
 ```bash
 # 1. Find task IDs via the graph (TASK ID column)
-dr pipeline graph --pipeline <pipeline-id>
+dr pipeline graph --pipeline PIPELINE_ID
 
 # 2. View source + signature for a draft task
-dr pipeline task get --pipeline <pipeline-id> <task-id>
+dr pipeline task get --pipeline PIPELINE_ID TASK_ID
 
 # 3. View the same task on a locked version (includes input payload)
-dr pipeline task get --pipeline <pipeline-id> --version=2 <task-id>
+dr pipeline task get --pipeline PIPELINE_ID --version=2 TASK_ID
 ```
 
 ### `input`
@@ -339,12 +339,12 @@ dr pipeline task get --pipeline <pipeline-id> --version=2 <task-id>
 Manage JSON payloads that drive a run.
 
 ```bash
-dr pipeline input create --pipeline <id> <payload-file>              # draft scope
-dr pipeline input create --pipeline <id> --version=N <payload-file>  # locked scope
-dr pipeline input list   --pipeline <id> [--scope|--version] [--offset N] [--limit N]
-dr pipeline input get    --pipeline <id> <input-id>      [--scope|--version]
-dr pipeline input update --pipeline <id> <input-id> <payload-file>   # draft only
-dr pipeline input delete --pipeline <id> <input-id>      [--scope|--version]
+dr pipeline input create --pipeline PIPELINE_ID PAYLOAD_FILE              # draft scope
+dr pipeline input create --pipeline PIPELINE_ID --version=N PAYLOAD_FILE  # locked scope
+dr pipeline input list   --pipeline PIPELINE_ID [--scope|--version] [--offset N] [--limit N]
+dr pipeline input get    --pipeline PIPELINE_ID INPUT_ID      [--scope|--version]
+dr pipeline input update --pipeline PIPELINE_ID INPUT_ID PAYLOAD_FILE   # draft only
+dr pipeline input delete --pipeline PIPELINE_ID INPUT_ID      [--scope|--version]
 ```
 
 The payload file must contain a JSON object. The CLI wraps it in `{"payload": …}` before sending.
@@ -355,12 +355,12 @@ Manage recurring (cron) runs on locked versions only. Both `--pipeline` and `--v
 required for every verb.
 
 ```bash
-dr pipeline schedule create --pipeline <id> --version=N \
-    --cron "0 * * * *" --input <input-id> [--timezone UTC]
-dr pipeline schedule list   --pipeline <id> --version=N [--offset N] [--limit N]
-dr pipeline schedule get    --pipeline <id> --version=N <schedule-id>
-dr pipeline schedule update --pipeline <id> --version=N <schedule-id> --cron "*/15 * * * *"
-dr pipeline schedule delete --pipeline <id> --version=N <schedule-id>
+dr pipeline schedule create --pipeline PIPELINE_ID --version=N \
+    --cron "0 * * * *" --input INPUT_ID [--timezone UTC]
+dr pipeline schedule list   --pipeline PIPELINE_ID --version=N [--offset N] [--limit N]
+dr pipeline schedule get    --pipeline PIPELINE_ID --version=N SCHEDULE_ID
+dr pipeline schedule update --pipeline PIPELINE_ID --version=N SCHEDULE_ID --cron "*/15 * * * *"
+dr pipeline schedule delete --pipeline PIPELINE_ID --version=N SCHEDULE_ID
 ```
 
 `schedule update` requires at least one of `--cron` or `--timezone`.
@@ -369,31 +369,31 @@ dr pipeline schedule delete --pipeline <id> --version=N <schedule-id>
 Trigger, inspect, and cancel pipeline executions.
 
 ```bash
-dr pipeline run create --pipeline <id> --input <input-id>              # draft
-dr pipeline run create --pipeline <id> --version=N --input <input-id>  # locked
-dr pipeline run list   --pipeline <id> [--scope|--version]
-dr pipeline run get    --pipeline <id> <run-id> [--scope|--version]
-dr pipeline run status --pipeline <id> <run-id> [--scope|--version]
-dr pipeline run cancel --pipeline <id> <run-id> [--scope|--version]
+dr pipeline run create --pipeline PIPELINE_ID --input INPUT_ID              # draft
+dr pipeline run create --pipeline PIPELINE_ID --version=N --input INPUT_ID  # locked
+dr pipeline run list   --pipeline PIPELINE_ID [--scope|--version]
+dr pipeline run get    --pipeline PIPELINE_ID RUN_ID [--scope|--version]
+dr pipeline run status --pipeline PIPELINE_ID RUN_ID [--scope|--version]
+dr pipeline run cancel --pipeline PIPELINE_ID RUN_ID [--scope|--version]
 ```
 
-`run status` is a lighter-weight call intended for polling — returns just
+`run status` is a lighter-weight call intended for polling&mdash;returns just
 the run ID, status, and Covalent dispatch ID.
 
 `run cancel` returns `409 Conflict` if the run is already terminal.
 
 ### `image`
 
-Manage pipeline execution images — named, immutable-versioned bags of pip packages
+Manage pipeline execution images&mdash;named, immutable-versioned bags of pip packages
 that pipelines can be built against. Each `update` appends a new version; individual
 older versions can be removed with `image version delete`.
 
 ```bash
-dr pipeline image create --name <name> --package <pkg> [--package <pkg> …] [--description <text>] [--output-format json]
+dr pipeline image create --name NAME --package PACKAGE [--package PACKAGE …] [--description TEXT] [--output-format json]
 dr pipeline image list   [--offset N] [--limit N] [--output-format json]
-dr pipeline image update <image-id> --package <pkg> [--package <pkg> …] [--output-format json]
-dr pipeline image delete <image-id>
-dr pipeline image version delete --image <image-id> <version>
+dr pipeline image update IMAGE_ID --package PACKAGE [--package PACKAGE …] [--output-format json]
+dr pipeline image delete IMAGE_ID
+dr pipeline image version delete --image IMAGE_ID VERSION
 ```
 
 `image create` registers a new image; `image update` appends a new
@@ -409,30 +409,27 @@ column of `dr pipeline graph` and are preserved across re-uploads and across the
 draft-to-locked transition.
 
 ```bash
-dr pipeline task get --pipeline <id> <task-id>                   # draft — source + params, inputs=null
-dr pipeline task get --pipeline <id> --version=N <task-id>       # locked — source + params + latest VALID input payload
-dr pipeline task get --pipeline <id> <task-id> --output-format json
+dr pipeline task get --pipeline PIPELINE_ID TASK_ID                   # draft&mdash;source + params, inputs=null
+dr pipeline task get --pipeline PIPELINE_ID --version=N TASK_ID       # locked&mdash;source + params + latest VALID input payload
+dr pipeline task get --pipeline PIPELINE_ID TASK_ID --output-format json
 ```
 
 `task get` returns the task's Python source string, its `@task` function signature
-parameters (name + optional type annotation), and — for locked versions — the full
+parameters (name + optional type annotation), and&mdash;for locked versions&mdash;the full
 payload from the latest `VALID` `PipelineInput` record for that version.
 
-If the task ID is not found, the command prints `Task not found: <task-id>` and exits 0.
+If the task ID is not found, the command prints `Task not found: TASK_ID` and exits 0.
 
 ## Error handling
 
 | Status | Cause                                                                          |
 |--------|--------------------------------------------------------------------------------|
 | `400`  | Invalid Python file or mismatched pipeline name.                               |
-| `404`  | The provided `<pipeline-id>`, version, or run does not exist.                  |
+| `404`  | The provided `PIPELINE_ID`, version, or run does not exist.                  |
 | `409`  | Tried to update a `locked` pipeline, or cancel an already-terminal run.        |
 
 ## See also
 
-- [Authentication](auth.md) — how `dr auth login` and `--skip-auth`
-  interact.
-- [Configuration](../user-guide/configuration.md) — config file and
-  environment-variable precedence.
-- [Feature gates](../development/feature-gates.md) — flipping
-  `DATAROBOT_CLI_FEATURE_PIPELINE` on and off.
+- [Authentication](auth.md)&mdash;how `dr auth login` and `--skip-auth` interact.
+- [Configuration](../user-guide/configuration.md)&mdash;config file and environment-variable precedence.
+- [Feature gates](../development/feature-gates.md)&mdash;flipping `DATAROBOT_CLI_FEATURE_PIPELINE` on and off.

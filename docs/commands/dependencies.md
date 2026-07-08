@@ -26,11 +26,11 @@ dr dependencies check
 
 ```bash
 # All dependencies satisfied
-$ dr dependencies check
+dr dependencies check
 ✅ All dependencies are already up to date.
 
 # Missing or wrong-version tools
-$ dr dependencies check
+dr dependencies check
  ❌ Missing required tools:
 
 	- uv  (https://docs.astral.sh/uv/getting-started/installation/)
@@ -79,7 +79,7 @@ dr dependencies install
 **Example — interactive:**
 
 ```bash
-$ dr dependencies install
+dr dependencies install
 
  ❌ Missing required tools:
 
@@ -92,15 +92,15 @@ Installing uv...
 **Example — non-interactive:**
 
 ```bash
-$ dr dependencies install --yes
+dr dependencies install --yes
 # or
-$ DATAROBOT_CLI_NON_INTERACTIVE=true dr dependencies install
+DATAROBOT_CLI_NON_INTERACTIVE=true dr dependencies install
 ```
 
 **Example — nothing to install:**
 
 ```bash
-$ dr dependencies install
+dr dependencies install
 ✅ All dependencies are already up to date.
 ```
 

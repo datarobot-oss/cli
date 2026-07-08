@@ -62,15 +62,6 @@ dr self completion bash | sudo tee /etc/bash_completion.d/dr
 source ~/.bashrc
 ```
 
-```zsh
-# If shell completion is not already enabled in your environment you will need
-# to enable it.  You can execute the following command once:
-# echo "autoload -U compinit; compinit" >> ~/.zshrc
-
-  # To load completions for each session, execute the following command once:
-  $ dr self completion zsh > "${fpath[1]}/_dr"
-```
-
 #### macOS
 
 The default shell in macOS is `zsh`. Shell completions for `zsh`

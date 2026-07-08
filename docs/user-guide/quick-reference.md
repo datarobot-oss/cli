@@ -206,6 +206,6 @@ dr --debug [command]
 
 ## See also
 
-- [Full command reference](../commands/README.md) - Complete command documentation
-- [User guide](README.md) - Detailed usage guides
-- [Quick start](../../README.md#quick-start) - Step-by-step setup instructions
+- [Full command reference](../commands/README.md)&mdash;complete command documentation.
+- [User guide](README.md)&mdash;detailed usage guides.
+- [Quick start](../../README.md#quick-start)&mdash;step-by-step setup instructions.

@@ -19,8 +19,8 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases. 
 
 Versioning follows [semantic versioning](https://semver.org/) conventions (SemVer).
 
-- **MAJOR.MINOR.PATCH** (e.g., `v1.2.3`)
-- **Pre-releases**: `v1.2.3-rc.1`, `v1.2.3-beta.1`, `v1.2.3-alpha.1`
+- **MAJOR.MINOR.PATCH** (e.g., `v1.2.3`).
+- **Pre-releases**&mdash;`v1.2.3-rc.1`, `v1.2.3-beta.1`, `v1.2.3-alpha.1`.
 
 ### Version guidelines
 
@@ -192,11 +192,11 @@ git push upstream :refs/tags/v0.2.0
 
 The release process is configured in `goreleaser.yaml`. Key configurations:
 
-- **Builds**: Defines target platforms and architectures.
-- **Archives**: Creates distribution archives.
-- **Checksums**: Generates checksum files.
-- **Release notes**: Automatic generation from commits.
-- **Artifacts**: Files to include in the release.
+- **Builds**&mdash;defines target platforms and architectures.
+- **Archives**&mdash;creates distribution archives.
+- **Checksums**&mdash;generates checksum files.
+- **Release notes**&mdash;automatic generation from commits.
+- **Artifacts**&mdash;files to include in the release.
 
 To validate the configuration:
 
@@ -299,6 +299,6 @@ git push upstream v0.2.0
 
 ## Next steps
 
-- [Setup Guide](setup.md): Outlines development environment setup.
-- [Building Guide](building.md): Provides detailed build information.
+- [Setup guide](setup.md)&mdash;outlines development environment setup.
+- [Building guide](building.md)&mdash;provides detailed build information.
 - [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;contribution guidelines.

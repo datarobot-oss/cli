@@ -575,9 +575,9 @@ This means your installed Go version doesn't match the version specified in `go.
 
 **To resolve:**
 
-- **Upgrade Go** to match `go.mod`: `brew upgrade go` (macOS)
-- **Or downgrade `go.mod`**: `go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version)
-- **Or force the downloaded toolchain**: `export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`)
+- **Upgrade Go** to match `go.mod`&mdash;`brew upgrade go` (macOS).
+- **Or downgrade `go.mod`**&mdash;`go mod edit -go=1.X.Z` (where `1.X.Z` is your installed version).
+- **Or force the downloaded toolchain**&mdash;`export GOTOOLCHAIN=go1.X.Y` (where `1.X.Y` is the version in `go.mod`).
 
 ### Run smoke tests
 

@@ -258,6 +258,6 @@ Generated files and artifacts:
 
 ## Next steps
 
-- [Setup guide](setup.md): setting up your development environment
-- [Build guide](building.md): Detailed build information and architecture
+- [Setup guide](setup.md)&mdash;setting up your development environment.
+- [Build guide](building.md)&mdash;detailed build information and architecture.
 - [Contributing guide](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;contribution guidelines.

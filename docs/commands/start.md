@@ -280,7 +280,7 @@ The repository check runs before start-command detection. If the current directo
 If you're not in a DataRobot repository, the command automatically launches the template setup wizard:
 
 ```bash
-$ dr start
+dr start
 # Automatically launches: dr templates setup
 ```
 
@@ -322,7 +322,7 @@ If a quickstart script fails, the error is displayed and the command exits. Chec
 ### ❌ When not to use
 
 - **Making configuration changes**&mdash;use `dr dotenv` to modify environment variables.
-- **Running specific tasks**&mdash;use `dr run <task>` for targeted task execution.
+- **Running specific tasks**&mdash;use `dr run TASK` for targeted task execution.
 
 ## See also
 

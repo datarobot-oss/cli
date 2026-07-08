@@ -421,7 +421,7 @@ dr self plugin package ./my-plugin -o dist/ --index-output /tmp/my-plugin.json
 # ```
 ```
 
-#### Adding to Plugin Registry
+#### Adding to plugin registry
 
 Use `dr self plugin add` to add the packaged version to your plugin registry.
 
