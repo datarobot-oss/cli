@@ -64,7 +64,7 @@ Example:
 
 			result, err := pipeline.GetPipelineSource(flags.PipelineID, scope, version)
 			if err != nil {
-				return handleSourceError(err, flags.PipelineID)
+				return handleSourceError(err, flags.PipelineID, outputFormat)
 			}
 
 			if outputFormat == outputformat.OutputFormatJSON {
@@ -92,10 +92,14 @@ Example:
 	return cmd
 }
 
-func handleSourceError(err error, pipelineID string) error {
+func handleSourceError(err error, pipelineID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No source available for pipeline: " + pipelineID))
 
 		return nil
