@@ -144,6 +144,12 @@
       "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
       "versions": [
         {
+          "version": "1.3.1",
+          "url": "xp/xp-1.3.1.tar.xz",
+          "sha256": "a7fdfa5e2d03fd143a7059a2a1e58a4b2b5f40b92b1b2dd090b3118e32456484",
+          "releaseDate": "2026-07-08"
+        },
+        {
           "version": "1.3.0",
           "url": "xp/xp-1.3.0.tar.xz",
           "sha256": "9f9d2b8e106b0d951347f8b96efce2ace9c15e52601232c60da1093c979e7a72",
