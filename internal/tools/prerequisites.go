@@ -30,19 +30,19 @@ import (
 
 // InstallCommands holds platform-specific install commands for a dependency.
 type InstallCommands struct {
-	MacOS   string `yaml:"macos"`
-	Linux   string `yaml:"linux"`
+	MacOS   string `yaml:"macos"   validate:"required"`
+	Linux   string `yaml:"linux"   validate:"required"`
 	Windows string `yaml:"windows"`
 }
 
 // Prerequisite represents a required tool
 type Prerequisite struct {
 	Key            string
-	Name           string          `yaml:"name"`
-	MinimumVersion string          `yaml:"minimum-version"`
-	Command        string          `yaml:"command"`
-	URL            string          `yaml:"url"`
-	Install        InstallCommands `yaml:"install"`
+	Name           string          `yaml:"name"            validate:"required"`
+	MinimumVersion string          `yaml:"minimum-version" validate:"required,semver"`
+	Command        string          `yaml:"command"         validate:"required"`
+	URL            string          `yaml:"url"             validate:"required"`
+	Install        InstallCommands `yaml:"install"         validate:"required"`
 }
 
 // PlatformInstallCommand returns the install command for the current OS.
