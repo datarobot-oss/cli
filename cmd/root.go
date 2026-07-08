@@ -172,6 +172,17 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			return nil
 		},
+		// RootCmd needs its own RunE (to show help on a bare "dr" invocation, after
+		// the first-run animation), which disqualifies it from setUnknownArgGuards'
+		// generic walk (that skips any command with a pre-existing RunE). So it gets
+		// the same "unknown command" Args validator explicitly here.
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return nil
+			}
+
+			return fmt.Errorf("unknown command: %s", args[0])
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
