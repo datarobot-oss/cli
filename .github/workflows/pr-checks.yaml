@@ -281,11 +281,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Runner image pre-seeds these MS apt sources; we don't use them and they're
-          # a source of flaky/noisy apt-get update failures (packages.microsoft.com
-          # sporadically serves a corrupted InRelease file). Removed for that reason only —
-          # if we ever actually need an MS package repo, re-add it explicitly for that job.
-          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list
+          # Runner image pre-seeds MS apt sources (azure-cli/microsoft-prod); we don't use
+          # them and they're a source of flaky/noisy apt-get update failures
+          # (packages.microsoft.com sporadically serves a corrupted InRelease file).
+          # Matching by content allows us to manage both legacy.list and deb822 .sources files.
+          # NOTE: if we ever actually need an MS package repo, re-add it explicitly for that job.
+          # NOTE: or true is used to avoid failing the step if no files are found to delete.
+          sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f || true
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
 
