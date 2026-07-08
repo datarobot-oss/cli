@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Run Trivy vulnerability scanner
+        id: trivy_scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 #v0.36.0
         with:
           scan-type: 'fs'
@@ -42,6 +43,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Convert results to SARIF
+        id: trivy_convert
         # trivy is in PATH after the action step above.
         # if: always() mirrors the upload step — ensures SARIF conversion is attempted even if the
         # scan step fails, so the upload step can still run (and report what it can).
@@ -49,13 +51,82 @@ jobs:
         run: trivy convert --format sarif --output trivy-results.sarif trivy-results.json
 
       - name: Upload Trivy results to GitHub Security tab
+        id: trivy_upload
         uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
 
       - name: Display vulnerability table
+        if: always()
         run: trivy convert --format table trivy-results.json
+
+      - name: Publish Trivy run summary
+        if: always()
+        env:
+          TRIVY_SCAN_OUTCOME: ${{ steps.trivy_scan.outcome }}
+          TRIVY_CONVERT_OUTCOME: ${{ steps.trivy_convert.outcome }}
+          TRIVY_UPLOAD_OUTCOME: ${{ steps.trivy_upload.outcome }}
+        run: |
+          {
+            echo "## Trivy scan summary"
+            echo ""
+            echo "| Stage | Outcome |"
+            echo "| --- | --- |"
+            echo "| Scan | \`${TRIVY_SCAN_OUTCOME}\` |"
+            echo "| Convert to SARIF | \`${TRIVY_CONVERT_OUTCOME}\` |"
+            echo "| Upload SARIF | \`${TRIVY_UPLOAD_OUTCOME}\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f trivy-results.json ]; then
+            total="$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy-results.json)"
+            critical="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json)"
+            high="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json)"
+            medium="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM")] | length' trivy-results.json)"
+
+            {
+              echo "### Vulnerability counts"
+              echo ""
+              echo "| Severity | Count |"
+              echo "| --- | --- |"
+              echo "| CRITICAL | ${critical} |"
+              echo "| HIGH | ${high} |"
+              echo "| MEDIUM | ${medium} |"
+              echo "| Total | ${total} |"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::trivy-results.json was not created. The scan likely failed before producing output."
+            echo "- trivy-results.json: missing" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Annotate Trivy failure reason
+        if: failure()
+        env:
+          TRIVY_SCAN_OUTCOME: ${{ steps.trivy_scan.outcome }}
+          TRIVY_CONVERT_OUTCOME: ${{ steps.trivy_convert.outcome }}
+          TRIVY_UPLOAD_OUTCOME: ${{ steps.trivy_upload.outcome }}
+        run: |
+          if [ "${TRIVY_SCAN_OUTCOME}" = "failure" ]; then
+            echo "::error title=Trivy scan failed::The 'Run Trivy vulnerability scanner' step failed. Check that step logs for the underlying scanner error."
+          fi
+
+          if [ "${TRIVY_CONVERT_OUTCOME}" = "failure" ]; then
+            echo "::error title=SARIF conversion failed::The JSON-to-SARIF conversion failed. This often happens when trivy-results.json is missing or malformed."
+          fi
+
+          if [ "${TRIVY_UPLOAD_OUTCOME}" = "failure" ]; then
+            echo "::error title=SARIF upload failed::Uploading trivy-results.sarif to GitHub Security failed. Check upload step logs for API or SARIF validation details."
+          fi
+
+          if [ ! -f trivy-results.json ]; then
+            echo "::error title=Missing Trivy JSON output::Expected trivy-results.json was not found in the workspace."
+          fi
+
+          if [ ! -f trivy-results.sarif ]; then
+            echo "::error title=Missing Trivy SARIF output::Expected trivy-results.sarif was not found in the workspace."
+          fi
 
 # Skip this scan for now due to false positives and performance issues
   # gosec-scan:
