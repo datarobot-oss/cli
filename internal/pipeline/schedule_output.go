@@ -35,6 +35,8 @@ type scheduleJSON struct {
 	ScheduleID     string `json:"schedule_id"`
 	PipelineID     string `json:"pipeline_id"`
 	Version        int    `json:"version"`
+	ImageID        string `json:"image_id"`
+	ImageVersion   int    `json:"image_version"`
 	CronExpression string `json:"cron_expression"`
 	Timezone       string `json:"timezone"`
 	Status         string `json:"status"`
@@ -47,6 +49,8 @@ func toScheduleJSON(s Schedule) scheduleJSON {
 		ScheduleID:     s.ScheduleID,
 		PipelineID:     s.PipelineID,
 		Version:        s.Version,
+		ImageID:        s.ImageID,
+		ImageVersion:   s.ImageVersion,
 		CronExpression: s.CronExpression,
 		Timezone:       s.Timezone,
 		Status:         string(s.Status),
@@ -96,6 +100,8 @@ func PrintScheduleHuman(s Schedule) {
 	fmt.Fprintf(w, "Schedule ID:\t%s\n", s.ScheduleID)
 	fmt.Fprintf(w, "Pipeline ID:\t%s\n", s.PipelineID)
 	fmt.Fprintf(w, "Version:\tv%d\n", s.Version)
+	fmt.Fprintf(w, "Image ID:\t%s\n", s.ImageID)
+	fmt.Fprintf(w, "Image Version:\tv%d\n", s.ImageVersion)
 	fmt.Fprintf(w, "Cron:\t%s\n", s.CronExpression)
 	fmt.Fprintf(w, "Timezone:\t%s\n", s.Timezone)
 	fmt.Fprintf(w, "Status:\t%s\n", string(s.Status))
@@ -135,7 +141,7 @@ func PrintScheduleListHuman(items []Schedule) {
 
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
-	headers := []string{"SCHEDULE ID", "VERSION", "CRON", "TIMEZONE", "STATUS", "UPDATED"}
+	headers := []string{"SCHEDULE ID", "VERSION", "IMAGE ID", "IMG VER", "CRON", "TIMEZONE", "STATUS", "UPDATED"}
 
 	updatedCol := slices.Index(headers, "UPDATED")
 
@@ -159,6 +165,8 @@ func PrintScheduleListHuman(items []Schedule) {
 		t.Row(
 			s.ScheduleID,
 			fmt.Sprintf("v%d", s.Version),
+			s.ImageID,
+			fmt.Sprintf("v%d", s.ImageVersion),
 			s.CronExpression,
 			s.Timezone,
 			string(s.Status),

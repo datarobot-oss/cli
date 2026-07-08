@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package create
+package get
 
 import (
 	"io"
@@ -34,40 +34,55 @@ func runCmd(t *testing.T, args ...string) error {
 	return cmd.Execute()
 }
 
-func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--image", "img-1", "--output-format", "yaml")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-}
-
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "--input", "in-1", "--image", "img-1")
+	err := runCmd(t, "--run", "d-1", "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RejectsMissingInput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--image", "img-1")
+func TestCmd_RejectsMissingRun(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "input")
+	assert.Contains(t, err.Error(), "run")
 }
 
-func TestCmd_RejectsMissingImage(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--input", "in-1")
+func TestCmd_RequiresPositionalArg(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "image")
 }
 
-func TestCmd_RejectsBadScopeCombo(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--image", "img-1", "--scope", "draft", "--version", "2")
+func TestCmd_RejectsNonIntegerTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1", "notanumber")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "draft cannot be combined")
+	assert.Contains(t, err.Error(), "invalid task-id")
+}
+
+func TestCmd_RejectsZeroTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1", "0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid task-id")
+}
+
+func TestParseTaskID_Valid(t *testing.T) {
+	id, err := parseTaskID("3")
+	require.NoError(t, err)
+	assert.Equal(t, 3, id)
+}
+
+func TestParseTaskID_RejectsZero(t *testing.T) {
+	_, err := parseTaskID("0")
+	require.Error(t, err)
+}
+
+func TestParseTaskID_RejectsNonInteger(t *testing.T) {
+	_, err := parseTaskID("abc")
+	require.Error(t, err)
 }
 
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"pipeline", "scope", "version", "input", "image", "output-format"} {
+	for _, name := range []string{"pipeline", "run", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }

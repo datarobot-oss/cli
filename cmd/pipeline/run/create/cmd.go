@@ -69,7 +69,8 @@ Example:
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to trigger the run with")
 	_ = cmd.MarkFlagRequired("input")
-	cmd.Flags().StringVar(&imageID, "image", "", "Override the pipeline's linked execution image for this run")
+	cmd.Flags().StringVar(&imageID, "image", "", "Execution image ID for this run")
+	_ = cmd.MarkFlagRequired("image")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

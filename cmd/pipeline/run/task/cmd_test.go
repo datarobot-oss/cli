@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package run
+package task
 
 import (
 	"testing"
@@ -24,12 +24,10 @@ func TestCmd_RegistersAllVerbs(t *testing.T) {
 	cmd := Cmd()
 
 	want := map[string]bool{
-		"create": false,
 		"list":   false,
 		"get":    false,
-		"status": false,
-		"cancel": false,
-		"task":   false,
+		"logs":   false,
+		"result": false,
 	}
 
 	for _, sub := range cmd.Commands() {

@@ -33,6 +33,7 @@ import (
 // Run lifecycle states (mirrors PipelineDispatchStatus on the wire).
 const (
 	RunStatusPending   = "PENDING"
+	RunStatusPreparing = "PREPARING"
 	RunStatusRunning   = "RUNNING"
 	RunStatusCompleted = "COMPLETED"
 	RunStatusFailed    = "FAILED"

@@ -27,6 +27,7 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		mode         string
+		search       string
 		offset       int
 		limit        int
 		outputFormat outputformat.OutputFormat
@@ -42,6 +43,7 @@ By default, output is human-readable. Use --output-format json for machine-parse
 Example:
   dr pipeline list
   dr pipeline list --mode draft
+  dr pipeline list --search "my-pipeline"
   dr pipeline list --offset 0 --limit 50 --output-format json`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
@@ -53,7 +55,7 @@ Example:
 				return fmt.Errorf("invalid mode: %s (supported: draft, locked)", mode)
 			}
 
-			list, err := pipeline.ListPipelines(mode, offset, limit)
+			list, err := pipeline.ListPipelines(mode, search, offset, limit)
 			if err != nil {
 				return err
 			}
@@ -65,6 +67,7 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
+	cmd.Flags().StringVar(&search, "search", "", "Filter pipelines by name substring")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 50, "Pagination limit (1-200)")
 

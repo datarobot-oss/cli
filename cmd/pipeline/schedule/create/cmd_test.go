@@ -38,6 +38,7 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 	err := runCmd(t,
 		"--pipeline", "p", "--version", "2",
 		"--cron", "0 * * * *", "--input", "in-1",
+		"--image", "img-1", "--image-version", "1",
 		"--output-format", "yaml",
 	)
 	require.Error(t, err)
@@ -45,33 +46,63 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "--version", "2", "--cron", "0 * * * *", "--input", "in-1")
+	err := runCmd(t,
+		"--version", "2", "--cron", "0 * * * *",
+		"--input", "in-1", "--image", "img-1", "--image-version", "1",
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsMissingVersion(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--cron", "0 * * * *", "--input", "in-1")
+	err := runCmd(t,
+		"--pipeline", "p", "--cron", "0 * * * *",
+		"--input", "in-1", "--image", "img-1", "--image-version", "1",
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "version")
 }
 
 func TestCmd_RejectsMissingCron(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2", "--input", "in-1")
+	err := runCmd(t,
+		"--pipeline", "p", "--version", "2",
+		"--input", "in-1", "--image", "img-1", "--image-version", "1",
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cron")
 }
 
 func TestCmd_RejectsMissingInput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2", "--cron", "0 * * * *")
+	err := runCmd(t,
+		"--pipeline", "p", "--version", "2",
+		"--cron", "0 * * * *", "--image", "img-1", "--image-version", "1",
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "input")
+}
+
+func TestCmd_RejectsMissingImage(t *testing.T) {
+	err := runCmd(t,
+		"--pipeline", "p", "--version", "2",
+		"--cron", "0 * * * *", "--input", "in-1", "--image-version", "1",
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "image")
+}
+
+func TestCmd_RejectsMissingImageVersion(t *testing.T) {
+	err := runCmd(t,
+		"--pipeline", "p", "--version", "2",
+		"--cron", "0 * * * *", "--input", "in-1", "--image", "img-1",
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "image-version")
 }
 
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"pipeline", "version", "cron", "input", "timezone", "output-format"} {
+	for _, name := range []string{"pipeline", "version", "cron", "input", "image", "image-version", "timezone", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }

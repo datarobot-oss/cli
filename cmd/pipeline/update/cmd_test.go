@@ -93,7 +93,7 @@ func TestCmd_RequiresPipelineID(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCmd_RequiresFilePath(t *testing.T) {
+func TestCmd_RequiresAtLeastOneChange(t *testing.T) {
 	cmd := Cmd()
 	cmd.SetArgs([]string{"some-id"})
 	cmd.SetOut(io.Discard)
@@ -102,7 +102,7 @@ func TestCmd_RequiresFilePath(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "a file path is required")
+	assert.Contains(t, err.Error(), "at least one of")
 }
 
 func TestCmd_RejectsBothPositionalAndFromFile(t *testing.T) {
@@ -132,9 +132,36 @@ func TestCmd_RejectsInvalidOutput(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"output-format", "from-file"} {
+	for _, name := range []string{"output-format", "from-file", "name", "description", "image"} {
 		flag := cmd.Flags().Lookup(name)
 		assert.NotNilf(t, flag, "expected --%s flag to be registered", name)
+	}
+}
+
+func TestCmd_AcceptsNameOnlyUpdate(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{"some-id", "--name", "New Name"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	// Will fail trying to reach the API, but should not fail validation.
+	err := cmd.Execute()
+	if err != nil {
+		assert.NotContains(t, err.Error(), "at least one of")
+	}
+}
+
+func TestCmd_AcceptsDescriptionOnlyUpdate(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{"some-id", "--description", "New desc"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	err := cmd.Execute()
+	if err != nil {
+		assert.NotContains(t, err.Error(), "at least one of")
 	}
 }
 

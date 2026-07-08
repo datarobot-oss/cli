@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package del
+package result
 
 import (
 	"io"
@@ -35,22 +35,38 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "s-1")
+	err := runCmd(t, "--run", "d-1", "1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RequiresPositional(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p")
+func TestCmd_RejectsMissingRun(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "1")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "run")
+}
+
+func TestCmd_RequiresPositionalArg(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1")
+	require.Error(t, err)
+}
+
+func TestCmd_RejectsNonIntegerTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1", "notanumber")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid task-id")
+}
+
+func TestCmd_RejectsZeroTaskID(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1", "0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid task-id")
 }
 
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
-	assert.NotNil(t, cmd.Flags().Lookup("pipeline"), "expected --pipeline flag")
-	assert.Nil(t, cmd.Flags().Lookup("version"), "unexpected --version flag after removal")
-}
 
-func TestCmd_Name(t *testing.T) {
-	assert.Equal(t, "delete", Cmd().Name())
+	for _, name := range []string{"pipeline", "run", "output-format"} {
+		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
+	}
 }

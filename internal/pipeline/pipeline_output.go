@@ -260,6 +260,11 @@ func printCreateResponseHuman(result CreateResponse) {
 
 	fmt.Fprintf(w, "Pipeline ID:\t%s\n", result.PipelineID)
 	fmt.Fprintf(w, "Name:\t%s\n", result.Name)
+
+	if result.Description != nil && *result.Description != "" {
+		fmt.Fprintf(w, "Description:\t%s\n", *result.Description)
+	}
+
 	fmt.Fprintf(w, "Version:\t%d\n", result.Version)
 	fmt.Fprintf(w, "Status:\t%s\n", result.Status)
 	fmt.Fprintf(w, "Mode:\t%s\n", result.Mode)

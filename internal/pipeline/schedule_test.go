@@ -24,74 +24,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateSchedule_LockedOnlyURLAndBody(t *testing.T) {
+func TestCreateSchedule_URLAndBody(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/schedules", r.URL.Path)
 
 		var body ScheduleCreateRequest
 
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, "0 * * * *", body.CronExpression)
+		assert.Equal(t, 2, body.PipelineVersionID)
 		assert.Equal(t, "in-1", body.PipelineInputID)
+		assert.Equal(t, "img-1", body.ImageID)
+		assert.Equal(t, 3, body.ImageVersion)
 		assert.Equal(t, "America/Los_Angeles", body.Timezone)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 * * * *","timezone":"America/Los_Angeles","status":"ACTIVE"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"imageId":"img-1","imageVersion":3,"cronExpression":"0 * * * *","timezone":"America/Los_Angeles","status":"ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateSchedule("p-1", 2, ScheduleCreateRequest{
-		CronExpression:  "0 * * * *",
-		PipelineInputID: "in-1",
-		Timezone:        "America/Los_Angeles",
+	got, err := CreateSchedule("p-1", ScheduleCreateRequest{
+		CronExpression:    "0 * * * *",
+		PipelineVersionID: 2,
+		PipelineInputID:   "in-1",
+		ImageID:           "img-1",
+		ImageVersion:      3,
+		Timezone:          "America/Los_Angeles",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "s-1", got.ScheduleID)
 	assert.Equal(t, ScheduleStatusActive, got.Status)
+	assert.Equal(t, "img-1", got.ImageID)
+	assert.Equal(t, 3, got.ImageVersion)
 }
 
 func TestListSchedules_QueryAndDecode(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/schedules", r.URL.Path)
 		assert.Equal(t, "5", r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 0 * * *","timezone":"UTC","status":"ACTIVE"}],"totalCount":1,"count":1}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"s-1","pipelineId":"p-1","version":2,"imageId":"img-1","imageVersion":1,"cronExpression":"0 0 * * *","timezone":"UTC","status":"ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}],"totalCount":1,"count":1}`))
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	items, err := ListSchedules("p-1", 2, 0, 5)
+	items, err := ListSchedules("p-1", 0, 5)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "s-1", items[0].ScheduleID)
+	assert.Equal(t, "img-1", items[0].ImageID)
 }
 
 func TestGetSchedule_TargetsCorrectURL(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules/s-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/schedules/s-1", r.URL.Path)
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"0 * * * *","timezone":"UTC","status":"PAUSED"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"imageId":"img-1","imageVersion":1,"cronExpression":"0 * * * *","timezone":"UTC","status":"PAUSED","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 
 	defer srv.Close()
 
 	installEndpoint(t, srv.URL)
 
-	got, err := GetSchedule("p-1", 2, "s-1")
+	got, err := GetSchedule("p-1", "s-1")
 	require.NoError(t, err)
 	assert.Equal(t, ScheduleStatusPaused, got.Status)
 }
@@ -101,7 +110,7 @@ func TestUpdateSchedule_OmitsUnsuppliedFields(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPatch, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules/s-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/schedules/s-1", r.URL.Path)
 
 		var raw map[string]any
 
@@ -112,7 +121,7 @@ func TestUpdateSchedule_OmitsUnsuppliedFields(t *testing.T) {
 		assert.False(t, hasTZ, "expected timezone to be omitted")
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"cronExpression":"*/15 * * * *","timezone":"UTC","status":"ACTIVE"}`))
+		_, _ = w.Write([]byte(`{"id":"s-1","pipelineId":"p-1","version":2,"imageId":"img-1","imageVersion":1,"cronExpression":"*/15 * * * *","timezone":"UTC","status":"ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 
 	defer srv.Close()
@@ -120,17 +129,17 @@ func TestUpdateSchedule_OmitsUnsuppliedFields(t *testing.T) {
 	installEndpoint(t, srv.URL)
 
 	cron := "*/15 * * * *"
-	got, err := UpdateSchedule("p-1", 2, "s-1", ScheduleUpdateRequest{CronExpression: &cron})
+	got, err := UpdateSchedule("p-1", "s-1", ScheduleUpdateRequest{CronExpression: &cron})
 	require.NoError(t, err)
 	assert.Equal(t, "*/15 * * * *", got.CronExpression)
 }
 
-func TestDeleteSchedule_DeletesLockedURL(t *testing.T) {
+func TestDeleteSchedule_DeletesCorrectURL(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/pipelines/p-1/versions/2/schedules/s-1", r.URL.Path)
+		assert.Equal(t, "/api/v2/pipelines/p-1/schedules/s-1", r.URL.Path)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -138,5 +147,5 @@ func TestDeleteSchedule_DeletesLockedURL(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	require.NoError(t, DeleteSchedule("p-1", 2, "s-1"))
+	require.NoError(t, DeleteSchedule("p-1", "s-1"))
 }
