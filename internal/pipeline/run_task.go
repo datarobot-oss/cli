@@ -20,12 +20,12 @@
 package pipeline
 
 import (
-	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/drapi"
 )
 
 // TaskExecution mirrors TaskExecutionResponse.
@@ -80,7 +80,7 @@ func ListTaskExecutions(pipelineID, runID string) ([]TaskExecution, error) {
 
 	var tasks []TaskExecution
 
-	err = doJSON(http.MethodGet, endpoint, nil, "task executions", &tasks)
+	err = drapi.GetJSON(endpoint, "task executions", &tasks)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func GetTaskExecution(pipelineID, runID string, taskID int) (*TaskExecution, err
 
 	var task TaskExecution
 
-	err = doJSON(http.MethodGet, endpoint, nil, "task execution", &task)
+	err = drapi.GetJSON(endpoint, "task execution", &task)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func GetTaskLogs(pipelineID, runID string, taskID int, tailLines *int, verbosity
 
 	var logs TaskExecutionLogs
 
-	err = doJSON(http.MethodGet, endpoint, nil, "task logs", &logs)
+	err = drapi.GetJSON(endpoint, "task logs", &logs)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func GetTaskDurableLog(pipelineID, runID string, taskID int, stream, verbosity s
 
 	var log TaskExecutionDurableLog
 
-	err = doJSON(http.MethodGet, endpoint, nil, "task durable log", &log)
+	err = drapi.GetJSON(endpoint, "task durable log", &log)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func GetTaskResult(pipelineID, runID string, taskID int) (*TaskExecutionResult, 
 
 	var result TaskExecutionResult
 
-	err = doJSON(http.MethodGet, endpoint, nil, "task result", &result)
+	err = drapi.GetJSON(endpoint, "task result", &result)
 	if err != nil {
 		return nil, err
 	}
