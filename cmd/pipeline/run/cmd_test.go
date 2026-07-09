@@ -29,6 +29,7 @@ func TestCmd_RegistersAllVerbs(t *testing.T) {
 		"get":    false,
 		"status": false,
 		"cancel": false,
+		"task":   false,
 	}
 
 	for _, sub := range cmd.Commands() {

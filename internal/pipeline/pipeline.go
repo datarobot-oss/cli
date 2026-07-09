@@ -52,31 +52,46 @@ type PipelineVersion struct {
 	CreatedAt      time.Time      `json:"createdAt"`
 }
 
+// LinkedImageBlock mirrors LinkedImageBlock from the pipelines-api:
+// a snapshot of the execution image bound to a pipeline.
+type LinkedImageBlock struct {
+	ImageID     string  `json:"imageId"`
+	Name        string  `json:"name"`
+	Version     int     `json:"version"`
+	Status      string  `json:"status"`
+	ErrorDetail *string `json:"errorDetail,omitempty"`
+}
+
 // Pipeline mirrors PipelineDetailResponse from the pipelines-api.
 type Pipeline struct {
-	PipelineID     string            `json:"id"`
-	Name           string            `json:"name"`
-	Description    string            `json:"description,omitempty"`
-	Mode           string            `json:"mode"`
-	IsActive       bool              `json:"isActive"`
-	TaskNames      []string          `json:"taskNames,omitempty"`
-	PythonVersion  string            `json:"pythonVersion,omitempty"`
-	ResourceBundle map[string]any    `json:"resourceBundle,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
-	UpdatedAt      time.Time         `json:"updatedAt"`
-	Versions       []PipelineVersion `json:"versions"`
+	PipelineID       string            `json:"id"`
+	Name             string            `json:"name"`
+	Description      string            `json:"description,omitempty"`
+	Mode             string            `json:"mode"`
+	IsActive         bool              `json:"isActive"`
+	TaskNames        []string          `json:"taskNames,omitempty"`
+	InputSetTemplate *string           `json:"inputSetTemplate,omitempty"`
+	ImageID          *string           `json:"imageId,omitempty"`
+	LinkedImage      *LinkedImageBlock `json:"linkedImage,omitempty"`
+	PythonVersion    string            `json:"pythonVersion,omitempty"`
+	ResourceBundle   map[string]any    `json:"resourceBundle,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	UpdatedAt        time.Time         `json:"updatedAt"`
+	Versions         []PipelineVersion `json:"versions"`
 }
 
 // CreateResponse mirrors PipelineCreateResponse from the pipelines-api.
 // It is also returned by PATCH /pipelines/{id}.
 type CreateResponse struct {
-	PipelineID string    `json:"id"`
-	Name       string    `json:"name"`
-	Version    int       `json:"version"`
-	Status     string    `json:"status"`
-	Mode       string    `json:"mode"`
-	TaskNames  []string  `json:"taskNames,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
+	PipelineID  string    `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description,omitempty"`
+	Version     int       `json:"version"`
+	Status      string    `json:"status"`
+	Mode        string    `json:"mode"`
+	TaskNames   []string  `json:"taskNames,omitempty"`
+	ImageID     *string   `json:"imageId,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // ListItem mirrors PipelineListItem from the pipelines-api.
@@ -92,7 +107,7 @@ type ListItem struct {
 }
 
 // CreatePipeline uploads a Python file to POST /api/v2/pipelines.
-func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, error) {
+func CreatePipeline(filePath, description, name, mode, imageID string) (*CreateResponse, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -111,6 +126,10 @@ func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, 
 		fields["mode"] = mode
 	}
 
+	if imageID != "" {
+		fields["image_id"] = imageID
+	}
+
 	var result CreateResponse
 
 	err = doMultipart(http.MethodPost, endpoint, filePath, fields, "create pipeline", &result)
@@ -122,7 +141,7 @@ func CreatePipeline(filePath, description, name, mode string) (*CreateResponse, 
 }
 
 // ListPipelines fetches a paginated list of pipelines from GET /api/v2/pipelines.
-func ListPipelines(mode string, offset, limit int) (*DataPage[ListItem], error) {
+func ListPipelines(mode, search string, offset, limit int) (*DataPage[ListItem], error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -131,6 +150,10 @@ func ListPipelines(mode string, offset, limit int) (*DataPage[ListItem], error) 
 	query := url.Values{}
 	if mode != "" {
 		query.Set("mode", mode)
+	}
+
+	if search != "" {
+		query.Set("search", search)
 	}
 
 	if offset > 0 {
@@ -172,16 +195,31 @@ func GetPipeline(pipelineID string) (*Pipeline, error) {
 	return &pipeline, nil
 }
 
-// UpdatePipeline re-uploads a Python file to PATCH /api/v2/pipelines/{pipeline_id}.
-func UpdatePipeline(pipelineID, filePath string) (*CreateResponse, error) {
+// UpdatePipeline patches a draft pipeline. filePath is optional (empty = no file
+// re-upload); name, description, and imageID are each no-op when empty.
+func UpdatePipeline(pipelineID, filePath, imageID, name, description string) (*CreateResponse, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID)
 	if err != nil {
 		return nil, err
 	}
 
+	fields := map[string]string{}
+
+	if imageID != "" {
+		fields["image_id"] = imageID
+	}
+
+	if name != "" {
+		fields["name"] = name
+	}
+
+	if description != "" {
+		fields["description"] = description
+	}
+
 	var result CreateResponse
 
-	err = doMultipart(http.MethodPatch, endpoint, filePath, nil, "update pipeline", &result)
+	err = doMultipart(http.MethodPatch, endpoint, filePath, fields, "update pipeline", &result)
 	if err != nil {
 		return nil, err
 	}
@@ -295,38 +333,40 @@ func decodeHTTPError(resp *http.Response, endpoint string) error {
 	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: endpoint, Detail: detail}
 }
 
-// buildMultipartBody constructs a multipart/form-data body containing the named
-// file plus the given form fields.
+// buildMultipartBody constructs a multipart/form-data body. filePath is optional;
+// when empty, no file part is included (metadata-only update).
 func buildMultipartBody(filePath string, fields map[string]string) (*bytes.Buffer, string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, "", fmt.Errorf("open %s: %w", filePath, err)
-	}
-
-	defer file.Close()
-
 	var body bytes.Buffer
 
 	writer := multipart.NewWriter(&body)
 
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-	if err != nil {
-		return nil, "", err
-	}
+	if filePath != "" {
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, "", fmt.Errorf("open %s: %w", filePath, err)
+		}
 
-	_, err = io.Copy(part, file)
-	if err != nil {
-		return nil, "", err
-	}
+		defer file.Close()
 
-	for key, value := range fields {
-		err = writer.WriteField(key, value)
+		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+		if err != nil {
+			return nil, "", err
+		}
+
+		_, err = io.Copy(part, file)
 		if err != nil {
 			return nil, "", err
 		}
 	}
 
-	err = writer.Close()
+	for key, value := range fields {
+		err := writer.WriteField(key, value)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	err := writer.Close()
 	if err != nil {
 		return nil, "", err
 	}

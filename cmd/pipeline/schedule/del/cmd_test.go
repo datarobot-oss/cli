@@ -35,20 +35,20 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "--version", "2", "s-1")
+	err := runCmd(t, "s-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RejectsMissingVersion(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "s-1")
+func TestCmd_RequiresPositional(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
 }
 
-func TestCmd_RequiresPositional(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2")
-	require.Error(t, err)
+func TestCmd_HasExpectedFlags(t *testing.T) {
+	cmd := Cmd()
+	assert.NotNil(t, cmd.Flags().Lookup("pipeline"), "expected --pipeline flag")
+	assert.Nil(t, cmd.Flags().Lookup("version"), "unexpected --version flag after removal")
 }
 
 func TestCmd_Name(t *testing.T) {

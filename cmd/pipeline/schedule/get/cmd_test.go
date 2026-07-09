@@ -38,26 +38,30 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2", "--output-format", "yaml", "s-1")
+	err := runCmd(t, "--pipeline", "p", "--output-format", "yaml", "s-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "--version", "2", "s-1")
+	err := runCmd(t, "s-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
-func TestCmd_RejectsMissingVersion(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "s-1")
+func TestCmd_RequiresPositional(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
 }
 
-func TestCmd_RequiresPositional(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--version", "2")
-	require.Error(t, err)
+func TestCmd_HasExpectedFlags(t *testing.T) {
+	cmd := Cmd()
+
+	for _, name := range []string{"pipeline", "output-format"} {
+		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
+	}
+
+	assert.Nil(t, cmd.Flags().Lookup("version"), "unexpected --version flag after removal")
 }
 
 func TestHandleGetError_404IsSuppressed(t *testing.T) {

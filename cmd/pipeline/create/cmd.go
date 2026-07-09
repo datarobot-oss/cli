@@ -32,6 +32,7 @@ func Cmd() *cobra.Command {
 		description  string
 		name         string
 		mode         string
+		imageID      string
 		outputFormat outputformat.OutputFormat
 		fromFile     string
 	)
@@ -52,6 +53,7 @@ Example:
   dr pipeline create ./my_pipeline.py
   dr pipeline create --from-file=./my_pipeline.py
   dr pipeline create ./my_pipeline.py --name "My Pipeline" --description "First draft" --mode draft
+  dr pipeline create ./my_pipeline.py --image <image-id>
   dr pipeline create --from-file=./my_pipeline.py --output-format json`,
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
@@ -74,7 +76,7 @@ Example:
 				return err
 			}
 
-			result, err := pipeline.CreatePipeline(filePath, description, name, mode)
+			result, err := pipeline.CreatePipeline(filePath, description, name, mode, imageID)
 			if err != nil {
 				return err
 			}
@@ -88,6 +90,7 @@ Example:
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
 	cmd.Flags().StringVar(&name, "name", "", "Optional human-readable display name; defaults to the title-cased @pipeline function name")
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
+	cmd.Flags().StringVar(&imageID, "image", "", "Execution image ID to associate with this pipeline")
 	cmd.Flags().StringVar(&fromFile, "from-file", "", "Path to the Python file to upload, e.g. --from-file=./my_pipeline.py (alternative to the positional argument)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {

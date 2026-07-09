@@ -32,27 +32,20 @@ import (
 )
 
 func Cmd() *cobra.Command {
-	var (
-		pipelineID string
-		version    int
-	)
+	var pipelineID string
 
 	cmd := &cobra.Command{
 		Use:   "delete <schedule-id>",
 		Short: "Delete a pipeline schedule",
-		Long: `Delete a recurring schedule from a locked pipeline version.
+		Long: `Delete a recurring schedule from a pipeline.
 
 Example:
-  dr pipeline schedule delete --pipeline <id> --version=2 <schedule-id>`,
+  dr pipeline schedule delete --pipeline <id> <schedule-id>`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if version <= 0 {
-				return errors.New("--version is required and must be > 0")
-			}
-
-			err := pipeline.DeleteSchedule(pipelineID, version, args[0])
+			err := pipeline.DeleteSchedule(pipelineID, args[0])
 			if err != nil {
 				return handleDeleteError(err, args[0])
 			}
@@ -65,14 +58,11 @@ Example:
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
-	_ = cmd.MarkFlagRequired("version")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"pipeline_id": pipelineID,
 			"schedule_id": telemetry.FirstArg(args),
-			"version":     version,
 		}
 	})
 

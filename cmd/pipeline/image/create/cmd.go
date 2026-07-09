@@ -26,10 +26,14 @@ import (
 
 func Cmd() *cobra.Command {
 	var (
-		name         string
-		description  string
-		rawPackages  []string
-		outputFormat outputformat.OutputFormat
+		name          string
+		description   string
+		rawPackages   []string
+		rawConda      []string
+		rawCondaChans []string
+		baseImage     string
+		nvidia        bool
+		outputFormat  outputformat.OutputFormat
 	)
 
 	cmd := &cobra.Command{
@@ -38,12 +42,15 @@ func Cmd() *cobra.Command {
 		Long: `Create a new pipeline execution image.
 
 A new image is registered with an initial version (v1) containing the
-supplied pip packages. The image may be referenced by pipelines once
+supplied package definition. The image may be referenced by pipelines once
 its first version reaches the READY state.
+
+At least one of --package (pip) or --conda must be provided.
 
 Example:
   dr pipeline image create --name ml-base --package numpy --package pandas
-  dr pipeline image create --name ml-base --package numpy,pandas==2.0 --description "training base" --output-format json`,
+  dr pipeline image create --name ml-base --conda scipy --conda numpy --base-image python:3.12
+  dr pipeline image create --name gpu-base --package torch --nvidia --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -54,12 +61,18 @@ Example:
 				return errors.New("--name is required")
 			}
 
-			packages, err := pipeline.NormalizePackages(rawPackages)
-			if err != nil {
-				return err
+			pip := pipeline.NormalizePackageList(rawPackages)
+			conda := pipeline.BuildCondaValue(rawConda, rawCondaChans)
+
+			if len(pip) == 0 && conda == nil {
+				return errors.New("at least one of --package (pip) or --conda is required")
 			}
 
-			result, err := pipeline.CreateImage(name, description, packages)
+			if conda != nil && len(conda.Deps) == 0 {
+				return errors.New("--conda-channel requires at least one --conda package")
+			}
+
+			result, err := pipeline.CreateImage(name, description, pip, conda, baseImage, nvidia)
 			if err != nil {
 				return err
 			}
@@ -74,6 +87,10 @@ Example:
 	_ = cmd.MarkFlagRequired("name")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
+	cmd.Flags().StringSliceVar(&rawConda, "conda", nil, "Conda package spec (repeatable)")
+	cmd.Flags().StringSliceVar(&rawCondaChans, "conda-channel", nil, "Conda channel (repeatable; if set, sends a structured CondaSpec)")
+	cmd.Flags().StringVar(&baseImage, "base-image", "", "Docker base image URI (e.g. python:3.12)")
+	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "Enable NVIDIA GPU support")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
