@@ -57,7 +57,8 @@ task run -- templates list
 4. Run `task lint` to format and lint code
 5. Run `task test` to verify tests pass
 6. Commit and push your changes
-7. Open a pull request
+7. Open a **draft** pull request (see [Contributing](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md#submitting-pull-requests) for details)
+8. When ready for review, mark the PR "Ready for Review" so [Review Router](https://github.com/datarobot-oss/review-router) can route it to the right teams
 
 See [Building](building.md) for detailed workflow documentation.
 

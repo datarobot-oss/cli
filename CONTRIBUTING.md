@@ -171,6 +171,16 @@ When opening an issue:
 
 ## Submitting Pull Requests
 
+### Open as Draft First
+
+**Always open your PR as a draft.** This repository uses [Review Router](https://github.com/datarobot-oss/review-router) to automatically route PRs to the appropriate reviewing teams based on the files changed. Review Router only triggers when a PR is marked "Ready for Review" (by flipping the draft flag or adding the "Ready for Review" label). If you open a non-draft PR directly, it will not be routed to reviewers.
+
+**Recommended workflow:**
+1. Open your PR as a **draft** while you are still working on it
+2. Push updates, iterate, and ensure `task lint` and `task test` pass
+3. When your PR is genuinely ready for review, mark it **"Ready for Review"**
+4. Review Router will automatically request reviews from the right teams based on [CODEOWNERS](https://github.com/datarobot-oss/cli/blob/main/.github/CODEOWNERS)
+
 ### Pull Request Process
 
 After pushing your changes to your fork, create a pull request from your fork to the upstream repository:
