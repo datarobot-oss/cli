@@ -37,7 +37,6 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
@@ -216,18 +215,10 @@ func init() {
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
 
-	// Private CA / TLS flags are gated behind "private-ca"
-	// (DATAROBOT_CLI_FEATURE_PRIVATE_CA) while the design is still subject to
-	// change (see cmd/tls.go and cmd/plugin/discovery.go). When disabled
-	// (the default), these flags do not exist and CLI behavior for all
-	// other customers is unchanged.
-	if features.Enabled("private-ca") {
-		RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
-		RootCmd.PersistentFlags().String("ca-cert", "", "path to a PEM-encoded CA certificate bundle")
-		registerExportWindowsCertsFlag(RootCmd.Command)
-
-		_ = viperx.BindPFlag("ca-cert", RootCmd.PersistentFlags().Lookup("ca-cert"))
-	}
+	// Private CA / TLS flags
+	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
+	RootCmd.PersistentFlags().String("ca-cert", "", "path to a PEM-encoded CA certificate bundle")
+	registerExportWindowsCertsFlag(RootCmd.Command)
 
 	outputformat.AddPersistentFlag(RootCmd.Command, &rootOutputFormat)
 
@@ -236,6 +227,8 @@ func init() {
 	bindUniversal("debug")
 	bindUniversal("disable-telemetry")
 	bindUniversal("verbose")
+	bindUniversal("skip-certificate-check")
+	bindUniversal("ca-cert")
 
 	// Non-universal flags: bound to viper only.
 	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))

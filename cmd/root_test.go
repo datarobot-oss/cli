@@ -354,15 +354,14 @@ func TestArtifactCommandNotPresentByDefault(t *testing.T) {
 	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
 }
 
-// TestPrivateCATLSFlagsNotPresentByDefault verifies that the private-ca
-// TLS flags are gated behind the "private-ca" feature and are not
-// registered on RootCmd by default, matching the gating pattern used for
-// the "workload"/"artifact" commands above. Flag gating happens during
-// init(), so this tests the actual registered state.
-func TestPrivateCATLSFlagsNotPresentByDefault(t *testing.T) {
-	for _, name := range []string{"skip-certificate-check", "ca-cert", "export-windows-certs"} {
-		assert.Nil(t, RootCmd.PersistentFlags().Lookup(name),
-			"flag --%s should not be registered when the private-ca feature gate is not enabled", name)
+// TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-ca
+// TLS flags are always registered on RootCmd (no longer feature-gated).
+// Flag registration happens during init(), so this tests the actual
+// registered state.
+func TestPrivateCATLSFlagsAlwaysRegistered(t *testing.T) {
+	for _, name := range []string{"skip-certificate-check", "ca-cert"} {
+		assert.NotNil(t, RootCmd.PersistentFlags().Lookup(name),
+			"flag --%s should always be registered (no longer feature-gated)", name)
 	}
 }
 

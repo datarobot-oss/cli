@@ -346,8 +346,12 @@ func setupUniversalTestFlags(t *testing.T) *pflag.FlagSet {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.Bool("debug", false, "")
 	fs.Bool("disable-telemetry", false, "")
+	fs.Bool("skip-certificate-check", false, "")
+	fs.String("ca-cert", "", "")
 	fs.Lookup("debug").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DEBUG"}}
 	fs.Lookup("disable-telemetry").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
+	fs.Lookup("skip-certificate-check").Annotations = map[string][]string{config.UniversalAnnotationKey: {"SKIP_CERTIFICATE_CHECK"}}
+	fs.Lookup("ca-cert").Annotations = map[string][]string{config.UniversalAnnotationKey: {"CA_CERT"}}
 
 	return fs
 }
@@ -413,6 +417,43 @@ func TestUniversalFlagEnv_BoolFalseOmitted(t *testing.T) {
 	result := universalFlagEnv(fs)
 
 	assert.Empty(t, result, "false bool flags must not be emitted")
+}
+
+func TestUniversalFlagEnv_CACertSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("ca-cert", "/path/to/ca.pem")
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"CA_CERT=/path/to/ca.pem")
+}
+
+func TestUniversalFlagEnv_SkipCertCheckSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("skip-certificate-check", true)
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"SKIP_CERTIFICATE_CHECK=1")
+}
+
+func TestUniversalFlagEnv_StringEmptyOmitted(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set("ca-cert", "")
+
+	result := universalFlagEnv(fs)
+
+	assert.NotContains(t, result, config.EnvPrefix+"CA_CERT=",
+		"empty string flags must not be emitted")
 }
 
 // --- TraverseChildren / core-blind invariant tests ---

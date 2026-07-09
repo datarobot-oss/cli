@@ -17,6 +17,9 @@ These flags are available for all commands:
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
       --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
+  -k, --skip-certificate-check   Skip TLS certificate verification (insecure)
+      --ca-cert string           Path to a PEM-encoded CA certificate bundle
+      --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
   -h, --help                     Show help information
 ```
 
@@ -26,23 +29,17 @@ These flags are available for all commands:
 > [!NOTE]
 > The `--force-interactive` flag forces commands to behave as if setup has never been completed, while still updating the state file. This is useful for testing or forcing re-execution of setup steps.
 
-### Private CA / TLS flags (experimental, feature-gated)
-
-```bash
-  -k, --skip-certificate-check    Skip TLS certificate verification (insecure)
-      --ca-cert string           Path to a PEM-encoded CA certificate bundle
-      --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
-```
-
-> [!NOTE]
-> These flags only exist when the `private-ca` feature gate is enabled via
-> `DATAROBOT_CLI_FEATURE_PRIVATE_CA=true`. They are not available by default,
-> and the underlying mechanism is subject to change (see
-> [Feature gates](../development/feature-gates.md)) as the design evolves.
-
 > [!WARNING]
 > `--skip-certificate-check` disables TLS certificate verification entirely
 > and should only be used against known, trusted endpoints for testing.
+
+> [!NOTE]
+> `--ca-cert` and `--skip-certificate-check` are universal flags: when placed
+> before a plugin name (e.g. `dr --ca-cert /path/to/ca.pem myplugin`), they are
+> forwarded to the plugin subprocess as `DATAROBOT_CLI_CA_CERT` and
+> `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` environment variables, in addition to
+> the standard `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE` / `NODE_TLS_REJECT_UNAUTHORIZED`
+> variables. See [Plugin development](../development/plugins.md#environment-variables).
 
 ## Commands
 
