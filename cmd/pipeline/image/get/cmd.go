@@ -45,7 +45,9 @@ Example:
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			outputFormat = outputformat.GetFormat(cmd)
+
 			imageID := args[0]
 
 			img, err := pipeline.GetImage(imageID)

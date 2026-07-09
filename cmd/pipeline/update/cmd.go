@@ -43,7 +43,7 @@ When a .py file is provided (positional or --from-file), a new version is
 appended. The pipeline name encoded in the uploaded file must match the
 existing pipeline name. Locked pipelines cannot be updated.
 
-At least one of --file, --name, --description, or --image must be supplied.
+At least one of a source file (positional argument or --from-file), --name, --description, or --image must be supplied.
 
 Example:
   dr pipeline update 507f1f77bcf86cd799439011 ./my_pipeline.py

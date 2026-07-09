@@ -31,12 +31,15 @@ package pipeline
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // ImageStatus mirrors PipelineImageStatus in the API.
@@ -296,6 +299,12 @@ func UpdateImage(imageID string, pip []string, conda *CondaValue, baseImage stri
 	// stored name anyway.
 	current, err := GetImage(imageID)
 	if err != nil {
+		var httpErr *drapi.HTTPError
+
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+			log.Warnf("image not found during update: %s", imageID)
+		}
+
 		return nil, err
 	}
 

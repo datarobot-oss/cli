@@ -160,22 +160,6 @@ tasks:
     cmds:
       - ./smoke_test_scripts/run_pre_release_smoke_test.sh {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$DR_API_TOKEN{{end}}
 
-  demo-pipelines:
-    desc: "End-to-end demo of every dr pipelines command. Defaults to interactive (keypress per step); pass DELAY=N or `-- --delay=N` for auto-advance. Set SKIP_SCHEDULES=true or SKIP_ENVIRONMENTS=true to skip steps that require k8s/Covalent."
-    deps: [build]
-    vars:
-      DEMO_DIR: '{{default "/Users/sunnypal.sharma/Desktop/tests/pipelines-api" .DEMO_DIR}}'
-      DELAY_FLAG: '{{if .DELAY}}--delay={{.DELAY}}{{end}}'
-    env:
-      DATAROBOT_CLI_FEATURE_PIPELINE: "true"
-      # DATAROBOT_CLI_ENDPOINT: "http://localhost:8100/api/v2"
-      # DATAROBOT_CLI_TOKEN: "local"
-      # DATAROBOT_CLI_SKIP_AUTH: "true"
-      DEMO_SKIP_SCHEDULES: '{{if eq .SKIP_SCHEDULES "false"}}false{{else}}true{{end}}'
-      DEMO_SKIP_IMAGES: '{{if eq .SKIP_IMAGES "false"}}false{{else}}true{{end}}'
-    cmds:
-      - DR_BIN="$PWD/dist/dr" DEMO_DIR="{{.DEMO_DIR}}" bash "{{.DEMO_DIR}}/demo.sh" {{.DELAY_FLAG}} {{.CLI_ARGS}} 2>&1 | tee output.txt
-
   smoke-test-self-update:
     desc: "Run self-update smoke tests"
     cmds:
@@ -199,8 +183,8 @@ tasks:
     cmds:
       - echo "📚 Starting documentation server…"
       - uv sync
-      - echo "🌐 Open http://localhost:8001 in your browser"
-      - uv run mkdocs serve --dev-addr localhost:8001
+      - echo "🌐 Open http://localhost:8000 in your browser"
+      - uv run mkdocs serve
 
   copyright:
     silent: true
