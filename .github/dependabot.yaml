@@ -13,3 +13,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: "⬆️ CI(Actions): "
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
