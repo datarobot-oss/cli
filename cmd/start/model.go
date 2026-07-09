@@ -663,7 +663,11 @@ func hasTaskStart() (bool, error) {
 		return false, err
 	}
 
-	cmd := exec.Command(taskPath, "--list")
+	// --color=false: Task force-enables ANSI color codes in --list output when
+	// CI=true is set (true on every GitHub Actions runner), which breaks the
+	// plain substring match below since "* start" / "start:" never appears
+	// contiguously in the colorized bytes.
+	cmd := exec.Command(taskPath, "--list", "--color=false")
 
 	var stderr bytes.Buffer
 
