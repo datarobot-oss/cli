@@ -148,7 +148,7 @@ else
   if [ "$start_rc" -ne 0 ]; then
     echo "❌ Assertion failed: 'dr start' bounded run failed (expect exit code: $start_rc)."
     echo "   --- tail of $DEBUG_LOG ---"
-    tail -n 40 "$DEBUG_LOG" 2>/dev/null || echo "   (no debug log)"
+    tail -n 150 "$DEBUG_LOG" 2>/dev/null || echo "   (no debug log)"
     cd ..
     rm -rf "$AGENTIC_DIR"
     exit 1
@@ -170,7 +170,7 @@ else
     echo "✅ Assertion passed: 'dr start' resolved to executing the template start command (execute_script=true)."
   else
     echo "❌ Assertion failed: 'dr start' never reached start-command execution (no execute_script=true in debug log)."
-    tail -n 40 "$DEBUG_LOG" 2>/dev/null
+    tail -n 150 "$DEBUG_LOG" 2>/dev/null
     cd ..
     rm -rf "$AGENTIC_DIR"
     exit 1

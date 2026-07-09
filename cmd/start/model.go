@@ -683,7 +683,19 @@ func hasTaskStart() (bool, error) {
 	outputStr := string(output)
 	hasStart := strings.Contains(outputStr, "* start") || strings.Contains(outputStr, "start:")
 
-	log.Debug("start: 'task --list' output", "hasStart", hasStart, "output", outputStr)
+	lines := strings.Split(outputStr, "\n")
+
+	var matchingLines []string
+
+	for _, line := range lines {
+		if strings.Contains(line, "start") {
+			matchingLines = append(matchingLines, strings.TrimSpace(line))
+		}
+	}
+
+	// Log a compact summary rather than the full output - the template's task list
+	// can be large enough to blow past the smoke test's debug-log tail window.
+	log.Debug("start: 'task --list' output", "hasStart", hasStart, "totalLines", len(lines), "matchingLines", matchingLines)
 
 	return hasStart, nil
 }
@@ -713,6 +725,29 @@ func logCwdDebugInfo() {
 	}
 
 	log.Debug("start: cwd contents", "entries", names)
+
+	logTaskfileDebugInfo(pwd)
+}
+
+// logTaskfileDebugInfo logs whether Taskfile.yml exists in dir and whether it
+// (or its .Taskfile.template counterpart) already contains a 'start:' task
+// definition - this is the file 'task --list' reads from, so checking it
+// directly tells us whether composition (e.g. 'dr task compose') ran.
+func logTaskfileDebugInfo(dir string) {
+	for _, name := range []string{"Taskfile.yml", ".Taskfile.template"} {
+		path := filepath.Join(dir, name)
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			log.Debug("start: taskfile not readable", "path", path, "err", err)
+
+			continue
+		}
+
+		hasStartTask := strings.Contains(string(content), "\nstart:") || strings.Contains(string(content), "\n  start:")
+
+		log.Debug("start: taskfile contents check", "path", path, "sizeBytes", len(content), "hasStartTask", hasStartTask)
+	}
 }
 
 func findQuickstartScript() (string, error) {
