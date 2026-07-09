@@ -41,22 +41,67 @@ const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
 // TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder
 var registry = &DiscoveredPluginsRegistry{}
 
-// GetPlugins returns discovered plugins, discovering lazily on first call
+// GetPlugins returns discovered plugins and any name conflicts found along
+// the way, discovering lazily on first call. If PrimeCache already populated
+// the registry (e.g. RegisterPluginCommands ran during startup), that result
+// is reused instead of discovering again.
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
-func GetPlugins() []DiscoveredPlugin {
+func GetPlugins() ([]DiscoveredPlugin, []PluginConflict) {
 	registry.once.Do(func() {
-		registry.plugins = DiscoverPluginsWithContext(context.Background())
+		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(context.Background())
 	})
 
-	return registry.plugins
+	return registry.plugins, registry.conflicts
 }
 
-// DiscoverPluginsWithContext discovers all plugins under the given context deadline.
+// PrimeCache seeds the discovery cache with an already-computed plugin list
+// and its conflicts, so a later GetPlugins() call reuses them instead of
+// discovering again. This is a no-op if GetPlugins() already ran. It exists
+// because command registration (RegisterPluginCommands) discovers plugins
+// under a user-configurable timeout before any command runs; without priming
+// the cache, GetPlugins() would redo that same PATH scan from scratch.
+func PrimeCache(plugins []DiscoveredPlugin, conflicts []PluginConflict) {
+	registry.once.Do(func() {
+		registry.plugins = plugins
+		registry.conflicts = conflicts
+	})
+}
+
+// LogConflicts logs a WARN for each conflict, in the same format previously
+// emitted directly by discovery internals. Callers choose which conflicts to
+// pass in — e.g. all of them for a full listing, or only those returned by
+// ConflictsForName when only one specific plugin was requested.
+func LogConflicts(conflicts []PluginConflict) {
+	for _, c := range conflicts {
+		log.Warn("Plugin name already registered, skipping", "name", c.Name, "path", c.Path)
+	}
+}
+
+// ConflictsForName filters conflicts down to those matching a single plugin
+// name, so callers that only care about one plugin (e.g. `dr plugin version
+// <name>`) don't surface warnings about unrelated plugins.
+func ConflictsForName(conflicts []PluginConflict, name string) []PluginConflict {
+	var matched []PluginConflict
+
+	for _, c := range conflicts {
+		if c.Name == name {
+			matched = append(matched, c)
+		}
+	}
+
+	return matched
+}
+
+// DiscoverPluginsWithContext discovers all plugins under the given context deadline,
+// along with any name conflicts encountered (a plugin skipped because another
+// plugin already claimed its manifest name from a higher-priority location).
 // Managed and local plugins (file I/O only) always complete before PATH scanning starts,
 // so they are always returned even when ctx is cancelled mid-discovery. PATH plugins
 // return whatever finished before ctx is done.
-func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
+func DiscoverPluginsWithContext(ctx context.Context) ([]DiscoveredPlugin, []PluginConflict) {
 	plugins := make([]DiscoveredPlugin, 0)
+
+	var conflicts []PluginConflict
 
 	seen := make(map[string]bool)
 
@@ -65,8 +110,9 @@ func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 	managedDirs, err := ManagedPluginsDirs()
 	if err == nil {
 		for _, managedDir := range managedDirs {
-			managedPlugins, errs := discoverManagedPlugins(managedDir, seen)
+			managedPlugins, managedConflicts, errs := discoverManagedPlugins(managedDir, seen)
 			plugins = append(plugins, managedPlugins...)
+			conflicts = append(conflicts, managedConflicts...)
 
 			for _, err := range errs {
 				log.Debug("Plugin discovery error in managed dir", "dir", managedDir, "error", err)
@@ -76,8 +122,9 @@ func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 
 	// 2. Check project-local directory (higher priority than PATH)
 	// TODO: LocalPluginDir shares path with QuickstartScriptPath - consider dedicated plugin directory
-	localPlugins, errs := discoverInDir(ctx, repo.LocalPluginDir, seen)
+	localPlugins, localConflicts, errs := discoverInDir(ctx, repo.LocalPluginDir, seen)
 	plugins = append(plugins, localPlugins...)
+	conflicts = append(conflicts, localConflicts...)
 
 	for _, err := range errs {
 		log.Debug("Plugin discovery error in local dir", "dir", repo.LocalPluginDir, "error", err)
@@ -88,7 +135,9 @@ func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 	// without sharing mutable state. Cross-dir dedup is handled inside the helper.
 	baseSeen := maps.Clone(seen)
 
-	plugins = append(plugins, discoverPathDirsParallel(ctx, filepath.SplitList(os.Getenv("PATH")), baseSeen)...)
+	pathPlugins, pathConflicts := discoverPathDirsParallel(ctx, uniqueDirs(filepath.SplitList(os.Getenv("PATH"))), baseSeen)
+	plugins = append(plugins, pathPlugins...)
+	conflicts = append(conflicts, pathConflicts...)
 
 	if ctx.Err() != nil {
 		log.Warn("Plugin discovery timed out; some PATH plugins may be missing — use --plugin-discovery-timeout to adjust", "discovered", len(plugins))
@@ -96,17 +145,40 @@ func DiscoverPluginsWithContext(ctx context.Context) []DiscoveredPlugin {
 
 	log.Debug("Plugin discovery complete", "count", len(plugins))
 
-	return plugins
+	return plugins, conflicts
+}
+
+// uniqueDirs removes duplicate directory entries from PATH, preserving order.
+// PATH commonly lists the same directory more than once (e.g. sourced twice
+// by shell rc files); scanning it twice would make discoverPathDirsParallel
+// re-report every plugin in that directory as an "already registered"
+// conflict with itself.
+func uniqueDirs(dirs []string) []string {
+	seen := make(map[string]bool, len(dirs))
+	unique := make([]string, 0, len(dirs))
+
+	for _, dir := range dirs {
+		if seen[dir] {
+			continue
+		}
+
+		seen[dir] = true
+
+		unique = append(unique, dir)
+	}
+
+	return unique
 }
 
 // discoverPathDirsParallel runs discoverInDir for each PATH directory concurrently.
 // Each goroutine receives its own copy of baseSeen so managed/local plugins are filtered
 // without cross-goroutine map races. Goroutines not yet started are skipped when ctx is done.
-// Results are merged in directory order and cross-dir duplicates are skipped.
-func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen map[string]bool) []DiscoveredPlugin {
+// Results are merged in directory order and cross-dir duplicates are recorded as conflicts.
+func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen map[string]bool) ([]DiscoveredPlugin, []PluginConflict) {
 	type dirResult struct {
-		plugins []DiscoveredPlugin
-		errs    []error
+		plugins   []DiscoveredPlugin
+		conflicts []PluginConflict
+		errs      []error
 	}
 
 	dirResults := make([]dirResult, len(pathDirs))
@@ -123,8 +195,11 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 			default:
 			}
 
-			p, e := discoverInDir(ctx, dir, localSeen)
-			dirResults[i] = dirResult{plugins: p, errs: e}
+			// A conflict here means the name was already seen in baseSeen
+			// (i.e. claimed by a managed/local plugin); genuine cross-dir
+			// PATH conflicts are detected below during the merge step.
+			p, c, e := discoverInDir(ctx, dir, localSeen)
+			dirResults[i] = dirResult{plugins: p, conflicts: c, errs: e}
 		})
 	}
 
@@ -135,16 +210,18 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 
 	var plugins []DiscoveredPlugin
 
+	var conflicts []PluginConflict
+
 	for i, dr := range dirResults {
 		for _, e := range dr.errs {
 			log.Debug("Plugin discovery error", "dir", pathDirs[i], "error", e)
 		}
 
+		conflicts = append(conflicts, dr.conflicts...)
+
 		for _, p := range dr.plugins {
 			if crossDirSeen[p.Manifest.Name] {
-				log.Warn("Plugin name already registered, skipping",
-					"name", p.Manifest.Name,
-					"path", p.Executable)
+				conflicts = append(conflicts, PluginConflict{Name: p.Manifest.Name, Path: p.Executable})
 
 				continue
 			}
@@ -155,24 +232,26 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 		}
 	}
 
-	return plugins
+	return plugins, conflicts
 }
 
 // discoverManagedPlugins discovers plugins installed via `dr plugin install`
 // These are in subdirectories with a manifest.json and platform-specific scripts
-func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	plugins := make([]DiscoveredPlugin, 0)
+
+	var conflicts []PluginConflict
 
 	var errs []error
 
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, []error{err}
+		return nil, nil, []error{err}
 	}
 
 	for _, entry := range entries {
@@ -180,7 +259,7 @@ func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugi
 			continue
 		}
 
-		plugin, err := loadManagedPlugin(dir, entry.Name(), seen)
+		plugin, conflict, err := loadManagedPlugin(dir, entry.Name(), seen)
 		if err != nil {
 			errs = append(errs, err)
 
@@ -190,45 +269,45 @@ func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugi
 		if plugin != nil {
 			plugins = append(plugins, *plugin)
 		}
+
+		if conflict != nil {
+			conflicts = append(conflicts, *conflict)
+		}
 	}
 
-	return plugins, errs
+	return plugins, conflicts, errs
 }
 
-func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugin, error) {
+func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugin, *PluginConflict, error) {
 	pluginDir := filepath.Join(dir, name)
 	manifestPath := filepath.Join(pluginDir, "manifest.json")
 
 	if _, err := os.Stat(manifestPath); err != nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var manifest PluginManifest
 
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if manifest.Name == "" {
-		return nil, errMissingManifestField("name")
+		return nil, nil, errMissingManifestField("name")
 	}
 
 	if seen[manifest.Name] {
-		log.Warn("Plugin name already registered, skipping",
-			"name", manifest.Name,
-			"path", pluginDir)
-
-		return nil, nil
+		return nil, &PluginConflict{Name: manifest.Name, Path: pluginDir}, nil
 	}
 
 	executable, err := resolvePlatformExecutable(pluginDir, &manifest)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	seen[manifest.Name] = true
@@ -236,7 +315,7 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 	return &DiscoveredPlugin{
 		Manifest:   manifest,
 		Executable: executable,
-	}, nil
+	}, nil, nil
 }
 
 // resolvePlatformExecutable returns the appropriate script path for the current platform
@@ -271,17 +350,17 @@ func errMissingManifestField(field string) error {
 	return errors.New("plugin manifest missing required field: " + field)
 }
 
-func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	// Check if directory exists
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
-		return nil, nil // Directory doesn't exist, not an error
+		return nil, nil, nil // Directory doesn't exist, not an error
 	}
 
 	// Read directory entries
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, []error{err}
+		return nil, nil, []error{err}
 	}
 
 	// Phase 1: collect valid executables (fast, no goroutines)
@@ -315,7 +394,7 @@ func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]Dis
 // deduplicates results against seen in lexicographic (input) order. Preserves the
 // "first binary wins" guarantee that os.ReadDir's alphabetical ordering provides.
 // Goroutines that have not yet called getManifest are skipped when ctx is done.
-func getManifestsParallel(ctx context.Context, executables []string, seen map[string]bool) ([]DiscoveredPlugin, []error) {
+func getManifestsParallel(ctx context.Context, executables []string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	type result struct {
 		path     string
 		manifest *PluginManifest
@@ -344,6 +423,8 @@ func getManifestsParallel(ctx context.Context, executables []string, seen map[st
 	// Deduplicate on manifest.Name (the actual command name), preserving lexicographic order
 	var plugins []DiscoveredPlugin
 
+	var conflicts []PluginConflict
+
 	var errs []error
 
 	for _, r := range results {
@@ -358,9 +439,7 @@ func getManifestsParallel(ctx context.Context, executables []string, seen map[st
 		}
 
 		if seen[r.manifest.Name] {
-			log.Warn("Plugin name already registered, skipping",
-				"name", r.manifest.Name,
-				"path", r.path)
+			conflicts = append(conflicts, PluginConflict{Name: r.manifest.Name, Path: r.path})
 
 			continue
 		}
@@ -373,7 +452,7 @@ func getManifestsParallel(ctx context.Context, executables []string, seen map[st
 		})
 	}
 
-	return plugins, errs
+	return plugins, conflicts, errs
 }
 
 func getManifest(ctx context.Context, executable string) (*PluginManifest, error) {

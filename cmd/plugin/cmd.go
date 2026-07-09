@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/cmd/plugin/list"
 	"github.com/datarobot/cli/cmd/plugin/uninstall"
 	"github.com/datarobot/cli/cmd/plugin/update"
+	"github.com/datarobot/cli/cmd/plugin/version"
 	"github.com/spf13/cobra"
 )
 
@@ -36,6 +37,7 @@ func Cmd() *cobra.Command {
 		install.Cmd(),
 		uninstall.Cmd(),
 		update.Cmd(),
+		version.Cmd(),
 	)
 
 	return cmd
