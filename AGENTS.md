@@ -165,6 +165,18 @@ Feature gates allow commands to be hidden until ready for release. For comprehen
 - Filtering happens via `cli.CommandAdder.AddCommand` at registration time — `CommandAdder` is the only filtering mechanism
 - To gate a **nested** subcommand, wrap the parent with `&cli.CommandAdder{Command: parent}` and call `adder.AddCommand(...)` instead of `parent.AddCommand(...)`
 
+## Pull Request Workflow
+
+**Always open PRs as draft first.** This repo uses [Review Router](https://github.com/datarobot-oss/review-router) to automatically route PRs to the right reviewing teams based on changed files. Review Router only fires when a PR transitions to "Ready for Review" (either by flipping the draft flag or applying the "Ready for Review" label). PRs that are opened as non-draft and never get the label will **not** be routed, leaving reviewers unaware.
+
+Workflow:
+1. Open your PR as a **draft** while you are still working on it
+2. Push updates, iterate, and run `task lint` + `task test`
+3. When the PR is genuinely ready for review, mark it **"Ready for Review"** (or add the "Ready for Review" label)
+4. Review Router will read `.github/CODEOWNERS`, request reviews from the appropriate teams, and post a summary comment
+
+Do not open non-draft PRs directly unless the change is trivially ready. Early draft PRs help reviewers see work in progress and ensure routing works correctly when the PR is ready.
+
 ## PR Output Format
 
 Output change summaries in Markdown format using the template in `.github/PULL_REQUEST_TEMPLATE.md`.
