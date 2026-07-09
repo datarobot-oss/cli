@@ -602,6 +602,7 @@ func checkRepository(m *Model) tea.Msg {
 func findAndExecuteStart(m *Model) tea.Msg {
 	// Try to find and execute either 'dr task run start' or a quickstart script
 	// Prefer 'dr task run start' if available
+	logCwdDebugInfo()
 
 	// First, check if 'task start' exists
 	hasTask, err := hasTaskStart()
@@ -657,15 +658,23 @@ func hasTaskStart() (bool, error) {
 	// and checking if 'start' is in the output
 	taskPath, err := exec.LookPath("task")
 	if err != nil {
+		log.Debug("start: 'task' binary not found on PATH", "err", err)
+
 		return false, err
 	}
 
 	cmd := exec.Command(taskPath, "--list")
 
+	var stderr bytes.Buffer
+
+	cmd.Stderr = &stderr
+
 	output, err := cmd.Output()
 	if err != nil {
 		// If the command fails, it could be because we're not in a template directory
 		// or task isn't configured - this is not an error, just means no task available
+		log.Debug("start: 'task --list' failed", "taskPath", taskPath, "err", err, "stderr", stderr.String())
+
 		return false, nil
 	}
 
@@ -674,7 +683,36 @@ func hasTaskStart() (bool, error) {
 	outputStr := string(output)
 	hasStart := strings.Contains(outputStr, "* start") || strings.Contains(outputStr, "start:")
 
+	log.Debug("start: 'task --list' output", "hasStart", hasStart, "output", outputStr)
+
 	return hasStart, nil
+}
+
+// logCwdDebugInfo logs the working directory and its contents to help diagnose
+// why 'task --list' / quickstart-script detection might not find a start command.
+func logCwdDebugInfo() {
+	pwd, err := os.Getwd()
+	if err != nil {
+		log.Debug("start: failed to get cwd", "err", err)
+
+		return
+	}
+
+	log.Debug("start: findAndExecuteStart cwd", "pwd", pwd)
+
+	entries, err := os.ReadDir(pwd)
+	if err != nil {
+		log.Debug("start: failed to list cwd", "pwd", pwd, "err", err)
+
+		return
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+
+	log.Debug("start: cwd contents", "entries", names)
 }
 
 func findQuickstartScript() (string, error) {
