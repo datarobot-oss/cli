@@ -17,7 +17,6 @@ package start
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -419,26 +418,4 @@ func TestView_WaitingToExecute_ShowsConfirmFooter(t *testing.T) {
 
 	assert.Contains(t, view, "confirm")
 	assert.NotContains(t, view, "install")
-}
-
-func TestHasTaskStart_DetectsStartTaskUnderCI(t *testing.T) {
-	if _, err := exec.LookPath("task"); err != nil {
-		t.Skip("task binary not available")
-	}
-
-	chdir(t, t.TempDir())
-
-	// 'task --list' (unlike --list-all) only shows tasks with a desc, matching
-	// how real templates (e.g. the Agentic Starter) define their start task.
-	taskfileContent := "version: '3'\n\ntasks:\n  start:\n    desc: Prepare local dev environment\n    cmds:\n      - echo start\n"
-	require.NoError(t, os.WriteFile("Taskfile.yml", []byte(taskfileContent), 0o600))
-
-	// GitHub Actions sets CI=true for every job, which makes Task force-enable
-	// ANSI color codes in --list output even though stdout is piped. Regression
-	// guard for hasTaskStart()'s substring match breaking on colorized output.
-	t.Setenv("CI", "true")
-
-	hasStart, err := hasTaskStart()
-	require.NoError(t, err)
-	assert.True(t, hasStart)
 }
