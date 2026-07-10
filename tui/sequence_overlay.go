@@ -38,11 +38,30 @@ type sequenceOverlay struct {
 	termHeight int
 }
 
+// defaultOverlayWidth/defaultOverlayHeight size an overlay before the first
+// tea.WindowSizeMsg arrives, matching the fallback used once a real size is
+// known (see checkTriggers).
+const (
+	defaultOverlayWidth  = 80
+	defaultOverlayHeight = 24
+)
+
 func newSequenceOverlay(inner tea.Model, triggers ...overlayTrigger) *sequenceOverlay {
 	return &sequenceOverlay{inner: inner, triggers: triggers}
 }
 
+// activateNow shows overlay immediately rather than waiting for its
+// triggering key sequence — used to force an overlay on from outside
+// (e.g. an env var-gated trigger).
+func (m *sequenceOverlay) activateNow(overlay tea.Model) {
+	m.active = overlay
+}
+
 func (m *sequenceOverlay) Init() tea.Cmd {
+	if m.active != nil {
+		return tea.Batch(m.inner.Init(), m.active.Init())
+	}
+
 	return m.inner.Init()
 }
 

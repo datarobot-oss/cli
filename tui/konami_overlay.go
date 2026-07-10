@@ -1,21 +1,37 @@
 package tui
 
-// Easter egg: the Konami code (↑ ↑ ↓ ↓ ← → ← → B A) triggers the rocket animation.
-// To remove: delete konami_overlay.go, konami.go, rocket.go, konami_test.go,
-// and the wrapWithKonamiOverlay call in program.go.
+// Easter egg: the Konami code (↑ ↑ ↓ ↓ ← → ← → B A) triggers Dax running
+// across the screen to reveal the DataRobot logo. Setting the I_LOVE_DAX
+// env var to any non-empty value shows it immediately, without needing the
+// code. To remove: delete konami_overlay.go, konami.go, dax.go,
+// konami_test.go, and the wrapWithKonamiOverlay call in program.go.
 // sequence_overlay.go can stay — it is general-purpose infrastructure.
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"os"
 
-// wrapWithKonamiOverlay wraps m in a sequenceOverlay that fires the rocket
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// daxLoveEnvVar, when set to any non-empty value, shows the Dax overlay
+// immediately on startup instead of waiting for the Konami code.
+const daxLoveEnvVar = "I_LOVE_DAX"
+
+// wrapWithKonamiOverlay wraps m in a sequenceOverlay that fires the Dax
 // animation when the Konami code is entered. To swap the animation for
-// something else, replace newRocketModel with a different overlayFactory.
+// something else, replace newDaxModel with a different overlayFactory.
 // To add more sequences, pass additional overlayTrigger values.
 func wrapWithKonamiOverlay(m tea.Model) tea.Model {
-	return newSequenceOverlay(m, overlayTrigger{
+	overlay := newSequenceOverlay(m, overlayTrigger{
 		detector: &konamiDetector{},
 		create: func(w, h int) tea.Model {
-			return newRocketModel(w, h)
+			return newDaxModel(w, h)
 		},
 	})
+
+	if os.Getenv(daxLoveEnvVar) != "" {
+		overlay.activateNow(newDaxModel(defaultOverlayWidth, defaultOverlayHeight))
+	}
+
+	return overlay
 }
