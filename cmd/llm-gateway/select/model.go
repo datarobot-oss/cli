@@ -135,6 +135,14 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			var cmd tea.Cmd
+
+			m.list, cmd = m.list.Update(msg)
+
+			return m, cmd
+		}
+
 		if msg.String() == "enter" {
 			if item, ok := m.list.SelectedItem().(llmItem); ok {
 				m.selectedID = item.llmID
