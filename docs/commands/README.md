@@ -56,6 +56,7 @@ These flags are available for all commands:
 | [`dotenv`](dotenv.md)             | Manage environment variables.                               |
 | [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
+| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM Gateway model.              |
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
@@ -92,6 +93,9 @@ dr
 │   ├── install        Install a plugin
 │   ├── uninstall      Uninstall a plugin
 │   └── update         Update plugins
+├── llm-gateway        LLM Gateway model management (alias: llm, llm-gateways)
+│   ├── list           List active LLM Gateway models (alias: ls)
+│   └── select         Set the default LLM Gateway model
 ├── pipeline           Pipelines API management (feature-gated)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
@@ -232,6 +236,30 @@ dr dotenv edit
 dr dotenv validate
 ```
 
+### LLM Gateway
+
+```bash
+# List active LLM Gateway models
+dr llm-gateway list
+
+# List as JSON
+dr llm-gateway list --output-format json
+
+# Select a default LLM interactively (TUI picker)
+dr llm-gateway select
+
+# Set a default LLM directly by ID
+dr llm-gateway select <llm-id>
+```
+
+Aliases:
+
+```bash
+dr llm list       # llm-gateway → llm
+dr llm ls         # list → ls
+dr llm select
+```
+
 ### Running tasks
 
 ```bash
@@ -317,6 +345,10 @@ For detailed documentation on each command, see:
 
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
+- **[llm-gateway](llm-gateway.md)**&mdash;list and configure the default LLM Gateway model (aliases: `llm`, `llm-gateways`).
+  - `list` (`ls`)&mdash;fetch all active LLMs from the catalog and display them in a table (`ID · NAME · PROVIDER · MODEL`). The currently-selected model is marked with `*`. Supports `--output-format json` (includes a `selected` boolean field per entry).
+  - `select [llm-id]`&mdash;set the default LLM. Without an argument, launches an interactive TUI picker. With an argument, validates the ID against the active catalog and persists it immediately. The selection is saved to `drconfig.yaml` under the key `default-llm-id`.
+
 - **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
   - `create`&mdash;upload a Python file to register a new pipeline.
   - `list`&mdash;list pipelines with mode filtering and pagination.
@@ -370,6 +402,7 @@ DATAROBOT_ENDPOINT                  # DataRobot URL
 DATAROBOT_API_TOKEN                 # API token (not recommended)
 DATAROBOT_CLI_CONFIG                # Path to config file
 DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT  # Timeout for plugin discovery (e.g. 2s; 0s disables)
+DATAROBOT_CLI_DEFAULT_LLM_ID        # Default LLM Gateway model ID (overrides drconfig.yaml)
 VISUAL                              # External editor for file editing
 EDITOR                              # External editor for file editing (fallback)
 ```

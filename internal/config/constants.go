@@ -20,6 +20,9 @@ const (
 
 	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
 
+	// DefaultLLMID is the config key for the user's default LLM Gateway model ID.
+	DefaultLLMID = "default-llm-id"
+
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment
 	// variables. Use this constant instead of hard-coding the string literal.
 	EnvPrefix = "DATAROBOT_CLI_"

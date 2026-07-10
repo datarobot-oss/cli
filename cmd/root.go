@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
+	llmgateway "github.com/datarobot/cli/cmd/llm-gateway"
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
@@ -256,6 +257,7 @@ func init() {
 		component.Cmd(),
 		dependencies.Cmd(),
 		dotenv.Cmd(),
+		llmgateway.Cmd(),
 		run.Cmd(),
 		self.Cmd(),
 		start.Cmd(),
