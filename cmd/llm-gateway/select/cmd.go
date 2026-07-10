@@ -96,12 +96,7 @@ func runPicker(llms []drapi.LLM) (string, error) {
 		return "", err
 	}
 
-	interruptible, ok := finalModel.(tui.InterruptibleModel)
-	if !ok {
-		return "", errors.New("unexpected model type returned from TUI")
-	}
-
-	picker, ok := interruptible.Model.(PickerModel)
+	picker, ok := tui.Unwrap(finalModel).(PickerModel)
 	if !ok {
 		return "", errors.New("unexpected inner model type returned from TUI")
 	}

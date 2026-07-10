@@ -90,10 +90,8 @@ func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
 	}
 
 	// Check if we need to launch template setup after quitting
-	if startModel, ok := finalModel.(tui.InterruptibleModel); ok {
-		if innerModel, ok := startModel.Model.(shared.AddModel); ok {
-			return innerModel.RepoURLs, nil
-		}
+	if innerModel, ok := tui.Unwrap(finalModel).(shared.AddModel); ok {
+		return innerModel.RepoURLs, nil
 	}
 
 	return args, nil

@@ -138,3 +138,12 @@ func (m *sequenceOverlay) View() string {
 
 	return m.inner.View()
 }
+
+// Unwrap returns the wrapped inner model — not whatever overlay might
+// currently be active, since callers unwrapping after tui.Run() want the
+// real command's model, and any overlay has already dismissed itself by
+// the time Run() returns in normal (non-interrupted) use. See the
+// package-level Unwrap for why this exists.
+func (m *sequenceOverlay) Unwrap() tea.Model {
+	return m.inner
+}

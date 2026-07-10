@@ -56,12 +56,7 @@ func runPostUpdateTasks() error {
 }
 
 func handleTUIResult(finalModel tea.Model) error {
-	setupModel, ok := finalModel.(tui.InterruptibleModel)
-	if !ok {
-		return nil
-	}
-
-	innerModel, ok := setupModel.Model.(shared.UpdateModel)
+	innerModel, ok := tui.Unwrap(finalModel).(shared.UpdateModel)
 	if !ok {
 		return nil
 	}
