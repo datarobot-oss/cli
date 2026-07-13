@@ -197,3 +197,33 @@ func TestGetTaskResult_ValueUnavailable(t *testing.T) {
 	require.NotNil(t, res.ValueUnavailableReason)
 	assert.Equal(t, "not_json_serializable", *res.ValueUnavailableReason)
 }
+
+func TestGetTaskResult_TextPreviewForNonSerializable(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// A DataFrame result: no JSON value, but a str() text preview
+		// the task pod recorded is surfaced instead.
+		_, _ = w.Write([]byte(`{
+			"url":"https://s3.example.com/result.tobj",
+			"expiresIn":900,
+			"contentType":"application/octet-stream",
+			"value":null,
+			"valueAvailable":false,
+			"valueUnavailableReason":"not_json_serializable",
+			"valueText":"   x  y\n0  1  3\n1  2  4",
+			"valueTextTruncated":true
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	res, err := GetTaskResult("p-1", "d-1", 1)
+	require.NoError(t, err)
+	assert.False(t, res.ValueAvailable)
+	assert.Equal(t, "   x  y\n0  1  3\n1  2  4", res.ValueText)
+	assert.True(t, res.ValueTextTruncated)
+}
