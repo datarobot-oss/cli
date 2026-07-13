@@ -30,7 +30,7 @@ type PluginScripts struct {
 
 // BasicPluginManifest contains the core fields that all plugin manifests must have.
 type BasicPluginManifest struct {
-	Name           string `json:"name"`
+	Name           string `json:"name"                  validate:"required,dr_id"`
 	Version        string `json:"version,omitempty"`
 	Description    string `json:"description,omitempty"`
 	Authentication bool   `json:"authentication,omitempty"`

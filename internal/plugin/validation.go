@@ -22,11 +22,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/datarobot/cli/internal/log"
-	"github.com/google/go-cmp/cmp"
+	"github.com/datarobot/cli/internal/validate"
+	"github.com/go-playground/validator/v10"
 )
 
 // validatePluginName checks that name is a safe single-segment identifier with no path separators.
@@ -82,17 +85,66 @@ func ValidateLicense(pluginDir string) error {
 	return nil
 }
 
-// validateManifests compares two manifests and returns an error if they differ.
+// createManifestValidatorOnce initializes the shared validator exactly once.
+// validator.New() allocates reflection caches and RegisterValidation /
+// RegisterTagNameFunc are not goroutine-safe to call concurrently, so
+// sync.OnceValue guarantees a single initialization.
+var createManifestValidatorOnce = sync.OnceValue(func() *validator.Validate {
+	v := validator.New()
+
+	v.RegisterTagNameFunc(func(f reflect.StructField) string {
+		if name, _, _ := strings.Cut(f.Tag.Get("json"), ","); name != "" && name != "-" {
+			return name
+		}
+
+		return f.Name
+	})
+
+	_ = validate.RegisterDRTags(v)
+
+	return v
+})
+
+// validateManifests validates the script output manifest and checks that the
+// core BasicPluginManifest fields match expected. Scripts and MinCLIVersion
+// are intentionally ignored — they are optional managed-plugin fields that
+// PATH plugins do not output.
+//
+// The field-by-field comparison below could be replaced with go-cmp, but was
+// written out explicitly to avoid adding that dependency.
 func validateManifests(expected, actual PluginManifest) error {
-	opts := cmp.Options{
-		// Ignore Scripts and MinCLIVersion - they're optional managed plugin fields
-		cmp.FilterPath(func(p cmp.Path) bool {
-			return p.String() == "Scripts" || p.String() == "MinCLIVersion"
-		}, cmp.Ignore()),
+	manifestValidator := createManifestValidatorOnce()
+
+	if err := manifestValidator.Struct(actual); err != nil {
+		var ve validator.ValidationErrors
+		if errors.As(err, &ve) {
+			return fmt.Errorf("plugin script output is invalid: field %q failed %q validation", ve[0].Field(), ve[0].Tag())
+		}
+
+		return fmt.Errorf("plugin script output is invalid: %w", err)
 	}
 
-	if diff := cmp.Diff(expected, actual, opts); diff != "" {
-		return fmt.Errorf("plugin script output does not match manifest.json:\n%s", diff)
+	var mismatches []string
+
+	// Fields `Scripts` and `MinCLIVersion` are ignored as they're optional managed plugin fields
+	if actual.Name != expected.Name {
+		mismatches = append(mismatches, fmt.Sprintf("Name: expected %q, got %q", expected.Name, actual.Name))
+	}
+
+	if actual.Version != expected.Version {
+		mismatches = append(mismatches, fmt.Sprintf("Version: expected %q, got %q", expected.Version, actual.Version))
+	}
+
+	if actual.Description != expected.Description {
+		mismatches = append(mismatches, fmt.Sprintf("Description: expected %q, got %q", expected.Description, actual.Description))
+	}
+
+	if actual.Authentication != expected.Authentication {
+		mismatches = append(mismatches, fmt.Sprintf("Authentication: expected %v, got %v", expected.Authentication, actual.Authentication))
+	}
+
+	if len(mismatches) > 0 {
+		return fmt.Errorf("plugin script output does not match manifest.json:\n  %s", strings.Join(mismatches, "\n  "))
 	}
 
 	log.Debug("Plugin script manifest validation passed")
