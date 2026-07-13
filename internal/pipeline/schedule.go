@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // schedule.go wraps the pipeline schedule endpoints described in
-// pipelines-api/.../controllers/pipeline_schedule.py. Schedules are only
-// valid for locked pipeline versions, so the URL always carries a
-// /versions/{ver} segment and there is no Scope parameter on this side.
+// pipelines-api/.../controllers/pipeline_schedule.py. Schedules live
+// directly under a pipeline (not a specific version) in the API URL; the
+// locked pipeline version is captured in the CREATE request body instead.
 
 package pipeline
 
@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/datarobot/cli/internal/config"
 )
 
 // ScheduleStatus mirrors PipelineScheduleStatus in the pipelines-api enums.
@@ -40,6 +42,8 @@ type Schedule struct {
 	ScheduleID     string         `json:"id"`
 	PipelineID     string         `json:"pipelineId"`
 	Version        int            `json:"version"`
+	ImageID        string         `json:"imageId"`
+	ImageVersion   int            `json:"imageVersion"`
 	CronExpression string         `json:"cronExpression"`
 	Timezone       string         `json:"timezone"`
 	Status         ScheduleStatus `json:"status"`
@@ -49,9 +53,12 @@ type Schedule struct {
 
 // ScheduleCreateRequest mirrors PipelineScheduleCreateRequest.
 type ScheduleCreateRequest struct {
-	CronExpression  string `json:"cron_expression"`
-	PipelineInputID string `json:"pipeline_input_id"`
-	Timezone        string `json:"timezone,omitempty"`
+	CronExpression    string `json:"cron_expression"`
+	PipelineVersionID int    `json:"pipeline_version_id"`
+	PipelineInputID   string `json:"pipeline_input_id"`
+	ImageID           string `json:"image_id"`
+	ImageVersion      int    `json:"image_version"`
+	Timezone          string `json:"timezone,omitempty"`
 }
 
 // ScheduleUpdateRequest mirrors PipelineScheduleUpdateRequest. Both fields
@@ -61,9 +68,13 @@ type ScheduleUpdateRequest struct {
 	Timezone       *string `json:"timezone,omitempty"`
 }
 
-// CreateSchedule registers a new recurring run for a locked version.
-func CreateSchedule(pipelineID string, version int, body ScheduleCreateRequest) (*Schedule, error) {
-	endpoint, err := EndpointFor(pipelineID, ScopeLocked, &version, "schedules")
+func scheduleBase(pipelineID string) (string, error) {
+	return config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/schedules")
+}
+
+// CreateSchedule registers a new recurring run for a locked pipeline version.
+func CreateSchedule(pipelineID string, body ScheduleCreateRequest) (*Schedule, error) {
+	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,9 +89,9 @@ func CreateSchedule(pipelineID string, version int, body ScheduleCreateRequest) 
 	return &result, nil
 }
 
-// ListSchedules returns a paginated list of schedules for a locked version.
-func ListSchedules(pipelineID string, version, offset, limit int) ([]Schedule, error) {
-	endpoint, err := EndpointFor(pipelineID, ScopeLocked, &version, "schedules")
+// ListSchedules returns a paginated list of all schedules for a pipeline.
+func ListSchedules(pipelineID string, offset, limit int) ([]Schedule, error) {
+	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,11 +120,13 @@ func ListSchedules(pipelineID string, version, offset, limit int) ([]Schedule, e
 }
 
 // GetSchedule fetches a single schedule by id.
-func GetSchedule(pipelineID string, version int, scheduleID string) (*Schedule, error) {
-	endpoint, err := EndpointFor(pipelineID, ScopeLocked, &version, "schedules/"+scheduleID)
+func GetSchedule(pipelineID, scheduleID string) (*Schedule, error) {
+	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return nil, err
 	}
+
+	endpoint = endpoint + "/" + scheduleID
 
 	var schedule Schedule
 
@@ -126,11 +139,13 @@ func GetSchedule(pipelineID string, version int, scheduleID string) (*Schedule, 
 }
 
 // UpdateSchedule patches a schedule's cron expression and/or timezone.
-func UpdateSchedule(pipelineID string, version int, scheduleID string, body ScheduleUpdateRequest) (*Schedule, error) {
-	endpoint, err := EndpointFor(pipelineID, ScopeLocked, &version, "schedules/"+scheduleID)
+func UpdateSchedule(pipelineID, scheduleID string, body ScheduleUpdateRequest) (*Schedule, error) {
+	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return nil, err
 	}
+
+	endpoint = endpoint + "/" + scheduleID
 
 	var result Schedule
 
@@ -143,11 +158,11 @@ func UpdateSchedule(pipelineID string, version int, scheduleID string, body Sche
 }
 
 // DeleteSchedule removes a schedule.
-func DeleteSchedule(pipelineID string, version int, scheduleID string) error {
-	endpoint, err := EndpointFor(pipelineID, ScopeLocked, &version, "schedules/"+scheduleID)
+func DeleteSchedule(pipelineID, scheduleID string) error {
+	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return err
 	}
 
-	return doDelete(endpoint, "delete schedule")
+	return doDelete(endpoint+"/"+scheduleID, "delete schedule")
 }

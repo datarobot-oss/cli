@@ -31,7 +31,6 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
-		version      int
 		outputFormat outputformat.OutputFormat
 	)
 
@@ -41,19 +40,15 @@ func Cmd() *cobra.Command {
 		Long: `Display the cron expression, timezone, and lifecycle status of a schedule.
 
 Example:
-  dr pipeline schedule get --pipeline <id> --version=2 <schedule-id>
-  dr pipeline schedule get --pipeline <id> --version=2 <schedule-id> --output-format json`,
+  dr pipeline schedule get --pipeline <id> <schedule-id>
+  dr pipeline schedule get --pipeline <id> <schedule-id> --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if version <= 0 {
-				return errors.New("--version is required and must be > 0")
-			}
-
-			result, err := pipeline.GetSchedule(pipelineID, version, args[0])
+			result, err := pipeline.GetSchedule(pipelineID, args[0])
 			if err != nil {
 				return handleGetError(err, args[0])
 			}
@@ -66,14 +61,11 @@ Example:
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
-	_ = cmd.MarkFlagRequired("version")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   pipelineID,
 			"schedule_id":   telemetry.FirstArg(args),
-			"version":       version,
 			"output_format": string(outputFormat),
 		}
 	})

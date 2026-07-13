@@ -15,8 +15,6 @@
 package list
 
 import (
-	"errors"
-
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -27,7 +25,6 @@ import (
 func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
-		version      int
 		offset       int
 		limit        int
 		outputFormat outputformat.OutputFormat
@@ -35,23 +32,19 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List schedules for a locked pipeline version",
-		Long: `List recurring schedules attached to a locked pipeline version.
+		Short: "List all schedules for a pipeline",
+		Long: `List recurring schedules attached to a pipeline across all versions.
 
 Example:
-  dr pipeline schedule list --pipeline <id> --version=2
-  dr pipeline schedule list --pipeline <id> --version=2 --output-format json`,
+  dr pipeline schedule list --pipeline <id>
+  dr pipeline schedule list --pipeline <id> --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if version <= 0 {
-				return errors.New("--version is required and must be > 0")
-			}
-
-			items, err := pipeline.ListSchedules(pipelineID, version, offset, limit)
+			items, err := pipeline.ListSchedules(pipelineID, offset, limit)
 			if err != nil {
 				return err
 			}
@@ -64,15 +57,12 @@ Example:
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
-	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of schedules to return")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"pipeline_id":   pipelineID,
-			"version":       version,
 			"offset":        offset,
 			"limit":         limit,
 			"output_format": string(outputFormat),

@@ -51,13 +51,13 @@ func GetRequirementsFromDir(dir string) ([]Prerequisite, []string, error) {
 		return nil, nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
 	}
 
-	violations := versionsYamlSchema.Validate(fileParsed)
+	var violations []string
 
 	versions := make([]Prerequisite, 0, len(fileParsed))
 
 	for key, version := range fileParsed {
 		version.Key = key
-
+		violations = append(violations, validatePrerequisite(key, version)...)
 		versions = append(versions, version)
 	}
 

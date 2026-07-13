@@ -30,6 +30,8 @@ func Cmd() *cobra.Command {
 		version      int
 		cron         string
 		inputID      string
+		imageID      string
+		imageVersion int
 		timezone     string
 		outputFormat outputformat.OutputFormat
 	)
@@ -39,9 +41,12 @@ func Cmd() *cobra.Command {
 		Short: "Create a recurring schedule for a locked pipeline version",
 		Long: `Register a cron-style schedule that triggers a run on a fixed cadence.
 
+The schedule snapshots the pipeline version, input, and image at creation time
+so that every future run uses the same reproducibility tuple.
+
 Example:
-  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>
-  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 9 * * *" --input <input-id> --timezone America/Los_Angeles`,
+  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id> --image <image-id> --image-version 1
+  dr pipeline schedule create --pipeline <id> --version=2 --cron "0 9 * * *" --input <input-id> --image <image-id> --image-version 1 --timezone America/Los_Angeles`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -52,13 +57,20 @@ Example:
 				return errors.New("--version is required and must be > 0")
 			}
 
-			body := pipeline.ScheduleCreateRequest{
-				CronExpression:  cron,
-				PipelineInputID: inputID,
-				Timezone:        timezone,
+			if imageVersion <= 0 {
+				return errors.New("--image-version is required and must be > 0")
 			}
 
-			result, err := pipeline.CreateSchedule(pipelineID, version, body)
+			body := pipeline.ScheduleCreateRequest{
+				CronExpression:    cron,
+				PipelineVersionID: version,
+				PipelineInputID:   inputID,
+				ImageID:           imageID,
+				ImageVersion:      imageVersion,
+				Timezone:          timezone,
+			}
+
+			result, err := pipeline.CreateSchedule(pipelineID, body)
 			if err != nil {
 				return err
 			}
@@ -71,12 +83,16 @@ Example:
 
 	cmd.Flags().StringVar(&pipelineID, "pipeline", "", "Pipeline ID")
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version")
+	cmd.Flags().IntVar(&version, "version", 0, "Locked pipeline version to schedule")
 	_ = cmd.MarkFlagRequired("version")
 	cmd.Flags().StringVar(&cron, "cron", "", "Cron expression, e.g. \"0 * * * *\"")
 	_ = cmd.MarkFlagRequired("cron")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to run on each tick")
 	_ = cmd.MarkFlagRequired("input")
+	cmd.Flags().StringVar(&imageID, "image", "", "Image ID to run the schedule with")
+	_ = cmd.MarkFlagRequired("image")
+	cmd.Flags().IntVar(&imageVersion, "image-version", 0, "Image version to run the schedule with")
+	_ = cmd.MarkFlagRequired("image-version")
 	cmd.Flags().StringVar(&timezone, "timezone", "", "IANA timezone name (default UTC)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {

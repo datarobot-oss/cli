@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/run/get"
 	"github.com/datarobot/cli/cmd/pipeline/run/list"
 	"github.com/datarobot/cli/cmd/pipeline/run/status"
+	"github.com/datarobot/cli/cmd/pipeline/run/task"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +44,7 @@ When --version is supplied, the locked scope is selected automatically.`,
 		get.Cmd(),
 		status.Cmd(),
 		cancel.Cmd(),
+		task.Cmd(),
 	)
 
 	return cmd

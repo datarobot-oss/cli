@@ -181,19 +181,13 @@ When `authentication` is enabled:
 - Authentication can be bypassed with the global `--skip-auth` flag (for advanced users).
 - Your plugin will receive a clean environment with authentication already validated
 
-### Private CA / TLS support (experimental, feature-gated)
+### Private CA / TLS support
 
-> **Subject to change:** this mechanism is gated behind
-> `DATAROBOT_CLI_FEATURE_PRIVATE_CA=true` and is expected to be reworked
-> once the CLI's generic root-flag-forwarding mechanism (a `DATAROBOT_CLI_*`
-> env var table for flags placed before the plugin name) lands. Do not treat
-> the exact env vars below as a stable contract yet.
-
-When the `private-ca` feature gate is enabled and a user passes
-`-k`/`--skip-certificate-check` or `--ca-cert <path>` before your plugin's
-name (e.g. `dr --ca-cert /path/to/ca.pem myplugin [args...]`), the CLI
-forwards the equivalent runtime configuration to your plugin subprocess via
-these environment variables:
+When a user passes `-k`/`--skip-certificate-check` or `--ca-cert <path>` before
+your plugin's name (e.g. `dr --ca-cert /path/to/ca.pem myplugin [args...]`), the
+CLI applies the TLS configuration to its own HTTP client and forwards the
+equivalent runtime configuration to your plugin subprocess via these environment
+variables:
 
 | Variable | Set when | Value |
 |---|---|---|
@@ -206,6 +200,92 @@ and `NODE_EXTRA_CA_CERTS` without any extra code. Other runtimes that respect
 `SSL_CERT_FILE` (e.g. many Go/OpenSSL-based tools) will pick up the custom CA
 bundle the same way. If your plugin uses a different HTTP client, read these
 variables at startup and configure your client's TLS trust store accordingly.
+
+### Environment variables
+
+The CLI sets the following environment variables on the plugin subprocess. Your plugin inherits the full parent environment plus these additions (which override any inherited values of the same name).
+
+#### Always present
+
+| Variable | Value | Description |
+|---|---|---|
+| `DR_PLUGIN_MODE` | `1` | Signals to the plugin that it was invoked by the `dr` CLI. |
+| `DR_PLUGIN_PATH` | `/path/to/dr-myplugin` | Absolute path to the plugin executable. |
+| `DATAROBOT_CONFIG` | `/path/to/drconfig.yaml` | Path to the active config file (if one is loaded). |
+
+#### Present when `authentication: true`
+
+| Variable | Value | Description |
+|---|---|---|
+| `DATAROBOT_ENDPOINT` | `https://app.datarobot.com` | The DataRobot API endpoint. |
+| `DATAROBOT_API_TOKEN` | `<token>` | The user's API token, already validated. |
+
+#### Universal CLI flags (`DATAROBOT_CLI_*`)
+
+When a user passes a universal root-level flag **before** the plugin name, the CLI
+consumes it internally and also forwards it to the plugin as a `DATAROBOT_CLI_*`
+environment variable so your plugin can optionally honour the same behaviour.
+
+> **Important:** Only flags placed **before** the plugin name are forwarded.
+> Flags placed after the plugin name are passed verbatim as command-line arguments
+> and are never seen by the core CLI. This matches the kubectl / helm model.
+
+```bash
+# Correct — --debug is consumed by core AND forwarded to the plugin:
+dr --debug myplugin [args...]
+
+# Not forwarded — --debug is passed to the plugin as a raw argument:
+dr myplugin --debug [args...]
+```
+
+| CLI flag | Environment variable | Value |
+|---|---|---|
+| `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
+| `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
+| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
+| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
+
+The `DATAROBOT_CLI_` prefix is the canonical namespace for flags forwarded from
+the core CLI. As new universal flags are added, they follow the same convention:
+the flag name is upper-cased and hyphens are replaced with underscores
+(e.g. `--ca-cert <path>` produces `DATAROBOT_CLI_CA_CERT=<path>`).
+
+##### Consuming forwarded flags in your plugin
+
+Check for the variable at startup and apply the corresponding behaviour:
+
+```bash
+# Example: shell plugin honouring DATAROBOT_CLI_DEBUG
+if [ "${DATAROBOT_CLI_DEBUG}" = "1" ]; then
+  set -x   # enable shell trace / verbose output
+fi
+```
+
+```python
+# Example: Python plugin
+import os
+DEBUG = os.getenv("DATAROBOT_CLI_DEBUG") == "1"
+```
+
+##### Adding a new universal flag (for CLI contributors)
+
+To forward a new root-level flag to plugins, only two files need to change:
+
+1. **Register the flag and mark it universal** — in `cmd/root.go`, add it as a
+   persistent flag on `RootCmd` and call `bindUniversal` in the universal flags
+   block. That single call binds it to viper and annotates it for forwarding:
+
+   ```go
+   RootCmd.PersistentFlags().Bool("my-flag", false, "description")
+   // ...
+   bindUniversal("my-flag")  // emits DATAROBOT_CLI_MY_FLAG=1
+   ```
+
+   `internal/plugin` discovers the annotation automatically — no changes needed there.
+
+2. **Update the docs** — add a row to the table above and the same row to the
+   table in `docs/commands/plugins.md` under "Passing global flags to plugins".
 
 ## Developing a plugin
 

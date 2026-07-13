@@ -250,3 +250,35 @@ When no plugins are found, the command displays a message and the discovery loca
 
 - Plugin manifest retrieval has its own timeout (see `plugin.manifest_timeout_ms` in configuration).
 - The global flag `--plugin-discovery-timeout` controls overall discovery time and disables discovery when set to `0s`.
+
+## Passing global flags to plugins
+
+Some global `dr` flags (such as `--debug` and `--disable-telemetry`) affect both the
+core CLI and the plugin subprocess. Because the core CLI does not process any
+arguments that appear after the plugin name, these flags **must** appear before the
+plugin name on the command line:
+
+```bash
+# Correct — enables debug output in both core and the plugin (if supported):
+dr --debug myplugin [args...]
+
+# Incorrect — --debug is passed to the plugin as a raw argument;
+# core debug output is NOT enabled:
+dr myplugin --debug [args...]
+```
+
+When a global flag is placed before the plugin name, the CLI forwards it to the
+plugin subprocess as a `DATAROBOT_CLI_*` environment variable in addition to
+consenting it internally:
+
+| CLI flag | Forwarded as env var | Value |
+|---|---|---|
+| `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
+| `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
+| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
+| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
+
+Plugins that want to honour these flags can read the environment variables at
+startup. See [Plugin environment variables](../development/plugins.md#environment-variables)
+for the full reference and code examples.

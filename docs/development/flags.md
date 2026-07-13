@@ -8,6 +8,7 @@ This guide covers best practices for defining and managing **command-line flags*
 
 - [Define flags clearly](#define-flags-clearly)
 - [Global output-format pattern](#global-output-format-pattern)
+- [Universal flags (forwarded to plugins)](#universal-flags-forwarded-to-plugins)
 - [Mark flag groups](#mark-flag-groups)
 - [Flag naming conventions](#flag-naming-conventions)
 - [Examples from the codebase](#examples-from-the-codebase)
@@ -89,6 +90,49 @@ if format == outputformat.OutputFormatJSON {
 ```
 
 The envelope format is `{"<key>": <data>}`, which ensures output is always a JSON object (never a bare array). This makes the output forward-compatible for adding metadata, pagination, or warnings without breaking callers.
+
+## Universal flags (forwarded to plugins)
+
+Some root flags must be forwarded to plugin subprocesses as `DATAROBOT_CLI_*` environment variables so plugins can honour them (e.g. `--debug` → `DATAROBOT_CLI_DEBUG=1`). These are called **universal flags**.
+
+### How it works
+
+Separation of concerns is strict:
+
+| Layer | Responsibility |
+|---|---|
+| `cmd/root.go` | Declares which flags are universal and what env var suffix they map to |
+| `internal/plugin` | Reads the annotations and injects env vars when launching a subprocess |
+
+The two sides share only one thing: the annotation key constant `plugin.UniversalAnnotationKey = "plugin-universal"`.
+
+### Adding a universal flag
+
+Call `bindUniversal` in the universal flags block in `cmd/root.go` — that is the **only** change required:
+
+```go
+// cmd/root.go — universal flags block
+bindUniversal("debug")
+bindUniversal("disable-telemetry")
+bindUniversal("my-new-flag")  // ← one line, done
+```
+
+`bindUniversal` does three things at once:
+
+1. Looks up the already-registered `*pflag.Flag`
+2. Binds it to viper (same as a plain `viperx.BindPFlag` call)
+3. Sets `flag.Annotations["plugin-universal"] = []string{"MY_NEW_FLAG"}` — the suffix is derived automatically from the flag name (uppercased, hyphens → underscores)
+
+`internal/plugin` discovers annotated flags automatically when it builds the subprocess environment — no edits needed there.
+
+### How `internal/plugin` discovers them
+
+`cmd/plugin.RegisterPluginCommands` passes the root command's persistent flagset to `internal/plugin.SetRootFlags`. From that point `universalFlagEnv()` (called inside `buildPluginEnv`) walks the flagset, finds any flag carrying a `plugin-universal` annotation, and emits `DATAROBOT_CLI_<SUFFIX>=<value>` into the subprocess environment.
+
+### What you must NOT do
+
+- Do **not** add a new flag name to `universalFlagEnv` in `exec.go` — the annotation on the flag drives discovery automatically.
+- Do **not** call `internalPlugin.SetRootFlags` from `cmd/root.go` — that call lives inside `RegisterPluginCommands`.
 
 ## Mark flag groups
 

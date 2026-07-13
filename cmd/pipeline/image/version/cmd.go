@@ -16,19 +16,21 @@ package version
 
 import (
 	"github.com/datarobot/cli/cmd/pipeline/image/version/del"
+	"github.com/datarobot/cli/cmd/pipeline/image/version/logs"
 	"github.com/spf13/cobra"
 )
 
 // Cmd returns the parent command for `dr pipeline image version`.
-// Currently only delete is exposed; the pipelines-api does not surface
-// per-version GET endpoints.
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Manage versions of a pipeline execution image",
 	}
 
-	cmd.AddCommand(del.Cmd())
+	cmd.AddCommand(
+		del.Cmd(),
+		logs.Cmd(),
+	)
 
 	return cmd
 }

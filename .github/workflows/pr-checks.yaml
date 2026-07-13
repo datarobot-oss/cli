@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Detect file changes
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: changes
         with:
           filters: |
@@ -281,6 +281,13 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Runner image pre-seeds MS apt sources (azure-cli/microsoft-prod); we don't use
+          # them and they're a source of flaky/noisy apt-get update failures
+          # (packages.microsoft.com sporadically serves a corrupted InRelease file).
+          # Matching by content allows us to manage both legacy.list and deb822 .sources files.
+          # NOTE: if we ever actually need an MS package repo, re-add it explicitly for that job.
+          # NOTE: or true is used to avoid failing the step if no files are found to delete.
+          sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f || true
           sudo apt-get update
           sudo apt-get install -y expect bash-completion
 

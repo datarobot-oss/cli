@@ -17,6 +17,7 @@ package image
 import (
 	"github.com/datarobot/cli/cmd/pipeline/image/create"
 	"github.com/datarobot/cli/cmd/pipeline/image/del"
+	"github.com/datarobot/cli/cmd/pipeline/image/get"
 	"github.com/datarobot/cli/cmd/pipeline/image/list"
 	"github.com/datarobot/cli/cmd/pipeline/image/update"
 	"github.com/datarobot/cli/cmd/pipeline/image/version"
@@ -25,7 +26,7 @@ import (
 
 // Cmd returns the parent command for `dr pipeline image`. It groups the
 // lifecycle verbs that operate on pipeline execution images (named,
-// immutable-versioned bags of pip packages).
+// immutable-versioned execution environments).
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "image",
@@ -33,14 +34,16 @@ func Cmd() *cobra.Command {
 		Short:   "Manage pipeline execution images",
 		Long: `Manage pipeline execution images.
 
-Images are named, immutable-versioned bags of pip packages that
-pipelines can be built against. Each ` + "`update`" + ` adds packages by
-creating a new version; older versions can be deleted individually with
-` + "`image version delete`" + `.`,
+Images are named, immutable-versioned execution environments backed by
+pip packages, conda packages, a base Docker image, and optional NVIDIA GPU
+support. Pipelines can be built against them. Each ` + "`update`" + ` creates
+a new version with a complete replacement definition; older versions can be
+deleted individually with ` + "`image version delete`" + `.`,
 	}
 
 	cmd.AddCommand(
 		create.Cmd(),
+		get.Cmd(),
 		list.Cmd(),
 		update.Cmd(),
 		del.Cmd(),

@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,7 @@ type envVarProvider struct{}
 // Feature names are converted to uppercase with underscores replacing hyphens.
 // Format: DATAROBOT_CLI_FEATURE_<NAME> (e.g., DATAROBOT_CLI_FEATURE_WORKLOAD)
 func (p *envVarProvider) IsEnabled(name string) bool {
-	envKey := "DATAROBOT_CLI_FEATURE_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	envKey := config.EnvPrefix + "FEATURE_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 	if v := os.Getenv(envKey); v != "" {
 		return strings.EqualFold(v, "true") || v == "1"
 	}

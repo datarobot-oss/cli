@@ -1,2 +1,3 @@
-* @datarobot/applications
-**/*.md @datarobot/api-docs
+* @datarobot-oss/cli-maintainers
+cmd/workload/ @datarobot-oss/workload-cli
+internal/workload/ @datarobot-oss/workload-cli

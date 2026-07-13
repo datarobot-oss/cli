@@ -35,25 +35,31 @@ func runCmd(t *testing.T, args ...string) error {
 }
 
 func TestCmd_RejectsInvalidOutput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--output-format", "yaml")
+	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--image", "img-1", "--output-format", "yaml")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {
-	err := runCmd(t, "--input", "in-1")
+	err := runCmd(t, "--input", "in-1", "--image", "img-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pipeline")
 }
 
 func TestCmd_RejectsMissingInput(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p")
+	err := runCmd(t, "--pipeline", "p", "--image", "img-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "input")
 }
 
+func TestCmd_RejectsMissingImage(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p", "--input", "in-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "image")
+}
+
 func TestCmd_RejectsBadScopeCombo(t *testing.T) {
-	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--scope", "draft", "--version", "2")
+	err := runCmd(t, "--pipeline", "p", "--input", "in-1", "--image", "img-1", "--scope", "draft", "--version", "2")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "draft cannot be combined")
 }
@@ -61,7 +67,7 @@ func TestCmd_RejectsBadScopeCombo(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"pipeline", "scope", "version", "input", "output-format"} {
+	for _, name := range []string{"pipeline", "scope", "version", "input", "image", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }

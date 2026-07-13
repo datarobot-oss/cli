@@ -33,3 +33,17 @@ func TestCmd_RegistersDelete(t *testing.T) {
 
 	assert.True(t, found, "missing delete subcommand")
 }
+
+func TestCmd_RegistersLogs(t *testing.T) {
+	cmd := Cmd()
+
+	found := false
+
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "logs" {
+			found = true
+		}
+	}
+
+	assert.True(t, found, "missing logs subcommand")
+}

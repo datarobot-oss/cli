@@ -27,6 +27,7 @@ func Cmd() *cobra.Command {
 	var (
 		flags        scopeflag.Flags
 		inputID      string
+		imageID      string
 		outputFormat outputformat.OutputFormat
 	)
 
@@ -40,6 +41,7 @@ or ` + "`dr pipeline run status`" + ` to follow its progress.
 
 Example:
   dr pipeline run create --pipeline <id> --input <input-id>
+  dr pipeline run create --pipeline <id> --input <input-id> --image <image-id>
   dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -52,7 +54,7 @@ Example:
 				return err
 			}
 
-			result, err := pipeline.CreateRun(flags.PipelineID, scope, version, inputID)
+			result, err := pipeline.CreateRun(flags.PipelineID, scope, version, inputID, imageID)
 			if err != nil {
 				return err
 			}
@@ -67,6 +69,8 @@ Example:
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&inputID, "input", "", "Input ID to trigger the run with")
 	_ = cmd.MarkFlagRequired("input")
+	cmd.Flags().StringVar(&imageID, "image", "", "Execution image ID for this run")
+	_ = cmd.MarkFlagRequired("image")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
