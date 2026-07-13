@@ -15,15 +15,6 @@ on:
     secrets:
       DR_API_TOKEN:
         required: true
-  # Manual trigger for testing this workflow on a branch without cutting a
-  # real release. DR_API_TOKEN is read from the repo's Actions secrets
-  # directly (workflow_dispatch has no secrets: block).
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Git ref (branch, tag, or SHA) to check out and build'
-        required: true
-        type: string
 
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
