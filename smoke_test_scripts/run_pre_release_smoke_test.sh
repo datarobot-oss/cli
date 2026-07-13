@@ -33,6 +33,13 @@ done
 
 export TERM="dumb"
 
+# GitHub Actions sets CI=true on every runner, which makes Task force-enable
+# ANSI color codes in `task --list` output (used internally by `dr start` to
+# detect a template's start task) even though stdout is piped, not a TTY.
+# NO_COLOR overrides that forced colorization so the detection's plain
+# substring match against "start" keeps working.
+export NO_COLOR=1
+
 # Timing helpers
 SCRIPT_START=$(date +%s)
 TEST_TIMINGS=""
