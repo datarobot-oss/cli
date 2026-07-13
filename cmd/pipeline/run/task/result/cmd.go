@@ -17,7 +17,7 @@ package result
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 	"text/tabwriter"
 
@@ -38,10 +38,16 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "result <task-id>",
 		Short: "Get the presigned URL for a completed task's result",
-		Long: `Return the presigned S3 URL for a completed @task electron's result blob.
+		Long: `Return the presigned S3 URL for a completed @task's result blob,
+plus a preview of the returned value.
 
 The result is a cloudpickle payload. Download the URL directly from S3
 and decode with cloudpickle.loads(). pipelines-api never proxies the bytes.
+
+A text preview of the value is also shown: for JSON-serializable results
+the structured value is displayed; for others (e.g. a DataFrame or numpy
+array) a str() text preview is shown so you can eyeball the data without
+downloading and unpickling the full object.
 
 Returns 409 when the task has not yet reached COMPLETED state.
 
@@ -64,7 +70,7 @@ Example:
 				return err
 			}
 
-			return renderResult(outputFormat, res)
+			return renderResult(cmd.OutOrStdout(), outputFormat, res)
 		},
 	}
 
@@ -87,25 +93,25 @@ Example:
 	return cmd
 }
 
-func renderResult(format outputformat.OutputFormat, res *pipeline.TaskExecutionResult) error {
+func renderResult(w io.Writer, format outputformat.OutputFormat, res *pipeline.TaskExecutionResult) error {
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
 			return err
 		}
 
-		fmt.Println(string(data))
+		fmt.Fprintln(w, string(data))
 
 		return nil
 	}
 
-	printResultHuman(res)
+	printResultHuman(w, res)
 
 	return nil
 }
 
-func printResultHuman(res *pipeline.TaskExecutionResult) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printResultHuman(out io.Writer, res *pipeline.TaskExecutionResult) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "URL:\t%s\n", res.URL)
 	fmt.Fprintf(w, "Expires In:\t%ds\n", res.ExpiresIn)
@@ -124,4 +130,17 @@ func printResultHuman(res *pipeline.TaskExecutionResult) {
 	}
 
 	w.Flush()
+
+	// When the JSON value can't represent the result (e.g. a DataFrame or
+	// numpy array), fall back to the str() text preview the task pod
+	// recorded. Printed outside the tabwriter so multi-line reprs keep
+	// their own layout.
+	if !res.ValueAvailable && res.ValueText != "" {
+		header := "Text Preview:"
+		if res.ValueTextTruncated {
+			header = "Text Preview (truncated):"
+		}
+
+		fmt.Fprintf(out, "\n%s\n%s\n", header, res.ValueText)
+	}
 }

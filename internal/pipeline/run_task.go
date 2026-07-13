@@ -56,6 +56,11 @@ type TaskExecutionDurableLog struct {
 
 // TaskExecutionResult mirrors TaskExecutionResultResponse (presigned S3 URL
 // for the task's cloudpickle result blob).
+//
+// ValueText is a human-readable str() preview the task pod records for every
+// result — present even when Value (the JSON-safe preview) is unavailable,
+// so a DataFrame/array/custom object shows *something* inline. It may be
+// truncated (see ValueTextTruncated); the full object is via URL.
 type TaskExecutionResult struct {
 	URL                    string  `json:"url"`
 	ExpiresIn              int     `json:"expiresIn"`
@@ -63,6 +68,8 @@ type TaskExecutionResult struct {
 	Value                  any     `json:"value,omitempty"`
 	ValueAvailable         bool    `json:"valueAvailable"`
 	ValueUnavailableReason *string `json:"valueUnavailableReason,omitempty"`
+	ValueText              string  `json:"valueText,omitempty"`
+	ValueTextTruncated     bool    `json:"valueTextTruncated"`
 }
 
 func taskBase(pipelineID, runID string) (string, error) {
