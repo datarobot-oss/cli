@@ -98,7 +98,7 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 | -------------------- | ------------------------------------------------------------------------- |
 | `install_method`     | Set at build time via ldflags (`release`, `source`, etc.)                 |
 | `os_arch`            | CPU architecture from `runtime.GOARCH`                                    |
-| `go_version`         | Go runtime version (e.g. `go1.26.4`) from `runtime.Version()`             |
+| `go_version`         | Go runtime version (e.g. `go1.26.5`) from `runtime.Version()`             |
 | `environment`        | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL                 |
 | `datarobot_instance` | Base URL of the configured DataRobot instance                             |
 | `template_name`      | Best-effort from `.datarobot/answers/` in the current repo                |

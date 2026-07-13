@@ -65,7 +65,7 @@ See [Building](building.md) for detailed workflow documentation.
 
 Before you begin development:
 
-- **Go 1.26.4 or later**&mdash;required for building the CLI.
+- **Go 1.26.5 or later**&mdash;required for building the CLI.
 - **Git**&mdash;version control.
 - **Task**&mdash;task runner for development commands.
 - **golangci-lint**&mdash;installed automatically via `task dev-init`.
