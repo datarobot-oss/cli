@@ -50,6 +50,7 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg.String() == "ctrl+c" {
 			// Log the interrupt for debugging purposes
 			log.Info("Ctrl-C detected, quitting...")
+
 			return m, tea.Quit
 		}
 	}
@@ -65,4 +66,11 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m InterruptibleModel) View() string {
 	return m.Model.View()
+}
+
+// Unwrap returns the wrapped model, so callers that need to recover the
+// original concrete model type after tui.Run() can peel this layer off.
+// See Unwrap (package-level) for why this exists.
+func (m InterruptibleModel) Unwrap() tea.Model {
+	return m.Model
 }

@@ -72,12 +72,7 @@ func RunTea(ctx context.Context, fromStartCommand bool) error {
 }
 
 func InnerModel(finalModel tea.Model) (Model, bool) {
-	startModel, ok := finalModel.(tui.InterruptibleModel)
-	if !ok {
-		return Model{}, false
-	}
-
-	innerModel, ok := startModel.Model.(Model)
+	innerModel, ok := tui.Unwrap(finalModel).(Model)
 	if !ok {
 		return Model{}, false
 	}

@@ -211,16 +211,14 @@ This wizard will help you:
 		}
 
 		// Check if the model has an error (e.g., from Pulumi login failure)
-		// The model is wrapped in InterruptibleModel, so we need to unwrap it
-		if finalM, ok := finalModel.(tui.InterruptibleModel); ok {
-			if m, ok := finalM.Model.(Model); ok {
-				if m.err != nil {
-					return m.err
-				}
+		// The model is wrapped by tui.Run(), so we need to unwrap it
+		if m, ok := tui.Unwrap(finalModel).(Model); ok {
+			if m.err != nil {
+				return m.err
+			}
 
-				if m.pulumiModel != nil && m.pulumiModel.err != nil {
-					return m.pulumiModel.err
-				}
+			if m.pulumiModel != nil && m.pulumiModel.err != nil {
+				return m.pulumiModel.err
 			}
 		}
 

@@ -28,7 +28,7 @@ func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 
 	defer log.StartStderr()
 
-	p := tea.NewProgram(NewInterruptibleModel(model), opts...)
+	p := tea.NewProgram(NewInterruptibleModel(wrapWithKonamiOverlay(model)), opts...)
 	finalModel, err := p.Run()
 
 	return finalModel, err
