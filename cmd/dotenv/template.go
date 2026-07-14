@@ -45,7 +45,7 @@ const (
 func getStateDir() (string, error) {
 	stateDir, err := config.GetStateDir()
 	if err != nil {
-		return "", fmt.Errorf("Failed to get user home directory: %w", err)
+		return "", fmt.Errorf("Failed to get state directory: %w", err)
 	}
 
 	drStateDir := filepath.Join(stateDir, "dr", "backups")
