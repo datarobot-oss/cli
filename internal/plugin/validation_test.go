@@ -16,7 +16,6 @@ package plugin
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -321,56 +320,6 @@ func TestExecPluginManifest_ExtraField(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid manifest JSON")
 	assert.Contains(t, err.Error(), "authenticated")
-}
-
-// Helper functions
-
-// writePluginManifestScript creates a cross-platform executable that responds to
-// --dr-plugin-manifest by echoing manifestJSON. Returns the script path.
-func writePluginManifestScript(t *testing.T, dir, name, manifestJSON string) string {
-	t.Helper()
-
-	var scriptPath, scriptContent string
-
-	if runtime.GOOS == "windows" {
-		scriptPath = filepath.Join(dir, name+".ps1")
-		scriptContent = "#!/usr/bin/env pwsh\n" +
-			"if ($args[0] -eq '--dr-plugin-manifest') {\n" +
-			"  Write-Output '" + manifestJSON + "'\n" +
-			"}\n"
-	} else {
-		scriptPath = filepath.Join(dir, name)
-		scriptContent = "#!/bin/sh\n" +
-			"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
-			"  echo '" + manifestJSON + "'\n" +
-			"else\n" +
-			"  exit 0\n" +
-			"fi\n"
-	}
-
-	createScript(t, scriptPath, scriptContent)
-
-	return scriptPath
-}
-
-// writeExitScript creates a Unix shell script that exits with the given code.
-// Returns the script path.
-func writeExitScript(t *testing.T, dir, name string, exitCode int) string {
-	t.Helper()
-
-	script := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
-	path := filepath.Join(dir, name)
-
-	createScript(t, path, script)
-
-	return path
-}
-
-func createScript(t *testing.T, path, content string) {
-	t.Helper()
-
-	err := os.WriteFile(path, []byte(content), 0o755)
-	require.NoError(t, err)
 }
 
 func TestValidateLicense_Success(t *testing.T) {
