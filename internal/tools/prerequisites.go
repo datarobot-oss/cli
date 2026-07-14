@@ -100,18 +100,6 @@ var RequiredTools = []Prerequisite{
 	{Name: "pulumi", Command: "pulumi version", URL: "https://www.pulumi.com/docs/get-started/download-install/", MinimumVersion: "3.245.0", Install: pulumiInstallCmd},
 }
 
-func CheckPrerequisite(name string) error {
-	for _, tool := range RequiredTools {
-		if tool.Name == name {
-			if !isInstalled(tool.Command) {
-				return fmt.Errorf("%s is not installed.", name)
-			}
-		}
-	}
-
-	return nil
-}
-
 // CheckResult holds the outcome of a CheckPrerequisites call.
 type CheckResult struct {
 	MissingTools         []Prerequisite
@@ -153,7 +141,11 @@ func CheckPrerequisiteList(prereqs []Prerequisite) CheckResult {
 	var result CheckResult
 
 	for _, tool := range prereqs {
-		if !isInstalled(tool.Command) {
+		command, args := commandArgs(tool.Command)
+
+		if command == "dr" {
+			checkDrPrerequisite(&result, tool, command, args)
+		} else if !isInstalled(tool.Command) {
 			log.Debug("deps: tool missing", "name", tool.Name)
 
 			result.MissingTools = append(result.MissingTools, tool)
@@ -169,6 +161,49 @@ func CheckPrerequisiteList(prereqs []Prerequisite) CheckResult {
 	}
 
 	return result
+}
+
+// checkDrPrerequisite handles a Prerequisite whose command invokes the dr CLI itself:
+// either "dr plugin version <name>" (a dependency on another installed dr plugin) or
+// the CLI's own self-version entry (e.g. "dr self version").
+func checkDrPrerequisite(result *CheckResult, tool Prerequisite, command string, args []string) {
+	if len(args) > 2 && args[0] == "plugin" && args[1] == "version" {
+		versionOutput, err := exec.Command(command, args...).Output()
+		if err != nil {
+			log.Debug("deps: plugin dependency missing", "name", tool.Name)
+
+			result.MissingTools = append(result.MissingTools, tool)
+			result.MissingMsgs = append(result.MissingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))
+
+			return
+		}
+
+		if versionInstalled, ok := sufficientVersion(string(versionOutput), tool.MinimumVersion); !ok {
+			log.Debug("deps: plugin dependency wrong version", "name", tool.Name, "msg", versionInstalled)
+
+			result.WrongVersionTools = append(result.WrongVersionTools, tool)
+			result.WrongVersionMsgs = append(result.WrongVersionMsgs, fmt.Sprintf("%s (minimal: v%s, installed: %s)\n%s\n",
+				tool.Name, tool.MinimumVersion, versionInstalled, tool.URL))
+
+			return
+		}
+
+		log.Debug("deps: plugin dependency ok", "name", tool.Name)
+
+		return
+	}
+
+	if !SufficientSelfVersion(tool.MinimumVersion) {
+		log.Debug("deps: tool wrong version", "name", tool.Name)
+
+		result.WrongVersionTools = append(result.WrongVersionTools, tool)
+		result.WrongVersionMsgs = append(result.WrongVersionMsgs, fmt.Sprintf("%s (minimal: v%s, installed: %s)\n%s\n",
+			tool.Name, tool.MinimumVersion, version.Version, tool.URL))
+
+		return
+	}
+
+	log.Debug("deps: tool ok", "name", tool.Name)
 }
 
 // PrerequisitesMsg formats the message to display to the user about missing/wrong-version prerequisites.
@@ -208,10 +243,6 @@ func commandArgs(fullCommand string) (string, []string) {
 func isInstalled(fullCommand string) bool {
 	command, _ := commandArgs(fullCommand)
 
-	if command == "dr" {
-		return true
-	}
-
 	_, err := exec.LookPath(command)
 
 	return err == nil
@@ -221,15 +252,6 @@ func isInstalled(fullCommand string) bool {
 func isVersionInstalled(tool Prerequisite) (string, bool) {
 	// Return success result if no version or no version command specified
 	if tool.MinimumVersion == "" || tool.Command == "" {
-		return "", true
-	}
-
-	if tool.Key == "dr" {
-		if !SufficientSelfVersion(tool.MinimumVersion) {
-			return fmt.Sprintf("%s (minimal: v%s, installed: %s)\n%s\n",
-				tool.Name, tool.MinimumVersion, version.Version, tool.URL), false
-		}
-
 		return "", true
 	}
 
@@ -279,32 +301,4 @@ func sufficientVersion(versionOutput, minimalStr string) (string, bool) {
 	}
 
 	return installedStr, true
-}
-
-// CheckTool verifies if a specific tool is installed
-func CheckTool(name string) error {
-	for _, tool := range RequiredTools {
-		if tool.Name == name {
-			if !isInstalled(tool.Command) {
-				return fmt.Errorf("%s is not installed.", name)
-			}
-
-			return nil
-		}
-	}
-
-	return fmt.Errorf("Unknown tool: %s.", name)
-}
-
-// GetMissingTools returns a list of missing prerequisite tools
-func GetMissingTools() []string {
-	var missing []string
-
-	for _, tool := range RequiredTools {
-		if !isInstalled(tool.Command) {
-			missing = append(missing, tool.Name)
-		}
-	}
-
-	return missing
 }

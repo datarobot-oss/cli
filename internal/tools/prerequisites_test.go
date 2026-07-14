@@ -70,6 +70,13 @@ func TestSufficientVersionTrue(t *testing.T) {
 		{installed: "v0.2.55-beta.0-0-gabcd1234", minimal: "0.2.55"},
 		// Fallback format for fresh clones
 		{installed: "v0.0.0-dev.42.gabcd1234", minimal: "0.0.0"},
+		// SNAPSHOT format emitted by Java / Maven-style plugins
+		{installed: "1.3.1-SNAPSHOT-b3cdbb6", minimal: "1.3.0"},
+		{installed: "1.3.1-SNAPSHOT-b3cdbb6", minimal: "1.3.1"},
+		// Plugin-style output: CLI wrapper prints a header line before the version.
+		// sufficientVersion must skip the non-numeric header and parse the second line.
+		{installed: "🔌 Running plugin: xp\n1.3.1-SNAPSHOT-b3cdbb6", minimal: "1.3.0"},
+		{installed: "🔌 Running plugin: xp\n1.3.1-SNAPSHOT-b3cdbb6", minimal: "1.3.1"},
 	}
 
 	for _, testCase := range sufficientCases {
@@ -88,6 +95,10 @@ func TestSufficientVersionFalse(t *testing.T) {
 		{installed: "v0.2.55-beta.0-0-gabcd1234", minimal: "0.2.56"},
 		// Fallback format is insufficient for higher minimal
 		{installed: "v0.0.0-dev.42.gabcd1234", minimal: "0.1.0"},
+		// SNAPSHOT format — version number extracted correctly, then compared
+		{installed: "1.3.1-SNAPSHOT-b3cdbb6", minimal: "2.0.0"},
+		// Plugin-style output with header — version still insufficient
+		{installed: "🔌 Running plugin: xp\n1.3.1-SNAPSHOT-b3cdbb6", minimal: "2.0.0"},
 	}
 
 	for _, testCase := range sufficientCases {
@@ -486,4 +497,134 @@ func TestCheckPrerequisiteList_NeverSetsValidationViolations(t *testing.T) {
 	result := CheckPrerequisiteList(prereqs)
 
 	assert.Empty(t, result.ValidationViolations)
+}
+
+// writeFakeDrScript writes a temp shell script named "dr" emulating
+// `dr plugin version <pluginName>`: prints installedVersion and exits 0 when
+// invoked with exactly that plugin name, exits 1 for any other invocation.
+// Prepends its directory to PATH so exec.Command("dr", ...) resolves to it;
+// t.Setenv restores the original PATH and t.TempDir removes the script when
+// the test completes.
+func writeFakeDrScript(t *testing.T, pluginName, installedVersion string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "dr")
+	content := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"plugin\" ] && [ \"$2\" = \"version\" ] && [ \"$3\" = \"" + pluginName + "\" ]; then\n" +
+		"  echo '" + installedVersion + "'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 1\n"
+
+	err := os.WriteFile(script, []byte(content), 0o755)
+	require.NoError(t, err)
+
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestCheckPrerequisiteList_PluginDependency_Installed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script approach not applicable on Windows")
+	}
+
+	writeFakeDrScript(t, "myplugin", "1.2.3")
+
+	prereqs := []Prerequisite{
+		{Name: "myplugin", Command: "dr plugin version myplugin", MinimumVersion: "1.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Empty(t, result.MissingMsgs)
+	assert.Empty(t, result.WrongVersionMsgs)
+}
+
+func TestCheckPrerequisiteList_PluginDependency_Missing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script approach not applicable on Windows")
+	}
+
+	// Fake "dr" only recognizes "otherplugin" — "myplugin" is not installed.
+	writeFakeDrScript(t, "otherplugin", "1.2.3")
+
+	prereqs := []Prerequisite{
+		{Name: "myplugin", Command: "dr plugin version myplugin", MinimumVersion: "1.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	require.Len(t, result.MissingTools, 1)
+	assert.Equal(t, "myplugin", result.MissingTools[0].Name)
+	assert.Empty(t, result.WrongVersionTools)
+	require.Len(t, result.MissingMsgs, 1)
+	assert.Contains(t, result.MissingMsgs[0], "myplugin")
+	assert.Empty(t, result.WrongVersionMsgs)
+}
+
+func TestCheckPrerequisiteList_PluginDependency_WrongVersion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script approach not applicable on Windows")
+	}
+
+	writeFakeDrScript(t, "myplugin", "1.2.3")
+
+	prereqs := []Prerequisite{
+		{Name: "myplugin", Command: "dr plugin version myplugin", MinimumVersion: "2.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.MissingMsgs)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "myplugin", result.WrongVersionTools[0].Name)
+	require.Len(t, result.WrongVersionMsgs, 1)
+	assert.Contains(t, result.WrongVersionMsgs[0], "myplugin")
+}
+
+// The dr-self-version branch (checkDrPrerequisite falling through to
+// SufficientSelfVersion) never shells out — it only compares the version.Version
+// package var — so these tests don't need a fake "dr" binary on PATH at all.
+
+func TestCheckPrerequisiteList_DrSelfVersion_Sufficient(t *testing.T) {
+	originalVersion := version.Version
+
+	defer func() { version.Version = originalVersion }()
+
+	version.Version = "2.0.0"
+
+	prereqs := []Prerequisite{
+		{Name: "dr", Command: "dr self version", MinimumVersion: "1.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.WrongVersionTools)
+	assert.Empty(t, result.MissingMsgs)
+	assert.Empty(t, result.WrongVersionMsgs)
+}
+
+func TestCheckPrerequisiteList_DrSelfVersion_Insufficient(t *testing.T) {
+	originalVersion := version.Version
+
+	defer func() { version.Version = originalVersion }()
+
+	version.Version = "1.0.0"
+
+	prereqs := []Prerequisite{
+		{Name: "dr", Command: "dr self version", MinimumVersion: "2.0.0", URL: "https://example.com"},
+	}
+
+	result := CheckPrerequisiteList(prereqs)
+
+	assert.Empty(t, result.MissingTools)
+	assert.Empty(t, result.MissingMsgs)
+	require.Len(t, result.WrongVersionTools, 1)
+	assert.Equal(t, "dr", result.WrongVersionTools[0].Name)
+	require.Len(t, result.WrongVersionMsgs, 1)
+	assert.Contains(t, result.WrongVersionMsgs[0], "dr")
 }
