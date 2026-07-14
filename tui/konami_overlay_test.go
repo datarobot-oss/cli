@@ -61,6 +61,37 @@ func TestWrapWithKonamiOverlay_TriggersDaxModel(t *testing.T) {
 	assert.IsType(t, DaxModel{}, so.active, "full Konami sequence should activate the Dax overlay")
 }
 
+// TestDaxOverlay_DismissesOnAnyKey locks in the "runs until any key" design:
+// once Dax is bouncing he never stops on his own (no bounce/time limit), so
+// the only exit is a keypress, which the overlay consumes to restore the
+// inner model.
+func TestDaxOverlay_DismissesOnAnyKey(t *testing.T) {
+	t.Setenv(daxLoveEnvVar, "1")
+
+	model := wrapWithKonamiOverlay(noopModel{})
+
+	so, ok := model.(*sequenceOverlay)
+	if !assert.True(t, ok, "wrapWithKonamiOverlay should return a *sequenceOverlay") {
+		return
+	}
+
+	assert.IsType(t, DaxModel{}, so.active, "Dax should be active to start")
+
+	// Many ticks pass with no key — Dax keeps bouncing, never dismisses.
+	for range 1000 {
+		model, _ = model.Update(daxTickMsg{})
+	}
+
+	so = model.(*sequenceOverlay)
+	assert.NotNil(t, so.active, "Dax must keep running until a key is pressed")
+
+	// Any key dismisses him.
+	model, _ = model.Update(key("x"))
+
+	so = model.(*sequenceOverlay)
+	assert.Nil(t, so.active, "pressing any key must dismiss the Dax overlay")
+}
+
 // TestWrapWithKonamiOverlay_PartialSequenceDoesNotTrigger guards against a
 // regression where any key (not just the exact Konami sequence) would open
 // the overlay.
