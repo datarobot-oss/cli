@@ -26,6 +26,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -601,8 +602,8 @@ func TestDiscoverPlugins_FindsPluginsInXDGConfigDirs(t *testing.T) {
 	tmpConfigDir := t.TempDir()
 
 	t.Setenv("HOME", tmpHome)
-	t.Setenv("XDG_CONFIG_HOME", tmpXDG)
-	t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir)
 
 	viperx.Reset()
 	viperx.Set("plugin.manifest_timeout_ms", 5000)

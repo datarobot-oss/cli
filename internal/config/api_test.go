@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/suite"
@@ -37,7 +38,7 @@ func (suite *APITestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-api-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
-	suite.T().Setenv("XDG_CONFIG_HOME", "")
+	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
 	viper.Reset()
 }
 

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +26,7 @@ func TestIsManagedPlugin(t *testing.T) {
 	t.Run("returns true for plugin in primary XDG dir", func(t *testing.T) {
 		tmpXDG := t.TempDir()
 
-		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
 
 		pluginPath := filepath.Join(tmpXDG, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
 
@@ -38,8 +39,8 @@ func TestIsManagedPlugin(t *testing.T) {
 		tmpConfigDir := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
-		t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir)
 
 		configDirPath := filepath.Join(tmpConfigDir, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
 
@@ -51,7 +52,7 @@ func TestIsManagedPlugin(t *testing.T) {
 		tmpXDG := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
 
 		pathPlugin := filepath.Join("/usr", "local", "bin", "dr-myplugin")
 

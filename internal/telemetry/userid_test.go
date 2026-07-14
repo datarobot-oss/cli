@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,7 @@ func sha256Fingerprint(token string) string {
 func TestRetrieveAccountInfo_FreshAPI(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/account/info/", r.URL.Path)
@@ -84,7 +85,7 @@ func TestRetrieveAccountInfo_FreshAPI(t *testing.T) {
 func TestRetrieveAccountInfo_FilePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -110,7 +111,7 @@ func TestRetrieveAccountInfo_FilePermissions(t *testing.T) {
 func TestRetrieveAccountInfo_CacheHit(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	defer viperx.Reset()
 	defer resetTokenForTest(t, "test-token")()
@@ -150,7 +151,7 @@ func TestRetrieveAccountInfo_CacheHit(t *testing.T) {
 func TestRetrieveAccountInfo_CacheMiss_EndpointChanged(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -195,7 +196,7 @@ func TestRetrieveAccountInfo_CacheMiss_EndpointChanged(t *testing.T) {
 func TestRetrieveAccountInfo_CacheMiss_TokenChanged(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -240,7 +241,7 @@ func TestRetrieveAccountInfo_CacheMiss_TokenChanged(t *testing.T) {
 func TestRetrieveAccountInfo_CacheMiss_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -264,7 +265,7 @@ func TestRetrieveAccountInfo_CacheMiss_NoFile(t *testing.T) {
 func TestRetrieveAccountInfo_CacheMiss_CorruptJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -298,7 +299,7 @@ func TestRetrieveAccountInfo_CacheMiss_CorruptJSON(t *testing.T) {
 func TestRetrieveAccountInfo_TokenChange_UpdatesCache(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -359,7 +360,7 @@ func TestRetrieveAccountInfo_TokenChange_UpdatesCache(t *testing.T) {
 func TestRetrieveAccountInfo_APIFailureReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -419,7 +420,7 @@ func TestGetAccountInfo_Unauthorized(t *testing.T) {
 func TestRetrieveAccountInfo_PartialCache_RefetchesAndUpgrades(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/account/info/", r.URL.Path)
@@ -484,7 +485,7 @@ func TestRetrieveAccountInfo_PartialCache_RefetchesAndUpgrades(t *testing.T) {
 func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	// Create and immediately close server to force a network error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -537,7 +538,7 @@ func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
 func TestRetrieveAccountInfo_CompleteCache_NetworkErrorReturnsAllCachedFields(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	// Create and immediately close server to force a network error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -587,7 +588,7 @@ func TestRetrieveAccountInfo_CompleteCache_NetworkErrorReturnsAllCachedFields(t 
 func TestRetrieveAccountInfo_StaleCache_NetworkErrorReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	// Create and immediately close server to force a network error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

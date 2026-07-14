@@ -27,6 +27,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/state"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -113,7 +114,7 @@ func TestGetOrCreateDeviceID_CreatesAndPersists(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	id1 := getOrCreateDeviceID()
 
@@ -139,7 +140,7 @@ func TestGetOrCreateDeviceID_ReadsExistingID(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -165,7 +166,7 @@ func TestGetOrCreateDeviceID_IgnoresBlankFile(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, "datarobot")
 
@@ -191,7 +192,7 @@ func TestGetOrCreateDeviceID_FallbackIDHasPrefix(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	id := getOrCreateDeviceID()
 
@@ -202,7 +203,7 @@ func TestGetOrCreateDeviceID_FallbackIDHasPrefix(t *testing.T) {
 func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	props := CollectCommonProperties()
 
@@ -212,7 +213,7 @@ func TestCollectCommonProperties_SetsDeviceID(t *testing.T) {
 func TestCollectCommonProperties_UserIDNilWhenUnauthenticated(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	defer viperx.Reset()
 
@@ -226,7 +227,7 @@ func TestCollectCommonProperties_UserIDNilWhenUnauthenticated(t *testing.T) {
 func TestCollectCommonProperties_UserIDFromCacheWhenAuthenticated(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	defer viperx.Reset()
 
@@ -376,7 +377,7 @@ func TestCollectCommonProperties_TemplateNameFromState(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	props := CollectCommonProperties()
 
@@ -405,7 +406,7 @@ func TestCollectCommonProperties_TemplateNameNilOutsideProject(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
 
 	props := CollectCommonProperties()
 
