@@ -169,4 +169,3 @@ task test-coverage  # Generate HTML coverage report
 3. Test it from a Factory session
 4. Share with your team
 5. Customize as needed for your workflow
-

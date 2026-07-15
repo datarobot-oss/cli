@@ -63,4 +63,3 @@ Validation is intentionally **not** run on `SaveConfig` / `SaveManifest` (truste
 ## Note on SemVer
 
 Semantic version validation in this repo is handled separately via `github.com/Masterminds/semver/v3` (for example `internal/tools/validation.go`), not via `validator/v10`.
-

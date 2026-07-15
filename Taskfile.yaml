@@ -11,6 +11,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
   GOLANGCI_LINT_VERSION: "v2.11.4"
+  LEFTHOOK_VERSION: "v1.13.6"
 
 dotenv: [".env"]
 
@@ -35,9 +36,15 @@ tasks:
 
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         go install github.com/goreleaser/goreleaser/v2@latest
+      # lefthook: install globally so git hooks can find it on PATH
+      - cmd: brew install lefthook
+        platforms: [darwin]
+      - cmd: go install github.com/evilmartians/lefthook@{{.LEFTHOOK_VERSION}}
+        platforms: [linux, windows]
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
+      - lefthook version
 
   uninstall-tools:
     silent: true
@@ -57,6 +64,8 @@ tasks:
         mkdir -p {{.BIN_DIR}}
         echo "🛠️ Installing tools…"
         go get github.com/stretchr/testify@latest
+        echo "🪝 Installing git hooks…"
+        lefthook install
         echo "✅ Development environment initialized."
 
   lint:
@@ -149,6 +158,30 @@ tasks:
           echo "Running on OS other than Mac/Linux - assuming Windows."
           start ./coverage.html
         {{end}}
+
+  precommit:
+    silent: true
+    desc: "Run pre-commit checks (format, tidy, vet, lint new changes)"
+    deps: [install-tools]
+    cmds:
+      - echo "🧹 Formatting…"
+      - "{{.BIN_DIR}}/golangci-lint fmt"
+      - echo "🧹 Tidying go.mod…"
+      - go mod tidy
+      - echo "🧹 Vetting…"
+      - go vet ./...
+      - echo "🧹 Linting new changes…"
+      - "{{.BIN_DIR}}/golangci-lint run --new-from-rev HEAD ./..."
+      - echo "🧹 Verifying golangci-lint config…"
+      - "{{.BIN_DIR}}/golangci-lint config verify"
+      - echo "🧹 Checking go.mod/go.sum are tidy…"
+      - git diff --exit-code go.mod go.sum
+
+  dupcheck:
+    silent: true
+    desc: "Check for duplicate code (jscpd)"
+    cmds:
+      - npx --yes jscpd@3.5.10 --config .jscpd.json .
 
   smoke-test:
     desc: "Run smoke tests"

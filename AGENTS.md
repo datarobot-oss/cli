@@ -88,6 +88,20 @@ func example() {
 
 All code must pass `task lint` before submitting.
 
+### Git Hooks (Lefthook)
+
+Lefthook enforces quality checks before each commit. It is a Go binary installed
+automatically by `task install-tools` and wired up by `task dev-init`.
+
+Hooks run automatically on `git commit`. Run manually with `lefthook run pre-commit`.
+Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
+
+- **`task precommit`**: formats via gofumpt, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only), verifies golangci-lint config, and checks go.mod/go.sum are tidy
+- **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
+
+Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
+Configuration lives in `lefthook.yml` at the repository root.
+
 ### Updating golangci-lint
 
 When upgrading the Go version in `go.mod`, you may need to update golangci-lint to ensure compatibility:

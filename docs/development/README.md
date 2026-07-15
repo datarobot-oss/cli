@@ -45,6 +45,12 @@ task test
 # Run linters
 task lint
 
+# Check for duplicate code
+task dupcheck
+
+# Run pre-commit checks (format, tidy, vet, lint new changes)
+task precommit
+
 # Run CLI without building
 task run -- templates list
 ```
@@ -52,13 +58,14 @@ task run -- templates list
 ### Development workflow
 
 1. Clone the repository and run `task dev-init`
-2. Create a feature branch
-3. Make your changes
-4. Run `task lint` to format and lint code
-5. Run `task test` to verify tests pass
-6. Commit and push your changes
-7. Open a **draft** pull request (see [Contributing](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md#submitting-pull-requests) for details)
-8. When ready for review, mark the PR "Ready for Review" so [Review Router](https://github.com/datarobot-oss/review-router) can route it to the right teams
+2. Install git hooks: `task dev-init` (runs `lefthook install` automatically)
+3. Create a feature branch
+4. Make your changes
+5. Run `task lint` to format and lint code
+6. Run `task test` to verify tests pass
+7. Commit and push your changes
+8. Open a **draft** pull request (see [Contributing](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md#submitting-pull-requests) for details)
+9. When ready for review, mark the PR "Ready for Review" so [Review Router](https://github.com/datarobot-oss/review-router) can route it to the right teams
 
 See [Building](building.md) for detailed workflow documentation.
 

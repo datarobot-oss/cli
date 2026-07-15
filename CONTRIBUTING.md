@@ -86,6 +86,9 @@ cd cli
 # Setup development environment
 task dev-init
 
+# Install git hooks (automatic via task dev-init)
+# lefthook install
+
 # Build the CLI
 task build
 
@@ -125,6 +128,9 @@ task lint
    # Run linters
    task lint
 
+   # Check for duplicate code
+   task dupcheck
+
    # Run smoke tests (optional, requires DR_API_TOKEN)
    export DR_API_TOKEN=your-token
    task smoke-test
@@ -135,6 +141,9 @@ task lint
    ```bash
    git commit -m "Brief description of your changes"
    ```
+
+   If you ran `task dev-init` (which installs lefthook hooks), quality checks run
+   automatically before each commit. Use `LEFTHOOK=0 git commit` to bypass (sparingly).
 
    Use clear, descriptive commit messages. Consider using [Conventional Commits](https://www.conventionalcommits.org/) format.
 

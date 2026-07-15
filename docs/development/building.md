@@ -50,6 +50,8 @@ task build              # Build the CLI binary
 task test               # Run all tests
 task test-coverage      # Run tests with coverage
 task lint               # Run linters (includes formatting)
+task dupcheck           # Check for duplicate code (jscpd)
+task precommit          # Run pre-commit checks (format, tidy, vet, lint)
 task clean              # Clean build artifacts
 task dev-init           # Setup development environment
 task install-tools      # Install development tools
@@ -363,6 +365,14 @@ All code must pass these tools without errors:
 
 **Before committing code, verify it follows [wsl](https://github.com/bombsimon/wsl?tab=readme-ov-file#wsl---whitespace-linter) (whitespace) rules.**
 
+### Git hooks (lefthook)
+
+Lefthook enforces quality checks before each commit. It is a Go binary installed
+by `task install-tools` and wired up by `task dev-init` (which runs `lefthook install`).
+Hooks run automatically on `git commit` and reuse Taskfile tasks (`task precommit`,
+`task dupcheck`) so checks are always consistent between local commits and CI.
+Run manually with `lefthook run pre-commit`. Bypass with `LEFTHOOK=0 git commit`.
+
 ### Run quality checks
 
 ```bash
@@ -418,6 +428,9 @@ cd cli
 
 # Setup development environment
 task dev-init
+
+# Install git hooks (automatic via task dev-init)
+# lefthook install
 ```
 
 ### 2. Create a feature branch
