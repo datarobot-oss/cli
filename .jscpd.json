@@ -8,9 +8,7 @@
     "**/tmp/**",
     "**/.git/**",
     "**/.claude/**",
-    "**/.aj/**",
-    "**/smoke_test_scripts/**",
-    "**/Users/**"
+    "**/smoke_test_scripts/**"
   ],
   "min-lines": 5,
   "min-tokens": 50,
