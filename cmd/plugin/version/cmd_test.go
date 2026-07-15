@@ -1,0 +1,60 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package version
+
+import (
+	"testing"
+
+	"github.com/datarobot/cli/internal/plugin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestFindPlugin(t *testing.T) {
+	plugins := []plugin.DiscoveredPlugin{
+		{
+			Manifest: plugin.PluginManifest{
+				BasicPluginManifest: plugin.BasicPluginManifest{
+					Name:    "my-plugin",
+					Version: "1.2.3",
+				},
+			},
+			Executable: "/path/to/plugin",
+		},
+		{
+			Manifest: plugin.PluginManifest{
+				BasicPluginManifest: plugin.BasicPluginManifest{
+					Name:    "empty-plugin",
+					Version: "",
+				},
+			},
+			Executable: "/path/to/empty",
+		},
+	}
+
+	found := findPlugin(plugins, "my-plugin")
+	require.NotNil(t, found)
+	assert.Equal(t, "1.2.3", found.Manifest.Version)
+
+	found = findPlugin(plugins, "empty-plugin")
+	require.NotNil(t, found)
+	assert.Empty(t, found.Manifest.Version)
+
+	assert.Nil(t, findPlugin(plugins, "missing-plugin"))
+}
+
+func TestFindPluginEmpty(t *testing.T) {
+	assert.Nil(t, findPlugin(nil, "anything"))
+}

@@ -49,7 +49,16 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 		builtinNames[cmd.Name()] = true
 	}
 
-	plugins := internalPlugin.DiscoverPluginsWithContext(ctx)
+	plugins, conflicts := internalPlugin.DiscoverPluginsWithContext(ctx)
+
+	// Registering commands considers every discovered plugin, so every
+	// conflict is relevant here (it affects which binary wins a command name).
+	internalPlugin.LogConflicts(conflicts)
+
+	// Seed the shared discovery cache so a later plugin.GetPlugins() call
+	// (e.g. from `dr plugin list` or `dr plugin version`) reuses this result
+	// instead of re-scanning PATH from scratch.
+	internalPlugin.PrimeCache(plugins, conflicts)
 
 	if len(plugins) == 0 {
 		// No plugins found, don't add empty group header

@@ -122,7 +122,10 @@ func printPluginsTable(plugins []plugin.DiscoveredPlugin) error {
 }
 
 func runList(cmd *cobra.Command, _ []string) error {
-	plugins := plugin.GetPlugins()
+	plugins, conflicts := plugin.GetPlugins()
+
+	// `list` shows every discovered plugin, so every conflict is relevant.
+	plugin.LogConflicts(conflicts)
 
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {

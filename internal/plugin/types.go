@@ -80,8 +80,23 @@ type DiscoveredPlugin struct {
 	Executable string // Full path to executable
 }
 
+// PluginConflict records a plugin executable that was skipped during
+// discovery because a plugin with the same manifest name was already
+// registered from a higher-priority location (managed dirs > local plugin
+// dir > PATH; first match within a tier wins).
+//
+// Discovery returns conflicts as data instead of logging them directly, so
+// each caller can decide which ones are relevant: `dr plugin list` and
+// command registration warn about all of them, while `dr plugin version
+// <name>` only surfaces conflicts for the plugin actually being asked about.
+type PluginConflict struct {
+	Name string // manifest name that was already registered
+	Path string // executable (or managed plugin dir) that was skipped
+}
+
 // DiscoveredPluginsRegistry holds discovered plugins with lazy initialization
 type DiscoveredPluginsRegistry struct {
-	plugins []DiscoveredPlugin
-	once    sync.Once
+	plugins   []DiscoveredPlugin
+	conflicts []PluginConflict
+	once      sync.Once
 }
