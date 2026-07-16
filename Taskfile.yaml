@@ -11,7 +11,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
   GOLANGCI_LINT_VERSION: "v2.11.4"
-  LEFTHOOK_VERSION: "v1.13.6"
+  LEFTHOOK_VERSION: "v2.1.10"
 
 dotenv: [".env"]
 
@@ -36,11 +36,9 @@ tasks:
 
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         go install github.com/goreleaser/goreleaser/v2@latest
-      # lefthook: install globally so git hooks can find it on PATH
-      - cmd: brew install lefthook
-        platforms: [darwin]
-      - cmd: go install github.com/evilmartians/lefthook@{{.LEFTHOOK_VERSION}}
-        platforms: [linux, windows]
+      # lefthook: install to GOPATH/bin so git hooks can find it on PATH
+      - cmd: go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
+        platforms: [darwin, linux, windows]
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
