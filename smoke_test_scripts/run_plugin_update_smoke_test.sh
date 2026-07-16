@@ -34,6 +34,14 @@ DR_CONFIG_DIR="$SANDBOX_DIR/datarobot"
 STATE_FILE="$DR_CONFIG_DIR/state.yaml"
 INSTALLED_META="$DR_CONFIG_DIR/plugins/$PLUGIN_NAME/.installed.json"
 
+# `expect` always allocates a real pty for the spawned `dr` process, which
+# satisfies dr's TTY check and, against this always-fresh sandbox, would
+# trigger the first-run welcome animation and corrupt the output expect is
+# pattern-matching. Pre-mark it as already shown; re-seeded again after the
+# state-file reset below (step 4), which would otherwise clear this too.
+mkdir -p "$DR_CONFIG_DIR"
+printf 'welcome_animation_shown: true\n' > "$STATE_FILE"
+
 cleanup() {
   # Remove only after unsetting so DR_CONFIG_DIR is no longer live
   unset XDG_CONFIG_HOME
@@ -97,11 +105,14 @@ assert_eq "Version after decline" "$(read_version "$INSTALLED_META")" "$PINNED_V
 echo ""
 
 # ── Step 3: Verify cooldown was recorded ──────────────────────────────────────
+# Checks for the plugin_update_checks key specifically, not mere file
+# existence — state.yaml already exists from the welcome_animation_shown seed
+# above regardless of whether the cooldown was actually recorded.
 echo "── Step 3: Verify state file (cooldown) ──"
-if [[ -f "$STATE_FILE" ]]; then
-  echo "✅ State file written at $STATE_FILE"
+if grep -q "plugin_update_checks" "$STATE_FILE" 2>/dev/null; then
+  echo "✅ Cooldown recorded in $STATE_FILE"
 else
-  echo "❌ State file not found — cooldown was not recorded"
+  echo "❌ Cooldown not recorded in $STATE_FILE"
   exit 1
 fi
 echo ""
@@ -109,6 +120,9 @@ echo ""
 # ── Step 4: Reset cooldown by deleting state file ─────────────────────────────
 echo "── Step 4: Clear state file to reset cooldown ──"
 rm "$STATE_FILE"
+# Re-seed welcome_animation_shown (cleared by the rm above) so the next `dr
+# assist` invocation in step 5 doesn't retrigger the first-run animation.
+printf 'welcome_animation_shown: true\n' > "$STATE_FILE"
 echo "✅ Cooldown reset"
 echo ""
 

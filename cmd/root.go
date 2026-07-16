@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -39,8 +40,10 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
+	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/internal/telemetry"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/tui"
@@ -155,6 +158,8 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 			config.SetAPIConsumerTrace(config.CommandPathToTrace(cmd.CommandPath()))
 
+			showFirstRunAnimation()
+
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
@@ -166,6 +171,20 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 			log.Stop()
 
 			return nil
+		},
+		// RootCmd needs its own RunE (to show help on a bare "dr" invocation, after
+		// the first-run animation), which disqualifies it from setUnknownArgGuards'
+		// generic walk (that skips any command with a pre-existing RunE). So it gets
+		// the same "unknown command" Args validator explicitly here.
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return nil
+			}
+
+			return fmt.Errorf("unknown command: %s", args[0])
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	},
 }
@@ -370,4 +389,34 @@ func initializeConfig(_ *cobra.Command) error {
 	}
 
 	return nil
+}
+
+// showFirstRunAnimation displays the animated DataRobot logo inline (no alt-screen)
+// on the very first CLI invocation, so the final settled frame remains in normal
+// terminal scrollback and whatever runs next (help text, or dr start's own inline
+// wizard) continues directly below it instead of hard-cutting from a full-screen
+// takeover. It checks global state to avoid showing it more than once, only runs
+// in interactive terminals, and is skipped entirely under automation (e.g. tools
+// like expect that attach a real pty and would otherwise see animation frames
+// mixed into output they're pattern-matching).
+func showFirstRunAnimation() {
+	if reader.IsNonInteractive() {
+		return
+	}
+
+	if !state.IsFirstRun() {
+		return
+	}
+
+	// Only show animation when stdout is a terminal (not piped or redirected)
+	fi, err := os.Stdout.Stat()
+	if err != nil || (fi.Mode()&os.ModeCharDevice) == 0 {
+		return
+	}
+
+	m := tui.NewLogoAnimationModel()
+
+	_, _ = tui.Run(m)
+
+	state.MarkAnimationShown()
 }

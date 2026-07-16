@@ -39,6 +39,17 @@ export TERM="dumb"
 # NO_COLOR overrides that forced colorization so the detection's plain
 # substring match against "start" keeps working.
 export NO_COLOR=1
+# `expect` always allocates a real pty for the spawned `dr` process, which
+# satisfies dr's TTY check and, on a fresh CI $HOME, would trigger the
+# first-run welcome animation and corrupt the output expect is
+# pattern-matching. Pre-mark it as already shown (rather than forcing
+# DATAROBOT_CLI_NON_INTERACTIVE, which is also the fallback for `dr start`'s
+# --yes-gated prompt this suite exercises for real) so only the animation is
+# affected.
+dr_state_dir="${XDG_CONFIG_HOME:-$HOME/.config}/datarobot"
+mkdir -p "$dr_state_dir"
+touch "$dr_state_dir/state.yaml"
+yq -i '.welcome_animation_shown = true' "$dr_state_dir/state.yaml"
 
 # Timing helpers
 SCRIPT_START=$(date +%s)
