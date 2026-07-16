@@ -2,7 +2,7 @@
 # Docs: https://github.com/evilmartians/lefthook
 #
 # Setup:
-#   task install-tools  # installs lefthook to GOPATH/bin
+#   task install-tools  # installs lefthook to tmp/bin
 #   task dev-init       # runs lefthook install automatically
 #
 # Run manually:

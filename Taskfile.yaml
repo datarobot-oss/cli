@@ -50,14 +50,13 @@ tasks:
           *) echo "Unsupported platform for jscpd: $JSCPD_OS-$JSCPD_ARCH"; exit 1 ;;
         esac
         curl -sSfL "https://github.com/kucherenko/jscpd/releases/download/v{{.JSCPD_VERSION}}/${JSCPD_ASSET}.tar.gz" | tar -xz -C {{.BIN_DIR}}
-      # lefthook: install to GOPATH/bin so git hooks can find it on PATH
-      - cmd: go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
-        platforms: [darwin, linux, windows]
+
+        go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
       - "{{.BIN_DIR}}/jscpd --version"
-      - lefthook version
+      - "{{.BIN_DIR}}/lefthook version"
 
   uninstall-tools:
     silent: true
@@ -66,7 +65,7 @@ tasks:
       - "rm {{.BIN_DIR}}/golangci-lint"
       - "rm {{.BIN_DIR}}/goreleaser"
       - "rm {{.BIN_DIR}}/jscpd"
-      - "rm -f $(go env GOPATH)/bin/lefthook"
+      - "rm {{.BIN_DIR}}/lefthook"
 
   dev-init:
     silent: true
@@ -80,7 +79,7 @@ tasks:
         echo "🛠️ Installing tools…"
         go get github.com/stretchr/testify@latest
         echo "🪝 Installing git hooks…"
-        lefthook install
+        {{.BIN_DIR}}/lefthook install
         echo "✅ Development environment initialized."
 
   lint:
