@@ -66,6 +66,7 @@ tasks:
       - "rm {{.BIN_DIR}}/golangci-lint"
       - "rm {{.BIN_DIR}}/goreleaser"
       - "rm {{.BIN_DIR}}/jscpd"
+      - "rm -f $(go env GOPATH)/bin/lefthook"
 
   dev-init:
     silent: true
