@@ -86,9 +86,6 @@ cd cli
 # Setup development environment
 task dev-init
 
-# Install git hooks (automatic via task dev-init)
-# lefthook install
-
 # Build the CLI
 task build
 
