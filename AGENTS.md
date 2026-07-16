@@ -93,7 +93,7 @@ All code must pass `task lint` before submitting.
 Lefthook enforces quality checks before each commit. It is a Go binary installed
 automatically by `task install-tools` and wired up by `task dev-init`.
 
-Hooks run automatically on `git commit`. Run manually with `lefthook run pre-commit`.
+Hooks run automatically on `git commit`. Run manually with `task precommit`.
 Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
 
 - **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only), verifies golangci-lint config, and checks go.mod/go.sum are tidy

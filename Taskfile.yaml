@@ -175,7 +175,7 @@ tasks:
 
   precommit:
     silent: true
-    desc: "Run pre-commit checks (format, tidy, vet, lint new changes)"
+    desc: "Run pre-commit checks (format, tidy, vet, lint, dupcheck)"
     deps: [install-tools]
     cmds:
       - echo "🧹 Formatting…"
@@ -192,6 +192,8 @@ tasks:
       - "{{.BIN_DIR}}/golangci-lint config verify"
       - echo "🧹 Checking go.mod/go.sum are tidy…"
       - git diff --exit-code go.mod go.sum
+      - echo "🧹 Checking for duplicate code…"
+      - "{{.BIN_DIR}}/jscpd --no-tips --config .jscpd.json ."
 
   dupcheck:
     silent: true

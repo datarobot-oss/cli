@@ -371,7 +371,7 @@ Lefthook enforces quality checks before each commit. It is a Go binary installed
 by `task install-tools` and wired up by `task dev-init` (which runs `lefthook install`).
 Hooks run automatically on `git commit` and reuse Taskfile tasks (`task precommit`,
 `task dupcheck`) so checks are always consistent between local commits and CI.
-Run manually with `lefthook run pre-commit`. Bypass with `LEFTHOOK=0 git commit`.
+Run manually with `task precommit`. Bypass with `LEFTHOOK=0 git commit`.
 
 ### Run quality checks
 

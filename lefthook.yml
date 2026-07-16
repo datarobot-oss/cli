@@ -6,7 +6,7 @@
 #   task dev-init       # runs lefthook install automatically
 #
 # Run manually:
-#   lefthook run pre-commit
+#   task precommit
 #
 # Bypass for a single commit (use sparingly):
 #   LEFTHOOK=0 git commit ...
@@ -21,6 +21,3 @@ pre-commit:
     go-checks:
       glob: "**/*.go"
       run: task precommit
-    dupcheck:
-      glob: "**/*.go"
-      run: task dupcheck
