@@ -285,7 +285,10 @@ func TestExecPluginManifest(t *testing.T) {
 		MinCLIVersion: "1.0.0",
 	}
 
-	scriptPath := createTestScript(t, tempDir, expected)
+	data, err := json.Marshal(expected)
+	require.NoError(t, err)
+
+	scriptPath := writePluginManifestScript(t, tempDir, "dr-test", string(data))
 
 	result, err := ExecPluginManifest(scriptPath)
 
@@ -296,24 +299,7 @@ func TestExecPluginManifest(t *testing.T) {
 func TestExecPluginManifest_InvalidJSON(t *testing.T) {
 	tempDir := t.TempDir()
 
-	scriptPath := filepath.Join(tempDir, "dr-test")
-
-	var scriptContent string
-
-	if runtime.GOOS == "windows" {
-		scriptPath = filepath.Join(tempDir, "dr-test.ps1")
-		scriptContent = "#!/usr/bin/env pwsh\n" +
-			"if ($args[0] -eq '--dr-plugin-manifest') {\n" +
-			"  Write-Output 'invalid json'\n" +
-			"}\n"
-	} else {
-		scriptContent = "#!/bin/sh\n" +
-			"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
-			"  echo 'invalid json'\n" +
-			"fi\n"
-	}
-
-	createScript(t, scriptPath, scriptContent)
+	scriptPath := writePluginManifestScript(t, tempDir, "dr-test", "invalid json")
 
 	_, err := ExecPluginManifest(scriptPath)
 
@@ -324,71 +310,16 @@ func TestExecPluginManifest_InvalidJSON(t *testing.T) {
 func TestExecPluginManifest_ExtraField(t *testing.T) {
 	tempDir := t.TempDir()
 
-	scriptPath := filepath.Join(tempDir, "dr-test")
-
-	var scriptContent string
-
 	// Script outputs extra field "authenticated" (typo)
 	invalidJSON := `{"name":"test","version":"1.0.0","description":"Test plugin","authentication":false,"authenticated":true}`
 
-	if runtime.GOOS == "windows" {
-		scriptPath = filepath.Join(tempDir, "dr-test.ps1")
-		scriptContent = "#!/usr/bin/env pwsh\n" +
-			"if ($args[0] -eq '--dr-plugin-manifest') {\n" +
-			"  Write-Output '" + invalidJSON + "'\n" +
-			"}\n"
-	} else {
-		scriptContent = "#!/bin/sh\n" +
-			"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
-			"  echo '" + invalidJSON + "'\n" +
-			"fi\n"
-	}
-
-	createScript(t, scriptPath, scriptContent)
+	scriptPath := writePluginManifestScript(t, tempDir, "dr-test", invalidJSON)
 
 	_, err := ExecPluginManifest(scriptPath)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid manifest JSON")
 	assert.Contains(t, err.Error(), "authenticated")
-}
-
-// Helper functions
-
-func createTestScript(t *testing.T, dir string, manifest PluginManifest) string {
-	t.Helper()
-
-	data, err := json.Marshal(manifest)
-	require.NoError(t, err)
-
-	var scriptPath string
-
-	var scriptContent string
-
-	if runtime.GOOS == "windows" {
-		scriptPath = filepath.Join(dir, "dr-test.ps1")
-		scriptContent = "#!/usr/bin/env pwsh\n" +
-			"if ($args[0] -eq '--dr-plugin-manifest') {\n" +
-			"  Write-Output '" + string(data) + "'\n" +
-			"}\n"
-	} else {
-		scriptPath = filepath.Join(dir, "dr-test")
-		scriptContent = "#!/bin/sh\n" +
-			"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
-			"  echo '" + string(data) + "'\n" +
-			"fi\n"
-	}
-
-	createScript(t, scriptPath, scriptContent)
-
-	return scriptPath
-}
-
-func createScript(t *testing.T, path, content string) {
-	t.Helper()
-
-	err := os.WriteFile(path, []byte(content), 0o755)
-	require.NoError(t, err)
 }
 
 func TestValidateLicense_Success(t *testing.T) {
@@ -424,9 +355,12 @@ func TestValidatePluginScript_MissingLicense(t *testing.T) {
 		},
 	}
 
-	createTestScript(t, tempDir, manifest)
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
 
-	err := ValidatePluginScript(tempDir, manifest)
+	writePluginManifestScript(t, tempDir, "dr-test", string(data))
+
+	err = ValidatePluginScript(tempDir, manifest)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "plugin must contain LICENSE.txt file")
@@ -444,10 +378,13 @@ func TestValidatePluginScript_WithLicense(t *testing.T) {
 		},
 	}
 
-	createTestScript(t, tempDir, manifest)
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	writePluginManifestScript(t, tempDir, "dr-test", string(data))
 
 	licensePath := filepath.Join(tempDir, "LICENSE.txt")
-	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
 	require.NoError(t, err)
 
 	err = ValidatePluginScript(tempDir, manifest)

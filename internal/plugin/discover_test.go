@@ -42,19 +42,7 @@ var (
 func createMockPlugin(t *testing.T, dir, name, manifestJSON string) string {
 	t.Helper()
 
-	script := fmt.Sprintf(`#!/bin/sh
-if [ "$1" = "--dr-plugin-manifest" ]; then
-  echo '%s'
-else
-  exit 0
-fi
-`, manifestJSON)
-
-	path := filepath.Join(dir, name)
-	err := os.WriteFile(path, []byte(script), 0o755)
-	require.NoError(t, err)
-
-	return path
+	return writePluginManifestScript(t, dir, name, manifestJSON)
 }
 
 // DiscoverTestSuite tests discovery functions with filesystem fixtures
@@ -126,7 +114,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
 	createMockPlugin(s.T(), s.tempDir, "dr-valid", validManifest)
 
 	// Create non-dr files
-	s.Require().NoError(os.WriteFile(filepath.Join(s.tempDir, "other-binary"), []byte("#!/bin/sh\nexit 0"), 0o755))
+	createScript(s.T(), filepath.Join(s.tempDir, "other-binary"), "#!/bin/sh\nexit 0")
 	s.Require().NoError(os.WriteFile(filepath.Join(s.tempDir, "random.txt"), []byte("text"), 0o644))
 
 	seen := make(map[string]bool)
@@ -357,7 +345,7 @@ func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin(
 	// sleep process directly, stdout closes immediately, and cmd.Output() returns without
 	// waiting for an orphaned child to finish.
 	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
-	s.Require().NoError(os.WriteFile(filepath.Join(s.dir2, "dr-slow"), []byte(slowScript), 0o755))
+	createScript(s.T(), filepath.Join(s.dir2, "dr-slow"), slowScript)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -439,11 +427,7 @@ func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
 
 func (s *ManifestTestSuite) TestGetManifestCommandFailure() {
 	// Create a script that exits with error
-	script := `#!/bin/sh
-exit 1
-`
-	path := filepath.Join(s.tempDir, "dr-failing")
-	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
+	path := writeExitScript(s.T(), s.tempDir, "dr-failing", 1)
 
 	manifest, err := getManifest(context.Background(), path)
 	s.Require().Error(err)
@@ -545,7 +529,7 @@ func (s *DiscoverWithContextSuite) TestPartialResultsOnTimeout() {
 	defer os.RemoveAll(slowDir)
 
 	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
-	s.Require().NoError(os.WriteFile(filepath.Join(slowDir, "dr-ctx-slow"), []byte(slowScript), 0o755))
+	createScript(s.T(), filepath.Join(slowDir, "dr-ctx-slow"), slowScript)
 
 	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+slowDir)
 
@@ -629,7 +613,7 @@ func createManagedTestPlugin(t *testing.T, pluginsDir, dirName, pluginName strin
 	)
 
 	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	createScript(t, filepath.Join(pluginDir, "scripts", "run.sh"), "#!/bin/sh\nexit 0\n")
 	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.ps1"), []byte("exit 0"), 0o644))
 }
 

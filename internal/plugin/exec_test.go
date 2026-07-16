@@ -57,35 +57,22 @@ func (s *ExecTestSuite) TearDownTest() {
 	}
 }
 
-// createScript creates a shell script that exits with the given code
-func (s *ExecTestSuite) createScript(name string, exitCode int) string {
-	script := fmt.Sprintf(`#!/bin/sh
-exit %d
-`, exitCode)
-
-	path := filepath.Join(s.tempDir, name)
-	err := os.WriteFile(path, []byte(script), 0o755)
-	s.Require().NoError(err)
-
-	return path
-}
-
 func (s *ExecTestSuite) TestExecutePluginSuccessfulExecution() {
-	path := s.createScript("success", 0)
+	path := writeExitScript(s.T(), s.tempDir, "success", 0)
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeOne() {
-	path := s.createScript("fail-one", 1)
+	path := writeExitScript(s.T(), s.tempDir, "fail-one", 1)
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(1, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginExitCodeFortyTwo() {
-	path := s.createScript("fail-42", 42)
+	path := writeExitScript(s.T(), s.tempDir, "fail-42", 42)
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 	s.Equal(42, exitCode)
@@ -106,7 +93,7 @@ else
 fi
 `
 	path := filepath.Join(s.tempDir, "with-args")
-	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
+	createScript(s.T(), path, script)
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"}, nil)
 	s.Equal(0, exitCode)
@@ -122,7 +109,7 @@ else
 fi
 `
 	path := filepath.Join(s.tempDir, "with-args-fail")
-	s.Require().NoError(os.WriteFile(path, []byte(script), 0o755))
+	createScript(s.T(), path, script)
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"}, nil)
 	s.Equal(1, exitCode)
@@ -150,12 +137,7 @@ func TestExecutePluginExitCodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			script := fmt.Sprintf(`#!/bin/sh
-exit %d
-`, tt.exitCode)
-
-			path := filepath.Join(tempDir, fmt.Sprintf("exit-%d", tt.exitCode))
-			require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+			path := writeExitScript(t, tempDir, fmt.Sprintf("exit-%d", tt.exitCode), tt.exitCode)
 
 			result := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{}, nil)
 			require.Equal(t, tt.expectedCode, result)
@@ -178,7 +160,7 @@ while true; do sleep 0.1; done
 `, markerFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "trap-term.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	createScript(t, scriptPath, script)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -219,7 +201,7 @@ while true; do sleep 0.1; done
 `
 
 	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	createScript(t, scriptPath, script)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -262,7 +244,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	scriptPath := filepath.Join(t.TempDir(), "test.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
@@ -570,7 +552,7 @@ func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	scriptPath := filepath.Join(t.TempDir(), "skip-auth-test.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
@@ -599,7 +581,7 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
 	scriptPath := filepath.Join(t.TempDir(), "no-skip-auth-test.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
