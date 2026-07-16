@@ -164,6 +164,8 @@ tasks:
     cmds:
       - echo "🧹 Formatting…"
       - "{{.BIN_DIR}}/golangci-lint fmt"
+      - echo "🧹 Checking Go files are formatted…"
+      - git diff --exit-code -- '*.go'
       - echo "🧹 Tidying go.mod…"
       - go mod tidy
       - echo "🧹 Vetting…"
