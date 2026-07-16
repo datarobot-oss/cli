@@ -1,0 +1,23 @@
+# Lefthook configuration for the DataRobot CLI
+# Docs: https://github.com/evilmartians/lefthook
+#
+# Setup:
+#   task install-tools  # installs lefthook to tmp/bin
+#   task dev-init       # runs lefthook install automatically
+#
+# Run manually:
+#   task precommit
+#
+# Bypass for a single commit (use sparingly):
+#   LEFTHOOK=0 git commit ...
+
+# Use doublestar so **/*.go matches root-level and nested Go files.
+# Lefthook only considers staged files, so .gitignore'd files are excluded automatically.
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: false
+  commands:
+    go-checks:
+      glob: "**/*.go"
+      run: task precommit

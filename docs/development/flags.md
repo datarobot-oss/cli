@@ -275,14 +275,14 @@ cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
    ```go
    func Cmd() *cobra.Command {
        cmd := &cobra.Command{ /* ... */ }
-       
+
        // Define flags
        cmd.Flags().BoolVar(...)
        cmd.Flags().StringVar(...)
-       
+
        // Mark constraints AFTER all flags are defined
        cmd.MarkFlagsMutuallyExclusive("flag1", "flag2")
-       
+
        return cmd
    }
    ```
@@ -301,7 +301,7 @@ cmd.MarkFlagsMutuallyExclusive("from-file", "release-date")
    ```bash
    # Should error: incompatible flags
    dr mycommand --flag1 --flag2
-   
+
    # Should work: one flag only
    dr mycommand --flag1
    ```

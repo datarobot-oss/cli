@@ -405,7 +405,7 @@ dr self plugin package ./my-plugin -o dist/ --index-output /tmp/my-plugin.json
 # ✅ Package created: dist/my-plugin-1.0.0.tar.xz
 #    SHA256: abc123...
 # 📝 Registry fragment saved to: /tmp/my-plugin.json
-# 
+#
 # Add to registry (index.json):
 # ```json
 # {

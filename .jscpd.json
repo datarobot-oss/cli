@@ -1,0 +1,17 @@
+{
+  "threshold": 5,
+  "reporters": ["console"],
+  "ignore": [
+    "**/*_test.go",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/tmp/**",
+    "**/.git/**",
+    "**/.claude/**",
+    "**/smoke_test_scripts/**"
+  ],
+  "minLines": 5,
+  "minTokens": 50,
+  "format": ["go"],
+  "output": "./tmp/jscpd-report"
+}

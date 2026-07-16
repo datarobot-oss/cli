@@ -52,6 +52,17 @@ task dev-init
 
 This will install all necessary development tools including linters and code formatters.
 
+### Install git hooks
+
+```bash
+task dev-init
+```
+
+`task dev-init` runs `lefthook install` automatically, which sets up git hooks
+that run quality checks before each commit. The hooks reuse Taskfile tasks
+(`task precommit`, `task dupcheck`) so checks are always consistent between
+local commits and CI. See [Git hooks (lefthook)](#git-hooks-lefthook) below for details.
+
 ### Build the CLI
 
 ```bash
@@ -87,6 +98,8 @@ task --list
 | `task dev-init` | Set up a development environment. |
 | `task install-tools` | Install development tools. |
 | `task run` | Run the CLI without building (e.g., `task run -- templates list`). |
+| `task dupcheck` | Check for duplicate code (jscpd). |
+| `task precommit` | Run pre-commit checks (format, tidy, vet, lint new changes). |
 
 ## Build the CLI
 
@@ -150,6 +163,20 @@ task lint
 ```
 
 golangci-lint is installed as a pre-built binary, so version mismatches with your project's Go version are handled automatically.
+
+## Git hooks (lefthook)
+
+Lefthook enforces quality checks before each commit. It is a Go binary installed
+by `task install-tools` and wired up by `task dev-init` (which runs `lefthook install`).
+
+Hooks run automatically on `git commit`. Run manually with `task precommit`.
+Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
+
+- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only), verifies golangci-lint config, and checks go.mod/go.sum are tidy
+- **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
+
+Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
+Configuration lives in `lefthook.yml` at the repository root.
 
 ## Next steps
 

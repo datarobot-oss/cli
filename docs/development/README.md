@@ -45,13 +45,19 @@ task test
 # Run linters
 task lint
 
+# Check for duplicate code
+task dupcheck
+
+# Run pre-commit checks (format, tidy, vet, lint new changes)
+task precommit
+
 # Run CLI without building
 task run -- templates list
 ```
 
 ### Development workflow
 
-1. Clone the repository and run `task dev-init`
+1. Clone the repository and run `task dev-init` (also installs git hooks via lefthook)
 2. Create a feature branch
 3. Make your changes
 4. Run `task lint` to format and lint code

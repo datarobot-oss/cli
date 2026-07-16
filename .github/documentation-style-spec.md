@@ -205,7 +205,7 @@ Add periods consistently to all levels
 ✅ # Clone the repository.
    git clone https://github.com/datarobot-oss/cli.git
    cd cli
-   
+
    # Build the CLI.
    task build
 

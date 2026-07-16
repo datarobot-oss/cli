@@ -11,6 +11,8 @@ vars:
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
   GOLANGCI_LINT_VERSION: "v2.11.4"
+  LEFTHOOK_VERSION: "v2.1.10"
+  JSCPD_VERSION: "5.0.12"
 
 dotenv: [".env"]
 
@@ -35,9 +37,26 @@ tasks:
 
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         go install github.com/goreleaser/goreleaser/v2@latest
+
+        # jscpd: download prebuilt Rust binary from GitHub releases
+        JSCPD_OS=$(go env GOOS)
+        JSCPD_ARCH=$(go env GOARCH)
+        case "$JSCPD_OS-$JSCPD_ARCH" in
+          darwin-arm64)  JSCPD_ASSET="jscpd-darwin-arm64" ;;
+          darwin-amd64)  JSCPD_ASSET="jscpd-darwin-x64" ;;
+          linux-arm64)   JSCPD_ASSET="jscpd-linux-arm64-gnu" ;;
+          linux-amd64)   JSCPD_ASSET="jscpd-linux-x64-gnu" ;;
+          windows-amd64) JSCPD_ASSET="jscpd-windows-x64-msvc" ;;
+          *) echo "Unsupported platform for jscpd: $JSCPD_OS-$JSCPD_ARCH"; exit 1 ;;
+        esac
+        curl -sSfL "https://github.com/kucherenko/jscpd/releases/download/v{{.JSCPD_VERSION}}/${JSCPD_ASSET}.tar.gz" | tar -xz -C {{.BIN_DIR}}
+
+        go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
+      - "{{.BIN_DIR}}/jscpd --version"
+      - "{{.BIN_DIR}}/lefthook version"
 
   uninstall-tools:
     silent: true
@@ -45,6 +64,8 @@ tasks:
     cmds:
       - "rm {{.BIN_DIR}}/golangci-lint"
       - "rm {{.BIN_DIR}}/goreleaser"
+      - "rm {{.BIN_DIR}}/jscpd"
+      - "rm {{.BIN_DIR}}/lefthook"
 
   dev-init:
     silent: true
@@ -57,6 +78,8 @@ tasks:
         mkdir -p {{.BIN_DIR}}
         echo "🛠️ Installing tools…"
         go get github.com/stretchr/testify@latest
+        echo "🪝 Installing git hooks…"
+        {{.BIN_DIR}}/lefthook install
         echo "✅ Development environment initialized."
 
   lint:
@@ -149,6 +172,35 @@ tasks:
           echo "Running on OS other than Mac/Linux - assuming Windows."
           start ./coverage.html
         {{end}}
+
+  precommit:
+    silent: true
+    desc: "Run pre-commit checks (format, tidy, vet, lint, dupcheck)"
+    deps: [install-tools]
+    cmds:
+      - echo "🧹 Formatting…"
+      - "{{.BIN_DIR}}/golangci-lint fmt"
+      - echo "🧹 Checking Go files are formatted…"
+      - git diff --exit-code -- '*.go'
+      - echo "🧹 Tidying go.mod…"
+      - go mod tidy
+      - echo "🧹 Vetting…"
+      - go vet ./...
+      - echo "🧹 Linting new changes…"
+      - "{{.BIN_DIR}}/golangci-lint run --new-from-rev HEAD ./..."
+      - echo "🧹 Verifying golangci-lint config…"
+      - "{{.BIN_DIR}}/golangci-lint config verify"
+      - echo "🧹 Checking go.mod/go.sum are tidy…"
+      - git diff --exit-code go.mod go.sum
+      - echo "🧹 Checking for duplicate code…"
+      - "{{.BIN_DIR}}/jscpd --no-tips --config .jscpd.json ."
+
+  dupcheck:
+    silent: true
+    desc: "Check for duplicate code (jscpd)"
+    deps: [install-tools]
+    cmds:
+      - "{{.BIN_DIR}}/jscpd --no-tips --config .jscpd.json ."
 
   smoke-test:
     desc: "Run smoke tests"
