@@ -181,7 +181,7 @@ tasks:
     silent: true
     desc: "Check for duplicate code (jscpd)"
     cmds:
-      - npx --yes jscpd@3.5.10 --config .jscpd.json .
+      - npx --yes jscpd@5.0.12 --config .jscpd.json .
 
   smoke-test:
     desc: "Run smoke tests"

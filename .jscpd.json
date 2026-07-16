@@ -10,8 +10,8 @@
     "**/.claude/**",
     "**/smoke_test_scripts/**"
   ],
-  "min-lines": 5,
-  "min-tokens": 50,
+  "minLines": 5,
+  "minTokens": 50,
   "format": ["go"],
   "output": "./tmp/jscpd-report"
 }
