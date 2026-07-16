@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/datarobot/cli/internal/log"
@@ -143,7 +144,7 @@ func CheckPrerequisiteList(prereqs []Prerequisite) CheckResult {
 	for _, tool := range prereqs {
 		command, args := commandArgs(tool.Command)
 
-		if command == "dr" {
+		if command == version.CliName || slices.Contains(version.CliAliases, command) {
 			checkDrPrerequisite(&result, tool, command, args)
 		} else if !isInstalled(tool.Command) {
 			log.Debug("deps: tool missing", "name", tool.Name)
@@ -170,7 +171,7 @@ func checkDrPrerequisite(result *CheckResult, tool Prerequisite, command string,
 	if len(args) > 2 && args[0] == "plugin" && args[1] == "version" {
 		versionOutput, err := exec.Command(command, args...).Output()
 		if err != nil {
-			log.Debug("deps: plugin dependency missing", "name", tool.Name)
+			log.Debug("deps: plugin dependency missing", "name", tool.Name, "err", err)
 
 			result.MissingTools = append(result.MissingTools, tool)
 			result.MissingMsgs = append(result.MissingMsgs, fmt.Sprintf("%s %s (%s)", tool.Name, tool.MinimumVersion, tool.URL))

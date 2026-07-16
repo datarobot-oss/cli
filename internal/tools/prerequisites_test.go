@@ -588,7 +588,6 @@ func TestCheckPrerequisiteList_PluginDependency_WrongVersion(t *testing.T) {
 // The dr-self-version branch (checkDrPrerequisite falling through to
 // SufficientSelfVersion) never shells out — it only compares the version.Version
 // package var — so these tests don't need a fake "dr" binary on PATH at all.
-
 func TestCheckPrerequisiteList_DrSelfVersion_Sufficient(t *testing.T) {
 	originalVersion := version.Version
 
