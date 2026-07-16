@@ -11,12 +11,16 @@
 # Bypass for a single commit (use sparingly):
 #   LEFTHOOK=0 git commit ...
 
+# Use doublestar so **/*.go matches root-level and nested Go files.
+# Lefthook only considers staged files, so .gitignore'd files are excluded automatically.
+glob_matcher: doublestar
+
 pre-commit:
   parallel: false
   commands:
     go-checks:
-      glob: "*.go"
+      glob: "**/*.go"
       run: task precommit
     dupcheck:
-      glob: "*.go"
+      glob: "**/*.go"
       run: task dupcheck
