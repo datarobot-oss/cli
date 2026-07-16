@@ -25,6 +25,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v3"
 )
@@ -43,7 +44,8 @@ func (suite *LoginModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
-	suite.T().Setenv("XDG_CONFIG_HOME", "")
+	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
 	err := config.ReadConfigFile("")
@@ -94,7 +96,8 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
-	suite.T().Setenv("XDG_CONFIG_HOME", "")
+	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
 	viperx.Reset()

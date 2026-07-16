@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/log"
 )
@@ -42,15 +43,9 @@ const (
 
 // getStateDir returns the XDG_STATE_HOME directory for the dr app
 func getStateDir() (string, error) {
-	// TODO Rewrite this to retrieve state dir from Viper config
-	stateDir := os.Getenv("XDG_STATE_HOME")
-	if stateDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("Failed to get user home directory: %w", err)
-		}
-
-		stateDir = filepath.Join(homeDir, ".local", "state")
+	stateDir, err := config.GetStateDir()
+	if err != nil {
+		return "", fmt.Errorf("Failed to get state directory: %w", err)
 	}
 
 	drStateDir := filepath.Join(stateDir, "dr", "backups")

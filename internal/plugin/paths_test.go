@@ -19,24 +19,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestManagedPluginsDir(t *testing.T) {
 	t.Run("respects XDG_CONFIG_HOME", func(t *testing.T) {
-		originalXDG := os.Getenv("XDG_CONFIG_HOME")
-
-		defer func() {
-			if originalXDG != "" {
-				os.Setenv("XDG_CONFIG_HOME", originalXDG)
-			} else {
-				os.Unsetenv("XDG_CONFIG_HOME")
-			}
-		}()
-
 		testConfigHome := "/custom/config"
-		os.Setenv("XDG_CONFIG_HOME", testConfigHome)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", testConfigHome)
 
 		dir, err := ManagedPluginsDir()
 
@@ -45,17 +36,7 @@ func TestManagedPluginsDir(t *testing.T) {
 	})
 
 	t.Run("falls back to ~/.config when XDG_CONFIG_HOME not set", func(t *testing.T) {
-		originalXDG := os.Getenv("XDG_CONFIG_HOME")
-
-		defer func() {
-			if originalXDG != "" {
-				os.Setenv("XDG_CONFIG_HOME", originalXDG)
-			} else {
-				os.Unsetenv("XDG_CONFIG_HOME")
-			}
-		}()
-
-		os.Unsetenv("XDG_CONFIG_HOME")
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", "")
 
 		dir, err := ManagedPluginsDir()
 
@@ -72,8 +53,8 @@ func TestManagedPluginsDirs(t *testing.T) {
 		tmpHome := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", "")
-		t.Setenv("XDG_CONFIG_DIRS", "")
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", "")
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", "")
 
 		dirs, err := ManagedPluginsDirs()
 
@@ -89,8 +70,8 @@ func TestManagedPluginsDirs(t *testing.T) {
 		tmpConfigDir2 := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
-		t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir1+string(filepath.ListSeparator)+tmpConfigDir2)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir1+string(filepath.ListSeparator)+tmpConfigDir2)
 
 		dirs, err := ManagedPluginsDirs()
 
@@ -106,9 +87,9 @@ func TestManagedPluginsDirs(t *testing.T) {
 		tmpXDG := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
 		// Set XDG_CONFIG_DIRS to include the same path as XDG_CONFIG_HOME
-		t.Setenv("XDG_CONFIG_DIRS", tmpXDG)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpXDG)
 
 		dirs, err := ManagedPluginsDirs()
 
@@ -122,8 +103,8 @@ func TestManagedPluginsDirs(t *testing.T) {
 		tmpConfigDir := t.TempDir()
 
 		t.Setenv("HOME", tmpHome)
-		t.Setenv("XDG_CONFIG_HOME", "")
-		t.Setenv("XDG_CONFIG_DIRS", tmpConfigDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", "")
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir)
 
 		dirs, err := ManagedPluginsDirs()
 

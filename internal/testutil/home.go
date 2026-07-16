@@ -14,7 +14,11 @@
 
 package testutil
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/adrg/xdg"
+)
 
 // SetTestHomeDir sets the home directory for tests to work cross-platform.
 // Both HOME (Unix) and USERPROFILE (Windows) are set so os.UserHomeDir() works everywhere.
@@ -23,5 +27,16 @@ func SetTestHomeDir(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	t.Setenv("XDG_CONFIG_HOME", "")
+	SetXDGEnv(t, "XDG_CONFIG_HOME", "")
+}
+
+// SetXDGEnv sets an XDG_* environment variable for the duration of the test
+// and reloads github.com/adrg/xdg's cached base directories so the change
+// takes effect immediately. Without this, xdg.ConfigHome/xdg.StateHome/
+// xdg.ConfigDirs would keep reflecting whatever the environment looked like
+// at process start (or the last Reload), ignoring the env var set here.
+func SetXDGEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Setenv(key, value)
+	xdg.Reload()
 }

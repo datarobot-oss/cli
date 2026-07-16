@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -150,7 +151,7 @@ func (suite *TemplateTestSuite) TestMultipleSavesDoNotDuplicateHeader() {
 func (suite *TemplateTestSuite) TestGetStateDir() {
 	// Test with XDG_STATE_HOME set
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
 
 	stateDir, err := getStateDir()
 	suite.Require().NoError(err)
@@ -158,7 +159,7 @@ func (suite *TemplateTestSuite) TestGetStateDir() {
 	suite.DirExists(stateDir)
 
 	// Test without XDG_STATE_HOME (should use default)
-	suite.T().Setenv("XDG_STATE_HOME", "")
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", "")
 
 	stateDir, err = getStateDir()
 	suite.Require().NoError(err)
@@ -199,7 +200,7 @@ func (suite *TemplateTestSuite) TestBackupCreatesFile() {
 
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
 
 	// Perform backup
 	err = backup(suite.dotfile)
@@ -231,7 +232,7 @@ func (suite *TemplateTestSuite) TestBackupCreatesFile() {
 func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
 
 	// Try to backup a file that doesn't exist
 	nonExistentFile := filepath.Join(suite.tempDir, "nonexistent.env")
@@ -252,7 +253,8 @@ func (suite *TemplateTestSuite) TestBackupNonExistentFile() {
 func (suite *TemplateTestSuite) TestCleanOldBackups() {
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
+
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
 	err := os.MkdirAll(stateDir, 0o755)
 	suite.Require().NoError(err)
@@ -289,7 +291,8 @@ func (suite *TemplateTestSuite) TestCleanOldBackups() {
 func (suite *TemplateTestSuite) TestCleanOldBackupsKeepsThreeOrLess() {
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
+
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
 	err := os.MkdirAll(stateDir, 0o755)
 	suite.Require().NoError(err)
@@ -318,7 +321,8 @@ func (suite *TemplateTestSuite) TestCleanOldBackupsKeepsThreeOrLess() {
 func (suite *TemplateTestSuite) TestMultipleBackupsIntegration() {
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
+
 	stateDir := filepath.Join(xdgStateHome, "dr", "backups")
 
 	// Create initial file
@@ -349,7 +353,7 @@ func (suite *TemplateTestSuite) TestMultipleBackupsIntegration() {
 func (suite *TemplateTestSuite) TestBackupDifferentFiles() {
 	// Set up a temporary XDG_STATE_HOME
 	xdgStateHome := filepath.Join(suite.tempDir, "xdg_state")
-	suite.T().Setenv("XDG_STATE_HOME", xdgStateHome)
+	testutil.SetXDGEnv(suite.T(), "XDG_STATE_HOME", xdgStateHome)
 
 	// Create two different .env files in different directories
 	dir1 := filepath.Join(suite.tempDir, "project1")

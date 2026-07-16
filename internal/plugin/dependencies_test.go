@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,7 +160,7 @@ func TestCheckAndInstallDeps_FallbackDirChecked(t *testing.T) {
 	tmpXDG := t.TempDir()
 
 	t.Setenv("HOME", tmpHome)
-	t.Setenv("XDG_CONFIG_HOME", tmpXDG)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
 
 	const pluginName = "test-dr-cli-deps-fallback"
 

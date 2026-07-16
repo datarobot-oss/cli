@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/adrg/xdg"
 	"github.com/spf13/viper"
 )
 
@@ -30,17 +31,56 @@ var configFileName = "drconfig.yaml"
 // GetConfigDir returns the config directory, respecting XDG_CONFIG_HOME if set.
 // Falls back to ~/.config/datarobot if XDG_CONFIG_HOME is not set.
 func GetConfigDir() (string, error) {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-
-		configHome = filepath.Join(homeDir, ".config")
+	configHome, err := resolveConfigHome()
+	if err != nil {
+		return "", err
 	}
 
 	return filepath.Join(configHome, "datarobot"), nil
+}
+
+// resolveConfigHome returns the XDG config home directory. It uses the value
+// parsed by github.com/adrg/xdg when XDG_CONFIG_HOME is explicitly set;
+// otherwise it falls back to ~/.config regardless of OS.
+func resolveConfigHome() (string, error) {
+	if os.Getenv("XDG_CONFIG_HOME") != "" {
+		return xdg.ConfigHome, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	return filepath.Join(homeDir, ".config"), nil
+}
+
+// GetConfigDirs returns additional XDG config search directories from
+// XDG_CONFIG_DIRS, in priority order, parsed via github.com/adrg/xdg. It
+// returns nil when the environment variable is not explicitly set: searching
+// extra system directories is opt-in only, no OS-specific defaults are used.
+func GetConfigDirs() []string {
+	if os.Getenv("XDG_CONFIG_DIRS") == "" {
+		return nil
+	}
+
+	return xdg.ConfigDirs
+}
+
+// GetStateDir returns the XDG state directory, respecting XDG_STATE_HOME if
+// set. Falls back to ~/.local/state if not set, regardless of OS (mirroring
+// GetConfigDir's fallback behavior).
+func GetStateDir() (string, error) {
+	if os.Getenv("XDG_STATE_HOME") != "" {
+		return xdg.StateHome, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	return filepath.Join(homeDir, ".local", "state"), nil
 }
 
 func CreateConfigFileDirIfNotExists() error {

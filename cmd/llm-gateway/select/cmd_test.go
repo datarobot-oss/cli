@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func TestFindByID_Empty(t *testing.T) {
 
 func TestSelectCmd_DirectArg_Valid(t *testing.T) {
 	setupLLMServer(t, testLLMs)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", t.TempDir())
 
 	cmd, buf := newTestCmd(t)
 	cmd.SetArgs([]string{"llm-001"})

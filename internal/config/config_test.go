@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,7 @@ func (suite *ConfigTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
 	suite.T().Setenv("HOME", suite.tempDir)
-	suite.T().Setenv("XDG_CONFIG_HOME", "")
+	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {
@@ -87,7 +88,7 @@ func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirWithXDGConfigHome() {
 	xdgConfigDir := filepath.Join(suite.tempDir, "custom-config")
-	suite.T().Setenv("XDG_CONFIG_HOME", xdgConfigDir)
+	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", xdgConfigDir)
 
 	err := CreateConfigFileDirIfNotExists()
 	suite.Require().NoError(err)
