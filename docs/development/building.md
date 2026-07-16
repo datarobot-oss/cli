@@ -428,9 +428,6 @@ cd cli
 
 # Setup development environment
 task dev-init
-
-# Install git hooks (automatic via task dev-init)
-# lefthook install
 ```
 
 ### 2. Create a feature branch
