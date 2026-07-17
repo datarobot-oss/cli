@@ -20,6 +20,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -104,7 +105,7 @@ func renderTaskList(format outputformat.OutputFormat, tasks []pipeline.TaskExecu
 
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
-	headers := []string{"TASK ID", "NAME", "STATUS", "STARTED", "COMPLETED"}
+	headers := []string{"TASK ID", "NODE ID", "NAME", "STATUS", "STARTED", "COMPLETED"}
 
 	completedCol := slices.Index(headers, "COMPLETED")
 
@@ -125,25 +126,39 @@ func renderTaskList(format outputformat.OutputFormat, tasks []pipeline.TaskExecu
 		Headers(headers...)
 
 	for _, task := range tasks {
-		taskIDStr := "-"
-		if task.TaskID != nil {
-			taskIDStr = strconv.Itoa(*task.TaskID)
-		}
-
-		startedStr := "-"
-		if task.StartedAt != nil {
-			startedStr = task.StartedAt.UTC().Format("2006-01-02 15:04:05")
-		}
-
-		completedStr := "-"
-		if task.CompletedAt != nil {
-			completedStr = task.CompletedAt.UTC().Format("2006-01-02 15:04:05")
-		}
-
-		t.Row(taskIDStr, task.Name, task.Status, startedStr, completedStr)
+		t.Row(taskRowCells(task)...)
 	}
 
 	fmt.Fprintln(os.Stdout, t.Render())
 
 	return nil
+}
+
+// taskRowCells renders one task-execution row's cells in header order,
+// substituting "-" for absent optional fields.
+func taskRowCells(task pipeline.TaskExecution) []string {
+	return []string{
+		optIntCell(task.TaskID),
+		optIntCell(task.NodeID),
+		task.Name,
+		task.Status,
+		optTimeCell(task.StartedAt),
+		optTimeCell(task.CompletedAt),
+	}
+}
+
+func optIntCell(v *int) string {
+	if v == nil {
+		return "-"
+	}
+
+	return strconv.Itoa(*v)
+}
+
+func optTimeCell(t *time.Time) string {
+	if t == nil {
+		return "-"
+	}
+
+	return t.UTC().Format("2006-01-02 15:04:05")
 }

@@ -58,10 +58,10 @@ func toVersionJSON(v PipelineVersion) versionJSON {
 // RenderVersion routes a single version to JSON or human output.
 func RenderVersion(format outputformat.OutputFormat, v PipelineVersion) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintVersionJSON(v)
+		return printVersionJSON(v)
 	}
 
-	PrintVersionHuman(v)
+	printVersionHuman(v)
 
 	return nil
 }
@@ -69,16 +69,16 @@ func RenderVersion(format outputformat.OutputFormat, v PipelineVersion) error {
 // RenderVersions routes a list of versions to JSON or human output.
 func RenderVersions(format outputformat.OutputFormat, items []PipelineVersion) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintVersionListJSON(items)
+		return printVersionListJSON(items)
 	}
 
-	PrintVersionListHuman(items)
+	printVersionListHuman(items)
 
 	return nil
 }
 
-// PrintVersionJSON marshals a single version as indented JSON through the DTO.
-func PrintVersionJSON(v PipelineVersion) error {
+// printVersionJSON marshals a single version as indented JSON through the DTO.
+func printVersionJSON(v PipelineVersion) error {
 	data, err := json.MarshalIndent(toVersionJSON(v), "", "  ")
 	if err != nil {
 		return err
@@ -89,8 +89,8 @@ func PrintVersionJSON(v PipelineVersion) error {
 	return nil
 }
 
-// PrintVersionHuman renders the key facts about a single version.
-func PrintVersionHuman(v PipelineVersion) {
+// printVersionHuman renders the key facts about a single version.
+func printVersionHuman(v PipelineVersion) {
 	tasks := emptyValuePlaceholder
 	if len(v.TaskNames) > 0 {
 		tasks = strings.Join(v.TaskNames, ", ")
@@ -117,8 +117,8 @@ func PrintVersionHuman(v PipelineVersion) {
 	w.Flush()
 }
 
-// PrintVersionListJSON marshals a list of versions as indented JSON through the DTO.
-func PrintVersionListJSON(items []PipelineVersion) error {
+// printVersionListJSON marshals a list of versions as indented JSON through the DTO.
+func printVersionListJSON(items []PipelineVersion) error {
 	view := make([]versionJSON, len(items))
 
 	for i, v := range items {
@@ -135,8 +135,8 @@ func PrintVersionListJSON(items []PipelineVersion) error {
 	return nil
 }
 
-// PrintVersionListHuman renders a lipgloss table summary of versions.
-func PrintVersionListHuman(items []PipelineVersion) {
+// printVersionListHuman renders a lipgloss table summary of versions.
+func printVersionListHuman(items []PipelineVersion) {
 	if len(items) == 0 {
 		fmt.Println(tui.DimStyle.Render("No versions found"))
 

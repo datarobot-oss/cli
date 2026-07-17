@@ -70,16 +70,16 @@ func toTaskJSON(t PipelineTask) taskJSON {
 // RenderTask routes a single task to JSON or human output.
 func RenderTask(format outputformat.OutputFormat, t PipelineTask) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintTaskJSON(t)
+		return printTaskJSON(t)
 	}
 
-	PrintTaskHuman(t)
+	printTaskHuman(t)
 
 	return nil
 }
 
-// PrintTaskJSON marshals a task as indented JSON using CLI-vocabulary keys.
-func PrintTaskJSON(t PipelineTask) error {
+// printTaskJSON marshals a task as indented JSON using CLI-vocabulary keys.
+func printTaskJSON(t PipelineTask) error {
 	data, err := json.MarshalIndent(toTaskJSON(t), "", "  ")
 	if err != nil {
 		return err
@@ -90,8 +90,8 @@ func PrintTaskJSON(t PipelineTask) error {
 	return nil
 }
 
-// PrintTaskHuman renders a single task in a human-friendly tabwriter form.
-func PrintTaskHuman(t PipelineTask) {
+// printTaskHuman renders a single task in a human-friendly tabwriter form.
+func printTaskHuman(t PipelineTask) {
 	scope := "draft"
 	versionDisplay := emptyValuePlaceholder
 

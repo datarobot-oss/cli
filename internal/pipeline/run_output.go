@@ -90,10 +90,10 @@ func toRunStatusJSON(s RunStatus) runStatusJSON {
 // RenderRun routes a single run to JSON or human output.
 func RenderRun(format outputformat.OutputFormat, r Run) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintRunJSON(r)
+		return printRunJSON(r)
 	}
 
-	PrintRunHuman(r)
+	printRunHuman(r)
 
 	return nil
 }
@@ -101,10 +101,10 @@ func RenderRun(format outputformat.OutputFormat, r Run) error {
 // RenderRuns routes a list of runs to JSON or human output.
 func RenderRuns(format outputformat.OutputFormat, items []Run) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintRunListJSON(items)
+		return printRunListJSON(items)
 	}
 
-	PrintRunListHuman(items)
+	printRunListHuman(items)
 
 	return nil
 }
@@ -112,16 +112,16 @@ func RenderRuns(format outputformat.OutputFormat, items []Run) error {
 // RenderRunStatus routes a run status to JSON or human output.
 func RenderRunStatus(format outputformat.OutputFormat, s RunStatus) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintStatusJSON(s)
+		return printStatusJSON(s)
 	}
 
-	PrintStatusHuman(s)
+	printStatusHuman(s)
 
 	return nil
 }
 
-// PrintRunJSON marshals a run as indented JSON using CLI-vocabulary keys.
-func PrintRunJSON(r Run) error {
+// printRunJSON marshals a run as indented JSON using CLI-vocabulary keys.
+func printRunJSON(r Run) error {
 	data, err := json.MarshalIndent(toRunJSON(r), "", "  ")
 	if err != nil {
 		return err
@@ -132,8 +132,8 @@ func PrintRunJSON(r Run) error {
 	return nil
 }
 
-// PrintRunHuman renders a single run in a human-friendly form.
-func PrintRunHuman(r Run) {
+// printRunHuman renders a single run in a human-friendly form.
+func printRunHuman(r Run) {
 	scope := "draft"
 	versionDisplay := emptyValuePlaceholder
 
@@ -178,9 +178,9 @@ func PrintRunHuman(r Run) {
 	w.Flush()
 }
 
-// PrintRunListJSON marshals a list of runs as indented JSON using
+// printRunListJSON marshals a list of runs as indented JSON using
 // CLI-vocabulary keys.
-func PrintRunListJSON(items []Run) error {
+func printRunListJSON(items []Run) error {
 	view := make([]runJSON, len(items))
 
 	for i, r := range items {
@@ -197,8 +197,8 @@ func PrintRunListJSON(items []Run) error {
 	return nil
 }
 
-// PrintRunListHuman renders a lipgloss table summary of runs.
-func PrintRunListHuman(items []Run) {
+// printRunListHuman renders a lipgloss table summary of runs.
+func printRunListHuman(items []Run) {
 	if len(items) == 0 {
 		fmt.Println(tui.DimStyle.Render("No runs found"))
 
@@ -244,9 +244,9 @@ func PrintRunListHuman(items []Run) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-// PrintStatusJSON marshals a lightweight status response as indented JSON
+// printStatusJSON marshals a lightweight status response as indented JSON
 // using CLI-vocabulary keys.
-func PrintStatusJSON(s RunStatus) error {
+func printStatusJSON(s RunStatus) error {
 	data, err := json.MarshalIndent(toRunStatusJSON(s), "", "  ")
 	if err != nil {
 		return err
@@ -257,8 +257,8 @@ func PrintStatusJSON(s RunStatus) error {
 	return nil
 }
 
-// PrintStatusHuman renders a lightweight status response.
-func PrintStatusHuman(s RunStatus) {
+// printStatusHuman renders a lightweight status response.
+func printStatusHuman(s RunStatus) {
 	covalent := s.CovalentDispatchID
 	if covalent == "" {
 		covalent = emptyValuePlaceholder

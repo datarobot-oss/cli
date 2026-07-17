@@ -114,6 +114,31 @@ func TestDecodeHTTPError_WithoutDetail_ReturnsHTTPError(t *testing.T) {
 	assert.Equal(t, "http://example/api/v2/pipelines/abc", httpErr.URL)
 }
 
+// errReadCloser fails on Read, simulating a broken/truncated response body.
+type errReadCloser struct{}
+
+func (errReadCloser) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+func (errReadCloser) Close() error             { return nil }
+
+func TestDecodeHTTPError_BodyReadError_StillReturnsHTTPError(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       errReadCloser{},
+	}
+
+	// A failed body read must be handled gracefully: no panic, and the
+	// status-coded *drapi.HTTPError is still returned so callers can
+	// errors.As on it (the read failure is logged, not swallowed silently).
+	err := decodeHTTPError(resp, "http://example/api/v2/pipelines")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusBadGateway, httpErr.StatusCode)
+	assert.Equal(t, "http://example/api/v2/pipelines", httpErr.URL)
+}
+
 func TestBuildMultipartBody_IncludesFileAndFields(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "pipeline.py")

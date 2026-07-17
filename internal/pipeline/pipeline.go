@@ -282,7 +282,7 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
 
 	defer resp.Body.Close()
@@ -295,7 +295,11 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 		return nil
 	}
 
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response from %s: %w", endpoint, err)
+	}
+
+	return nil
 }
 
 // buildMultipartRequest assembles the multipart body and HTTP request with
@@ -326,7 +330,13 @@ func buildMultipartRequest(method, endpoint, filePath string, fields map[string]
 // decodeHTTPError reads a non-2xx response body and turns it into a meaningful error.
 // Always returns *drapi.HTTPError so callers can use errors.As for status-code checks.
 func decodeHTTPError(resp *http.Response, endpoint string) error {
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		// Best-effort: we still return the status-coded error even if the body
+		// couldn't be read, but log it — a truncated/unreadable error body is
+		// exactly what makes a failed request hard to diagnose.
+		log.Warnf("reading error response body from %s: %v", endpoint, err)
+	}
 
 	detail := extractErrorDetail(respBody)
 

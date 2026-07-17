@@ -65,10 +65,10 @@ func toInputJSON(input Input) inputJSON {
 // RenderInput routes a single input to JSON or human output.
 func RenderInput(format outputformat.OutputFormat, input Input) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintInputJSON(input)
+		return printInputJSON(input)
 	}
 
-	PrintInputHuman(input)
+	printInputHuman(input)
 
 	return nil
 }
@@ -76,16 +76,16 @@ func RenderInput(format outputformat.OutputFormat, input Input) error {
 // RenderInputs routes a list of inputs to JSON or human output.
 func RenderInputs(format outputformat.OutputFormat, inputs []Input) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintInputListJSON(inputs)
+		return printInputListJSON(inputs)
 	}
 
-	PrintInputListHuman(inputs)
+	printInputListHuman(inputs)
 
 	return nil
 }
 
-// PrintInputJSON marshals an input record as indented JSON through the DTO.
-func PrintInputJSON(input Input) error {
+// printInputJSON marshals an input record as indented JSON through the DTO.
+func printInputJSON(input Input) error {
 	data, err := json.MarshalIndent(toInputJSON(input), "", "  ")
 	if err != nil {
 		return err
@@ -96,8 +96,8 @@ func PrintInputJSON(input Input) error {
 	return nil
 }
 
-// PrintInputHuman renders the key facts about a single input record.
-func PrintInputHuman(input Input) {
+// printInputHuman renders the key facts about a single input record.
+func printInputHuman(input Input) {
 	scope := "draft"
 	versionDisplay := emptyValuePlaceholder
 
@@ -128,8 +128,8 @@ func PrintInputHuman(input Input) {
 	fmt.Println(string(payload))
 }
 
-// PrintInputListJSON marshals a list of inputs as indented JSON through the DTO.
-func PrintInputListJSON(inputs []Input) error {
+// printInputListJSON marshals a list of inputs as indented JSON through the DTO.
+func printInputListJSON(inputs []Input) error {
 	view := make([]inputJSON, len(inputs))
 
 	for i, in := range inputs {
@@ -146,8 +146,8 @@ func PrintInputListJSON(inputs []Input) error {
 	return nil
 }
 
-// PrintInputListHuman renders a lipgloss table summary of inputs.
-func PrintInputListHuman(inputs []Input) {
+// printInputListHuman renders a lipgloss table summary of inputs.
+func printInputListHuman(inputs []Input) {
 	if len(inputs) == 0 {
 		fmt.Println(tui.DimStyle.Render("No inputs found"))
 

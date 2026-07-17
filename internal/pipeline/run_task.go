@@ -29,8 +29,16 @@ import (
 )
 
 // TaskExecution mirrors TaskExecutionResponse.
+//
+// NodeID is unique per invocation within a run: when the same @task runs at
+// multiple graph nodes (fan-out), every execution shares one TaskID but has
+// its own NodeID. Pass it as --node-id to address a specific invocation on
+// the per-task endpoints. GraphNodeID links the invocation back to a static
+// pipeline-graph node (nil when no 1:1 mapping exists, e.g. loops).
 type TaskExecution struct {
 	TaskID      *int       `json:"taskId,omitempty"`
+	NodeID      *int       `json:"nodeId,omitempty"`
+	GraphNodeID *int       `json:"graphNodeId,omitempty"`
 	Name        string     `json:"name"`
 	Status      string     `json:"status"`
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
@@ -78,6 +86,25 @@ func taskBase(pipelineID, runID string) (string, error) {
 	)
 }
 
+// setNodeID adds the optional nodeId selector to a query. It disambiguates a
+// specific fan-out invocation when the same @task ran at multiple graph nodes
+// (all sharing one taskId); when nodeID is nil the API returns 409 for an
+// ambiguous taskId, listing the candidate node ids.
+func setNodeID(query url.Values, nodeID *int) {
+	if nodeID != nil {
+		query.Set("nodeId", strconv.Itoa(*nodeID))
+	}
+}
+
+// withQuery appends an encoded query string to an endpoint, if non-empty.
+func withQuery(endpoint string, query url.Values) string {
+	if encoded := query.Encode(); encoded != "" {
+		return endpoint + "?" + encoded
+	}
+
+	return endpoint
+}
+
 // ListTaskExecutions returns all task execution records for a run.
 func ListTaskExecutions(pipelineID, runID string) ([]TaskExecution, error) {
 	endpoint, err := taskBase(pipelineID, runID)
@@ -96,13 +123,16 @@ func ListTaskExecutions(pipelineID, runID string) ([]TaskExecution, error) {
 }
 
 // GetTaskExecution fetches a single task execution by its sequential task ID.
-func GetTaskExecution(pipelineID, runID string, taskID int) (*TaskExecution, error) {
+// nodeID (optional) selects a specific fan-out invocation; see setNodeID.
+func GetTaskExecution(pipelineID, runID string, taskID int, nodeID *int) (*TaskExecution, error) {
 	base, err := taskBase(pipelineID, runID)
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint := base + "/" + strconv.Itoa(taskID)
+	query := url.Values{}
+	setNodeID(query, nodeID)
+	endpoint := withQuery(base+"/"+strconv.Itoa(taskID), query)
 
 	var task TaskExecution
 
@@ -116,7 +146,7 @@ func GetTaskExecution(pipelineID, runID string, taskID int) (*TaskExecution, err
 
 // GetTaskLogs reads live K8s pod logs for a task. tailLines limits the number
 // of trailing lines returned (nil = no limit). verbosity is "user" or "all".
-func GetTaskLogs(pipelineID, runID string, taskID int, tailLines *int, verbosity string) (*TaskExecutionLogs, error) {
+func GetTaskLogs(pipelineID, runID string, taskID int, nodeID, tailLines *int, verbosity string) (*TaskExecutionLogs, error) {
 	base, err := taskBase(pipelineID, runID)
 	if err != nil {
 		return nil, err
@@ -131,11 +161,9 @@ func GetTaskLogs(pipelineID, runID string, taskID int, tailLines *int, verbosity
 		query.Set("verbosity", verbosity)
 	}
 
-	endpoint := base + "/" + strconv.Itoa(taskID) + "/logs"
+	setNodeID(query, nodeID)
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
+	endpoint := withQuery(base+"/"+strconv.Itoa(taskID)+"/logs", query)
 
 	var logs TaskExecutionLogs
 
@@ -149,7 +177,7 @@ func GetTaskLogs(pipelineID, runID string, taskID int, tailLines *int, verbosity
 
 // GetTaskDurableLog reads the S3-uploaded log for a task. stream must be
 // "stdout" or "stderr". verbosity is "user" or "all".
-func GetTaskDurableLog(pipelineID, runID string, taskID int, stream, verbosity string) (*TaskExecutionDurableLog, error) {
+func GetTaskDurableLog(pipelineID, runID string, taskID int, nodeID *int, stream, verbosity string) (*TaskExecutionDurableLog, error) {
 	base, err := taskBase(pipelineID, runID)
 	if err != nil {
 		return nil, err
@@ -160,11 +188,9 @@ func GetTaskDurableLog(pipelineID, runID string, taskID int, stream, verbosity s
 		query.Set("verbosity", verbosity)
 	}
 
-	endpoint := base + "/" + strconv.Itoa(taskID) + "/logs/" + stream
+	setNodeID(query, nodeID)
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
+	endpoint := withQuery(base+"/"+strconv.Itoa(taskID)+"/logs/"+stream, query)
 
 	var log TaskExecutionDurableLog
 
@@ -177,13 +203,16 @@ func GetTaskDurableLog(pipelineID, runID string, taskID int, stream, verbosity s
 }
 
 // GetTaskResult returns the presigned S3 URL for a completed task's result.
-func GetTaskResult(pipelineID, runID string, taskID int) (*TaskExecutionResult, error) {
+// nodeID (optional) selects a specific fan-out invocation; see setNodeID.
+func GetTaskResult(pipelineID, runID string, taskID int, nodeID *int) (*TaskExecutionResult, error) {
 	base, err := taskBase(pipelineID, runID)
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint := base + "/" + strconv.Itoa(taskID) + "/result"
+	query := url.Values{}
+	setNodeID(query, nodeID)
+	endpoint := withQuery(base+"/"+strconv.Itoa(taskID)+"/result", query)
 
 	var result TaskExecutionResult
 

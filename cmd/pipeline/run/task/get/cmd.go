@@ -36,6 +36,7 @@ func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
 		runID        string
+		nodeID       int
 		outputFormat outputformat.OutputFormat
 	)
 
@@ -47,8 +48,14 @@ func Cmd() *cobra.Command {
 <task-id> is the sequential task number (1, 2, 3, …) as returned by
 "dr pipeline run task list".
 
+When the same @task runs at more than one graph node (fan-out), all its
+invocations share one <task-id>. Pass --node-id (the NODE ID column from
+"dr pipeline run task list") to select a specific invocation; without it an
+ambiguous task returns an error listing the candidate node ids.
+
 Example:
   dr pipeline run task get --pipeline <id> --run <run-id> 1
+  dr pipeline run task get --pipeline <id> --run <run-id> 3 --node-id 7
   dr pipeline run task get --pipeline <id> --run <run-id> 2 --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -61,7 +68,12 @@ Example:
 				return err
 			}
 
-			task, err := pipeline.GetTaskExecution(pipelineID, runID, taskID)
+			var node *int
+			if cmd.Flags().Changed("node-id") {
+				node = &nodeID
+			}
+
+			task, err := pipeline.GetTaskExecution(pipelineID, runID, taskID, node)
 			if err != nil {
 				return handleNotFound(err, args[0])
 			}
@@ -76,6 +88,7 @@ Example:
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&runID, "run", "", "Run (dispatch) ID")
 	_ = cmd.MarkFlagRequired("run")
+	cmd.Flags().IntVar(&nodeID, "node-id", 0, "Select a specific fan-out invocation by its nodeId (from `task list`)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
@@ -121,6 +134,11 @@ func printTaskHuman(task *pipeline.TaskExecution) {
 		taskIDStr = strconv.Itoa(*task.TaskID)
 	}
 
+	nodeIDStr := "-"
+	if task.NodeID != nil {
+		nodeIDStr = strconv.Itoa(*task.NodeID)
+	}
+
 	startedStr := "-"
 	if task.StartedAt != nil {
 		startedStr = task.StartedAt.UTC().Format("2006-01-02 15:04:05")
@@ -139,6 +157,7 @@ func printTaskHuman(task *pipeline.TaskExecution) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "Task ID:\t%s\n", taskIDStr)
+	fmt.Fprintf(w, "Node ID:\t%s\n", nodeIDStr)
 	fmt.Fprintf(w, "Name:\t%s\n", task.Name)
 	fmt.Fprintf(w, "Status:\t%s\n", task.Status)
 	fmt.Fprintf(w, "Started:\t%s\n", startedStr)

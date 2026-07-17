@@ -57,10 +57,8 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if name == "" {
-				return errors.New("--name is required")
-			}
-
+			// --name is enforced by MarkFlagRequired below; Cobra rejects a
+			// missing required flag before RunE runs, so no manual check here.
 			pip := pipeline.NormalizePackageList(rawPackages)
 			conda := pipeline.BuildCondaValue(rawConda, rawCondaChans)
 

@@ -118,10 +118,10 @@ func toImageSummaryJSON(img ImageSummary) imageSummaryJSON {
 // RenderImage routes a single image to JSON or human output.
 func RenderImage(format outputformat.OutputFormat, img Image) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintImageJSON(img)
+		return printImageJSON(img)
 	}
 
-	PrintImageHuman(img)
+	printImageHuman(img)
 
 	return nil
 }
@@ -129,16 +129,16 @@ func RenderImage(format outputformat.OutputFormat, img Image) error {
 // RenderImages routes a list of images to JSON or human output.
 func RenderImages(format outputformat.OutputFormat, items []ImageSummary) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintImageListJSON(items)
+		return printImageListJSON(items)
 	}
 
-	PrintImageListHuman(items)
+	printImageListHuman(items)
 
 	return nil
 }
 
-// PrintImageJSON marshals an image record as indented JSON through the DTO.
-func PrintImageJSON(img Image) error {
+// printImageJSON marshals an image record as indented JSON through the DTO.
+func printImageJSON(img Image) error {
 	data, err := json.MarshalIndent(toImageJSON(img), "", "  ")
 	if err != nil {
 		return err
@@ -149,9 +149,9 @@ func PrintImageJSON(img Image) error {
 	return nil
 }
 
-// PrintImageHuman renders the key facts about a single image record,
+// printImageHuman renders the key facts about a single image record,
 // including its full version history.
-func PrintImageHuman(img Image) {
+func printImageHuman(img Image) {
 	desc := emptyValuePlaceholder
 	if img.Description != nil && *img.Description != "" {
 		desc = *img.Description
@@ -227,8 +227,8 @@ func printImageVersionsHuman(versions []ImageVersion) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
-// PrintImageListJSON marshals a list of images as indented JSON through the DTO.
-func PrintImageListJSON(items []ImageSummary) error {
+// printImageListJSON marshals a list of images as indented JSON through the DTO.
+func printImageListJSON(items []ImageSummary) error {
 	view := make([]imageSummaryJSON, len(items))
 
 	for i, img := range items {
@@ -245,8 +245,8 @@ func PrintImageListJSON(items []ImageSummary) error {
 	return nil
 }
 
-// PrintImageListHuman renders a lipgloss table summary of images.
-func PrintImageListHuman(items []ImageSummary) {
+// printImageListHuman renders a lipgloss table summary of images.
+func printImageListHuman(items []ImageSummary) {
 	if len(items) == 0 {
 		fmt.Println(tui.DimStyle.Render("No images found"))
 

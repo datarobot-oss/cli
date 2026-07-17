@@ -41,6 +41,9 @@ func Cmd() *cobra.Command {
 		Short:   "Pipelines API management commands",
 		Long: `Manage AI/ML pipelines orchestrated by Covalent.
 
+NOTE: Pipelines are in Private Preview. Behavior and command surface may
+change, and access is limited to enabled organizations.
+
 Create, list, inspect, and update pipelines registered with the
 DataRobot pipelines service. Sub-commands are also available for managing
 input payloads, runs, and recurring schedules.`,

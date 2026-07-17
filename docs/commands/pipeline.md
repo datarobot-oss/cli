@@ -432,6 +432,51 @@ the run ID, status, and Covalent dispatch ID.
 
 `run cancel` returns `409 Conflict` if the run is already terminal.
 
+#### `run task`
+
+Inspect the per-`@task` executions of a single run (dispatch): their lifecycle
+status, logs, and results. Distinct from `dr pipeline task …`, which inspects the
+*static* task definitions in a pipeline; `run task` reports what actually happened
+in one execution.
+
+```bash
+dr pipeline run task list   --pipeline <id> --run <run-id>
+dr pipeline run task get    --pipeline <id> --run <run-id> <task-id> [--node-id N]
+dr pipeline run task logs   --pipeline <id> --run <run-id> <task-id> [--node-id N] [--stream stdout|stderr] [--tail N] [--verbosity user|all]
+dr pipeline run task result --pipeline <id> --run <run-id> <task-id> [--node-id N]
+```
+
+`<task-id>` is the sequential task number (1, 2, 3, …) shown in the **TASK ID**
+column of `run task list`.
+
+**Fan-out and `--node-id`.** When the same `@task` runs at more than one graph
+node (fan-out — e.g. the same function called on several inputs), every one of
+its invocations shares one `<task-id>` but has a distinct **NODE ID** (the
+`run task list` NODE ID column). Pass `--node-id <N>` to address a specific
+invocation. Without it, a task that ran more than once returns `409 Conflict`
+whose message lists the candidate node ids — so `get`/`logs`/`result` never
+silently return the wrong invocation's data. Tasks that ran exactly once need no
+`--node-id`.
+
+- `run task list` — one row per invocation, with both TASK ID and NODE ID.
+  Returns an empty list while the run is still `PENDING`/`PREPARING`.
+- `run task get` — lifecycle record (status, timestamps, error) for one invocation.
+- `run task logs` — without `--stream`, live Kubernetes pod logs (available only
+  while the pod exists, ~60s after the task finishes); with `--stream stdout` or
+  `--stream stderr`, the durable S3-archived log for post-mortem debugging.
+  `--tail N` limits live logs to the last N lines; `--verbosity all` includes the
+  task runner's own bookkeeping lines (default `user` hides them).
+- `run task result` — presigned S3 URL for a completed task's cloudpickle result,
+  plus an inline value preview. Returns `409 Conflict` until the task reaches
+  `COMPLETED`.
+
+```bash
+# Discover invocations, then address a specific fan-out node:
+dr pipeline run task list --pipeline <id> --run <run-id>
+dr pipeline run task result --pipeline <id> --run <run-id> 3 --node-id 7
+dr pipeline run task logs   --pipeline <id> --run <run-id> 3 --node-id 7 --stream stderr
+```
+
 ### `image`
 
 Manage pipeline execution images — named, immutable-versioned environments (pip
