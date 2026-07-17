@@ -1,0 +1,19 @@
+# Deploy an existing artifact with CPU autoscaling.
+# Replace artifactId with your artifact id.
+name: my-app
+artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
+runtime:
+  containerGroups:
+    - name: default
+      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 10
+        policies:
+          - scalingMetric: cpuAverageUtilization
+            target: 80
+      containers:
+        - name: primary
+          resourceAllocation:
+            cpu: 1
+            memory: 512MB
