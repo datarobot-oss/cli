@@ -2,17 +2,45 @@
 
 The CLI collects anonymous usage analytics via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is implemented in `internal/telemetry/`. On each CLI invocation a `Client` is created with a set of `CommonProperties`, events are queued via `Client.Track()`, and the queue is flushed at process exit via `Client.Flush()`.
 
-When telemetry is disabled or the Amplitude API key is absent (all dev builds), every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
+When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
 
-## Opting out
+> [!NOTE]
+> The entire telemetry system is subject to change. This document reflects the current implementation but should not be treated as a stable API contract.
 
-Users can disable telemetry in three ways, in order of precedence:
+## Configuring and disabling telemetry
 
-| Method | How |
-|---|---|
-| Flag | `dr --disable-telemetry <command>` |
-| Environment variable | `DATAROBOT_CLI_DISABLE_TELEMETRY=true` |
-| Config file | `disable-telemetry: true` in `drconfig.yaml` |
+Telemetry is enabled by default. Users can disable it at any time via any of the three methods below (listed in order of precedence — higher precedence wins):
+
+| Method               | How                                          |
+| -------------------- | -------------------------------------------- |
+| Flag                 | `dr --disable-telemetry <command>`           |
+| Environment variable | `DATAROBOT_CLI_DISABLE_TELEMETRY=true`       |
+| Config file          | `disable-telemetry: true` in `drconfig.yaml` |
+
+To disable telemetry permanently, add the key to your config file:
+
+```yaml
+# ~/.config/datarobot/drconfig.yaml
+disable-telemetry: true
+```
+
+The `--disable-telemetry` flag is a [universal flag](flags.md) — it is forwarded to plugin subprocesses as the `DATAROBOT_CLI_DISABLE_TELEMETRY` environment variable, so plugin commands respect the same setting.
+
+When telemetry is disabled, events are logged to the debug logger (visible with `--debug`) instead of being sent over the network. No data leaves the machine.
+
+## Network endpoints
+
+Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
+
+| Host                                                       | Purpose                                                                                                       | Port |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---- |
+| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone, default) — event ingestion                                                       | 443  |
+| `api.eu.amplitude.com`                                     | Amplitude HTTP API (EU zone) — only if `ServerZone` is set to EU                                              | 443  |
+| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
+
+The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to anonymous (`device_id`-only) tracking — the CLI does not error.
+
+No other hosts are contacted by the telemetry subsystem.
 
 ## Device ID
 
@@ -33,44 +61,56 @@ Amplitude requires a `device_id` or `user_id` on every event. The CLI uses a sta
 
 When the user is authenticated, the CLI sends a real DataRobot `uid` as the top-level Amplitude `user_id` field. If the user is unauthenticated (no API token, invalid token, or network failure with no valid cache), the field is left empty and Amplitude falls back to `device_id`-only anonymous tracking.
 
-The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing the user's unique identifier. The `uid` is stable per DataRobot instance and is not PII (email is deliberately excluded from telemetry to avoid transmitting personally identifiable information).
+The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing the user's unique identifier, organization ID, and tenant ID. The `uid` is stable per DataRobot instance and is not PII (email is deliberately excluded from telemetry to avoid transmitting personally identifiable information). The organization ID and tenant ID are also cached and sent as event properties (see [Common Properties](#common-properties)).
 
 ### Caching
 
-To avoid an API call on every CLI invocation, the `uid` is cached to disk alongside `device_id` and `drconfig.yaml`:
+To avoid an API call on every CLI invocation, the account info (`uid`, `organization_id`, `tenant_id`) is cached to disk alongside `device_id` and `drconfig.yaml`:
 
 - **Cache file**: `$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`)
 - **File permissions**: `0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`
 - **Cache format** (JSON):
 
   ```json
-  {"uid":"...","endpoint":"https://app.datarobot.com","token_fingerprint":"sha256hex"}
+  {
+    "uid": "...",
+    "endpoint": "https://app.datarobot.com",
+    "token_fingerprint": "sha256hex",
+    "organization_id": "...",
+    "tenant_id": "..."
+  }
   ```
 
   - `uid` — the DataRobot user identifier
   - `endpoint` — the scheme+host of the DataRobot instance (e.g., `https://app.datarobot.com`)
   - `token_fingerprint` — SHA-256 hex digest of the current API token
+  - `organization_id` — the DataRobot organization ID
+  - `tenant_id` — the DataRobot tenant ID (may be empty for legacy/system accounts)
 
 ### Cache validation and invalidation
 
-On subsequent invocations, when no fresh API `uid` is available, the cache is validated against both the current endpoint and the current token fingerprint:
+On subsequent invocations, when no fresh API response is available, the cache is validated against both the current endpoint and the current token fingerprint:
 
-- **Endpoint match**: the cached `endpoint` must equal the current `viperx.GetString(config.DataRobotURL)` (scheme+host only)
+- **Endpoint match**: the cached `endpoint` must equal the current `config.GetBaseURL()` (scheme+host only)
 - **Token fingerprint match**: the cached `token_fingerprint` must equal the SHA-256 hex of the current API token
+- **Completeness check**: the cache must contain both a non-empty `uid` and `organization_id`. Cache files written by older CLI versions (before `organization_id`/`tenant_id` were added) are treated as partial and trigger a re-fetch. (`tenant_id` may legitimately be empty for legacy or system accounts, so it is not included in this check.)
 
-If either check fails, the cache is treated as stale and the `user_id` is left empty (anonymous tracking). This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
+If any check fails, the cache is treated as stale and a fresh API call is made. If the API call also fails (network error), the cached `uid` is still used as long as the endpoint and token fingerprint match — this preserves tracking in offline scenarios. If the endpoint or token changed and the API is unreachable, `user_id` is left empty (anonymous tracking).
+
+This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
 
 ### Behavior summary
 
-| Scenario | `user_id` behavior |
-|---|---|
-| Authenticated, API succeeds | `uid` from API, cached to disk |
-| Authenticated, cache hit (same endpoint + token) | Cached `uid` (no API call) |
-| Endpoint changed | Re-fetch from API, update cache |
-| Token changed (rotation / new user) | Re-fetch from API, update cache |
-| No API token / invalid token | Empty `user_id`, anonymous tracking |
-| Network error, same endpoint + token | Return cached `uid` |
-| Network error, endpoint/token changed | Empty `user_id`, anonymous tracking |
+| Scenario                                                         | `user_id` / `organization_id` / `tenant_id` behavior  |
+| ---------------------------------------------------------------- | ----------------------------------------------------- |
+| Authenticated, API succeeds                                      | `uid`, `org_id`, `tenant_id` from API, cached to disk |
+| Authenticated, cache hit (same endpoint + token, complete cache) | Cached `uid`, `org_id`, `tenant_id` (no API call)     |
+| Endpoint changed                                                 | Re-fetch from API, update cache                       |
+| Token changed (rotation / new user)                              | Re-fetch from API, update cache                       |
+| Partial cache (old CLI version, missing `org_id`)                | Re-fetch from API, update cache                       |
+| No API token / invalid token                                     | Empty `user_id`, anonymous tracking                   |
+| Network error, same endpoint + token, valid cache                | Return cached `uid`, `org_id`, `tenant_id`            |
+| Network error, endpoint/token changed                            | Empty `user_id`, anonymous tracking                   |
 
 ## Common Properties
 
@@ -94,15 +134,18 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 
 ### Event properties
 
-| Property             | Source                                                                    |
-| -------------------- | ------------------------------------------------------------------------- |
-| `install_method`     | Set at build time via ldflags (`release`, `source`, etc.)                 |
-| `os_arch`            | CPU architecture from `runtime.GOARCH`                                    |
-| `go_version`         | Go runtime version (e.g. `go1.26.4`) from `runtime.Version()`             |
-| `environment`        | `US`, `EU`, `JP`, or `custom` — derived from endpoint URL                 |
-| `datarobot_instance` | Base URL of the configured DataRobot instance                             |
-| `template_name`      | Best-effort from `.datarobot/answers/` in the current repo                |
-| `command_kind`       | `"core"` or `"plugin"` — automatically set by the root command dispatcher |
+| Property             | Source                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `install_method`     | Set at build time via ldflags (`release`, `source`, etc.)                                                     |
+| `os_arch`            | CPU architecture from `runtime.GOARCH`                                                                        |
+| `go_version`         | Go runtime version (e.g. `go1.26.4`) from `runtime.Version()`                                                 |
+| `shell`              | Detected shell name (e.g. `zsh`, `bash`, `powershell`) from parent process / `$SHELL`                         |
+| `datarobot_instance` | Base URL of the configured DataRobot instance                                                                 |
+| `command_kind`       | `"core"` or `"plugin"` — automatically set by the root command dispatcher                                     |
+| `organization_id`    | DataRobot org ID from `GET /api/v2/account/info/`, cached to disk; absent if unauthenticated                  |
+| `tenant_id`          | DataRobot tenant ID from `GET /api/v2/account/info/`, cached to disk; may be empty for legacy/system accounts |
+| `template_name`      | Best-effort from `.datarobot/answers/` in the current repo                                                    |
+| `template_id`        | Stable ID of the DataRobot template used to create this project; absent when not inside a template project    |
 
 
 ## Event Wiring
@@ -157,10 +200,10 @@ RunE: func(cmd *cobra.Command, args []string) error {
 
 `internal/telemetry` is **stateless** — it defines `Client`, helpers, and `ClientContextKey` but holds no global variables. The two places that own state are:
 
-| Owner | What | Why |
-|---|---|---|
-| `cmd` package (`root.go` + `exit.go`) | `var telemetryClient *telemetry.Client` | Needed by `main.go`'s error path, which only has the signal context (no cobra context). |
-| cobra command context | `*telemetry.Client` stored under `telemetry.ClientContextKey{}` | Accessible to any sub-package that has a `*cobra.Command` without importing `cmd` (which would be circular). |
+| Owner                                 | What                                                            | Why                                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `cmd` package (`root.go` + `exit.go`) | `var telemetryClient *telemetry.Client`                         | Needed by `main.go`'s error path, which only has the signal context (no cobra context).                      |
+| cobra command context                 | `*telemetry.Client` stored under `telemetry.ClientContextKey{}` | Accessible to any sub-package that has a `*cobra.Command` without importing `cmd` (which would be circular). |
 
 Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitWithContext` (exit-code path).
 
@@ -318,11 +361,11 @@ task test
 task lint
 ```
 
-Run the CLI with telemetry disabled (the dev default) and check the
-debug log to see your event:
+Run the CLI with telemetry disabled and check the debug log to see your
+event:
 
 ```bash
-dr foo --debug
+dr foo --debug --disable-telemetry
 # .dr-tui-debug.log will include "Telemetry event (dry-run)" entries
 ```
 
@@ -335,10 +378,6 @@ Plugin commands are discovered at runtime by `cmd/plugin/discovery.go::createPlu
 - Registers an extractor that adds `plugin_version` to the event.
 
 The event type is `cmd.CommandPath()` — for example `dr assist`. There is no longer a synthetic `"dr plugin execute"` event.
-
-## Dev builds
-
-`AmplitudeAPIKey` is empty in dev builds (it is injected via ldflags in release builds only). When the key is empty, `IsEnabled()` returns `false` and all `Track` calls log to the debug logger.
 
 ## SDK log routing
 
