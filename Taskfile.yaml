@@ -4,7 +4,7 @@ vars:
   VERSION_PACKAGE: "github.com/datarobot/cli/internal/version"
   VERSION: { sh: 'git describe --dirty --tags --long --always --abbrev=15' }
   COMMIT: { sh: "git describe --dirty --long --always --abbrev=15" }
-  BUILD_DATE: { sh: 'date -u +"%Y-%m-%dT%H:%M:%SZ"' }
+  BUILD_DATE: '{{now.UTC.Format "2006-01-02T15:04:05Z"}}'
   LDFLAGS_COMMON: |
     -X {{.VERSION_PACKAGE}}.GitCommit={{.COMMIT}} \
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
