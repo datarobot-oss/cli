@@ -67,7 +67,7 @@ dr workload create --spec-file <path> [--output-format text|json]
 - `--spec-file <path>`: path to the JSON or YAML spec (required).
 - `--output-format <text|json>`: output format. Defaults to `text`.
 
-**Example:**
+**Example (fixed replica count):**
 
 ```yaml
 # workload.yaml - deploy an existing artifact
@@ -83,6 +83,35 @@ runtime:
             cpu: 1
             memory: 512MB
 ```
+
+**Example (autoscaling):**
+
+Replica bounds live on `autoscaling` (`minReplicaCount` / `maxReplicaCount`). Each policy only needs `scalingMetric` and `target`. A full copy-paste spec is in [workload-autoscaling.yaml](../examples/workload-autoscaling.yaml).
+
+```yaml
+name: my-app
+artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
+runtime:
+  containerGroups:
+    - name: default
+      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 10
+        policies:
+          - scalingMetric: cpuAverageUtilization
+            target: 80
+      containers:
+        - name: primary
+          resourceAllocation:
+            cpu: 1
+            memory: 512MB
+```
+
+Use **either** `replicaCount` (fixed scale) **or** `autoscaling.enabled: true` (dynamic scale) per container group — not both. Omit `replicaCount` when autoscaling is enabled.
+
+> [!NOTE]
+> The Workload API still accepts the legacy per-policy `minCount` / `maxCount` fields on input and hoists them automatically, but responses always use `minReplicaCount` / `maxReplicaCount` on `autoscaling`. Prefer the new shape in new specs.
 
 ```bash
 dr workload create --spec-file workload.yaml
@@ -207,7 +236,7 @@ dr workload delete <workload-id>
 | `403`  | Starting the workload would exceed your concurrent workload limits.                                         |
 | `404`  | The workload does not exist.                                                                                |
 | `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`). |
-| `422`  | The spec failed server validation; the response names the offending JSON path.                              |
+| `422`  | The spec failed server validation; the response names the offending JSON path (for example `replicaCount` set alongside `autoscaling.enabled: true`, or `maxReplicaCount` below 1). |
 
 ## See also
 
