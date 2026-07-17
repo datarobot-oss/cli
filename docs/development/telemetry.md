@@ -26,7 +26,7 @@ disable-telemetry: true
 
 The `--disable-telemetry` flag is a [universal flag](flags.md) — it is forwarded to plugin subprocesses as the `DATAROBOT_CLI_DISABLE_TELEMETRY` environment variable, so plugin commands respect the same setting.
 
-When telemetry is disabled, events are logged to the debug logger (visible with `--debug`) instead of being sent over the network. No data leaves the machine.
+When telemetry is disabled, events are logged to the debug logger (visible with `--debug`) instead of being sent over the network to Amplitude.
 
 ## Network endpoints
 
