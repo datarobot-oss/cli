@@ -92,6 +92,37 @@ func TestValidateWorkloadCreateRequest(t *testing.T) {
 			name: "unknown fields pass through to the server",
 			spec: `{"name": "wl", "artifactId": "abc", "futureField": true}`,
 		},
+		{
+			name: "valid fixed replica count without autoscaling",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1}]}}`,
+		},
+		{
+			name: "valid autoscaling without replicaCount",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"autoscaling": {"enabled": true, "minReplicaCount": 1, "maxReplicaCount": 3, "policies": [{"scalingMetric": "cpuAverageUtilization", "target": 80}]}}]}}`,
+		},
+		{
+			name: "valid autoscaling with explicit null replicaCount",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": null, "autoscaling": {"enabled": true, "policies": []}}]}}`,
+		},
+		{
+			name: "valid replicaCount with autoscaling disabled",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 2, "autoscaling": {"enabled": false}}]}}`,
+		},
+		{
+			name:    "replicaCount conflicts with autoscaling enabled",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1, "autoscaling": {"enabled": true, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "replicaCount conflicts when autoscaling enabled by default",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1, "autoscaling": {"policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "replicaCount conflict reports container group index",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{}, {"replicaCount": 2, "autoscaling": {"enabled": true}}]}}`,
+			wantErr: "runtime.containerGroups[1]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
 	}
 
 	for _, c := range cases {
