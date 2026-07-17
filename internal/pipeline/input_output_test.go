@@ -103,18 +103,18 @@ func TestRenderInput_JSON(t *testing.T) {
 }
 
 func TestRenderInput_Human(t *testing.T) {
-	out := captureStdout(t, func() { PrintInputHuman(sampleInput()) })
+	out := captureStdout(t, func() { printInputHuman(sampleInput()) })
 
 	assert.Contains(t, out, "in-1")
 	assert.Contains(t, out, "locked")
 	assert.Contains(t, out, string(InputStateValid))
 }
 
-// ── PrintInputListJSON ───────────────────────────────────────────────────────
+// ── printInputListJSON ───────────────────────────────────────────────────────
 
 func TestPrintInputListJSON_RemapsFields(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, PrintInputListJSON([]Input{sampleInput()}))
+		require.NoError(t, printInputListJSON([]Input{sampleInput()}))
 	})
 
 	var parsed []map[string]any
@@ -125,15 +125,15 @@ func TestPrintInputListJSON_RemapsFields(t *testing.T) {
 	assert.Equal(t, "locked", parsed[0]["scope"])
 }
 
-// ── PrintInputListHuman ──────────────────────────────────────────────────────
+// ── printInputListHuman ──────────────────────────────────────────────────────
 
 func TestPrintInputListHuman_Empty(t *testing.T) {
-	out := captureStdout(t, func() { PrintInputListHuman(nil) })
+	out := captureStdout(t, func() { printInputListHuman(nil) })
 	assert.Contains(t, out, "No inputs found")
 }
 
 func TestPrintInputListHuman_RendersTable(t *testing.T) {
-	out := captureStdout(t, func() { PrintInputListHuman([]Input{sampleInput()}) })
+	out := captureStdout(t, func() { printInputListHuman([]Input{sampleInput()}) })
 
 	assert.Contains(t, out, "INPUT ID")
 	assert.Contains(t, out, "in-1")

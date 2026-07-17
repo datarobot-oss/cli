@@ -32,6 +32,7 @@ func Cmd() *cobra.Command {
 	var (
 		pipelineID   string
 		runID        string
+		nodeID       int
 		outputFormat outputformat.OutputFormat
 	)
 
@@ -49,10 +50,13 @@ the structured value is displayed; for others (e.g. a DataFrame or numpy
 array) a str() text preview is shown so you can eyeball the data without
 downloading and unpickling the full object.
 
-Returns 409 when the task has not yet reached COMPLETED state.
+Returns 409 when the task has not yet reached COMPLETED state, or when the
+task ran at multiple graph nodes (fan-out) and no --node-id was given — the
+error lists the candidate node ids from "dr pipeline run task list".
 
 Example:
   dr pipeline run task result --pipeline <id> --run <run-id> 1
+  dr pipeline run task result --pipeline <id> --run <run-id> 3 --node-id 7
   dr pipeline run task result --pipeline <id> --run <run-id> 1 --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -65,7 +69,12 @@ Example:
 				return fmt.Errorf("invalid task-id %q: must be a positive integer", args[0])
 			}
 
-			res, err := pipeline.GetTaskResult(pipelineID, runID, taskID)
+			var node *int
+			if cmd.Flags().Changed("node-id") {
+				node = &nodeID
+			}
+
+			res, err := pipeline.GetTaskResult(pipelineID, runID, taskID, node)
 			if err != nil {
 				return err
 			}
@@ -80,6 +89,7 @@ Example:
 	_ = cmd.MarkFlagRequired("pipeline")
 	cmd.Flags().StringVar(&runID, "run", "", "Run (dispatch) ID")
 	_ = cmd.MarkFlagRequired("run")
+	cmd.Flags().IntVar(&nodeID, "node-id", 0, "Select a specific fan-out invocation by its nodeId (from `task list`)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

@@ -282,7 +282,7 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
 
 	defer resp.Body.Close()
@@ -295,7 +295,11 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 		return nil
 	}
 
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response from %s: %w", endpoint, err)
+	}
+
+	return nil
 }
 
 // buildMultipartRequest assembles the multipart body and HTTP request with
