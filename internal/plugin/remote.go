@@ -380,13 +380,39 @@ func UninstallPlugin(name string) error {
 	return nil
 }
 
-// GetInstalledPlugins returns metadata about installed managed plugins
+// GetInstalledPlugins returns metadata about installed managed plugins.
+// It searches all managed plugin directories in priority order (XDG_CONFIG_HOME first,
+// then XDG_CONFIG_DIRS), returning the first occurrence of each plugin name.
 func GetInstalledPlugins() ([]InstalledPlugin, error) {
-	managedDir, err := ManagedPluginsDir()
+	managedDirs, err := ManagedPluginsDirs()
 	if err != nil {
 		return nil, err
 	}
 
+	seen := map[string]bool{}
+
+	var installed []InstalledPlugin
+
+	for _, managedDir := range managedDirs {
+		plugins, err := getInstalledPluginsInDir(managedDir)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, p := range plugins {
+			if seen[p.Name] {
+				continue
+			}
+
+			seen[p.Name] = true
+			installed = append(installed, p)
+		}
+	}
+
+	return installed, nil
+}
+
+func getInstalledPluginsInDir(managedDir string) ([]InstalledPlugin, error) {
 	entries, err := os.ReadDir(managedDir)
 	if err != nil {
 		if os.IsNotExist(err) {
