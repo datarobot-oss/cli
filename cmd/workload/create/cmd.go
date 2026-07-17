@@ -46,10 +46,10 @@ stay strings (for example "0644" or "1.10"), and unquoted dates are sent
 as RFC3339 timestamps. The server validates field-level shape and returns
 a 422 with a JSON-path detail on a mismatch.
 
-Two flows:
+Three flows:
 
-  1. Deploy an existing artifact (e.g. one built with 'dr artifact code sync'
-     and a build):
+  1. Deploy an existing artifact with a fixed replica count (e.g. one built with
+     'dr artifact code sync' and a build):
 
   {
     "name": "my-app",
@@ -66,7 +66,34 @@ Two flows:
     }
   }
 
-  2. Define a draft artifact inline and deploy it in one call:
+  2. Deploy with autoscaling (replica bounds on autoscaling, not per policy).
+     Use replicaCount OR autoscaling.enabled=true per container group, not both.
+     See docs/examples/workload-autoscaling.yaml.
+
+  {
+    "name": "my-app",
+    "artifactId": "68b0c1d2e3f4a5b6c7d8e9f0",
+    "runtime": {
+      "containerGroups": [{
+        "name": "default",
+        "autoscaling": {
+          "enabled": true,
+          "minReplicaCount": 1,
+          "maxReplicaCount": 10,
+          "policies": [{
+            "scalingMetric": "cpuAverageUtilization",
+            "target": 80
+          }]
+        },
+        "containers": [{
+          "name": "primary",
+          "resourceAllocation": {"cpu": 1, "memory": "512MB"}
+        }]
+      }]
+    }
+  }
+
+  3. Define a draft artifact inline and deploy it in one call:
 
   {
     "name": "hello-whoami",
