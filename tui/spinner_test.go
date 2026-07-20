@@ -30,7 +30,7 @@ func TestSpinnerModel_ViewShowsLabelWhileRunning(t *testing.T) {
 	s.Style = InfoStyle
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 
@@ -44,7 +44,7 @@ func TestSpinnerModel_ViewEmptyWhenDone(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 		done:    true,
 	}
@@ -57,7 +57,7 @@ func TestSpinnerModel_UpdateOnDoneMsg(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 
@@ -72,7 +72,7 @@ func TestSpinnerModel_UpdateOnDoneMsgWithError(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 
@@ -127,7 +127,7 @@ func TestRunWithSpinner_LabelRendered(t *testing.T) {
 	s.Style = InfoStyle
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "my special label",
 	}
 
@@ -141,7 +141,7 @@ func TestSpinnerModel_InitReturnsBatch(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 		fn:      func() error { return nil },
 	}
@@ -160,7 +160,7 @@ func TestSpinnerModel_UpdateTickMsg(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 
@@ -179,7 +179,7 @@ func TestSpinnerModel_UpdateUnknownMsg(t *testing.T) {
 	type unknownMsg struct{}
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 
@@ -194,7 +194,7 @@ func TestSpinnerModel_UpdateReturnsSelf(t *testing.T) {
 	s.Spinner = spinner.Dot
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: Loading{Spinner: s},
 		label:   "Loading…",
 	}
 

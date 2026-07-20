@@ -50,7 +50,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 type Model struct {
 	template       drapi.Template
 	directoryInput textinput.Model
-	spinner        spinner.Model
+	spinner        tui.Loading
 	help           help.Model
 	keys           keyMap
 	debounceID     int
@@ -137,7 +137,7 @@ func (m Model) validateDir() tea.Cmd {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, focusInput, m.validateDir())
+	return tea.Batch(m.spinner.Init(), focusInput, m.validateDir())
 }
 
 const debounceDuration = 350 * time.Millisecond
@@ -234,7 +234,10 @@ func (m Model) View() string {
 	sb.WriteString("\n\n")
 
 	if m.cloning {
-		// Show cloning progress
+		// Show cloning progress. The animated spinner for this state is
+		// rendered by the parent wizard's status bar (setup.Model.View),
+		// which is shown whenever isLoading is true - rendering one here
+		// too would duplicate it.
 		message := lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
 			Render(fmt.Sprintf("Cloning into %s...", m.Dir))
@@ -308,7 +311,7 @@ func (m Model) View() string {
 
 	// Status bar
 	sb.WriteString("\n")
-	sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Enter directory name and press Enter to clone", false))
+	sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, "Enter directory name and press Enter to clone", false))
 
 	return sb.String()
 }
@@ -332,9 +335,7 @@ func (m *Model) SetTemplate(template drapi.Template) {
 
 	m.template = template
 
-	m.spinner = spinner.New()
-	m.spinner.Spinner = spinner.Dot
-	m.spinner.Style = tui.InfoStyle
+	m.spinner = tui.NewLoading()
 
 	m.help = help.New()
 	m.help.ShowAll = false

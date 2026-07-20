@@ -18,13 +18,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/misc/reader"
 )
 
 type spinnerModel struct {
-	spinner spinner.Model
+	spinner Loading
 	label   string
 	fn      func() error
 	done    bool
@@ -34,7 +33,7 @@ type spinnerDoneMsg struct{ err error }
 
 func (m spinnerModel) Init() tea.Cmd {
 	return tea.Batch(
-		m.spinner.Tick,
+		m.spinner.Init(),
 		func() tea.Msg {
 			return spinnerDoneMsg{err: m.fn()}
 		},
@@ -47,15 +46,13 @@ func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 
 		return m, tea.Quit
-	case spinner.TickMsg:
+	default:
 		var cmd tea.Cmd
 
 		m.spinner, cmd = m.spinner.Update(msg)
 
 		return m, cmd
 	}
-
-	return m, nil
 }
 
 func (m spinnerModel) View() string {
@@ -79,14 +76,10 @@ func RunWithSpinner(label string, fn func() error) error {
 		return fn()
 	}
 
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = InfoStyle
-
 	var fnErr error
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: NewLoading(),
 		label:   label,
 		fn: func() error {
 			fnErr = fn()
