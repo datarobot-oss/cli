@@ -360,17 +360,35 @@ func installPluginFromArchive(archivePath, pluginDir string, entry RegistryPlugi
 	return nil
 }
 
-// UninstallPlugin removes an installed plugin
-func UninstallPlugin(name string) error {
-	managedDir, err := ManagedPluginsDir()
-	if err != nil {
-		return fmt.Errorf("Failed to get plugins directory: %w", err)
+// findPluginDir searches all managed plugin directories in priority order and
+// returns the full path to the first directory that contains the named plugin.
+// Returns an error if the plugin is not found in any managed directory.
+func findPluginDir(name string) (string, error) {
+	if err := validatePluginName(name); err != nil {
+		return "", err
 	}
 
-	pluginDir := filepath.Join(managedDir, name)
+	managedDirs, err := ManagedPluginsDirs()
+	if err != nil {
+		return "", fmt.Errorf("Failed to get plugins directories: %w", err)
+	}
 
-	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		return fmt.Errorf("Plugin %s is not installed", name)
+	for _, dir := range managedDirs {
+		pluginDir := filepath.Join(dir, name)
+
+		if _, err := os.Stat(pluginDir); err == nil {
+			return pluginDir, nil
+		}
+	}
+
+	return "", fmt.Errorf("Plugin %s is not installed", name)
+}
+
+// UninstallPlugin removes an installed plugin
+func UninstallPlugin(name string) error {
+	pluginDir, err := findPluginDir(name)
+	if err != nil {
+		return err
 	}
 
 	if err := os.RemoveAll(pluginDir); err != nil {
@@ -613,15 +631,9 @@ func saveInstalledMetadata(pluginDir string, entry RegistryPlugin, version Regis
 // BackupPlugin creates a backup of an installed plugin in a temporary directory
 // Returns the path to the backup directory
 func BackupPlugin(name string) (string, error) {
-	managedDir, err := ManagedPluginsDir()
+	pluginDir, err := findPluginDir(name)
 	if err != nil {
-		return "", fmt.Errorf("Failed to get plugins directory: %w", err)
-	}
-
-	pluginDir := filepath.Join(managedDir, name)
-
-	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		return "", fmt.Errorf("Plugin %s is not installed", name)
+		return "", err
 	}
 
 	backupDir, err := os.MkdirTemp("", fmt.Sprintf("dr-plugin-backup-%s-*", name))
@@ -667,12 +679,10 @@ func CleanupBackup(backupPath string) {
 
 // ValidatePlugin validates that a plugin installation is working correctly
 func ValidatePlugin(name string) error {
-	managedDir, err := ManagedPluginsDir()
+	pluginDir, err := findPluginDir(name)
 	if err != nil {
-		return fmt.Errorf("failed to get plugins directory: %w", err)
+		return err
 	}
-
-	pluginDir := filepath.Join(managedDir, name)
 
 	metadataPath := filepath.Join(pluginDir, ".installed.json")
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
@@ -690,6 +700,7 @@ func ValidatePlugin(name string) error {
 	}
 
 	var manifest PluginManifest
+
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return fmt.Errorf("Failed to parse manifest: %w", err)
 	}
