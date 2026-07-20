@@ -72,25 +72,25 @@ func (p Prerequisite) PlatformInstallCommand() (string, error) {
 var pythonInstallCmd = InstallCommands{
 	MacOS: "brew install python",
 	Linux: "sudo apt-get install python3",
-	// Windows: "Download and install Python from https://www.python.org/downloads/windows/",
+	Windows: "winget install Python.Python.3",
 }
 
 var uvInstallCmd = InstallCommands{
 	MacOS: "brew install uv",
 	Linux: "curl -Ls https://astral.sh/uv/install.sh | sh",
-	// Windows: "iwr -useb https://astral.sh/uv/install.ps1 | iex",
+	Windows: "winget install --id=astral-sh.uv  -e",
 }
 
 var taskInstallCmd = InstallCommands{
 	MacOS: "brew install go-task/tap/go-task",
 	Linux: "curl -sL https://taskfile.dev/install.sh | sh",
-	// Windows: "iwr -useb https://taskfile.dev/install.ps1 | iex",
+	Windows: "winget install Task.Task",
 }
 
 var pulumiInstallCmd = InstallCommands{
 	MacOS: "brew install pulumi",
 	Linux: "curl -fsSL https://get.pulumi.com | sh",
-	// Windows: "iwr -useb https://get.pulumi.com/windows-installer.exe -OutFile pulumi-installer.exe; Start-Process -FilePath pulumi-installer.exe -Wait",
+	Windows: "winget install pulumi",
 }
 
 // RequiredTools lists all tools required for the quickstart process
