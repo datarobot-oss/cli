@@ -100,8 +100,20 @@ jobs:
   test:
     needs: detect-changes
     if: needs.detect-changes.outputs.go_code == 'true'
-    runs-on: ubuntu-latest
-    name: Run Tests
+    # CFX-6919: run unit tests on Linux and Windows so runtime.GOOS=="windows"
+    # branches (and //go:build windows files) are exercised in CI. Windows uses
+    # a lighter run (no -race/coverage) to avoid the CGO/gcc dependency and keep
+    # runner cost down; fail-fast:false so one OS failing does not cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            task: test
+          - os: windows-latest
+            task: test-windows
+    runs-on: ${{ matrix.os }}
+    name: Run Tests (${{ matrix.os }})
     timeout-minutes: 20
     permissions:
       contents: read
@@ -115,8 +127,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run Golang Test Command
-        run: |
-          task test
+        run: task ${{ matrix.task }}
 
   copyright:
     runs-on: ubuntu-latest
