@@ -233,7 +233,7 @@ func autoscalingEnabled(group map[string]any) bool {
 	}
 
 	enabled, ok := autoscaling["enabled"]
-	if !ok {
+	if !ok || enabled == nil {
 		return true
 	}
 

@@ -123,6 +123,11 @@ func TestValidateWorkloadCreateRequest(t *testing.T) {
 			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{}, {"replicaCount": 2, "autoscaling": {"enabled": true}}]}}`,
 			wantErr: "runtime.containerGroups[1]: replicaCount and autoscaling.enabled=true are mutually exclusive",
 		},
+		{
+			name:    "replicaCount conflicts when autoscaling enabled is null",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": null, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
 	}
 
 	for _, c := range cases {
