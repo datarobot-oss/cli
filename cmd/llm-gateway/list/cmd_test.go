@@ -159,6 +159,12 @@ func TestPrintLLMTable_ContextColumnNoDescription(t *testing.T) {
 	assert.NotContains(t, out, "balanced reasoning model")
 }
 
+func TestFormatContextSize(t *testing.T) {
+	assert.Equal(t, "128000", formatContextSize(128000))
+	assert.Equal(t, "-", formatContextSize(0))
+	assert.Equal(t, "-", formatContextSize(-1))
+}
+
 // --- full command ---
 
 func TestListCmd_TableOutput(t *testing.T) {

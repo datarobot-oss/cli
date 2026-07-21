@@ -112,6 +112,16 @@ func terminalWidth() int {
 	return w
 }
 
+// formatContextSize renders a context-window size for the table. A zero or
+// missing value shows as "-" so it reads as unknown, not a real zero-token limit.
+func formatContextSize(n int) string {
+	if n <= 0 {
+		return "-"
+	}
+
+	return strconv.Itoa(n)
+}
+
 func printLLMTable(llms []drapi.LLM, selectedID string) {
 	fmt.Println(tui.SubTitleStyle.Render("LLM Gateway Models"))
 
@@ -146,7 +156,7 @@ func printLLMTable(llms []drapi.LLM, selectedID string) {
 			id = "* " + l.LlmID
 		}
 
-		t.Row(id, l.Name, l.Provider, l.Model, strconv.Itoa(l.ContextSize))
+		t.Row(id, l.Name, l.Provider, l.Model, formatContextSize(l.ContextSize))
 	}
 
 	rendered := t.Render()
