@@ -29,6 +29,7 @@ jobs:
       go_code: ${{ steps.changes.outputs.go_code }}
       deps: ${{ steps.changes.outputs.deps }}
       install_sh: ${{ steps.changes.outputs.install_sh }}
+      test_config: ${{ steps.changes.outputs.test_config }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,6 +60,13 @@ jobs:
             install_sh:
               - 'install.sh'
               - 'smoke_test_scripts/run_install_integration_test.sh'
+            # Re-run the test job when the test tooling itself changes, so
+            # changes to CI config / Taskfile can be validated even on PRs that
+            # touch no Go files (CFX-6919).
+            test_config:
+              - 'Taskfile.yaml'
+              - '.github/workflows/pr-checks.yaml'
+              - '.github/actions/setup/**'
 
   lint:
     needs: detect-changes
@@ -99,7 +107,7 @@ jobs:
 
   test:
     needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true'
+    if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.test_config == 'true'
     # CFX-6919: run unit tests on Linux and Windows so runtime.GOOS=="windows"
     # branches (and //go:build windows files) are exercised in CI. Windows uses
     # a lighter run (no -race/coverage) to avoid the CGO/gcc dependency and keep
