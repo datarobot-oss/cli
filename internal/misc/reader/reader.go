@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 
@@ -29,14 +28,16 @@ import (
 )
 
 func ReadString() (string, error) {
-	if runtime.GOOS == "windows" {
-		return bufio.NewReader(os.Stdin).ReadString('\n')
-	}
-
 	cr, err := cancelreader.NewReader(os.Stdin)
 	if err != nil {
 		return "", err
 	}
+
+	// cancelreader must be closed. That never happened here: leaks epoll/pipe
+	// fds on Linux/macOS, and leaves Windows in raw console mode (no echo) —
+	// the garbled input CFX-4799 papered over by bypassing cancelreader on
+	// Windows instead of closing it.
+	defer cr.Close()
 
 	cancelChan := make(chan os.Signal, 1)
 	defer close(cancelChan)
