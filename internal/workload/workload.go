@@ -206,12 +206,46 @@ func validateRuntimeReplicaAutoscaling(data []byte) error {
 			continue
 		}
 
-		if replicaCountSet(group) && autoscalingEnabled(group) {
+		if err := validateContainerGroupAutoscaling(i, group); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateContainerGroupAutoscaling(index int, group map[string]any) error {
+	autoscalingRaw, ok := group["autoscaling"]
+	if !ok {
+		return nil
+	}
+
+	if _, ok := autoscalingRaw.(bool); ok {
+		return fmt.Errorf(
+			"invalid spec: runtime.containerGroups[%d]: autoscaling must be an object, not a boolean",
+			index,
+		)
+	}
+
+	autoscaling, ok := autoscalingRaw.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	if enabled, ok := autoscaling["enabled"]; ok && enabled != nil {
+		if _, ok := enabled.(bool); !ok {
 			return fmt.Errorf(
-				"invalid spec: runtime.containerGroups[%d]: replicaCount and autoscaling.enabled=true are mutually exclusive; omit replicaCount when using autoscaling or set autoscaling.enabled to false",
-				i,
+				"invalid spec: runtime.containerGroups[%d]: autoscaling.enabled must be true or false",
+				index,
 			)
 		}
+	}
+
+	if replicaCountSet(group) && autoscalingEnabled(group) {
+		return fmt.Errorf(
+			"invalid spec: runtime.containerGroups[%d]: replicaCount and autoscaling.enabled=true are mutually exclusive; omit replicaCount when using autoscaling or set autoscaling.enabled to false",
+			index,
+		)
 	}
 
 	return nil

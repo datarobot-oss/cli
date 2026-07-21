@@ -128,6 +128,36 @@ func TestValidateWorkloadCreateRequest(t *testing.T) {
 			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": null, "policies": []}}]}}`,
 			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
 		},
+		{
+			name:    "rejects non-boolean autoscaling enabled yes",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "yes", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects non-boolean autoscaling enabled on",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "on", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects non-boolean autoscaling enabled y",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "y", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects string autoscaling enabled true",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "true", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects numeric autoscaling enabled 1",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": 1, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects boolean autoscaling shorthand",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": true}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling must be an object, not a boolean",
+		},
 	}
 
 	for _, c := range cases {
