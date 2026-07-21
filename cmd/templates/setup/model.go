@@ -26,7 +26,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/cmd/dotenv"
@@ -56,7 +55,7 @@ type Model struct {
 	screen   screens
 	template drapi.Template
 
-	spinner         spinner.Model
+	spinner         tui.Loading
 	help            help.Model
 	keys            keyMap
 	isLoading       bool
@@ -272,10 +271,6 @@ func NewModel(fromStartCommand bool) Model {
 		skipDotenv = state.HasCompletedDotenvSetup(repoRoot)
 	}
 
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = tui.InfoStyle
-
 	h := help.New()
 	h.ShowAll = false
 
@@ -294,7 +289,7 @@ func NewModel(fromStartCommand bool) Model {
 		screen:   welcomeScreen,
 		template: drapi.Template{},
 
-		spinner:         s,
+		spinner:         tui.NewLoading(),
 		help:            h,
 		keys:            keys,
 		isLoading:       true,
@@ -325,7 +320,7 @@ func NewModel(fromStartCommand bool) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, getTemplates(1))
+	return tea.Batch(m.spinner.Init(), getTemplates(1))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
@@ -340,12 +335,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				return m, tea.Quit
 			}
 		}
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-
-		m.spinner, cmd = m.spinner.Update(msg)
-
-		return m, cmd
 	case getHostMsg:
 		m.screen = hostScreen
 		m.isLoading = false
@@ -477,6 +466,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		return m, tea.Sequence(tea.ExitAltScreen, tea.Quit)
 	}
 
+	// Advance the wizard's own spinner. spinner.Model.Update no-ops on ticks
+	// that don't carry its ID, so this is safe to call unconditionally
+	// alongside forwarding the same message to whichever child screen is
+	// active below - otherwise a child's own spinner.TickMsg would be
+	// swallowed here before it ever reaches the child, leaving the child's
+	// spinner frozen after one frame.
+	var spinnerCmd tea.Cmd
+
+	m.spinner, spinnerCmd = m.spinner.Update(msg)
+
 	var cmd tea.Cmd
 
 	switch m.screen {
@@ -484,28 +483,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		// No interaction needed - loading starts automatically
 	case hostScreen:
 		m.hostModel, cmd = m.hostModel.Update(msg)
-
-		return m, cmd
 	case loginScreen:
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch keypress := msg.String(); keypress {
-			case "esc":
-				m.login.server.Close()
-				// Reset authentication flag when user goes back to change URL
-				m.isAuthenticated = false
-
-				return m, getHost
-			}
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" {
+			m.login.server.Close()
+			// Reset authentication flag when user goes back to change URL
+			m.isAuthenticated = false
+			cmd = getHost
+		} else {
+			m.login, cmd = m.login.Update(msg)
 		}
-
-		m.login, cmd = m.login.Update(msg)
-
-		return m, cmd
 	case listScreen:
 		m.list, cmd = m.list.Update(msg)
-
-		return m, cmd
 	case cloneScreen:
 		m.clone, cmd = m.clone.Update(msg)
 
@@ -514,18 +502,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			m.isLoading = true
 			m.loadingMessage = "Cloning template to your computer..."
 		}
-
-		return m, cmd
 	case dotenvScreen:
-		dotenvModel, cmd := m.dotenv.Update(msg)
+		var dotenvModel tea.Model
+
+		dotenvModel, cmd = m.dotenv.Update(msg)
 		// Type assertion to appease compiler
 		m.dotenv = dotenvModel.(dotenv.Model)
-
-		return m, cmd
 	case exitScreen:
 	}
 
-	return m, nil
+	return m, tea.Batch(spinnerCmd, cmd)
 }
 
 func (m Model) View() string { //nolint: cyclop
@@ -677,16 +663,16 @@ func (m Model) View() string { //nolint: cyclop
 	sb.WriteString("\n")
 
 	if m.isLoading {
-		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, m.loadingMessage, m.isLoading))
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, m.loadingMessage, m.isLoading))
 	} else if m.screen == welcomeScreen {
 		// Show idle status bar only on welcome screen
-		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Ready to start your AI journey", false))
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, "Ready to start your AI journey", false))
 	} else if m.screen == hostScreen {
 		// Show status bar on host selection screen (waiting for input, no spinner)
-		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Waiting for environment host selection", false))
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, "Waiting for environment host selection", false))
 	} else if m.screen == listScreen {
 		// Show status bar on template selection screen
-		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Choose your template to get started", false))
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, "Choose your template to get started", false))
 	}
 
 	return sb.String()

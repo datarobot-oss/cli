@@ -47,7 +47,7 @@ const (
 type AddModel struct {
 	screen   addScreens
 	list     list.Model
-	spinner  spinner.Model
+	spinner  tui.Loading
 	width    int
 	height   int
 	errorMsg string
@@ -55,13 +55,9 @@ type AddModel struct {
 }
 
 func NewAddModel() AddModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = tui.InfoStyle
-
 	return AddModel{
 		screen:  addLoadingScreen,
-		spinner: s,
+		spinner: tui.NewLoading(),
 	}
 }
 
@@ -156,7 +152,7 @@ func (am AddModel) loadComponents() tea.Cmd {
 }
 
 func (am AddModel) Init() tea.Cmd {
-	return tea.Batch(am.loadComponents(), am.spinner.Tick, tea.WindowSize())
+	return tea.Batch(am.loadComponents(), am.spinner.Init(), tea.WindowSize())
 }
 
 func (am AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop

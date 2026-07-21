@@ -109,7 +109,7 @@ type UpdateModel struct {
 	viewport    viewport.Model
 	help        help.Model
 	keys        detailKeyMap
-	spinner     spinner.Model
+	spinner     tui.Loading
 	updating    bool
 	ready       bool
 	ExitMessage string
@@ -199,21 +199,17 @@ func NewUpdateComponentModel(updateFlags copier.UpdateFlags) UpdateModel {
 	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(tui.DrPurple)
 	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(tui.DimStyle.GetForeground())
 
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = tui.InfoStyle
-
 	return UpdateModel{
 		screen:      listScreen,
 		help:        h,
 		keys:        newDetailKeys(),
 		updateFlags: updateFlags,
-		spinner:     s,
+		spinner:     tui.NewLoading(),
 	}
 }
 
 func (m UpdateModel) Init() tea.Cmd {
-	return tea.Batch(m.loadComponents(), m.spinner.Tick, tea.WindowSize())
+	return tea.Batch(m.loadComponents(), m.spinner.Init(), tea.WindowSize())
 }
 
 func (m UpdateModel) loadComponents() tea.Cmd {
@@ -365,7 +361,7 @@ func (m UpdateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:cyclop
 
 					cmd := tea.Sequence(cmdsToRun...)
 
-					return m, tea.Batch(m.spinner.Tick, cmd)
+					return m, tea.Batch(m.spinner.Init(), cmd)
 				}
 			default:
 				// If we have an error allow any keypress to exit screen/quit
@@ -476,7 +472,7 @@ func (m UpdateModel) viewListScreen() string {
 	if m.updating {
 		sb.WriteString(tui.WelcomeStyle.Render("Available Components for Recipe Agent Template:"))
 		sb.WriteString("\n\n")
-		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner, "Updating selected components...", true))
+		sb.WriteString(tui.RenderStatusBar(m.width, m.spinner.Spinner, "Updating selected components...", true))
 
 		return sb.String()
 	}
