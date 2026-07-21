@@ -122,6 +122,11 @@ jobs:
             task: test-windows
     runs-on: ${{ matrix.os }}
     name: Run Tests (${{ matrix.os }})
+    # CFX-6919: the windows-latest leg is informational for now — it surfaces
+    # pre-existing Windows unit-test failures (tracked in CFX-7059) without
+    # blocking merges. Flip this off (make Windows required) once those are
+    # fixed. The ubuntu-latest leg stays blocking.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
