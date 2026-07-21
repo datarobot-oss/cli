@@ -70,26 +70,26 @@ func (p Prerequisite) PlatformInstallCommand() (string, error) {
 }
 
 var pythonInstallCmd = InstallCommands{
-	MacOS: "brew install python",
-	Linux: "sudo apt-get install python3",
+	MacOS:   "brew install python",
+	Linux:   "sudo apt-get install python3",
 	Windows: "winget install Python.Python.3",
 }
 
 var uvInstallCmd = InstallCommands{
-	MacOS: "brew install uv",
-	Linux: "curl -Ls https://astral.sh/uv/install.sh | sh",
+	MacOS:   "brew install uv",
+	Linux:   "curl -Ls https://astral.sh/uv/install.sh | sh",
 	Windows: "winget install --id=astral-sh.uv  -e",
 }
 
 var taskInstallCmd = InstallCommands{
-	MacOS: "brew install go-task/tap/go-task",
-	Linux: "curl -sL https://taskfile.dev/install.sh | sh",
+	MacOS:   "brew install go-task/tap/go-task",
+	Linux:   "curl -sL https://taskfile.dev/install.sh | sh",
 	Windows: "winget install Task.Task",
 }
 
 var pulumiInstallCmd = InstallCommands{
-	MacOS: "brew install pulumi",
-	Linux: "curl -fsSL https://get.pulumi.com | sh",
+	MacOS:   "brew install pulumi",
+	Linux:   "curl -fsSL https://get.pulumi.com | sh",
 	Windows: "winget install pulumi",
 }
 
