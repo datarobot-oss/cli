@@ -127,6 +127,17 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 | `dr pipeline run status` | `GET /pipelines/{id}/dispatches/{dispatch_id}/status` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}/status` (locked) | `dr pipeline run status --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline run cancel` | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` (draft) <br> `DELETE /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}` (locked) | `dr pipeline run cancel --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`. |
 
+### Run tasks (`dr pipeline run task …`)
+
+Per-invocation execution records for a single run. `<task-id>` is the sequential TASK ID from `run task list`; when the same `@task` runs at multiple graph nodes (fan-out), pass `--node-id <N>` (the NODE ID column) to select one invocation — otherwise `get`/`logs`/`result` return `409 Conflict` listing the candidate node ids.
+
+| Command | API endpoint | Usage | Inputs |
+|---|---|---|---|
+| `dr pipeline run task list` | `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks` | `dr pipeline run task list --pipeline <id> --run <run-id>` | **Flags:** `--pipeline <id>` (required), `--run <run-id>` (required), `--output-format json`. |
+| `dr pipeline run task get` | `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}` | `dr pipeline run task get --pipeline <id> --run <run-id> <task-id>` <br> `dr pipeline run task get --pipeline <id> --run <run-id> 3 --node-id 7` | **Positional:** `<task-id>` (required). **Flags:** `--pipeline <id>` (required), `--run <run-id>` (required), `--node-id <n>` (fan-out selector), `--output-format json`. |
+| `dr pipeline run task logs` | `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}/logs` <br> `GET …/tasks/{task_id}/logs/{stream}` (durable) | `dr pipeline run task logs --pipeline <id> --run <run-id> <task-id>` <br> `dr pipeline run task logs --pipeline <id> --run <run-id> 3 --node-id 7 --stream stderr` | **Positional:** `<task-id>` (required). **Flags:** `--pipeline <id>` (required), `--run <run-id>` (required), `--node-id <n>`, `--stream stdout\|stderr` (durable S3 log), `--tail <n>` (live only), `--verbosity user\|all`, `--output-format json`. |
+| `dr pipeline run task result` | `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}/result` | `dr pipeline run task result --pipeline <id> --run <run-id> <task-id>` <br> `dr pipeline run task result --pipeline <id> --run <run-id> 3 --node-id 7` | **Positional:** `<task-id>` (required). **Flags:** `--pipeline <id>` (required), `--run <run-id>` (required), `--node-id <n>`, `--output-format json`. Returns `409` until the task is `COMPLETED`, or when a fan-out task is addressed without `--node-id`. |
+
 ---
 
 ## Schedules (`dr pipeline schedule …`)
@@ -186,6 +197,10 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `GET /pipelines/{id}/dispatches` | `dr pipeline run list` (draft) |
 | `GET /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run get` (draft) |
 | `DELETE /pipelines/{id}/dispatches/{dispatch_id}` | `dr pipeline run cancel` (draft) |
+| `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks` | `dr pipeline run task list` |
+| `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}` | `dr pipeline run task get` |
+| `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}/logs` | `dr pipeline run task logs` |
+| `GET /pipelines/{id}/dispatches/{dispatch_id}/tasks/{task_id}/result` | `dr pipeline run task result` |
 | `POST /pipelines/{id}/inputs` | `dr pipeline input create` (draft) |
 | `POST /pipelines/{id}/versions/{ver}/inputs` | `dr pipeline input create` (locked) |
 | `GET /pipelines/{id}/inputs` | `dr pipeline input list` (draft) |

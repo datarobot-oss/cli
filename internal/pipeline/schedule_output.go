@@ -62,10 +62,10 @@ func toScheduleJSON(s Schedule) scheduleJSON {
 // RenderSchedule routes a single schedule to JSON or human output.
 func RenderSchedule(format outputformat.OutputFormat, s Schedule) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintScheduleJSON(s)
+		return printScheduleJSON(s)
 	}
 
-	PrintScheduleHuman(s)
+	printScheduleHuman(s)
 
 	return nil
 }
@@ -73,16 +73,16 @@ func RenderSchedule(format outputformat.OutputFormat, s Schedule) error {
 // RenderSchedules routes a list of schedules to JSON or human output.
 func RenderSchedules(format outputformat.OutputFormat, items []Schedule) error {
 	if format == outputformat.OutputFormatJSON {
-		return PrintScheduleListJSON(items)
+		return printScheduleListJSON(items)
 	}
 
-	PrintScheduleListHuman(items)
+	printScheduleListHuman(items)
 
 	return nil
 }
 
-// PrintScheduleJSON marshals a schedule as indented JSON through the DTO.
-func PrintScheduleJSON(s Schedule) error {
+// printScheduleJSON marshals a schedule as indented JSON through the DTO.
+func printScheduleJSON(s Schedule) error {
 	data, err := json.MarshalIndent(toScheduleJSON(s), "", "  ")
 	if err != nil {
 		return err
@@ -93,8 +93,8 @@ func PrintScheduleJSON(s Schedule) error {
 	return nil
 }
 
-// PrintScheduleHuman renders a single schedule in human-friendly form.
-func PrintScheduleHuman(s Schedule) {
+// printScheduleHuman renders a single schedule in human-friendly form.
+func printScheduleHuman(s Schedule) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "Schedule ID:\t%s\n", s.ScheduleID)
@@ -111,8 +111,8 @@ func PrintScheduleHuman(s Schedule) {
 	w.Flush()
 }
 
-// PrintScheduleListJSON marshals a list of schedules as indented JSON through the DTO.
-func PrintScheduleListJSON(items []Schedule) error {
+// printScheduleListJSON marshals a list of schedules as indented JSON through the DTO.
+func printScheduleListJSON(items []Schedule) error {
 	view := make([]scheduleJSON, len(items))
 
 	for i, s := range items {
@@ -129,8 +129,8 @@ func PrintScheduleListJSON(items []Schedule) error {
 	return nil
 }
 
-// PrintScheduleListHuman renders a lipgloss table summary of schedules.
-func PrintScheduleListHuman(items []Schedule) {
+// printScheduleListHuman renders a lipgloss table summary of schedules.
+func printScheduleListHuman(items []Schedule) {
 	if len(items) == 0 {
 		fmt.Println(tui.DimStyle.Render("No schedules found"))
 

@@ -117,7 +117,7 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 		},
 	}
 
-	out := captureStdout(t, func() { PrintImageHuman(img) })
+	out := captureStdout(t, func() { printImageHuman(img) })
 
 	assert.Contains(t, out, "[conda-forge]", "channels must appear in human output")
 	assert.Contains(t, out, "scipy", "dependencies must appear in human output")
@@ -144,7 +144,7 @@ func TestPrintImageHuman_HidesCondaWhenEmpty(t *testing.T) {
 		},
 	}
 
-	out := captureStdout(t, func() { PrintImageHuman(img) })
+	out := captureStdout(t, func() { printImageHuman(img) })
 
 	assert.Contains(t, out, emptyValuePlaceholder, "conda cell should show placeholder when no conda packages")
 }

@@ -27,6 +27,7 @@ package pipeline
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/datarobot/cli/internal/config"
@@ -60,7 +61,7 @@ func doJSON(method, endpoint string, body any, info string, out any) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
 
 	defer resp.Body.Close()
@@ -73,7 +74,11 @@ func doJSON(method, endpoint string, body any, info string, out any) error {
 		return nil
 	}
 
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response from %s: %w", endpoint, err)
+	}
+
+	return nil
 }
 
 // buildJSONRequest assembles an authenticated *http.Request with a
@@ -143,7 +148,7 @@ func doDelete(endpoint, info string) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
 
 	defer resp.Body.Close()

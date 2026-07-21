@@ -32,6 +32,7 @@ func Cmd() *cobra.Command {
 		runID        string
 		stream       string
 		tailLines    int
+		nodeID       int
 		verbosity    string
 		outputFormat outputformat.OutputFormat
 	)
@@ -48,9 +49,14 @@ With --stream stdout or --stream stderr: reads the durable S3-uploaded
 log captured by the electron runner at process exit. Use this for
 post-mortem debugging after the pod has been GC'd.
 
+When the same @task runs at multiple graph nodes (fan-out), all invocations
+share one <task-id>. Pass --node-id (the NODE ID column from
+"dr pipeline run task list") to read a specific invocation's logs; without it
+an ambiguous task returns an error listing the candidate node ids.
+
 Example:
   dr pipeline run task logs --pipeline <id> --run <run-id> 1
-  dr pipeline run task logs --pipeline <id> --run <run-id> 1 --stream stdout
+  dr pipeline run task logs --pipeline <id> --run <run-id> 3 --node-id 7 --stream stderr
   dr pipeline run task logs --pipeline <id> --run <run-id> 1 --tail 100 --verbosity all`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -67,8 +73,13 @@ Example:
 				return fmt.Errorf("--stream must be stdout or stderr (got %q)", stream)
 			}
 
+			var node *int
+			if cmd.Flags().Changed("node-id") {
+				node = &nodeID
+			}
+
 			if stream != "" {
-				return fetchDurableLog(pipelineID, runID, taskID, stream, verbosity, outputFormat)
+				return fetchDurableLog(pipelineID, runID, taskID, node, stream, verbosity, outputFormat)
 			}
 
 			var tail *int
@@ -77,7 +88,7 @@ Example:
 				tail = &tailLines
 			}
 
-			return fetchLiveLogs(pipelineID, runID, taskID, tail, verbosity, outputFormat)
+			return fetchLiveLogs(pipelineID, runID, taskID, node, tail, verbosity, outputFormat)
 		},
 	}
 
@@ -89,6 +100,7 @@ Example:
 	_ = cmd.MarkFlagRequired("run")
 	cmd.Flags().StringVar(&stream, "stream", "", "Read durable S3 log: stdout or stderr")
 	cmd.Flags().IntVar(&tailLines, "tail", 0, "Limit to last N lines (live logs only)")
+	cmd.Flags().IntVar(&nodeID, "node-id", 0, "Select a specific fan-out invocation by its nodeId (from `task list`)")
 	cmd.Flags().StringVar(&verbosity, "verbosity", "", "Log verbosity: user (default) or all")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
@@ -104,8 +116,8 @@ Example:
 	return cmd
 }
 
-func fetchLiveLogs(pipelineID, runID string, taskID int, tailLines *int, verbosity string, format outputformat.OutputFormat) error {
-	logs, err := pipeline.GetTaskLogs(pipelineID, runID, taskID, tailLines, verbosity)
+func fetchLiveLogs(pipelineID, runID string, taskID int, nodeID, tailLines *int, verbosity string, format outputformat.OutputFormat) error {
+	logs, err := pipeline.GetTaskLogs(pipelineID, runID, taskID, nodeID, tailLines, verbosity)
 	if err != nil {
 		return err
 	}
@@ -126,8 +138,8 @@ func fetchLiveLogs(pipelineID, runID string, taskID int, tailLines *int, verbosi
 	return nil
 }
 
-func fetchDurableLog(pipelineID, runID string, taskID int, stream, verbosity string, format outputformat.OutputFormat) error {
-	log, err := pipeline.GetTaskDurableLog(pipelineID, runID, taskID, stream, verbosity)
+func fetchDurableLog(pipelineID, runID string, taskID int, nodeID *int, stream, verbosity string, format outputformat.OutputFormat) error {
+	log, err := pipeline.GetTaskDurableLog(pipelineID, runID, taskID, nodeID, stream, verbosity)
 	if err != nil {
 		return err
 	}

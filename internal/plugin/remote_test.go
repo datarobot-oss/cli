@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -335,6 +336,120 @@ func TestResolveVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetInstalledPlugins tests multi-directory discovery behaviour
+func TestGetInstalledPlugins(t *testing.T) {
+	// writeMetadata is a small helper that creates a plugin directory with a
+	// .installed.json so loadPluginMetadata can find it.
+	writeMetadata := func(t *testing.T, dir, name, version string) {
+		t.Helper()
+
+		pluginDir := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(pluginDir, 0o755))
+
+		meta := InstalledPlugin{Name: name, Version: version}
+
+		data, err := json.Marshal(meta)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(pluginDir, ".installed.json"), data, 0o644))
+	}
+
+	t.Run("discovers plugin only in XDG_CONFIG_DIRS", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "remote-only", "2.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var found bool
+
+		for _, p := range plugins {
+			if p.Name == "remote-only" {
+				found = true
+
+				assert.Equal(t, "2.0.0", p.Version)
+			}
+		}
+
+		assert.True(t, found, "plugin from XDG_CONFIG_DIRS should be discovered")
+	})
+
+	t.Run("primary dir shadows same-named plugin in XDG_CONFIG_DIRS", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "shared-plugin", "1.0.0")
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "shared-plugin", "9.9.9")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var count int
+
+		for _, p := range plugins {
+			if p.Name == "shared-plugin" {
+				count++
+
+				assert.Equal(t, "1.0.0", p.Version, "primary dir version should win")
+			}
+		}
+
+		assert.Equal(t, 1, count, "same-named plugin should appear only once")
+	})
+
+	t.Run("plugins from both dirs are returned when names differ", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "plugin-a", "1.0.0")
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "plugin-b", "2.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		names := make(map[string]bool)
+
+		for _, p := range plugins {
+			names[p.Name] = true
+		}
+
+		assert.True(t, names["plugin-a"], "plugin-a from primary dir should be present")
+		assert.True(t, names["plugin-b"], "plugin-b from XDG_CONFIG_DIRS should be present")
+	})
+
+	t.Run("non-existent XDG_CONFIG_DIRS dir is silently skipped", func(t *testing.T) {
+		primaryDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", "/does/not/exist")
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "only-plugin", "1.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var found bool
+
+		for _, p := range plugins {
+			if p.Name == "only-plugin" {
+				found = true
+			}
+		}
+
+		assert.True(t, found, "plugin from primary dir should still be returned")
+	})
 }
 
 // TestResolveVersionEmpty tests error handling for empty version list

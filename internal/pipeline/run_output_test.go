@@ -89,7 +89,7 @@ func TestRenderRun_JSON(t *testing.T) {
 }
 
 func TestRenderRun_Human(t *testing.T) {
-	out := captureStdout(t, func() { PrintRunHuman(sampleRun()) })
+	out := captureStdout(t, func() { printRunHuman(sampleRun()) })
 
 	assert.Contains(t, out, "d-1")
 	assert.Contains(t, out, "locked")
@@ -115,11 +115,11 @@ func TestRenderRunStatus_JSON(t *testing.T) {
 	assert.NotContains(t, parsed, "covalentDispatchId")
 }
 
-// ── PrintRunListJSON ─────────────────────────────────────────────────────────
+// ── printRunListJSON ─────────────────────────────────────────────────────────
 
 func TestPrintRunListJSON_RemapsFields(t *testing.T) {
 	out := captureStdout(t, func() {
-		require.NoError(t, PrintRunListJSON([]Run{sampleRun()}))
+		require.NoError(t, printRunListJSON([]Run{sampleRun()}))
 	})
 
 	var parsed []map[string]any
@@ -131,12 +131,12 @@ func TestPrintRunListJSON_RemapsFields(t *testing.T) {
 }
 
 func TestPrintRunListHuman_Empty(t *testing.T) {
-	out := captureStdout(t, func() { PrintRunListHuman(nil) })
+	out := captureStdout(t, func() { printRunListHuman(nil) })
 	assert.Contains(t, out, "No runs found")
 }
 
 func TestPrintRunListHuman_RendersTable(t *testing.T) {
-	out := captureStdout(t, func() { PrintRunListHuman([]Run{sampleRun()}) })
+	out := captureStdout(t, func() { printRunListHuman([]Run{sampleRun()}) })
 
 	assert.Contains(t, out, "RUN ID")
 	assert.Contains(t, out, "d-1")

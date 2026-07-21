@@ -129,7 +129,7 @@ func TestRenderTask_JSON(t *testing.T) {
 }
 
 func TestRenderTask_Human(t *testing.T) {
-	out := captureStdout(t, func() { PrintTaskHuman(sampleTask()) })
+	out := captureStdout(t, func() { printTaskHuman(sampleTask()) })
 
 	assert.Contains(t, out, "Task ID:")
 	assert.Contains(t, out, "locked")
@@ -143,7 +143,7 @@ func TestPrintTaskHuman_DraftNoInputs(t *testing.T) {
 	tk.VersionID = nil
 	tk.Inputs = nil
 
-	out := captureStdout(t, func() { PrintTaskHuman(tk) })
+	out := captureStdout(t, func() { printTaskHuman(tk) })
 
 	assert.Contains(t, out, "draft")
 	assert.NotContains(t, out, "Inputs:")
