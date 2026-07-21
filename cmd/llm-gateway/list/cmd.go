@@ -17,6 +17,7 @@ package list
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -33,11 +34,13 @@ import (
 
 // LLMOutput is the JSON representation of an LLM for --output-format json.
 type LLMOutput struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Selected bool   `json:"selected"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	Description string `json:"description"`
+	ContextSize int    `json:"context_size"`
+	Selected    bool   `json:"selected"`
 }
 
 func Cmd() *cobra.Command {
@@ -87,11 +90,13 @@ func toLLMOutputs(llms []drapi.LLM, selectedID string) []LLMOutput {
 
 	for i, l := range llms {
 		outputs[i] = LLMOutput{
-			ID:       l.LlmID,
-			Name:     l.Name,
-			Provider: l.Provider,
-			Model:    l.Model,
-			Selected: l.LlmID == selectedID,
+			ID:          l.LlmID,
+			Name:        l.Name,
+			Provider:    l.Provider,
+			Model:       l.Model,
+			Description: l.Description,
+			ContextSize: l.ContextSize,
+			Selected:    l.LlmID == selectedID,
 		}
 	}
 
@@ -105,6 +110,16 @@ func terminalWidth() int {
 	}
 
 	return w
+}
+
+// formatContextSize renders a context-window size for the table. A zero or
+// missing value shows as "-" so it reads as unknown, not a real zero-token limit.
+func formatContextSize(n int) string {
+	if n <= 0 {
+		return "-"
+	}
+
+	return strconv.Itoa(n)
 }
 
 func printLLMTable(llms []drapi.LLM, selectedID string) {
@@ -133,7 +148,7 @@ func printLLMTable(llms []drapi.LLM, selectedID string) {
 				return dimStyle
 			}
 		}).
-		Headers("ID", "NAME", "PROVIDER", "MODEL")
+		Headers("ID", "NAME", "PROVIDER", "MODEL", "CONTEXT")
 
 	for _, l := range llms {
 		id := "  " + l.LlmID
@@ -141,7 +156,7 @@ func printLLMTable(llms []drapi.LLM, selectedID string) {
 			id = "* " + l.LlmID
 		}
 
-		t.Row(id, l.Name, l.Provider, l.Model)
+		t.Row(id, l.Name, l.Provider, l.Model, formatContextSize(l.ContextSize))
 	}
 
 	rendered := t.Render()

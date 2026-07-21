@@ -41,18 +41,21 @@ dr llm ls               # shortest alias
 | `NAME`     | Human-readable model name.                       |
 | `PROVIDER` | Provider (e.g. `azure`, `anthropic`, `google`).  |
 | `MODEL`    | Underlying model identifier.                     |
+| `CONTEXT`  | Context-window size in tokens. `-` when the catalog does not report it. |
 
-The table width is content-driven and capped at the terminal width to prevent overflow.
+The table width is content-driven and capped at the terminal width to prevent overflow. `description` is omitted from the table (it is long enough to wrap unreadably across a full catalog) and appears in JSON output only.
 
 **JSON output** (`--output-format json`) returns an envelope with a `llms` array. Each entry includes:
 
 ```json
 {
-  "id":       "llm-abc123",
-  "name":     "GPT-4o",
-  "provider": "azure",
-  "model":    "gpt-4o",
-  "selected": true
+  "id":           "llm-abc123",
+  "name":         "GPT-4o",
+  "provider":     "azure",
+  "model":        "gpt-4o",
+  "description":  "OpenAI's flagship multimodal model.",
+  "context_size": 128000,
+  "selected":     true
 }
 ```
 
