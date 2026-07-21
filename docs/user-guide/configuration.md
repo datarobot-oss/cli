@@ -144,6 +144,24 @@ export DATAROBOT_CLI_FORCE_INTERACTIVE=true
 export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 ```
 
+### Telemetry
+
+The CLI collects anonymous usage analytics to help improve the tool. To disable telemetry:
+
+```bash
+# Per-invocation
+dr --disable-telemetry templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_DISABLE_TELEMETRY=true
+
+# Permanently (config file)
+# Add to ~/.config/datarobot/drconfig.yaml:
+disable-telemetry: true
+```
+
+When telemetry is disabled, no data is sent over the network. See the [developer documentation](../development/telemetry.md) for details on what is collected and how the system works.
+
 ### Advanced flags
 
 The CLI supports advanced command-line flags for special use cases:
