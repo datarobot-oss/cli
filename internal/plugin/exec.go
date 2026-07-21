@@ -111,26 +111,34 @@ func executePluginCommand(ctx context.Context, executable string, args []string,
 	return 0
 }
 
+// pluginCommandArgs returns the executable and argument list to invoke a plugin
+// script. On Windows, .ps1 files are run through PowerShell, since Windows
+// cannot execute a .ps1 text file directly.
+func pluginCommandArgs(executable string, args ...string) (string, []string) {
+	return pluginCommandArgsFor(runtime.GOOS, executable, args...)
+}
+
+// pluginCommandArgsFor is the goos-parameterized core of pluginCommandArgs,
+// exposed as a test seam so the Windows-wrapping branch can be exercised on
+// any platform.
+func pluginCommandArgsFor(goos, executable string, args ...string) (string, []string) {
+	if goos == "windows" && filepath.Ext(executable) == ".ps1" {
+		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
+
+		return "powershell.exe", psArgs
+	}
+
+	return executable, args
+}
+
 // buildPluginCommand creates the appropriate exec.Cmd for the given executable.
 // On Windows, .ps1 files are executed via PowerShell.
 // ctx cancellation sends SIGTERM to the process, with a 5-second grace
 // period before SIGKILL.
 func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) *exec.Cmd {
-	ext := filepath.Ext(executable)
+	name, cmdArgs := pluginCommandArgs(executable, args...)
 
-	// On Windows, execute .ps1 files through PowerShell
-	if runtime.GOOS == "windows" && ext == ".ps1" {
-		psArgs := append([]string{"-ExecutionPolicy", "Bypass", "-File", executable}, args...)
-
-		cmd := exec.CommandContext(ctx, "powershell.exe", psArgs...)
-		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-		cmd.WaitDelay = 5 * time.Second
-		cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)
-
-		return cmd
-	}
-
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)

@@ -465,7 +465,9 @@ func getManifest(ctx context.Context, executable string) (*PluginManifest, error
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, executable, PluginManifestFlag)
+	name, cmdArgs := pluginCommandArgs(executable, PluginManifestFlag)
+
+	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 
 	output, err := cmd.Output()
 	if err != nil {
