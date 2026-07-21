@@ -15,10 +15,66 @@
 package reader
 
 import (
+	"bufio"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestReadLine_UnixNewline(t *testing.T) {
+	line, err := readLine(bufio.NewReader(strings.NewReader("yes\nrest")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "yes", line)
+}
+
+func TestReadLine_BareCarriageReturn(t *testing.T) {
+	// Simulates Windows raw console-mode Enter, which delivers a bare '\r'
+	// with no paired '\n' (ENABLE_LINE_INPUT is off).
+	line, err := readLine(bufio.NewReader(strings.NewReader("yes\r")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "yes", line)
+}
+
+func TestReadLine_WindowsCRLF(t *testing.T) {
+	line, err := readLine(bufio.NewReader(strings.NewReader("yes\r\nrest")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "yes", line)
+}
+
+func TestReadLine_OnlyFirstLineConsumed(t *testing.T) {
+	r := bufio.NewReader(strings.NewReader("first\nsecond\n"))
+
+	line, err := readLine(r)
+	require.NoError(t, err)
+	assert.Equal(t, "first", line)
+
+	line, err = readLine(r)
+	require.NoError(t, err)
+	assert.Equal(t, "second", line)
+}
+
+func TestReadLine_EOFWithoutNewline(t *testing.T) {
+	line, err := readLine(bufio.NewReader(strings.NewReader("no newline")))
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, io.EOF))
+	assert.Equal(t, "no newline", line)
+}
+
+func TestReadLine_EmptyInput(t *testing.T) {
+	line, err := readLine(bufio.NewReader(strings.NewReader("")))
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, io.EOF))
+	assert.Equal(t, "", line)
+}
 
 func TestIsNonInteractive(t *testing.T) {
 	cases := map[string]bool{

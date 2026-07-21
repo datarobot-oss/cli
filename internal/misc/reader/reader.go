@@ -52,12 +52,37 @@ func ReadString() (string, error) {
 
 	reader := bufio.NewReader(cr)
 
-	str, err := reader.ReadString('\n')
+	str, err := readLine(reader)
 	if err != nil {
 		fmt.Println()
 	}
 
 	return str, err
+}
+
+// readLine reads bytes until '\n' or '\r', whichever comes first, without
+// looking ahead for a paired '\r\n'. That lookahead would block: with
+// ENABLE_LINE_INPUT off, Windows' raw console mode delivers a bare '\r' for
+// Enter and nothing more until the next keystroke, so waiting to see whether
+// '\n' follows would hang until the user types again. POSIX terminals
+// already translate Enter to a bare '\n' at the tty layer, so they never hit
+// the '\r' branch here. This also means redirected/piped input is handled
+// regardless of its line-ending convention ('\n', '\r', or '\r\n').
+func readLine(r *bufio.Reader) (string, error) {
+	var sb strings.Builder
+
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return sb.String(), err
+		}
+
+		if b == '\n' || b == '\r' {
+			return sb.String(), nil
+		}
+
+		sb.WriteByte(b)
+	}
 }
 
 // AskYesNo prints nothing itself — the caller is expected to have already
