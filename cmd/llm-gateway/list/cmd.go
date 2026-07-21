@@ -54,7 +54,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
-		Short:        "List available LLM Gateway models",
+		Short:        "List available LLMs",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
