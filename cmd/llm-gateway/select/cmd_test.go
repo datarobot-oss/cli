@@ -120,6 +120,9 @@ func TestSelectCmd_DirectArg_Valid(t *testing.T) {
 }
 
 func TestSelectCmd_DirectArg_Invalid(t *testing.T) {
+	// setupLLMServer serves catalog-shaped JSON on every path, so the deployed
+	// source fails to decode. That partial-failure state is what triggers the
+	// error enrichment, so the message names both the id and the dead source.
 	setupLLMServer(t, testLLMs)
 
 	cmd, _ := newTestCmd(t)
@@ -128,6 +131,7 @@ func TestSelectCmd_DirectArg_Invalid(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not-a-real-llm")
+	assert.Contains(t, err.Error(), "DataRobot-deployed LLMs unavailable")
 }
 
 func TestSelectCmd_DirectArg_APIError(t *testing.T) {

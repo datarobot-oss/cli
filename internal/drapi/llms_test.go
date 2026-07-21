@@ -157,6 +157,9 @@ func TestGetLLMsAndDeployed_GatewayFailsSoftDegrade(t *testing.T) {
 
 	require.Len(t, list.LLMs, 1)
 	assert.Equal(t, LLMKindDeployed, list.LLMs[0].Kind)
+
+	require.Len(t, list.Warnings, 1)
+	assert.Contains(t, list.Warnings[0], "LLM Gateway catalog unavailable")
 }
 
 func TestGetLLMsAndDeployed_DeployedFailsSoftDegrade(t *testing.T) {
@@ -167,6 +170,29 @@ func TestGetLLMsAndDeployed_DeployedFailsSoftDegrade(t *testing.T) {
 
 	require.Len(t, list.LLMs, 1)
 	assert.Equal(t, LLMKindGateway, list.LLMs[0].Kind)
+
+	require.Len(t, list.Warnings, 1)
+	assert.Contains(t, list.Warnings[0], "DataRobot-deployed LLMs unavailable")
+}
+
+func TestGetLLMsAndDeployed_BothSucceedNoWarnings(t *testing.T) {
+	setupRoutedServer(t, routeResponse{body: gatewayBody}, routeResponse{body: deployedBody})
+
+	list, err := GetLLMsAndDeployed()
+	require.NoError(t, err)
+
+	assert.Empty(t, list.Warnings)
+}
+
+func TestGetDeployedLLMs_EmptyLabelFallsBackToID(t *testing.T) {
+	body := `{"data":[{"id":"dep-no-label","label":"","status":"active","model":{"targetType":"TextGeneration"}}]}`
+	setupRoutedServer(t, routeResponse{}, routeResponse{body: body})
+
+	deployed, err := GetDeployedLLMs()
+	require.NoError(t, err)
+
+	require.Len(t, deployed, 1)
+	assert.Equal(t, "dep-no-label", deployed[0].Name)
 }
 
 func TestGetLLMsAndDeployed_BothFail(t *testing.T) {

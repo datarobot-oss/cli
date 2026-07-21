@@ -89,6 +89,11 @@ type LLMList struct {
 	TotalCount int    `json:"totalCount"`
 	Next       string `json:"next"`
 	Previous   string `json:"previous"`
+
+	// Warnings is set programmatically (not decoded) by GetLLMsAndDeployed when
+	// one source failed but the other succeeded, so callers can surface why the
+	// list is partial instead of silently treating a missing source as empty.
+	Warnings []string `json:"-"`
 }
 
 func GetLLMs() (*LLMList, error) {
@@ -177,9 +182,16 @@ func GetDeployedLLMs() ([]LLM, error) {
 				continue
 			}
 
+			// A deployment's label is nullable; fall back to its id so the name
+			// column is never blank.
+			name := d.Label
+			if name == "" {
+				name = d.ID
+			}
+
 			deployed = append(deployed, LLM{
 				LlmID:        d.ID,
-				Name:         d.Label,
+				Name:         name,
 				Model:        deployedModelSentinel,
 				Description:  d.Description,
 				IsActive:     true,
@@ -209,12 +221,19 @@ func GetDeployedLLMs() ([]LLM, error) {
 // list. An error is returned only when both sources fail.
 func GetLLMsAndDeployed() (*LLMList, error) {
 	gateway, gwErr := GetLLMs()
+	deployed, depErr := GetDeployedLLMs()
+
+	var warnings []string
+
 	if gwErr != nil {
+		warnings = append(warnings, "LLM Gateway catalog unavailable: "+gwErr.Error())
+
 		log.Warnf("Could not list LLM Gateway models: %s", gwErr.Error())
 	}
 
-	deployed, depErr := GetDeployedLLMs()
 	if depErr != nil {
+		warnings = append(warnings, "DataRobot-deployed LLMs unavailable: "+depErr.Error())
+
 		log.Warnf("Could not list DataRobot-deployed LLMs: %s", depErr.Error())
 	}
 
@@ -230,5 +249,5 @@ func GetLLMsAndDeployed() (*LLMList, error) {
 
 	llms = append(llms, deployed...)
 
-	return &LLMList{LLMs: llms, Count: len(llms), TotalCount: len(llms)}, nil
+	return &LLMList{LLMs: llms, Count: len(llms), TotalCount: len(llms), Warnings: warnings}, nil
 }

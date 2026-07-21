@@ -17,6 +17,7 @@ package selectcmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
@@ -50,6 +51,13 @@ func Cmd() *cobra.Command {
 			}
 
 			if err != nil {
+				// One source may have failed while the other returned a partial
+				// list. Surface that so a "not found" isn't blamed on the user
+				// when the model is really just missing from an unreachable source.
+				if len(llmList.Warnings) > 0 {
+					return fmt.Errorf("%w (%s)", err, strings.Join(llmList.Warnings, "; "))
+				}
+
 				return err
 			}
 
