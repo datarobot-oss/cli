@@ -92,6 +92,18 @@ func TestFindByID_Empty(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestFindByID_DeployedID(t *testing.T) {
+	llms := []drapi.LLM{
+		{LlmID: "llm-001", Name: "GPT-4o", Provider: "azure", Model: "gpt-4o", IsActive: true, Kind: drapi.LLMKindGateway},
+		{LlmID: "6650f0aa11bb22cc33dd44ee", Name: "Support RAG LLM", Model: "datarobot/datarobot-deployed-llm", IsActive: true, Kind: drapi.LLMKindDeployed, DeploymentID: "6650f0aa11bb22cc33dd44ee"},
+	}
+
+	id, err := findByID(llms, "6650f0aa11bb22cc33dd44ee")
+
+	require.NoError(t, err)
+	assert.Equal(t, "6650f0aa11bb22cc33dd44ee", id)
+}
+
 // --- select with direct arg ---
 
 func TestSelectCmd_DirectArg_Valid(t *testing.T) {
