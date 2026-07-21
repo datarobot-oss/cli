@@ -163,7 +163,7 @@ type deploymentList struct {
 // query params and return every deployment, so rows are re-filtered
 // client-side on target type and active status.
 func GetDeployedLLMs() ([]LLM, error) {
-	url, err := config.GetEndpointURL("/api/v2/deployments/?championModelTargetType=TextGeneration&limit=100")
+	url, err := config.GetEndpointURL("/api/v2/deployments/?championModelTargetType=" + targetTypeTextGeneration + "&limit=100")
 	if err != nil {
 		return nil, err
 	}
