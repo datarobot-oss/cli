@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -120,15 +121,47 @@ func TestSelectCmd_DirectArg_Valid(t *testing.T) {
 }
 
 func TestSelectCmd_DirectArg_Invalid(t *testing.T) {
-	// setupLLMServer serves catalog-shaped JSON on every path, so the deployed
-	// source fails to decode. That partial-failure state is what triggers the
-	// error enrichment, so the message names both the id and the dead source.
 	setupLLMServer(t, testLLMs)
 
 	cmd, _ := newTestCmd(t)
 	cmd.SetArgs([]string{"not-a-real-llm"})
 
 	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not-a-real-llm")
+}
+
+// TestSelectCmd_InvalidID_PartialFailure routes the two sources independently:
+// the catalog answers, the deployments endpoint 500s. The deployed-source
+// failure is explicit (not an incidental decode error), so an unknown id errors
+// with both the id and the unavailable-source note.
+func TestSelectCmd_InvalidID_PartialFailure(t *testing.T) {
+	body, err := json.Marshal(drapi.LLMList{LLMs: testLLMs, Count: len(testLLMs), TotalCount: len(testLLMs)})
+	require.NoError(t, err)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/deployments") {
+			http.Error(w, "boom", http.StatusInternalServerError)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	viperx.Set(config.DataRobotURL, srv.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	cmd, _ := newTestCmd(t)
+	cmd.SetArgs([]string{"not-a-real-llm"})
+
+	err = cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not-a-real-llm")
 	assert.Contains(t, err.Error(), "DataRobot-deployed LLMs unavailable")
