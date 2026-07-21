@@ -25,10 +25,11 @@ type LLM struct {
 	IsActive bool   `json:"isActive"`
 	Model    string `json:"model"`
 
+	Description string `json:"description"`
+	ContextSize int    `json:"contextSize"`
+
 	//Version              string   `json:"version"`
-	//Description          string   `json:"description"`
 	//Creator              string   `json:"creator"`
-	//ContextSize          int      `json:"contextSize"`
 	//MaxCompletionTokens  int      `json:"maxCompletionTokens"`
 	//Capabilities         []string `json:"capabilities"`
 	//SupportedLanguages   []string `json:"supportedLanguages"`
