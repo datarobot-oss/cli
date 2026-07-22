@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -72,6 +73,13 @@ func ReadString() (string, error) {
 func readLine(r *bufio.Reader) (string, error) {
 	var sb strings.Builder
 
+	// cancelreader's Windows raw console mode also disables ENABLE_ECHO_INPUT,
+	// so the console stops echoing typed characters (and doesn't erase them
+	// on backspace) on its own — we have to do both ourselves there. POSIX
+	// never touches termios, so the tty keeps echoing normally on its own;
+	// echoing here too would double every character.
+	echo := runtime.GOOS == "windows"
+
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
@@ -91,10 +99,28 @@ func readLine(r *bufio.Reader) (string, error) {
 		}
 
 		if b == '\n' || b == '\r' {
+			if echo {
+				fmt.Println()
+			}
+
 			return sb.String(), nil
 		}
 
+		if echo && (b == '\b' || b == 0x7f) {
+			if s := sb.String(); s != "" {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+				fmt.Print("\b \b")
+			}
+
+			continue
+		}
+
 		sb.WriteByte(b)
+
+		if echo && b >= 0x20 && b < 0x7f {
+			fmt.Printf("%c", b)
+		}
 	}
 }
 
