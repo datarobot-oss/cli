@@ -8,7 +8,7 @@ For most users, common CLI management tasks are straightforward:
 
 ```bash
 # Check CLI version
-dr self version
+dr self version --output-format text
 
 # Update to latest version
 dr self update
@@ -147,16 +147,20 @@ dr self version
 
 **Options:**
 
-- `-f, --format`&mdash;output format (`text` or `json`)
+- `-o, --output-format`&mdash;output format (`text` or `json`, default: `json`)
+- `-s, --short`&mdash;print just the version number (text format only)
 
 **Examples:**
 
 ```bash
-# Show version (default text format)
+# Show version (default JSON format)
 dr self version
 
-# Show version in JSON format
-dr self version --format json
+# Show version in text format
+dr self version --output-format text
+
+# Show just the version number
+dr self version --output-format text --short
 ```
 
 ## Global options
@@ -181,7 +185,7 @@ Installing DataRobot CLI...
 ### Check CLI version
 
 ```bash
-$ dr self version
+$ dr self version --output-format text
 DataRobot CLI version: v0.2.55
 ```
 
@@ -214,7 +218,7 @@ $ dr self completion bash | sudo tee /etc/bash_completion.d/dr
 ### Get version in JSON
 
 ```bash
-$ dr self version --format json
+$ dr self version
 {
   "version": "v0.2.55",
   "commit": "abc1234def5678",

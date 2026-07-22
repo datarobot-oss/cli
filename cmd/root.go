@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
+	selfversion "github.com/datarobot/cli/cmd/self/version"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
@@ -309,7 +310,16 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprintln(cmd.OutOrStdout(), internalVersion.GetAppNameVersionText())
+			// Route through self version with explicit --output-format text
+			versionCmd := selfversion.Cmd()
+			versionCmd.SetArgs([]string{"--output-format", "text"})
+			versionCmd.SetOut(cmd.OutOrStdout())
+			versionCmd.SetErr(cmd.ErrOrStderr())
+
+			if err := versionCmd.Execute(); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			}
+
 			fmt.Fprintln(cmd.OutOrStdout(), "\nTo update: dr self update")
 		} else {
 			// Use default help behavior but with customized template
