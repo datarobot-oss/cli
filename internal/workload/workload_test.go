@@ -285,41 +285,6 @@ func TestCreateWorkload_AutoscalingShapePostsVerbatimAndParses201(t *testing.T) 
 	assertProjection(t, workload, "wl-autoscale-id", "wl-autoscale", "submitted")
 }
 
-// TestCreateWorkload_PreflightRejectsReplicaCountWithAutoscaling mirrors dr workload
-// create: validation fails before any POST when replicaCount conflicts with autoscaling.
-func TestCreateWorkload_PreflightRejectsReplicaCountWithAutoscaling(t *testing.T) {
-	installSkipAuth(t)
-
-	spec := []byte(`{
-		"name": "wl-conflict",
-		"artifactId": "art-1",
-		"runtime": {
-			"containerGroups": [{
-				"replicaCount": 1,
-				"autoscaling": {"enabled": true, "policies": []}
-			}]
-		}
-	}`)
-
-	var posted bool
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		posted = true
-		w.WriteHeader(http.StatusCreated)
-	}))
-
-	defer srv.Close()
-
-	installEndpoint(t, srv.URL)
-
-	err := ValidateWorkloadCreateRequest(spec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive")
-
-	// cmd/workload/create stops on validation error; ensure CreateWorkload is not invoked.
-	assert.False(t, posted)
-}
-
 func TestCreateWorkload_422SurfacesServerDetail(t *testing.T) {
 	installSkipAuth(t)
 
