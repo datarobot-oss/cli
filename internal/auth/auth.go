@@ -318,6 +318,7 @@ func askForNewHost() bool {
 
 	selectedOption, err := reader.ReadString()
 	if err != nil {
+		fmt.Println("reader.ReadString => err :", err)
 		return false
 	}
 

@@ -54,6 +54,7 @@ func ReadString() (string, error) {
 
 	str, err := readLine(reader)
 	if err != nil {
+		fmt.Println("readLine err => : ", err)
 		fmt.Println()
 	}
 
@@ -74,6 +75,7 @@ func readLine(r *bufio.Reader) (string, error) {
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
+			fmt.Println("ReadByte err", err)
 			return sb.String(), err
 		}
 
@@ -93,6 +95,7 @@ func readLine(r *bufio.Reader) (string, error) {
 func AskYesNo() bool {
 	line, err := ReadString()
 	if err != nil {
+		fmt.Println("err", err)
 		return false
 	}
 
