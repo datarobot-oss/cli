@@ -75,8 +75,19 @@ func readLine(r *bufio.Reader) (string, error) {
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
-			fmt.Println("ReadByte err", err)
 			return sb.String(), err
+		}
+
+		// Ctrl+C (ASCII ETX, 0x03). On POSIX this byte never reaches us —
+		// the tty driver intercepts it at the ISIG layer and raises a real
+		// SIGINT before it's ever placed in the input stream. On Windows,
+		// cancelreader disables ENABLE_PROCESSED_INPUT (required so it can
+		// implement its own Cancel()), which per Microsoft's docs means
+		// "CTRL+C is reported as keyboard input rather than as a signal" —
+		// so this is the only place Ctrl+C is ever observable on Windows.
+		if b == 0x03 {
+			fmt.Println("ReadByte 0x03", err)
+			return sb.String(), cancelreader.ErrCanceled
 		}
 
 		if b == '\n' || b == '\r' {
