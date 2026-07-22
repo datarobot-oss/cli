@@ -115,6 +115,70 @@ fi
 	s.Equal(1, exitCode)
 }
 
+// TestPluginCommandArgsFor verifies the goos-parameterized wrapping decision so
+// the Windows PowerShell branch is exercised on any platform (the real Windows
+// runners are not yet part of CI).
+func TestPluginCommandArgsFor(t *testing.T) {
+	tests := []struct {
+		name         string
+		goos         string
+		executable   string
+		args         []string
+		expectedName string
+		expectedArgs []string
+	}{
+		{
+			name:         "windows ps1 is wrapped in powershell",
+			goos:         "windows",
+			executable:   `C:\plugins\dr-foo.ps1`,
+			args:         []string{PluginManifestFlag},
+			expectedName: "powershell.exe",
+			expectedArgs: []string{"-ExecutionPolicy", "Bypass", "-File", `C:\plugins\dr-foo.ps1`, PluginManifestFlag},
+		},
+		{
+			name:         "windows ps1 preserves extra args in order",
+			goos:         "windows",
+			executable:   "dr-foo.ps1",
+			args:         []string{"alpha", "beta"},
+			expectedName: "powershell.exe",
+			expectedArgs: []string{"-ExecutionPolicy", "Bypass", "-File", "dr-foo.ps1", "alpha", "beta"},
+		},
+		{
+			name:         "windows non-ps1 executable is unchanged",
+			goos:         "windows",
+			executable:   "dr-foo.exe",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo.exe",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+		{
+			name:         "windows extensionless executable is unchanged",
+			goos:         "windows",
+			executable:   "dr-foo",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+		{
+			name:         "non-windows ps1 is not wrapped",
+			goos:         "linux",
+			executable:   "dr-foo.ps1",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo.ps1",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, cmdArgs := pluginCommandArgsFor(tt.goos, tt.executable, tt.args...)
+
+			assert.Equal(t, tt.expectedName, name)
+			assert.Equal(t, tt.expectedArgs, cmdArgs)
+		})
+	}
+}
+
 // TestExecutePluginExitCodes tests various exit codes are properly propagated
 func TestExecutePluginExitCodes(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "plugin-exitcode-test")
