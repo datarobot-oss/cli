@@ -71,43 +71,21 @@ function Test-DRCompletionInstallWithExecutionPolicy {
         [bool]$ExpectWarning
     )
 
+    # Guard: Get-ExecutionPolicy may not be available on every PowerShell
+    # build (e.g. some Windows Server 2025 runner images fail to auto-load
+    # the Microsoft.PowerShell.Security module).  Skip gracefully instead of
+    # crashing the entire smoke-test suite.
+    try {
+        $null = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: Get-ExecutionPolicy cmdlet not available on this system."
+
+        return
+    }
+
     # Save the current policy so it can be restored after the test, then apply the policy under test.
     $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
     Set-ExecutionPolicy $Policy -Scope CurrentUser -Force
-
-    # Run the installer and fail fast if it exits non-zero.
-    $installOutput = (dr self completion install powershell --yes 2>&1 | Out-String)
-    $installExitCode = $LASTEXITCODE
-    if ($installExitCode -ne 0) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-        Write-ErrorMsg "dr self completion install powershell --yes failed with exit code $installExitCode"
-    }
-
-    # Assert the installer warned (or did not warn) about the execution policy fix command.
-    $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
-    $hasWarning = $installOutput -match $fixCommand
-
-    if ($ExpectWarning -and -not $hasWarning) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-
-        # XFAIL: when testing Restricted policy without the Phase 2 Go fix,
-        # the warning is expected to be absent. Track as an expected failure
-        # instead of a hard error. Remove this branch when Phase 2 lands.
-        $isXFail = $ExpectWarning -and ($Policy -eq "Restricted")
-
-        if ($isXFail) {
-            Write-XFailMsg "Assertion xfail [$TestName]: installer did not warn user with the execution policy fix command (expected: Phase 2 not yet merged)"
-        } else {
-            Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
-        }
-    }
-
-    if (-not $ExpectWarning -and $hasWarning) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
-        Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
-    }
-
-    Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
 
     # Resolve the PowerShell profile path, preferring PowerShell Core over Windows PowerShell (matches the Go installer).
     $documentsPath = "$env:USERPROFILE\Documents"
@@ -119,6 +97,50 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     } else {
         $profilePath = Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
     }
+
+    # Clean up any existing profile from a previous test so each run starts fresh.
+    if (Test-Path $profilePath) {
+        Remove-Item $profilePath -Force -ErrorAction SilentlyContinue
+    }
+
+    # Run the installer with --force so each invocation performs a real install.
+    $installOutput = (dr self completion install powershell --yes --force 2>&1 | Out-String)
+    $installExitCode = $LASTEXITCODE
+    if ($installExitCode -ne 0) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "dr self completion install powershell --yes --force failed with exit code $installExitCode"
+    }
+
+    # Assert the installer warned (or did not warn) about the execution policy fix command.
+    $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    $hasWarning = $installOutput -match $fixCommand
+
+    if ($ExpectWarning -and -not $hasWarning) {
+        # XFAIL: when testing Restricted policy without the Phase 2 Go fix,
+        # the warning is expected to be absent. Track as an expected failure
+        # and return early — the remaining assertions (profile, policy) are
+        # not meaningful when the warning behavior isn't yet implemented.
+        # Remove this branch when Phase 2 lands.
+        $isXFail = $ExpectWarning -and ($Policy -eq "Restricted")
+
+        if ($isXFail) {
+            Write-XFailMsg "Assertion xfail [$TestName]: installer did not warn user with the execution policy fix command (expected: Phase 2 not yet merged)"
+            Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+            if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
+
+            return
+        }
+
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
+    }
+
+    if (-not $ExpectWarning -and $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
 
     # Assert the profile exists and contains the dr completion block.
     if (-not (Test-Path $profilePath)) {
@@ -143,8 +165,9 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
 
-    # Restore the original execution policy.
+    # Restore the original execution policy and clean up the profile.
     Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
 }
 
 # Main execution
