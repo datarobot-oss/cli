@@ -445,6 +445,101 @@ func TestEnsureSourceInBashrcNotFound(t *testing.T) {
 	}
 }
 
+func TestMissingPowerShellBlocks(t *testing.T) {
+	t.Run("empty content returns all blocks", func(t *testing.T) {
+		result := missingPowerShellBlocks("")
+		if !contains(result, "dr completion powershell") {
+			t.Error("expected dr completion block")
+		}
+
+		if !contains(result, "# datarobot alias completion") {
+			t.Error("expected datarobot alias block")
+		}
+	})
+
+	t.Run("existing dr block skips dr but includes alias", func(t *testing.T) {
+		existing := "dr completion powershell | Out-String | Invoke-Expression\n"
+
+		result := missingPowerShellBlocks(existing)
+		if contains(result, "# dr completion") {
+			t.Error("should not include dr block header when already present")
+		}
+
+		if !contains(result, "# datarobot alias completion") {
+			t.Error("expected datarobot alias block")
+		}
+	})
+
+	t.Run("existing alias block skips alias", func(t *testing.T) {
+		existing := "# datarobot alias completion\nif (Get-Command datarobot -ErrorAction SilentlyContinue) {\n"
+
+		result := missingPowerShellBlocks(existing)
+		if contains(result, "# datarobot alias completion") {
+			t.Error("should not include datarobot alias block when already present")
+		}
+
+		if !contains(result, "dr completion powershell") {
+			t.Error("expected dr completion block")
+		}
+	})
+
+	t.Run("all blocks present returns empty", func(t *testing.T) {
+		existing := "dr completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n"
+
+		result := missingPowerShellBlocks(existing)
+		if result != "" {
+			t.Errorf("expected empty result when all blocks present, got: %s", result)
+		}
+	})
+}
+
+func TestInstallPowerShell(t *testing.T) {
+	rootCmd := &cobra.Command{
+		Use:   "dr",
+		Short: "DataRobot CLI.",
+	}
+
+	tmpDir, err := os.MkdirTemp("", "test-powershell-profile-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origHome := os.Getenv("HOME")
+
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	profilePath, installFn := installPowerShell(rootCmd, false)
+
+	if profilePath == "" {
+		t.Error("expected non-empty profile path")
+	}
+
+	if installFn == nil {
+		t.Fatal("expected non-nil install function")
+	}
+
+	if err := installFn(rootCmd); err != nil {
+		t.Fatalf("installPowerShell failed: %v", err)
+	}
+
+	if !fsutil.FileExists(profilePath) {
+		t.Fatalf("expected profile to exist at %s", profilePath)
+	}
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("failed to read profile: %v", err)
+	}
+
+	content := string(data)
+
+	if !contains(content, "dr completion powershell") {
+		t.Error("profile should contain dr completion block")
+	}
+}
+
 // Helper function
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
