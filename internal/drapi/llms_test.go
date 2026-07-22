@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -193,6 +194,40 @@ func TestGetDeployedLLMs_EmptyLabelFallsBackToID(t *testing.T) {
 
 	require.Len(t, deployed, 1)
 	assert.Equal(t, "dep-no-label", deployed[0].Name)
+}
+
+// TestGetDeployedLLMs_SendsFilterAndLimit asserts the outgoing request carries
+// the server-side target-type filter and page limit. Without this, dropping the
+// filter from the URL would still pass the mapping tests (the client re-filter
+// masks it) while silently losing the server-side narrowing.
+func TestGetDeployedLLMs_SendsFilterAndLimit(t *testing.T) {
+	// Buffered so the handler goroutine's send happens-before the test's read.
+	queryCh := make(chan string, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queryCh <- r.URL.RawQuery
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set("skip_auth", true)
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	_, err := GetDeployedLLMs()
+	require.NoError(t, err)
+
+	values, err := url.ParseQuery(<-queryCh)
+	require.NoError(t, err)
+	assert.Equal(t, targetTypeTextGeneration, values.Get("championModelTargetType"))
+	assert.Equal(t, "100", values.Get("limit"))
 }
 
 func TestGetLLMsAndDeployed_BothFail(t *testing.T) {
