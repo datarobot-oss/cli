@@ -1,0 +1,5 @@
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY dr /dr
+
+ENTRYPOINT ["/dr"]
