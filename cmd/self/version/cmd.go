@@ -32,7 +32,7 @@ type versionOptions struct {
 func Cmd() *cobra.Command {
 	var options versionOptions
 
-	options.outputFormat = outputformat.OutputFormatJSON
+	options.outputFormat = outputformat.OutputFormatText
 
 	cmd := &cobra.Command{
 		Use:   "version",

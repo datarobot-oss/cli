@@ -41,14 +41,11 @@ func runVersionCmd(t *testing.T, args ...string) string {
 	return outBuf.String()
 }
 
-func TestVersionDefaultJSON(t *testing.T) {
+func TestVersionDefaultText(t *testing.T) {
 	output := runVersionCmd(t)
 
-	var info internalVersion.InfoData
-
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(output)), &info), "default output should be valid JSON")
-	assert.Equal(t, internalVersion.Version, info.Version)
-	assert.NotEmpty(t, info.Runtime)
+	assert.Contains(t, output, internalVersion.AppName, "default output should contain app name")
+	assert.Contains(t, output, internalVersion.Version, "default output should contain version")
 }
 
 func TestVersionOutputFormatText(t *testing.T) {
@@ -74,15 +71,10 @@ func TestVersionShortText(t *testing.T) {
 	assert.Equal(t, internalVersion.Version, strings.TrimSpace(output), "--short should return just the version number")
 }
 
-func TestVersionShortJSONIgnored(t *testing.T) {
+func TestVersionShortDefault(t *testing.T) {
 	output := runVersionCmd(t, "--short")
 
-	// --short is ignored in JSON mode; should still get full JSON
-	var info internalVersion.InfoData
-
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(output)), &info), "output should be valid JSON")
-	assert.Equal(t, internalVersion.Version, info.Version)
-	assert.NotEmpty(t, info.Runtime)
+	assert.Equal(t, internalVersion.Version, strings.TrimSpace(output), "--short with default (text) should return just the version number")
 }
 
 func TestVersionLegacyFormatJSON(t *testing.T) {
