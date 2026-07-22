@@ -519,6 +519,8 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 			return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
 		}
 
+		warnIfExecutionPolicyRestricted()
+
 		return nil
 	}
 
