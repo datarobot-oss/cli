@@ -79,14 +79,13 @@ git:
 
 dockers:
   - id: ghcr-amd64
-    ids: [linux]
     use: buildx
     goos: linux
     goarch: amd64
     dockerfile: Dockerfile.goreleaser
     image_templates:
       - "ghcr.io/datarobot-oss/cli:{{ .Tag }}-amd64"
-    build_flag_templates:
+    build_flag_templates: &docker_build_flags
       - "--pull"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
       - "--label=org.opencontainers.image.description=DataRobot command-line interface."
@@ -94,27 +93,17 @@ dockers:
       - "--label=org.opencontainers.image.source=https://github.com/datarobot-oss/cli"
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.created={{ .CommitDate }}"
       - "--label=org.opencontainers.image.licenses=Apache-2.0"
 
   - id: ghcr-arm64
-    ids: [linux]
     use: buildx
     goos: linux
     goarch: arm64
     dockerfile: Dockerfile.goreleaser
     image_templates:
       - "ghcr.io/datarobot-oss/cli:{{ .Tag }}-arm64"
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.description=DataRobot command-line interface."
-      - "--label=org.opencontainers.image.url=https://github.com/datarobot-oss/cli"
-      - "--label=org.opencontainers.image.source=https://github.com/datarobot-oss/cli"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+    build_flag_templates: *docker_build_flags
 
 docker_manifests:
   - name_template: "ghcr.io/datarobot-oss/cli:{{ .Tag }}"
