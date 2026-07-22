@@ -17,6 +17,7 @@ package wapi
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,7 +37,11 @@ func TestAtomicWriteFile_CreatesNew(t *testing.T) {
 
 	info, err := os.Stat(target)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+
+	if runtime.GOOS != "windows" {
+		// Windows does not enforce Unix permission bits.
+		assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+	}
 }
 
 func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {

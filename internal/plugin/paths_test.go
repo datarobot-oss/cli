@@ -26,7 +26,9 @@ import (
 
 func TestManagedPluginsDir(t *testing.T) {
 	t.Run("respects XDG_CONFIG_HOME", func(t *testing.T) {
-		testConfigHome := "/custom/config"
+		// Use an absolute temp dir: adrg/xdg discards a non-absolute
+		// XDG_CONFIG_HOME, and "/custom/config" is not absolute on Windows.
+		testConfigHome := t.TempDir()
 		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", testConfigHome)
 
 		dir, err := ManagedPluginsDir()
@@ -52,8 +54,7 @@ func TestManagedPluginsDirs(t *testing.T) {
 	t.Run("returns only primary dir when XDG_CONFIG_DIRS is not set", func(t *testing.T) {
 		tmpHome := t.TempDir()
 
-		t.Setenv("HOME", tmpHome)
-		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", "")
+		testutil.SetTestHomeDir(t, tmpHome)
 		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", "")
 
 		dirs, err := ManagedPluginsDirs()
@@ -102,8 +103,7 @@ func TestManagedPluginsDirs(t *testing.T) {
 		tmpHome := t.TempDir()
 		tmpConfigDir := t.TempDir()
 
-		t.Setenv("HOME", tmpHome)
-		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", "")
+		testutil.SetTestHomeDir(t, tmpHome)
 		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir)
 
 		dirs, err := ManagedPluginsDirs()

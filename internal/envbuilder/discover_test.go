@@ -135,8 +135,8 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsFiles() {
 	suite.Require().NoError(err)
 
 	suite.Len(foundPaths, 2, "Expected to find 2 YAML files")
-	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
-	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
+	suite.Contains(foundPaths, filepath.Join(suite.tempDir, ".datarobot", "parakeet.yaml"))
+	suite.Contains(foundPaths, filepath.Join(suite.tempDir, ".datarobot", "another_parakeet.yaml"))
 }
 
 func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
@@ -165,9 +165,9 @@ func (suite *DiscoverTestSuite) TestDiscoverFindsNestedFiles() {
 	suite.Require().NoError(err)
 
 	suite.Len(foundPaths, 3, "Expected to find 3 YAML files")
-	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet.yaml")
-	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/another_parakeet.yaml")
-	suite.Contains(foundPaths, suite.tempDir+"/.datarobot/parakeet/yet_another_parakeet.yml")
+	suite.Contains(foundPaths, filepath.Join(suite.tempDir, ".datarobot", "parakeet.yaml"))
+	suite.Contains(foundPaths, filepath.Join(suite.tempDir, ".datarobot", "another_parakeet.yaml"))
+	suite.Contains(foundPaths, filepath.Join(suite.tempDir, ".datarobot", "parakeet", "yet_another_parakeet.yml"))
 }
 
 // Non-prompt YAML files (copier answers, versions.yaml, etc.) are now filtered
