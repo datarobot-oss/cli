@@ -76,18 +76,22 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     # the Microsoft.PowerShell.Security module).  Skip gracefully instead of
     # crashing the entire smoke-test suite.
     try {
-        $null = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction Stop
+        $null = Get-ExecutionPolicy -ErrorAction Stop
     } catch {
         Write-InfoMsg "Skipping [$TestName]: Get-ExecutionPolicy cmdlet not available on this system."
 
         return
     }
 
-    # Save the current policy so it can be restored after the test, then apply the policy under test.
-    $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
+    # Save the current effective policy so it can be restored after the test.
+    # Use -Scope Process for Set-ExecutionPolicy so we don't touch the registry
+    # (some CI runners lock down CurrentUser/Machine policy via Group Policy).
+    # Get-ExecutionPolicy (no -Scope) returns the effective policy, which
+    # correctly reflects the Process-scope override.
+    $originalPolicy = Get-ExecutionPolicy
 
     try {
-        Set-ExecutionPolicy $Policy -Scope CurrentUser -Force -ErrorAction Stop
+        Set-ExecutionPolicy $Policy -Scope Process -Force -ErrorAction Stop
     } catch {
         Write-InfoMsg "Skipping [$TestName]: unable to set execution policy to $Policy."
 
@@ -119,7 +123,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     $installExitCode = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
     if ($installExitCode -ne 0) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "dr self completion install powershell --yes --force failed with exit code $installExitCode"
     }
 
@@ -137,18 +141,18 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
         if ($isXFail) {
             Write-XFailMsg "Assertion xfail [$TestName]: installer did not warn user with the execution policy fix command (expected: Phase 2 not yet merged)"
-            Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+            Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
             if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
 
             return
         }
 
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
     }
 
     if (-not $ExpectWarning -and $hasWarning) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
     }
 
@@ -156,29 +160,29 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     # Assert the profile exists and contains the dr completion block.
     if (-not (Test-Path $profilePath)) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
     }
 
     $profileContent = Get-Content $profilePath -Raw
     if ($profileContent -notmatch "dr completion powershell") {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed: profile does not contain completion block"
     }
 
     Write-SuccessMsg "Assertion passed: profile contains completion block"
 
     # Assert the execution policy was not modified by the installer.
-    $actualPolicy = Get-ExecutionPolicy -Scope CurrentUser
+    $actualPolicy = Get-ExecutionPolicy
     if ($actualPolicy -ne $ExpectedPolicy) {
-        Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed [$TestName]: expected execution policy to be $ExpectedPolicy, but it is '$actualPolicy'"
     }
 
     Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
 
     # Restore the original execution policy and clean up the profile.
-    Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
     if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
 }
 
