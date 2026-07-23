@@ -761,3 +761,80 @@ func TestRenderWorkloadLogLine_JSONLineCompact(t *testing.T) {
 		`{"timestamp": "2026-06-11 14:04:14+00:00", "level": "INFO", "message": "hello"}`,
 		line)
 }
+
+func TestEnvironmentVarSourceLabel(t *testing.T) {
+	assert.Equal(t, "plain", environmentVarSourceLabel(EnvironmentVar{Name: "LOG_LEVEL", Value: "debug"}))
+	assert.Equal(t, "dr-credential", environmentVarSourceLabel(EnvironmentVar{
+		Source: EnvironmentVarSourceDRCredential, Name: "API_KEY",
+	}))
+}
+
+func TestEnvironmentVarDisplayValue(t *testing.T) {
+	t.Run("plain var shows its value", func(t *testing.T) {
+		value := environmentVarDisplayValue(EnvironmentVar{Name: "LOG_LEVEL", Value: "debug"})
+		assert.Equal(t, "debug", value)
+	})
+
+	t.Run("credential-backed var never shows a value", func(t *testing.T) {
+		value := environmentVarDisplayValue(EnvironmentVar{
+			Source:         EnvironmentVarSourceDRCredential,
+			Name:           "API_KEY",
+			DRCredentialID: "cred-1",
+			Key:            "apiToken",
+		})
+		assert.Equal(t, "dr-credential:cred-1/apiToken", value)
+	})
+}
+
+func TestRenderEnvironmentVars_Text(t *testing.T) {
+	vars := []EnvironmentVar{
+		{Name: "LOG_LEVEL", Value: "debug"},
+		{Source: EnvironmentVarSourceDRCredential, Name: "API_KEY", DRCredentialID: "cred-1", Key: "apiToken"},
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderEnvironmentVars(outputformat.OutputFormatText, vars))
+	})
+
+	assert.Contains(t, output, "NAME")
+	assert.Contains(t, output, "SOURCE")
+	assert.Contains(t, output, "VALUE")
+	assert.Contains(t, output, "LOG_LEVEL")
+	assert.Contains(t, output, "plain")
+	assert.Contains(t, output, "debug")
+	assert.Contains(t, output, "API_KEY")
+	assert.Contains(t, output, "dr-credential")
+	assert.Contains(t, output, "cred-1/apiToken")
+}
+
+func TestRenderEnvironmentVars_TextEmpty(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderEnvironmentVars(outputformat.OutputFormatText, nil))
+	})
+
+	assert.Equal(t, "No environment variables set.\n", output)
+}
+
+func TestRenderEnvironmentVars_JSONIncludesPlainValueButNotCredentialSecret(t *testing.T) {
+	vars := []EnvironmentVar{
+		{Name: "LOG_LEVEL", Value: "debug"},
+		{Source: EnvironmentVarSourceDRCredential, Name: "API_KEY", DRCredentialID: "cred-1", Key: "apiToken"},
+	}
+
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderEnvironmentVars(outputformat.OutputFormatJSON, vars))
+	})
+
+	assert.JSONEq(t, `[
+		{"name": "LOG_LEVEL", "value": "debug"},
+		{"source": "dr-credential", "name": "API_KEY", "drCredentialId": "cred-1", "key": "apiToken"}
+	]`, output)
+}
+
+func TestRenderEnvironmentVars_JSONEmptyIsArrayNotNull(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderEnvironmentVars(outputformat.OutputFormatJSON, nil))
+	})
+
+	assert.JSONEq(t, `[]`, output)
+}
