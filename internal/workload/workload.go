@@ -177,7 +177,103 @@ func ValidateWorkloadCreateRequest(data []byte) error {
 		return errors.New("invalid spec: exactly one of 'artifactId' (existing artifact) or 'artifact' (inline definition) must be set")
 	}
 
+	return validateRuntimeReplicaAutoscaling(data)
+}
+
+// validateRuntimeReplicaAutoscaling rejects replicaCount alongside autoscaling.enabled=true
+// per container group, matching workload-api GroupRuntime reconciliation. Other runtime
+// shape checks stay on the server (422 with JSON-path detail).
+func validateRuntimeReplicaAutoscaling(data []byte) error {
+	var doc map[string]any
+
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil
+	}
+
+	runtime, ok := doc["runtime"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	groups, ok := runtime["containerGroups"].([]any)
+	if !ok {
+		return nil
+	}
+
+	for i, g := range groups {
+		group, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if err := validateContainerGroupAutoscaling(i, group); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func validateContainerGroupAutoscaling(index int, group map[string]any) error {
+	autoscalingRaw, ok := group["autoscaling"]
+	if !ok {
+		return nil
+	}
+
+	if _, ok := autoscalingRaw.(bool); ok {
+		return fmt.Errorf(
+			"invalid spec: runtime.containerGroups[%d]: autoscaling must be an object, not a boolean",
+			index,
+		)
+	}
+
+	autoscaling, ok := autoscalingRaw.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	if enabled, ok := autoscaling["enabled"]; ok && enabled != nil {
+		if _, ok := enabled.(bool); !ok {
+			return fmt.Errorf(
+				"invalid spec: runtime.containerGroups[%d]: autoscaling.enabled must be true or false",
+				index,
+			)
+		}
+	}
+
+	if replicaCountSet(group) && autoscalingEnabled(group) {
+		return fmt.Errorf(
+			"invalid spec: runtime.containerGroups[%d]: replicaCount and autoscaling.enabled=true are mutually exclusive; omit replicaCount when using autoscaling or set autoscaling.enabled to false",
+			index,
+		)
+	}
+
+	return nil
+}
+
+func replicaCountSet(group map[string]any) bool {
+	v, ok := group["replicaCount"]
+	if !ok {
+		return false
+	}
+
+	return v != nil
+}
+
+func autoscalingEnabled(group map[string]any) bool {
+	autoscaling, ok := group["autoscaling"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	enabled, ok := autoscaling["enabled"]
+	if !ok || enabled == nil {
+		return true
+	}
+
+	b, ok := enabled.(bool)
+
+	return ok && b
 }
 
 // CreateWorkload POSTs payload to /api/v2/workloads/ and returns the parsed

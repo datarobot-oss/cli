@@ -105,3 +105,23 @@ func TestReadSpecFile_FileNotFound(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "file not found")
 }
+
+func TestReadSpecFile_ValidateReplicaAutoscalingConflict(t *testing.T) {
+	path := writeSpec(t, "spec.yaml", `
+name: wl
+artifactId: abc
+runtime:
+  containerGroups:
+    - replicaCount: 3
+      autoscaling:
+        enabled: true
+        policies: []
+`)
+
+	payload, err := ReadSpecFile(path)
+	require.NoError(t, err)
+
+	err = ValidateWorkloadCreateRequest(payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive")
+}

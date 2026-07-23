@@ -236,7 +236,7 @@ dr workload delete <workload-id>
 | `403`  | Starting the workload would exceed your concurrent workload limits.                                         |
 | `404`  | The workload does not exist.                                                                                |
 | `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`). |
-| `422`  | The spec failed server validation; the response names the offending JSON path (for example `replicaCount` set alongside `autoscaling.enabled: true`, or `maxReplicaCount` below 1). |
+| `422`  | The spec failed server validation; the response names the offending JSON path (for example `maxReplicaCount` below 1). |
 
 ## See also
 

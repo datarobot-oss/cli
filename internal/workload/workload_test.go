@@ -92,6 +92,72 @@ func TestValidateWorkloadCreateRequest(t *testing.T) {
 			name: "unknown fields pass through to the server",
 			spec: `{"name": "wl", "artifactId": "abc", "futureField": true}`,
 		},
+		{
+			name: "valid fixed replica count without autoscaling",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1}]}}`,
+		},
+		{
+			name: "valid autoscaling without replicaCount",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"autoscaling": {"enabled": true, "minReplicaCount": 1, "maxReplicaCount": 3, "policies": [{"scalingMetric": "cpuAverageUtilization", "target": 80}]}}]}}`,
+		},
+		{
+			name: "valid autoscaling with explicit null replicaCount",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": null, "autoscaling": {"enabled": true, "policies": []}}]}}`,
+		},
+		{
+			name: "valid replicaCount with autoscaling disabled",
+			spec: `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 2, "autoscaling": {"enabled": false}}]}}`,
+		},
+		{
+			name:    "replicaCount conflicts with autoscaling enabled",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1, "autoscaling": {"enabled": true, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "replicaCount conflicts when autoscaling enabled by default",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 1, "autoscaling": {"policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "replicaCount conflict reports container group index",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{}, {"replicaCount": 2, "autoscaling": {"enabled": true}}]}}`,
+			wantErr: "runtime.containerGroups[1]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "replicaCount conflicts when autoscaling enabled is null",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": null, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
+		{
+			name:    "rejects non-boolean autoscaling enabled yes",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "yes", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects non-boolean autoscaling enabled on",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "on", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects non-boolean autoscaling enabled y",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "y", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects string autoscaling enabled true",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": "true", "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects numeric autoscaling enabled 1",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": {"enabled": 1, "policies": []}}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling.enabled must be true or false",
+		},
+		{
+			name:    "rejects boolean autoscaling shorthand",
+			spec:    `{"name": "wl", "artifactId": "abc", "runtime": {"containerGroups": [{"replicaCount": 3, "autoscaling": true}]}}`,
+			wantErr: "runtime.containerGroups[0]: autoscaling must be an object, not a boolean",
+		},
 	}
 
 	for _, c := range cases {
