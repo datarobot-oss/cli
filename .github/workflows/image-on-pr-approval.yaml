@@ -1,0 +1,124 @@
+name: PR Approved Image
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: pr-image-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# S5: deny all by default; jobs opt-in to what they need.
+permissions: {}
+
+jobs:
+  check-approval:
+    if: github.event.review.state == 'approved' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    name: Verify Maintainer Approval
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      is_fork: ${{ steps.resolve.outputs.is_fork }}
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+    steps:
+      - name: Verify reviewer is a maintainer and resolve PR details
+        id: resolve
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const reviewer = context.payload.review.user.login;
+
+            const result = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: reviewer,
+            });
+            const allowed = ['write', 'maintain', 'admin'];
+            const permission = result.data.permission;
+            if (!allowed.includes(permission)) {
+              core.setFailed(
+                `@${reviewer}'s approval has permission '${permission}' — ` +
+                `maintainer access (write/maintain/admin) is required to publish a PR image.`
+              );
+              return;
+            }
+
+            const pr = context.payload.pull_request;
+            const isFork = pr.head.repo.full_name !== (context.repo.owner + '/' + context.repo.repo);
+
+            // Pin the SHA's shape before it's used in shell interpolation downstream.
+            if (!/^[0-9a-f]{40}$/.test(pr.head.sha)) {
+              core.setFailed(`PR head SHA '${pr.head.sha}' is not a 40-char hex SHA.`);
+              return;
+            }
+
+            console.log(`@${reviewer} (${permission}) approved PR #${pr.number} — fork: ${isFork}, sha: ${pr.head.sha}`);
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('is_fork', isFork.toString());
+            core.setOutput('pr_number', String(pr.number));
+
+  publish-image:
+    needs: check-approval
+    runs-on: ubuntu-latest
+    name: Build and Push PR Image
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      statuses: write
+    steps:
+      - name: Checkout approved commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check-approval.outputs.sha }}
+
+      # GoReleaser drives the build, so Task is not needed here.
+      - name: Set up Go
+        uses: ./.github/actions/setup
+        with:
+          install-task: 'false'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Authenticate Docker to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tags
+        id: tags
+        run: |
+          short_sha="$(git rev-parse --short "${{ needs.check-approval.outputs.sha }}")"
+          echo "pr_tag=pr-${{ needs.check-approval.outputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=pr-${{ needs.check-approval.outputs.pr_number }}-${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push PR image
+        id: build
+        uses: ./.github/actions/build-push-docker-image
+        with:
+          tags: "${{ steps.tags.outputs.pr_tag }} ${{ steps.tags.outputs.immutable_tag }}"
+          revision: ${{ needs.check-approval.outputs.sha }}
+
+      - name: Set commit status with image name
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const success = '${{ steps.build.outcome }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.check-approval.outputs.sha }}',
+              state: success ? 'success' : 'failure',
+              context: 'PR Image',
+              description: success
+                ? 'ghcr.io/datarobot-oss/cli:${{ steps.tags.outputs.pr_tag }}'
+                : 'Failed to publish PR image',
+              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`,
+            });
