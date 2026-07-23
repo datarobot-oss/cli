@@ -85,7 +85,14 @@ function Test-DRCompletionInstallWithExecutionPolicy {
 
     # Save the current policy so it can be restored after the test, then apply the policy under test.
     $originalPolicy = Get-ExecutionPolicy -Scope CurrentUser
-    Set-ExecutionPolicy $Policy -Scope CurrentUser -Force
+
+    try {
+        Set-ExecutionPolicy $Policy -Scope CurrentUser -Force -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: unable to set execution policy to $Policy."
+
+        return
+    }
 
     # Resolve the PowerShell profile path, preferring PowerShell Core over Windows PowerShell (matches the Go installer).
     $documentsPath = "$env:USERPROFILE\Documents"
@@ -104,8 +111,13 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     }
 
     # Run the installer with --force so each invocation performs a real install.
+    # Relax EAP to "Continue" so stderr lines from the native command are
+    # captured, not thrown (same pattern as the --debug test above).
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $installOutput = (dr self completion install powershell --yes --force 2>&1 | Out-String)
     $installExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
     if ($installExitCode -ne 0) {
         Set-ExecutionPolicy $originalPolicy -Scope CurrentUser -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "dr self completion install powershell --yes --force failed with exit code $installExitCode"

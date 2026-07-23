@@ -226,8 +226,10 @@ tasks:
     cmds:
       # Clear PSModulePath so powershell.exe (5.1) reconstructs its own module
       # path instead of inheriting pwsh 7's incompatible module paths.
+      # Taskfile uses mvdan/sh (POSIX sh), so we use env-prefix assignment
+      # syntax (not cmd.exe `set` or pwsh `$env:` syntax).
       # See: https://github.com/PowerShell/PowerShell/issues/18530#issuecomment-1325691850
-      - set "PSModulePath=" && powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
+      - PSModulePath= powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
 
   docs-serve:
     silent: true
