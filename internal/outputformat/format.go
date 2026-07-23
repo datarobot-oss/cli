@@ -74,7 +74,7 @@ func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
 // 1. explicit CLI flag (local or inherited, with Changed=true)
 // 2. viper (env-var / config file, e.g. DATAROBOT_CLI_OUTPUT_FORMAT)
 // 3. flag default value
-// 4. OutputFormatText
+// 4. OutputFormatText.
 func GetFormat(cmd *cobra.Command) OutputFormat {
 	if cmd == nil {
 		return OutputFormatText

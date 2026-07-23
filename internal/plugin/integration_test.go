@@ -26,7 +26,7 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-// TestLivePluginManifests validates all manifest.json files in docs/plugins/
+// TestLivePluginManifests validates all manifest.json files in docs/plugins/.
 func TestLivePluginManifests(t *testing.T) {
 	projectRoot, err := findProjectRoot()
 	require.NoError(t, err, "Failed to find project root")
@@ -100,7 +100,7 @@ func TestLivePluginManifests(t *testing.T) {
 	}
 }
 
-// TestPluginIndexReferenceIntegrity validates that all plugins in index.json reference valid archives
+// TestPluginIndexReferenceIntegrity validates that all plugins in index.json reference valid archives.
 func TestPluginIndexReferenceIntegrity(t *testing.T) {
 	projectRoot, err := findProjectRoot()
 	require.NoError(t, err, "Failed to find project root")
@@ -150,7 +150,7 @@ func TestPluginIndexReferenceIntegrity(t *testing.T) {
 	}
 }
 
-// TestManifestScriptsExecutability verifies scripts have executable permissions on Unix
+// TestManifestScriptsExecutability verifies scripts have executable permissions on Unix.
 func TestManifestScriptsExecutability(t *testing.T) {
 	projectRoot, err := findProjectRoot()
 	require.NoError(t, err, "Failed to find project root")
@@ -227,7 +227,7 @@ func findInString(s, substr string) int {
 	return -1
 }
 
-// TestPluginUpgradeWithRollback tests the complete upgrade flow with backup and rollback
+// TestPluginUpgradeWithRollback tests the complete upgrade flow with backup and rollback.
 func TestPluginUpgradeWithRollback(t *testing.T) {
 	// Note: This test uses the actual user plugins directory
 	// We'll verify the test plugin specifically
@@ -373,7 +373,7 @@ func TestPluginUpgradeWithRollback(t *testing.T) {
 }
 
 // createTestPluginArchive creates a test plugin archive (.tar.xz) for testing
-// If valid is false, creates a broken plugin missing the manifest
+// If valid is false, creates a broken plugin missing the manifest.
 func createTestPluginArchive(t *testing.T, name, version string, valid bool) string {
 	t.Helper()
 

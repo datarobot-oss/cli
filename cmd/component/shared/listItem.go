@@ -35,7 +35,7 @@ func (i ListItem) Title() string {
 	)
 }
 
-// TODO: Decide if we return something for description - don't think needed - it's really just us adhering to interface
+// TODO: Decide if we return something for description - don't think needed - it's really just us adhering to interface.
 func (i ListItem) Description() string { return "" }
 
 func (i ListItem) FilterValue() string {

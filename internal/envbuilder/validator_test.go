@@ -735,7 +735,7 @@ func TestDetermineRequiredSectionsDuplicates(t *testing.T) {
 	})
 }
 
-// Helper function for string contains check
+// Helper function for string contains check.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
 }

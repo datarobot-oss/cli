@@ -16,7 +16,7 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
-// konamiSequence is the Konami code: ↑ ↑ ↓ ↓ ← → ← → B A
+// konamiSequence is the Konami code: ↑ ↑ ↓ ↓ ← → ← → B A.
 var konamiSequence = []string{
 	"up", "up", "down", "down", "left", "right", "left", "right", "b", "a",
 }

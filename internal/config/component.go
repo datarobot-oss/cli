@@ -26,15 +26,15 @@ import (
 
 const (
 	// ComponentDefaultsFileName is the name of the component defaults file
-	// This follows copier's data_file convention
+	// This follows copier's data_file convention.
 	ComponentDefaultsFileName = ".copier-answers-defaults.yaml"
-	// LegacyComponentDefaultsFileName is the old name for backward compatibility
+	// LegacyComponentDefaultsFileName is the old name for backward compatibility.
 	LegacyComponentDefaultsFileName = "component-defaults.yaml"
 )
 
 // ComponentDefaults holds default answers for copier templates
 // The structure maps component repo URLs to their default answers
-// This follows copier's data_file semantics but supports multiple repos
+// This follows copier's data_file semantics but supports multiple repos.
 type ComponentDefaults struct {
 	Defaults map[string]map[string]interface{} `yaml:"defaults"`
 }
@@ -45,7 +45,7 @@ type ComponentDefaults struct {
 // 2. .datarobot/.copier-answers-defaults.yaml in repo root
 // 3. ~/.config/datarobot/.copier-answers-defaults.yaml
 // 4. ~/.config/datarobot/component-defaults.yaml (legacy)
-// Returns an empty config if no file exists
+// Returns an empty config if no file exists.
 func LoadComponentDefaults(explicitPath string) (*ComponentDefaults, error) {
 	var configPath string
 
@@ -87,7 +87,7 @@ func LoadComponentDefaults(explicitPath string) (*ComponentDefaults, error) {
 }
 
 // findComponentDefaultsPath searches for the component defaults file
-// in priority order and returns the first one found
+// in priority order and returns the first one found.
 func findComponentDefaultsPath() string {
 	// 1. Check repo root .datarobot folder
 	repoRoot, err := repo.FindRepoRoot()
@@ -119,7 +119,7 @@ func findComponentDefaultsPath() string {
 }
 
 // GetDefaultsForRepo returns the default answers for a specific repository URL
-// Returns an empty map if no defaults are configured
+// Returns an empty map if no defaults are configured.
 func (c *ComponentDefaults) GetDefaultsForRepo(repoURL string) map[string]interface{} {
 	if c.Defaults == nil {
 		return make(map[string]interface{})
@@ -134,7 +134,7 @@ func (c *ComponentDefaults) GetDefaultsForRepo(repoURL string) map[string]interf
 }
 
 // MergeWithCLIData merges configured defaults with CLI-provided --data arguments
-// CLI arguments take precedence over defaults
+// CLI arguments take precedence over defaults.
 func (c *ComponentDefaults) MergeWithCLIData(repoURL string, cliData map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
 

@@ -29,7 +29,7 @@ type contextKey string
 
 const userAgentKey contextKey = "userAgent"
 
-// WithUserAgent adds a custom User-Agent to the context
+// WithUserAgent adds a custom User-Agent to the context.
 func WithUserAgent(ctx context.Context, userAgent string) context.Context {
 	return context.WithValue(ctx, userAgentKey, userAgent)
 }

@@ -24,7 +24,7 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// getScrollPercent calculates the scroll percentage for the viewport
+// getScrollPercent calculates the scroll percentage for the viewport.
 func (m UpdateModel) getScrollPercent() int {
 	if m.viewport.TotalLineCount() <= m.viewport.Height {
 		return 100 // If content fits in viewport, we're at 100%
@@ -42,7 +42,7 @@ func (m UpdateModel) getScrollPercent() int {
 	return int(float64(m.viewport.YOffset) / float64(maxScroll) * 100)
 }
 
-// getCurrentComponentFileName returns the filename of the currently selected component
+// getCurrentComponentFileName returns the filename of the currently selected component.
 func (m UpdateModel) getCurrentComponentFileName() string {
 	if len(m.list.VisibleItems()) == 0 {
 		return ""
@@ -53,7 +53,7 @@ func (m UpdateModel) getCurrentComponentFileName() string {
 	return item.component.FileName
 }
 
-// getComponentDetailContent generates the markdown content for component details
+// getComponentDetailContent generates the markdown content for component details.
 func (m UpdateModel) getComponentDetailContent() string {
 	var sb strings.Builder
 
@@ -72,7 +72,7 @@ func (m UpdateModel) getComponentDetailContent() string {
 	return sb.String()
 }
 
-// renderStatusBar creates the status bar for the detail view
+// renderStatusBar creates the status bar for the detail view.
 func (m UpdateModel) renderStatusBar() string {
 	fileName := m.getCurrentComponentFileName()
 	scrollPercent := m.getScrollPercent()
@@ -127,7 +127,7 @@ func (m UpdateModel) renderStatusBar() string {
 	return statusBarStyle.Width(width).Render(bar)
 }
 
-// viewComponentDetailScreen renders the component detail screen
+// viewComponentDetailScreen renders the component detail screen.
 func (m UpdateModel) viewComponentDetailScreen() string {
 	if !m.ready {
 		return "\n  Initializing..."
