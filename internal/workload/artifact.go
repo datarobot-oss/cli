@@ -71,8 +71,30 @@ type Container struct {
 	ImageURI string `json:"imageUri,omitempty"`
 	// *bool so an absent value round-trips as nil and omitempty drops it
 	// on marshal, instead of re-asserting `false` back to the server.
-	Primary *bool `json:"primary,omitempty"`
+	Primary         *bool            `json:"primary,omitempty"`
+	EnvironmentVars []EnvironmentVar `json:"environmentVars,omitempty"`
 }
+
+// EnvironmentVar is one entry in a container's environmentVars array. A plain
+// var carries Value directly; a credential-backed var has Source ==
+// "dr-credential" and carries DRCredentialID/Key instead, letting the
+// platform inject the secret without it ever appearing in the artifact spec.
+// Source is omitempty on write: the server defaults plain vars to "string"
+// when it is absent, so callers only need to set it for the credential case.
+//
+// Key selects which field of the DRCredentialID credential to use -- not to
+// be confused with Name (the env var's own name). A single stored credential
+// can bundle several secret fields (an S3 credential has awsAccessKeyId,
+// awsSecretAccessKey, and awsSessionToken, for instance); Key picks one.
+type EnvironmentVar struct {
+	Source         string `json:"source,omitempty"`
+	Name           string `json:"name"`
+	Value          string `json:"value,omitempty"`
+	DRCredentialID string `json:"drCredentialId,omitempty"`
+	Key            string `json:"key,omitempty"`
+}
+
+const EnvironmentVarSourceDRCredential = "dr-credential"
 
 type ImageBuildConfig struct {
 	CodeRef    *CodeRef    `json:"codeRef,omitempty"`
@@ -189,6 +211,33 @@ func GetPrimaryContainerImageURI(artifact Artifact) string {
 	}
 
 	return artifact.Spec.ContainerGroups[0].Containers[0].ImageURI
+}
+
+// PrimaryEnvironmentVars returns the environmentVars of the primary container
+// (the one flagged "primary": true), falling back to
+// containerGroups[0].containers[0] when no primary is marked. Mirrors
+// GetPrimaryContainerImageURI's selection semantics so every per-container
+// field this CLI reads picks the same container.
+func PrimaryEnvironmentVars(artifact Artifact) []EnvironmentVar {
+	for _, group := range artifact.Spec.ContainerGroups {
+		for _, container := range group.Containers {
+			if container.Primary == nil || !*container.Primary {
+				continue
+			}
+
+			return container.EnvironmentVars
+		}
+	}
+
+	if len(artifact.Spec.ContainerGroups) == 0 {
+		return nil
+	}
+
+	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
+		return nil
+	}
+
+	return artifact.Spec.ContainerGroups[0].Containers[0].EnvironmentVars
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {

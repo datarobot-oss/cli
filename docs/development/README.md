@@ -25,6 +25,7 @@ If you're new to developing the CLI, start here:
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
 - **[Workload `.wapi/` validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
+- **[Workload env var management spec](env_spec.md)**&mdash;implementation specification for `dr workload env {list,set,delete}`: the live-verified artifact/replacement/credential API contract and the corner cases a reimplementation must handle.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
 - **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
 

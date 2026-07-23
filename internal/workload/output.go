@@ -536,6 +536,99 @@ func formatWorkloadLogLine(e WorkloadLogEntry) string {
 	return formatLogParts(strings.ToUpper(e.Level), e.Timestamp, e.Message)
 }
 
+// RenderEnvironmentVars renders a workload's primary-container environment
+// variables. Text mode prints a NAME/SOURCE/VALUE table (see
+// printEnvironmentVarsTable). JSON mode emits the full array (always [],
+// never null, when empty) so scripted callers get every field including the
+// credential reference.
+func RenderEnvironmentVars(format outputformat.OutputFormat, vars []EnvironmentVar) error {
+	if format == outputformat.OutputFormatJSON {
+		if vars == nil {
+			vars = []EnvironmentVar{}
+		}
+
+		return printJSON(vars)
+	}
+
+	printEnvironmentVarsTable(vars)
+
+	return nil
+}
+
+func printEnvironmentVarsTable(vars []EnvironmentVar) {
+	if len(vars) == 0 {
+		fmt.Println("No environment variables set.")
+
+		return
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+	dimStyle := tui.DimStyle.Padding(0, 1)
+
+	headers := []string{"NAME", "SOURCE", "VALUE"}
+	sourceCol := slices.Index(headers, "SOURCE")
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			if col == sourceCol {
+				return dimStyle
+			}
+
+			return cellStyle
+		}).
+		Headers(headers...)
+
+	for _, v := range vars {
+		t.Row(v.Name, environmentVarSourceLabel(v), environmentVarDisplayValue(v))
+	}
+
+	fmt.Fprintln(os.Stdout, t.Render())
+}
+
+// environmentVarSourceLabel returns "plain" for a literal-value var (the
+// server's own default when Source is absent, see EnvironmentVar's doc) or
+// "dr-credential" for a credential-backed one.
+func environmentVarSourceLabel(v EnvironmentVar) string {
+	if v.Source == EnvironmentVarSourceDRCredential {
+		return EnvironmentVarSourceDRCredential
+	}
+
+	return "plain"
+}
+
+// environmentVarDisplayValue returns the literal value for a plain var (it
+// already lives in plaintext in the artifact spec, so this adds no exposure
+// beyond --output-format json) or the "dr-credential:<id>/<key>" reference
+// for a credential-backed one, whose secret value is never resolved or
+// printed.
+func environmentVarDisplayValue(v EnvironmentVar) string {
+	if v.Source == EnvironmentVarSourceDRCredential {
+		return fmt.Sprintf("dr-credential:%s/%s", v.DRCredentialID, v.Key)
+	}
+
+	return v.Value
+}
+
+// RenderReplacement renders the outcome of a rolling artifact replacement.
+// Text mode prints a one-line "artifact: status" summary; JSON mode emits
+// the full Replacement document so --wait scripts can inspect the status
+// programmatically.
+func RenderReplacement(format outputformat.OutputFormat, replacement Replacement) error {
+	if format == outputformat.OutputFormatJSON {
+		return printJSON(replacement)
+	}
+
+	fmt.Printf("Replacement to artifact %s: %s\n", replacement.ArtifactID, replacement.Status)
+
+	return nil
+}
+
 // RenderWorkloadLogLine prints a single log entry for the --follow stream:
 // the same text line as RenderWorkloadLogs, or one compact JSON object
 // (JSON Lines), since a never-ending stream cannot be one closed array.
