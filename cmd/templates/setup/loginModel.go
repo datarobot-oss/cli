@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -55,8 +56,9 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 
 		mux := http.NewServeMux()
 		server := &http.Server{
-			Addr:    addr,
-			Handler: mux,
+			Addr:              addr,
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second,
 		}
 
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

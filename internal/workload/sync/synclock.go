@@ -38,7 +38,7 @@ func AcquireSyncLock(projectDir string) (*SyncLock, error) {
 
 	path := filepath.Join(wapiDir, syncLockFile)
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open sync lock %s: %w", path, err)
 	}

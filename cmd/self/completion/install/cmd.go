@@ -509,7 +509,7 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 		}
 
 		// Append missing blocks to profile
-		f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return fmt.Errorf("Failed to open PowerShell profile: %w", err)
 		}
@@ -600,7 +600,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 	}
 
 	// Append to file
-	f, err := os.OpenFile(zshrc, os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(zshrc, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -637,7 +637,7 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	}
 
 	// Append to file
-	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
