@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
@@ -64,4 +65,24 @@ func TestHandleGetError_PropagatesOther(t *testing.T) {
 	err := handleGetError(errors.New("boom"), "in-1", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
+}
+
+func TestHandleGetError_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleGetError(httpErr, "in-1", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleGetError_JSONFormat_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: http.StatusInternalServerError, URL: "x"}
+
+	err := handleGetError(other, "in-1", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
 }

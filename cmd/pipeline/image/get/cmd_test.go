@@ -16,8 +16,12 @@ package get
 
 import (
 	"io"
+	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,4 +57,35 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 func TestCmd_RejectsExtraArgs(t *testing.T) {
 	err := runCmd(t, "img-1", "img-2")
 	require.Error(t, err)
+}
+
+func TestHandleImageError_TextFormat_404_PrintsMessageAndReturnsNil(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleImageError(httpErr, "img-1", outputformat.OutputFormatText)
+		assert.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "No image found: img-1")
+}
+
+func TestHandleImageError_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleImageError(httpErr, "img-1", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleImageError_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: http.StatusInternalServerError, URL: "x"}
+
+	err := handleImageError(other, "img-1", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
 }

@@ -172,3 +172,23 @@ func TestHandleGetError_NonHTTPErrorPassesThrough(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, plain, err)
 }
+
+func TestHandleGetError_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: 404, URL: "http://example/api/v2/pipelines/abc"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleGetError(httpErr, "abc", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleGetError_JSONFormat_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: 500, URL: "x"}
+
+	err := handleGetError(other, "abc", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
+}
