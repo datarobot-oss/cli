@@ -362,6 +362,112 @@ func CreateArtifact(payload any) (*Artifact, error) {
 	return &artifact, nil
 }
 
+// PatchPrimaryContainer applies the key-value pairs from updates to the primary
+// container in the artifact's raw spec, then PATCHes the artifact. Only draft
+// artifacts are editable; locked artifacts will get a 403 from the server.
+// This follows the same GET-modify-PATCH pattern as PatchArtifactCodeRef.
+func PatchPrimaryContainer(artifactID string, updates map[string]any) error {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
+	if err != nil {
+		return err
+	}
+
+	var raw map[string]any
+
+	if err := drapi.GetJSON(url, "artifact", &raw); err != nil {
+		return fmt.Errorf("fetch artifact for spec update: %w", err)
+	}
+
+	container, err := findPrimaryContainerRaw(raw)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range updates {
+		container[k] = v
+	}
+
+	body := map[string]any{"spec": raw["spec"]}
+
+	return drapi.PatchJSON(url, "artifact", body, nil)
+}
+
+// findPrimaryContainerRaw returns the raw map of the primary container in the
+// artifact spec, falling back to containerGroups[0].containers[0]. Mirrors the
+// selection logic in ExtractCodeRef / assignToPrimaryContainer.
+func findPrimaryContainerRaw(raw map[string]any) (map[string]any, error) {
+	groups, err := extractContainerGroups(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	if c := searchPrimaryContainer(groups); c != nil {
+		return c, nil
+	}
+
+	return fallbackFirstContainer(groups)
+}
+
+func extractContainerGroups(raw map[string]any) ([]any, error) {
+	spec, ok := raw["spec"].(map[string]any)
+	if !ok {
+		return nil, errors.New("artifact: spec missing or wrong type")
+	}
+
+	groups, ok := spec["containerGroups"].([]any)
+	if !ok || len(groups) == 0 {
+		return nil, errors.New("artifact: spec.containerGroups missing or empty")
+	}
+
+	return groups, nil
+}
+
+func searchPrimaryContainer(groups []any) map[string]any {
+	for _, g := range groups {
+		group, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		containers, ok := group["containers"].([]any)
+		if !ok {
+			continue
+		}
+
+		for _, c := range containers {
+			container, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			if isPrimaryContainer(container) {
+				return container
+			}
+		}
+	}
+
+	return nil
+}
+
+func fallbackFirstContainer(groups []any) (map[string]any, error) {
+	firstGroup, ok := groups[0].(map[string]any)
+	if !ok {
+		return nil, errors.New("artifact: spec.containerGroups[0] wrong type")
+	}
+
+	containers, ok := firstGroup["containers"].([]any)
+	if !ok || len(containers) == 0 {
+		return nil, errors.New("artifact: spec.containerGroups[0].containers missing or empty")
+	}
+
+	first, ok := containers[0].(map[string]any)
+	if !ok {
+		return nil, errors.New("artifact: spec.containerGroups[0].containers[0] wrong type")
+	}
+
+	return first, nil
+}
+
 func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
 	if err != nil {

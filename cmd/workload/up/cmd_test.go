@@ -48,6 +48,7 @@ type fakes struct {
 	triggerBuild    func(string) (*workload.BuildTriggerResponse, error)
 	waitForBuild    func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	lockArtifact    func(string) (*workload.Artifact, error)
+	patchContainer  func(string, map[string]any) error
 	createWorkload  func(any) (*workload.Workload, error)
 	getWorkload     func(string) (*workload.Workload, error)
 	listWorkloads   func(int, []string) ([]workload.Workload, error)
@@ -66,6 +67,7 @@ func installFakes(t *testing.T, f fakes) {
 	origTrigger := triggerBuildFn
 	origWaitBuild := waitForBuildFn
 	origLock := lockArtifactFn
+	origPatch := patchContainerFn
 	origCreate := createWorkloadFn
 	origGet := getWorkloadFn
 	origList := listWorkloadsFn
@@ -81,6 +83,7 @@ func installFakes(t *testing.T, f fakes) {
 		triggerBuildFn = origTrigger
 		waitForBuildFn = origWaitBuild
 		lockArtifactFn = origLock
+		patchContainerFn = origPatch
 		createWorkloadFn = origCreate
 		getWorkloadFn = origGet
 		listWorkloadsFn = origList
@@ -104,6 +107,7 @@ func installFakes(t *testing.T, f fakes) {
 		return &workload.Build{ID: "b-1", Status: workload.BuildStatusCompleted}, nil
 	})
 	lockArtifactFn = fnOr(f.lockArtifact, func(string) (*workload.Artifact, error) { fail("lockArtifact"); return nil, nil })
+	patchContainerFn = fnOr(f.patchContainer, func(string, map[string]any) error { return nil })
 	createWorkloadFn = fnOr(f.createWorkload, func(any) (*workload.Workload, error) { fail("createWorkload"); return nil, nil })
 	getWorkloadFn = fnOr(f.getWorkload, func(string) (*workload.Workload, error) { fail("getWorkload"); return nil, nil })
 	listWorkloadsFn = fnOr(f.listWorkloads, func(int, []string) ([]workload.Workload, error) { fail("listWorkloads"); return nil, nil })
@@ -331,6 +335,9 @@ func TestUp_DetachErroredWorkloadExitsNonZero(t *testing.T) {
 	installFakes(t, fakes{
 		getWorkload: func(string) (*workload.Workload, error) {
 			return &workload.Workload{ID: "wl-9", Status: workload.WorkloadStatusErrored, Endpoint: "https://e/"}, nil
+		},
+		startWorkload: func(string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{}, nil
 		},
 	})
 

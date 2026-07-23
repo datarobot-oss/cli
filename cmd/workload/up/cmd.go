@@ -80,6 +80,7 @@ var (
 	triggerBuildFn    = workload.TriggerArtifactBuild
 	waitForBuildFn    = workload.WaitForBuild
 	lockArtifactFn    = workload.LockArtifact
+	patchContainerFn  = workload.PatchPrimaryContainer
 	createWorkloadFn  = workload.CreateWorkload
 	getWorkloadFn     = workload.GetWorkload
 	listWorkloadsFn   = workload.ListWorkloads
@@ -256,6 +257,18 @@ func orchestrate( //nolint: cyclop
 		phaseComplete(cmd, linkDetail, time.Since(start))
 	} else {
 		phaseComplete(cmd, "Artifact ready", time.Since(start))
+
+		// The artifact already existed; reconcile its spec (probe, port, env)
+		// with the current workload.yaml so edits take effect without
+		// deleting and recreating.
+		if !art.IsLocked() {
+			err = runPhase(cmd, "Applying config to artifact", func() error {
+				return reconcileArtifactSpec(artifactID, cfg)
+			})
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// Phase: sync code -------------------------------------------------------
@@ -277,23 +290,32 @@ func orchestrate( //nolint: cyclop
 	reportSyncConflicts(cmd, syncResult)
 
 	// Phase: build image -----------------------------------------------------
-	var failedBuild *workload.Build
+	codeChanged := syncResult == nil ||
+		syncResult.UploadedCount > 0 ||
+		syncResult.DeletedCount > 0 ||
+		syncResult.OldVersion == ""
 
-	start = time.Now()
+	if codeChanged {
+		var failedBuild *workload.Build
 
-	err = tui.RunWithSpinner("Building image (this may take a minute)", func() error {
-		b, e := buildAndWait(artifactID)
-		failedBuild = b
+		start = time.Now()
 
-		return e
-	})
-	if err != nil {
-		printBuildFailure(cmd, failedBuild)
+		err = tui.RunWithSpinner("Building image (this may take a minute)", func() error {
+			b, e := buildAndWait(artifactID)
+			failedBuild = b
 
-		return err
+			return e
+		})
+		if err != nil {
+			printBuildFailure(cmd, failedBuild)
+
+			return err
+		}
+
+		phaseComplete(cmd, "Image built", time.Since(start))
+	} else {
+		phaseComplete(cmd, "Image up to date (no code changes)", 0)
 	}
-
-	phaseComplete(cmd, "Image built", time.Since(start))
 
 	// Phase: deploy workload -------------------------------------------------
 	var (
@@ -313,7 +335,7 @@ func orchestrate( //nolint: cyclop
 		return err
 	}
 
-	phaseComplete(cmd, fmt.Sprintf("Launched workload %s", wl.ID), time.Since(start))
+	phaseComplete(cmd, "Launched workload "+wl.ID, time.Since(start))
 
 	if deployWarning != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "    %s\n", tui.HintStyle.Render(deployWarning))
@@ -379,7 +401,7 @@ func orchestrateImage(
 		return err
 	}
 
-	phaseComplete(cmd, fmt.Sprintf("Launched workload %s", wl.ID), time.Since(start))
+	phaseComplete(cmd, "Launched workload "+wl.ID, time.Since(start))
 
 	if deployWarning != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "    %s\n", tui.HintStyle.Render(deployWarning))
@@ -784,8 +806,8 @@ func reachExistingWorkload(projectDir string, cfg *wlconfig.Config) (*workload.W
 		return nil, "", err
 	}
 
-	// Bring a stopped/suspended/interrupted workload back up, then re-fetch so
-	// we do not report the stale pre-start status.
+	// Bring a stopped/suspended/interrupted/errored workload back up, then
+	// re-fetch so we do not report the stale pre-start status.
 	if isStoppedLike(wl.Status) {
 		if _, serr := startWorkloadFn(cfg.WorkloadID); serr != nil {
 			return nil, "", serr
@@ -872,7 +894,8 @@ func isStoppedLike(status string) bool {
 	switch status {
 	case workload.WorkloadStatusStopped,
 		workload.WorkloadStatusSuspended,
-		workload.WorkloadStatusInterrupted:
+		workload.WorkloadStatusInterrupted,
+		workload.WorkloadStatusErrored:
 		return true
 	}
 
@@ -932,8 +955,12 @@ var (
 )
 
 func phaseComplete(cmd *cobra.Command, msg string, elapsed time.Duration) {
-	dur := durationStyle.Render(fmt.Sprintf("(%s)", elapsed.Truncate(100*time.Millisecond)))
-	fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s %s\n", checkStyle.Render("✓"), msg, dur)
+	if elapsed > 0 {
+		dur := durationStyle.Render(fmt.Sprintf("(%s)", elapsed.Truncate(100*time.Millisecond)))
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s %s\n", checkStyle.Render("✓"), msg, dur)
+	} else {
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s\n", checkStyle.Render("✓"), msg)
+	}
 }
 
 // runPhase wraps a function in a spinner, times it, and prints a ✓ completion
@@ -949,6 +976,31 @@ func runPhase(cmd *cobra.Command, label string, fn func() error) error {
 	phaseComplete(cmd, label, time.Since(start))
 
 	return nil
+}
+
+// reconcileArtifactSpec patches the primary container's readiness probe, port,
+// and env vars on the existing draft artifact so they match the current
+// workload.yaml. This lets a user fix a misconfigured probe path and re-run
+// `dr workload up` without deleting and recreating the artifact.
+func reconcileArtifactSpec(artifactID string, cfg *wlconfig.Config) error {
+	updates := map[string]any{
+		"port": cfg.Port(),
+		"readinessProbe": map[string]any{
+			"path":                cfg.Health(),
+			"port":                cfg.Port(),
+			"initialDelaySeconds": probeInitialDelay,
+			"periodSeconds":       probePeriod,
+			"timeoutSeconds":      probeTimeout,
+			"failureThreshold":    probeFailureThreshold,
+			"scheme":              "HTTP",
+		},
+	}
+
+	if env := envVarsPayload(cfg); env != nil {
+		updates["environmentVars"] = env
+	}
+
+	return patchContainerFn(artifactID, updates)
 }
 
 // defaultRunSync links the sync engine to projectDir and runs a full,
