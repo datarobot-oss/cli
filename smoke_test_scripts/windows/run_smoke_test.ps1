@@ -5,12 +5,21 @@ $DR_API_TOKEN = $args[0]
 
 $ErrorActionPreference = "Stop"
 
+$global:XFailCount = 0
+
 function Write-ErrorMsg {
     param([string]$Message)
     Write-Host "[ERROR] " -NoNewline -ForegroundColor Red
     Write-Host $Message
     Write-Host ""
     exit 1
+}
+
+function Write-XFailMsg {
+    param([string]$Message)
+    Write-Host "[XFAIL] " -NoNewline -ForegroundColor Yellow
+    Write-Host $Message
+    $global:XFailCount++
 }
 
 function Write-SuccessMsg {
@@ -25,6 +34,7 @@ function Write-InfoMsg {
     Write-Host $Message
 }
 
+# Prints a section header banner centered around the given message.
 function Write-Delimiter {
     param([string]$Message)
     Write-Host ""
@@ -35,6 +45,7 @@ function Write-Delimiter {
     Write-Host ("=" * 20)
 }
 
+# Prints a closing END banner to delimit test sections.
 function Write-End {
     Write-Host ("=" * 20) -NoNewline
     Write-Host " END " -NoNewline
@@ -49,6 +60,130 @@ function Test-URLAccessible {
     } catch {
         return $false
     }
+}
+
+# Installs PowerShell completions under a given execution policy and asserts warning behavior, profile contents, and policy preservation.
+function Test-DRCompletionInstallWithExecutionPolicy {
+    param(
+        [string]$TestName,
+        [string]$Policy,
+        [string]$ExpectedPolicy,
+        [bool]$ExpectWarning
+    )
+
+    # Guard: Get-ExecutionPolicy may not be available on every PowerShell
+    # build (e.g. some Windows Server 2025 runner images fail to auto-load
+    # the Microsoft.PowerShell.Security module).  Skip gracefully instead of
+    # crashing the entire smoke-test suite.
+    try {
+        $null = Get-ExecutionPolicy -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: Get-ExecutionPolicy cmdlet not available on this system."
+
+        return
+    }
+
+    # Save the current effective policy so it can be restored after the test.
+    # Use -Scope Process for Set-ExecutionPolicy so we don't touch the registry
+    # (some CI runners lock down CurrentUser/Machine policy via Group Policy).
+    # Get-ExecutionPolicy (no -Scope) returns the effective policy, which
+    # correctly reflects the Process-scope override.
+    $originalPolicy = Get-ExecutionPolicy
+
+    try {
+        Set-ExecutionPolicy $Policy -Scope Process -Force -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: unable to set execution policy to $Policy."
+
+        return
+    }
+
+    # Resolve the PowerShell profile path, preferring PowerShell Core over Windows PowerShell (matches the Go installer).
+    $documentsPath = "$env:USERPROFILE\Documents"
+    $psCoreDir = Join-Path $documentsPath "PowerShell"
+    $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
+
+    if (Test-Path $psCoreDir) {
+        $profilePath = Join-Path $psCoreDir "Microsoft.PowerShell_profile.ps1"
+    } else {
+        $profilePath = Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
+    }
+
+    # Clean up any existing profile from a previous test so each run starts fresh.
+    if (Test-Path $profilePath) {
+        Remove-Item $profilePath -Force -ErrorAction SilentlyContinue
+    }
+
+    # Run the installer with --force so each invocation performs a real install.
+    # Relax EAP to "Continue" so stderr lines from the native command are
+    # captured, not thrown (same pattern as the --debug test above).
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $installOutput = (dr self completion install powershell --yes --force 2>&1 | Out-String)
+    $installExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($installExitCode -ne 0) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "dr self completion install powershell --yes --force failed with exit code $installExitCode"
+    }
+
+    # Assert the installer warned (or did not warn) about the execution policy fix command.
+    $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    $hasWarning = $installOutput -match $fixCommand
+
+    if ($ExpectWarning -and -not $hasWarning) {
+        # XFAIL: when testing Restricted policy without the Phase 2 Go fix,
+        # the warning is expected to be absent. Track as an expected failure
+        # and return early — the remaining assertions (profile, policy) are
+        # not meaningful when the warning behavior isn't yet implemented.
+        # Remove this branch when Phase 2 lands.
+        $isXFail = $ExpectWarning -and ($Policy -eq "Restricted")
+
+        if ($isXFail) {
+            Write-XFailMsg "Assertion xfail [$TestName]: installer did not warn user with the execution policy fix command (expected: Phase 2 not yet merged)"
+            Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+            if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
+
+            return
+        }
+
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
+    }
+
+    if (-not $ExpectWarning -and $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
+
+    # Assert the profile exists and contains the dr completion block.
+    if (-not (Test-Path $profilePath)) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
+    }
+
+    $profileContent = Get-Content $profilePath -Raw
+    if ($profileContent -notmatch "dr completion powershell") {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: profile does not contain completion block"
+    }
+
+    Write-SuccessMsg "Assertion passed: profile contains completion block"
+
+    # Assert the execution policy was not modified by the installer.
+    $actualPolicy = Get-ExecutionPolicy
+    if ($actualPolicy -ne $ExpectedPolicy) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: expected execution policy to be $ExpectedPolicy, but it is '$actualPolicy'"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
+
+    # Restore the original execution policy and clean up the profile.
+    Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+    if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
 }
 
 # Main execution
@@ -150,6 +285,20 @@ if (Test-Path $completion_file) {
 }
 Write-End
 
+# Test completion install under a fresh-machine execution policy.
+# The installer should warn the user that the profile will not load under the
+# default Restricted policy and print the exact command to fix it, but it should
+# not modify the policy itself.
+Write-Delimiter "Testing dr self completion install (Restricted execution policy)"
+Test-DRCompletionInstallWithExecutionPolicy -TestName "Restricted" -Policy "Restricted" -ExpectedPolicy "Restricted" -ExpectWarning $true
+Write-End
+
+# Test completion install under a permissive execution policy.
+# The installer should complete silently without warning the user.
+Write-Delimiter "Testing dr self completion install (permissive execution policy)"
+Test-DRCompletionInstallWithExecutionPolicy -TestName "RemoteSigned" -Policy "RemoteSigned" -ExpectedPolicy "RemoteSigned" -ExpectWarning $false
+Write-End
+
 # Test dr run command
 Write-Delimiter "Testing dr run command"
 dr run
@@ -234,6 +383,14 @@ if (-not $url_accessible) {
     Write-InfoMsg "Testing template setup would require interactive input..."
     Write-InfoMsg "Skipping template clone test on Windows (requires interactive expect-like tool)"
     Write-End
+}
+
+if ($global:XFailCount -gt 0) {
+    Write-Host ""
+    Write-Host ("=" * 20) -NoNewline
+    Write-Host " XFAIL SUMMARY " -NoNewline -ForegroundColor Yellow
+    Write-Host ("=" * 20)
+    Write-Host "$global:XFailCount expected failure(s) (xfail) -- these will pass after Phase 2 (CFX-6647 Go fix) is merged."
 }
 
 Write-SuccessMsg "Smoke tests for Windows completed successfully."
