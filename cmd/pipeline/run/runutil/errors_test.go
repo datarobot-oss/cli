@@ -20,17 +20,18 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHandleRunNotFoundError_404IsSuppressed(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
-	assert.NoError(t, HandleRunNotFoundError(httpErr, "d-1"))
+	assert.NoError(t, HandleRunNotFoundError(httpErr, "d-1", outputformat.OutputFormatText))
 }
 
 func TestHandleRunNotFoundError_PropagatesOther(t *testing.T) {
-	err := HandleRunNotFoundError(errors.New("boom"), "d-1")
+	err := HandleRunNotFoundError(errors.New("boom"), "d-1", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }

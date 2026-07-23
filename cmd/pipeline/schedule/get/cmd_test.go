@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,11 +67,11 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 
 func TestHandleGetError_404IsSuppressed(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
-	assert.NoError(t, handleGetError(httpErr, "s-1"))
+	assert.NoError(t, handleGetError(httpErr, "s-1", outputformat.OutputFormatText))
 }
 
 func TestHandleGetError_PropagatesOther(t *testing.T) {
-	err := handleGetError(errors.New("boom"), "s-1")
+	err := handleGetError(errors.New("boom"), "s-1", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }

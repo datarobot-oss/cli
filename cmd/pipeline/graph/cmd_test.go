@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,12 +79,12 @@ func TestPrintGraphHuman_EmptyGraph(t *testing.T) {
 func TestHandleGraphError_404IsSuppressed(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
 
-	err := handleGraphError(httpErr, "abc")
+	err := handleGraphError(httpErr, "abc", outputformat.OutputFormatText)
 	assert.NoError(t, err)
 }
 
 func TestHandleGraphError_PropagatesOther(t *testing.T) {
-	err := handleGraphError(errors.New("boom"), "abc")
+	err := handleGraphError(errors.New("boom"), "abc", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }

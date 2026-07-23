@@ -146,7 +146,7 @@ func TestHandleGetError_NotFoundPrintsFriendlyMessage(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: 404, URL: "http://example/api/v2/pipelines/abc"}
 
 	output := testutil.CaptureStdout(t, func() {
-		err := handleGetError(httpErr, "abc")
+		err := handleGetError(httpErr, "abc", outputformat.OutputFormatText)
 		assert.NoError(t, err)
 	})
 
@@ -157,7 +157,7 @@ func TestHandleGetError_OtherErrorsPassThrough(t *testing.T) {
 	otherHTTP := &drapi.HTTPError{StatusCode: 500, URL: "http://example/api/v2/pipelines/abc"}
 
 	output := testutil.CaptureStdout(t, func() {
-		err := handleGetError(otherHTTP, "abc")
+		err := handleGetError(otherHTTP, "abc", outputformat.OutputFormatText)
 		require.Error(t, err)
 		assert.Same(t, otherHTTP, err)
 	})
@@ -168,7 +168,7 @@ func TestHandleGetError_OtherErrorsPassThrough(t *testing.T) {
 func TestHandleGetError_NonHTTPErrorPassesThrough(t *testing.T) {
 	plain := errors.New("network unreachable")
 
-	err := handleGetError(plain, "abc")
+	err := handleGetError(plain, "abc", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Equal(t, plain, err)
 }

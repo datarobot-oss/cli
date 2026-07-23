@@ -60,7 +60,7 @@ Example:
 
 			result, err := pipeline.GetInput(flags.PipelineID, scope, version, args[0])
 			if err != nil {
-				return handleGetError(err, args[0])
+				return handleGetError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderInput(outputFormat, *result)
@@ -85,10 +85,14 @@ Example:
 	return cmd
 }
 
-func handleGetError(err error, inputID string) error {
+func handleGetError(err error, inputID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No input found with id: " + inputID))
 
 		return nil

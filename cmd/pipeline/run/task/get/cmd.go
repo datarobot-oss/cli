@@ -75,7 +75,7 @@ Example:
 
 			task, err := pipeline.GetTaskExecution(pipelineID, runID, taskID, node)
 			if err != nil {
-				return handleNotFound(err, args[0])
+				return handleNotFound(err, args[0], outputFormat)
 			}
 
 			return renderTask(outputFormat, task)
@@ -167,10 +167,14 @@ func printTaskHuman(task *pipeline.TaskExecution) {
 	w.Flush()
 }
 
-func handleNotFound(err error, taskID string) error {
+func handleNotFound(err error, taskID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No task execution found with id: " + taskID))
 
 		return nil

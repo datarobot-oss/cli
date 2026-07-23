@@ -20,15 +20,22 @@ import (
 	"net/http"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
 
 // HandleRunNotFoundError converts a 404 into a friendly informational message
 // (returns nil) so the caller does not surface a raw HTTP error for a no-op.
-func HandleRunNotFoundError(err error, runID string) error {
+// In JSON output mode the original error is returned unchanged so stdout
+// stays parseable.
+func HandleRunNotFoundError(err error, runID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No run found with id: " + runID))
 
 		return nil

@@ -56,7 +56,7 @@ Example:
 
 			result, err := pipeline.GetVersion(pipelineID, versionID)
 			if err != nil {
-				return handleGetError(err, args[0])
+				return handleGetError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderVersion(outputFormat, *result)
@@ -79,10 +79,14 @@ Example:
 	return cmd
 }
 
-func handleGetError(err error, versionLabel string) error {
+func handleGetError(err error, versionLabel string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No version found: " + versionLabel))
 
 		return nil

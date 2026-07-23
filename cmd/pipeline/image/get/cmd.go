@@ -55,6 +55,10 @@ Example:
 				var httpErr *drapi.HTTPError
 
 				if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+					if outputFormat == outputformat.OutputFormatJSON {
+						return err
+					}
+
 					fmt.Println(tui.DimStyle.Render("No image found: " + imageID))
 
 					return nil
