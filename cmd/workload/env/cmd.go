@@ -16,6 +16,7 @@ package env
 
 import (
 	"github.com/datarobot/cli/cmd/workload/env/del"
+	importcmd "github.com/datarobot/cli/cmd/workload/env/import"
 	"github.com/datarobot/cli/cmd/workload/env/list"
 	"github.com/datarobot/cli/cmd/workload/env/set"
 	"github.com/spf13/cobra"
@@ -37,19 +38,22 @@ Only the workload's primary container is affected. Artifacts with
 additional (sidecar) containers are not yet supported.
 
 Subcommands:
-  list     Show the current environment variables (names only; secret
-           values are never printed).
-  set      Add or update one or more variables, then roll out.
+  list     Show the current environment variables.
+  set      Add or update one or more variables from NAME=VALUE arguments,
+           then roll out.
+  import   Add or update variables from a .env file, then roll out.
   delete   Remove one or more variables, then roll out.
 
 Example:
   dr workload env list 68b0c1d2e3f4a5b6c7d8e9f0
   dr workload env set 68b0c1d2e3f4a5b6c7d8e9f0 LOG_LEVEL=debug
+  dr workload env import 68b0c1d2e3f4a5b6c7d8e9f0 --file production.env
   dr workload env delete 68b0c1d2e3f4a5b6c7d8e9f0 LOG_LEVEL`,
 	}
 
 	cmd.AddCommand(list.Cmd())
 	cmd.AddCommand(set.Cmd())
+	cmd.AddCommand(importcmd.Cmd())
 	cmd.AddCommand(del.Cmd())
 
 	return cmd

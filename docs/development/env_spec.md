@@ -1,21 +1,24 @@
 # `dr workload env` — implementation specification
 
-This document specifies the `dr workload env {list,set,delete}` capability well
-enough that it could be re-implemented from scratch, in any language or CLI
-framework, without reading this repository's Go code. It captures the external
-API contract (as verified live against a running DataRobot instance — not just
-as documented, since the two disagree in places), the required behavior, and a
-list of corner cases that a naive implementation gets wrong, each with the
-reasoning for why it matters.
+This document specifies the `dr workload env {list,set,import,delete}`
+capability well enough that it could be re-implemented from scratch, in any
+language or CLI framework, without reading this repository's Go code. It
+captures the external API contract (as verified live against a running
+DataRobot instance — not just as documented, since the two disagree in
+places), the required behavior, and a list of corner cases that a naive
+implementation gets wrong, each with the reasoning for why it matters.
 
 A working reference implementation exists in this repository:
 
 - `internal/workload/env.go`, `internal/workload/replacement.go`,
   `internal/workload/credential.go`, `internal/workload/artifact.go` (the
   `EnvironmentVar`/`Container` types) — business logic.
-- `cmd/workload/env/{list,set,del}/cmd.go` — CLI commands.
+- `cmd/workload/env/{list,set,import,del}/cmd.go` — CLI commands.
 - `cmd/workload/env/internal/rollout/rollout.go` — the shared deploy-or-stage
-  decision used by `set` and `delete`.
+  decision used by `set`, `import`, and `delete`.
+- `cmd/workload/env/internal/envparse/envparse.go` — the NAME/VALUE parsing
+  and validation (§7.7) shared by `set` and `import`, so the two can never
+  drift on what counts as a valid name or a valid credential reference.
 
 Treat this spec as authoritative over that code if they ever disagree — the
 code should be brought back in line, not the other way around.
@@ -35,7 +38,7 @@ env vars). Changing a workload's env vars means:
 
 Doing this by hand means juggling three-plus API calls, a non-obvious
 draft-vs-locked branch, and a replacement endpoint with sharp edges (see
-§4.5). The goal of `dr workload env` is to make "set an env var" one command
+§3.6). The goal of `dr workload env` is to make "set an env var" one command
 instead of that whole dance.
 
 ## 2. Terminology
@@ -265,7 +268,7 @@ validate `key` against §3.2's table (drift risk).
 
 ## 4. Command surface
 
-Three subcommands, operating only on the primary container (§2). Multi-
+Four subcommands, operating only on the primary container (§2). Multi-
 container (sidecar) support is an explicit non-goal for v1 (§8).
 
 ### 4.1 `env list <workload-id>`
@@ -303,7 +306,44 @@ Resolves workload → artifact, reads the primary container's
   (distinguishes "nothing to do" from a likely typo) — but see §7.2 for why
   this check must happen *before* any artifact is touched.
 
-### 4.4 Common flags
+### 4.4 `env import <workload-id> [--file <path>] [--stage] [--yes] [--wait]`
+
+Loads variables from a file instead of positional arguments, then applies
+them exactly like `set` would — same validation, same upsert, same rollout.
+This is not a separate code path from `set` so much as a different *source*
+of the same `[NAME]→[VALUE or credential reference]` list:
+
+- **Default source: `.env` in the current directory.** `--file <path>`
+  overrides it.
+- **Parse with standard dotenv syntax:** blank lines and `#`-prefixed
+  comments ignored, values may be quoted (a well-tested library dependency
+  is the pragmatic choice here over a hand-rolled parser — don't reinvent
+  dotenv quoting/escaping rules).
+- **Recognize the identical `NAME=dr-credential:<id>/<key>` value syntax**
+  `set` does, applied to each parsed value — a credential reference in a
+  `.env` file must be validated exactly like one typed on the command line
+  (§7.7). Do not special-case file-sourced values as "more trusted."
+- **Every variable found in the file is applied together in one call** —
+  this falls out naturally from "load the whole file, then upsert," but call
+  it out explicitly: it's what makes `import` immune to the
+  cross-invocation batching gap described in §7.2, *for a single import*.
+  Running `import` twice in a row still has the same batching limitation as
+  running `set` twice in a row.
+- **Merge semantics: the file's value wins on a name collision** with
+  whatever the workload's artifact currently has. This requires no special
+  logic beyond what `set` already needs — it's the same upsert-by-name
+  operation (§4.2), just fed a different list. A name in the file that
+  doesn't yet exist on the workload is simply added; a name that already
+  exists is overwritten; every other existing name is left untouched.
+- **An empty or all-comments file is an error, not a silent no-op** — it's
+  far more likely to mean "wrong file" or "empty by mistake" than "the user
+  really meant to do nothing."
+- The upfront in-flight-replacement guard (§7.3), the never-lock-a-staged-
+  clone rule (§7.4), and the orphaned-artifact-naming requirement (§7.5) all
+  apply identically — none of them are specific to how the var list was
+  sourced.
+
+### 4.5 Common flags
 
 - `--stage`: prepare the edit (patch, or clone+patch) but do not roll it out.
   No confirmation prompt is needed in this mode (§6.4). See §7.4 for why
@@ -379,8 +419,8 @@ Given `spec.containerGroups`, select:
 1. The first container across all groups with `"primary": true`, if any.
 2. Otherwise, `containerGroups[0].containers[0]`.
 
-Apply this **identically** for reads (`list`) and writes (`set`/`delete`) so
-they always agree on which container they're talking about.
+Apply this **identically** for reads (`list`) and writes (`set`/`import`/
+`delete`) so they always agree on which container they're talking about.
 
 ### 6.3 Mutate: draft vs. locked
 
@@ -660,3 +700,9 @@ At minimum, a reimplementation should have automated coverage for:
   is surfaced as a check failure, not silently treated as "confirmed
   missing."
 - A multiline value round-trips unchanged through write and read.
+- `import`: defaults to `.env` in the current directory; `--file` overrides
+  it; a missing file, and an empty (or comments-and-blanks-only) file, both
+  error rather than silently no-op-ing; a name present both in the imported
+  file and already on the workload ends up with the file's value (ordinary
+  upsert-by-name, same as `set`); the same name/credential validation as
+  `set` applies to every variable found in the file.
