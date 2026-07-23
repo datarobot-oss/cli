@@ -15,6 +15,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -141,7 +142,9 @@ Examples:
 			if err != nil { //nolint: nestif
 				exitCode := 1
 
-				if exitErr, ok := err.(*exec.ExitError); ok {
+				var exitErr *exec.ExitError
+
+				if errors.As(err, &exitErr) {
 					// Only propagate if '--exit-code' was requested
 					if opts.taskOpts.ExitCode {
 						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {

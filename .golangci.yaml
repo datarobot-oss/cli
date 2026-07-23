@@ -11,7 +11,7 @@ linters:
     - depguard
     - dupword
     - errname
-    # - errorlint # disabled until we can resolve lints
+    - errorlint
     - exhaustive
     # - godot # disabled until we can resolve lints
     # - godox # disabled until we can resolve lints

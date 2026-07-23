@@ -250,7 +250,7 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 	case apiKey := <-apiKeyChan:
 		// Now shut down the server after key is received
 		if err := server.Shutdown(ctx); err != nil {
-			return "", fmt.Errorf("Error during shutdown: %v", err)
+			return "", fmt.Errorf("Error during shutdown: %w", err)
 		}
 
 		// empty apiKey means we need to interrupt current auth flow
