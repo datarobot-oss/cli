@@ -30,6 +30,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/cmd/workload/internal/wlprompt"
 	"github.com/datarobot/cli/internal/auth"
@@ -41,6 +42,7 @@ import (
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wlconfig"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -219,7 +221,7 @@ func runUp(cmd *cobra.Command, outputFormat outputformat.OutputFormat, poll poll
 // orchestrate runs ensureLinked -> sync -> build -> deploy -> optional lock ->
 // wait -> render, keeping runUp's flag/config resolution separate from the flow.
 // Pre-built image manifests take the short path: no code, no sync, no build.
-func orchestrate(
+func orchestrate( //nolint: cyclop
 	cmd *cobra.Command,
 	projectDir string,
 	cfg *wlconfig.Config,
@@ -231,48 +233,119 @@ func orchestrate(
 		return orchestrateImage(cmd, projectDir, cfg, flags, poll, outputFormat)
 	}
 
-	artifactID, art, err := ensureLinked(cmd, projectDir, cfg)
+	// Phase: prepare artifact ------------------------------------------------
+	var (
+		artifactID string
+		art        *workload.Artifact
+		linkDetail string
+	)
+
+	start := time.Now()
+
+	err := tui.RunWithSpinner("Preparing artifact", func() error {
+		id, a, detail, e := ensureLinked(projectDir, cfg)
+		artifactID, art, linkDetail = id, a, detail
+
+		return e
+	})
 	if err != nil {
 		return err
 	}
 
-	announce(cmd, "Syncing code")
+	if linkDetail != "" {
+		phaseComplete(cmd, linkDetail, time.Since(start))
+	} else {
+		phaseComplete(cmd, "Artifact ready", time.Since(start))
+	}
 
-	result, err := runSyncFn(projectDir)
+	// Phase: sync code -------------------------------------------------------
+	var syncResult *sync.Result
+
+	start = time.Now()
+
+	err = tui.RunWithSpinner("Syncing code", func() error {
+		r, e := runSyncFn(projectDir)
+		syncResult = r
+
+		return e
+	})
 	if err != nil {
 		return err
 	}
 
-	reportSyncConflicts(cmd, result)
+	phaseComplete(cmd, "Code synced", time.Since(start))
+	reportSyncConflicts(cmd, syncResult)
 
-	announce(cmd, "Building image")
+	// Phase: build image -----------------------------------------------------
+	var failedBuild *workload.Build
 
-	if err := buildAndWait(cmd, artifactID); err != nil {
+	start = time.Now()
+
+	err = tui.RunWithSpinner("Building image (this may take a minute)", func() error {
+		b, e := buildAndWait(artifactID)
+		failedBuild = b
+
+		return e
+	})
+	if err != nil {
+		printBuildFailure(cmd, failedBuild)
+
 		return err
 	}
 
-	wl, err := deploy(cmd, projectDir, cfg, artifactID, art)
+	phaseComplete(cmd, "Image built", time.Since(start))
+
+	// Phase: deploy workload -------------------------------------------------
+	var (
+		wl            *workload.Workload
+		deployWarning string
+	)
+
+	start = time.Now()
+
+	err = tui.RunWithSpinner("Deploying workload (this may take a minute)", func() error {
+		w, warning, e := deploy(projectDir, cfg, artifactID, art)
+		wl, deployWarning = w, warning
+
+		return e
+	})
 	if err != nil {
 		return err
 	}
 
-	// Lock only after a successful deploy so a failed create cannot orphan a
-	// locked (undeletable) artifact.
+	phaseComplete(cmd, fmt.Sprintf("Launched workload %s", wl.ID), time.Since(start))
+
+	if deployWarning != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "    %s\n", tui.HintStyle.Render(deployWarning))
+	}
+
+	// Phase: optional lock ---------------------------------------------------
 	if flags.Lock {
-		announce(cmd, "Locking artifact")
+		err = runPhase(cmd, "Locking artifact", func() error {
+			_, e := lockArtifactFn(artifactID)
 
-		if _, err := lockArtifactFn(artifactID); err != nil {
-			return err
-		}
-	}
-
-	if !flags.Detach {
-		announce(cmd, "Waiting for workload to become running")
-
-		wl, err = waitForWorkloadFn(wl.ID, poll.Interval, poll.Timeout, nil)
+			return e
+		})
 		if err != nil {
 			return err
 		}
+	}
+
+	// Phase: wait for running ------------------------------------------------
+	if !flags.Detach {
+		start = time.Now()
+
+		err = tui.RunWithSpinner("Waiting for workload to become running", func() error {
+			w, e := waitForWorkloadFn(wl.ID, poll.Interval, poll.Timeout, nil)
+			wl = w
+
+			return e
+		})
+		if err != nil {
+			return err
+		}
+
+		phaseComplete(cmd, fmt.Sprintf("Workload %s is running", wl.ID), time.Since(start))
 	}
 
 	return renderUp(cmd, outputFormat, wl, flags.Detach)
@@ -289,29 +362,57 @@ func orchestrateImage(
 	poll pollflags.Set,
 	outputFormat outputformat.OutputFormat,
 ) error {
-	wl, err := deployImage(cmd, projectDir, cfg)
+	var (
+		wl            *workload.Workload
+		deployWarning string
+	)
+
+	start := time.Now()
+
+	err := tui.RunWithSpinner("Deploying workload (this may take a minute)", func() error {
+		w, warning, e := deployImage(projectDir, cfg)
+		wl, deployWarning = w, warning
+
+		return e
+	})
 	if err != nil {
 		return err
+	}
+
+	phaseComplete(cmd, fmt.Sprintf("Launched workload %s", wl.ID), time.Since(start))
+
+	if deployWarning != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "    %s\n", tui.HintStyle.Render(deployWarning))
 	}
 
 	// The inline-create response carries the id of the draft artifact the
 	// server created; locking it moves the workload into the production
 	// lifecycle (Tutorial 2, step 2).
 	if flags.Lock {
-		announce(cmd, "Locking artifact")
+		err = runPhase(cmd, "Locking artifact", func() error {
+			_, e := lockArtifactFn(wl.ArtifactID)
 
-		if _, err := lockArtifactFn(wl.ArtifactID); err != nil {
+			return e
+		})
+		if err != nil {
 			return err
 		}
 	}
 
 	if !flags.Detach {
-		announce(cmd, "Waiting for workload to become running")
+		start = time.Now()
 
-		wl, err = waitForWorkloadFn(wl.ID, poll.Interval, poll.Timeout, nil)
+		err = tui.RunWithSpinner("Waiting for workload to become running", func() error {
+			w, e := waitForWorkloadFn(wl.ID, poll.Interval, poll.Timeout, nil)
+			wl = w
+
+			return e
+		})
 		if err != nil {
 			return err
 		}
+
+		phaseComplete(cmd, fmt.Sprintf("Workload %s is running", wl.ID), time.Since(start))
 	}
 
 	return renderUp(cmd, outputFormat, wl, flags.Detach)
@@ -319,12 +420,10 @@ func orchestrateImage(
 
 // deployImage creates the workload with the manifest's image inline on first
 // run, or reaches the recorded workload on a re-run.
-func deployImage(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config) (*workload.Workload, error) {
+func deployImage(projectDir string, cfg *wlconfig.Config) (*workload.Workload, string, error) {
 	if cfg.WorkloadID != "" {
-		return reachExistingWorkload(cmd, projectDir, cfg)
+		return reachExistingWorkload(projectDir, cfg)
 	}
-
-	announce(cmd, "Creating workload from image "+cfg.Build.Image)
 
 	name := cfg.Name
 	if name == "" {
@@ -333,14 +432,14 @@ func deployImage(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config) (*
 
 	wl, err := createWorkloadFn(buildImageCreatePayload(name, cfg))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if err := recordWorkloadID(projectDir, cfg, wl); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return wl, nil
+	return wl, "", nil
 }
 
 // buildImageCreatePayload assembles the one-call create for image mode: the
@@ -408,50 +507,50 @@ func envVarsPayload(cfg *wlconfig.Config) []any {
 // project directory from the manifest's build settings when the directory is not
 // linked yet. This is what lets `dr workload up` run with only `dr workload
 // config` before it, with no manual `dr artifact create` / `code init`.
-func ensureLinked(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config) (string, *workload.Artifact, error) {
+// The returned string is a human detail message (non-empty only when a new
+// artifact was created).
+func ensureLinked(projectDir string, cfg *wlconfig.Config) (string, *workload.Artifact, string, error) {
 	if !wapi.Exists(projectDir) {
-		return createAndLink(cmd, projectDir, cfg)
+		return createAndLink(projectDir, cfg)
 	}
 
 	wcfg, err := wapi.LoadConfig(projectDir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 
 	art, err := getArtifactFn(wcfg.ArtifactID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 
 	if art.IsLocked() {
-		return "", nil, fmt.Errorf("artifact %s is locked (immutable); `dr workload up` cannot redeploy through a locked artifact. Create a new artifact and workload to deploy changes", wcfg.ArtifactID)
+		return "", nil, "", fmt.Errorf("artifact %s is locked (immutable); `dr workload up` cannot redeploy through a locked artifact. Create a new artifact and workload to deploy changes", wcfg.ArtifactID)
 	}
 
-	return wcfg.ArtifactID, art, nil
+	return wcfg.ArtifactID, art, "", nil
 }
 
 // createAndLink creates a draft artifact from the manifest's build settings and
 // links the project directory to it.
-func createAndLink(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config) (string, *workload.Artifact, error) {
-	announce(cmd, "Creating artifact ("+cfg.BuildMode()+" build)")
-
+func createAndLink(projectDir string, cfg *wlconfig.Config) (string, *workload.Artifact, string, error) {
 	spec, err := buildArtifactSpec(cfg)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 
 	art, err := createArtifactFn(spec)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 
 	if err := initProjectFn(projectDir, wapi.InitOptions{ArtifactID: art.ID}); err != nil {
-		return "", nil, fmt.Errorf("artifact %s created but linking %s failed: %w", art.ID, projectDir, err)
+		return "", nil, "", fmt.Errorf("artifact %s created but linking %s failed: %w", art.ID, projectDir, err)
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "  created artifact %s and linked %s\n", art.ID, projectDir)
+	detail := fmt.Sprintf("Created artifact %s and linked %s", art.ID, projectDir)
 
-	return art.ID, art, nil
+	return art.ID, art, detail, nil
 }
 
 // buildArtifactSpec builds the CreateArtifact payload from the manifest, in
@@ -543,30 +642,26 @@ func reportSyncConflicts(cmd *cobra.Command, result *sync.Result) {
 }
 
 // buildAndWait triggers a build for artifactID and blocks on each returned
-// build until it reaches a terminal status. On failure it prints the build log
-// tail, matching `dr artifact build create --wait`.
-func buildAndWait(cmd *cobra.Command, artifactID string) error {
+// build until it reaches a terminal status. On failure it returns the failed
+// build so the caller can print log tails after the spinner exits.
+func buildAndWait(artifactID string) (*workload.Build, error) {
 	resp, err := triggerBuildFn(artifactID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(resp.BuildIDs) == 0 {
-		return errors.New("no build IDs returned by server")
+		return nil, errors.New("no build IDs returned by server")
 	}
 
 	for _, id := range resp.BuildIDs {
-		fmt.Fprintf(cmd.ErrOrStderr(), "  waiting for build %s...\n", id)
-
 		build, werr := waitForBuildFn(artifactID, id, pollflags.DefaultPollInterval, pollflags.DefaultPollTimeout, nil)
 		if werr != nil {
-			printBuildFailure(cmd, build)
-
-			return werr
+			return build, werr
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // printBuildFailure dumps the tail of a failed build's logs to stderr so the
@@ -590,19 +685,21 @@ func printBuildFailure(cmd *cobra.Command, build *workload.Build) {
 
 // deploy creates the workload on first run (recording its id back into the
 // manifest for idempotent re-runs) or reaches an already-created workload.
-func deploy(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config, artifactID string, art *workload.Artifact) (*workload.Workload, error) {
+// The returned warning string is non-empty when the workload already exists and
+// cannot be updated in place.
+func deploy(projectDir string, cfg *wlconfig.Config, artifactID string, art *workload.Artifact) (*workload.Workload, string, error) {
 	if cfg.WorkloadID == "" {
-		return createWorkload(cmd, projectDir, cfg, artifactID, art)
+		wl, err := createWorkload(projectDir, cfg, artifactID, art)
+
+		return wl, "", err
 	}
 
-	return reachExistingWorkload(cmd, projectDir, cfg)
+	return reachExistingWorkload(projectDir, cfg)
 }
 
 // createWorkload is the first-deploy path: create the workload from the linked
 // artifact and record its id so re-runs are idempotent.
-func createWorkload(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config, artifactID string, art *workload.Artifact) (*workload.Workload, error) {
-	announce(cmd, "Creating workload")
-
+func createWorkload(projectDir string, cfg *wlconfig.Config, artifactID string, art *workload.Artifact) (*workload.Workload, error) {
 	name := cfg.Name
 	if name == "" {
 		name = filepath.Base(projectDir)
@@ -614,7 +711,7 @@ func createWorkload(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config,
 		// what we hit, the manifest lost its workloadId (rewritten by an old
 		// config, hand-edited, fresh clone): adopt the existing workload
 		// instead of dead-ending on the 409.
-		wl = adoptWorkloadForArtifact(cmd, artifactID, err)
+		wl = adoptWorkloadForArtifact(artifactID, err)
 		if wl == nil {
 			return nil, err
 		}
@@ -632,7 +729,7 @@ func createWorkload(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config,
 // return it so the deploy continues with it. Returns nil when the error is not
 // that 409 or no backing workload is found (the caller keeps the original
 // error).
-func adoptWorkloadForArtifact(cmd *cobra.Command, artifactID string, createErr error) *workload.Workload {
+func adoptWorkloadForArtifact(artifactID string, createErr error) *workload.Workload {
 	var httpErr *drapi.HTTPError
 
 	if !errors.As(createErr, &httpErr) || httpErr.StatusCode != http.StatusConflict {
@@ -648,9 +745,6 @@ func adoptWorkloadForArtifact(cmd *cobra.Command, artifactID string, createErr e
 		if workloads[i].ArtifactID != artifactID {
 			continue
 		}
-
-		announce(cmd, fmt.Sprintf("Adopting existing workload %s (%s); a draft artifact allows only one workload",
-			workloads[i].ID, workloads[i].Name))
 
 		return &workloads[i]
 	}
@@ -675,39 +769,40 @@ func recordWorkloadID(projectDir string, cfg *wlconfig.Config, wl *workload.Work
 
 // reachExistingWorkload is the re-deploy path. It brings a non-running workload
 // back up and is honest that a newly built image is not auto-applied to an
-// already-running workload.
-func reachExistingWorkload(cmd *cobra.Command, projectDir string, cfg *wlconfig.Config) (*workload.Workload, error) {
-	announce(cmd, "Reaching workload "+cfg.WorkloadID)
-
+// already-running workload. The returned warning is non-empty when the workload
+// is already running and cannot be updated in place.
+func reachExistingWorkload(projectDir string, cfg *wlconfig.Config) (*workload.Workload, string, error) {
 	wl, err := getWorkloadFn(cfg.WorkloadID)
 	if err != nil {
 		var httpErr *drapi.HTTPError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf(
+			return nil, "", fmt.Errorf(
 				"workload %s (recorded in %s) no longer exists; run `dr workload config` to bind or create another",
 				cfg.WorkloadID, wlconfig.Path(projectDir))
 		}
 
-		return nil, err
+		return nil, "", err
 	}
 
 	// Bring a stopped/suspended/interrupted workload back up, then re-fetch so
 	// we do not report the stale pre-start status.
 	if isStoppedLike(wl.Status) {
 		if _, serr := startWorkloadFn(cfg.WorkloadID); serr != nil {
-			return nil, serr
+			return nil, "", serr
 		}
 
 		if refetched, rerr := getWorkloadFn(cfg.WorkloadID); rerr == nil {
 			wl = refetched
 		}
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"  WARNING: workload %s already exists; updating a running workload in place is not automated yet, so it keeps serving its current artifact. Recreate the workload (or use a replace flow) to roll out changes.\n",
-			cfg.WorkloadID)
+
+		return wl, "", nil
 	}
 
-	return wl, nil
+	warning := fmt.Sprintf(
+		"workload %s already exists; updating a running workload in place is not automated yet. Recreate or use a replace flow to roll out changes.",
+		cfg.WorkloadID)
+
+	return wl, warning, nil
 }
 
 // buildCreatePayload assembles the workload create request for the code-build
@@ -804,10 +899,11 @@ func renderUp(cmd *cobra.Command, outputFormat outputformat.OutputFormat, wl *wo
 		return nil
 	}
 
+	// For --detach the caller skipped the wait spinner, so we print status here.
 	if detached {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Workload %s is %s (deploy requested; not waiting). Check `dr workload status %s`.\n", wl.ID, wl.Status, wl.ID)
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Workload %s is %s.\n", wl.ID, wl.Status)
+		fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s\n",
+			checkStyle.Render("✓"),
+			fmt.Sprintf("Workload %s is %s (not waiting)", wl.ID, wl.Status))
 	}
 
 	if failed {
@@ -817,20 +913,42 @@ func renderUp(cmd *cobra.Command, outputFormat outputformat.OutputFormat, wl *wo
 	// The bare endpoint URL is the last stdout line, matching the
 	// `dr workload endpoint` contract so scripts can capture it.
 	if wl.Endpoint == "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "No endpoint URL yet; check `dr workload status`.")
+		fmt.Fprintf(cmd.ErrOrStderr(), "    %s\n", tui.HintStyle.Render("No endpoint URL yet; check `dr workload status`."))
 
 		return nil
 	}
 
+	fmt.Fprintf(cmd.ErrOrStderr(), "\n  %s %s\n", "🚀", tui.SuccessStyle.Render("Endpoint ready:"))
 	fmt.Fprintln(cmd.OutOrStdout(), wl.Endpoint)
 
 	return nil
 }
 
-// announce prints a narrated phase line to stderr so stdout stays reserved for
-// the endpoint URL / JSON contract.
-func announce(cmd *cobra.Command, msg string) {
-	fmt.Fprintf(cmd.ErrOrStderr(), "==> %s\n", msg)
+// phaseComplete prints a styled completion line with elapsed time to stderr so
+// stdout stays reserved for the endpoint URL / JSON contract.
+var (
+	checkStyle    = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark))
+	durationStyle = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrGray, tui.DrGrayDark))
+)
+
+func phaseComplete(cmd *cobra.Command, msg string, elapsed time.Duration) {
+	dur := durationStyle.Render(fmt.Sprintf("(%s)", elapsed.Truncate(100*time.Millisecond)))
+	fmt.Fprintf(cmd.ErrOrStderr(), "  %s %s %s\n", checkStyle.Render("✓"), msg, dur)
+}
+
+// runPhase wraps a function in a spinner, times it, and prints a ✓ completion
+// line when done.
+func runPhase(cmd *cobra.Command, label string, fn func() error) error {
+	start := time.Now()
+
+	err := tui.RunWithSpinner(label, fn)
+	if err != nil {
+		return err
+	}
+
+	phaseComplete(cmd, label, time.Since(start))
+
+	return nil
 }
 
 // defaultRunSync links the sync engine to projectDir and runs a full,
