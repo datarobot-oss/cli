@@ -60,15 +60,16 @@ func Cmd() *cobra.Command {
 	cmd.Flags().VarP(
 		&options.outputFormat,
 		"output-format",
-		"o",
+		"",
 		fmt.Sprintf("Output format (%s, %s)", outputformat.OutputFormatJSON, outputformat.OutputFormatText),
 	)
 
 	// Deprecated: use --output-format instead. Kept for backward compat with smoke test scripts.
+	// The -o shorthand is retained here for backwards compatibility with existing scripts.
 	cmd.Flags().VarP(
 		&options.legacyFormat,
 		"format",
-		"f",
+		"o",
 		fmt.Sprintf("Output format (deprecated, use --output-format) (%s, %s)", outputformat.OutputFormatJSON, outputformat.OutputFormatText),
 	)
 
