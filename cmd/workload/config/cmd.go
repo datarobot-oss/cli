@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/cmd/workload/internal/wlprompt"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -165,7 +166,15 @@ func runConfig(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 // their defaults; the written manifest is commented so the user can edit them.
 // A read error (Ctrl-C/EOF) aborts rather than silently accepting defaults.
 func promptBuild(cmd *cobra.Command, cfg *wlconfig.Config) error {
-	fmt.Fprintln(cmd.ErrOrStderr(), "Build mode: [1] use your Dockerfile   [2] DataRobot builds it (generated)   [3] deploy a pre-built image")
+	w := cmd.ErrOrStderr()
+	numStyle := lipgloss.NewStyle().Foreground(tui.DrPurple).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#CCCCCC"})
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, tui.BaseTextStyle.Render("  Build mode:"))
+	fmt.Fprintf(w, "    %s  %s\n", numStyle.Render("1"), descStyle.Render("Use your Dockerfile"))
+	fmt.Fprintf(w, "    %s  %s\n", numStyle.Render("2"), descStyle.Render("DataRobot builds it (generated)"))
+	fmt.Fprintf(w, "    %s  %s\n", numStyle.Render("3"), descStyle.Render("Deploy a pre-built image"))
 
 	mode, err := wlprompt.AskWithDefault("Choose 1, 2, or 3", "1")
 	if err != nil {
@@ -283,8 +292,14 @@ func selectWorkload(yes bool, idFlag, nameFlag string) (id, name string, err err
 		return "", "", errors.New("non-interactive: provide --workload-id (existing) or --name (new)")
 	}
 
-	workloads, err := listWorkloadsFn(workloadPickLimit, nil)
-	if err != nil {
+	var workloads []workload.Workload
+
+	if err := tui.RunWithSpinner("Fetching workloads", func() error {
+		w, e := listWorkloadsFn(workloadPickLimit, nil)
+		workloads = w
+
+		return e
+	}); err != nil {
 		return "", "", err
 	}
 
@@ -338,6 +353,8 @@ func runPicker(workloads []workload.Workload) (workloadItem, error) {
 	return *picker.selected, nil
 }
 
+var checkStyle = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark))
+
 func renderResult(cmd *cobra.Command, outputFormat outputformat.OutputFormat, cfg wlconfig.Config, path string) error {
 	result := configResult{
 		WorkloadID: cfg.WorkloadID,
@@ -353,16 +370,21 @@ func renderResult(cmd *cobra.Command, outputFormat outputformat.OutputFormat, cf
 		return enc.Encode(result)
 	}
 
-	out := cmd.OutOrStdout()
+	w := cmd.ErrOrStderr()
+	check := checkStyle.Render("✓")
+
+	fmt.Fprintln(w)
 
 	if cfg.WorkloadID != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Bound workload %s (%s).\n", cfg.WorkloadID, cfg.Name)
+		fmt.Fprintf(w, "  %s Bound workload %s (%s)\n", check, cfg.WorkloadID, cfg.Name)
 	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Recorded new workload %q; it is created on the first `dr workload up`.\n", cfg.Name)
+		fmt.Fprintf(w, "  %s Recorded new workload %q (created on first `dr workload up`)\n", check, cfg.Name)
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "Wrote configuration. Run `dr workload up` to deploy.\n")
-	fmt.Fprintln(out, path)
+	fmt.Fprintf(w, "  %s Wrote %s\n", check, path)
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  %s\n", tui.HintStyle.Render("Run `dr workload up` to deploy."))
+	fmt.Fprintln(cmd.OutOrStdout(), path)
 
 	return nil
 }
