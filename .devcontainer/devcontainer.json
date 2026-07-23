@@ -1,0 +1,25 @@
+{
+  "name": "DataRobot CLI (Go 1.26)",
+  "image": "mcr.microsoft.com/devcontainers/go:2-1.26-bookworm",
+  "features": {
+    "ghcr.io/eitsupi/devcontainer-features/go-task:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "task.vscode-task"
+      ],
+      "settings": {
+        "go.useLanguageServer": true,
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        }
+      }
+    }
+  },
+  "postCreateCommand": "task bootstrap"
+}
