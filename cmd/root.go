@@ -86,6 +86,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
   dr start             # Create your first AI app (start here!)
+  dr self update       # Update DataRobot CLI to latest version
   dr --help            # Show all available commands
 
 💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
@@ -219,7 +220,7 @@ func init() {
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	// Set custom version template to match our unified format
-	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n")
+	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n\nTo update: dr self update\n")
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
@@ -309,6 +310,7 @@ func init() {
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
 			fmt.Fprintln(cmd.OutOrStdout(), internalVersion.GetAppNameVersionText())
+			fmt.Fprintln(cmd.OutOrStdout(), "\nTo update: dr self update")
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)

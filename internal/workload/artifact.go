@@ -64,6 +64,10 @@ type ContainerGroup struct {
 }
 
 type Container struct {
+	// Name is the container's identifier within its group. Workload runtime
+	// overrides (e.g. resourceAllocation) must reference the container by this
+	// name, so it is parsed for callers that build a runtime spec.
+	Name             string            `json:"name,omitempty"`
 	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
 	// ImageURI is the resolved container image reference. Server-managed:
 	// before a successful build this is the placeholder from create; after
@@ -189,6 +193,28 @@ func GetPrimaryContainerImageURI(artifact Artifact) string {
 	}
 
 	return artifact.Spec.ContainerGroups[0].Containers[0].ImageURI
+}
+
+// PrimaryContainerName returns the name of the artifact's primary container,
+// falling back to the first container, then to "primary". Callers building a
+// workload runtime spec need this because resourceAllocation overrides are keyed
+// by container name and must match a container in the artifact.
+func PrimaryContainerName(artifact Artifact) string {
+	for _, group := range artifact.Spec.ContainerGroups {
+		for _, container := range group.Containers {
+			if container.Primary != nil && *container.Primary && container.Name != "" {
+				return container.Name
+			}
+		}
+	}
+
+	if len(artifact.Spec.ContainerGroups) > 0 &&
+		len(artifact.Spec.ContainerGroups[0].Containers) > 0 &&
+		artifact.Spec.ContainerGroups[0].Containers[0].Name != "" {
+		return artifact.Spec.ContainerGroups[0].Containers[0].Name
+	}
+
+	return "primary"
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {
