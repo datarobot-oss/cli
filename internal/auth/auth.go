@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
@@ -206,8 +207,9 @@ func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, e
 
 	mux := http.NewServeMux()
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
