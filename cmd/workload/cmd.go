@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"github.com/datarobot/cli/cmd/workload/config"
 	"github.com/datarobot/cli/cmd/workload/create"
 	"github.com/datarobot/cli/cmd/workload/del"
 	"github.com/datarobot/cli/cmd/workload/endpoint"
@@ -24,6 +25,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/start"
 	"github.com/datarobot/cli/cmd/workload/status"
 	"github.com/datarobot/cli/cmd/workload/stop"
+	"github.com/datarobot/cli/cmd/workload/up"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -53,6 +55,9 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		start.Cmd(),
 		status.Cmd(),
 		stop.Cmd(),
+		// Porcelain: interactive setup + fused deploy on top of the verbs above.
+		config.Cmd(),
+		up.Cmd(),
 	)
 
 	return cmd

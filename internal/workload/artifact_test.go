@@ -790,3 +790,25 @@ func TestLockArtifact_403AlreadyLockedPropagatesAsHTTPError(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "artifact is locked")
 }
+
+func TestPrimaryContainerName(t *testing.T) {
+	primary := true
+
+	t.Run("returns the name of the primary-flagged container", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Name: "sidecar"}, {Name: "main", Primary: &primary}}},
+		}}}
+		assert.Equal(t, "main", PrimaryContainerName(art))
+	})
+
+	t.Run("falls back to the first container when none is flagged primary", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Name: "only"}}},
+		}}}
+		assert.Equal(t, "only", PrimaryContainerName(art))
+	})
+
+	t.Run("falls back to \"primary\" when the artifact has no named container", func(t *testing.T) {
+		assert.Equal(t, "primary", PrimaryContainerName(Artifact{}))
+	})
+}
