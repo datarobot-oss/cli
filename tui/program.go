@@ -21,7 +21,7 @@ import (
 
 // Run is a wrapper for tea.NewProgram and (p *Program) Run()
 // Disables stderr logging while bubbletea program is running
-// Wraps a model in NewInterruptibleModel
+// Wraps a model in NewInterruptibleModel.
 func Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
 	// Pause stderr logger to prevent breaking of bubbletea program output
 	log.StopStderr()

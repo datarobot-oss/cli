@@ -194,7 +194,7 @@ Examples:
 	return cmd
 }
 
-// completeTaskNames provides shell completion for task names
+// completeTaskNames provides shell completion for task names.
 func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective) {
 	binaryName := "task"
 

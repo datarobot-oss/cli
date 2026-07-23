@@ -187,7 +187,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	return nil
 }
 
-// getRepoURLFromAnswersFile reads the _src_path from a copier answers file
+// getRepoURLFromAnswersFile reads the _src_path from a copier answers file.
 func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
@@ -209,7 +209,7 @@ func getRepoURLFromAnswersFile(yamlFile string) (string, error) {
 	return answers.SrcPath, nil
 }
 
-// TODO: Maybe use `IsValidYAML` from /internal/misc/yaml/validation.go instead or even move this function there
+// TODO: Maybe use `IsValidYAML` from /internal/misc/yaml/validation.go instead or even move this function there.
 func isYamlFile(yamlFile string) bool {
 	info, err := os.Stat(yamlFile)
 

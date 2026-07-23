@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// ExecTestSuite tests plugin execution functions
+// ExecTestSuite tests plugin execution functions.
 type ExecTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -115,7 +115,7 @@ fi
 	s.Equal(1, exitCode)
 }
 
-// TestExecutePluginExitCodes tests various exit codes are properly propagated
+// TestExecutePluginExitCodes tests various exit codes are properly propagated.
 func TestExecutePluginExitCodes(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "plugin-exitcode-test")
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ while true; do sleep 0.1; done
 	}
 }
 
-// TestExecutePluginCustomUserAgent verifies that plugins use custom User-Agent during authentication
+// TestExecutePluginCustomUserAgent verifies that plugins use custom User-Agent during authentication.
 func TestExecutePluginCustomUserAgent(t *testing.T) {
 	var capturedUserAgent string
 

@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	// Key bindings
+	// Key bindings.
 	keyQuit         = "enter"
 	keyInteractive  = "w"
 	keyEdit         = "e"

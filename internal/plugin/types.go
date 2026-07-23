@@ -16,13 +16,13 @@ package plugin
 
 import "sync"
 
-// PluginPrefix is the required prefix for all plugin executables
+// PluginPrefix is the required prefix for all plugin executables.
 const PluginPrefix = "dr-"
 
-// PluginManifestFlag is the command-line flag plugins must implement to output their manifest
+// PluginManifestFlag is the command-line flag plugins must implement to output their manifest.
 const PluginManifestFlag = "--dr-plugin-manifest"
 
-// PluginScripts maps platforms to their script paths within the plugin package
+// PluginScripts maps platforms to their script paths within the plugin package.
 type PluginScripts struct {
 	Posix   string `json:"posix,omitempty"`   // Script for Linux/macOS (e.g., "scripts/plugin.sh")
 	Windows string `json:"windows,omitempty"` // Script for Windows (e.g., "scripts/plugin.ps1")
@@ -44,7 +44,7 @@ type PluginManifest struct {
 	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
 }
 
-// RegistryVersion represents a specific version in the plugin registry
+// RegistryVersion represents a specific version in the plugin registry.
 type RegistryVersion struct {
 	Version     string `json:"version"`
 	URL         string `json:"url"`
@@ -52,7 +52,7 @@ type RegistryVersion struct {
 	ReleaseDate string `json:"releaseDate,omitempty"`
 }
 
-// RegistryPlugin represents a plugin entry in the remote registry
+// RegistryPlugin represents a plugin entry in the remote registry.
 type RegistryPlugin struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
@@ -60,13 +60,13 @@ type RegistryPlugin struct {
 	Versions    []RegistryVersion `json:"versions"`
 }
 
-// PluginRegistry represents the remote plugin registry structure
+// PluginRegistry represents the remote plugin registry structure.
 type PluginRegistry struct {
 	Version string                    `json:"version"`
 	Plugins map[string]RegistryPlugin `json:"plugins"`
 }
 
-// InstalledPlugin represents metadata about an installed remote plugin
+// InstalledPlugin represents metadata about an installed remote plugin.
 type InstalledPlugin struct {
 	Name        string `json:"name"`
 	Version     string `json:"version"`
@@ -74,7 +74,7 @@ type InstalledPlugin struct {
 	InstalledAt string `json:"installedAt"` // RFC3339 timestamp
 }
 
-// DiscoveredPlugin pairs a manifest with its executable path
+// DiscoveredPlugin pairs a manifest with its executable path.
 type DiscoveredPlugin struct {
 	Manifest   PluginManifest
 	Executable string // Full path to executable
@@ -94,7 +94,7 @@ type PluginConflict struct {
 	Path string // executable (or managed plugin dir) that was skipped
 }
 
-// DiscoveredPluginsRegistry holds discovered plugins with lazy initialization
+// DiscoveredPluginsRegistry holds discovered plugins with lazy initialization.
 type DiscoveredPluginsRegistry struct {
 	plugins   []DiscoveredPlugin
 	conflicts []PluginConflict

@@ -66,7 +66,7 @@ type Model struct {
 	BackCmd        tea.Cmd
 }
 
-// Input field with styled frame
+// Input field with styled frame.
 var inputStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
@@ -313,7 +313,7 @@ func (m Model) View() string {
 	return sb.String()
 }
 
-// IsCloning returns whether the repository is currently being cloned
+// IsCloning returns whether the repository is currently being cloned.
 func (m Model) IsCloning() bool {
 	return m.cloning
 }

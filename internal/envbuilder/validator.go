@@ -84,7 +84,7 @@ func (r EnvironmentValidationError) Error() string {
 // The validation process:
 // 1. Determines which sections are active based on requires dependencies
 // 2. Validates all required UserPrompts in active sections
-// 3. Validates core DataRobot variables (DATAROBOT_ENDPOINT, DATAROBOT_API_TOKEN)
+// 3. Validates core DataRobot variables (DATAROBOT_ENDPOINT, DATAROBOT_API_TOKEN).
 func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValidationError {
 	result := EnvironmentValidationError{
 		Results: make([]ValidationResult, 0),

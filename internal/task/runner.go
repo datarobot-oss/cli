@@ -45,7 +45,7 @@ type RunnerOpts struct {
 	Stdin      *os.File
 }
 
-// Runner uses Taskfile to run template tasks
+// Runner uses Taskfile to run template tasks.
 type Runner struct {
 	opts RunnerOpts
 }

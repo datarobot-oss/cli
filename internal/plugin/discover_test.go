@@ -32,20 +32,20 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// Test manifests
+// Test manifests.
 var (
 	validManifest   = `{"name":"test-plugin","version":"1.0.0","description":"Test plugin"}`
 	invalidManifest = `{invalid json`
 )
 
-// createMockPlugin creates a shell script that responds to --dr-plugin-manifest
+// createMockPlugin creates a shell script that responds to --dr-plugin-manifest.
 func createMockPlugin(t *testing.T, dir, name, manifestJSON string) string {
 	t.Helper()
 
 	return writePluginManifestScript(t, dir, name, manifestJSON)
 }
 
-// DiscoverTestSuite tests discovery functions with filesystem fixtures
+// DiscoverTestSuite tests discovery functions with filesystem fixtures.
 type DiscoverTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -225,7 +225,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirCancelledContext() {
 	s.Empty(errs)
 }
 
-// PathDirsTestSuite tests discoverPathDirsParallel
+// PathDirsTestSuite tests discoverPathDirsParallel.
 type PathDirsTestSuite struct {
 	suite.Suite
 	dir1 string
@@ -361,7 +361,7 @@ func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin(
 	s.False(names["slow-plugin"], "slow plugin should be skipped after deadline expires")
 }
 
-// TestGetManifest tests manifest retrieval
+// TestGetManifest tests manifest retrieval.
 type ManifestTestSuite struct {
 	suite.Suite
 	tempDir string

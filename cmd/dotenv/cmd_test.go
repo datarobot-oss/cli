@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setupTestRepo creates a temporary git repository with parakeet.yaml for testing
+// setupTestRepo creates a temporary git repository with parakeet.yaml for testing.
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
 

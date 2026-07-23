@@ -22,7 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// DataRobot brand colors, utilizing the Design System palette
+// DataRobot brand colors, utilizing the Design System palette.
 const (
 	DrPurple      = lipgloss.Color("#7770F9") // purple-60
 	DrPurpleLight = lipgloss.Color("#B4B0FF") // purple-40
@@ -33,7 +33,7 @@ const (
 	DrBlack       = lipgloss.Color("#0B0B0B") // black-90
 )
 
-// Light mode color variants (darker for visibility on light backgrounds)
+// Light mode color variants (darker for visibility on light backgrounds).
 const (
 	DrPurpleDark      = lipgloss.Color("#5500DD") // Darker purple
 	DrPurpleDarkLight = lipgloss.Color("#7755DD") // Darker purple-light
@@ -44,7 +44,7 @@ const (
 	DrGrayDark        = lipgloss.Color("240")     // Dark gray for light backgrounds
 )
 
-// GetAdaptiveColor returns a color that works on both light and dark backgrounds
+// GetAdaptiveColor returns a color that works on both light and dark backgrounds.
 func GetAdaptiveColor(darkColor, lightColor lipgloss.Color) lipgloss.Color {
 	if lipgloss.HasDarkBackground() {
 		return darkColor

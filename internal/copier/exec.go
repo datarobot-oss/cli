@@ -39,7 +39,7 @@ type AddFlags struct {
 	Trust    bool
 }
 
-// Add creates a copier copy command with optional --data arguments
+// Add creates a copier copy command with optional --data arguments.
 func Add(repoURL string, data map[string]interface{}, flags AddFlags) *exec.Cmd {
 	commandParts := []string{"copier", "copy", repoURL, "."}
 
@@ -62,7 +62,7 @@ func Add(repoURL string, data map[string]interface{}, flags AddFlags) *exec.Cmd 
 	return cmd
 }
 
-// ExecAdd executes a copier copy command with optional --data arguments
+// ExecAdd executes a copier copy command with optional --data arguments.
 func ExecAdd(repoURL string, data map[string]interface{}, flags AddFlags) error {
 	if repoURL == "" {
 		return errors.New("Repository URL is missing.")
@@ -81,7 +81,7 @@ type UpdateFlags struct {
 	Trust     bool
 }
 
-// Update creates a copier update command with optional --data arguments
+// Update creates a copier update command with optional --data arguments.
 func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags) *exec.Cmd {
 	copierCommand := "update"
 
@@ -124,7 +124,7 @@ func Update(yamlFile string, data map[string]interface{}, flags UpdateFlags) *ex
 	return cmd
 }
 
-// ExecUpdate executes a copier update command with optional --data arguments
+// ExecUpdate executes a copier update command with optional --data arguments.
 func ExecUpdate(yamlFile string, data map[string]interface{}, flags UpdateFlags) error {
 	if yamlFile == "" {
 		return errors.New("Path to YAML file is missing.")
@@ -134,7 +134,7 @@ func ExecUpdate(yamlFile string, data map[string]interface{}, flags UpdateFlags)
 }
 
 // formatDataValue converts a value to a string suitable for --data arguments
-// This follows copier's type handling: str, int, float, bool, json, yaml
+// This follows copier's type handling: str, int, float, bool, json, yaml.
 func formatDataValue(value interface{}) string {
 	switch v := value.(type) {
 	case string:
@@ -155,7 +155,7 @@ func formatDataValue(value interface{}) string {
 	}
 }
 
-// formatBool formats a boolean value
+// formatBool formats a boolean value.
 func formatBool(v bool) string {
 	if v {
 		return "true"
@@ -164,7 +164,7 @@ func formatBool(v bool) string {
 	return "false"
 }
 
-// formatNumeric formats numeric types using strconv for performance
+// formatNumeric formats numeric types using strconv for performance.
 func formatNumeric(value interface{}) string {
 	switch v := value.(type) {
 	case int:
@@ -188,7 +188,7 @@ func formatNumeric(value interface{}) string {
 }
 
 // formatYAMLList formats a slice as a YAML-style list string
-// e.g., [1, 2, 3] for multiselect choice questions
+// e.g., [1, 2, 3] for multiselect choice questions.
 func formatYAMLList(items []interface{}) string {
 	strItems := make([]string, len(items))
 	for i, item := range items {
@@ -198,7 +198,7 @@ func formatYAMLList(items []interface{}) string {
 	return "[" + strings.Join(strItems, ", ") + "]"
 }
 
-// formatYAMLMap formats a map as a YAML string for complex data types
+// formatYAMLMap formats a map as a YAML string for complex data types.
 func formatYAMLMap(data map[string]interface{}) string {
 	parts := make([]string, 0, len(data))
 	for k, v := range data {

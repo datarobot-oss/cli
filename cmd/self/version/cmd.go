@@ -51,7 +51,7 @@ func (vf *Format) Set(s string) error {
 		s, FormatJSON, FormatText)
 }
 
-// Type is used by the shell completion generator
+// Type is used by the shell completion generator.
 func (vf *Format) Type() string {
 	return "version.Format"
 }

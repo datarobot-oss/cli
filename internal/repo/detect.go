@@ -62,7 +62,7 @@ func FindRepoRoot() (string, error) {
 	}
 }
 
-// detectTemplate checks if .datarobot/answers or .datarobot/cli exists in dir directory
+// detectTemplate checks if .datarobot/answers or .datarobot/cli exists in dir directory.
 func detectTemplate(dir string) bool {
 	answersDirPresent := fsutil.DirExists(filepath.Join(dir, DataRobotTemplateDetectAnswersPath))
 	if answersDirPresent {

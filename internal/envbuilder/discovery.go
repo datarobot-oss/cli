@@ -24,7 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// depth gets our current directory depth by file path
+// depth gets our current directory depth by file path.
 func depth(path string) int {
 	// Windows uses backslashes, so we normalize to forward slashes
 	normalized := filepath.ToSlash(path)
@@ -66,7 +66,7 @@ func shouldSkipDir(name string, currentDepth, maxDepth int) bool {
 }
 
 // findComponents looks for the *.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given .datarobot directory,
-// and returns discovered components
+// and returns discovered components.
 func findComponents(root string, maxDepth int) ([]string, error) {
 	var includes []string
 

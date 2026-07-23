@@ -452,7 +452,7 @@ func TestUpdateTrustFlag(t *testing.T) {
 	}
 }
 
-// containsArg checks if a string exists in a slice of strings
+// containsArg checks if a string exists in a slice of strings.
 func containsArg(args []string, target string) bool {
 	for _, arg := range args {
 		if arg == target {

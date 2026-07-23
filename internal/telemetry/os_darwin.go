@@ -20,7 +20,7 @@ import "syscall"
 // Returns an empty string if detection fails.
 // example:
 // ╰─❯ sysctl kern.osproductversion
-// kern.osproductversion: 15.7.5
+// kern.osproductversion: 15.7.5.
 func osVersion() string {
 	// Note: runtime doesn't provide OSVERSION.
 	// Note: Originally used "sw_vers -productVersion"

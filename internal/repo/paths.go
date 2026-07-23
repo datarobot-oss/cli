@@ -15,12 +15,12 @@
 package repo
 
 const (
-	// DataRobotTemplateDetectAnswersPath is the path to the answers folder relative to CWD
+	// DataRobotTemplateDetectAnswersPath is the path to the answers folder relative to CWD.
 	DataRobotTemplateDetectAnswersPath = ".datarobot/answers"
-	// DataRobotTemplateDetectCliPath path to the CLI config folder relative to CWD
+	// DataRobotTemplateDetectCliPath path to the CLI config folder relative to CWD.
 	DataRobotTemplateDetectCliPath = ".datarobot/cli"
-	// QuickstartScriptPath is the path to the quickstart scripts directory relative to CWD
+	// QuickstartScriptPath is the path to the quickstart scripts directory relative to CWD.
 	QuickstartScriptPath = ".datarobot/cli/bin"
-	// LocalPluginDir is the project-local plugin directory relative to CWD
+	// LocalPluginDir is the project-local plugin directory relative to CWD.
 	LocalPluginDir = ".datarobot/cli/bin"
 )

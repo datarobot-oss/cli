@@ -49,7 +49,7 @@ func init() {
 	telemetry.Track(Cmd)
 }
 
-// RunTea starts the template setup TUI, optionally from the start command
+// RunTea starts the template setup TUI, optionally from the start command.
 func RunTea(ctx context.Context, fromStartCommand bool) error {
 	m := NewModel(fromStartCommand)
 

@@ -124,7 +124,7 @@ func templateCloned() tea.Msg   { return templateClonedMsg{} }
 func dotenvUpdated() tea.Msg    { return dotenvUpdatedMsg{} }
 func exit() tea.Msg             { return exitMsg{} }
 
-// matchTemplateByGitRemote attempts to match a template from the list based on the current git remote URL
+// matchTemplateByGitRemote attempts to match a template from the list based on the current git remote URL.
 func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template, bool) {
 	md := exec.Command("git", "config", "--get", "remote.origin.url")
 
@@ -160,7 +160,7 @@ func matchTemplateByGitRemote(templatesList *drapi.TemplateList) (drapi.Template
 }
 
 // handleExistingRepo handles the case where we're already in a DataRobot repo
-// It checks if .env exists - if not, we need to run dotenv setup
+// It checks if .env exists - if not, we need to run dotenv setup.
 func handleExistingRepo(repoRoot string) tea.Msg {
 	log.Debug("Already in a DataRobot repo at: " + repoRoot)
 

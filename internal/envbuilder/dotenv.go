@@ -80,7 +80,7 @@ type (
 // help comments for prompt-backed variables are split from user-provided comments and discarded
 // they are added later from UserPrompt struct value
 //
-// returns slice of chunks of dotenv file with their position
+// returns slice of chunks of dotenv file with their position.
 func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //nolint: cyclop
 	result := make(DotenvChunks, 0)
 
@@ -216,7 +216,7 @@ func mergedDotenvChunks(prompts []UserPrompt, contents string) DotenvChunks { //
 	return result
 }
 
-// Sort sorts by chunk position in dotenv file
+// Sort sorts by chunk position in dotenv file.
 func (ch DotenvChunks) Sort() DotenvChunks {
 	slices.SortStableFunc(ch, func(a, b Chunk) int {
 		// If both are prompt chunks sort by position in prompts array
