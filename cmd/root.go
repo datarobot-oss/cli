@@ -312,15 +312,20 @@ func init() {
 		} else if showVersion {
 			// Route through self version with explicit --output-format text
 			versionCmd := selfversion.Cmd()
+			// Suppress automatic error/usage output from cobra to prevent double-printing.
+			// Error handling is done explicitly below.
+			versionCmd.SilenceErrors = true
+			versionCmd.SilenceUsage = true
 			versionCmd.SetArgs([]string{"--output-format", "text"})
 			versionCmd.SetOut(cmd.OutOrStdout())
 			versionCmd.SetErr(cmd.ErrOrStderr())
 
 			if err := versionCmd.Execute(); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			} else {
+				// Only print the update hint on success
+				fmt.Fprintln(cmd.OutOrStdout(), "\nTo update: dr self update")
 			}
-
-			fmt.Fprintln(cmd.OutOrStdout(), "\nTo update: dr self update")
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)
