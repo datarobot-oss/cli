@@ -18,60 +18,35 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	internalVersion "github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
-
-type Format string
-
-var _ pflag.Value = (*Format)(nil)
-
-const (
-	FormatJSON Format = "json"
-	FormatText Format = "text"
-)
-
-func (vf *Format) String() string {
-	if vf == nil {
-		return ""
-	}
-
-	return string(*vf)
-}
-
-func (vf *Format) Set(s string) error {
-	switch s {
-	case string(FormatJSON), string(FormatText):
-		*vf = Format(s)
-		return nil
-	}
-
-	return fmt.Errorf("Invalid format %q (must be %q or %q).",
-		s, FormatJSON, FormatText)
-}
-
-// Type is used by the shell completion generator
-func (vf *Format) Type() string {
-	return "version.Format"
-}
 
 type versionOptions struct {
-	format Format
-	short  bool
+	outputFormat outputformat.OutputFormat
+	legacyFormat outputformat.OutputFormat
+	short        bool
 }
 
 func Cmd() *cobra.Command {
 	var options versionOptions
 
-	options.format = FormatText
+	options.outputFormat = outputformat.OutputFormatText
 
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "📋 Show " + internalVersion.AppName + " version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			info, err := getVersion(options)
+			format := outputformat.GetFormat(cmd)
+
+			// Backward compat: --format takes precedence if explicitly set
+			if legacyFlag := cmd.Flags().Lookup("format"); legacyFlag != nil && legacyFlag.Changed {
+				format = options.legacyFormat
+			}
+
+			info, err := getVersion(format, options.short)
 			if err != nil {
 				return err
 			}
@@ -83,27 +58,39 @@ func Cmd() *cobra.Command {
 	}
 
 	cmd.Flags().VarP(
-		&options.format,
-		"format",
-		"f",
-		fmt.Sprintf("Output format (options: %s, %s)", FormatJSON, FormatText),
+		&options.outputFormat,
+		"output-format",
+		"",
+		fmt.Sprintf("Output format (%s, %s)", outputformat.OutputFormatJSON, outputformat.OutputFormatText),
 	)
 
-	cmd.Flags().BoolVarP(&options.short, "short", "s", false, "Short format")
+	// Deprecated: use --output-format instead. Kept for backward compat with smoke test scripts.
+	// The -o shorthand is retained here for backwards compatibility with existing scripts.
+	cmd.Flags().VarP(
+		&options.legacyFormat,
+		"format",
+		"o",
+		fmt.Sprintf("Output format (deprecated, use --output-format) (%s, %s)", outputformat.OutputFormatJSON, outputformat.OutputFormatText),
+	)
 
-	_ = cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{string(FormatJSON), string(FormatText)}, cobra.ShellCompDirectiveNoFileComp
+	_ = cmd.Flags().MarkHidden("format")
+	_ = cmd.Flags().MarkDeprecated("format", "use --output-format instead")
+
+	cmd.Flags().BoolVarP(&options.short, "short", "s", false, "Print just the version number (text format only)")
+
+	_ = cmd.RegisterFlagCompletionFunc("output-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{string(outputformat.OutputFormatJSON), string(outputformat.OutputFormatText)}, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
 }
 
-func getVersion(opts versionOptions) (string, error) {
-	if opts.short {
+func getVersion(format outputformat.OutputFormat, short bool) (string, error) {
+	if short && format == outputformat.OutputFormatText {
 		return internalVersion.Version, nil
 	}
 
-	if opts.format == FormatJSON {
+	if format == outputformat.OutputFormatJSON {
 		b, err := json.Marshal(internalVersion.Info)
 		if err != nil {
 			return "", fmt.Errorf("Failed to marshal version info to JSON: %w", err)

@@ -91,6 +91,22 @@ if format == outputformat.OutputFormatJSON {
 
 The envelope format is `{"<key>": <data>}`, which ensures output is always a JSON object (never a bare array). This makes the output forward-compatible for adding metadata, pagination, or warnings without breaking callers.
 
+### JSON output purity
+
+When the effective format is JSON, **stdout must contain only valid JSON**. Anything that would break `dr <cmd> --output-format json | jq .` (or `... 2>&1 | jq .`) is a bug.
+
+All non-JSON diagnostics belong on **stderr**, never stdout:
+
+- Cobra deprecation warnings (e.g. from `MarkDeprecated` / the legacy `-o`/`--format` shorthand)
+- Usage/help printed on error
+- Log lines, warnings, progress messages, update hints
+
+Concretely:
+
+- Write JSON via `fmt.Fprintln(cmd.OutOrStdout(), payload)` or `outputformat.PrintJSONEnvelope(os.Stdout, ...)` — never mix in non-JSON `fmt.Fprintln(cmd.OutOrStdout(), ...)` calls on the JSON path.
+- Return errors from `RunE` so cobra routes them to stderr; do not print errors to stdout.
+- If you need to emit a deprecation/notice alongside JSON output, write it to `cmd.ErrOrStderr()`.
+
 ## Universal flags (forwarded to plugins)
 
 Some root flags must be forwarded to plugin subprocesses as `DATAROBOT_CLI_*` environment variables so plugins can honour them (e.g. `--debug` → `DATAROBOT_CLI_DEBUG=1`). These are called **universal flags**.
