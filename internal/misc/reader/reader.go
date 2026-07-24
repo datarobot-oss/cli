@@ -242,7 +242,6 @@ func echoByte(b byte) {
 func AskYesNo() bool {
 	line, err := ReadString()
 	if err != nil {
-		fmt.Println("err", err)
 		return false
 	}
 
