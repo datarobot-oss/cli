@@ -106,7 +106,7 @@ func parentProcessNameWindows(ppid int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
+	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}
@@ -147,7 +147,7 @@ func parentProcessName() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}
