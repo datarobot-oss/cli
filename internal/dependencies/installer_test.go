@@ -29,7 +29,7 @@ import (
 )
 
 // errWriter is an io.Writer that always returns an error.
-// It triggers the non-ExitError path in ExecuteShLine by failing the
+// It triggers the non-ExitError path in ExecutePlatformCommand by failing the
 // stdout/stderr copy goroutine that exec.Cmd runs internally.
 type errWriter struct{}
 
@@ -37,29 +37,29 @@ func (errWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("write failed")
 }
 
-func TestExecuteShLine_Success(t *testing.T) {
+func TestExecutePlatformCommand_Success(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("echo hello", &buf)
+	code, err := ExecutePlatformCommand("echo hello", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, buf.String(), "hello")
 }
 
-func TestExecuteShLine_NonZeroExitCode(t *testing.T) {
+func TestExecutePlatformCommand_NonZeroExitCode(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("exit 42", &buf)
+	code, err := ExecutePlatformCommand("exit 42", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 42, code)
 }
 
-func TestExecuteShLine_MultiLineOutput(t *testing.T) {
+func TestExecutePlatformCommand_MultiLineOutput(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("echo line1; echo line2; echo line3", &buf)
+	code, err := ExecutePlatformCommand("echo line1; echo line2; echo line3", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
@@ -72,58 +72,58 @@ func TestExecuteShLine_MultiLineOutput(t *testing.T) {
 	assert.Equal(t, 3, strings.Count(output, "\n"))
 }
 
-func TestExecuteShLine_PipeCommand(t *testing.T) {
+func TestExecutePlatformCommand_PipeCommand(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("echo piped_value | cat", &buf)
+	code, err := ExecutePlatformCommand("echo piped_value | cat", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, buf.String(), "piped_value")
 }
 
-func TestExecuteShLine_StderrCaptured(t *testing.T) {
+func TestExecutePlatformCommand_StderrCaptured(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("echo error_output >&2", &buf)
+	code, err := ExecutePlatformCommand("echo error_output >&2", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.Contains(t, buf.String(), "error_output")
 }
 
-func TestExecuteShLine_CommandNotFound(t *testing.T) {
+func TestExecutePlatformCommand_CommandNotFound(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecuteShLine("nonexistent_command_dr_cli_test_xyz", &buf)
+	code, err := ExecutePlatformCommand("nonexistent_command_dr_cli_test_xyz", &buf)
 
 	require.NoError(t, err)
 	assert.NotEqual(t, 0, code)
 }
 
-func TestExecuteShLine_OutputBeforeFailure(t *testing.T) {
+func TestExecutePlatformCommand_OutputBeforeFailure(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Verifies output is captured even when the command exits non-zero.
-	code, err := ExecuteShLine("echo before_fail; exit 2", &buf)
+	code, err := ExecutePlatformCommand("echo before_fail; exit 2", &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, buf.String(), "before_fail")
 }
 
-func TestExecuteShLine_WriterError(t *testing.T) {
+func TestExecutePlatformCommand_WriterError(t *testing.T) {
 	// errWriter fails on the first Write call, which causes the exec copy
 	// goroutine to error. cmd.Wait() surfaces that as a non-ExitError, so
-	// ExecuteShLine returns (1, err) with a non-nil error.
-	code, err := ExecuteShLine("echo hello", errWriter{})
+	// ExecutePlatformCommand returns (1, err) with a non-nil error.
+	code, err := ExecutePlatformCommand("echo hello", errWriter{})
 
 	assert.Equal(t, 1, code)
 	assert.Error(t, err)
 }
 
-func TestExecuteShLine_WriterErrorPreservesMessage(t *testing.T) {
-	code, err := ExecuteShLine("echo hello", errWriter{})
+func TestExecutePlatformCommand_WriterErrorPreservesMessage(t *testing.T) {
+	code, err := ExecutePlatformCommand("echo hello", errWriter{})
 
 	assert.Equal(t, 1, code)
 	require.Error(t, err)
