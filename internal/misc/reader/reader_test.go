@@ -16,7 +16,6 @@ package reader
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -63,17 +62,15 @@ func TestReadLine_OnlyFirstLineConsumed(t *testing.T) {
 func TestReadLine_EOFWithoutNewline(t *testing.T) {
 	line, err := readLine(bufio.NewReader(strings.NewReader("no newline")))
 
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, io.EOF))
+	require.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, "no newline", line)
 }
 
 func TestReadLine_EmptyInput(t *testing.T) {
 	line, err := readLine(bufio.NewReader(strings.NewReader("")))
 
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, io.EOF))
-	assert.Equal(t, "", line)
+	require.ErrorIs(t, err, io.EOF)
+	assert.Empty(t, line)
 }
 
 func TestIsNonInteractive(t *testing.T) {

@@ -62,6 +62,16 @@ func ReadString() (string, error) {
 	return str, err
 }
 
+const (
+	ctrlC     = 0x03 // ASCII ETX, sent by Ctrl+C
+	backspace = '\b'
+	del       = 0x7f // ASCII DEL, sent by Backspace on some terminals; also the exclusive upper bound of printable ASCII
+
+	printableASCIIMin = 0x20 // ' ', the lowest printable ASCII byte
+
+	eraseSequence = "\b \b" // backspace, overwrite with space, backspace again
+)
+
 // readLine reads bytes until '\n' or '\r', whichever comes first, without
 // looking ahead for a paired '\r\n'. That lookahead would block: with
 // ENABLE_LINE_INPUT off, Windows' raw console mode delivers a bare '\r' for
@@ -93,8 +103,7 @@ func readLine(r *bufio.Reader) (string, error) {
 		// implement its own Cancel()), which per Microsoft's docs means
 		// "CTRL+C is reported as keyboard input rather than as a signal" —
 		// so this is the only place Ctrl+C is ever observable on Windows.
-		if b == 0x03 {
-			fmt.Println("ReadByte 0x03", err)
+		if b == ctrlC {
 			return sb.String(), cancelreader.ErrCanceled
 		}
 
@@ -106,11 +115,9 @@ func readLine(r *bufio.Reader) (string, error) {
 			return sb.String(), nil
 		}
 
-		if echo && (b == '\b' || b == 0x7f) {
-			if s := sb.String(); s != "" {
-				sb.Reset()
-				sb.WriteString(s[:len(s)-1])
-				fmt.Print("\b \b")
+		if isBackspace(b) {
+			if echo {
+				eraseLastByte(&sb)
 			}
 
 			continue
@@ -118,9 +125,34 @@ func readLine(r *bufio.Reader) (string, error) {
 
 		sb.WriteByte(b)
 
-		if echo && b >= 0x20 && b < 0x7f {
-			fmt.Printf("%c", b)
+		if echo {
+			echoByte(b)
 		}
+	}
+}
+
+// isBackspace reports whether b is a backspace or DEL byte.
+func isBackspace(b byte) bool {
+	return b == backspace || b == del
+}
+
+// eraseLastByte removes the last byte from sb, if any, and erases its
+// on-screen representation via the standard backspace-space-backspace trick.
+func eraseLastByte(sb *strings.Builder) {
+	s := sb.String()
+	if s == "" {
+		return
+	}
+
+	sb.Reset()
+	sb.WriteString(s[:len(s)-1])
+	fmt.Print(eraseSequence)
+}
+
+// echoByte prints b if it falls in the printable ASCII range.
+func echoByte(b byte) {
+	if b >= printableASCIIMin && b < del {
+		fmt.Printf("%c", b)
 	}
 }
 
