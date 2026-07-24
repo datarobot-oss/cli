@@ -214,7 +214,7 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 
 	for i, dr := range dirResults {
 		for _, e := range dr.errs {
-			log.Debug("Plugin discovery error", "dir", pathDirs[i], "error", e)
+			log.Debug("Plugin discovery error", "dir", pathDirs[i], "error", e) //nolint:gosec // dirResults has len(pathDirs) entries
 		}
 
 		conflicts = append(conflicts, dr.conflicts...)
