@@ -37,7 +37,7 @@ func warnIfExecutionPolicyRestricted(shellExe string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, shellExe, "-Command", "Get-ExecutionPolicy").Output()
+	out, err := exec.CommandContext(ctx, shellExe, "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy").Output()
 	if err != nil {
 		return
 	}
