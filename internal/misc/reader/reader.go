@@ -47,8 +47,17 @@ func ReadString() (string, error) {
 	defer signal.Stop(cancelChan)
 
 	go func() {
-		<-cancelChan
-		cr.Cancel()
+		// ok is false only when cancelChan was closed (normal completion)
+		// with nothing pending — not from a genuine signal. Without this
+		// check, every successful read would still call cr.Cancel() here
+		// (close() unblocks a pending receive same as a real send would),
+		// racing the deferred cr.Close() above: cancelreader has no
+		// synchronization between Cancel() and Close(), and on Windows
+		// Close() skips console-mode restoration entirely if the race makes
+		// CloseHandle(cancelEvent) fail — the exact bug this file fixes.
+		if _, ok := <-cancelChan; ok {
+			cr.Cancel()
+		}
 	}()
 
 	reader := bufio.NewReader(cr)
