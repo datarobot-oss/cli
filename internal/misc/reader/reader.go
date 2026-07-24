@@ -55,7 +55,6 @@ func ReadString() (string, error) {
 
 	str, err := readLine(reader)
 	if err != nil {
-		fmt.Println("readLine err => : ", err)
 		fmt.Println()
 	}
 
