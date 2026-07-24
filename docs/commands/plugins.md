@@ -183,7 +183,7 @@ Either way, the check is not repeated until the configured cooldown interval has
 ### Configuring the update check
 
 ```bash
-# Change the cooldown interval (default 24h)
+# Change the cooldown interval (default 1h)
 # Accepts Go duration strings: 30m, 6h, 48h, 0s
 dr --plugin-update-check-interval 6h assist
 
