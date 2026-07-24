@@ -38,7 +38,7 @@ type ParsedYaml map[string][]UserPrompt
 // - Root must be a mapping (sections)
 // - Each section value must be a sequence of mappings (prompts)
 // - Each prompt must have at least one of: env or key
-// - Each prompt must have a help field
+// - Each prompt must have a help field.
 type PromptFileSchema struct{}
 
 // Validate checks if the provided YAML node conforms to the prompt file schema.

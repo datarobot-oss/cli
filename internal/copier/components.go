@@ -18,7 +18,7 @@ import (
 	"embed"
 )
 
-// TODO: I don't know what we should add here
+// TODO: I don't know what we should add here.
 type Details struct {
 	readMeFile     string
 	ReadMeContents string
@@ -52,7 +52,7 @@ func init() {
 }
 
 // Map the repo listed in an "answer file" to relevant info for component
-// To Note: Not all of the README contents have been added
+// To Note: Not all of the README contents have been added.
 var (
 	ComponentDetailsByURL       = map[string]Details{}
 	ComponentDetailsByShortName = map[string]Details{}

@@ -92,7 +92,7 @@ func FetchRegistryWithContext(ctx context.Context, registryURL string) (*PluginR
 
 // ResolveVersion finds the best matching version for a constraint
 // Supports full semver constraint syntax including: exact (1.2.3), caret (^1.2.3), tilde (~1.2.3),
-// ranges (>=1.0.0), comma-separated constraints (>=1.0.0, <2.0.0), and latest
+// ranges (>=1.0.0), comma-separated constraints (>=1.0.0, <2.0.0), and latest.
 func ResolveVersion(versions []RegistryVersion, constraint string) (*RegistryVersion, error) {
 	if len(versions) == 0 {
 		return nil, errors.New("No versions available")
@@ -276,7 +276,7 @@ func readNameFromArchive(archivePath string) (string, error) {
 	return manifest.Name, nil
 }
 
-// InstallPlugin downloads and installs a plugin
+// InstallPlugin downloads and installs a plugin.
 func InstallPlugin(pluginEntry RegistryPlugin, version RegistryVersion, baseURL string) error {
 	pluginDir, err := preparePluginDirectory(pluginEntry.Name)
 	if err != nil {
@@ -384,7 +384,7 @@ func findPluginDir(name string) (string, error) {
 	return "", fmt.Errorf("Plugin %s is not installed", name)
 }
 
-// UninstallPlugin removes an installed plugin
+// UninstallPlugin removes an installed plugin.
 func UninstallPlugin(name string) error {
 	pluginDir, err := findPluginDir(name)
 	if err != nil {
@@ -495,7 +495,7 @@ func downloadFile(url, baseURL string) (string, error) {
 	return downloadHTTP(finalURL)
 }
 
-// copyFileURL handles file:// URLs by copying to a temp file
+// copyFileURL handles file:// URLs by copying to a temp file.
 func copyFileURL(url string) (string, error) {
 	srcPath := strings.TrimPrefix(url, "file://")
 
@@ -522,7 +522,7 @@ func copyFileURL(url string) (string, error) {
 	return tmpFile.Name(), nil
 }
 
-// downloadHTTP downloads a file via HTTP to a temp file
+// downloadHTTP downloads a file via HTTP to a temp file.
 func downloadHTTP(finalURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", finalURL)
 
@@ -570,7 +570,7 @@ func downloadHTTP(finalURL string) (string, error) {
 	return tmpFile.Name(), nil
 }
 
-// verifyChecksum verifies the SHA256 checksum of a file
+// verifyChecksum verifies the SHA256 checksum of a file.
 func verifyChecksum(filePath, expected string) error {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -594,7 +594,7 @@ func verifyChecksum(filePath, expected string) error {
 }
 
 // extractTarXz extracts a .tar.xz archive to the destination directory
-// Uses secure extraction library to prevent path traversal, zip bombs, and symlink attacks
+// Uses secure extraction library to prevent path traversal, zip bombs, and symlink attacks.
 func extractTarXz(archivePath, destDir string) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -611,7 +611,7 @@ func extractTarXz(archivePath, destDir string) error {
 	return extract.Tar(context.Background(), xzReader, destDir, nil)
 }
 
-// saveInstalledMetadata saves metadata about the installed plugin
+// saveInstalledMetadata saves metadata about the installed plugin.
 func saveInstalledMetadata(pluginDir string, entry RegistryPlugin, version RegistryVersion) error {
 	meta := InstalledPlugin{
 		Name:        entry.Name,
@@ -629,7 +629,7 @@ func saveInstalledMetadata(pluginDir string, entry RegistryPlugin, version Regis
 }
 
 // BackupPlugin creates a backup of an installed plugin in a temporary directory
-// Returns the path to the backup directory
+// Returns the path to the backup directory.
 func BackupPlugin(name string) (string, error) {
 	pluginDir, err := findPluginDir(name)
 	if err != nil {
@@ -650,7 +650,7 @@ func BackupPlugin(name string) (string, error) {
 	return backupDir, nil
 }
 
-// RestorePlugin restores a plugin from a backup directory
+// RestorePlugin restores a plugin from a backup directory.
 func RestorePlugin(name, backupPath string) error {
 	managedDir, err := ManagedPluginsDir()
 	if err != nil {
@@ -670,14 +670,14 @@ func RestorePlugin(name, backupPath string) error {
 	return nil
 }
 
-// CleanupBackup removes a backup directory
+// CleanupBackup removes a backup directory.
 func CleanupBackup(backupPath string) {
 	if backupPath != "" {
 		os.RemoveAll(backupPath)
 	}
 }
 
-// ValidatePlugin validates that a plugin installation is working correctly
+// ValidatePlugin validates that a plugin installation is working correctly.
 func ValidatePlugin(name string) error {
 	pluginDir, err := findPluginDir(name)
 	if err != nil {
@@ -712,7 +712,7 @@ func ValidatePlugin(name string) error {
 	return nil
 }
 
-// copyDir recursively copies a directory
+// copyDir recursively copies a directory.
 func copyDir(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -741,7 +741,7 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
-// copyFile copies a single file
+// copyFile copies a single file.
 func copyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {

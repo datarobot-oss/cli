@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLivePluginRegistrySchema validates the actual docs/plugins/index.json file
+// TestLivePluginRegistrySchema validates the actual docs/plugins/index.json file.
 func TestLivePluginRegistrySchema(t *testing.T) {
 	// Find the project root by looking for go.mod
 	projectRoot, err := findProjectRoot()
@@ -87,7 +87,7 @@ func TestLivePluginRegistrySchema(t *testing.T) {
 	}
 }
 
-// TestPluginManifestSchema validates plugin manifest JSON schema
+// TestPluginManifestSchema validates plugin manifest JSON schema.
 func TestPluginManifestSchema(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -184,7 +184,7 @@ func TestPluginManifestSchema(t *testing.T) {
 	}
 }
 
-// TestPluginRegistryParsing validates plugin registry JSON parsing
+// TestPluginRegistryParsing validates plugin registry JSON parsing.
 func TestPluginRegistryParsing(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -265,7 +265,7 @@ func TestPluginRegistryParsing(t *testing.T) {
 	}
 }
 
-// TestInstalledPluginMetadata validates installed plugin metadata JSON
+// TestInstalledPluginMetadata validates installed plugin metadata JSON.
 func TestInstalledPluginMetadata(t *testing.T) {
 	meta := InstalledPlugin{
 		Name:        "test",
@@ -288,7 +288,7 @@ func TestInstalledPluginMetadata(t *testing.T) {
 	assert.Equal(t, meta.InstalledAt, decoded.InstalledAt)
 }
 
-// TestResolveVersion tests semver constraint resolution
+// TestResolveVersion tests semver constraint resolution.
 func TestResolveVersion(t *testing.T) {
 	versions := []RegistryVersion{
 		{Version: "2.1.0", URL: "url-2.1.0"},
@@ -338,7 +338,7 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-// TestGetInstalledPlugins tests multi-directory discovery behaviour
+// TestGetInstalledPlugins tests multi-directory discovery behaviour.
 func TestGetInstalledPlugins(t *testing.T) {
 	// writeMetadata is a small helper that creates a plugin directory with a
 	// .installed.json so loadPluginMetadata can find it.
@@ -452,14 +452,14 @@ func TestGetInstalledPlugins(t *testing.T) {
 	})
 }
 
-// TestResolveVersionEmpty tests error handling for empty version list
+// TestResolveVersionEmpty tests error handling for empty version list.
 func TestResolveVersionEmpty(t *testing.T) {
 	_, err := ResolveVersion([]RegistryVersion{}, "latest")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "No versions available")
 }
 
-// Helper function to find project root
+// Helper function to find project root.
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

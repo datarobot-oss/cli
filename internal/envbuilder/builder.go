@@ -152,7 +152,7 @@ func (up UserPrompt) SkipSaving() bool {
 	return !up.Active && up.Value == up.Default
 }
 
-// HasEnvValue returns true if prompt has effective value when written to .env file
+// HasEnvValue returns true if prompt has effective value when written to .env file.
 func (up UserPrompt) HasEnvValue() bool {
 	return !up.Commented && up.Env != "" && up.Active
 }

@@ -13,7 +13,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    # - godot # disabled until we can resolve lints
+    - godot
     # - godox # disabled until we can resolve lints
     # - gosec # disabled until we can resolve lints
     - loggercheck

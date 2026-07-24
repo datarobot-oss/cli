@@ -72,17 +72,17 @@ var (
 )
 
 // taskfileData is the structure of the .taskfile-data.yaml configuration file
-// that allows template authors to provide additional data for template rendering
+// that allows template authors to provide additional data for template rendering.
 type taskfileData struct {
 	Ports []devPort `yaml:"ports"`
 }
 
-// taskfileMetadata is used to parse just the dotenv directive from a Taskfile
+// taskfileMetadata is used to parse just the dotenv directive from a Taskfile.
 type taskfileMetadata struct {
 	Dotenv interface{} `yaml:"dotenv"`
 }
 
-// depth gets our current directory depth by file path
+// depth gets our current directory depth by file path.
 func depth(path string) int {
 	// Windows uses backslashes, so we normalize to forward slashes
 	normalized := filepath.ToSlash(path)
@@ -168,7 +168,7 @@ func FormatDiscoveryError(err error) error {
 }
 
 // findComponents looks for the {T,t}askfile.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given root directory,
-// and returns discovered components
+// and returns discovered components.
 func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclude, error) {
 	var includes []componentInclude
 
@@ -227,7 +227,7 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 	return includes, err
 }
 
-// checkForDotenvConflicts checks if any of the discovered Taskfiles already have a dotenv directive
+// checkForDotenvConflicts checks if any of the discovered Taskfiles already have a dotenv directive.
 func (d *Discovery) checkForDotenvConflicts(root string, includes []componentInclude) error {
 	for _, include := range includes {
 		taskfilePath := filepath.Join(root, include.Taskfile)
@@ -246,7 +246,7 @@ func (d *Discovery) checkForDotenvConflicts(root string, includes []componentInc
 	return nil
 }
 
-// taskfileHasDotenv checks if a Taskfile has a dotenv directive
+// taskfileHasDotenv checks if a Taskfile has a dotenv directive.
 func (d *Discovery) taskfileHasDotenv(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -322,7 +322,7 @@ func (d *Discovery) buildComposeData(root string, includes []componentInclude) (
 	return data, nil
 }
 
-// aggregateComponentTasks discovers and aggregates tasks from a single component
+// aggregateComponentTasks discovers and aggregates tasks from a single component.
 func (d *Discovery) aggregateComponentTasks(data *taskfileTmplData, root string, include componentInclude) {
 	componentPath := filepath.Join(root, include.Dir)
 	runner := NewTaskRunner(RunnerOpts{
@@ -342,7 +342,7 @@ func (d *Discovery) aggregateComponentTasks(data *taskfileTmplData, root string,
 	}
 }
 
-// checkAndAddTask checks if a task matches known task types and adds it to the appropriate list
+// checkAndAddTask checks if a task matches known task types and adds it to the appropriate list.
 func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, componentName string) {
 	// Map task names/aliases to their component lists and flags
 	taskTypeMap := map[string]struct {
@@ -375,7 +375,7 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 }
 
 // addComponentOnce adds a component to the list if it's not already present.
-// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate)
+// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate).
 func addComponentOnce(components *[]string, hasFlag *bool, componentName string) {
 	if components == nil {
 		// Just set the flag without adding to components
@@ -393,7 +393,7 @@ func addComponentOnce(components *[]string, hasFlag *bool, componentName string)
 	*hasFlag = true
 }
 
-// loadDevPorts reads port configuration from .taskfile-data.yaml if it exists
+// loadDevPorts reads port configuration from .taskfile-data.yaml if it exists.
 func (d *Discovery) loadDevPorts(root string) []devPort {
 	dataFile := filepath.Join(root, ".taskfile-data.yaml")
 

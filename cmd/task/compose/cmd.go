@@ -127,7 +127,7 @@ func validateTemplatePath(path string) (string, error) {
 }
 
 // detectExistingTaskfile checks for existing Taskfile.yaml or Taskfile.yml
-// and returns the name of the existing one, or defaults to Taskfile.yaml
+// and returns the name of the existing one, or defaults to Taskfile.yaml.
 func detectExistingTaskfile() (inUse, notInUse string) {
 	// Check for Taskfile.yaml first (more common)
 	if _, err := os.Stat(taskfileLong); err == nil {
@@ -143,7 +143,7 @@ func detectExistingTaskfile() (inUse, notInUse string) {
 	return taskfileLong, taskfileShort
 }
 
-// isIgnored checks if a pattern is already in .gitignore content
+// isIgnored checks if a pattern is already in .gitignore content.
 func isIgnored(content, pattern string) bool {
 	// Normalize content to have trailing newline for consistent checking
 	if !strings.HasSuffix(content, "\n") {

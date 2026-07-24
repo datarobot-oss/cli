@@ -82,7 +82,7 @@ func GetUserAgentHeader() string {
 }
 
 // apiConsumerTrace holds the dot-notation command path set at startup.
-// Example: "datarobot.cli.templates.setup"
+// Example: "datarobot.cli.templates.setup".
 var apiConsumerTrace string
 
 // SetAPIConsumerTrace stores the dot-notation trace value for the running command.
@@ -137,7 +137,7 @@ func RedactedReqInfo(req *http.Request) string {
 }
 
 // TODO: I believe we want to delete this function as there is SetURLToConfig function
-// But it is used in cmd/templates/setup/model.go
+// But it is used in cmd/templates/setup/model.go.
 func SaveURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {

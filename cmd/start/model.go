@@ -37,7 +37,7 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// step represents a single step in the quickstart process
+// step represents a single step in the quickstart process.
 type step struct {
 	// description is a brief summary of the step
 	description string
@@ -93,7 +93,7 @@ type depsInstallCompleteMsg struct {
 	installed []string
 }
 
-// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails
+// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails.
 type telemetryCapture struct {
 	validationViolations []string
 	missingMsgs          []string
@@ -709,7 +709,7 @@ func findQuickstartScript() (string, error) {
 	return "", nil
 }
 
-// isExecutable determines if a file is executable based on platform-specific rules
+// isExecutable determines if a file is executable based on platform-specific rules.
 func isExecutable(path string, info os.FileInfo) bool {
 	// On Windows, check for common executable extensions
 	if runtime.GOOS == "windows" {

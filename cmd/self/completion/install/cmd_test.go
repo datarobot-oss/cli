@@ -445,7 +445,7 @@ func TestEnsureSourceInBashrcNotFound(t *testing.T) {
 	}
 }
 
-// Helper function
+// Helper function.
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }

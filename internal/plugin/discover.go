@@ -32,20 +32,20 @@ import (
 	"github.com/datarobot/cli/internal/repo"
 )
 
-// PluginRegistryTerminology is the user-facing term for the plugin registry
+// PluginRegistryTerminology is the user-facing term for the plugin registry.
 const PluginRegistryTerminology = "registry"
 
-// PluginRegistryURL is the default URL for the remote plugin registry
+// PluginRegistryURL is the default URL for the remote plugin registry.
 const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
 
-// TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder
+// TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder.
 var registry = &DiscoveredPluginsRegistry{}
 
 // GetPlugins returns discovered plugins and any name conflicts found along
 // the way, discovering lazily on first call. If PrimeCache already populated
 // the registry (e.g. RegisterPluginCommands ran during startup), that result
 // is reused instead of discovering again.
-// TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation
+// TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation.
 func GetPlugins() ([]DiscoveredPlugin, []PluginConflict) {
 	registry.once.Do(func() {
 		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(context.Background())
@@ -236,7 +236,7 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 }
 
 // discoverManagedPlugins discovers plugins installed via `dr plugin install`
-// These are in subdirectories with a manifest.json and platform-specific scripts
+// These are in subdirectories with a manifest.json and platform-specific scripts.
 func discoverManagedPlugins(dir string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	plugins := make([]DiscoveredPlugin, 0)
 
@@ -318,7 +318,7 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 	}, nil, nil
 }
 
-// resolvePlatformExecutable returns the appropriate script path for the current platform
+// resolvePlatformExecutable returns the appropriate script path for the current platform.
 func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (string, error) {
 	if manifest.Scripts == nil {
 		return "", errors.New("managed plugin missing scripts configuration")

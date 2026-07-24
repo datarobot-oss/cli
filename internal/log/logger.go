@@ -26,10 +26,10 @@ import (
 
 const logLevelWidth = 5
 
-// logFileName is the filename for logs
+// logFileName is the filename for logs.
 const logFileName = ".dr-tui-debug.log"
 
-// logStyles customizes the log styles for logging
+// logStyles customizes the log styles for logging.
 var logStyles *log.Styles
 
 func init() {
@@ -47,7 +47,7 @@ var (
 	fileLogger   *log.Logger
 )
 
-// Start sets up and starts both stderr and file loggers
+// Start sets up and starts both stderr and file loggers.
 func Start() {
 	// Debug takes precedence
 	if viperx.GetBool("debug") {
@@ -65,7 +65,7 @@ func Start() {
 	StartFile()
 }
 
-// Stop stops both stderr and file loggers
+// Stop stops both stderr and file loggers.
 func Stop() {
 	StopFile()
 	StopStderr()
