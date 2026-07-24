@@ -77,6 +77,26 @@ release:
 git:
   tag_sort: -version:creatordate
 
+dockers_v2:
+  - ids: [linux]
+    dockerfile: Dockerfile.goreleaser
+    images:
+      - ghcr.io/datarobot-oss/cli
+    tags:
+      - "{{ .Tag }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "DataRobot command-line interface."
+      "org.opencontainers.image.url": "https://github.com/datarobot-oss/cli"
+      "org.opencontainers.image.source": "https://github.com/datarobot-oss/cli"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .CommitDate }}"
+      "org.opencontainers.image.licenses": "Apache-2.0"
+
 homebrew_casks:
   - name: dr-cli
     hooks:
