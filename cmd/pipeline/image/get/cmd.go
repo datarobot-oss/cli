@@ -52,15 +52,7 @@ Example:
 
 			img, err := pipeline.GetImage(imageID)
 			if err != nil {
-				var httpErr *drapi.HTTPError
-
-				if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-					fmt.Println(tui.DimStyle.Render("No image found: " + imageID))
-
-					return nil
-				}
-
-				return err
+				return handleImageError(err, imageID, outputFormat)
 			}
 
 			return pipeline.RenderImage(outputFormat, *img)
@@ -77,4 +69,23 @@ Example:
 	})
 
 	return cmd
+}
+
+// handleImageError converts a 404 into a friendly informational message on
+// stdout (returns nil) in text mode. In JSON output mode the original error
+// is returned unchanged so stdout stays parseable.
+func handleImageError(err error, imageID string, format outputformat.OutputFormat) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
+		fmt.Println(tui.DimStyle.Render("No image found: " + imageID))
+
+		return nil
+	}
+
+	return err
 }

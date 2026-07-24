@@ -15,9 +15,14 @@
 package get
 
 import (
+	"errors"
 	"io"
+	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,4 +90,43 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 	for _, name := range []string{"pipeline", "run", "output-format"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
+}
+
+func TestHandleNotFound_TextFormat_404_PrintsMessageAndReturnsNil(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleNotFound(httpErr, "1", outputformat.OutputFormatText)
+		assert.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "No task execution found with id: 1")
+}
+
+func TestHandleNotFound_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleNotFound(httpErr, "1", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleNotFound_JSONFormat_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: http.StatusInternalServerError, URL: "x"}
+
+	err := handleNotFound(other, "1", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
+}
+
+func TestHandleNotFound_NonHTTPError_Propagates(t *testing.T) {
+	plain := errors.New("network unreachable")
+
+	err := handleNotFound(plain, "1", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Equal(t, plain, err)
 }

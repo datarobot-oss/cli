@@ -57,7 +57,7 @@ Example:
 
 			result, err := pipeline.GetRunStatus(flags.PipelineID, scope, version, args[0])
 			if err != nil {
-				return runutil.HandleRunNotFoundError(err, args[0])
+				return runutil.HandleRunNotFoundError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderRunStatus(outputFormat, *result)

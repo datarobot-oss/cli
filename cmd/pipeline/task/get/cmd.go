@@ -77,7 +77,7 @@ Example:
 
 			result, err := pipeline.GetTask(flags.PipelineID, scope, version, taskID)
 			if err != nil {
-				return handleTaskNotFoundError(err, args[0])
+				return handleTaskNotFoundError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderTask(outputFormat, *result)
@@ -102,10 +102,14 @@ Example:
 	return cmd
 }
 
-func handleTaskNotFoundError(err error, taskID string) error {
+func handleTaskNotFoundError(err error, taskID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("Task not found: " + taskID))
 
 		return nil

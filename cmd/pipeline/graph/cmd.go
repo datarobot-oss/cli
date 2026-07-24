@@ -67,7 +67,7 @@ Example:
 
 			result, err := pipeline.GetGraph(flags.PipelineID, scope, version)
 			if err != nil {
-				return handleGraphError(err, flags.PipelineID)
+				return handleGraphError(err, flags.PipelineID, outputFormat)
 			}
 
 			if outputFormat == outputformat.OutputFormatJSON {
@@ -95,10 +95,14 @@ Example:
 	return cmd
 }
 
-func handleGraphError(err error, pipelineID string) error {
+func handleGraphError(err error, pipelineID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No graph available for pipeline: " + pipelineID))
 
 		return nil
