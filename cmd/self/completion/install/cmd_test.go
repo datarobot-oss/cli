@@ -505,10 +505,16 @@ func TestInstallPowerShell(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// On Windows, os.UserHomeDir() reads USERPROFILE, not HOME.
+	// Set both so the test isolates the profile path on all platforms.
 	origHome := os.Getenv("HOME")
+	origUserProfile := os.Getenv("USERPROFILE")
 
 	os.Setenv("HOME", tmpDir)
+	os.Setenv("USERPROFILE", tmpDir)
+
 	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("USERPROFILE", origUserProfile)
 
 	profilePath, installFn := installPowerShell(rootCmd, false)
 
@@ -540,7 +546,7 @@ func TestInstallPowerShell(t *testing.T) {
 	}
 }
 
-// Helper function
+// Helper function.
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }

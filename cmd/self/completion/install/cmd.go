@@ -482,6 +482,8 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 		return "", func(*cobra.Command) error { return err }
 	}
 
+	shellExe := powerShellExeForProfile()
+
 	installFunc := func(rootCmd *cobra.Command) error {
 		// Ensure the directory exists
 		profileDir := filepath.Dir(profilePath)
@@ -519,12 +521,33 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 			return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
 		}
 
-		warnIfExecutionPolicyRestricted()
+		warnIfExecutionPolicyRestricted(shellExe)
 
 		return nil
 	}
 
 	return profilePath, installFunc
+}
+
+// powerShellExeForProfile returns the PowerShell binary name that matches the
+// profile path chosen by powerShellProfilePath. PS Core (pwsh) and Windows
+// PowerShell (powershell) maintain separate execution policy settings, so the
+// warning check must query the same shell that will actually load the profile.
+func powerShellExeForProfile() string {
+	if runtime.GOOS != "windows" {
+		return "powershell"
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "powershell"
+	}
+
+	if fsutil.DirExists(filepath.Join(homeDir, "Documents", "PowerShell")) {
+		return "pwsh"
+	}
+
+	return "powershell"
 }
 
 func powerShellProfilePath() (string, error) {
