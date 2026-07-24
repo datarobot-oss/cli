@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -484,4 +485,140 @@ func TestNewWorkloadOutput_FormatsTimestampsRFC3339(t *testing.T) {
 	assert.Equal(t, "2026-06-10T08:00:00Z", out.CreatedAt)
 	assert.Equal(t, "2026-06-10T08:05:00Z", out.UpdatedAt)
 	assert.Equal(t, "https://e/", out.Endpoint)
+}
+
+func TestIsTerminalWorkloadStatus(t *testing.T) {
+	terminal := []string{
+		WorkloadStatusRunning,
+		WorkloadStatusErrored,
+		WorkloadStatusTerminated,
+	}
+
+	nonTerminal := []string{
+		WorkloadStatusSubmitted,
+		WorkloadStatusProvisioning,
+		WorkloadStatusLaunching,
+		WorkloadStatusStopping,
+		WorkloadStatusStopped,
+		WorkloadStatusSuspended,
+		WorkloadStatusInterrupted,
+		WorkloadStatusUnknown,
+	}
+
+	for _, s := range terminal {
+		assert.True(t, IsTerminalWorkloadStatus(s), "%s should be terminal", s)
+	}
+
+	for _, s := range nonTerminal {
+		assert.False(t, IsTerminalWorkloadStatus(s), "%s should not be terminal", s)
+	}
+}
+
+func TestIsWorkloadErrorStatus(t *testing.T) {
+	for _, s := range []string{WorkloadStatusErrored, WorkloadStatusTerminated} {
+		assert.True(t, IsWorkloadErrorStatus(s), "%s should be an error status", s)
+	}
+
+	steady := []string{
+		WorkloadStatusRunning,
+		WorkloadStatusStopped,
+		WorkloadStatusSuspended,
+		WorkloadStatusInterrupted,
+		WorkloadStatusUnknown,
+	}
+
+	for _, s := range steady {
+		assert.False(t, IsWorkloadErrorStatus(s), "%s should not be an error status", s)
+	}
+}
+
+func TestWaitForWorkload_RunningReturnsNil(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		page := atomic.AddInt32(&hits, 1)
+
+		status := WorkloadStatusLaunching
+		if page >= 2 {
+			status = WorkloadStatusRunning
+		}
+
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", status))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	var ticks int
+
+	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, func(*Workload) {
+		ticks++
+	})
+	require.NoError(t, err)
+	assert.Equal(t, WorkloadStatusRunning, wl.Status)
+	assert.GreaterOrEqual(t, ticks, 2)
+}
+
+func TestWaitForWorkload_ErroredReturnsError(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", WorkloadStatusErrored))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, nil)
+	require.Error(t, err)
+	require.NotNil(t, wl, "errored returns final Workload alongside error")
+	assert.Equal(t, WorkloadStatusErrored, wl.Status)
+	assert.Contains(t, err.Error(), WorkloadStatusErrored)
+}
+
+func TestWaitForWorkload_PollsThroughStoppedUntilRunning(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		page := atomic.AddInt32(&hits, 1)
+
+		// A just-started workload can still report 'stopped' on the first poll;
+		// WaitForWorkload must keep polling rather than treat it as terminal.
+		status := WorkloadStatusStopped
+		if page >= 2 {
+			status = WorkloadStatusRunning
+		}
+
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", status))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	assert.Equal(t, WorkloadStatusRunning, wl.Status)
+}
+
+func TestWaitForWorkload_Timeout(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", WorkloadStatusProvisioning))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := WaitForWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout")
 }

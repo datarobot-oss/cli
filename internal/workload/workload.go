@@ -95,6 +95,36 @@ func knownWorkloadStatuses() []string {
 	}
 }
 
+// IsTerminalWorkloadStatus reports whether a "wait until running" poll loop
+// should stop: running is terminal success; errored and terminated are terminal
+// failures. Every other status is non-terminal so the loop keeps polling. That
+// deliberately includes the steady non-running states (stopped, suspended,
+// interrupted): WaitForWorkload only runs after the caller has created or
+// started the workload, so those states are transient on the way up, not a
+// reason to bail. A workload that never leaves them surfaces via the timeout
+// rather than a spurious "settled" error on the first, still-stale poll.
+func IsTerminalWorkloadStatus(s string) bool {
+	switch s {
+	case WorkloadStatusRunning,
+		WorkloadStatusErrored,
+		WorkloadStatusTerminated:
+		return true
+	}
+
+	return false
+}
+
+// IsWorkloadErrorStatus reports whether s is a terminal failure a caller should
+// surface as an error rather than a settled state.
+func IsWorkloadErrorStatus(s string) bool {
+	switch s {
+	case WorkloadStatusErrored, WorkloadStatusTerminated:
+		return true
+	}
+
+	return false
+}
+
 // Workload is the projection of the server's workload document the CLI
 // renders. Server-side extras (owners, permissions, creator, stats) are
 // deliberately not parsed so they cannot leak into scripted output.
@@ -317,6 +347,50 @@ func GetWorkload(workloadID string) (*Workload, error) {
 	}
 
 	return &workload, nil
+}
+
+// WaitForWorkload polls GetWorkload on interval until the workload reaches a
+// terminal status (see IsTerminalWorkloadStatus) or deadline expires. It
+// returns the final Workload in every non-poll-error case so callers can render
+// it:
+//   - running: success, nil error.
+//   - errored/terminated: the final workload alongside a failure error.
+//   - timeout: the last-seen workload alongside a timeout error (this covers a
+//     workload stuck in a non-running steady state such as stopped).
+//
+// onTick may be nil and is invoked after each poll for debug-only observation,
+// mirroring WaitForBuild.
+func WaitForWorkload(
+	workloadID string,
+	interval, timeout time.Duration,
+	onTick func(*Workload),
+) (*Workload, error) {
+	deadline := time.Now().Add(timeout)
+
+	for {
+		wl, err := GetWorkload(workloadID)
+		if err != nil {
+			return nil, fmt.Errorf("poll workload %s: %w", workloadID, err)
+		}
+
+		if onTick != nil {
+			onTick(wl)
+		}
+
+		if IsTerminalWorkloadStatus(wl.Status) {
+			if IsWorkloadErrorStatus(wl.Status) {
+				return wl, fmt.Errorf("workload %s ended with status %s; run 'dr workload logs %s' to inspect", workloadID, wl.Status, workloadID)
+			}
+
+			return wl, nil
+		}
+
+		if time.Now().After(deadline) {
+			return wl, fmt.Errorf("timeout waiting for workload %s after %s", workloadID, timeout)
+		}
+
+		time.Sleep(interval)
+	}
 }
 
 type WorkloadList struct {
