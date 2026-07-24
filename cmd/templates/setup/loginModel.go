@@ -140,7 +140,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		// Now shut down the server after key is received
 		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
+			return errMsg{fmt.Errorf("Error during shutdown: %w", err)}
 		}
 
 		// empty apiKey means we need to interrupt current auth flow
@@ -152,7 +152,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		err := auth.WriteConfigFileSilent()
 		if err != nil {
-			return errMsg{fmt.Errorf("Error during writing config file: %v", err)}
+			return errMsg{fmt.Errorf("Error during writing config file: %w", err)}
 		}
 
 		return lm.SuccessCmd()
