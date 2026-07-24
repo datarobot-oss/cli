@@ -73,6 +73,36 @@ func TestReadLine_EmptyInput(t *testing.T) {
 	assert.Empty(t, line)
 }
 
+func TestReadLine_ArrowKeysDiscarded(t *testing.T) {
+	// Reproduces a real bug: pressing Right arrow twice while typing a URL
+	// embedded raw escape bytes ("abcdefghi\x1b[C\x1b[C") into the answer,
+	// which then failed url.Parse downstream. Arrow keys send VT100 escape
+	// sequences (ESC '[' 'C'/'D') on every platform, regardless of
+	// cooked/raw console mode, so they must be discarded rather than
+	// appended.
+	line, err := readLine(bufio.NewReader(strings.NewReader("abcdefghi\x1b[C\x1b[C\n")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "abcdefghi", line)
+}
+
+func TestReadLine_EscapeSequenceMidLine(t *testing.T) {
+	line, err := readLine(bufio.NewReader(strings.NewReader("abc\x1b[Ddef\n")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "abcdef", line)
+}
+
+func TestReadLine_BareEscapeKeypress(t *testing.T) {
+	// A bare Escape keypress (not part of a CSI sequence) has no '[' after
+	// it; that next byte must be pushed back and processed normally rather
+	// than silently swallowed.
+	line, err := readLine(bufio.NewReader(strings.NewReader("ab\x1bcd\n")))
+
+	require.NoError(t, err)
+	assert.Equal(t, "abcd", line)
+}
+
 func TestIsNonInteractive(t *testing.T) {
 	cases := map[string]bool{
 		"":      false,

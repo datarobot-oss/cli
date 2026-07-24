@@ -66,10 +66,14 @@ const (
 	ctrlC     = 0x03 // ASCII ETX, sent by Ctrl+C
 	backspace = '\b'
 	del       = 0x7f // ASCII DEL, sent by Backspace on some terminals; also the exclusive upper bound of printable ASCII
+	esc       = 0x1b // ASCII ESC, begins VT100/ANSI escape sequences (arrows, Home/End, etc.)
 
 	printableASCIIMin = 0x20 // ' ', the lowest printable ASCII byte
 
 	eraseSequence = "\b \b" // backspace, overwrite with space, backspace again
+
+	csiFinalByteMin = 0x40 // '@', low end of the CSI final-byte range (ECMA-48)
+	csiFinalByteMax = 0x7e // '~', high end of the CSI final-byte range (ECMA-48)
 )
 
 // readLine reads bytes until '\n' or '\r', whichever comes first, without
@@ -96,18 +100,17 @@ func readLine(r *bufio.Reader) (string, error) {
 			return sb.String(), err
 		}
 
-		// Ctrl+C (ASCII ETX, 0x03). On POSIX this byte never reaches us —
-		// the tty driver intercepts it at the ISIG layer and raises a real
-		// SIGINT before it's ever placed in the input stream. On Windows,
-		// cancelreader disables ENABLE_PROCESSED_INPUT (required so it can
-		// implement its own Cancel()), which per Microsoft's docs means
-		// "CTRL+C is reported as keyboard input rather than as a signal" —
-		// so this is the only place Ctrl+C is ever observable on Windows.
-		if b == ctrlC {
-			return sb.String(), cancelreader.ErrCanceled
+		// Ctrl+C and escape sequences (arrow keys, Home/End, etc.) never
+		// belong in the answer — see handleControlByte.
+		if consumed, err := handleControlByte(r, b); consumed {
+			if err != nil {
+				return sb.String(), err
+			}
+
+			continue
 		}
 
-		if b == '\n' || b == '\r' {
+		if isLineEnd(b) {
 			if echo {
 				fmt.Println()
 			}
@@ -131,9 +134,76 @@ func readLine(r *bufio.Reader) (string, error) {
 	}
 }
 
+// isLineEnd reports whether b is '\n' or '\r'.
+func isLineEnd(b byte) bool {
+	return b == '\n' || b == '\r'
+}
+
+// handleControlByte handles the two byte values that never belong in the
+// answer text itself. consumed is true if b was one of them, in which case
+// the caller should `continue` its read loop when err is nil, or stop and
+// return err otherwise.
+//
+//   - Ctrl+C (ASCII ETX, 0x03): on POSIX this byte never reaches us — the tty
+//     driver intercepts it at the ISIG layer and raises a real SIGINT before
+//     it's ever placed in the input stream. On Windows, cancelreader disables
+//     ENABLE_PROCESSED_INPUT (required so it can implement its own Cancel()),
+//     which per Microsoft's docs means "CTRL+C is reported as keyboard input
+//     rather than as a signal" — so this is the only place Ctrl+C is ever
+//     observable on Windows.
+//   - Escape sequences (ESC, 0x1b): arrow keys, Home/End, Delete, etc. are
+//     sent as VT100/ANSI escape sequences (e.g. Right arrow is ESC '[' 'C')
+//     on every platform — this is how terminals encode special keys,
+//     independent of cooked vs. raw console/tty mode. Without discarding
+//     these, the bytes get echoed and appended into the answer as literal
+//     control characters (e.g. a typed URL ending up as
+//     "abcdefghi\x1b[C\x1b[C" and failing url.Parse downstream). We don't yet
+//     act on them (e.g. actually moving the cursor) — just discard them so
+//     they can't corrupt the answer.
+func handleControlByte(r *bufio.Reader, b byte) (consumed bool, err error) {
+	switch b {
+	case ctrlC:
+		return true, cancelreader.ErrCanceled
+	case esc:
+		return true, discardEscapeSequence(r)
+	}
+
+	return false, nil
+}
+
 // isBackspace reports whether b is a backspace or DEL byte.
 func isBackspace(b byte) bool {
 	return b == backspace || b == del
+}
+
+// discardEscapeSequence consumes and discards a VT100/ANSI escape sequence
+// following an ESC byte already read from r, so it isn't echoed or appended
+// to the answer as literal control bytes (e.g. arrow keys send ESC '[' 'C'/'D').
+// A CSI sequence is ESC '[' followed by any number of parameter/intermediate
+// bytes and a single final byte in the 0x40-0x7e range (ECMA-48).
+// If the byte after ESC isn't '[', this wasn't a CSI sequence (e.g. a bare
+// Escape keypress) — that byte is pushed back via UnreadByte so the caller
+// processes it normally instead of silently swallowing an unrelated keystroke.
+func discardEscapeSequence(r *bufio.Reader) error {
+	next, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	if next != '[' {
+		return r.UnreadByte()
+	}
+
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return err
+		}
+
+		if b >= csiFinalByteMin && b <= csiFinalByteMax {
+			return nil
+		}
+	}
 }
 
 // eraseLastByte removes the last byte from sb, if any, and erases its
