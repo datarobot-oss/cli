@@ -33,6 +33,8 @@ type taskRunOptions struct {
 	taskOpts task.RunOpts
 }
 
+const taskRunFromRootEnv = "DATAROBOT_CLI_TASK_RUN_FROM_ROOT"
+
 // splitTaskArgs separates task names from additional arguments.
 // Supports: dr run task1 task2 -- -flag1 -flag2
 // Also auto-detects flags after task names if no explicit -- separator is present.
@@ -68,6 +70,32 @@ func splitTaskArgs(args []string) (taskNames []string, taskArgs []string) {
 	return taskNames, taskArgs
 }
 
+func taskfileForRun(dir string) (string, bool, error) {
+	if os.Getenv(taskRunFromRootEnv) != "" {
+		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+
+		rootTaskfile, err := discovery.Discover(dir, 2)
+
+		return rootTaskfile, false, err
+	}
+
+	discovery, err := task.NewDiscovery("Taskfile.gen.yaml", "")
+	if err != nil {
+		return "", false, err
+	}
+
+	discovery.PreferRootTaskfile = true
+
+	rootTaskfile, err := discovery.Discover(dir, 2)
+	if err != nil {
+		return "", false, err
+	}
+
+	usingRootTaskfile := filepath.Base(rootTaskfile) != "Taskfile.gen.yaml"
+
+	return rootTaskfile, usingRootTaskfile, nil
+}
+
 func Cmd() *cobra.Command {
 	var opts taskRunOptions
 
@@ -97,9 +125,9 @@ Examples:
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
-			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+			taskNames, taskArgs := splitTaskArgs(args)
 
-			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
+			rootTaskfile, usingRootTaskfile, err := taskfileForRun(opts.Dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
 
@@ -129,13 +157,14 @@ Examples:
 				return cli.ErrSilent
 			}
 
-			taskNames, taskArgs := splitTaskArgs(args)
-
 			if !opts.taskOpts.Silent {
 				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
 			opts.taskOpts.TaskArgs = taskArgs
+			if usingRootTaskfile {
+				opts.taskOpts.Env = append(opts.taskOpts.Env, taskRunFromRootEnv+"=1")
+			}
 
 			err = runner.Run(taskNames, opts.taskOpts)
 			if err != nil { //nolint: nestif
