@@ -29,6 +29,7 @@ jobs:
       go_code: ${{ steps.changes.outputs.go_code }}
       deps: ${{ steps.changes.outputs.deps }}
       install_sh: ${{ steps.changes.outputs.install_sh }}
+      test_config: ${{ steps.changes.outputs.test_config }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,6 +60,13 @@ jobs:
             install_sh:
               - 'install.sh'
               - 'smoke_test_scripts/run_install_integration_test.sh'
+            # Re-run the test job when the test tooling itself changes, so
+            # changes to CI config / Taskfile can be validated even on PRs that
+            # touch no Go files (CFX-6919).
+            test_config:
+              - 'Taskfile.yaml'
+              - '.github/workflows/pr-checks.yaml'
+              - '.github/actions/setup/**'
 
   lint:
     needs: detect-changes
@@ -99,9 +107,26 @@ jobs:
 
   test:
     needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true'
-    runs-on: ubuntu-latest
-    name: Run Tests
+    if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.test_config == 'true'
+    # CFX-6919: run unit tests on Linux and Windows so runtime.GOOS=="windows"
+    # branches (and //go:build windows files) are exercised in CI. Windows uses
+    # a lighter run (no -race/coverage) to avoid the CGO/gcc dependency and keep
+    # runner cost down; fail-fast:false so one OS failing does not cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            task: test
+          - os: windows-latest
+            task: test-windows
+    runs-on: ${{ matrix.os }}
+    name: Run Tests (${{ matrix.os }})
+    # CFX-6919: the windows-latest leg is informational for now — it surfaces
+    # pre-existing Windows unit-test failures (tracked in CFX-7059) without
+    # blocking merges. Flip this off (make Windows required) once those are
+    # fixed. The ubuntu-latest leg stays blocking.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -115,8 +140,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run Golang Test Command
-        run: |
-          task test
+        run: task ${{ matrix.task }}
 
   copyright:
     runs-on: ubuntu-latest

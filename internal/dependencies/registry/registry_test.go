@@ -17,6 +17,7 @@ package registry
 import (
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -189,6 +190,10 @@ func TestDetectEnvironment_NVM_ViaEnvVar(t *testing.T) {
 }
 
 func TestDetectEnvironment_NVM_ViaHomeFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on os.UserHomeDir honoring $HOME, which is POSIX-only")
+	}
+
 	t.Setenv("HOME", "/home/user")
 
 	dirExists := func(p string) bool { return p == "/home/user/.nvm" }

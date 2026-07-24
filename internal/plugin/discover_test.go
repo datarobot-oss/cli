@@ -45,6 +45,20 @@ func createMockPlugin(t *testing.T, dir, name, manifestJSON string) string {
 	return writePluginManifestScript(t, dir, name, manifestJSON)
 }
 
+// setDiscoveryPath sets PATH to value for the test. On Windows the existing
+// PATH is appended so powershell.exe — used to run .ps1 plugins during
+// discovery — stays resolvable; on POSIX the value is used as-is to keep
+// discovery scoped to the controlled dirs (scripts run via their shebang).
+func setDiscoveryPath(t *testing.T, value string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		value += string(os.PathListSeparator) + os.Getenv("PATH")
+	}
+
+	t.Setenv("PATH", value)
+}
+
 // DiscoverTestSuite tests discovery functions with filesystem fixtures
 type DiscoverTestSuite struct {
 	suite.Suite
@@ -288,18 +302,20 @@ func (s *PathDirsTestSuite) TestCrossDirDeduplicationFirstDirWins() {
 	// Same manifest name in both dirs — dir1 must win because results are
 	// merged in directory order after all goroutines complete.
 	manifest := `{"name":"shared-plugin","version":"1.0.0","description":"Shared"}`
-	createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
-	createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
+	// createMockPlugin returns the actual script path, which carries a .ps1
+	// extension on Windows — assert against it rather than reconstructing.
+	exe1 := createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
+	exe2 := createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
 
 	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
 
 	s.Require().Len(plugins, 1)
 	s.Equal("shared-plugin", plugins[0].Manifest.Name)
-	s.Equal(filepath.Join(s.dir1, "dr-shared"), plugins[0].Executable)
+	s.Equal(exe1, plugins[0].Executable)
 
 	s.Require().Len(conflicts, 1, "the second dir's binary sharing the manifest name must be recorded as a conflict")
 	s.Equal("shared-plugin", conflicts[0].Name)
-	s.Equal(filepath.Join(s.dir2, "dr-shared"), conflicts[0].Path)
+	s.Equal(exe2, conflicts[0].Path)
 }
 
 func (s *PathDirsTestSuite) TestBaseSeenFiltersPlugins() {
@@ -508,7 +524,7 @@ func (s *DiscoverWithContextSuite) TearDownTest() {
 func (s *DiscoverWithContextSuite) TestDiscoversPATHPlugin() {
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-alpha",
 		`{"name":"ctx-alpha","version":"1.0.0","description":"Alpha"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	plugins, _ := DiscoverPluginsWithContext(context.Background())
 
@@ -531,7 +547,7 @@ func (s *DiscoverWithContextSuite) TestPartialResultsOnTimeout() {
 	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
 	createScript(s.T(), filepath.Join(slowDir, "dr-ctx-slow"), slowScript)
 
-	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+slowDir)
+	setDiscoveryPath(s.T(), s.pluginDir+string(os.PathListSeparator)+slowDir)
 
 	// 2 s gives the fast plugin plenty of time to respond; the slow plugin is
 	// killed by the per-manifest timeout (5 s set in SetupTest capped by the
@@ -551,7 +567,7 @@ func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
 	// which is the condition that triggers the WARN — no real-time dependency.
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-warn",
 		`{"name":"ctx-warn","version":"1.0.0","description":"Warn"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -567,7 +583,7 @@ func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
 func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-skip",
 		`{"name":"ctx-skip","version":"1.0.0","description":"Skip"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -582,7 +598,7 @@ func (s *DiscoverWithContextSuite) TestDuplicatePATHEntryDoesNotWarn() {
 		`{"name":"ctx-dup","version":"1.0.0","description":"Dup"}`)
 	// The same directory listed twice in PATH used to make discovery scan it
 	// twice, reporting a false conflict against itself.
-	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir+string(os.PathListSeparator)+s.pluginDir)
 
 	plugins, conflicts := DiscoverPluginsWithContext(context.Background())
 

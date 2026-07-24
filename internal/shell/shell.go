@@ -90,6 +90,13 @@ func DetectShell() (string, error) {
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
 
+	// On Windows, $SHELL is a Unix convention and is normally unset, and the
+	// parent process is often a non-shell (e.g. the installer). Default to
+	// PowerShell, which the CLI fully supports, rather than failing detection.
+	if runtime.GOOS == "windows" {
+		return string(PowerShell), nil
+	}
+
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
 }
 

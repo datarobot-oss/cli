@@ -84,32 +84,14 @@ func (s *ExecTestSuite) TestExecutePluginCommandNotFound() {
 }
 
 func (s *ExecTestSuite) TestExecutePluginWithArguments() {
-	// Create a script that uses arguments
-	script := `#!/bin/sh
-if [ "$1" = "expected" ] && [ "$2" = "args" ]; then
-  exit 0
-else
-  exit 1
-fi
-`
-	path := filepath.Join(s.tempDir, "with-args")
-	createScript(s.T(), path, script)
+	path := writeArgCheckScript(s.T(), s.tempDir, "with-args")
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"}, nil)
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginWithWrongArguments() {
-	// Create a script that uses arguments
-	script := `#!/bin/sh
-if [ "$1" = "expected" ] && [ "$2" = "args" ]; then
-  exit 0
-else
-  exit 1
-fi
-`
-	path := filepath.Join(s.tempDir, "with-args-fail")
-	createScript(s.T(), path, script)
+	path := writeArgCheckScript(s.T(), s.tempDir, "with-args-fail")
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"}, nil)
 	s.Equal(1, exitCode)
@@ -307,8 +289,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
@@ -615,8 +596,7 @@ func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "skip-auth-test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "skip-auth-test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
@@ -644,8 +624,7 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "no-skip-auth-test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "no-skip-auth-test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},

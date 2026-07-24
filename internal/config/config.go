@@ -108,9 +108,15 @@ func CreateConfigFileDirIfNotExists() error {
 		return fmt.Errorf("Failed to create config file directory: %w", err)
 	}
 
-	_, err = os.Create(defaultConfigFilePath)
+	f, err := os.Create(defaultConfigFilePath)
 	if err != nil {
 		return fmt.Errorf("Failed to create config file: %w", err)
+	}
+
+	// Close the handle immediately. On Windows an open handle blocks the file
+	// from being removed (e.g. t.TempDir cleanup); POSIX silently tolerates it.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("Failed to close config file: %w", err)
 	}
 
 	return nil

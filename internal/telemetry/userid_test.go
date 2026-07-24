@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -105,6 +106,11 @@ func TestRetrieveAccountInfo_FilePermissions(t *testing.T) {
 	info, err := os.Stat(cachePath)
 
 	require.NoError(t, err)
+
+	if runtime.GOOS == "windows" {
+		return // Unix permission bits are not enforced on Windows.
+	}
+
 	assert.Equal(t, os.FileMode(0o600), info.Mode()&os.ModePerm)
 }
 
