@@ -22,7 +22,7 @@ At CLI startup, plugins are discovered from the following locations, in priority
    - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
    - The primary directory always takes precedence: if the same plugin name exists in multiple locations, the first discovered one wins and later ones are skipped.
 2. **Project-local** `.dr/plugins/` directory.
-3. **Every directory on your `PATH``.
+3. **Every directory on your `PATH`**.
 
 Only files whose filename begins with `dr-` are considered.
 
