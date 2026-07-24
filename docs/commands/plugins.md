@@ -228,10 +228,13 @@ A plugin is an executable that:
 
 ### Plugin discovery
 
-The CLI discovers plugins from:
+The CLI discovers plugins from, in priority order:
 
-1. Project-local `.dr/plugins/` directory (highest priority).
-2. All directories on your `PATH`.
+1. **Managed plugin directories** (highest priority) — plugins installed via `dr plugin install`.
+   - Primary: `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/` when `XDG_CONFIG_HOME` is not set).
+   - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
+2. **Project-local** `.dr/plugins/` directory.
+3. **All directories on your `PATH`**.
 
 If multiple executables declare the same manifest `name`, the CLI uses only the first discovered plugin.
 
