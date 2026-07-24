@@ -330,7 +330,7 @@ func SetURLAction() bool {
 			printSetURLPrompt()
 
 			url, err := reader.ReadString()
-			if err != nil || url == "\n" {
+			if err != nil || url == "" {
 				break
 			}
 
