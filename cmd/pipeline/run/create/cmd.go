@@ -15,6 +15,8 @@
 package create
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -51,12 +53,12 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			result, err := pipeline.CreateRun(flags.PipelineID, scope, version, inputID, imageID)
 			if err != nil {
-				return err
+				return fmt.Errorf("create run: %w", err)
 			}
 
 			return pipeline.RenderRun(outputFormat, *result)

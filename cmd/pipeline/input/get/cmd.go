@@ -55,7 +55,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			result, err := pipeline.GetInput(flags.PipelineID, scope, version, args[0])

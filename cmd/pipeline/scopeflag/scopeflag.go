@@ -18,6 +18,8 @@
 package scopeflag
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/spf13/cobra"
 )
@@ -52,5 +54,10 @@ func (f *Flags) Resolve(cmd *cobra.Command) (pipeline.Scope, *int, error) {
 		version = &v
 	}
 
-	return pipeline.ResolveScope(f.Scope, version)
+	scope, ver, err := pipeline.ResolveScope(f.Scope, version)
+	if err != nil {
+		return pipeline.Scope(""), nil, fmt.Errorf("resolve scope: %w", err)
+	}
+
+	return scope, ver, nil
 }

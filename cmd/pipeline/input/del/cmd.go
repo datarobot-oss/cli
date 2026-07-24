@@ -49,7 +49,7 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			err = pipeline.DeleteInput(flags.PipelineID, scope, version, args[0])

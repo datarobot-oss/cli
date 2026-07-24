@@ -59,7 +59,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			result, err := pipeline.GetPipelineSource(flags.PipelineID, scope, version)
@@ -111,7 +111,7 @@ func handleSourceError(err error, pipelineID string, format outputformat.OutputF
 func printSourceJSON(s pipeline.PipelineSourceResponse) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal json: %w", err)
 	}
 
 	fmt.Println(string(data))

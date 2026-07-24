@@ -57,7 +57,7 @@ Example:
 
 			list, err := pipeline.ListPipelines(mode, search, offset, limit)
 			if err != nil {
-				return err
+				return fmt.Errorf("list pipelines: %w", err)
 			}
 
 			return pipeline.RenderPipelines(outputFormat, *list)

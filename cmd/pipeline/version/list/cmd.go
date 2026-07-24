@@ -15,6 +15,8 @@
 package list
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -46,7 +48,7 @@ Example:
 
 			items, err := pipeline.ListVersions(pipelineID, offset, limit)
 			if err != nil {
-				return err
+				return fmt.Errorf("list versions: %w", err)
 			}
 
 			return pipeline.RenderVersions(outputFormat, items)

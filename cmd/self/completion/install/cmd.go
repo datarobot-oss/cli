@@ -106,7 +106,7 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
 func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRun bool) error {
 	shell, err := internalShell.ResolveShell(specifiedShell)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve shell: %w", err)
 	}
 
 	fmt.Println()
@@ -230,7 +230,7 @@ func getInstallFunc(rootCmd *cobra.Command, shellType internalShell.Shell, force
 func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", func(*cobra.Command) error { return err }
+		return "", func(*cobra.Command) error { return fmt.Errorf("get user home dir: %w", err) }
 	}
 
 	var installPath string
@@ -250,19 +250,19 @@ func installZsh(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	installFunc := func(rootCmd *cobra.Command) error {
 		// Create directory
 		if err := os.MkdirAll(compDir, 0o755); err != nil {
-			return err
+			return fmt.Errorf("create completion directory: %w", err)
 		}
 
 		// Create completion file
 		f, err := os.Create(installPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("create completion file: %w", err)
 		}
 		defer f.Close()
 
 		// Generate completion
 		if err := rootCmd.GenZshCompletion(f); err != nil {
-			return err
+			return fmt.Errorf("generate zsh completion: %w", err)
 		}
 
 		// Clear cache
@@ -291,7 +291,7 @@ func installZshAliases(compDir string) error {
 	for _, alias := range version.CliAliases {
 		content := fmt.Sprintf("#compdef %s\n_%s \"$@\"\n", alias, version.CliName)
 		if err := os.WriteFile(filepath.Join(compDir, "_"+alias), []byte(content), 0o644); err != nil {
-			return err
+			return fmt.Errorf("write zsh alias completion: %w", err)
 		}
 	}
 
@@ -301,7 +301,7 @@ func installZshAliases(compDir string) error {
 func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", func(*cobra.Command) error { return err }
+		return "", func(*cobra.Command) error { return fmt.Errorf("get user home dir: %w", err) }
 	}
 
 	compDir := filepath.Join(homeDir, ".bash_completions")
@@ -346,24 +346,24 @@ func installBash(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 
 		// Create directory
 		if err := os.MkdirAll(compDir, 0o755); err != nil {
-			return err
+			return fmt.Errorf("create completion directory: %w", err)
 		}
 
 		// Create completion file
 		f, err := os.Create(installPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("create completion file: %w", err)
 		}
 		defer f.Close()
 
 		// Generate completion
 		if err := rootCmd.GenBashCompletion(f); err != nil {
-			return err
+			return fmt.Errorf("generate bash completion: %w", err)
 		}
 
 		for _, alias := range version.CliAliases {
 			if _, err := fmt.Fprintf(f, "\ncomplete -o default -F __start_%s %s\n", version.CliName, alias); err != nil {
-				return err
+				return fmt.Errorf("write bash alias completion: %w", err)
 			}
 		}
 
@@ -416,7 +416,7 @@ func isBashCompletionAvailable() bool {
 func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", func(*cobra.Command) error { return err }
+		return "", func(*cobra.Command) error { return fmt.Errorf("get user home dir: %w", err) }
 	}
 
 	compDir := filepath.Join(homeDir, ".config", "fish", "completions")
@@ -425,25 +425,25 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 	installFunc := func(rootCmd *cobra.Command) error {
 		// Create directory
 		if err := os.MkdirAll(compDir, 0o755); err != nil {
-			return err
+			return fmt.Errorf("create completion directory: %w", err)
 		}
 
 		// Create completion file
 		f, err := os.Create(installPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("create completion file: %w", err)
 		}
 		defer f.Close()
 
 		// Generate completion
 		if err := rootCmd.GenFishCompletion(f, true); err != nil {
-			return err
+			return fmt.Errorf("generate fish completion: %w", err)
 		}
 
 		for _, alias := range version.CliAliases {
 			content := fmt.Sprintf("complete --command %s --wraps %s\n", alias, version.CliName)
 			if err := os.WriteFile(filepath.Join(compDir, alias+".fish"), []byte(content), 0o644); err != nil {
-				return err
+				return fmt.Errorf("write fish alias completion: %w", err)
 			}
 		}
 
@@ -528,7 +528,7 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 func powerShellProfilePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("get user home dir: %w", err)
 	}
 
 	if runtime.GOOS != "windows" {
@@ -591,7 +591,7 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Read file
 	content, err := os.ReadFile(zshrc)
 	if err != nil {
-		return err
+		return fmt.Errorf("read zshrc: %w", err)
 	}
 
 	// Check if already contains the path
@@ -602,21 +602,24 @@ func ensureFpathInZshrc(zshrc, compDir string) error {
 	// Append to file
 	f, err := os.OpenFile(zshrc, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("open zshrc: %w", err)
 	}
 	defer f.Close()
 
 	if _, err = fmt.Fprintf(f, "\n# Added by %s completion installer\n", version.CliName); err != nil {
-		return err
+		return fmt.Errorf("write zshrc fpath comment: %w", err)
 	}
 
 	if _, err = fmt.Fprintf(f, "fpath=(%s $fpath)\n", compDir); err != nil {
-		return err
+		return fmt.Errorf("write zshrc fpath: %w", err)
 	}
 
 	_, err = f.WriteString("autoload -U compinit && compinit\n")
+	if err != nil {
+		return fmt.Errorf("write zshrc compinit: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func ensureSourceInBashrc(bashrc, completionFile string) error {
@@ -628,7 +631,7 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Read file
 	content, err := os.ReadFile(bashrc)
 	if err != nil {
-		return err
+		return fmt.Errorf("read bashrc: %w", err)
 	}
 
 	// Check if already contains the source line
@@ -639,15 +642,18 @@ func ensureSourceInBashrc(bashrc, completionFile string) error {
 	// Append to file
 	f, err := os.OpenFile(bashrc, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("open bashrc: %w", err)
 	}
 	defer f.Close()
 
 	if _, err = fmt.Fprintf(f, "\n# Added by %s completion installer\n", version.CliName); err != nil {
-		return err
+		return fmt.Errorf("write bashrc comment: %w", err)
 	}
 
 	_, err = fmt.Fprintf(f, "[ -f %s ] && source %s\n", completionFile, completionFile)
+	if err != nil {
+		return fmt.Errorf("write bashrc source line: %w", err)
+	}
 
-	return err
+	return nil
 }

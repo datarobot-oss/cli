@@ -16,6 +16,7 @@ package get
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
@@ -52,7 +53,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			result, err := pipeline.GetRun(flags.PipelineID, scope, version, args[0])

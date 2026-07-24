@@ -119,13 +119,13 @@ Example:
 func fetchLiveLogs(pipelineID, runID string, taskID int, nodeID, tailLines *int, verbosity string, format outputformat.OutputFormat) error {
 	logs, err := pipeline.GetTaskLogs(pipelineID, runID, taskID, nodeID, tailLines, verbosity)
 	if err != nil {
-		return err
+		return fmt.Errorf("get task logs: %w", err)
 	}
 
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(logs, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal json: %w", err)
 		}
 
 		fmt.Println(string(data))
@@ -141,13 +141,13 @@ func fetchLiveLogs(pipelineID, runID string, taskID int, nodeID, tailLines *int,
 func fetchDurableLog(pipelineID, runID string, taskID int, nodeID *int, stream, verbosity string, format outputformat.OutputFormat) error {
 	log, err := pipeline.GetTaskDurableLog(pipelineID, runID, taskID, nodeID, stream, verbosity)
 	if err != nil {
-		return err
+		return fmt.Errorf("get task durable log: %w", err)
 	}
 
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(log, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal json: %w", err)
 		}
 
 		fmt.Println(string(data))

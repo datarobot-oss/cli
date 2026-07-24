@@ -61,7 +61,7 @@ Example:
 					return nil
 				}
 
-				return err
+				return fmt.Errorf("get image build logs: %w", err)
 			}
 
 			fmt.Print(resp.Logs)

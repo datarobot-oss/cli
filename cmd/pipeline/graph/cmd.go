@@ -62,7 +62,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			result, err := pipeline.GetGraph(flags.PipelineID, scope, version)
@@ -114,7 +114,7 @@ func handleGraphError(err error, pipelineID string, format outputformat.OutputFo
 func printGraphJSON(g pipeline.Graph) error {
 	data, err := json.MarshalIndent(g, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal json: %w", err)
 	}
 
 	fmt.Println(string(data))

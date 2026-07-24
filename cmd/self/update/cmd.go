@@ -44,7 +44,7 @@ with your default shell.
 		RunE: func(_ *cobra.Command, _ []string) error {
 			requirement, err := tools.GetSelfRequirement()
 			if err != nil {
-				return err
+				return fmt.Errorf("get self requirement: %w", err)
 			}
 
 			if tools.SufficientSelfVersion(requirement.MinimumVersion) && !force {
@@ -74,7 +74,7 @@ with your default shell.
 
 						if err := brewUpdateCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return err
+							return fmt.Errorf("brew update: %w", err)
 						}
 
 						brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
@@ -83,7 +83,7 @@ with your default shell.
 
 						if err := brewReinstallCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return err
+							return fmt.Errorf("brew reinstall: %w", err)
 						}
 
 						return nil
@@ -95,7 +95,7 @@ with your default shell.
 			shell, err := internalShell.DetectShell()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
-				return err
+				return fmt.Errorf("detect shell: %w", err)
 			}
 
 			var (

@@ -15,6 +15,8 @@
 package list
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -49,7 +51,7 @@ Example:
 
 			items, err := pipeline.ListImages(offset, limit)
 			if err != nil {
-				return err
+				return fmt.Errorf("list images: %w", err)
 			}
 
 			return pipeline.RenderImages(outputFormat, items)

@@ -52,7 +52,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve scope: %w", err)
 			}
 
 			err = pipeline.CancelRun(flags.PipelineID, scope, version, args[0])

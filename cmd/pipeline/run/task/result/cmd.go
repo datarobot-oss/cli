@@ -76,7 +76,7 @@ Example:
 
 			res, err := pipeline.GetTaskResult(pipelineID, runID, taskID, node)
 			if err != nil {
-				return err
+				return fmt.Errorf("get task result: %w", err)
 			}
 
 			return renderResult(cmd.OutOrStdout(), outputFormat, res)
@@ -107,7 +107,7 @@ func renderResult(w io.Writer, format outputformat.OutputFormat, res *pipeline.T
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal json: %w", err)
 		}
 
 		fmt.Fprintln(w, string(data))
