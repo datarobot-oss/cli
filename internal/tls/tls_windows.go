@@ -17,6 +17,7 @@
 package tls
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -50,7 +51,7 @@ func ExportWindowsCerts(dest string) error {
 	pem := strings.TrimSpace(string(out))
 
 	if pem == "" {
-		return fmt.Errorf("no certificates found in Windows cert store")
+		return errors.New("no certificates found in Windows cert store")
 	}
 
 	if err := os.WriteFile(dest, []byte(pem+"\n"), 0o600); err != nil {
