@@ -57,7 +57,7 @@ func Ask(label string) (string, error) {
 
 	s, err := reader.ReadString()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read input: %w", err)
 	}
 
 	s = strings.TrimSpace(s)
@@ -73,7 +73,7 @@ func AskWithDefault(label, defaultVal string) (string, error) {
 
 	s, err := reader.ReadString()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read input: %w", err)
 	}
 
 	s = strings.TrimSpace(s)

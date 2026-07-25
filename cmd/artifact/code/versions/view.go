@@ -171,7 +171,11 @@ func renderJSON(out io.Writer, v view) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 
-	return enc.Encode(rows)
+	if err := enc.Encode(rows); err != nil {
+		return fmt.Errorf("encode json: %w", err)
+	}
+
+	return nil
 }
 
 func formatCreatedAt(s string) string {

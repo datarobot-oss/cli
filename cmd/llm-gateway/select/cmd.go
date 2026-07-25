@@ -39,7 +39,7 @@ func Cmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			llmList, err := drapi.GetLLMsAndDeployed()
 			if err != nil {
-				return err
+				return fmt.Errorf("get llms: %w", err)
 			}
 
 			var chosenID string
@@ -64,7 +64,7 @@ func Cmd() *cobra.Command {
 			viperx.Set(config.DefaultLLMID, chosenID)
 
 			if err = config.UpdateConfigFile(config.DefaultLLMID); err != nil {
-				return err
+				return fmt.Errorf("update config file: %w", err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Default LLM set to: %s\n", chosenID)
@@ -101,7 +101,7 @@ func runPicker(llms []drapi.LLM) (string, error) {
 
 	finalModel, err := tui.Run(m, tea.WithAltScreen())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("run llm picker: %w", err)
 	}
 
 	picker, ok := tui.Unwrap(finalModel).(PickerModel)

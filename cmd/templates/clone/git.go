@@ -15,6 +15,7 @@
 package clone
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -32,7 +33,7 @@ func gitClone(repoURL, dir, tag string) (string, error) {
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("git clone: %w", err)
 	}
 
 	return string(stdout), nil
@@ -58,7 +59,7 @@ func gitPull(dir string) (string, error) {
 
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("git pull: %w", err)
 	}
 
 	return string(stdout), nil

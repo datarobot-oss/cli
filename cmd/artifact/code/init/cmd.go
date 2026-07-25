@@ -99,7 +99,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 	dir, err := dirprompt.ResolveDir(dirFlag, yes, dirprompt.AskWithDefault)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve project dir: %w", err)
 	}
 
 	if wapi.Exists(dir) {
@@ -108,7 +108,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 	artifactID, err := dirprompt.ResolveArtifactID(args, yes, dirprompt.Ask)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve artifact id: %w", err)
 	}
 
 	art, err := fetchArtifact(artifactID)
@@ -124,7 +124,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 			return reportAlreadyLinked(dir)
 		}
 
-		return err
+		return fmt.Errorf("initialize wapi: %w", err)
 	}
 
 	return renderInitResult(outputFormat, newInitResult(*art, dir))

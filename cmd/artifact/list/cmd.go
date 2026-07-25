@@ -59,7 +59,7 @@ Example:
 
 			artifacts, err := workload.ListArtifacts(limit, status)
 			if err != nil {
-				return err
+				return fmt.Errorf("list artifacts: %w", err)
 			}
 
 			return workload.RenderArtifacts(outputFormat, artifacts)

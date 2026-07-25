@@ -123,7 +123,7 @@ func printMissingEnvVarError(varName string) {
 func extractDotenvVars(dotenvPath string) (string, string, error) {
 	fileContents, readErr := os.ReadFile(dotenvPath)
 	if readErr != nil {
-		return "", "", readErr
+		return "", "", fmt.Errorf("read dotenv file: %w", readErr)
 	}
 
 	lines := make([]string, 0)

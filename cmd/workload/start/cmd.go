@@ -57,11 +57,11 @@ Example:
 
 			resp, err := workload.StartWorkload(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("start workload: %w", err)
 			}
 
 			if err := workload.RenderWorkloadOperation(outputFormat, *resp); err != nil {
-				return err
+				return fmt.Errorf("render workload operation: %w", err)
 			}
 
 			// The follow-up hint goes to stderr so script captures of stdout

@@ -130,7 +130,11 @@ func runList(cmd *cobra.Command, _ []string) error {
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {
 		outputs := toPluginOutputs(plugins)
-		return outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs)
+		if err := outputformat.PrintJSONEnvelope(os.Stdout, "plugins", outputs); err != nil {
+			return fmt.Errorf("print plugins json: %w", err)
+		}
+
+		return nil
 	}
 
 	if len(plugins) == 0 {

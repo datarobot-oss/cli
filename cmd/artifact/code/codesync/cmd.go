@@ -78,7 +78,7 @@ func defaultDeps() Deps {
 		NewEngine: func(dir string, opts sync.Options) (engineRunner, error) {
 			e, err := sync.New(dir, opts)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("create sync engine: %w", err)
 			}
 
 			return realEngine{e}, nil
@@ -162,7 +162,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 	dir, err := dirprompt.ResolveDir(dirFlag, flags.Yes, dirprompt.AskWithDefault)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve project dir: %w", err)
 	}
 
 	if !wapi.Exists(dir) {
@@ -182,7 +182,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 	plan, err := engine.Plan()
 	if err != nil {
-		return err
+		return fmt.Errorf("compute sync plan: %w", err)
 	}
 
 	if engine.StaleRollbackRestored() {
@@ -207,6 +207,13 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 	}
 }
 
+// errQuitConflict is returned by handleConflictPrompt when the user
+// chose to quit from the conflict menu. Callers detect it with
+// errors.Is and treat it as a clean exit (no Execute, no error
+// printed) so the plan is left on stdout/JSON for the caller to
+// inspect or re-invoke with --yes.
+var errQuitConflict = errors.New("user quit from conflict prompt")
+
 // finishSync handles the render → optional prompt → execute → render
 // tail of the command. Pulled out so runSync's early-return paths
 // (auth, lock, plan errors) stay flat.
@@ -225,23 +232,46 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 		return nil
 	}
 
-	if shouldPromptConflicts(plan, flags.Yes) {
-		choice, err := promptConflictMenu(cmd, engine, plan, deps.ReadLine)
-		if err != nil {
-			return err
-		}
-
-		if choice == promptQuit {
+	if err := handleConflictPrompt(cmd, engine, plan, flags.Yes, deps); err != nil {
+		if errors.Is(err, errQuitConflict) {
 			return nil
 		}
+
+		return err
 	}
 
 	result, err := engine.Execute(plan)
 	if err != nil {
+		return fmt.Errorf("execute sync plan: %w", err)
+	}
+
+	if err := display.PrintResult(out, result); err != nil {
+		return fmt.Errorf("print sync result: %w", err)
+	}
+
+	return nil
+}
+
+// handleConflictPrompt runs the interactive conflict menu when the
+// plan has conflicts and the user did not pass --yes. It returns nil
+// when nothing was prompted or the conflict was resolved, and the
+// errQuitConflict sentinel when the user chose to quit. Genuine
+// prompt/protocol errors propagate as-is.
+func handleConflictPrompt(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, yes bool, deps Deps) error {
+	if !shouldPromptConflicts(plan, yes) {
+		return nil
+	}
+
+	choice, err := promptConflictMenu(cmd, engine, plan, deps.ReadLine)
+	if err != nil {
 		return err
 	}
 
-	return display.PrintResult(out, result)
+	if choice == promptQuit {
+		return errQuitConflict
+	}
+
+	return nil
 }
 
 // renderHumanPlan prints the plan and optional per-file diffs.
@@ -249,14 +279,18 @@ func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPla
 	out := cmd.OutOrStdout()
 
 	if err := display.PrintPlan(out, plan); err != nil {
-		return err
+		return fmt.Errorf("print sync plan: %w", err)
 	}
 
 	if !diffFlag {
 		return nil
 	}
 
-	return display.PrintDiffs(out, plan, engine.Fetcher())
+	if err := display.PrintDiffs(out, plan, engine.Fetcher()); err != nil {
+		return fmt.Errorf("print sync diffs: %w", err)
+	}
+
+	return nil
 }
 
 // shouldPromptConflicts encapsulates the decision: prompt only when
@@ -274,7 +308,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
 	if err := display.RenderPlanJSON(out, plan); err != nil {
-		return err
+		return fmt.Errorf("render plan json: %w", err)
 	}
 
 	if flags.DryRun || flags.Diff || plan.IsEmpty() {
@@ -287,8 +321,12 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 
 	result, err := engine.Execute(plan)
 	if err != nil {
-		return err
+		return fmt.Errorf("execute sync plan: %w", err)
 	}
 
-	return display.RenderResultJSON(out, result)
+	if err := display.RenderResultJSON(out, result); err != nil {
+		return fmt.Errorf("render result json: %w", err)
+	}
+
+	return nil
 }

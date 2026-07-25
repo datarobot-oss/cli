@@ -137,7 +137,7 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 func resolveProjectDir(dirFlag string, yes bool, prompt dirprompt.PromptFunc) (string, error) {
 	dir, err := dirprompt.ResolveDir(dirFlag, yes, prompt)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve project dir: %w", err)
 	}
 
 	abs, err := filepath.Abs(dir)

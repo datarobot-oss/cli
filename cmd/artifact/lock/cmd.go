@@ -15,6 +15,8 @@
 package lock
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -52,7 +54,7 @@ Example:
 
 			artifact, err := workload.LockArtifact(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("lock artifact: %w", err)
 			}
 
 			return workload.RenderArtifact(outputFormat, *artifact)

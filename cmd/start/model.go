@@ -657,7 +657,7 @@ func hasTaskStart() (bool, error) {
 	// and checking if 'start' is in the output
 	taskPath, err := exec.LookPath("task")
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("look up task binary: %w", err)
 	}
 
 	cmd := exec.Command(taskPath, "--list")

@@ -104,7 +104,7 @@ func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
 	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
 		"Delete workload "+workloadID+"? This stops and removes a running workload. [y/N] ")
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("confirm delete: %w", err)
 	}
 
 	if !confirmed {

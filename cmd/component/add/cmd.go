@@ -65,7 +65,7 @@ func RunE(_ *cobra.Command, args []string) error {
 	}
 
 	if err := compose.Cmd().RunE(nil, nil); err != nil {
-		return err
+		return fmt.Errorf("run compose: %w", err)
 	}
 
 	// Validate and edit .env if needed
@@ -86,7 +86,7 @@ func getArgsFromCLIOrPrompt(args []string) ([]string, error) {
 
 	finalModel, err := tui.Run(am, tea.WithAltScreen())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("run add prompt: %w", err)
 	}
 
 	// Check if we need to launch template setup after quitting

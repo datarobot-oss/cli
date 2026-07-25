@@ -52,7 +52,7 @@ func renderInitResult(format outputformat.OutputFormat, result initResult) error
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal init result: %w", err)
 		}
 
 		fmt.Println(string(data))

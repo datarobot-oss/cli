@@ -63,12 +63,12 @@ Example:
 
 			parsedStatuses, err := workload.ParseWorkloadStatuses(statuses)
 			if err != nil {
-				return err
+				return fmt.Errorf("parse workload statuses: %w", err)
 			}
 
 			workloads, err := workload.ListWorkloads(limit, parsedStatuses)
 			if err != nil {
-				return err
+				return fmt.Errorf("list workloads: %w", err)
 			}
 
 			return workload.RenderWorkloads(outputFormat, workloads)

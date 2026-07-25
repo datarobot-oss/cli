@@ -66,7 +66,7 @@ var EditCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return err
+			return fmt.Errorf("get working directory: %w", err)
 		}
 
 		dotenvFile := filepath.Join(cwd, ".env")
@@ -95,9 +95,13 @@ var EditCmd = &cobra.Command{
 			contents:      contents,
 			SuccessCmd:    tea.Quit,
 		}
-		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 
-		return err
+		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
+		if err != nil {
+			return fmt.Errorf("run dotenv editor: %w", err)
+		}
+
+		return nil
 	},
 }
 
@@ -207,7 +211,7 @@ This wizard will help you:
 
 		finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
-			return err
+			return fmt.Errorf("run dotenv setup: %w", err)
 		}
 
 		// Check if the model has an error (e.g., from Pulumi login failure)

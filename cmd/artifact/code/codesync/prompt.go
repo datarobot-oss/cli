@@ -67,7 +67,7 @@ func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 			return promptSync, nil
 		case "d":
 			if err := display.PrintDiffs(cmd.OutOrStdout(), plan, engine.Fetcher()); err != nil {
-				return promptQuit, err
+				return promptQuit, fmt.Errorf("print sync diffs: %w", err)
 			}
 			// loop and re-prompt
 		case "q":

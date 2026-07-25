@@ -15,6 +15,8 @@
 package create
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -95,16 +97,16 @@ Example:
 
 			payload, err := workload.ReadSpecFile(specFile)
 			if err != nil {
-				return err
+				return fmt.Errorf("read spec file: %w", err)
 			}
 
 			if err := workload.ValidateCreateRequest(payload); err != nil {
-				return err
+				return fmt.Errorf("validate create request: %w", err)
 			}
 
 			artifact, err := workload.CreateArtifact(payload)
 			if err != nil {
-				return err
+				return fmt.Errorf("create artifact: %w", err)
 			}
 
 			return workload.RenderArtifact(outputFormat, *artifact)

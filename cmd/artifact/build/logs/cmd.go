@@ -73,12 +73,12 @@ Examples:
 
 			artifactID, buildID, err := buildargs.ResolvePositional(args)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve build args: %w", err)
 			}
 
 			entries, err := workload.GetArtifactBuildLogs(artifactID, buildID)
 			if err != nil {
-				return err
+				return fmt.Errorf("get artifact build logs: %w", err)
 			}
 
 			entries = workload.FilterLogsByLevel(entries, lower)

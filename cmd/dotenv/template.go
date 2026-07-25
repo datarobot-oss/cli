@@ -79,7 +79,7 @@ func cleanOldBackups(stateDir, baseName string) error {
 
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return err
+		return fmt.Errorf("glob backup files: %w", err)
 	}
 
 	if len(matches) <= 3 {
@@ -213,7 +213,7 @@ func writeContents(cleanContents, dotenvFile string) error {
 	old, err := os.ReadFile(dotenvFile)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Debug(err)
-		return err
+		return fmt.Errorf("read dotenv file: %w", err)
 	}
 
 	// Strip any existing header comments from the contents
@@ -234,7 +234,7 @@ func writeContents(cleanContents, dotenvFile string) error {
 
 	f, err := os.Create(dotenvFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("create dotenv file: %w", err)
 	}
 	defer f.Close()
 
@@ -248,17 +248,17 @@ func writeContents(cleanContents, dotenvFile string) error {
 
 	_, err = writer.WriteString(cleanContents)
 	if err != nil {
-		return err
+		return fmt.Errorf("write dotenv contents: %w", err)
 	}
 
 	// Flush buffer to file
 	if err := writer.Flush(); err != nil {
-		return err
+		return fmt.Errorf("flush dotenv contents: %w", err)
 	}
 
 	// Sync to ensure data is written to physical storage
 	if err := f.Sync(); err != nil {
-		return err
+		return fmt.Errorf("sync dotenv file: %w", err)
 	}
 
 	return nil

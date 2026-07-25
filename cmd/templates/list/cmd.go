@@ -53,7 +53,7 @@ start building AI applications. Each template includes:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			templateList, err := drapi.GetTemplates()
 			if err != nil {
-				return err
+				return fmt.Errorf("get templates: %w", err)
 			}
 
 			format := outputformat.GetFormat(cmd)

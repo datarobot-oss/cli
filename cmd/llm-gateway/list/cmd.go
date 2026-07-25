@@ -61,7 +61,7 @@ func Cmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			llmList, err := drapi.GetLLMsAndDeployed()
 			if err != nil {
-				return err
+				return fmt.Errorf("get llms: %w", err)
 			}
 
 			selectedID := viperx.GetString(config.DefaultLLMID)

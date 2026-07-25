@@ -118,8 +118,11 @@ func runInstallFromRegistry(args []string) error {
 			var fetchErr error
 
 			registry, baseURL, fetchErr = plugin.FetchRegistry(finalRegistryURL)
+			if fetchErr != nil {
+				return fmt.Errorf("fetch plugin registry: %w", fetchErr)
+			}
 
-			return fetchErr
+			return nil
 		},
 	)
 	if err != nil {
@@ -203,7 +206,7 @@ func runInstallFromFile(args []string) error {
 
 			resolvedName, err = plugin.InstallPluginFromFile(filePath, name)
 
-			return err
+			return fmt.Errorf("install plugin from file: %w", err)
 		},
 	); err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
@@ -235,7 +238,7 @@ func runInstallFromURL(args []string) error {
 
 			resolvedName, err = plugin.InstallPluginFromURL(pluginURL, name)
 
-			return err
+			return fmt.Errorf("install plugin from url: %w", err)
 		},
 	); err != nil {
 		return fmt.Errorf("failed to install plugin: %w", err)
@@ -265,7 +268,12 @@ func (h *headingWriter) Write(p []byte) (int, error) {
 		fmt.Println(tui.SubTitleStyle.Render(h.heading))
 	}
 
-	return h.w.Write(p)
+	n, err := h.w.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("write plugin deps output: %w", err)
+	}
+
+	return n, nil
 }
 
 // confirmPluginDepsInstall returns true when the user consents to installing
@@ -292,7 +300,7 @@ func checkAndInstallPluginDeps(pluginName string) error {
 			return nil
 		}
 
-		return err
+		return fmt.Errorf("check and install plugin deps: %w", err)
 	}
 
 	return nil

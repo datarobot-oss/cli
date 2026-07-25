@@ -16,6 +16,7 @@ package setup
 
 import (
 	"context"
+	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
@@ -54,21 +55,11 @@ func RunTea(ctx context.Context, fromStartCommand bool) error {
 	m := NewModel(fromStartCommand)
 
 	_, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(ctx))
-	// TODO: Re-enable after further testing of component configure
-	// if err != nil {
-	// 	return err
-	// }
+	if err != nil {
+		return fmt.Errorf("run template setup: %w", err)
+	}
 
-	// // Check if we need to launch template setup after quitting
-	// if setupModel, ok := finalModel.(tui.InterruptibleModel); ok {
-	// 	if innerModel, ok := setupModel.Model.(Model); ok {
-	// 		if innerModel.dotenvSetupCompleted {
-	// 			return component.RunE(component.AddCmd, nil)
-	// 		}
-	// 	}
-	// }
-
-	return err
+	return nil
 }
 
 func InnerModel(finalModel tea.Model) (Model, bool) {

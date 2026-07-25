@@ -77,7 +77,7 @@ Example:
 
 			parsedLevel, err := workload.ParseLogLevel(level)
 			if err != nil {
-				return err
+				return fmt.Errorf("parse log level: %w", err)
 			}
 
 			if follow {
@@ -94,7 +94,7 @@ Example:
 
 			entries, err := workload.GetWorkloadLogs(args[0], limit, parsedLevel)
 			if err != nil {
-				return err
+				return fmt.Errorf("get workload logs: %w", err)
 			}
 
 			return workload.RenderWorkloadLogs(outputFormat, entries)

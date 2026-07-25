@@ -101,7 +101,7 @@ func confirmDelete(cmd *cobra.Command, artifactID string) (bool, error) {
 	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
 		"Delete artifact "+artifactID+"? [y/N] ")
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("confirm delete: %w", err)
 	}
 
 	if !confirmed {

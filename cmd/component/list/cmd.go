@@ -36,12 +36,16 @@ type ComponentOutput struct {
 func runE(cmd *cobra.Command, _ []string) error {
 	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
-		return err
+		return fmt.Errorf("list components: %w", err)
 	}
 
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {
-		return outputformat.PrintJSONEnvelope(os.Stdout, "components", toComponentOutputs(answers))
+		if err := outputformat.PrintJSONEnvelope(os.Stdout, "components", toComponentOutputs(answers)); err != nil {
+			return fmt.Errorf("print components json: %w", err)
+		}
+
+		return nil
 	}
 
 	return printComponentsTable(answers)

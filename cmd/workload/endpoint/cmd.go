@@ -48,7 +48,7 @@ Example:
 		RunE: func(_ *cobra.Command, args []string) error {
 			wl, err := workload.GetWorkload(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("get workload: %w", err)
 			}
 
 			// Fail loudly rather than print an empty line: a script doing

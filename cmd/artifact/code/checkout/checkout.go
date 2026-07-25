@@ -229,7 +229,7 @@ func prepareCheckoutsParent(parent string, totalSize int64) error {
 	}
 
 	if err := sync.EnsureSpaceFor(parent, totalSize); err != nil {
-		return err
+		return fmt.Errorf("ensure space for checkouts: %w", err)
 	}
 
 	return nil

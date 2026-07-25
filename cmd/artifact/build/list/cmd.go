@@ -60,10 +60,14 @@ Examples:
 
 			builds, err := workload.ListArtifactBuilds(artifactID, limit)
 			if err != nil {
-				return err
+				return fmt.Errorf("list artifact builds: %w", err)
 			}
 
-			return workload.RenderBuilds(outputFormat, builds)
+			if err := workload.RenderBuilds(outputFormat, builds); err != nil {
+				return fmt.Errorf("render builds: %w", err)
+			}
+
+			return nil
 		},
 	}
 

@@ -15,6 +15,8 @@
 package status
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -50,7 +52,7 @@ Example:
 
 			wl, err := workload.GetWorkload(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("get workload: %w", err)
 			}
 
 			return workload.RenderWorkloadStatus(outputFormat, *wl)

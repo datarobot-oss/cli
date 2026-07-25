@@ -40,8 +40,11 @@ func ResolveOptional(args []string) (string, error) {
 	}
 
 	id, _, err := workload.ResolveArtifactID(explicit)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact id: %w", err)
+	}
 
-	return id, err
+	return id, nil
 }
 
 // ResolvePositional maps cobra args to (artifactID, buildID).
@@ -56,14 +59,14 @@ func ResolvePositional(args []string) (string, string, error) {
 	case 1:
 		artifactID, _, err := workload.ResolveArtifactID("")
 		if err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("resolve artifact id: %w", err)
 		}
 
 		return artifactID, args[0], nil //nolint:gosec // bounded by case 1: len(args)==1
 	case 2:
 		artifactID, _, err := workload.ResolveArtifactID(args[0]) //nolint:gosec // bounded by case 2: len(args)==2
 		if err != nil {
-			return "", "", err
+			return "", "", fmt.Errorf("resolve artifact id: %w", err)
 		}
 
 		return artifactID, args[1], nil

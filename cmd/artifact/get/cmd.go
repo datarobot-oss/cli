@@ -15,6 +15,8 @@
 package get
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -47,7 +49,7 @@ Example:
 
 			artifact, err := workload.GetArtifact(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("get artifact: %w", err)
 			}
 
 			return workload.RenderArtifact(outputFormat, *artifact)

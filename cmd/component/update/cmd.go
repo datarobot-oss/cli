@@ -49,10 +49,14 @@ func PreRunE(_ *cobra.Command, _ []string) error {
 
 func runPostUpdateTasks() error {
 	if err := compose.Cmd().RunE(nil, nil); err != nil {
-		return err
+		return fmt.Errorf("run compose: %w", err)
 	}
 
-	return run.Cmd().RunE(nil, []string{"reinstall"})
+	if err := run.Cmd().RunE(nil, []string{"reinstall"}); err != nil {
+		return fmt.Errorf("run reinstall: %w", err)
+	}
+
+	return nil
 }
 
 func handleTUIResult(finalModel tea.Model) error {
@@ -101,7 +105,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 	finalModel, err := tui.Run(m, tea.WithAltScreen())
 	if err != nil {
-		return err
+		return fmt.Errorf("run update prompt: %w", err)
 	}
 
 	return handleTUIResult(finalModel)
@@ -144,7 +148,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 
 	answers, err := copier.AnswersFromPath(".", false)
 	if err != nil {
-		return err
+		return fmt.Errorf("list components: %w", err)
 	}
 
 	answersContainFile := slices.ContainsFunc(answers, func(answer copier.Answers) bool {
@@ -181,7 +185,7 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 			log.Error("uv is not installed.")
 		}
 
-		return execErr
+		return fmt.Errorf("exec update: %w", execErr)
 	}
 
 	return nil

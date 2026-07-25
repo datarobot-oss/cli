@@ -82,7 +82,11 @@ func runVersion(cmd *cobra.Command, args []string) error {
 	if format == outputformat.OutputFormatJSON {
 		output := PluginVersionOutput{Name: p.Manifest.Name, Version: p.Manifest.Version}
 
-		return outputformat.PrintJSONEnvelope(os.Stdout, "plugin", output)
+		if err := outputformat.PrintJSONEnvelope(os.Stdout, "plugin", output); err != nil {
+			return fmt.Errorf("print plugin version json: %w", err)
+		}
+
+		return nil
 	}
 
 	if p.Manifest.Version == "" {

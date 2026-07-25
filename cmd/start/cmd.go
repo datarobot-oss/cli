@@ -15,6 +15,8 @@
 package start
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/cmd/templates/setup"
 	"github.com/datarobot/cli/internal/auth"
@@ -49,7 +51,7 @@ The following actions will be performed:
 
 			finalModel, err := tui.Run(m)
 			if err != nil {
-				return err
+				return fmt.Errorf("run start model: %w", err)
 			}
 
 			innerModel, ok := getInnerModel(finalModel)
@@ -77,7 +79,7 @@ The following actions will be performed:
 
 			finalSetupModel, err := tui.Run(sm, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 			if err != nil {
-				return err
+				return fmt.Errorf("run template setup: %w", err)
 			}
 
 			innerSetupModel, ok := setup.InnerModel(finalSetupModel)
@@ -93,7 +95,7 @@ The following actions will be performed:
 
 			finalModel2, err := tui.Run(m2)
 			if err != nil {
-				return err
+				return fmt.Errorf("run start model: %w", err)
 			}
 
 			innerModel2, ok := getInnerModel(finalModel2)

@@ -95,7 +95,7 @@ func runTrigger(
 
 	resp, err := workload.TriggerArtifactBuild(artifactID)
 	if err != nil {
-		return err
+		return fmt.Errorf("trigger artifact build: %w", err)
 	}
 
 	if len(resp.BuildIDs) == 0 {
@@ -106,7 +106,11 @@ func runTrigger(
 		// Script-capture contract: text-mode `BID=$(dr artifact build
 		// create $ART)` gets just the IDs on stdout. JSON callers parse
 		// the trigger response document.
-		return workload.RenderBuildTrigger(outputFormat, *resp)
+		if err := workload.RenderBuildTrigger(outputFormat, *resp); err != nil {
+			return fmt.Errorf("render build trigger: %w", err)
+		}
+
+		return nil
 	}
 
 	// With --wait the canonical stdout contract is the BuildSummary(ies)
@@ -122,7 +126,7 @@ func runTrigger(
 	summaries, firstWaitErr := waitForAllBuilds(cmd, artifactID, resp.BuildIDs, poll)
 
 	if err := workload.RenderBuildSummaries(outputFormat, summaries); err != nil {
-		return err
+		return fmt.Errorf("render build summaries: %w", err)
 	}
 
 	return firstWaitErr

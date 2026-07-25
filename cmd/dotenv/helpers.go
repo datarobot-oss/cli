@@ -135,7 +135,7 @@ func ValidateAndEditIfNeeded() error {
 		fmt.Println("  " + tui.InfoStyle.Render("dr dotenv edit"))
 		fmt.Println()
 
-		return err
+		return fmt.Errorf("run env vars prompt: %w", err)
 	}
 
 	return nil
@@ -170,7 +170,7 @@ func applyDefaultsToPrompts(prompts []envbuilder.UserPrompt) ([]envbuilder.UserP
 	// Apply generated values for prompts with field: `generate: true`
 	prompts, err = envbuilder.ApplyGeneratedValues(prompts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("apply generated values: %w", err)
 	}
 
 	// Determine required sections based on selected options

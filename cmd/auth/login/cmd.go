@@ -17,6 +17,7 @@ package login
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
@@ -85,15 +86,18 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		var waitErr error
 
 		key, waitErr = auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
+		if waitErr != nil {
+			return fmt.Errorf("wait for api key callback: %w", waitErr)
+		}
 
-		return waitErr
+		return nil
 	})
 	if err != nil {
 		log.Error(err)
 
 		cmd.SilenceUsage = true
 
-		return err
+		return fmt.Errorf("wait for browser authorization: %w", err)
 	}
 
 	if key == "" {
@@ -108,7 +112,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		cmd.SilenceUsage = true
 
-		return err
+		return fmt.Errorf("write config file: %w", err)
 	}
 
 	return nil

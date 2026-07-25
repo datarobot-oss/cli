@@ -67,7 +67,7 @@ func runUninstall(_ *cobra.Command, args []string) error {
 	fmt.Printf("Uninstalling %s...\n", pluginName)
 
 	if err := plugin.UninstallPlugin(pluginName); err != nil {
-		return err
+		return fmt.Errorf("uninstall plugin: %w", err)
 	}
 
 	fmt.Println()

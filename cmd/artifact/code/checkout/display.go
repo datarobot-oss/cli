@@ -115,5 +115,9 @@ func encodeJSON(out io.Writer, v any) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 
-	return enc.Encode(v)
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encode json: %w", err)
+	}
+
+	return nil
 }

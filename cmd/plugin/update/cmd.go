@@ -86,8 +86,11 @@ func runUpdate(_ *cobra.Command, args []string) error {
 			var fetchErr error
 
 			registry, baseURL, fetchErr = plugin.FetchRegistry(finalRegistryURL)
+			if fetchErr != nil {
+				return fmt.Errorf("fetch plugin registry: %w", fetchErr)
+			}
 
-			return fetchErr
+			return nil
 		},
 	)
 	if err != nil {
