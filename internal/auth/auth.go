@@ -325,6 +325,13 @@ func askForNewHost() bool {
 }
 
 func SetURLAction() bool {
+	if !reader.IsStdinTerminal() {
+		log.Error("No DataRobot URL configured and no terminal available to prompt for one. " +
+			"Run 'dr auth set-url <url>' or set DATAROBOT_ENDPOINT to configure it non-interactively.")
+
+		return false
+	}
+
 	if askForNewHost() {
 		for {
 			printSetURLPrompt()
