@@ -3,7 +3,8 @@
   "image": "mcr.microsoft.com/devcontainers/go:2-1.26-bookworm",
   "features": {
     "ghcr.io/eitsupi/devcontainer-features/go-task:1": {},
-    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+    "ghcr.io/va-h/devcontainers-features/uv:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
   "customizations": {
     "vscode": {
