@@ -8,6 +8,7 @@ This repo includes a [devcontainer](https://containers.dev/) configuration at `.
 - **Task** (installed via the [go-task devcontainer feature](https://github.com/eitsupi/devcontainer-features/tree/main/src/go-task))
 - **Automatic Go version sync** — if the image's Go patch version doesn't match `go.mod`, it is upgraded automatically during container creation
 - **One-command bootstrap** — `task bootstrap` runs automatically, installing all development tools (golangci-lint, goreleaser, jscpd, lefthook), setting up git hooks, and building the CLI
+- **uv** (installed via the [uv devcontainer feature](https://github.com/va-h/devcontainers-features/tree/main/src/uv)) — enables `task docs-serve` for local documentation preview with MkDocs
 
 ## Local development
 
