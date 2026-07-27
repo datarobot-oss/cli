@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -72,7 +73,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return fmt.Errorf("resolve scope: %w", err)
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			result, err := pipeline.GetTask(flags.PipelineID, scope, version, taskID)

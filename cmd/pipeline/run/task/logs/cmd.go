@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -125,7 +126,7 @@ func fetchLiveLogs(pipelineID, runID string, taskID int, nodeID, tailLines *int,
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(logs, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal json: %w", err)
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Println(string(data))
@@ -147,7 +148,7 @@ func fetchDurableLog(pipelineID, runID string, taskID int, nodeID *int, stream, 
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(log, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal json: %w", err)
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Println(string(data))

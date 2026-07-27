@@ -24,6 +24,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -87,7 +88,7 @@ func renderTaskList(format outputformat.OutputFormat, tasks []pipeline.TaskExecu
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(tasks, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal json: %w", err)
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Println(string(data))

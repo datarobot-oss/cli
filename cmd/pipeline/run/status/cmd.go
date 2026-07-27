@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
@@ -53,7 +54,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return fmt.Errorf("resolve scope: %w", err)
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			result, err := pipeline.GetRunStatus(flags.PipelineID, scope, version, args[0])

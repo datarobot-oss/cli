@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -107,7 +108,7 @@ func renderResult(w io.Writer, format outputformat.OutputFormat, res *pipeline.T
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
-			return fmt.Errorf("marshal json: %w", err)
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Fprintln(w, string(data))

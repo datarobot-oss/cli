@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
@@ -293,7 +294,7 @@ func saveIndexFragment(path string, manifest *plugin.PluginManifest, archiveName
 
 	data, err := json.MarshalIndent(fragment, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
+		return fmt.Errorf(errmsg.MarshalJSON, err)
 	}
 
 	data = append(data, '\n')
