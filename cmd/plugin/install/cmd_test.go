@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -92,11 +93,11 @@ func TestConfirmPluginDepsInstall_UserAnswersY(t *testing.T) {
 	_, _ = w.WriteString("y\n")
 	w.Close()
 
-	origStdin := os.Stdin
-	os.Stdin = r
+	origStdin := reader.Stdin
+	reader.Stdin = r
 
 	defer func() {
-		os.Stdin = origStdin
+		reader.Stdin = origStdin
 
 		r.Close()
 	}()
@@ -111,11 +112,11 @@ func TestConfirmPluginDepsInstall_UserAnswersN(t *testing.T) {
 	_, _ = w.WriteString("n\n")
 	w.Close()
 
-	origStdin := os.Stdin
-	os.Stdin = r
+	origStdin := reader.Stdin
+	reader.Stdin = r
 
 	defer func() {
-		os.Stdin = origStdin
+		reader.Stdin = origStdin
 
 		r.Close()
 	}()
@@ -158,11 +159,11 @@ func TestCheckAndInstallPluginDeps_SkipsInstallWhenUserDeclines(t *testing.T) {
 	_, _ = w.WriteString("n\n")
 	w.Close()
 
-	origStdin := os.Stdin
-	os.Stdin = r
+	origStdin := reader.Stdin
+	reader.Stdin = r
 
 	defer func() {
-		os.Stdin = origStdin
+		reader.Stdin = origStdin
 
 		r.Close()
 	}()

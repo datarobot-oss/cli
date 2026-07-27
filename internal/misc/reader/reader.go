@@ -17,6 +17,7 @@ package reader
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -28,8 +29,20 @@ import (
 	"golang.org/x/term"
 )
 
+// Stdin is the source ReadString reads from. It defaults to os.Stdin; tests
+// override it to inject canned input instead of reassigning the os.Stdin
+// global. Reassigning os.Stdin itself doesn't work on Windows: cancelreader's
+// Windows implementation special-cases "is this reader's fd the same as
+// os.Stdin's fd?" and, when true, discards the reader it was given in favor
+// of opening the real console handle (CONIN$) directly — so a test-supplied
+// pipe assigned to os.Stdin gets ignored and the read blocks forever waiting
+// for real keystrokes. Overriding this var instead leaves the real os.Stdin
+// untouched, so the fds never match and cancelreader takes its generic
+// fallback path, which actually reads from the injected pipe.
+var Stdin io.Reader = os.Stdin
+
 func ReadString() (string, error) {
-	cr, err := cancelreader.NewReader(os.Stdin)
+	cr, err := cancelreader.NewReader(Stdin)
 	if err != nil {
 		return "", err
 	}
