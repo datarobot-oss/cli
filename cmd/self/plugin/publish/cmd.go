@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
@@ -174,7 +175,7 @@ func createArchive(sourceDir, archivePath string) error {
 	if err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		return appendToArchive(tarWriter, sourceDir, path, info, err)
 	}); err != nil {
-		return fmt.Errorf("walk source directory: %w", err)
+		return fmt.Errorf(errmsg.WalkSourceDirectory, err)
 	}
 
 	return nil
@@ -185,12 +186,12 @@ func createArchive(sourceDir, archivePath string) error {
 // closure) to keep createArchive's cyclomatic complexity manageable.
 func appendToArchive(tarWriter *tar.Writer, sourceDir, path string, info os.FileInfo, err error) error {
 	if err != nil {
-		return fmt.Errorf("walk source dir: %w", err)
+		return fmt.Errorf(errmsg.WalkSourceDir, err)
 	}
 
 	relPath, err := filepath.Rel(sourceDir, path)
 	if err != nil {
-		return fmt.Errorf("resolve relative path: %w", err)
+		return fmt.Errorf(errmsg.ResolveRelativePath, err)
 	}
 
 	if relPath == "." {
@@ -199,13 +200,13 @@ func appendToArchive(tarWriter *tar.Writer, sourceDir, path string, info os.File
 
 	header, err := tar.FileInfoHeader(info, "")
 	if err != nil {
-		return fmt.Errorf("build tar header: %w", err)
+		return fmt.Errorf(errmsg.BuildTarHeader, err)
 	}
 
 	header.Name = relPath
 
 	if err := tarWriter.WriteHeader(header); err != nil {
-		return fmt.Errorf("write tar header: %w", err)
+		return fmt.Errorf(errmsg.WriteTarHeader, err)
 	}
 
 	if info.IsDir() {
@@ -214,13 +215,13 @@ func appendToArchive(tarWriter *tar.Writer, sourceDir, path string, info os.File
 
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open file: %w", err)
+		return fmt.Errorf(errmsg.OpenFile, err)
 	}
 	defer file.Close()
 
 	_, err = io.Copy(tarWriter, file)
 	if err != nil {
-		return fmt.Errorf("copy file into archive: %w", err)
+		return fmt.Errorf(errmsg.CopyFileIntoArchive, err)
 	}
 
 	return nil
@@ -352,7 +353,7 @@ func validatePluginScript(pluginDir string, manifest *plugin.PluginManifest) err
 	log.Info("Validating plugin script output", "plugin", manifest.Name)
 
 	if err := plugin.ValidatePluginScript(pluginDir, *manifest); err != nil {
-		return fmt.Errorf("validate plugin script: %w", err)
+		return fmt.Errorf(errmsg.ValidatePluginScript, err)
 	}
 
 	return nil

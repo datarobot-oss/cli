@@ -12,23 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
-package sync
-
-import (
-	"fmt"
-
-	"golang.org/x/sys/unix"
-)
-
-// realAvailableBytes uses Bavail (not Bfree) because Bavail excludes
-// blocks reserved for the superuser.
-func realAvailableBytes(path string) (int64, error) {
-	var st unix.Statfs_t
-	if err := unix.Statfs(path, &st); err != nil {
-		return 0, fmt.Errorf("statfs %s: %w", path, err)
-	}
-
-	return int64(st.Bavail * uint64(st.Bsize)), nil //nolint:gosec // Bavail * Bsize fits in int64 on every supported FS.
-}
+// Package uninstall implements the `dr plugin uninstall` subcommand, which
+// removes a managed plugin (one previously installed via `dr plugin install`).
+package uninstall

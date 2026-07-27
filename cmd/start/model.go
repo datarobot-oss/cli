@@ -195,7 +195,7 @@ func (m Model) execQuickstartScript() tea.Cmd {
 	}
 
 	// Regular quickstart script execution
-	cmd := exec.Command(m.quickstartScriptPath)
+	cmd := exec.Command(m.quickstartScriptPath) //nolint:gosec // subprocess launched with validated input
 
 	return tea.ExecProcess(cmd, func(e error) tea.Msg {
 		return startScriptCompleteMsg{err: e}

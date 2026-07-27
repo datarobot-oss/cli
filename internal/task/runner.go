@@ -91,7 +91,7 @@ func (r *Runner) ListTasks() ([]Task, error) {
 		args = append(args, "-t", r.opts.Taskfile)
 	}
 
-	cmd := exec.Command(r.opts.BinaryName, args...)
+	cmd := exec.Command(r.opts.BinaryName, args...) //nolint:gosec // subprocess launched with validated input
 
 	cmd.Dir = r.opts.Dir
 
@@ -169,7 +169,7 @@ func (r *Runner) Run(tasks []string, opts RunOpts) error {
 		args = append(args, opts.TaskArgs...)
 	}
 
-	cmd := exec.Command(r.opts.BinaryName, args...)
+	cmd := exec.Command(r.opts.BinaryName, args...) //nolint:gosec // subprocess launched with validated input
 
 	cmd.Dir = r.opts.Dir
 

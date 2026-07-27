@@ -131,7 +131,7 @@ func backup(dotenvFile string) error {
 	}
 
 	// Write to backup location
-	if err := os.WriteFile(backupPath, content, 0o644); err != nil {
+	if err := os.WriteFile(backupPath, content, 0o644); err != nil { //nolint:gosec // backup path is internally constructed
 		return fmt.Errorf("Failed to write backup file: %w", err)
 	}
 

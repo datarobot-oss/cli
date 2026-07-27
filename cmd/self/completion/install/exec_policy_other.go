@@ -14,21 +14,6 @@
 
 //go:build !windows
 
-package sync
+package install
 
-import (
-	"fmt"
-
-	"golang.org/x/sys/unix"
-)
-
-// realAvailableBytes uses Bavail (not Bfree) because Bavail excludes
-// blocks reserved for the superuser.
-func realAvailableBytes(path string) (int64, error) {
-	var st unix.Statfs_t
-	if err := unix.Statfs(path, &st); err != nil {
-		return 0, fmt.Errorf("statfs %s: %w", path, err)
-	}
-
-	return int64(st.Bavail * uint64(st.Bsize)), nil //nolint:gosec // Bavail * Bsize fits in int64 on every supported FS.
-}
+func warnIfExecutionPolicyRestricted(_ string) {}

@@ -12,23 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
-package sync
-
-import (
-	"fmt"
-
-	"golang.org/x/sys/unix"
-)
-
-// realAvailableBytes uses Bavail (not Bfree) because Bavail excludes
-// blocks reserved for the superuser.
-func realAvailableBytes(path string) (int64, error) {
-	var st unix.Statfs_t
-	if err := unix.Statfs(path, &st); err != nil {
-		return 0, fmt.Errorf("statfs %s: %w", path, err)
-	}
-
-	return int64(st.Bavail * uint64(st.Bsize)), nil //nolint:gosec // Bavail * Bsize fits in int64 on every supported FS.
-}
+// Package install implements the `dr plugin install` subcommand, which
+// installs a plugin from the remote registry, a local .tar.xz archive,
+// or an HTTP/HTTPS URL. It also lists available plugins and versions
+// from the registry.
+package install

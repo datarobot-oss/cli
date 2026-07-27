@@ -22,7 +22,7 @@ import (
 
 // osVersion retrieves the Windows OS version via RtlGetVersion (ntdll.dll).
 // Returns an empty string if detection fails.
-// example output: "10.0.22621"
+// example output: "10.0.22621".
 func osVersion() string {
 	info := windows.RtlGetVersion()
 

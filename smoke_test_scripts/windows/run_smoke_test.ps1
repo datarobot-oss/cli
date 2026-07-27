@@ -5,21 +5,12 @@ $DR_API_TOKEN = $args[0]
 
 $ErrorActionPreference = "Stop"
 
-$global:XFailCount = 0
-
 function Write-ErrorMsg {
     param([string]$Message)
     Write-Host "[ERROR] " -NoNewline -ForegroundColor Red
     Write-Host $Message
     Write-Host ""
     exit 1
-}
-
-function Write-XFailMsg {
-    param([string]$Message)
-    Write-Host "[XFAIL] " -NoNewline -ForegroundColor Yellow
-    Write-Host $Message
-    $global:XFailCount++
 }
 
 function Write-SuccessMsg {
@@ -132,21 +123,6 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     $hasWarning = $installOutput -match $fixCommand
 
     if ($ExpectWarning -and -not $hasWarning) {
-        # XFAIL: when testing Restricted policy without the Phase 2 Go fix,
-        # the warning is expected to be absent. Track as an expected failure
-        # and return early — the remaining assertions (profile, policy) are
-        # not meaningful when the warning behavior isn't yet implemented.
-        # Remove this branch when Phase 2 lands.
-        $isXFail = $ExpectWarning -and ($Policy -eq "Restricted")
-
-        if ($isXFail) {
-            Write-XFailMsg "Assertion xfail [$TestName]: installer did not warn user with the execution policy fix command (expected: Phase 2 not yet merged)"
-            Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
-            if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
-
-            return
-        }
-
         Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
     }
@@ -159,6 +135,8 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
 
     # Assert the profile exists and contains the dr completion block.
+    # Restricted policy blocks *loading* the profile, not writing it, so the
+    # installer should still create the profile even under Restricted.
     if (-not (Test-Path $profilePath)) {
         Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
@@ -383,14 +361,6 @@ if (-not $url_accessible) {
     Write-InfoMsg "Testing template setup would require interactive input..."
     Write-InfoMsg "Skipping template clone test on Windows (requires interactive expect-like tool)"
     Write-End
-}
-
-if ($global:XFailCount -gt 0) {
-    Write-Host ""
-    Write-Host ("=" * 20) -NoNewline
-    Write-Host " XFAIL SUMMARY " -NoNewline -ForegroundColor Yellow
-    Write-Host ("=" * 20)
-    Write-Host "$global:XFailCount expected failure(s) (xfail) -- these will pass after Phase 2 (CFX-6647 Go fix) is merged."
 }
 
 Write-SuccessMsg "Smoke tests for Windows completed successfully."
