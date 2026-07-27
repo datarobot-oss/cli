@@ -16,6 +16,7 @@ package update
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -68,7 +69,7 @@ Example:
 
 			result, err := pipeline.UpdateImage(args[0], pip, conda, baseImage, nvidia)
 			if err != nil {
-				return err
+				return fmt.Errorf("update image: %w", err)
 			}
 
 			return pipeline.RenderImage(outputFormat, *result)

@@ -73,12 +73,12 @@ Example:
 
 			filePath, err := fileutil.ResolveFilePath(args, fromFile)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve file path: %w", err)
 			}
 
 			result, err := pipeline.CreatePipeline(filePath, description, name, mode, imageID)
 			if err != nil {
-				return err
+				return fmt.Errorf("create pipeline: %w", err)
 			}
 
 			return pipeline.RenderCreateResponse(outputFormat, *result)

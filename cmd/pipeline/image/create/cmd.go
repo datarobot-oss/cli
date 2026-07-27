@@ -16,6 +16,7 @@ package create
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -72,7 +73,7 @@ Example:
 
 			result, err := pipeline.CreateImage(name, description, pip, conda, baseImage, nvidia)
 			if err != nil {
-				return err
+				return fmt.Errorf("create image: %w", err)
 			}
 
 			return pipeline.RenderImage(outputFormat, *result)

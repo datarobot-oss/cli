@@ -15,6 +15,8 @@
 package update
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -51,12 +53,12 @@ Example:
 
 			payload, err := pipeline.ResolvePayload(args[1:], fromFile)
 			if err != nil {
-				return err
+				return fmt.Errorf("resolve payload: %w", err)
 			}
 
 			result, err := pipeline.UpdateInput(pipelineID, inputID, payload)
 			if err != nil {
-				return err
+				return fmt.Errorf("update input: %w", err)
 			}
 
 			return pipeline.RenderInput(outputFormat, *result)

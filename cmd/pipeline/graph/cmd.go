@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -62,7 +63,7 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			result, err := pipeline.GetGraph(flags.PipelineID, scope, version)
@@ -114,7 +115,7 @@ func handleGraphError(err error, pipelineID string, format outputformat.OutputFo
 func printGraphJSON(g pipeline.Graph) error {
 	data, err := json.MarshalIndent(g, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf(errmsg.MarshalJSON, err)
 	}
 
 	fmt.Println(string(data))

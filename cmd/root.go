@@ -195,7 +195,11 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 // It adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func ExecuteContext(ctx context.Context) error {
-	return RootCmd.ExecuteContext(ctx)
+	if err := RootCmd.ExecuteContext(ctx); err != nil {
+		return fmt.Errorf("execute root command: %w", err)
+	}
+
+	return nil
 }
 
 // bindUniversal binds name to viper and annotates the flag for forwarding to

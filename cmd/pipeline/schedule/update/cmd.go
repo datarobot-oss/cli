@@ -16,6 +16,7 @@ package update
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -56,7 +57,7 @@ Example:
 
 			result, err := pipeline.UpdateSchedule(pipelineID, args[0], body)
 			if err != nil {
-				return err
+				return fmt.Errorf("update schedule: %w", err)
 			}
 
 			return pipeline.RenderSchedule(outputFormat, *result)
