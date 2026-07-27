@@ -21,5 +21,7 @@
       }
     }
   },
-  "postCreateCommand": "bash .devcontainer/post-create.sh"
+  "updateContentCommand": "bash .devcontainer/sync-go.sh",
+  "postCreateCommand": "task bootstrap",
+  "waitFor": "postCreateCommand"
 }
