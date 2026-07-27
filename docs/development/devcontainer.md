@@ -10,6 +10,7 @@ This repo includes a [devcontainer](https://containers.dev/) configuration at `.
 - **One-command bootstrap** — `task bootstrap` runs automatically, installing all development tools (golangci-lint, goreleaser, jscpd, lefthook), setting up git hooks, and building the CLI
 - **uv** (installed via the [uv devcontainer feature](https://github.com/va-h/devcontainers-features/tree/main/src/uv)) — enables `task docs-serve` for local documentation preview with MkDocs
 - **Docker** (installed via the [docker-outside-of-docker feature](https://github.com/devcontainers/features/tree/main/src/docker-outside-of-docker)) — enables `task copyright` which runs `docker run` for Apache Skywalking Eyes license header management
+- **GitHub CLI** (installed via the [github-cli feature](https://github.com/devcontainers/features/tree/main/src/github-cli)) — enables `gh` commands for fork management, PR creation, and review from inside the container
 
 ## Local development
 
