@@ -361,10 +361,17 @@ dr run --l<Tab>
    Get-ExecutionPolicy
    ```
 
-   If it's `Restricted`, change it:
+   If it's `Restricted`, the CLI will warn you during install. Change it with:
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
+
+   > [!NOTE]
+   > **Restricted execution policy warning:** On Windows, if the effective execution policy is `Restricted`, 
+   > the `dr self completion install` command will display a warning to stderr after writing the completion profile. 
+   > This is because a `Restricted` policy prevents PowerShell from loading the profile file on startup. The warning 
+   > provides the exact command to fix this: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`. The CLI does not 
+   > change the policy on your behalf—it only warns you so you can take action.
 
 2. Verify profile loads completion:
    ```powershell

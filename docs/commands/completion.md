@@ -340,6 +340,12 @@ build  dev  deploy  lint  test
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
 
+   > [!NOTE]
+   > **Execution policy warning during install:** The `dr self completion install` command will warn you to stderr 
+   > if your effective execution policy is `Restricted`. This warning doesn't prevent the profile from being created—it 
+   > just alerts you that the profile won't load on the next PowerShell launch. Use the command shown in the warning to 
+   > fix it: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`.
+
 2. Verify profile loads completion:
 
    ```powershell
