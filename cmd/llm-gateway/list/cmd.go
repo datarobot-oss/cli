@@ -104,7 +104,7 @@ func toLLMOutputs(llms []drapi.LLM, selectedID string) []LLMOutput {
 }
 
 func terminalWidth() int {
-	w, _, err := term.GetSize(int(os.Stdout.Fd()))
+	w, _, err := term.GetSize(int(os.Stdout.Fd())) //nolint:gosec // uintptr and int are same size on supported platforms
 	if err != nil || w <= 0 {
 		return 120
 	}

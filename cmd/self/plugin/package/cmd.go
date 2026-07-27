@@ -215,7 +215,7 @@ func createArchive(sourceDir, archivePath string) error {
 			return nil
 		}
 
-		file, err := os.Open(path)
+		file, err := os.Open(path) //nolint:gosec // low TOCTOU risk for plugin packaging
 		if err != nil {
 			return err
 		}
