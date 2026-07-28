@@ -258,6 +258,37 @@ func LockPipeline(pipelineID string) (*CreateResponse, error) {
 	return &result, nil
 }
 
+// cloneRequest is the JSON body for POST /api/v2/pipelines/{id}/clone. The
+// omitempty keeps the body as `{}` when no name override is supplied, letting
+// the server apply its default "Clone of <source name>" label.
+type cloneRequest struct {
+	Name string `json:"name,omitempty"`
+}
+
+// ClonePipeline issues POST /api/v2/pipelines/{pipeline_id}/clone to copy an
+// existing pipeline into a new draft (source, description, latest input, and
+// assigned image). An empty name lets the server default to
+// "Clone of <source name>". The response mirrors a create payload.
+func ClonePipeline(pipelineID, name string) (*CreateResponse, error) {
+	// Escape the caller-supplied id so reserved path characters can't alter
+	// the request path (mirrors internal/workload/workload.go).
+	escapedID := url.PathEscape(pipelineID)
+
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapedID + "/clone")
+	if err != nil {
+		return nil, err
+	}
+
+	var result CreateResponse
+
+	err = doJSON(http.MethodPost, endpoint, cloneRequest{Name: name}, "clone pipeline", &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 // doMultipart performs a multipart/form-data request with a single "file" upload
 // and optional form fields, decoding the JSON response into out.
 func doMultipart(method, endpoint, filePath string, fields map[string]string, info string, out any) error {
