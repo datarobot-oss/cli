@@ -174,12 +174,6 @@ func runUpdate(yamlFile string, cliData map[string]interface{}, dataFilePath str
 	// Merge defaults with CLI data (CLI data takes precedence)
 	mergedData := componentConfig.MergeWithCLIData(repoURL, cliData)
 
-	// Rewrite _src_path in the answers file when APPLICATION_TEMPLATE_GIT_BASE_URL
-	// is set so copier pulls from the configured mirror instead of GitHub.
-	if err := copier.RewriteSrcPathIfNeeded(yamlFile); err != nil {
-		log.Warn("Failed to rewrite _src_path in answers file", "file", yamlFile, "error", err)
-	}
-
 	execErr := copier.ExecUpdate(yamlFile, mergedData, updateFlags)
 	if execErr != nil {
 		// TODO: Check beforehand if uv is installed or not
