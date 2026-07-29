@@ -105,20 +105,33 @@ jobs:
           tags: "${{ steps.tags.outputs.pr_tag }} ${{ steps.tags.outputs.immutable_tag }}"
           revision: ${{ needs.check-approval.outputs.sha }}
 
+      # Best-effort: pull_request_review has no "_target" variant, so on a fork PR
+      # GitHub silently caps GITHUB_TOKEN to read-only here regardless of the
+      # `permissions:` block above, and this call 403s. Swallow only that expected
+      # 403 so it doesn't mask the real build failure (from the "Build and push PR
+      # image" step) behind an unrelated stack trace; re-throw anything else.
       - name: Set commit status with image name
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const success = '${{ steps.build.outcome }}' === 'success';
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: '${{ needs.check-approval.outputs.sha }}',
-              state: success ? 'success' : 'failure',
-              context: 'PR Image',
-              description: success
-                ? 'ghcr.io/datarobot-oss/cli:${{ steps.tags.outputs.pr_tag }}'
-                : 'Failed to publish PR image',
-              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`,
-            });
+            try {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: '${{ needs.check-approval.outputs.sha }}',
+                state: success ? 'success' : 'failure',
+                context: 'PR Image',
+                description: success
+                  ? 'ghcr.io/datarobot-oss/cli:${{ steps.tags.outputs.pr_tag }}'
+                  : 'Failed to publish PR image',
+                target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`,
+              });
+            } catch (err) {
+              if (err.status === 403) {
+                core.warning(`Could not set commit status (expected for fork PRs, which get a read-only token here): ${err.message}`);
+              } else {
+                throw err;
+              }
+            }
