@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -55,8 +56,9 @@ func startServer(apiKeyChan chan string, datarobotHost string) tea.Cmd {
 
 		mux := http.NewServeMux()
 		server := &http.Server{
-			Addr:    addr,
-			Handler: mux,
+			Addr:              addr,
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second,
 		}
 
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +142,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		// Now shut down the server after key is received
 		if err := lm.server.Shutdown(context.Background()); err != nil {
-			return errMsg{fmt.Errorf("Error during shutdown: %v", err)}
+			return errMsg{fmt.Errorf("Error during shutdown: %w", err)}
 		}
 
 		// empty apiKey means we need to interrupt current auth flow
@@ -152,7 +154,7 @@ func (lm LoginModel) waitForAPIKey() tea.Cmd {
 
 		err := auth.WriteConfigFileSilent()
 		if err != nil {
-			return errMsg{fmt.Errorf("Error during writing config file: %v", err)}
+			return errMsg{fmt.Errorf("Error during writing config file: %w", err)}
 		}
 
 		return lm.SuccessCmd()

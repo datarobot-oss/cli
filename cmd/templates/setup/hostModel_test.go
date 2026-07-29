@@ -33,7 +33,7 @@ type HostModelTestSuite struct {
 	suite.Suite
 }
 
-// hostModelWrapper wraps HostModel to satisfy tea.Model interface
+// hostModelWrapper wraps HostModel to satisfy tea.Model interface.
 type hostModelWrapper struct {
 	HostModel
 }

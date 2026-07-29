@@ -18,9 +18,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/run/runutil"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -51,12 +53,12 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			err = pipeline.CancelRun(flags.PipelineID, scope, version, args[0])
 			if err != nil {
-				return runutil.HandleRunNotFoundError(err, args[0])
+				return runutil.HandleRunNotFoundError(err, args[0], outputformat.OutputFormatText)
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Cancelled run: " + args[0]))

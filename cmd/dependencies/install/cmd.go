@@ -69,7 +69,7 @@ func Cmd() *cobra.Command {
 				if err != nil {
 					cmd.SilenceUsage = true
 
-					return err
+					return fmt.Errorf("confirm install: %w", err)
 				}
 
 				if !yes {
@@ -88,7 +88,7 @@ func Cmd() *cobra.Command {
 				installError = err.Error()
 				cmd.SilenceUsage = true
 
-				return err
+				return fmt.Errorf("install prerequisites: %w", err)
 			}
 
 			log.Debug("deps: install complete", "installed", installSuccess)

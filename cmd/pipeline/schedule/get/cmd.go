@@ -50,7 +50,7 @@ Example:
 
 			result, err := pipeline.GetSchedule(pipelineID, args[0])
 			if err != nil {
-				return handleGetError(err, args[0])
+				return handleGetError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderSchedule(outputFormat, *result)
@@ -73,10 +73,14 @@ Example:
 	return cmd
 }
 
-func handleGetError(err error, scheduleID string) error {
+func handleGetError(err error, scheduleID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No schedule found with id: " + scheduleID))
 
 		return nil

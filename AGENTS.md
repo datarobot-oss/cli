@@ -142,31 +142,38 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
 
 **High-Risk** (catches silent failures, data corruption, poor error handling):
+
 - **Concurrency** — Goroutine panic recovery, loop variable capture, WaitGroup pairing, channel closure
 - **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
 - **Security** — Input validation, security boundaries, threat models
 - **Testing** — Race detector, error path coverage, test seams
 
 **Resource & Operations** (prevents hangs, leaks, platform bugs):
+
 - **Resources** — Lock lifecycle, timeouts, cleanup, disk space checks
 - **Paths** — Validation, normalization, Unicode, symlinks
 - **Cross-Platform** — Build tags, case sensitivity, line endings, symlink handling
 
 **Design** (prevents tight coupling, premature abstraction):
+
 - **Architecture** — Code organization, separation of concerns, dependency injection, phase orchestration
 - **Package APIs** — Contracts between packages, documentation, limitations
 
 **Quality** (consistency and maintainability):
+
 - **Testing** — Test coverage, mocking, pagination tests
-- **Commands** — Table rendering, file organization, output formatting
+- **Commands** — Table rendering, file organization, output formatting, JSON output purity
 
 **CI & Workflows** (informational callouts, not correctness bugs):
+
 - **Composite Actions** — Changes to `.github/actions/*/action.yaml` can't be validated by their own PR's CI
 
 **When working on code**, apply these quick principles:
+
 - **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
 - **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
 - **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
+- **JSON output purity**: When `--output-format json` is set, stdout must contain only valid JSON. All deprecation warnings, logs, usage, and update hints go to stderr
 - **Platforms**: Add build tags, match signatures, test on target platforms
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.

@@ -30,8 +30,20 @@ const DRAPIURLSuffix = "/api/v2"
 var ErrInvalidURL = errors.New("Invalid URL.")
 
 // SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
-// returns https://app.datarobot.com (no trailing slash)
+// returns https://app.datarobot.com (no trailing slash).
+//
+// A bare hostname without a scheme (e.g. "app.datarobot.com") is also accepted
+// and defaults to the https scheme, so "app.datarobot.com" is treated the same
+// as "https://app.datarobot.com".
 func SchemeHostOnly(longURL string) (string, error) {
+	longURL = strings.TrimSpace(longURL)
+
+	// Default to https when no scheme is provided so that a bare hostname is
+	// accepted in addition to a full URL.
+	if longURL != "" && !strings.Contains(longURL, "://") {
+		longURL = "https://" + longURL
+	}
+
 	parsedURL, err := url.Parse(longURL)
 	if err != nil {
 		return "", err
@@ -70,7 +82,7 @@ func GetUserAgentHeader() string {
 }
 
 // apiConsumerTrace holds the dot-notation command path set at startup.
-// Example: "datarobot.cli.templates.setup"
+// Example: "datarobot.cli.templates.setup".
 var apiConsumerTrace string
 
 // SetAPIConsumerTrace stores the dot-notation trace value for the running command.
@@ -125,7 +137,7 @@ func RedactedReqInfo(req *http.Request) string {
 }
 
 // TODO: I believe we want to delete this function as there is SetURLToConfig function
-// But it is used in cmd/templates/setup/model.go
+// But it is used in cmd/templates/setup/model.go.
 func SaveURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {

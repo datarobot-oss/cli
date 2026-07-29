@@ -33,8 +33,16 @@ import (
 )
 
 var testLLMs = []drapi.LLM{
-	{LlmID: "llm-001", Name: "GPT-4o", Provider: "azure", Model: "gpt-4o", IsActive: true},
-	{LlmID: "llm-002", Name: "Claude 3.5", Provider: "anthropic", Model: "claude-3-5-sonnet", IsActive: true},
+	{LlmID: "llm-001", Name: "GPT-4o", Provider: "azure", Model: "gpt-4o", IsActive: true, Description: "flagship multimodal model", ContextSize: 128000},
+	{LlmID: "llm-002", Name: "Claude 3.5", Provider: "anthropic", Model: "claude-3-5-sonnet", IsActive: true, Description: "balanced reasoning model", ContextSize: 200000},
+}
+
+// testMixedLLMs pairs a gateway model with a deployed LLM. The deployed row
+// carries no provider/context and the litellm sentinel model; its LlmID is the
+// deployment id.
+var testMixedLLMs = []drapi.LLM{
+	{LlmID: "llm-001", Name: "GPT-4o", Provider: "azure", Model: "gpt-4o", IsActive: true, ContextSize: 128000, Kind: drapi.LLMKindGateway},
+	{LlmID: "6650f0aa11bb22cc33dd44ee", Name: "Support RAG LLM", Model: "datarobot/datarobot-deployed-llm", IsActive: true, Kind: drapi.LLMKindDeployed, DeploymentID: "6650f0aa11bb22cc33dd44ee"},
 }
 
 // setupLLMServer starts an httptest.Server serving a fixed LLM catalog and wires viperx config.
@@ -106,6 +114,8 @@ func TestToLLMOutputs_Basic(t *testing.T) {
 	assert.Equal(t, "GPT-4o", outputs[0].Name)
 	assert.Equal(t, "azure", outputs[0].Provider)
 	assert.Equal(t, "gpt-4o", outputs[0].Model)
+	assert.Equal(t, "flagship multimodal model", outputs[0].Description)
+	assert.Equal(t, 128000, outputs[0].ContextSize)
 	assert.False(t, outputs[0].Selected)
 	assert.False(t, outputs[1].Selected)
 }
@@ -141,6 +151,26 @@ func TestPrintLLMTable_NoneSelected(t *testing.T) {
 	assert.NotContains(t, out, "* ")
 	assert.Contains(t, out, "  llm-001")
 	assert.Contains(t, out, "  llm-002")
+}
+
+// The table shows a CONTEXT column but deliberately omits description
+// (it wraps into unreadable multi-line rows across a large catalog).
+func TestPrintLLMTable_ContextColumnNoDescription(t *testing.T) {
+	out := captureStdout(t, func() {
+		printLLMTable(testLLMs, "")
+	})
+
+	assert.Contains(t, out, "CONTEXT")
+	assert.Contains(t, out, "128000")
+	assert.Contains(t, out, "200000")
+	assert.NotContains(t, out, "flagship multimodal model")
+	assert.NotContains(t, out, "balanced reasoning model")
+}
+
+func TestFormatContextSize(t *testing.T) {
+	assert.Equal(t, "128000", formatContextSize(128000))
+	assert.Equal(t, "-", formatContextSize(0))
+	assert.Equal(t, "-", formatContextSize(-1))
 }
 
 // --- full command ---
@@ -192,8 +222,13 @@ func TestListCmd_JSONOutput(t *testing.T) {
 	require.Len(t, envelope.LLMs, 2)
 	assert.Equal(t, "llm-001", envelope.LLMs[0].ID)
 	assert.Equal(t, "llm-002", envelope.LLMs[1].ID)
+	assert.Equal(t, "flagship multimodal model", envelope.LLMs[0].Description)
+	assert.Equal(t, 128000, envelope.LLMs[0].ContextSize)
 	assert.False(t, envelope.LLMs[0].Selected)
 	assert.False(t, envelope.LLMs[1].Selected)
+
+	// Lock the wire key as snake_case: the contract CFX-6981 consumes.
+	assert.Contains(t, out, `"context_size"`)
 }
 
 func TestListCmd_JSONOutput_SelectedField(t *testing.T) {
@@ -234,4 +269,46 @@ func TestListCmd_APIError(t *testing.T) {
 
 	err := root.Execute()
 	assert.Error(t, err)
+}
+
+// --- deployed-LLM union ---
+
+func TestToLLMOutputs_DeployedFields(t *testing.T) {
+	outputs := toLLMOutputs(testMixedLLMs, "")
+
+	require.Len(t, outputs, 2)
+
+	assert.Equal(t, "gateway", outputs[0].Source)
+	assert.Empty(t, outputs[0].DeploymentID)
+
+	assert.Equal(t, "deployed", outputs[1].Source)
+	assert.Equal(t, "6650f0aa11bb22cc33dd44ee", outputs[1].ID)
+	assert.Equal(t, "6650f0aa11bb22cc33dd44ee", outputs[1].DeploymentID)
+	assert.Equal(t, "datarobot/datarobot-deployed-llm", outputs[1].Model)
+}
+
+// TestToLLMOutputs_DeployedJSONKeys locks the wire contract CFX-6980 consumes:
+// snake_case source + deployment_id present on every entry.
+func TestToLLMOutputs_DeployedJSONKeys(t *testing.T) {
+	data, err := json.Marshal(toLLMOutputs(testMixedLLMs, ""))
+	require.NoError(t, err)
+
+	out := string(data)
+	assert.Contains(t, out, `"source":"gateway"`)
+	assert.Contains(t, out, `"source":"deployed"`)
+	assert.Contains(t, out, `"deployment_id":"6650f0aa11bb22cc33dd44ee"`)
+}
+
+func TestPrintLLMTable_DeployedRow(t *testing.T) {
+	out := captureStdout(t, func() {
+		printLLMTable(testMixedLLMs, "")
+	})
+
+	// SOURCE column carries the kind, and the deployed row shows its label + id.
+	assert.Contains(t, out, "deployed")
+	assert.Contains(t, out, "Support RAG LLM")
+	assert.Contains(t, out, "6650f0aa11bb22cc33dd44ee")
+
+	// The sentinel model is blanked to "-" in the table (JSON-only contract).
+	assert.NotContains(t, out, "datarobot/datarobot-deployed-llm")
 }

@@ -60,6 +60,16 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			expectedURL: "https://app.datarobot.com/api/v2",
 		},
 		{
+			name:        "bare hostname defaults to https",
+			input:       "app.datarobot.com",
+			expectedURL: "https://app.datarobot.com/api/v2",
+		},
+		{
+			name:        "bare hostname with path gets trimmed and defaults to https",
+			input:       "app.datarobot.com/api/v2",
+			expectedURL: "https://app.datarobot.com/api/v2",
+		},
+		{
 			name:        "shortcut 1 resolves to app.datarobot.com",
 			input:       "1",
 			expectedURL: "https://app.datarobot.com/api/v2",
@@ -80,8 +90,8 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			expectedURL: "https://custom.example.com/api/v2",
 		},
 		{
-			name:        "invalid URL without host returns error",
-			input:       "not-a-url",
+			name:        "invalid URL with space in host returns error",
+			input:       "not a url",
 			expectError: true,
 		},
 	}

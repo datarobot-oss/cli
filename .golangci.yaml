@@ -11,11 +11,11 @@ linters:
     - depguard
     - dupword
     - errname
-    # - errorlint # disabled until we can resolve lints
+    - errorlint
     - exhaustive
-    # - godot # disabled until we can resolve lints
+    - godot
     # - godox # disabled until we can resolve lints
-    # - gosec # disabled until we can resolve lints
+    - gosec
     - loggercheck
     - misspell
     - nestif
@@ -89,6 +89,8 @@ linters:
     rules:
       - linters: [forbidigo]
         path: "^main\\.go$|internal/telemetry/telemetry\\.go|internal/log/pkg\\.go|_test\\.go$"
+      - linters: [gosec]
+        text: "G(101|104|301|304|306):"
     generated: lax
     presets:
       - comments

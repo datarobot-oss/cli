@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/plugin"
 	"github.com/datarobot/cli/cmd/self"
+	selfversion "github.com/datarobot/cli/cmd/self/version"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
 	"github.com/datarobot/cli/cmd/task/run"
@@ -86,6 +87,7 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 🎯 ` + tui.BaseTextStyle.Render("Quick Start:") + `
   dr start             # Create your first AI app (start here!)
+  dr self update       # Update DataRobot CLI to latest version
   dr --help            # Show all available commands
 
 💡 ` + tui.BaseTextStyle.Render("New to AI development?") + ` Perfect! Run 'dr start' and we'll guide you through everything.`,
@@ -193,7 +195,11 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 // It adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func ExecuteContext(ctx context.Context) error {
-	return RootCmd.ExecuteContext(ctx)
+	if err := RootCmd.ExecuteContext(ctx); err != nil {
+		return fmt.Errorf("execute root command: %w", err)
+	}
+
+	return nil
 }
 
 // bindUniversal binds name to viper and annotates the flag for forwarding to
@@ -219,7 +225,7 @@ func init() {
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	// Set custom version template to match our unified format
-	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n")
+	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n\nTo update: dr self update\n")
 
 	// Configure persistent flags
 	RootCmd.PersistentFlags().StringVar(&configFilePath, "config", "",
@@ -308,7 +314,22 @@ func init() {
 
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), output)
 		} else if showVersion {
-			fmt.Fprintln(cmd.OutOrStdout(), internalVersion.GetAppNameVersionText())
+			// Route through self version with explicit --output-format text
+			versionCmd := selfversion.Cmd()
+			// Suppress automatic error/usage output from cobra to prevent double-printing.
+			// Error handling is done explicitly below.
+			versionCmd.SilenceErrors = true
+			versionCmd.SilenceUsage = true
+			versionCmd.SetArgs([]string{"--output-format", "text"})
+			versionCmd.SetOut(cmd.OutOrStdout())
+			versionCmd.SetErr(cmd.ErrOrStderr())
+
+			if err := versionCmd.Execute(); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+			} else {
+				// Only print the update hint on success
+				fmt.Fprintln(cmd.OutOrStdout(), "\nTo update: dr self update")
+			}
 		} else {
 			// Use default help behavior but with customized template
 			RootCmd.SetHelpTemplate(CustomHelpTemplate)

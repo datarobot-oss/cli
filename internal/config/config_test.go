@@ -39,8 +39,9 @@ type ConfigTestSuite struct {
 func (suite *ConfigTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
-	suite.T().Setenv("HOME", suite.tempDir)
-	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+	// Sets HOME + USERPROFILE (Windows) and clears XDG_CONFIG_HOME so the
+	// config dir resolves under the temp dir on every platform.
+	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {

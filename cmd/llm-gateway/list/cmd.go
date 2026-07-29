@@ -17,6 +17,7 @@ package list
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -32,12 +33,19 @@ import (
 )
 
 // LLMOutput is the JSON representation of an LLM for --output-format json.
+// Source discriminates gateway catalog models from DataRobot-deployed LLMs;
+// DeploymentID is set only for deployed entries and is what downstream tooling
+// uses to write the deployed-model .env keys.
 type LLMOutput struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Selected bool   `json:"selected"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Source       string `json:"source"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	Description  string `json:"description"`
+	ContextSize  int    `json:"context_size"`
+	DeploymentID string `json:"deployment_id"`
+	Selected     bool   `json:"selected"`
 }
 
 func Cmd() *cobra.Command {
@@ -46,12 +54,12 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
-		Short:        "List available LLM Gateway models",
+		Short:        "List available LLMs",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			llmList, err := drapi.GetLLMs()
+			llmList, err := drapi.GetLLMsAndDeployed()
 			if err != nil {
 				return err
 			}
@@ -87,11 +95,15 @@ func toLLMOutputs(llms []drapi.LLM, selectedID string) []LLMOutput {
 
 	for i, l := range llms {
 		outputs[i] = LLMOutput{
-			ID:       l.LlmID,
-			Name:     l.Name,
-			Provider: l.Provider,
-			Model:    l.Model,
-			Selected: l.LlmID == selectedID,
+			ID:           l.LlmID,
+			Name:         l.Name,
+			Source:       l.Kind,
+			Provider:     l.Provider,
+			Model:        l.Model,
+			Description:  l.Description,
+			ContextSize:  l.ContextSize,
+			DeploymentID: l.DeploymentID,
+			Selected:     l.LlmID == selectedID,
 		}
 	}
 
@@ -99,7 +111,7 @@ func toLLMOutputs(llms []drapi.LLM, selectedID string) []LLMOutput {
 }
 
 func terminalWidth() int {
-	w, _, err := term.GetSize(int(os.Stdout.Fd()))
+	w, _, err := term.GetSize(int(os.Stdout.Fd())) //nolint:gosec // uintptr and int are same size on supported platforms
 	if err != nil || w <= 0 {
 		return 120
 	}
@@ -107,8 +119,18 @@ func terminalWidth() int {
 	return w
 }
 
+// formatContextSize renders a context-window size for the table. A zero or
+// missing value shows as "-" so it reads as unknown, not a real zero-token limit.
+func formatContextSize(n int) string {
+	if n <= 0 {
+		return "-"
+	}
+
+	return strconv.Itoa(n)
+}
+
 func printLLMTable(llms []drapi.LLM, selectedID string) {
-	fmt.Println(tui.SubTitleStyle.Render("LLM Gateway Models"))
+	fmt.Println(tui.SubTitleStyle.Render("Available LLMs"))
 
 	idStyle := tui.BaseTextStyle.
 		Foreground(tui.GetAdaptiveColor(tui.DrPurple, tui.DrPurpleDark)).
@@ -133,7 +155,7 @@ func printLLMTable(llms []drapi.LLM, selectedID string) {
 				return dimStyle
 			}
 		}).
-		Headers("ID", "NAME", "PROVIDER", "MODEL")
+		Headers("ID", "NAME", "SOURCE", "PROVIDER", "MODEL", "CONTEXT")
 
 	for _, l := range llms {
 		id := "  " + l.LlmID
@@ -141,7 +163,15 @@ func printLLMTable(llms []drapi.LLM, selectedID string) {
 			id = "* " + l.LlmID
 		}
 
-		t.Row(id, l.Name, l.Provider, l.Model)
+		// Deployed rows carry no provider and only the litellm sentinel model;
+		// both are noise in the table (the SOURCE column already says
+		// "deployed"), so show "-" and keep the sentinel in JSON output only.
+		provider, model := l.Provider, l.Model
+		if l.Kind == drapi.LLMKindDeployed {
+			provider, model = "-", "-"
+		}
+
+		t.Row(id, l.Name, l.Kind, provider, model, formatContextSize(l.ContextSize))
 	}
 
 	rendered := t.Render()

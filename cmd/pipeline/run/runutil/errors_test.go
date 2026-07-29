@@ -19,18 +19,51 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHandleRunNotFoundError_404IsSuppressed(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
-	assert.NoError(t, HandleRunNotFoundError(httpErr, "d-1"))
+	assert.NoError(t, HandleRunNotFoundError(httpErr, "d-1", outputformat.OutputFormatText))
 }
 
 func TestHandleRunNotFoundError_PropagatesOther(t *testing.T) {
-	err := HandleRunNotFoundError(errors.New("boom"), "d-1")
+	err := HandleRunNotFoundError(errors.New("boom"), "d-1", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
+}
+
+func TestHandleRunNotFoundError_TextFormat_404_PrintsMessageAndReturnsNil(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := HandleRunNotFoundError(httpErr, "d-1", outputformat.OutputFormatText)
+		assert.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "No run found with id: d-1")
+}
+
+func TestHandleRunNotFoundError_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := HandleRunNotFoundError(httpErr, "d-1", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleRunNotFoundError_JSONFormat_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: http.StatusInternalServerError, URL: "x"}
+
+	err := HandleRunNotFoundError(other, "d-1", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
 }

@@ -173,7 +173,7 @@ func restoreFromDir(rollDir, projectDir string) error {
 			return fmt.Errorf("mkdir restore parent: %w", err)
 		}
 
-		in, err := os.Open(p)
+		in, err := os.Open(p) //nolint:gosec // low TOCTOU risk for backup restore
 		if err != nil {
 			return fmt.Errorf("open backup %s: %w", p, err)
 		}

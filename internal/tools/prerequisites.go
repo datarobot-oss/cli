@@ -37,7 +37,7 @@ type InstallCommands struct {
 	Windows string `yaml:"windows"`
 }
 
-// Prerequisite represents a required tool
+// Prerequisite represents a required tool.
 type Prerequisite struct {
 	Key            string
 	Name           string          `yaml:"name"            validate:"required"`
@@ -94,7 +94,7 @@ var pulumiInstallCmd = InstallCommands{
 	Windows: "winget install Pulumi.Pulumi" + registry.WingetUnattendedFlags,
 }
 
-// RequiredTools lists all tools required for the quickstart process
+// RequiredTools lists all tools required for the quickstart process.
 var RequiredTools = []Prerequisite{
 	{Name: "Python", Command: "python3 --version", URL: "https://www.python.org/downloads/", MinimumVersion: "3.12.5", Install: pythonInstallCmd},
 	{Name: "uv", Command: "uv --version", URL: "https://docs.astral.sh/uv/getting-started/installation/", MinimumVersion: "0.11.20", Install: uvInstallCmd},
@@ -241,7 +241,7 @@ func commandArgs(fullCommand string) (string, []string) {
 	return command[0], command[1:]
 }
 
-// isInstalled checks if a command is available in the system PATH
+// isInstalled checks if a command is available in the system PATH.
 func isInstalled(fullCommand string) bool {
 	command, _ := commandArgs(fullCommand)
 
@@ -250,7 +250,7 @@ func isInstalled(fullCommand string) bool {
 	return err == nil
 }
 
-// isVersionInstalled checks if a command has proper version installed
+// isVersionInstalled checks if a command has proper version installed.
 func isVersionInstalled(tool Prerequisite) (string, bool) {
 	// Return success result if no version or no version command specified
 	if tool.MinimumVersion == "" || tool.Command == "" {

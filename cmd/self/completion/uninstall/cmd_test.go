@@ -17,6 +17,7 @@ package uninstall
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -134,6 +135,13 @@ func TestGetUninstallPaths(t *testing.T) {
 	testHome := "/test/home"
 	testutil.SetTestHomeDir(t, testHome)
 
+	// On Windows, PowerShell has two profile locations (PowerShell Core and
+	// Windows PowerShell); other platforms have one.
+	powershellCount := 1
+	if runtime.GOOS == "windows" {
+		powershellCount = 2
+	}
+
 	tests := []struct {
 		name          string
 		shell         internalShell.Shell
@@ -156,12 +164,12 @@ func TestGetUninstallPaths(t *testing.T) {
 			name:          "fish paths",
 			shell:         internalShell.Fish,
 			expectedCount: 2,
-			checkPath:     ".config/fish",
+			checkPath:     filepath.Join(".config", "fish"),
 		},
 		{
 			name:          "powershell paths",
 			shell:         internalShell.PowerShell,
-			expectedCount: 1,
+			expectedCount: powershellCount,
 			checkPath:     "PowerShell",
 		},
 	}

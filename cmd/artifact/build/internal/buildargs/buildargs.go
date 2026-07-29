@@ -36,7 +36,7 @@ import (
 func ResolveOptional(args []string) (string, error) {
 	explicit := ""
 	if len(args) == 1 {
-		explicit = args[0]
+		explicit = args[0] //nolint:gosec // bounded by if len(args)==1 check above
 	}
 
 	id, _, err := workload.ResolveArtifactID(explicit)
@@ -59,9 +59,9 @@ func ResolvePositional(args []string) (string, string, error) {
 			return "", "", err
 		}
 
-		return artifactID, args[0], nil
+		return artifactID, args[0], nil //nolint:gosec // bounded by case 1: len(args)==1
 	case 2:
-		artifactID, _, err := workload.ResolveArtifactID(args[0])
+		artifactID, _, err := workload.ResolveArtifactID(args[0]) //nolint:gosec // bounded by case 2: len(args)==2
 		if err != nil {
 			return "", "", err
 		}

@@ -16,6 +16,7 @@ package update
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -71,7 +72,7 @@ Example:
 
 			result, err := pipeline.UpdatePipeline(pipelineID, filePath, imageID, name, description)
 			if err != nil {
-				return err
+				return fmt.Errorf("update pipeline: %w", err)
 			}
 
 			return pipeline.RenderCreateResponse(outputFormat, *result)

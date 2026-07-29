@@ -138,7 +138,7 @@ func resolveShellForUninstall(specifiedShell string) (string, error) {
 
 	shell, err := internalShell.DetectShell()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("detect shell: %w", err)
 	}
 
 	fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)

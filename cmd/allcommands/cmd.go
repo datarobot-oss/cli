@@ -41,7 +41,7 @@ func Cmd() *cobra.Command {
 	return cmd
 }
 
-// GenerateCommandTree generates a tree representation of all commands and flags
+// GenerateCommandTree generates a tree representation of all commands and flags.
 func GenerateCommandTree(rootCmd *cobra.Command) string {
 	var builder strings.Builder
 

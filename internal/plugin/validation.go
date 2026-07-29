@@ -216,7 +216,9 @@ func ExecPluginManifest(scriptPath string) (*PluginManifest, error) {
 		return nil, fmt.Errorf("failed to make script executable: %w", err)
 	}
 
-	cmd := exec.Command(scriptPath, PluginManifestFlag)
+	name, cmdArgs := pluginCommandArgs(scriptPath, PluginManifestFlag)
+
+	cmd := exec.Command(name, cmdArgs...)
 
 	var stdout, stderr bytes.Buffer
 

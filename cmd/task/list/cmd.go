@@ -28,7 +28,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Category name constants
+// Category name constants.
 const (
 	CategoryQuickStart      = "🚀 Quick Start"
 	CategoryBuilding        = "🏗️ Building"
@@ -38,7 +38,7 @@ const (
 	CategoryNamespacePrefix = "❖ "
 )
 
-// Category represents a human-readable task category
+// Category represents a human-readable task category.
 type Category struct {
 	Name     string
 	Tasks    []task.Task
@@ -52,7 +52,7 @@ type TaskOutput struct {
 	Description string   `json:"description"`
 }
 
-// getCategoryStyle returns the appropriate style for a category name with adaptive colors
+// getCategoryStyle returns the appropriate style for a category name with adaptive colors.
 func getCategoryStyle(categoryName string) lipgloss.Style {
 	switch {
 	case strings.Contains(categoryName, CategoryQuickStart):
@@ -78,7 +78,7 @@ func getCategoryStyle(categoryName string) lipgloss.Style {
 	}
 }
 
-// getTaskCategory determines category based on task suffix
+// getTaskCategory determines category based on task suffix.
 func getTaskCategory(suffix string) *Category {
 	lowerSuffix := strings.ToLower(suffix)
 
@@ -101,7 +101,7 @@ func getTaskCategory(suffix string) *Category {
 	return nil
 }
 
-// isCommonTask checks if a task is commonly used
+// isCommonTask checks if a task is commonly used.
 func isCommonTask(suffix string) bool {
 	lowerSuffix := strings.ToLower(suffix)
 	commonSuffixes := []string{"dev", "build", "test", "install", "deploy", "lint"}
@@ -115,7 +115,7 @@ func isCommonTask(suffix string) bool {
 	return false
 }
 
-// categorizeTask determines the appropriate category for a task
+// categorizeTask determines the appropriate category for a task.
 func categorizeTask(t task.Task, showAll bool) *Category {
 	name := t.Name
 
@@ -158,7 +158,7 @@ func categorizeTask(t task.Task, showAll bool) *Category {
 	return &Category{Name: categoryName, Priority: 10}
 }
 
-// groupTasksByCategory groups tasks into human-readable categories
+// groupTasksByCategory groups tasks into human-readable categories.
 func groupTasksByCategory(tasks []task.Task, showAll bool) []*Category {
 	categoryMap := make(map[string]*Category)
 
@@ -191,7 +191,7 @@ func groupTasksByCategory(tasks []task.Task, showAll bool) []*Category {
 	return categories
 }
 
-// printCategorizedTasks prints tasks grouped by category in a styled table format
+// printCategorizedTasks prints tasks grouped by category in a styled table format.
 func printCategorizedTasks(categories []*Category, showAll bool) error {
 	if len(categories) == 0 {
 		fmt.Println("No tasks found.")

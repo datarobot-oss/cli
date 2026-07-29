@@ -15,6 +15,9 @@
 package list
 
 import (
+	"fmt"
+
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -54,12 +57,12 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			items, err := pipeline.ListInputs(flags.PipelineID, scope, version, offset, limit)
 			if err != nil {
-				return err
+				return fmt.Errorf("list inputs: %w", err)
 			}
 
 			return pipeline.RenderInputs(outputFormat, items)

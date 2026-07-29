@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-// ParseDataArgs parses --data arguments in key=value format
+// ParseDataArgs parses --data arguments in key=value format.
 func ParseDataArgs(dataArgs []string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 

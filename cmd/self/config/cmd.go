@@ -15,6 +15,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +35,7 @@ func Cmd() *cobra.Command {
 func RunE(cmd *cobra.Command, _ []string) error {
 	output, err := config.DebugViperConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("debug viper config: %w", err)
 	}
 
 	cmd.Print(output)

@@ -46,6 +46,7 @@ const versionsYAMLWrongVersion = `echo-tool:
   install:
     macos: "echo install"
     linux: "echo install"
+    windows: "echo install"
 `
 
 // writePluginVersionsYAML creates a plugin dir under the managed plugins directory

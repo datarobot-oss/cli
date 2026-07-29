@@ -43,8 +43,7 @@ type LoginModelTestSuite struct {
 func (suite *LoginModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
-	suite.T().Setenv("HOME", suite.tempDir)
-	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
 
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
@@ -77,7 +76,10 @@ func (suite *LoginModelTestSuite) WaitFor(tm *teatest.TestModel, contains string
 			return bytes.Contains(bts, []byte(contains))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
+		// teatest's PTY rendering is markedly slower on Windows CI runners, so
+		// use a generous deadline. Healthy runs still return as soon as the
+		// awaited output appears, so non-Windows pays no penalty on success.
+		teatest.WithDuration(time.Second*10),
 	)
 }
 
@@ -95,8 +97,7 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
-	suite.T().Setenv("HOME", suite.tempDir)
-	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
 
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 

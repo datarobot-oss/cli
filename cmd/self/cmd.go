@@ -27,7 +27,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "self",
 		GroupID: "self",
-		Short:   "⚙️ Run DataRobot CLI utility commands",
+		Short:   "⚙️ Configure and update the DataRobot CLI",
 	}
 
 	cmd.AddCommand(

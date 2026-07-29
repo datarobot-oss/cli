@@ -357,6 +357,10 @@ func TestLastSuccessDepsCheck_UpdatedByInstallPrerequisites(t *testing.T) {
 // --- isPermissionDenied tests ---
 
 func TestIsPermissionDenied_ExitCode126(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("exit code 126 is a POSIX-shell permission convention; not applicable on Windows")
+	}
+
 	assert.True(t, isPermissionDenied(126, ""))
 }
 

@@ -16,9 +16,9 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Common style definitions using DataRobot branding
+// Common style definitions using DataRobot branding.
 var (
-	// Adaptive colors for light/dark terminals
+	// Adaptive colors for light/dark terminals.
 	TitleColor  = GetAdaptiveColor(DrGreen, DrGreenDark)
 	BorderColor = GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)
 
@@ -30,7 +30,7 @@ var (
 	HintStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGray, DrGrayDark))
 	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
 
-	// Specific UI styles
+	// Specific UI styles.
 	LogoStyle     = BaseTextStyle
 	WelcomeStyle  = BaseTextStyle.Bold(true)
 	SubTitleStyle = BaseTextStyle.Bold(true).

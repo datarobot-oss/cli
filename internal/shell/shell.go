@@ -90,6 +90,13 @@ func DetectShell() (string, error) {
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
 
+	// On Windows, $SHELL is a Unix convention and is normally unset, and the
+	// parent process is often a non-shell (e.g. the installer). Default to
+	// PowerShell, which the CLI fully supports, rather than failing detection.
+	if runtime.GOOS == "windows" {
+		return string(PowerShell), nil
+	}
+
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
 }
 
@@ -99,7 +106,7 @@ func parentProcessNameWindows(ppid int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
+	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}
@@ -140,7 +147,7 @@ func parentProcessName() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}

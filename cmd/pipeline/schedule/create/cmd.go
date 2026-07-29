@@ -16,6 +16,7 @@ package create
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -72,7 +73,7 @@ Example:
 
 			result, err := pipeline.CreateSchedule(pipelineID, body)
 			if err != nil {
-				return err
+				return fmt.Errorf("create schedule: %w", err)
 			}
 
 			return pipeline.RenderSchedule(outputFormat, *result)

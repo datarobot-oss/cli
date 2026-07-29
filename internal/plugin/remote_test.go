@@ -21,11 +21,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestLivePluginRegistrySchema validates the actual docs/plugins/index.json file
+// TestLivePluginRegistrySchema validates the actual docs/plugins/index.json file.
 func TestLivePluginRegistrySchema(t *testing.T) {
 	// Find the project root by looking for go.mod
 	projectRoot, err := findProjectRoot()
@@ -86,7 +87,7 @@ func TestLivePluginRegistrySchema(t *testing.T) {
 	}
 }
 
-// TestPluginManifestSchema validates plugin manifest JSON schema
+// TestPluginManifestSchema validates plugin manifest JSON schema.
 func TestPluginManifestSchema(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -183,7 +184,7 @@ func TestPluginManifestSchema(t *testing.T) {
 	}
 }
 
-// TestPluginRegistryParsing validates plugin registry JSON parsing
+// TestPluginRegistryParsing validates plugin registry JSON parsing.
 func TestPluginRegistryParsing(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -264,7 +265,7 @@ func TestPluginRegistryParsing(t *testing.T) {
 	}
 }
 
-// TestInstalledPluginMetadata validates installed plugin metadata JSON
+// TestInstalledPluginMetadata validates installed plugin metadata JSON.
 func TestInstalledPluginMetadata(t *testing.T) {
 	meta := InstalledPlugin{
 		Name:        "test",
@@ -287,7 +288,7 @@ func TestInstalledPluginMetadata(t *testing.T) {
 	assert.Equal(t, meta.InstalledAt, decoded.InstalledAt)
 }
 
-// TestResolveVersion tests semver constraint resolution
+// TestResolveVersion tests semver constraint resolution.
 func TestResolveVersion(t *testing.T) {
 	versions := []RegistryVersion{
 		{Version: "2.1.0", URL: "url-2.1.0"},
@@ -337,14 +338,128 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-// TestResolveVersionEmpty tests error handling for empty version list
+// TestGetInstalledPlugins tests multi-directory discovery behaviour.
+func TestGetInstalledPlugins(t *testing.T) {
+	// writeMetadata is a small helper that creates a plugin directory with a
+	// .installed.json so loadPluginMetadata can find it.
+	writeMetadata := func(t *testing.T, dir, name, version string) {
+		t.Helper()
+
+		pluginDir := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(pluginDir, 0o755))
+
+		meta := InstalledPlugin{Name: name, Version: version}
+
+		data, err := json.Marshal(meta)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(pluginDir, ".installed.json"), data, 0o644))
+	}
+
+	t.Run("discovers plugin only in XDG_CONFIG_DIRS", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "remote-only", "2.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var found bool
+
+		for _, p := range plugins {
+			if p.Name == "remote-only" {
+				found = true
+
+				assert.Equal(t, "2.0.0", p.Version)
+			}
+		}
+
+		assert.True(t, found, "plugin from XDG_CONFIG_DIRS should be discovered")
+	})
+
+	t.Run("primary dir shadows same-named plugin in XDG_CONFIG_DIRS", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "shared-plugin", "1.0.0")
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "shared-plugin", "9.9.9")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var count int
+
+		for _, p := range plugins {
+			if p.Name == "shared-plugin" {
+				count++
+
+				assert.Equal(t, "1.0.0", p.Version, "primary dir version should win")
+			}
+		}
+
+		assert.Equal(t, 1, count, "same-named plugin should appear only once")
+	})
+
+	t.Run("plugins from both dirs are returned when names differ", func(t *testing.T) {
+		primaryDir := t.TempDir()
+		xdgDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", xdgDir)
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "plugin-a", "1.0.0")
+		writeMetadata(t, filepath.Join(xdgDir, "datarobot", "plugins"), "plugin-b", "2.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		names := make(map[string]bool)
+
+		for _, p := range plugins {
+			names[p.Name] = true
+		}
+
+		assert.True(t, names["plugin-a"], "plugin-a from primary dir should be present")
+		assert.True(t, names["plugin-b"], "plugin-b from XDG_CONFIG_DIRS should be present")
+	})
+
+	t.Run("non-existent XDG_CONFIG_DIRS dir is silently skipped", func(t *testing.T) {
+		primaryDir := t.TempDir()
+
+		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", primaryDir)
+		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", "/does/not/exist")
+
+		writeMetadata(t, filepath.Join(primaryDir, "datarobot", "plugins"), "only-plugin", "1.0.0")
+
+		plugins, err := GetInstalledPlugins()
+		require.NoError(t, err)
+
+		var found bool
+
+		for _, p := range plugins {
+			if p.Name == "only-plugin" {
+				found = true
+			}
+		}
+
+		assert.True(t, found, "plugin from primary dir should still be returned")
+	})
+}
+
+// TestResolveVersionEmpty tests error handling for empty version list.
 func TestResolveVersionEmpty(t *testing.T) {
 	_, err := ResolveVersion([]RegistryVersion{}, "latest")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "No versions available")
 }
 
-// Helper function to find project root
+// Helper function to find project root.
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

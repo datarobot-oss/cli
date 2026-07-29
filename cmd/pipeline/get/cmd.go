@@ -49,7 +49,7 @@ Example:
 
 			result, err := pipeline.GetPipeline(args[0])
 			if err != nil {
-				return handleGetError(err, args[0])
+				return handleGetError(err, args[0], outputFormat)
 			}
 
 			return pipeline.RenderPipeline(outputFormat, *result)
@@ -72,10 +72,14 @@ Example:
 // A 404 is rendered as a friendly "No pipeline found" line on stdout and
 // suppressed (returns nil) so the user does not see an HTTP-style stack
 // or the command's usage on what is really an informational outcome.
-func handleGetError(err error, pipelineID string) error {
+func handleGetError(err error, pipelineID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No pipeline found with id: " + pipelineID))
 
 		return nil

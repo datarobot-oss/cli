@@ -147,7 +147,8 @@ dr self version
 
 **Options:**
 
-- `-f, --format`&mdash;output format (`text` or `json`)
+- `-o, --output-format`&mdash;output format (`text` or `json`, default: `text`)
+- `-s, --short`&mdash;print just the version number (text format only)
 
 **Examples:**
 
@@ -156,7 +157,10 @@ dr self version
 dr self version
 
 # Show version in JSON format
-dr self version --format json
+dr self version --output-format json
+
+# Show just the version number
+dr self version --short
 ```
 
 ## Global options
@@ -214,7 +218,7 @@ $ dr self completion bash | sudo tee /etc/bash_completion.d/dr
 ### Get version in JSON
 
 ```bash
-$ dr self version --format json
+$ dr self version --output-format json
 {
   "version": "v0.2.55",
   "commit": "abc1234def5678",
