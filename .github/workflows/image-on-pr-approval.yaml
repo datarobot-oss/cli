@@ -107,9 +107,9 @@ jobs:
 
       # Best-effort: pull_request_review has no "_target" variant, so on a fork PR
       # GitHub silently caps GITHUB_TOKEN to read-only here regardless of the
-      # `permissions:` block above, and this call 403s. Swallow that so it doesn't
-      # mask the real build failure (from the "Build and push PR image" step) behind
-      # an unrelated unhandled-error stack trace.
+      # `permissions:` block above, and this call 403s. Swallow only that expected
+      # 403 so it doesn't mask the real build failure (from the "Build and push PR
+      # image" step) behind an unrelated stack trace; re-throw anything else.
       - name: Set commit status with image name
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -129,5 +129,9 @@ jobs:
                 target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`,
               });
             } catch (err) {
-              core.warning(`Could not set commit status (expected for fork PRs, which get a read-only token here): ${err.message}`);
+              if (err.status === 403) {
+                core.warning(`Could not set commit status (expected for fork PRs, which get a read-only token here): ${err.message}`);
+              } else {
+                throw err;
+              }
             }
