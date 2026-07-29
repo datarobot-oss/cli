@@ -24,21 +24,17 @@ import (
 
 const (
 	// EnvApplicationTemplateGitBaseURL is the environment variable name used to
-	// override the default DataRobot GitHub base URLs for component templates.
+	// override the default DataRobot community GitHub base URL for component templates.
 	EnvApplicationTemplateGitBaseURL = "APPLICATION_TEMPLATE_GIT_BASE_URL"
 
 	// defaultGitBaseCommunity is the DataRobot community GitHub org base URL.
-	// Must be checked before defaultGitBase because it shares a common prefix.
 	defaultGitBaseCommunity = "https://github.com/datarobot-community"
-
-	// defaultGitBase is the DataRobot main GitHub org base URL.
-	defaultGitBase = "https://github.com/datarobot"
 )
 
-// ApplyGitBaseURL replaces the known DataRobot GitHub base URLs
-// (https://github.com/datarobot-community and https://github.com/datarobot)
-// with the value of APPLICATION_TEMPLATE_GIT_BASE_URL when that variable is set.
-// If the variable is not set, or the URL does not start with a known prefix,
+// ApplyGitBaseURL replaces the DataRobot community GitHub base URL
+// (https://github.com/datarobot-community) with the value of
+// APPLICATION_TEMPLATE_GIT_BASE_URL when that variable is set.
+// If the variable is not set, or the URL does not start with the community prefix,
 // the original URL is returned unchanged.
 func ApplyGitBaseURL(url string) string {
 	baseURL := os.Getenv(EnvApplicationTemplateGitBaseURL)
@@ -48,14 +44,8 @@ func ApplyGitBaseURL(url string) string {
 
 	baseURL = strings.TrimRight(baseURL, "/")
 
-	// Check the more-specific community prefix first to avoid a partial match
-	// against the shorter defaultGitBase prefix.
 	if strings.HasPrefix(url, defaultGitBaseCommunity+"/") || url == defaultGitBaseCommunity {
 		return baseURL + url[len(defaultGitBaseCommunity):]
-	}
-
-	if strings.HasPrefix(url, defaultGitBase+"/") || url == defaultGitBase {
-		return baseURL + url[len(defaultGitBase):]
 	}
 
 	return url

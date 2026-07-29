@@ -38,12 +38,6 @@ func TestApplyGitBaseURL(t *testing.T) {
 			want:    "https://github.com/datarobot-community/af-component-agent.git",
 		},
 		{
-			name:    "no env var – main org URL unchanged",
-			baseURL: "",
-			input:   "https://github.com/datarobot/af-component-react.git",
-			want:    "https://github.com/datarobot/af-component-react.git",
-		},
-		{
 			name:    "no env var – unrelated URL unchanged",
 			baseURL: "",
 			input:   "https://gitlab.com/acme/my-repo.git",
@@ -56,10 +50,10 @@ func TestApplyGitBaseURL(t *testing.T) {
 			want:    "https://internal.example.com/mirror/af-component-agent.git",
 		},
 		{
-			name:    "env var set – main org URL replaced",
+			name:    "env var set – non-community datarobot URL unchanged",
 			baseURL: "https://internal.example.com/mirror",
 			input:   "https://github.com/datarobot/af-component-react.git",
-			want:    "https://internal.example.com/mirror/af-component-react.git",
+			want:    "https://github.com/datarobot/af-component-react.git",
 		},
 		{
 			name:    "env var set – unrelated URL unchanged",
@@ -77,12 +71,6 @@ func TestApplyGitBaseURL(t *testing.T) {
 			name:    "env var set – community org base URL exactly (no trailing slash)",
 			baseURL: "https://internal.example.com/mirror",
 			input:   defaultGitBaseCommunity,
-			want:    "https://internal.example.com/mirror",
-		},
-		{
-			name:    "env var set – main org base URL exactly (no trailing slash)",
-			baseURL: "https://internal.example.com/mirror",
-			input:   defaultGitBase,
 			want:    "https://internal.example.com/mirror",
 		},
 	}
@@ -153,14 +141,14 @@ func TestRewriteSrcPathIfNeeded(t *testing.T) {
 		assert.Equal(t, customBase+"/af-component-agent.git", readSrcPath(t, path))
 	})
 
-	t.Run("env var set – main org URL rewritten", func(t *testing.T) {
+	t.Run("env var set – non-community datarobot URL not rewritten", func(t *testing.T) {
 		t.Setenv(EnvApplicationTemplateGitBaseURL, customBase)
 		dir := t.TempDir()
 		path := makeAnswersFile(t, dir, mainOrgRepoURL)
 
 		require.NoError(t, RewriteSrcPathIfNeeded(path))
 
-		assert.Equal(t, customBase+"/af-component-react.git", readSrcPath(t, path))
+		assert.Equal(t, mainOrgRepoURL, readSrcPath(t, path))
 	})
 
 	t.Run("env var set – unrelated URL unchanged", func(t *testing.T) {
