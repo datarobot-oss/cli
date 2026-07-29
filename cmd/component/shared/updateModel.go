@@ -131,6 +131,14 @@ func (m UpdateModel) toggleCurrent() (UpdateModel, tea.Cmd) {
 }
 
 func updateComponent(item ListItem, updateFlags copier.UpdateFlags) tea.Cmd {
+	// Rewrite _src_path in the answers file when APPLICATION_TEMPLATE_GIT_BASE_URL
+	// is set so copier pulls from the configured mirror instead of GitHub.
+	if err := copier.RewriteSrcPathIfNeeded(item.component.FileName); err != nil {
+		return func() tea.Msg {
+			return updateCompleteMsg{item, fmt.Errorf("rewriting answers file: %w", err)}
+		}
+	}
+
 	command := copier.Update(item.component.FileName, nil, updateFlags)
 
 	return tea.ExecProcess(command, func(err error) tea.Msg {
