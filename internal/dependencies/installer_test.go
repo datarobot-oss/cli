@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -74,7 +75,14 @@ func TestExecutePlatformCommand_MultiLineOutput(t *testing.T) {
 func TestExecutePlatformCommand_PipeCommand(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecutePlatformCommand("echo piped_value | cat", &buf)
+	// "| cat" is POSIX-only: PowerShell's "cat" alias is Get-Content, which
+	// requires a -Path argument and errors on piped string input instead.
+	cmd := "echo piped_value | cat"
+	if runtime.GOOS == "windows" {
+		cmd = "Write-Output piped_value | Write-Output"
+	}
+
+	code, err := ExecutePlatformCommand(cmd, &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
@@ -84,7 +92,14 @@ func TestExecutePlatformCommand_PipeCommand(t *testing.T) {
 func TestExecutePlatformCommand_StderrCaptured(t *testing.T) {
 	var buf bytes.Buffer
 
-	code, err := ExecutePlatformCommand("echo error_output >&2", &buf)
+	// ">&2" is POSIX fd-redirection syntax; PowerShell requires an explicit
+	// source stream number (e.g. "1>&2") and rejects the bare form.
+	cmd := "echo error_output >&2"
+	if runtime.GOOS == "windows" {
+		cmd = "[Console]::Error.WriteLine('error_output')"
+	}
+
+	code, err := ExecutePlatformCommand(cmd, &buf)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
