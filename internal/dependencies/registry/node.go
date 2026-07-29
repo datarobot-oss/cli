@@ -23,7 +23,7 @@ func init() {
 			ManagerStrategy{Manager: "fnm", DefaultVersion: "24", Commands: []string{"fnm install {version}", "fnm use {version}"}},
 			ManagerStrategy{Manager: "asdf", DefaultVersion: "24", Commands: []string{"asdf install nodejs {version}", "asdf global nodejs {version}"}},
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install node"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install OpenJS.NodeJS"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install OpenJS.NodeJS" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install nodejs"}},
 			FallbackStrategy{
 				DefaultVersion: "24",

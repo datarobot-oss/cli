@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/datarobot/cli/internal/dependencies/registry"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
@@ -72,25 +73,25 @@ func (p Prerequisite) PlatformInstallCommand() (string, error) {
 var pythonInstallCmd = InstallCommands{
 	MacOS:   "brew install python",
 	Linux:   "sudo apt-get install python3",
-	Windows: "winget install Python.Python.3",
+	Windows: "winget install -e --id Python.Python.3.12" + registry.WingetUnattendedFlags,
 }
 
 var uvInstallCmd = InstallCommands{
 	MacOS:   "brew install uv",
 	Linux:   "curl -Ls https://astral.sh/uv/install.sh | sh",
-	Windows: "winget install --id=astral-sh.uv  -e",
+	Windows: "winget install --id=astral-sh.uv  -e" + registry.WingetUnattendedFlags,
 }
 
 var taskInstallCmd = InstallCommands{
 	MacOS:   "brew install go-task/tap/go-task",
 	Linux:   "curl -sL https://taskfile.dev/install.sh | sh",
-	Windows: "winget install Task.Task",
+	Windows: "winget install Task.Task" + registry.WingetUnattendedFlags,
 }
 
 var pulumiInstallCmd = InstallCommands{
 	MacOS:   "brew install pulumi",
 	Linux:   "curl -fsSL https://get.pulumi.com | sh",
-	Windows: "winget install pulumi",
+	Windows: "winget install Pulumi.Pulumi" + registry.WingetUnattendedFlags,
 }
 
 // RequiredTools lists all tools required for the quickstart process

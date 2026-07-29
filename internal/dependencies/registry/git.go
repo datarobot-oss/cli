@@ -20,7 +20,7 @@ func init() {
 		Aliases: []string{"git source control management tool"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install git"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Git.Git"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Git.Git" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install git"}},
 			FallbackStrategy{
 				URL: "https://git-scm.com/downloads",

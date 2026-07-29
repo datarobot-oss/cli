@@ -419,7 +419,7 @@ func TestSelectInstallStrategy_WingetPresent_Task(t *testing.T) {
 	ms, ok := SelectInstallStrategy("task", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	assert.Equal(t, []string{"winget install Task.Task"}, ms.Commands)
+	assert.Equal(t, []string{"winget install Task.Task" + WingetUnattendedFlags}, ms.Commands)
 }
 
 func TestSelectInstallStrategy_NVMPresent_Node(t *testing.T) {
