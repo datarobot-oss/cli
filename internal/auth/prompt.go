@@ -15,7 +15,8 @@
 package auth
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"strings"
+
 	"github.com/datarobot/cli/tui"
 )
 
@@ -54,7 +55,31 @@ const (
 	browserOpenedHint = "Didn't open? Use this link:"
 	browserFailedHint = "⚠ Couldn't open your browser automatically."
 	browserManualHint = "Open this link to finish signing in:"
+
+	// promptIndent lines the prompt block up under the spinner's label rather than
+	// against the left edge of the terminal.
+	promptIndent = 2
 )
+
+// indentLines prefixes every line with n spaces.
+//
+// Done by hand rather than with a lipgloss padding style because that pads every
+// line out to the width of the widest one, leaving trailing whitespace on the
+// short hint lines that users would pick up when copying the link.
+func indentLines(s string, n int) string {
+	pad := strings.Repeat(" ", n)
+	lines := strings.Split(s, "\n")
+
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		lines[i] = pad + line
+	}
+
+	return strings.Join(lines, "\n")
+}
 
 // SpinnerLabel returns the label for the wait spinner.
 //
@@ -67,37 +92,46 @@ func SpinnerLabel(state BrowserState) string {
 	return awaitingAuthLabel
 }
 
+// linkHint is the line introducing the link. It is a quiet aside when the browser
+// opened and an instruction when it did not.
+func linkHint(state BrowserState) string {
+	if state == BrowserOpened {
+		return tui.HintStyle.Render(browserOpenedHint)
+	}
+
+	return tui.BaseTextStyle.Render(browserManualHint)
+}
+
 // RenderBrowserPrompt returns the block shown beneath the spinner while the CLI
 // waits for the browser callback.
 //
-// When the browser opened the link is a quiet fallback. Otherwise it is promoted
-// into a bordered box, because it is then the only way for the user to continue.
+// Every state uses the same shape - a hint line, a blank line, then the link in a
+// bordered box - so that `dr auth login` and `dr auth login --no-browser` look
+// like the same command. Only the wording changes with the state.
 func RenderBrowserPrompt(authURL string, state BrowserState) string {
-	link := tui.InfoStyle.Underline(true).Render(authURL)
+	rows := make([]string, 0, 4)
 
-	if state == BrowserOpened {
-		return lipgloss.JoinVertical(
-			lipgloss.Left,
-			"",
-			tui.HintStyle.Render(browserOpenedHint),
-			link,
-			"",
-		)
-	}
-
-	lines := []string{""}
-
-	// A skipped browser is expected, so it gets no warning line.
+	// Only a genuine failure warrants a warning; --no-browser is a deliberate
+	// choice and must not be reported as something going wrong.
 	if state == BrowserFailed {
-		lines = append(lines, tui.ErrorStyle.Render(browserFailedHint))
+		rows = append(rows, tui.ErrorStyle.Render(browserFailedHint))
 	}
 
-	lines = append(lines,
-		tui.BaseTextStyle.Render(browserManualHint),
+	// The URL is deliberately unstyled. Styling text that lipgloss then wraps in a
+	// border makes it re-emit the content one character at a time with escapes in
+	// between, so the URL stops being a contiguous string: terminals no longer
+	// linkify it, copying it can pick up escapes, and anything matching on the
+	// output (the expect-based smoke tests) stops finding it. The border already
+	// draws the eye, so the text needs no help.
+	rows = append(rows,
+		linkHint(state),
 		"",
-		tui.NoteBoxStyle.Render(link),
-		"",
+		tui.NoteBoxStyle.Render(authURL),
 	)
 
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	block := indentLines(strings.Join(rows, "\n"), promptIndent)
+
+	// A blank line separates the block from the spinner label it is appended to,
+	// and a trailing newline keeps it off whatever the caller prints next.
+	return "\n\n" + block + "\n"
 }

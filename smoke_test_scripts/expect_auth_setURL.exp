@@ -27,4 +27,28 @@ expect {
 expect "Check your DataRobot login page"
 send -- "https://app.datarobot.com\r\n"
 
-expect eof
+# Setting the URL writes the config and then hands straight over to the login
+# flow, which blocks waiting for a browser callback that never comes in a test.
+# Interrupt it as soon as the auth link appears, the same way
+# expect_auth_login.exp does; SIGINT cancels the root context and unblocks the
+# wait immediately. Without this the script sits here until the login times out.
+expect {
+    "cliRedirect=true" {
+        send -- "\x03"
+    }
+    timeout {
+        puts "WARN: auth link never appeared; interrupting anyway"
+        send -- "\x03"
+    }
+}
+
+# The endpoint is already persisted by this point, so the harness's config
+# assertion holds regardless of how the login ends.
+expect {
+    eof {}
+    timeout {
+        puts "WARN: process did not exit after interrupt; forcing close"
+        close
+        wait
+    }
+}

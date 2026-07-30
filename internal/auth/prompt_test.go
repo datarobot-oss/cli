@@ -37,15 +37,16 @@ func TestSpinnerLabel_OnlyClaimsOpeningWhenItActuallyOpened(t *testing.T) {
 	assert.Equal(t, awaitingAuthLabel, SpinnerLabel(BrowserSkipped))
 }
 
-func TestRenderBrowserPrompt_OpenedKeepsLinkAsQuietFallback(t *testing.T) {
+func TestRenderBrowserPrompt_OpenedFramesLinkAsQuietFallback(t *testing.T) {
 	out := RenderBrowserPrompt(testAuthURL, BrowserOpened)
+	plain := stripANSI(out)
 
-	assert.Contains(t, stripANSI(out), browserOpenedHint)
-	assert.Contains(t, stripANSI(out), testAuthURL)
+	assert.Contains(t, plain, browserOpenedHint)
+	assert.Contains(t, plain, testAuthURL)
+	assert.Contains(t, plain, "╭", "the link is boxed in every state so the paths look alike")
 
-	// No apology and no box: the browser did open, so the link is a footnote.
-	assert.NotContains(t, stripANSI(out), browserFailedHint)
-	assert.NotContains(t, out, "╭", "the link must not be boxed when the browser opened")
+	// The browser did open, so there is nothing to apologise for.
+	assert.NotContains(t, plain, browserFailedHint)
 }
 
 func TestRenderBrowserPrompt_FailedPromotesLinkAndSaysSo(t *testing.T) {
@@ -55,7 +56,7 @@ func TestRenderBrowserPrompt_FailedPromotesLinkAndSaysSo(t *testing.T) {
 	assert.Contains(t, plain, browserFailedHint, "the user must be told the browser did not open")
 	assert.Contains(t, plain, browserManualHint)
 	assert.Contains(t, plain, testAuthURL)
-	assert.Contains(t, out, "╭", "the link becomes the primary instruction and is boxed")
+	assert.Contains(t, plain, "╭")
 }
 
 func TestRenderBrowserPrompt_SkippedPromotesLinkWithoutWarning(t *testing.T) {
@@ -66,7 +67,80 @@ func TestRenderBrowserPrompt_SkippedPromotesLinkWithoutWarning(t *testing.T) {
 	assert.NotContains(t, plain, browserFailedHint)
 	assert.Contains(t, plain, browserManualHint)
 	assert.Contains(t, plain, testAuthURL)
-	assert.Contains(t, out, "╭")
+	assert.Contains(t, plain, "╭")
+}
+
+// TestRenderBrowserPrompt_AllStatesShareOneShape is the consistency guard: the
+// regular and --no-browser paths must be recognisably the same command, differing
+// only in wording. It compares the structure with the text stripped out.
+func TestRenderBrowserPrompt_AllStatesShareOneShape(t *testing.T) {
+	shapes := map[BrowserState]string{}
+
+	for _, state := range []BrowserState{BrowserOpened, BrowserFailed, BrowserSkipped} {
+		plain := stripANSI(RenderBrowserPrompt(testAuthURL, state))
+
+		// Every state: leading blank line, hint, blank line, three box lines.
+		assert.True(t, strings.HasPrefix(plain, "\n\n"),
+			"state %d must start with a blank line separating it from the spinner label", state)
+		assert.True(t, strings.HasSuffix(plain, "\n"),
+			"state %d must end with a newline", state)
+
+		var boxLines int
+
+		for line := range strings.SplitSeq(plain, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+
+			// Non-blank lines are indented as a block.
+			assert.True(t, strings.HasPrefix(line, strings.Repeat(" ", promptIndent)),
+				"state %d line %q must be indented by %d spaces", state, line, promptIndent)
+
+			if strings.ContainsAny(trimmed, "╭│╰") {
+				boxLines++
+			}
+		}
+
+		assert.Equal(t, 3, boxLines, "state %d must render a three-line bordered box", state)
+
+		shapes[state] = strings.Join(boxLinesOf(plain), "\n")
+	}
+
+	// The box itself is identical across states; only the hint above it differs.
+	assert.Equal(t, shapes[BrowserOpened], shapes[BrowserFailed])
+	assert.Equal(t, shapes[BrowserOpened], shapes[BrowserSkipped])
+}
+
+// TestRenderBrowserPrompt_URLStaysContiguousInRawOutput guards a subtle rendering
+// trap: styling text that lipgloss then wraps in a border makes it re-emit the
+// content one character at a time with escape sequences in between. The URL then
+// still *looks* right but is no longer a contiguous string, so terminals stop
+// linkifying it and anything matching on raw output - notably
+// smoke_test_scripts/expect_auth_login.exp, which waits for "cliRedirect=true" -
+// silently stops finding it.
+func TestRenderBrowserPrompt_URLStaysContiguousInRawOutput(t *testing.T) {
+	for _, state := range []BrowserState{BrowserOpened, BrowserFailed, BrowserSkipped} {
+		raw := RenderBrowserPrompt(testAuthURL, state)
+
+		assert.Contains(t, raw, testAuthURL,
+			"state %d: the URL must appear un-escaped in the raw output", state)
+		assert.Contains(t, raw, "cliRedirect=true",
+			"state %d: the smoke tests match this substring in raw terminal output", state)
+	}
+}
+
+// boxLinesOf returns just the bordered-box lines of a rendered prompt.
+func boxLinesOf(plain string) []string {
+	var out []string
+
+	for line := range strings.SplitSeq(plain, "\n") {
+		if strings.ContainsAny(line, "╭│╰") {
+			out = append(out, line)
+		}
+	}
+
+	return out
 }
 
 func TestRenderBrowserPrompt_LabelAndPromptComposeIntoMultilineSpinnerLabel(t *testing.T) {
@@ -76,10 +150,8 @@ func TestRenderBrowserPrompt_LabelAndPromptComposeIntoMultilineSpinnerLabel(t *t
 	label := SpinnerLabel(BrowserOpened) + RenderBrowserPrompt(testAuthURL, BrowserOpened)
 	lines := strings.Split(stripANSI(label), "\n")
 
-	// lipgloss pads every joined line to the width of the widest one, so compare
-	// content rather than the incidental trailing whitespace.
-	assert.Equal(t, openingBrowserLabel, strings.TrimRight(lines[0], " "),
-		"the spinner's own line must contain only the label")
+	assert.Equal(t, openingBrowserLabel, lines[0],
+		"the spinner's own line must contain only the label, with no padding")
 	assert.Greater(t, len(lines), 2, "the fallback link must render below the spinner line")
 	assert.Contains(t, stripANSI(label), testAuthURL)
 }

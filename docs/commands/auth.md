@@ -64,8 +64,12 @@ dr auth login
 ```bash
 $ dr auth login
 ⠋ Opening your browser to sign in to DataRobot…
+
   Didn't open? Use this link:
-  https://app.datarobot.com/account/developer-tools?cliRedirect=true
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
 
 **Stored Credentials:**
@@ -76,19 +80,20 @@ $ dr auth login
 
 **Troubleshooting:**
 
-If the browser cannot be opened, the CLI says so and promotes the link, which you can
-open on any machine that can reach DataRobot:
+If the browser cannot be opened, the CLI says so and the link becomes the instruction
+rather than a footnote. The layout is otherwise identical, so the two paths read as the
+same command:
 
 ```bash
 $ dr auth login
-⚠ Couldn't open your browser automatically.
-Open this link to finish signing in:
-
-╭────────────────────────────────────────────────────────────────────╮
-│ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
-╰────────────────────────────────────────────────────────────────────╯
-
 ⠋ Waiting for authorization…
+
+  ⚠ Couldn't open your browser automatically.
+  Open this link to finish signing in:
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
 
 If another `dr` process is already waiting on `localhost:51164`, the new one asks it to
@@ -517,14 +522,17 @@ machine that can reach both DataRobot and this machine's `localhost:51164`. Use
 
 ```bash
 $ dr auth login --no-browser
-Open this link to finish signing in:
-
-╭────────────────────────────────────────────────────────────────────╮
-│ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
-╰────────────────────────────────────────────────────────────────────╯
-
 ⠋ Waiting for authorization…
+
+  Open this link to finish signing in:
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
+
+`--no-browser` is not reported as a failure: it shows the same framed link as the error
+path, without the warning line.
 
 Run with `--debug` to see why the launch failed.
 
