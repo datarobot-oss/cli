@@ -27,7 +27,7 @@ func init() {
 				"asdf install uv latest",
 				"asdf global uv latest",
 			}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install astral-sh.uv"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install astral-sh.uv" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install uv"}},
 			FallbackStrategy{
 				Commands:        []string{"curl -LsSf https://astral.sh/uv/install.sh | sh"},

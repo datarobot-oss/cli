@@ -54,7 +54,7 @@ func InstallPrerequisites(w io.Writer, prerequisites []tools.Prerequisite) ([]st
 
 		var cmdBuf bytes.Buffer
 
-		exitCode, err := ExecuteShLine(installCmd, io.MultiWriter(w, &cmdBuf))
+		exitCode, err := ExecutePlatformCommand(installCmd, io.MultiWriter(w, &cmdBuf))
 		if err != nil {
 			log.Debug("deps: install failed to start", "name", prerequisite.Name, "err", err)
 
@@ -192,12 +192,19 @@ func buildInstallTip(prerequisite tools.Prerequisite, permDenied bool, env map[s
 	return strategy.WithVersion(prerequisite.MinimumVersion).GetStrategyTip(goos)
 }
 
-// ExecuteShLine executes shellCmd via sh -c, streaming stdout and stderr
-// to w in real time. Handles pipe-based commands (e.g. curl ... | sh).
-// Returns the process exit code; a non-nil error indicates the process could
-// not be started (not a non-zero exit).
-func ExecuteShLine(shellCmd string, w io.Writer) (int, error) {
-	cmd := exec.Command("sh", "-c", shellCmd)
+// ExecutePlatformCommand executes command via the platform shell — sh -c on
+// POSIX platforms, PowerShell on Windows — streaming stdout and stderr to w
+// in real time. Handles pipe-based commands (e.g. curl ... | sh on POSIX,
+// iwr ... | iex on Windows). Returns the process exit code; a non-nil error
+// indicates the process could not be started (not a non-zero exit).
+func ExecutePlatformCommand(command string, w io.Writer) (int, error) {
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command)
+	} else {
+		cmd = exec.Command("sh", "-c", command)
+	}
 
 	cmd.Stdout = w
 	cmd.Stderr = w

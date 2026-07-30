@@ -28,6 +28,11 @@ import (
 // TAB is the indent prefix used in user-facing tip and failure messages.
 const TAB = "  "
 
+// WingetUnattendedFlags accept winget's one-time source and per-package
+// license prompts, which would otherwise block a copy-pasted winget command
+// on a fresh machine that has never run winget before.
+const WingetUnattendedFlags = " --accept-source-agreements --accept-package-agreements"
+
 // Strategy is implemented by ManagerStrategy and FallbackStrategy.
 // getStrategyTip returns the user-facing tip line for an install failure, or ""
 // when no actionable suggestion is available.

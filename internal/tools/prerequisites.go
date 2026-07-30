@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/datarobot/cli/internal/dependencies/registry"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/regexp2"
 	"github.com/datarobot/cli/internal/repo"
@@ -70,32 +71,32 @@ func (p Prerequisite) PlatformInstallCommand() (string, error) {
 }
 
 var pythonInstallCmd = InstallCommands{
-	MacOS: "brew install python",
-	Linux: "sudo apt-get install python3",
-	// Windows: "Download and install Python from https://www.python.org/downloads/windows/",
+	MacOS:   "brew install python",
+	Linux:   "sudo apt-get install python3",
+	Windows: "winget install -e --id Python.Python.3.12" + registry.WingetUnattendedFlags,
 }
 
 var uvInstallCmd = InstallCommands{
-	MacOS: "brew install uv",
-	Linux: "curl -Ls https://astral.sh/uv/install.sh | sh",
-	// Windows: "iwr -useb https://astral.sh/uv/install.ps1 | iex",
+	MacOS:   "brew install uv",
+	Linux:   "curl -Ls https://astral.sh/uv/install.sh | sh",
+	Windows: "winget install --id=astral-sh.uv  -e" + registry.WingetUnattendedFlags,
 }
 
 var taskInstallCmd = InstallCommands{
-	MacOS: "brew install go-task/tap/go-task",
-	Linux: "curl -sL https://taskfile.dev/install.sh | sh",
-	// Windows: "iwr -useb https://taskfile.dev/install.ps1 | iex",
+	MacOS:   "brew install go-task/tap/go-task",
+	Linux:   "curl -sL https://taskfile.dev/install.sh | sh",
+	Windows: "winget install Task.Task" + registry.WingetUnattendedFlags,
 }
 
 var pulumiInstallCmd = InstallCommands{
-	MacOS: "brew install pulumi",
-	Linux: "curl -fsSL https://get.pulumi.com | sh",
-	// Windows: "iwr -useb https://get.pulumi.com/windows-installer.exe -OutFile pulumi-installer.exe; Start-Process -FilePath pulumi-installer.exe -Wait",
+	MacOS:   "brew install pulumi",
+	Linux:   "curl -fsSL https://get.pulumi.com | sh",
+	Windows: "winget install Pulumi.Pulumi" + registry.WingetUnattendedFlags,
 }
 
 // RequiredTools lists all tools required for the quickstart process.
 var RequiredTools = []Prerequisite{
-	{Name: "Python", Command: "python3 --version", URL: "https://www.python.org/downloads/", MinimumVersion: "3.9.6", Install: pythonInstallCmd},
+	{Name: "Python", Command: "python3 --version", URL: "https://www.python.org/downloads/", MinimumVersion: "3.12.5", Install: pythonInstallCmd},
 	{Name: "uv", Command: "uv --version", URL: "https://docs.astral.sh/uv/getting-started/installation/", MinimumVersion: "0.11.20", Install: uvInstallCmd},
 	{Name: "task", Command: "task --version", URL: "https://taskfile.dev/docs/installation", MinimumVersion: "3.50.0", Install: taskInstallCmd},
 	{Name: "pulumi", Command: "pulumi version", URL: "https://www.pulumi.com/docs/get-started/download-install/", MinimumVersion: "3.245.0", Install: pulumiInstallCmd},
