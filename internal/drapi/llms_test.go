@@ -66,7 +66,7 @@ func setupRoutedServer(t *testing.T, catalog, deployments routeResponse) {
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 	// skip_auth trusts the viper token directly; without it resolveToken makes a
 	// server-side verification request the routed handler would 404.
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -121,7 +121,7 @@ func TestGetDeployedLLMs_Pagination(t *testing.T) {
 	viperx.Reset()
 	viperx.Set(config.DataRobotURL, srv.URL)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -214,7 +214,7 @@ func TestGetDeployedLLMs_SendsFilterAndLimit(t *testing.T) {
 	viperx.Reset()
 	viperx.Set(config.DataRobotURL, srv.URL)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()

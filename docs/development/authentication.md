@@ -8,17 +8,16 @@ The CLI provides a reusable authentication mechanism that you can use with any c
 
 ### PreRunE hook
 
-Use the `auth.EnsureAuthenticatedE(ctx)` function in your command's `PreRunE` hook.
+Use `auth.EnsureAuthenticatedE` as your command's `PreRunE` hook. It already has the
+`func(*cobra.Command, []string) error` shape Cobra expects, so assign it directly.
 
 ```go
-import "github.com/datarobot/cli/cmd/auth"
+import "github.com/datarobot/cli/internal/auth"
 
 var MyCmd = &cobra.Command{
-    Use:   "mycommand",
-    Short: "My command description",
-    PreRunE: func(cmd *cobra.Command, _ []string) error {
-        return auth.EnsureAuthenticatedE(cmd.Context())
-    },
+    Use:     "mycommand",
+    Short:   "My command description",
+    PreRunE: auth.EnsureAuthenticatedE,
     Run: func(_ *cobra.Command, _ []string) {
         // Command implementation
         // Authentication is guaranteed to be valid here
@@ -37,19 +36,22 @@ The hook functions are outlined below.
 
 ### Direct call for non-command code
 
-For code that isn't a Cobra command, you can use `auth.EnsureAuthenticated()` directly.
+For code that isn't a Cobra command, call `auth.EnsureAuthenticated(ctx)` directly.
 
 ```go
-import "github.com/datarobot/cli/cmd/auth"
+import "github.com/datarobot/cli/internal/auth"
 
-func MyFunction() error {
+func MyFunction(ctx context.Context) error {
     // Ensure valid authentication before proceeding.
-    if !auth.EnsureAuthenticated() {
+    if !auth.EnsureAuthenticated(ctx) {
         return errors.New("authentication failed")
     }
 
     // Continue with authenticated operations.
-    apiKey := config.GetAPIKey()
+    apiKey, err := config.GetAPIKey(ctx)
+    if err != nil {
+        return err
+    }
     // ... use apiKey for API calls
 
     return nil
@@ -109,7 +111,35 @@ The `--skip-auth` flag is intended for advanced scenarios such as:
 
 ## Manual login
 
-You can still manually run `dr auth login` to refresh credentials or change accounts. The `LoginAction()` function provides the interactive login experience with confirmation prompts for overwriting existing credentials.
+You can still run `dr auth login` to refresh credentials or change accounts. Both that
+command and the implicit login inside `EnsureAuthenticated` go through
+`auth.RunBrowserLogin`, so the two present identically.
+
+### Browser login internals
+
+`auth.BrowserFlow` (`internal/auth/browserflow.go`) owns the callback listener and splits
+the login into three steps, which is what lets the blocking CLI path and the bubbletea
+setup wizard share one implementation:
+
+```go
+flow, err := auth.NewBrowserFlow(host) // binds localhost:51164
+defer flow.Close()
+
+openErr := flow.OpenBrowser()          // best effort; report the link if non-nil
+key, err := flow.Wait(ctx)             // serves until the callback arrives
+```
+
+Two rules matter when changing this code:
+
+- **Bind before opening the browser.** `NewBrowserFlow` binds the listener so a fast
+  redirect cannot arrive before anything is listening.
+- **Never claim the browser opened without checking.** `open.Open` returns an error;
+  pass it through `auth.BrowserStateFor` and let `auth.RenderBrowserPrompt` choose the
+  wording. Telling users to watch for a browser that never opened is the bug CFX-6318
+  fixed.
+
+`auth.RunBrowserLoginWith` accepts `LoginOptions{NoBrowser: true}` for `--no-browser`,
+which renders the link prominently without reporting a failure.
 
 ## Internal APIs
 
@@ -121,10 +151,18 @@ into `drconfig.yaml`. Outside `internal/config/...`, all viper access
 goes through the `internal/config/viperx` wrapper. See
 [Configuration](configuration.md) for the full contract.
 
+`drconfig.yaml` holds the API token in plaintext, so `config.UpdateConfigFile` writes it
+with mode `0600` **and** chmods it on every write. The chmod is not redundant:
+`os.WriteFile` only applies its perm argument when it creates the file, so a config left
+at `0644` by an older CLI would otherwise stay world-readable forever.
+
 - `WriteConfigFileSilent()`&mdash;writes only allowlisted keys
   (`config.PersistableKeys`) back to `drconfig.yaml` and returns an error.
 - `WriteConfigFile()`&mdash;writes the config file, prints a success
   message, and returns an error.
-- `SetURLAction()`&mdash;prompts for a DataRobot URL, optionally
-  overwrites an existing value, and returns a boolean indicating whether
-  the URL changed.
+- `SetURLAction()`&mdash;asks for a DataRobot URL and returns whether it changed. On an
+  interactive terminal it runs the `tui/hostpicker` list; otherwise it falls back to a
+  plain-text stdin prompt so piped input and the expect-based smoke tests keep working.
+- `config.SkipAuthKey`&mdash;the viper key for `--skip-auth`. Use the constant at every
+  bind and read site: viper does not treat `-` and `_` as equivalent for lookups, and
+  reading `"skip_auth"` silently ignored the bound flag.

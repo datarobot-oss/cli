@@ -5,13 +5,20 @@ set timeout 10
 # Use TERM=dumb to prevent terminal color probing which causes OSC sequences
 set env(TERM) dumb
 
+# Force non-interactive mode so set-url uses the plain-text numbered prompt that
+# this script drives. On a real terminal it now shows a Bubble Tea list picker
+# instead, which expects arrow keys rather than a typed URL.
+set env(DATAROBOT_CLI_NON_INTERACTIVE) 1
+
 set datarobot_cli_config [lindex $argv 0]; # Grab the first command line parameter
 
 spawn dr auth set-url --config $datarobot_cli_config
 
-# If we get an overwrite prompt be sure to say yes to it first
+# If a URL is already configured we get an overwrite prompt; say yes to it first.
+# This must match internal/auth.askForNewHost. When no URL is configured the
+# prompt never appears, so fall through on timeout.
 expect {
-    "Do you want to login with a different account" {
+    "do you want to overwrite it?" {
         send -- "y\r\n"
     }
     timeout

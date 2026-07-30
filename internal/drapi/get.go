@@ -60,7 +60,7 @@ func SetToken(value string) {
 // is in viper without contacting the server, so local development against
 // stub APIs that don't implement /version/ still works.
 func resolveToken() (string, error) {
-	if viperx.GetBool("skip_auth") {
+	if viperx.GetBool(config.SkipAuthKey) {
 		return viperx.GetString(config.DataRobotAPIKey), nil
 	}
 

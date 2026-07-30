@@ -590,7 +590,7 @@ func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
 
 func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	viperx.Reset()
-	viperx.Set("skip-auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	// Deliberately leave no credentials configured — if auth were attempted it would fail.
 	os.Unsetenv("DATAROBOT_ENDPOINT")

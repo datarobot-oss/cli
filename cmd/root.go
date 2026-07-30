@@ -234,7 +234,7 @@ func init() {
 	RootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	RootCmd.PersistentFlags().Bool("debug", false, "debug output")
 	RootCmd.PersistentFlags().Bool("all-commands", false, "display all available commands and their flags in tree format")
-	RootCmd.PersistentFlags().Bool("skip-auth", false, "skip authentication checks (for advanced users)")
+	RootCmd.PersistentFlags().Bool(config.SkipAuthKey, false, "skip authentication checks (for advanced users)")
 	RootCmd.PersistentFlags().Bool("force-interactive", false, "force setup wizards to run even if already completed")
 	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
@@ -258,7 +258,7 @@ func init() {
 
 	// Non-universal flags: bound to viper only.
 	_ = viperx.BindPFlag("config", RootCmd.PersistentFlags().Lookup("config"))
-	_ = viperx.BindPFlag("skip-auth", RootCmd.PersistentFlags().Lookup("skip-auth"))
+	_ = viperx.BindPFlag(config.SkipAuthKey, RootCmd.PersistentFlags().Lookup(config.SkipAuthKey))
 	_ = viperx.BindPFlag("force-interactive", RootCmd.PersistentFlags().Lookup("force-interactive"))
 	_ = viperx.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))

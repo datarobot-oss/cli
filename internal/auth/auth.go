@@ -18,38 +18,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"strings"
-	"time"
+	"testing"
 
-	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
+	"github.com/datarobot/cli/tui/hostpicker"
 	"github.com/spf13/cobra"
 )
 
 // APIKeyCallbackFunc is a variable that holds the function for retrieving API keys.
 // This can be overridden in tests to mock the browser-based authentication flow.
-var APIKeyCallbackFunc = WaitForAPIKeyCallback
+var APIKeyCallbackFunc = RunBrowserLogin
 
 // AuthCallbackURL returns the DataRobot URL the user must visit to authorize the CLI.
 func AuthCallbackURL(datarobotHost string) string {
 	return datarobotHost + "/account/developer-tools?cliRedirect=true"
-}
-
-// PrintAuthInstructions prints the message instructing the user to visit the
-// given auth URL. It must be called before any TUI/bubbletea program starts
-// rendering, otherwise the output will be garbled or hidden.
-func PrintAuthInstructions(authURL string) {
-	fmt.Println("\n\nPlease visit this link to connect your DataRobot credentials to the CLI")
-	fmt.Println("(If you're prompted to log in, you may need to re-enter this URL):")
-	fmt.Printf("%s\n\n", authURL)
 }
 
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
@@ -111,7 +99,7 @@ func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 // triggers the login flow automatically. Returns true if authentication
 // is valid or was successfully obtained.
 func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
-	if viperx.GetBool("skip_auth") {
+	if viperx.GetBool(config.SkipAuthKey) {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
 
 		return true
@@ -180,8 +168,6 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	// Auto-retrieve new credentials without prompting
 	viperx.Set(config.DataRobotAPIKey, "")
 
-	PrintAuthInstructions(AuthCallbackURL(datarobotHost))
-
 	key, err := APIKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
 		log.Error("Failed to retrieve API key.", "error", err)
@@ -199,74 +185,6 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	log.Info("Authentication successful")
 
 	return true
-}
-
-func WaitForAPIKeyCallback(ctx context.Context, datarobotHost string) (string, error) {
-	addr := "localhost:51164"
-	apiKeyChan := make(chan string, 1) // If we don't have a buffer of 1, this may hang.
-
-	mux := http.NewServeMux()
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		apiKey := r.URL.Query().Get("key")
-
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = assets.Write(w, "templates/success.html")
-
-		apiKeyChan <- apiKey // send the key to the main goroutine
-	})
-
-	listen, err := net.Listen("tcp", addr)
-	if err != nil {
-		// close previous auth server if address already in use
-		resp, err := http.Get("http://" + addr)
-		if err == nil {
-			resp.Body.Close()
-		}
-
-		listen, err = net.Listen("tcp", addr)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	// Start the server in a goroutine
-	authURL := AuthCallbackURL(datarobotHost)
-
-	go func() {
-		open.Open(authURL)
-
-		err := server.Serve(listen)
-		if err != http.ErrServerClosed {
-			log.Errorf("Server error: %v\n", err)
-		}
-	}()
-
-	select {
-	// Wait for the key from the handler
-	case apiKey := <-apiKeyChan:
-		// Now shut down the server after key is received
-		if err := server.Shutdown(ctx); err != nil {
-			return "", fmt.Errorf("Error during shutdown: %w", err)
-		}
-
-		// empty apiKey means we need to interrupt current auth flow
-		if apiKey == "" {
-			return "", errors.New("Interrupt request received.")
-		}
-
-		log.Debug("Successfully consumed API key from API request")
-
-		return apiKey, nil
-	case <-ctx.Done():
-		log.Debug("Ctrl-C received, exiting auth wait")
-		return "", errors.New("Interrupt request received.")
-	}
 }
 
 func WriteConfigFileSilent() error {
@@ -326,44 +244,137 @@ func askForNewHost() bool {
 	return strings.ToLower(strings.TrimSpace(selectedOption)) == "y"
 }
 
+// SetURLAction asks the user which DataRobot environment to use and stores the
+// answer. It reports whether the configured URL changed.
+//
+// On an interactive terminal this is a TUI list (arrow keys plus Enter, US Cloud
+// preselected). On a terminal with DATAROBOT_CLI_NON_INTERACTIVE set it falls back
+// to the plain-text numbered prompt, which is what the expect based smoke tests
+// drive - they spawn a PTY and set that variable. With no terminal at all there is
+// nothing to prompt, so it prints the non-interactive instructions and gives up.
 func SetURLAction() bool {
+	// Every path below reads stdin, askForNewHost's overwrite prompt included, so
+	// this has to come first. Without a terminal no answer is coming: on Windows
+	// cancelreader discards a redirected stdin in favour of the real console and
+	// then blocks forever waiting for keystrokes. See internal/misc/reader.
 	if !reader.IsStdinTerminal() {
-		log.Error("No DataRobot URL configured and no terminal available to prompt for one. " +
-			"Run 'dr auth set-url <url>' or set DATAROBOT_ENDPOINT to configure it non-interactively.")
+		printURLUnchanged()
 
 		return false
 	}
 
-	if askForNewHost() {
-		for {
-			printSetURLPrompt()
+	if !askForNewHost() {
+		printURLUnchanged()
 
-			url, err := reader.ReadString()
-			if err != nil || url == "" {
-				break
-			}
-
-			err = config.SetURLToConfig(url)
-			if err != nil {
-				if errors.Is(err, config.ErrInvalidURL) {
-					fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
-					continue
-				}
-
-				log.Error(err)
-
-				break
-			}
-
-			fmt.Println("Thank you for providing the URL. Validating it and retrieving your API key...")
-
-			return true
-		}
+		return false
 	}
 
-	fmt.Println("Exiting without changing the DataRobot URL.")
+	if interactiveURLPickerAvailable() {
+		return selectURLInteractively()
+	}
+
+	return readURLFromStdin()
+}
+
+// interactiveURLPickerAvailable reports whether the TUI picker can be shown.
+//
+// The testing.Testing() guard matches internal/misc/open: `go test` normally hands
+// the binary /dev/null for stdin, but under a PTY it would not, and a test that
+// launched the real picker would block until the suite timed out.
+func interactiveURLPickerAvailable() bool {
+	if testing.Testing() {
+		return false
+	}
+
+	return reader.IsStdinTerminal() && !reader.IsNonInteractive()
+}
+
+// selectURLInteractively runs the TUI environment picker.
+func selectURLInteractively() bool {
+	for {
+		url, ok, err := hostpicker.Select()
+		if err != nil {
+			log.Error("Failed to show the environment picker.", "error", err)
+			printURLUnchanged()
+
+			return false
+		}
+
+		if !ok {
+			// The user pressed Esc or Ctrl-C.
+			printURLUnchanged()
+
+			return false
+		}
+
+		err = config.SetURLToConfig(url)
+		if err == nil {
+			return true
+		}
+
+		if errors.Is(err, config.ErrInvalidURL) {
+			fmt.Println(tui.ErrorStyle.Render("Invalid URL provided. Verify your URL and try again."))
+
+			continue
+		}
+
+		log.Error(err)
+		printURLUnchanged()
+
+		return false
+	}
+}
+
+// readURLFromStdin is the non-interactive fallback: a numbered prompt read from
+// stdin, so DATAROBOT_CLI_NON_INTERACTIVE and the expect-based smoke tests keep
+// working.
+func readURLFromStdin() bool {
+	for {
+		printSetURLPrompt()
+
+		// reader.ReadString strips the newline, so an empty answer is "" - testing
+		// for "\n" here would send it to SetURLToConfig and loop on "Invalid URL".
+		url, err := reader.ReadString()
+		if err != nil || url == "" {
+			break
+		}
+
+		err = config.SetURLToConfig(url)
+		if err != nil {
+			if errors.Is(err, config.ErrInvalidURL) {
+				fmt.Print("\nInvalid URL provided. Verify your URL and try again.\n\n")
+				continue
+			}
+
+			log.Error(err)
+
+			break
+		}
+
+		fmt.Println("Thank you for providing the URL. Validating it and retrieving your API key...")
+
+		return true
+	}
+
+	printURLUnchanged()
 
 	return false
+}
+
+// printURLUnchanged explains that nothing was configured and how to proceed.
+//
+// The bare "Exiting without changing the DataRobot URL." this replaces left users
+// with no next step, which is especially unhelpful when the cause was redirected
+// stdin rather than a deliberate cancel.
+func printURLUnchanged() {
+	fmt.Println(tui.BaseTextStyle.Render("No DataRobot URL was configured."))
+	fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
+	fmt.Println(tui.InfoStyle.Render("dr auth set-url <url>"))
+	fmt.Print(tui.BaseTextStyle.Render("or export "))
+	fmt.Print(tui.InfoStyle.Render("DATAROBOT_ENDPOINT"))
+	fmt.Print(tui.BaseTextStyle.Render(" and "))
+	fmt.Print(tui.InfoStyle.Render("DATAROBOT_API_TOKEN"))
+	fmt.Println(tui.BaseTextStyle.Render(" to skip the login entirely."))
 }
 
 func GetBaseURLOrAsk() string {

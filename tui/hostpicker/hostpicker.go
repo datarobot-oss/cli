@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package setup
+package hostpicker
 
 import (
 	"fmt"
@@ -26,24 +26,24 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-type hostItem struct {
+type item struct {
 	title       string
 	description string
 	url         string
 	isCustom    bool
 }
 
-func (i hostItem) Title() string       { return i.title }
-func (i hostItem) Description() string { return i.description }
-func (i hostItem) FilterValue() string { return i.title }
+func (i item) Title() string       { return i.title }
+func (i item) Description() string { return i.description }
+func (i item) FilterValue() string { return i.title }
 
-type hostItemDelegate struct{}
+type itemDelegate struct{}
 
-func (d hostItemDelegate) Height() int                             { return 2 }
-func (d hostItemDelegate) Spacing() int                            { return 1 }
-func (d hostItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d hostItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(hostItem)
+func (d itemDelegate) Height() int                             { return 2 }
+func (d itemDelegate) Spacing() int                            { return 1 }
+func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(item)
 	if !ok {
 		return
 	}
@@ -81,7 +81,7 @@ func (d hostItemDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 	}
 }
 
-type HostModel struct {
+type Model struct {
 	list        list.Model
 	customInput textinput.Model
 	showCustom  bool
@@ -89,27 +89,27 @@ type HostModel struct {
 	SuccessCmd  func(string) tea.Cmd
 }
 
-func NewHostModel() HostModel {
+func New() Model {
 	items := []list.Item{
-		hostItem{
+		item{
 			title:       "🇺🇸 US Cloud",
 			description: "https://app.datarobot.com",
 			url:         "https://app.datarobot.com",
 			isCustom:    false,
 		},
-		hostItem{
+		item{
 			title:       "🇪🇺 EU Cloud",
 			description: "https://app.eu.datarobot.com",
 			url:         "https://app.eu.datarobot.com",
 			isCustom:    false,
 		},
-		hostItem{
+		item{
 			title:       "🇯🇵 Japan Cloud",
 			description: "https://app.jp.datarobot.com",
 			url:         "https://app.jp.datarobot.com",
 			isCustom:    false,
 		},
-		hostItem{
+		item{
 			title:       "🏢 Custom/On-Prem",
 			description: "Enter your custom DataRobot URL",
 			url:         "",
@@ -117,7 +117,7 @@ func NewHostModel() HostModel {
 		},
 	}
 
-	delegate := hostItemDelegate{}
+	delegate := itemDelegate{}
 	l := list.New(items, delegate, 0, 0)
 	l.Title = "DataRobot Environment"
 	l.SetShowStatusBar(false)
@@ -137,7 +137,7 @@ func NewHostModel() HostModel {
 	customInput.CharLimit = 256
 	customInput.Width = 50
 
-	return HostModel{
+	return Model{
 		list:        l,
 		customInput: customInput,
 		showCustom:  false,
@@ -145,11 +145,11 @@ func NewHostModel() HostModel {
 	}
 }
 
-func (m HostModel) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m HostModel) handleCustomInput(msg tea.KeyMsg) (HostModel, tea.Cmd) {
+func (m Model) handleCustomInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case tea.KeyEnter.String():
 		url := strings.TrimSpace(m.customInput.Value())
@@ -173,12 +173,12 @@ func (m HostModel) handleCustomInput(msg tea.KeyMsg) (HostModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m HostModel) handleListMode(msg tea.KeyMsg) (HostModel, tea.Cmd) {
+func (m Model) handleListMode(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if msg.String() != "enter" {
 		return m, nil
 	}
 
-	selectedItem, ok := m.list.SelectedItem().(hostItem)
+	selectedItem, ok := m.list.SelectedItem().(item)
 	if !ok {
 		return m, nil
 	}
@@ -199,7 +199,7 @@ func (m HostModel) handleListMode(msg tea.KeyMsg) (HostModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m HostModel) Update(msg tea.Msg) (HostModel, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -245,7 +245,7 @@ func (m HostModel) Update(msg tea.Msg) (HostModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m HostModel) View() string {
+func (m Model) View() string {
 	if m.showCustom {
 		// Custom URL input view
 		var sb strings.Builder

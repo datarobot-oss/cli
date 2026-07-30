@@ -37,6 +37,7 @@ import (
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
+	"github.com/datarobot/cli/tui/hostpicker"
 )
 
 type screens int
@@ -69,7 +70,7 @@ type Model struct {
 	fromStartCommand     bool // true if invoked from dr start
 	skipDotenvSetup      bool // true if dotenv setup was already completed
 	dotenvSetupCompleted bool // tracks if dotenv was actually run (for state update)
-	hostModel            HostModel
+	hostModel            hostpicker.Model
 	login                LoginModel
 	list                 list.Model
 	clone                clone.Model
@@ -297,7 +298,7 @@ func NewModel(fromStartCommand bool) Model {
 		width:           80,
 		isAuthenticated: false,
 
-		hostModel: NewHostModel(),
+		hostModel: hostpicker.New(),
 		login: LoginModel{
 			APIKeyChan: make(chan string, 1),
 			GetHostCmd: getHost,
@@ -485,7 +486,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.hostModel, cmd = m.hostModel.Update(msg)
 	case loginScreen:
 		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" {
-			m.login.server.Close()
+			m.login.Close()
 			// Reset authentication flag when user goes back to change URL
 			m.isAuthenticated = false
 			cmd = getHost
@@ -581,14 +582,13 @@ func (m Model) View() string { //nolint: cyclop
 			Bold(true).
 			Render("🔐 Connect Your DataRobot Account")
 
-		subtitle := tui.BaseTextStyle.
-			Render("Opening your browser to securely authenticate...")
-
+		// No "opening your browser" subtitle here: LoginModel knows whether the
+		// browser actually opened and says so itself, so this screen must not claim
+		// it did.
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
 			title,
 			"",
-			subtitle,
 			m.login.View(),
 			"",
 			tui.BaseTextStyle.Faint(true).Render("💡 Press Esc to change DataRobot URL"),

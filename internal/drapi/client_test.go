@@ -47,14 +47,14 @@ func resetTokenCache(t *testing.T) {
 func withSkipAuth(t *testing.T, value string) string {
 	t.Helper()
 
-	prevSkip := viperx.GetBool("skip_auth")
+	prevSkip := viperx.GetBool(config.SkipAuthKey)
 	prevKey := viperx.GetString(config.DataRobotAPIKey)
 
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 	viperx.Set(config.DataRobotAPIKey, value)
 
 	t.Cleanup(func() {
-		viperx.Set("skip_auth", prevSkip)
+		viperx.Set(config.SkipAuthKey, prevSkip)
 		viperx.Set(config.DataRobotAPIKey, prevKey)
 	})
 

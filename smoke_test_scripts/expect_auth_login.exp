@@ -7,9 +7,11 @@ set env(TERM) dumb
 
 # Force non-interactive mode so the CLI skips the animated Bubble Tea spinner
 # (which otherwise burns CPU redrawing every frame) and prints a single static
-# "Waiting for browser authorization…" line instead. Ctrl-C is delivered as a
-# real SIGINT, which cancels the root context and unblocks the auth wait via the
-# normal signal path (fast, deterministic exit).
+# status line plus the auth link instead. It also keeps the set-url fallback on
+# the plain-text numbered prompt this script types into, rather than the Bubble
+# Tea list picker used on a real terminal. Ctrl-C is delivered as a real SIGINT,
+# which cancels the root context and unblocks the auth wait via the normal
+# signal path (fast, deterministic exit).
 set env(DATAROBOT_CLI_NON_INTERACTIVE) 1
 
 spawn dr auth login

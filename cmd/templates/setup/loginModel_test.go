@@ -110,7 +110,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	suite.WaitFor(tm, "US Cloud")
 	// US Cloud is already selected by default (first item)
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -132,7 +132,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	// Navigate down to EU Cloud (second item)
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -155,7 +155,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -187,7 +187,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	}
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
