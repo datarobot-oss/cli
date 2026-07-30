@@ -210,16 +210,23 @@ func WriteConfigFile() error {
 	return nil
 }
 
+// printSetURLPrompt draws the non-interactive environment menu.
+//
+// The region icons are the single-codepoint globes from tui/hostpicker rather
+// than country flags: a flag is a regional-indicator pair that Windows paints as
+// two letter boxes (4 columns) while every width calculation says 2, which both
+// hides the icon and knocks this hand-aligned box out of true. See the comment on
+// hostpicker's icon constants.
 func printSetURLPrompt() {
 	fmt.Println("🌐 DataRobot URL Configuration")
 	fmt.Println("")
 	fmt.Println("Choose your DataRobot environment:")
 	fmt.Println("")
 	fmt.Println("┌────────────────────────────────────────────────────────┐")
-	fmt.Println("│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │")
-	fmt.Println("│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │")
-	fmt.Println("│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │")
-	fmt.Println("│      🏢 Custom          Enter your custom URL          │")
+	fmt.Printf("│  [1] %s US Cloud        https://app.datarobot.com      │\n", hostpicker.USRegionIcon)
+	fmt.Printf("│  [2] %s EU Cloud        https://app.eu.datarobot.com   │\n", hostpicker.EURegionIcon)
+	fmt.Printf("│  [3] %s Japan Cloud     https://app.jp.datarobot.com   │\n", hostpicker.JPRegionIcon)
+	fmt.Printf("│      %s Custom          Enter your custom URL          │\n", hostpicker.CustomRegionIcon)
 	fmt.Println("└────────────────────────────────────────────────────────┘")
 	fmt.Println("")
 	fmt.Println("🔗 Don't know which one? Check your DataRobot login page URL in your browser.")

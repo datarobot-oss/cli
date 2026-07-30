@@ -196,13 +196,13 @@ common case is a single keystroke:
 ```text
   DataRobot Environment
 
-▶ 🇺🇸 US Cloud
+▶ 🌎 US Cloud
   https://app.datarobot.com
 
-  🇪🇺 EU Cloud
+  🌍 EU Cloud
   https://app.eu.datarobot.com
 
-  🇯🇵 Japan Cloud
+  🌏 Japan Cloud
   https://app.jp.datarobot.com
 
   🏢 Custom/On-Prem

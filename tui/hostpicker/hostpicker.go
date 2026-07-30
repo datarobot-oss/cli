@@ -89,28 +89,49 @@ type Model struct {
 	SuccessCmd  func(string) tea.Cmd
 }
 
+// Region icons are single-codepoint globes, not country flags.
+//
+// Flag emoji are pairs of regional-indicator letters, and Windows deliberately
+// ships no flag glyphs in Segoe UI Emoji - it renders the pair as two letter
+// boxes instead. That is not a font the user can install, so flags are invisible
+// or wrong in PowerShell, Windows Terminal, and the VS Code terminal no matter
+// what. Worse, the pair measures as width 2 (lipgloss.Width) but paints 4
+// columns, so it silently breaks alignment as well.
+//
+// The globes are one codepoint, measure and paint as width 2, and are present in
+// Segoe UI Emoji, so they render everywhere the rest of the CLI's emoji do.
+//
+// Exported so the plain-text fallback menu in internal/auth renders the same
+// icons; keeping two copies is how they would drift back to flags.
+const (
+	USRegionIcon     = "🌎" // Americas
+	EURegionIcon     = "🌍" // Europe / Africa
+	JPRegionIcon     = "🌏" // Asia
+	CustomRegionIcon = "🏢"
+)
+
 func New() Model {
 	items := []list.Item{
 		item{
-			title:       "🇺🇸 US Cloud",
+			title:       USRegionIcon + " US Cloud",
 			description: "https://app.datarobot.com",
 			url:         "https://app.datarobot.com",
 			isCustom:    false,
 		},
 		item{
-			title:       "🇪🇺 EU Cloud",
+			title:       EURegionIcon + " EU Cloud",
 			description: "https://app.eu.datarobot.com",
 			url:         "https://app.eu.datarobot.com",
 			isCustom:    false,
 		},
 		item{
-			title:       "🇯🇵 Japan Cloud",
+			title:       JPRegionIcon + " Japan Cloud",
 			description: "https://app.jp.datarobot.com",
 			url:         "https://app.jp.datarobot.com",
 			isCustom:    false,
 		},
 		item{
-			title:       "🏢 Custom/On-Prem",
+			title:       CustomRegionIcon + " Custom/On-Prem",
 			description: "Enter your custom DataRobot URL",
 			url:         "",
 			isCustom:    true,
@@ -253,7 +274,7 @@ func (m Model) View() string {
 		title := lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#6124DF", Dark: "#9D7EDF"}).
 			Bold(true).
-			Render("🏢 Custom DataRobot URL")
+			Render(CustomRegionIcon + " Custom DataRobot URL")
 
 		sb.WriteString(title)
 		sb.WriteString("\n\n")
