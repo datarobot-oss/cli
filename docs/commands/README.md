@@ -74,7 +74,8 @@ dr
 ├── component          Component management (alias: c)
 │   ├── add            Add a component to your template
 │   ├── list           List installed components
-│   └── update         Update a component
+│   ├── update         Update a component
+│   └── rewrite-config Rewrite answers files to use APPLICATION_TEMPLATE_GIT_BASE_URL
 ├── templates          Template management (alias: template)
 │   ├── list           List available templates
 │   └── setup          Interactive setup wizard
@@ -208,6 +209,9 @@ dr component add <component-url>
 
 # Update a component
 dr component update
+
+# Rewrite answers files to use a custom Git mirror
+dr component rewrite-config
 ```
 
 ### Quickstart
@@ -310,6 +314,7 @@ For detailed documentation on each command, see:
   - `add`&mdash;add a component to your template.
   - `list`&mdash;list installed components.
   - `update`&mdash;update a component.
+  - `rewrite-config`&mdash;rewrite `_src_path` in all answers files to use `APPLICATION_TEMPLATE_GIT_BASE_URL` (useful for migrating to an internal Git mirror).
   - Note: Components are reusable pieces that can be added to templates to extend functionality.
 
 - **templates**&mdash;template operations.
@@ -403,6 +408,7 @@ DATAROBOT_API_TOKEN                 # API token (not recommended)
 DATAROBOT_CLI_CONFIG                # Path to config file
 DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT  # Timeout for plugin discovery (e.g. 2s; 0s disables)
 DATAROBOT_CLI_DEFAULT_LLM_ID        # Default LLM ID: gateway model or deployment id (overrides drconfig.yaml)
+APPLICATION_TEMPLATE_GIT_BASE_URL  # Override DataRobot community GitHub base URL for component templates (air-gapped / mirror setups)
 VISUAL                              # External editor for file editing
 EDITOR                              # External editor for file editing (fallback)
 ```
