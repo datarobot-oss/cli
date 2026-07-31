@@ -299,6 +299,16 @@ func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
+	// Always capture window size on the outer model, even while a sub-model
+	// (e.g. the Pulumi flow) is active — otherwise width/height never get set
+	// when Init() starts directly on a screen with an active sub-model, and
+	// stay stuck at zero for the rest of the session (no SIGWINCH on Windows
+	// means no later WindowSizeMsg will ever arrive to fix it up).
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = sizeMsg.Width
+		m.height = sizeMsg.Height
+	}
+
 	// If Pulumi login sub-model is active, delegate to it
 	if m.pulumiModel != nil {
 		return m.handlePulumiUpdate(msg)

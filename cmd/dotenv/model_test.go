@@ -575,3 +575,40 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_ErrorSurfacedRegardlessOfScre
 	suite.Require().Error(fm.err)
 	suite.Contains(fm.err.Error(), "boom")
 }
+
+// TestDotenvModel_WindowSizeCapturedWhileOnPulumiScreen is a regression test: when
+// Init() starts on pulumiScreen, the tea.WindowSizeMsg used to be swallowed entirely by
+// the top-level "delegate to pulumiModel" guard in Update(), so m.width/m.height were
+// never set. Once the Pulumi flow completed and the user opened the editor from
+// listScreen, the textarea was built with negative width/height (m.width-14, m.height-13
+// with both still zero) and — with no SIGWINCH-driven resize on Windows to correct it —
+// stayed broken for the rest of the session.
+func (suite *DotenvModelTestSuite) TestDotenvModel_WindowSizeCapturedWhileOnPulumiScreen() {
+	m := Model{
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+	}
+	m.ConfigureFromPulumiCheck(true, true, true)
+
+	// suite.NewTestModel sends an initial tea.WindowSizeMsg{300, 100} (via
+	// teatest.WithInitialTermSize) while the model still starts on pulumiScreen.
+	tm := suite.NewTestModel(m)
+
+	suite.WaitFor(tm, "Pulumi Configuration Passphrase")
+
+	// Skip the passphrase prompt, hand off to the wizard.
+	suite.Send(tm, "n")
+	suite.WaitFor(tm, "Interactive Setup")
+
+	// Jump straight to the list screen without completing every prompt.
+	suite.Send(tm, "esc")
+	suite.WaitFor(tm, "Environment Variables Menu")
+
+	// Open the built-in editor — this is where the stale zero width/height used to bite.
+	suite.Send(tm, "e")
+	suite.WaitFor(tm, "Edit Mode")
+
+	fm := suite.FinalModel(tm)
+
+	suite.Greater(fm.textarea.Width(), 100, "textarea width should reflect the real terminal size, not a clamped/zero fallback")
+	suite.Greater(fm.textarea.Height(), 50, "textarea height should reflect the real terminal size, not a clamped/zero fallback")
+}
