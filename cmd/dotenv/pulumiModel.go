@@ -379,8 +379,8 @@ func isPulumiLoggedIn() bool {
 
 // CheckPulumiSetup returns whether the Pulumi setup screen should be shown,
 // whether the user is already logged in, and whether a passphrase needs to be
-// configured. Call this before starting the dotenv TUI and set the corresponding
-// Model fields.
+// configured. Call this before starting the dotenv TUI and pass the result to
+// ConfigureFromPulumiCheck.
 func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, alreadyLoggedIn, needsPassphrase bool) {
 	prompts, err := envbuilder.GatherUserPrompts(dir, variables)
 	if err != nil {
@@ -395,6 +395,24 @@ func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, 
 	passphraseSet := viperx.GetString(pulumiConfigPassphraseKey) != ""
 
 	return needsPulumiSetup(prompts, loggedIn, passphraseSet), loggedIn, !passphraseSet
+}
+
+// ConfigureFromPulumiCheck sets the model's initial screen synchronously from the
+// result of CheckPulumiSetup, so the Pulumi passphrase screen — when needed — is the
+// very first thing rendered. Deciding this asynchronously (e.g. only once the wizard's
+// prompt-loading completes) races with that load and can leave the wrong screen showing
+// if it's slow or fails. Call this after constructing the Model (with Yes already set,
+// since --yes mode always skips the interactive Pulumi screen) and before Init().
+func (m *Model) ConfigureFromPulumiCheck(needsPulumi, loggedIn, needsPassphrase bool) {
+	if needsPulumi && !m.Yes {
+		plm := newPulumiLoginModel(loggedIn, needsPassphrase)
+		m.pulumiModel = &plm
+		m.screen = pulumiScreen
+
+		return
+	}
+
+	m.screen = wizardScreen
 }
 
 // handlePulumiPassphraseNonInteractive checks if Pulumi passphrase needs to be
