@@ -113,6 +113,17 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 
 	shellType := internalShell.Shell(shell)
 
+	if shellType == internalShell.Cmd {
+		// cmd.exe has no completion-script mechanism, so there is nothing to
+		// install. Surface a clear message rather than the generic error.
+		fmt.Println(infoStyle.Render("cmd.exe does not support shell completion scripts; nothing to install."))
+		return nil
+	}
+
+	return installForShell(rootCmd, shell, shellType, force, yes, dryRun)
+}
+
+func installForShell(rootCmd *cobra.Command, shell string, shellType internalShell.Shell, force, yes, dryRun bool) error {
 	installPath, installFunc, err := getInstallFunc(rootCmd, shellType, force)
 	if err != nil {
 		return err
@@ -222,6 +233,10 @@ func getInstallFunc(rootCmd *cobra.Command, shellType internalShell.Shell, force
 	case internalShell.PowerShell:
 		path, fn := installPowerShell(rootCmd, force)
 		return path, fn, nil
+	case internalShell.Cmd:
+		// cmd.exe has no completion-script mechanism; callers short-circuit
+		// before reaching here, so this is a defensive guard.
+		return "", nil, errors.New("cmd.exe does not support shell completion scripts.")
 	default:
 		return "", nil, fmt.Errorf("Unsupported shell: %s.", shellType)
 	}
@@ -599,6 +614,8 @@ func showActivationInstructions(shell internalShell.Shell) {
 		fmt.Println()
 		fmt.Println("  2. Or reload your profile in the current session:")
 		fmt.Println(infoStyle.Render("     . $PROFILE"))
+	case internalShell.Cmd:
+		// cmd.exe has no completions to activate; callers short-circuit earlier.
 	}
 
 	fmt.Println()

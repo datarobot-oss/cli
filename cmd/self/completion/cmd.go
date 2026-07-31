@@ -93,6 +93,14 @@ PowerShell:
 				return cmd.Root().GenFishCompletion(os.Stdout, true)
 			case internalShell.PowerShell:
 				return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+			case internalShell.Cmd:
+				// cmd.exe has no completion-script mechanism. Keep stdout clean
+				// (no bogus script) and explain on stderr.
+				cmd.SilenceUsage = true
+
+				fmt.Fprintln(os.Stderr, "cmd.exe does not support shell completion scripts.")
+
+				return nil
 			default:
 				cmd.SilenceUsage = true
 				return fmt.Errorf("Unsupported shell %q.", args[0])

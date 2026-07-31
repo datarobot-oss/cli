@@ -48,6 +48,8 @@ func TestNormalizeShellName(t *testing.T) {
 		{input: "bash", expected: "bash"},
 		{input: "zsh", expected: "zsh"},
 		{input: "fish", expected: "fish"},
+		{input: "cmd", expected: "cmd"},
+		{input: "cmd.exe", expected: "cmd"},
 	}
 
 	for _, tt := range tests {
@@ -130,6 +132,7 @@ func TestIsSupportedShell(t *testing.T) {
 		{name: "zsh", want: true},
 		{name: "fish", want: true},
 		{name: "powershell", want: true},
+		{name: "cmd", want: true},
 		{name: "ruby", want: false},
 		{name: "python", want: false},
 		{name: "sh", want: false},
@@ -186,13 +189,14 @@ func TestSupportedShells(t *testing.T) {
 	assert.Contains(t, supported, string(Zsh))
 	assert.Contains(t, supported, string(Fish))
 	assert.Contains(t, supported, string(PowerShell))
-	assert.Len(t, supported, 4)
+	assert.Contains(t, supported, string(Cmd))
+	assert.Len(t, supported, 5)
 }
 
 // TestResolveShell_SpecifiedShell verifies that an explicitly provided shell name
 // is returned unchanged without invoking detection.
 func TestResolveShell_SpecifiedShell(t *testing.T) {
-	shells := []string{"bash", "zsh", "fish", "powershell"}
+	shells := []string{"bash", "zsh", "fish", "powershell", "cmd"}
 
 	for _, shell := range shells {
 		t.Run(shell, func(t *testing.T) {
@@ -244,11 +248,67 @@ func TestNormalizeShellName_EdgeCases(t *testing.T) {
 		// Only "pwsh" maps to "powershell"; other PowerShell names are unchanged
 		{input: "pwsh.exe", want: "pwsh.exe"},
 		{input: "powershell.exe", want: "powershell.exe"},
+		// "cmd.exe" (as it may appear in $SHELL) canonicalizes to "cmd"
+		{input: "cmd.exe", want: "cmd"},
+		{input: "cmd", want: "cmd"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			assert.Equal(t, tt.want, normalizeShellName(tt.input))
+		})
+	}
+}
+
+// TestParseTasklistName exercises the CSV parsing used to read the parent
+// process name from tasklist output on Windows. tasklist only exists on
+// Windows, but the parsing is pure and must behave identically everywhere.
+func TestParseTasklistName(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{
+			name:   "cmd.exe",
+			output: `"cmd.exe","12345","Console","1","4,000 K"`,
+			want:   "cmd",
+		},
+		{
+			name:   "powershell.exe",
+			output: `"powershell.exe","12345","Console","1","4,000 K"`,
+			want:   "powershell",
+		},
+		{
+			name:   "pwsh.exe",
+			output: `"pwsh.exe","12345","Console","1","4,000 K"`,
+			want:   "pwsh",
+		},
+		{
+			name:   "trailing newline",
+			output: "\"cmd.exe\",\"12345\",\"Console\",\"1\",\"4,000 K\"\r\n",
+			want:   "cmd",
+		},
+		{
+			name:   "mixed case is lowercased",
+			output: `"CMD.EXE","12345","Console","1","4,000 K"`,
+			want:   "cmd",
+		},
+		{
+			name:   "empty output",
+			output: "",
+			want:   "",
+		},
+		{
+			name:   "no comma",
+			output: `"cmd.exe"`,
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseTasklistName(tt.output))
 		})
 	}
 }

@@ -102,6 +102,7 @@ with your default shell.
 				command    string
 				executable string
 				backup     string
+				execCmd    *exec.Cmd
 			)
 
 			switch runtime.GOOS {
@@ -114,13 +115,17 @@ with your default shell.
 				if err != nil {
 					return err
 				}
+
+				// The install command is a PowerShell one-liner, so it must run
+				// under PowerShell regardless of the detected shell (e.g. cmd.exe,
+				// which uses /C and cannot run `irm ... | iex`).
+				execCmd = exec.Command("powershell", "-NoProfile", "-Command", command)
 			case "darwin", "linux":
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
+				execCmd = exec.Command(shell, "-c", command)
 			default:
 				return fmt.Errorf("could not determine OS: %s", runtime.GOOS)
 			}
-
-			execCmd := exec.Command(shell, "-c", command)
 
 			execCmd.Stdout = os.Stdout
 			execCmd.Stderr = os.Stderr
