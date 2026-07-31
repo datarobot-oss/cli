@@ -231,6 +231,15 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 		}
 	}()
 
+	return runLoginWithFlow(ctx, flow, opts)
+}
+
+// runLoginWithFlow drives a flow whose listener is already bound: it opens the
+// browser, shows the user the link, and waits for the callback.
+//
+// Split out from RunBrowserLoginWith so tests can drive a flow on an ephemeral port
+// instead of competing for the fixed production one.
+func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions) (string, error) {
 	// The browser state drives the wording: when no browser opened, the link stops
 	// being a footnote and becomes the primary instruction.
 	state := BrowserSkipped
@@ -258,12 +267,20 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 		return waitErr
 	}
 
-	// tui.RunWithSpinner drops the label entirely when stdin is not a terminal, which
-	// would leave a piped or redirected invocation waiting in silence with no link to
-	// follow. Print it ourselves in that case; the animated spinner is only useful on
-	// a real terminal anyway.
-	if !reader.IsStdinTerminal() {
-		fmt.Fprintln(os.Stderr, label)
+	var err error
+
+	// The link is what this command exists to produce, so it goes to stdout - where
+	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
+	// and where callers that redirect the streams separately look for it. The Windows
+	// smoke test is one such caller; the expect-based Linux and macOS ones cannot tell
+	// the difference, because a PTY merges stdout and stderr.
+	//
+	// Printing it here rather than leaving it to tui.RunWithSpinner, which only shows
+	// the label while it animates: it drops the label outright without a terminal, and
+	// diverts it to stderr under DATAROBOT_CLI_NON_INTERACTIVE. Neither leaves the
+	// link on stdout, and the spinner is no use in either case anyway.
+	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
+		fmt.Fprintln(os.Stdout, label)
 
 		err = wait()
 	} else {

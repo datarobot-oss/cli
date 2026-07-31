@@ -332,10 +332,14 @@ for ($i = 0; $i -lt 20; $i++) {
     if ($auth_proc.HasExited) { break }
 }
 
+# Whether the process was still running tells a hang apart from an early exit, so
+# capture it before the kill below makes it moot.
+$auth_still_running = -not $auth_proc.HasExited
+
 # No browser round-trip happens in tests, so stop the waiting process. Guard the
 # kill: the process may exit between the check and the Kill() call, which would
 # otherwise throw under $ErrorActionPreference = "Stop".
-if (-not $auth_proc.HasExited) {
+if ($auth_still_running) {
     try {
         $auth_proc.Kill()
         $auth_proc.WaitForExit()
@@ -344,12 +348,35 @@ if (-not $auth_proc.HasExited) {
     }
 }
 
-Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
-
 if ($auth_url_shown) {
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
     Write-SuccessMsg "Assertion passed: 'dr auth login' displayed the OAuth redirect URL."
 } else {
+    # Dump both streams before deleting them. Without this the failure says only
+    # "the URL was not on stdout", which cannot distinguish the three causes that
+    # look identical from here: the link went to stderr instead, the process never
+    # got as far as printing it (a browser launcher that blocks would do that), or
+    # it exited early with an error.
     Write-ErrorMsg "Assertion failed: 'dr auth login' did not display the auth URL (cliRedirect=true)."
+    Write-InfoMsg "Process still running when polling gave up: $auth_still_running"
+
+    foreach ($stream in @(@{ Name = "stdout"; Path = $auth_out }, @{ Name = "stderr"; Path = $auth_err })) {
+        Write-InfoMsg "--- dr auth login $($stream.Name) ---"
+
+        if (Test-Path $stream.Path) {
+            $content = Get-Content $stream.Path -Raw
+
+            if ([string]::IsNullOrWhiteSpace($content)) {
+                Write-Host "(empty)"
+            } else {
+                Write-Host $content
+            }
+        } else {
+            Write-Host "(file never created)"
+        }
+    }
+
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
 }
 Write-End
 

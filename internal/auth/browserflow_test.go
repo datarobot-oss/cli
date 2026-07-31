@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -256,4 +257,77 @@ func TestBrowserFlow_OpenBrowserIsNoOpUnderTest(t *testing.T) {
 
 func TestErrLoginInterrupted_IsNotDeadlineExceeded(t *testing.T) {
 	assert.NotErrorIs(t, ErrLoginInterrupted, context.DeadlineExceeded)
+}
+
+// captureStdoutStderr runs fn with both standard streams replaced by pipes and
+// returns what each received.
+//
+// The streams are swapped rather than injected because the login prompt is written
+// through os.Stdout/os.Stderr directly, which is the behaviour under test: the
+// Windows smoke test reads the two streams as separate files, so which one the link
+// lands on is a contract, not an implementation detail.
+func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+
+	outR, outW, err := os.Pipe()
+	require.NoError(t, err)
+
+	errR, errW, err := os.Pipe()
+	require.NoError(t, err)
+
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = outW, errW
+
+	defer func() {
+		os.Stdout, os.Stderr = oldOut, oldErr
+	}()
+
+	// Drain concurrently: a prompt larger than the pipe buffer would otherwise block
+	// fn forever.
+	outCh, errCh := make(chan string, 1), make(chan string, 1)
+
+	go func() { outCh <- readAll(outR) }()
+	go func() { errCh <- readAll(errR) }()
+
+	fn()
+
+	require.NoError(t, outW.Close())
+	require.NoError(t, errW.Close())
+
+	return <-outCh, <-errCh
+}
+
+func readAll(r io.Reader) string {
+	b, _ := io.ReadAll(r)
+
+	return string(b)
+}
+
+// TestRunLoginWithFlow_PrintsLinkToStdout pins which stream carries the login link
+// when there is no terminal to animate a spinner on.
+//
+// It has to be stdout. The Windows smoke test launches `dr auth login` with
+// Start-Process, redirects the two streams to separate files, and polls only the
+// stdout one for "cliRedirect=true" - so a link on stderr fails the test while
+// looking correct to anyone watching a terminal. The expect-based Linux and macOS
+// tests cannot catch this: a PTY merges both streams into one.
+func TestRunLoginWithFlow_PrintsLinkToStdout(t *testing.T) {
+	flow := newTestFlow(t)
+
+	// Already cancelled, so Wait returns at once instead of holding the test for the
+	// full login timeout. The prompt is printed before the wait either way.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		_, err := runLoginWithFlow(ctx, flow, LoginOptions{NoBrowser: true})
+		assert.ErrorIs(t, err, ErrLoginInterrupted)
+	})
+
+	assert.Contains(t, stdout, "cliRedirect=true",
+		"the smoke test polls stdout for this substring")
+	assert.Contains(t, stdout, flow.AuthURL(),
+		"the whole link must reach stdout unbroken")
+	assert.NotContains(t, stderr, "cliRedirect=true",
+		"the link must not be diverted to stderr, where redirected callers miss it")
 }
