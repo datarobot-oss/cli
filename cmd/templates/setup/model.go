@@ -300,7 +300,6 @@ func NewModel(fromStartCommand bool) Model {
 
 		hostModel: hostpicker.New(),
 		login: LoginModel{
-			APIKeyChan: make(chan string, 1),
 			GetHostCmd: getHost,
 			SuccessCmd: authSuccess,
 		},

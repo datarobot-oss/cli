@@ -29,7 +29,6 @@ import (
 type LoginModel struct {
 	loginMessage string
 	flow         *auth.BrowserFlow
-	APIKeyChan   chan string
 	err          error
 	GetHostCmd   tea.Cmd
 	SuccessCmd   tea.Cmd

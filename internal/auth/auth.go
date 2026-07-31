@@ -368,14 +368,25 @@ func readURLFromStdin() bool {
 	return false
 }
 
-// printURLUnchanged explains that nothing was configured and how to proceed.
+// printURLUnchanged explains that the configured URL was left as it is and how to
+// proceed non-interactively.
 //
 // The bare "Exiting without changing the DataRobot URL." this replaces left users
 // with no next step, which is especially unhelpful when the cause was redirected
-// stdin rather than a deliberate cancel.
+// stdin rather than a deliberate cancel. The first line depends on whether a URL is
+// already configured: callers get here either because nothing was ever set or
+// because the user kept what was there (declining the overwrite prompt, cancelling
+// the picker), and "nothing configured" would be wrong in the latter case.
 func printURLUnchanged() {
-	fmt.Println(tui.BaseTextStyle.Render("No DataRobot URL was configured."))
-	fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
+	if current := config.GetBaseURL(); len(current) > 0 {
+		fmt.Print(tui.BaseTextStyle.Render("Keeping the current DataRobot URL "))
+		fmt.Println(tui.InfoStyle.Render(current))
+		fmt.Print(tui.BaseTextStyle.Render("Change it non-interactively with "))
+	} else {
+		fmt.Println(tui.BaseTextStyle.Render("No DataRobot URL was configured."))
+		fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
+	}
+
 	fmt.Println(tui.InfoStyle.Render("dr auth set-url <url>"))
 	fmt.Print(tui.BaseTextStyle.Render("or export "))
 	fmt.Print(tui.InfoStyle.Render("DATAROBOT_ENDPOINT"))
