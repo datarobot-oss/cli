@@ -418,7 +418,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.loadingMessage = ""
 		m.screen = dotenvScreen
 		m.dotenv.DotenvFile = filepath.Join(m.clone.Dir, ".env")
-		m.dotenv.ConfigureFromPulumiCheck(dotenv.CheckPulumiSetup(m.clone.Dir, nil))
+
+		needsPulumi, loggedIn, needsPassphrase := dotenv.CheckPulumiSetup(m.clone.Dir, nil)
+		m.dotenv.ConfigureFromPulumiCheck(needsPulumi, loggedIn, needsPassphrase, m.dotenv.Yes)
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()
@@ -428,7 +430,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 		m.list.Template = msg.template
 		m.template = msg.template
 		m.dotenv.DotenvFile = msg.dotenvFile
-		m.dotenv.ConfigureFromPulumiCheck(dotenv.CheckPulumiSetup(filepath.Dir(msg.dotenvFile), nil))
+
+		needsPulumi, loggedIn, needsPassphrase := dotenv.CheckPulumiSetup(filepath.Dir(msg.dotenvFile), nil)
+		m.dotenv.ConfigureFromPulumiCheck(needsPulumi, loggedIn, needsPassphrase, m.dotenv.Yes)
 		m.dotenvSetupCompleted = true
 
 		return m, m.dotenv.Init()

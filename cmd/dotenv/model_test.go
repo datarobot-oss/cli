@@ -535,7 +535,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_PulumiScreenShownFirst() {
 	}
 	// loggedIn=true so the Pulumi sub-model starts directly on the passphrase
 	// prompt screen instead of the backend-selection screen.
-	m.ConfigureFromPulumiCheck(true, true, true)
+	m.ConfigureFromPulumiCheck(true, true, true, false)
 
 	tm := suite.NewTestModel(m)
 
@@ -587,7 +587,7 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_WindowSizeCapturedWhileOnPulu
 	m := Model{
 		DotenvFile: filepath.Join(suite.tempDir, ".env"),
 	}
-	m.ConfigureFromPulumiCheck(true, true, true)
+	m.ConfigureFromPulumiCheck(true, true, true, false)
 
 	// suite.NewTestModel sends an initial tea.WindowSizeMsg{300, 100} (via
 	// teatest.WithInitialTermSize) while the model still starts on pulumiScreen.

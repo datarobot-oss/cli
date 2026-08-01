@@ -42,7 +42,12 @@ const (
 type screens int
 
 const (
-	listScreen = screens(iota)
+	// unsetScreen is the zero value: a Model whose screen was never explicitly
+	// configured. Init() panics on it rather than silently behaving as
+	// listScreen, so a caller that forgets to set screen fails immediately
+	// instead of shipping a hard-to-diagnose "wrong screen shown" bug.
+	unsetScreen = screens(iota)
+	listScreen
 	editorScreen
 	wizardScreen
 	pulumiScreen
@@ -263,6 +268,8 @@ func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
 
 func (m Model) Init() tea.Cmd {
 	switch m.screen {
+	case unsetScreen:
+		panic("dotenv.Model.screen was never configured before Init()")
 	case editorScreen:
 		return tea.Batch(openEditorCmd, tea.WindowSize())
 	case pulumiScreen:
@@ -275,7 +282,7 @@ func (m Model) Init() tea.Cmd {
 		return tea.Batch(m.loadVariables(), tea.WindowSize())
 	}
 
-	return tea.Batch(m.loadVariables(), tea.WindowSize())
+	panic(fmt.Sprintf("dotenv.Model.screen has unknown value %d", m.screen))
 }
 
 func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -395,6 +402,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 	}
 
 	switch m.screen {
+	case unsetScreen:
+		// Unreachable: Init() panics before Update() ever sees an unconfigured Model.
 	case pulumiScreen:
 		// Handled above via m.pulumiModel delegation
 	case listScreen:
@@ -480,6 +489,8 @@ func (m Model) View() string {
 	}
 
 	switch m.screen {
+	case unsetScreen:
+		// Unreachable: Init() panics before View() ever sees an unconfigured Model.
 	case pulumiScreen:
 		if m.pulumiModel != nil {
 			sb.WriteString(m.pulumiModel.View())

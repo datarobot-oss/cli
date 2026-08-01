@@ -196,9 +196,10 @@ This wizard will help you:
 			contents:       contents,
 			SuccessCmd:     tea.Quit,
 			ShowAllPrompts: showAllPrompts,
-			Yes:            yes,
 		}
-		m.ConfigureFromPulumiCheck(CheckPulumiSetup(repositoryRoot, variables))
+
+		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
+		m.ConfigureFromPulumiCheck(needsPulumi, pulumiLoggedIn, needsPassphrase, yes)
 
 		finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {

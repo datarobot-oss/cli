@@ -397,14 +397,17 @@ func CheckPulumiSetup(dir string, variables []envbuilder.Variable) (needsSetup, 
 	return needsPulumiSetup(prompts, loggedIn, passphraseSet), loggedIn, !passphraseSet
 }
 
-// ConfigureFromPulumiCheck sets the model's initial screen synchronously from the
-// result of CheckPulumiSetup, so the Pulumi passphrase screen — when needed — is the
-// very first thing rendered. Deciding this asynchronously (e.g. only once the wizard's
-// prompt-loading completes) races with that load and can leave the wrong screen showing
-// if it's slow or fails. Call this after constructing the Model (with Yes already set,
-// since --yes mode always skips the interactive Pulumi screen) and before Init().
-func (m *Model) ConfigureFromPulumiCheck(needsPulumi, loggedIn, needsPassphrase bool) {
-	if needsPulumi && !m.Yes {
+// ConfigureFromPulumiCheck sets the model's Yes flag and initial screen synchronously
+// from the result of CheckPulumiSetup, so the Pulumi passphrase screen — when needed —
+// is the very first thing rendered. Deciding this asynchronously (e.g. only once the
+// wizard's prompt-loading completes) races with that load and can leave the wrong
+// screen showing if it's slow or fails. yes mirrors --yes/non-interactive mode, which
+// always skips the interactive Pulumi screen. Call this after constructing the Model
+// and before Init(); it owns setting Yes, so callers don't need to set it separately.
+func (m *Model) ConfigureFromPulumiCheck(needsPulumi, loggedIn, needsPassphrase, yes bool) {
+	m.Yes = yes
+
+	if needsPulumi && !yes {
 		plm := newPulumiLoginModel(loggedIn, needsPassphrase)
 		m.pulumiModel = &plm
 		m.screen = pulumiScreen
