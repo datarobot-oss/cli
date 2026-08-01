@@ -119,11 +119,11 @@ func ValidateAndEditIfNeeded() error {
 
 	// Launch the edit flow
 	m := Model{
-		initialScreen: screen,
-		DotenvFile:    dotenv,
-		variables:     variables,
-		contents:      contents,
-		SuccessCmd:    tea.Quit,
+		screen:     screen,
+		DotenvFile: dotenv,
+		variables:  variables,
+		contents:   contents,
+		SuccessCmd: tea.Quit,
 	}
 
 	_, err = tui.Run(m, tea.WithAltScreen())

@@ -16,6 +16,8 @@ package dotenv
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -179,7 +181,6 @@ func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		ShowAllPrompts: true,
 	})
@@ -226,7 +227,6 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Happy_Path() {
 func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		ShowAllPrompts: true,
 	})
@@ -284,7 +284,6 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Branching_Path() {
 func (suite *DotenvModelTestSuite) TestDotenvModel_Both_Path() {
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		ShowAllPrompts: true,
 	})
@@ -356,7 +355,6 @@ func (suite *DotenvModelTestSuite) Test__loadPromptsFindsEnvValues() {
 	suite.T().Setenv("PULUMI_CONFIG_PASSPHRASE", "existing_passphrase")
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		ShowAllPrompts: true,
 	})
@@ -427,7 +425,6 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_SkipsPromptsWithDefaults() {
 	// The wizard should skip both and start directly at data_source.
 	tm := suite.NewTestModel(Model{
 		screen:         wizardScreen,
-		initialScreen:  wizardScreen,
 		DotenvFile:     filepath.Join(suite.tempDir, ".env"),
 		ShowAllPrompts: false, // Default behavior - skip prompts with defaults
 	})
@@ -470,10 +467,9 @@ func (suite *DotenvModelTestSuite) TestDotenvModel_Yes() {
 	// 3. The file is saved automatically
 	// 4. The model exits immediately without waiting for user confirmation
 	tm := suite.NewTestModel(Model{
-		screen:        wizardScreen,
-		initialScreen: wizardScreen,
-		DotenvFile:    filepath.Join(suite.tempDir, ".env"),
-		Yes:           true,
+		screen:     wizardScreen,
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+		Yes:        true,
 	})
 
 	// Wait a moment for the async save operation to complete before quitting
@@ -526,4 +522,93 @@ func (suite *DotenvModelTestSuite) TestYes_ViperBinding() {
 	suite.T().Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "false")
 
 	suite.False(viperx.GetBool("yes"), "Expected viper to read 'false' as false")
+}
+
+// TestDotenvModel_PulumiScreenShownFirst is a regression test for CFX-6904: when Pulumi
+// setup is needed, the passphrase screen must be the very first thing rendered — never
+// the "Environment Variables Menu" list screen — regardless of how long loading prompts
+// in the background takes. Deciding this asynchronously (via promptsLoadedMsg) used to
+// race with that load and could leave the wrong screen showing.
+func (suite *DotenvModelTestSuite) TestDotenvModel_PulumiScreenShownFirst() {
+	m := Model{
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+	}
+	// loggedIn=true so the Pulumi sub-model starts directly on the passphrase
+	// prompt screen instead of the backend-selection screen.
+	m.ConfigureFromPulumiCheck(true, true, true, false)
+
+	tm := suite.NewTestModel(m)
+
+	var captured bytes.Buffer
+
+	teatest.WaitFor(
+		suite.T(), io.TeeReader(tm.Output(), &captured),
+		func(bts []byte) bool {
+			return bytes.Contains(bts, []byte("Pulumi Configuration Passphrase"))
+		},
+		teatest.WithCheckInterval(time.Millisecond*100),
+		teatest.WithDuration(time.Second*3),
+	)
+
+	suite.NotContains(captured.String(), "Environment Variables Menu",
+		"the Pulumi passphrase screen must be the first thing rendered, not the list screen")
+}
+
+// TestDotenvModel_ErrorSurfacedRegardlessOfScreen is a regression test for CFX-6904:
+// errMsg used to only be handled while m.screen == listScreen, so an error arriving on
+// any other screen (e.g. wizardScreen) was silently dropped and the model got stuck
+// re-rendering stale UI forever. errMsg must now be captured and surfaced regardless of
+// which screen is active.
+func (suite *DotenvModelTestSuite) TestDotenvModel_ErrorSurfacedRegardlessOfScreen() {
+	m := Model{
+		screen:     wizardScreen,
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+	}
+
+	tm := suite.NewTestModel(m)
+
+	tm.Send(errMsg{err: errors.New("boom: something went wrong loading prompts")})
+
+	suite.WaitFor(tm, "Error: boom")
+
+	fm := suite.FinalModel(tm)
+	suite.Require().Error(fm.err)
+	suite.Contains(fm.err.Error(), "boom")
+}
+
+// TestDotenvModel_WindowSizeCapturedWhileOnPulumiScreen is a regression test: when
+// Init() starts on pulumiScreen, the tea.WindowSizeMsg used to be swallowed entirely by
+// the top-level "delegate to pulumiModel" guard in Update(), so m.width/m.height were
+// never set. Once the Pulumi flow completed and the user opened the editor from
+// listScreen, the textarea was built with negative width/height (m.width-14, m.height-13
+// with both still zero) and — with no SIGWINCH-driven resize on Windows to correct it —
+// stayed broken for the rest of the session.
+func (suite *DotenvModelTestSuite) TestDotenvModel_WindowSizeCapturedWhileOnPulumiScreen() {
+	m := Model{
+		DotenvFile: filepath.Join(suite.tempDir, ".env"),
+	}
+	m.ConfigureFromPulumiCheck(true, true, true, false)
+
+	// suite.NewTestModel sends an initial tea.WindowSizeMsg{300, 100} (via
+	// teatest.WithInitialTermSize) while the model still starts on pulumiScreen.
+	tm := suite.NewTestModel(m)
+
+	suite.WaitFor(tm, "Pulumi Configuration Passphrase")
+
+	// Skip the passphrase prompt, hand off to the wizard.
+	suite.Send(tm, "n")
+	suite.WaitFor(tm, "Interactive Setup")
+
+	// Jump straight to the list screen without completing every prompt.
+	suite.Send(tm, "esc")
+	suite.WaitFor(tm, "Environment Variables Menu")
+
+	// Open the built-in editor — this is where the stale zero width/height used to bite.
+	suite.Send(tm, "e")
+	suite.WaitFor(tm, "Edit Mode")
+
+	fm := suite.FinalModel(tm)
+
+	suite.Greater(fm.textarea.Width(), 100, "textarea width should reflect the real terminal size, not a clamped/zero fallback")
+	suite.Greater(fm.textarea.Height(), 50, "textarea height should reflect the real terminal size, not a clamped/zero fallback")
 }

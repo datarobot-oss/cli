@@ -42,34 +42,35 @@ const (
 type screens int
 
 const (
-	listScreen = screens(iota)
+	// unsetScreen is the zero value: a Model whose screen was never explicitly
+	// configured. Init() panics on it rather than silently behaving as
+	// listScreen, so a caller that forgets to set screen fails immediately
+	// instead of shipping a hard-to-diagnose "wrong screen shown" bug.
+	unsetScreen = screens(iota)
+	listScreen
 	editorScreen
 	wizardScreen
 	pulumiScreen
 )
 
 type Model struct {
-	screen                screens
-	initialScreen         screens
-	DotenvFile            string
-	variables             []envbuilder.Variable
-	err                   error
-	textarea              textarea.Model
-	contents              string
-	width                 int
-	height                int
-	SuccessCmd            tea.Cmd
-	prompts               []envbuilder.UserPrompt
-	currentPromptIndex    int
-	currentPrompt         promptModel
-	hasPrompts            *bool             // Cache whether prompts are available
-	ShowAllPrompts        bool              // When true, show all prompts regardless of defaults
-	Yes                   bool              // When true, auto-populate all prompts with defaults (or empty) without showing wizard
-	skippedPrompts        int               // Count of prompts skipped due to having defaults
-	pulumiModel           *pulumiLoginModel // Sub-model for Pulumi login flow, shown before wizard if needed
-	NeedsPulumiLogin      bool              // Set by callers before Init(); true when login or passphrase setup is needed
-	PulumiAlreadyLoggedIn bool              // Set by callers; when true, Pulumi screen skips backend selection
-	NeedsPulumiPassphrase bool              // Set by callers; when true, passphrase prompt is shown after login
+	screen             screens
+	DotenvFile         string
+	variables          []envbuilder.Variable
+	err                error
+	textarea           textarea.Model
+	contents           string
+	width              int
+	height             int
+	SuccessCmd         tea.Cmd
+	prompts            []envbuilder.UserPrompt
+	currentPromptIndex int
+	currentPrompt      promptModel
+	hasPrompts         *bool             // Cache whether prompts are available
+	ShowAllPrompts     bool              // When true, show all prompts regardless of defaults
+	Yes                bool              // When true, auto-populate all prompts with defaults (or empty) without showing wizard
+	skippedPrompts     int               // Count of prompts skipped due to having defaults
+	pulumiModel        *pulumiLoginModel // Sub-model for Pulumi login flow, shown before wizard if needed
 }
 
 type (
@@ -266,24 +267,31 @@ func (m Model) autoPopulateAndSave() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) Init() tea.Cmd {
-	if m.initialScreen == editorScreen {
+	switch m.screen {
+	case unsetScreen:
+		panic("dotenv.Model.screen was never configured before Init()")
+	case editorScreen:
 		return tea.Batch(openEditorCmd, tea.WindowSize())
-	}
-
-	if m.initialScreen == wizardScreen {
+	case pulumiScreen:
+		// Prompts are (re)loaded once the Pulumi flow completes and hands off
+		// to the wizard (see handlePulumiUpdate) — no need to load them now.
+		return tea.Batch(m.pulumiModel.Init(), tea.WindowSize())
+	case wizardScreen:
 		return tea.Batch(m.loadPrompts(), tea.WindowSize())
+	case listScreen:
+		return tea.Batch(m.loadVariables(), tea.WindowSize())
 	}
 
-	return tea.Batch(m.loadVariables(), tea.WindowSize())
+	panic(fmt.Sprintf("dotenv.Model.screen has unknown value %d", m.screen))
 }
 
 func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case pulumiLoginCompleteMsg:
-		// Pulumi setup finished — reload prompts so the newly saved passphrase
-		// is picked up before the wizard starts.
+		// Pulumi setup finished — hand off to the wizard and reload prompts so
+		// the newly saved passphrase is picked up before it starts.
 		m.pulumiModel = nil
-		m.NeedsPulumiLogin = false
+		m.screen = wizardScreen
 
 		return m, m.loadPrompts()
 	}
@@ -298,6 +306,16 @@ func (m Model) handlePulumiUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
+	// Always capture window size on the outer model, even while a sub-model
+	// (e.g. the Pulumi flow) is active — otherwise width/height never get set
+	// when Init() starts directly on a screen with an active sub-model, and
+	// stay stuck at zero for the rest of the session (no SIGWINCH on Windows
+	// means no later WindowSizeMsg will ever arrive to fix it up).
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = sizeMsg.Width
+		m.height = sizeMsg.Height
+	}
+
 	// If Pulumi login sub-model is active, delegate to it
 	if m.pulumiModel != nil {
 		return m.handlePulumiUpdate(msg)
@@ -352,16 +370,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			return m, nil
 		}
 
-		// Check if Pulumi login/passphrase setup is needed before the wizard
-		// Skip interactive Pulumi screen in --yes mode (passphrase will be auto-generated if needed)
-		if m.NeedsPulumiLogin && !m.Yes {
-			plm := newPulumiLoginModel(m.PulumiAlreadyLoggedIn, m.NeedsPulumiPassphrase)
-			m.pulumiModel = &plm
-			m.screen = pulumiScreen
-
-			return m, plm.Init()
-		}
-
 		// If Yes is true, auto-populate all values and save without showing wizard
 		if m.Yes {
 			return m.autoPopulateAndSave()
@@ -387,9 +395,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 				Runes: []rune("ctrl+home"),
 			}
 		})
+	case errMsg:
+		m.err = msg.err
+
+		return m, nil
 	}
 
 	switch m.screen {
+	case unsetScreen:
+		// Unreachable: Init() panics before Update() ever sees an unconfigured Model.
 	case pulumiScreen:
 		// Handled above via m.pulumiModel delegation
 	case listScreen:
@@ -407,9 +421,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 			case keyOpenExternal:
 				return m, m.openInExternalEditor()
 			}
-		case errMsg:
-			m.err = msg.err
-			return m, nil
 		}
 	case editorScreen:
 		switch msg := msg.(type) {
@@ -469,7 +480,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint: cyclop
 func (m Model) View() string {
 	var sb strings.Builder
 
+	if m.err != nil {
+		sb.WriteString(tui.ErrorStyle.Render("Error: " + m.err.Error()))
+		sb.WriteString("\n\n")
+		sb.WriteString(tui.BaseTextStyle.Render("Press ctrl+c to exit."))
+
+		return sb.String()
+	}
+
 	switch m.screen {
+	case unsetScreen:
+		// Unreachable: Init() panics before View() ever sees an unconfigured Model.
 	case pulumiScreen:
 		if m.pulumiModel != nil {
 			sb.WriteString(m.pulumiModel.View())

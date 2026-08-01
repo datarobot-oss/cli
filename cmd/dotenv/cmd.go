@@ -89,11 +89,11 @@ var EditCmd = &cobra.Command{
 		}
 
 		m := Model{
-			initialScreen: screen,
-			DotenvFile:    dotenvFile,
-			variables:     variables,
-			contents:      contents,
-			SuccessCmd:    tea.Quit,
+			screen:     screen,
+			DotenvFile: dotenvFile,
+			variables:  variables,
+			contents:   contents,
+			SuccessCmd: tea.Quit,
 		}
 		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 
@@ -190,20 +190,16 @@ This wizard will help you:
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
-		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
-
 		m := Model{
-			initialScreen:         wizardScreen,
-			DotenvFile:            dotenvFile,
-			variables:             variables,
-			contents:              contents,
-			SuccessCmd:            tea.Quit,
-			ShowAllPrompts:        showAllPrompts,
-			Yes:                   yes,
-			NeedsPulumiLogin:      needsPulumi,
-			PulumiAlreadyLoggedIn: pulumiLoggedIn,
-			NeedsPulumiPassphrase: needsPassphrase,
+			DotenvFile:     dotenvFile,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+			ShowAllPrompts: showAllPrompts,
 		}
+
+		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
+		m.ConfigureFromPulumiCheck(needsPulumi, pulumiLoggedIn, needsPassphrase, yes)
 
 		finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
