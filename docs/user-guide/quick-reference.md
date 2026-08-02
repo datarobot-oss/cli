@@ -21,6 +21,9 @@ dr auth logout
 
 # Check authentication status
 dr auth check
+
+# Export credentials into the current shell session
+eval "$(dr auth export)"
 ```
 
 ## Templates

@@ -353,6 +353,39 @@ if ($auth_url_shown) {
 }
 Write-End
 
+# Test auth export
+#
+# Verifies the PowerShell rendering and that piping it to Invoke-Expression
+# actually populates $env:. Values are never echoed, so no token reaches the
+# CI log.
+Write-Delimiter "Testing dr auth export"
+
+$auth_export_output = (dr auth export --shell powershell) -join "`n"
+
+if ($auth_export_output -match '\$env:DATAROBOT_ENDPOINT = ' -and
+    $auth_export_output -match '\$env:DATAROBOT_API_TOKEN = ') {
+    Write-SuccessMsg "Assertion passed: 'dr auth export' emitted both canonical variables."
+} else {
+    Write-ErrorMsg "Assertion failed: 'dr auth export' did not emit both canonical variables."
+}
+
+# Snapshot and restore so the token does not leak into the rest of the suite.
+$saved_endpoint = $env:DATAROBOT_ENDPOINT
+$saved_token = $env:DATAROBOT_API_TOKEN
+
+$auth_export_output | Invoke-Expression
+
+if ($env:DATAROBOT_ENDPOINT -eq "${testing_url}/api/v2" -and -not [string]::IsNullOrEmpty($env:DATAROBOT_API_TOKEN)) {
+    Write-SuccessMsg "Assertion passed: Invoke-Expression of 'dr auth export' set the canonical variables."
+} else {
+    Write-Host "DATAROBOT_ENDPOINT=$($env:DATAROBOT_ENDPOINT)"
+    Write-ErrorMsg "Assertion failed: Invoke-Expression of 'dr auth export' did not set the canonical variables."
+}
+
+$env:DATAROBOT_ENDPOINT = $saved_endpoint
+$env:DATAROBOT_API_TOKEN = $saved_token
+Write-End
+
 # Test templates (if URL is accessible)
 if (-not $url_accessible) {
     Write-InfoMsg "URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."

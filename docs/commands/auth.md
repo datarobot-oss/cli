@@ -27,7 +27,7 @@ dr auth <command> [flags]
 
 ## Description
 
-The `auth` command provides authentication management for the DataRobot CLI. It handles login, logout, and URL configuration for connecting to your DataRobot instance.
+The `auth` command provides authentication management for the DataRobot CLI. It handles login, logout, URL configuration, and exporting credentials as environment variables for connecting to your DataRobot instance.
 
 ## Subcommands
 
@@ -152,6 +152,80 @@ Unset it and try again:
 
 > [!TIP]
 > Use `dr auth check` in CI/CD pipelines to verify credentials before running other commands.
+
+### `export`
+
+Print the canonical DataRobot environment variables for the credentials the CLI is currently using, as shell statements you can source into your session.
+
+```bash
+dr auth export [--shell <bash|zsh|fish|powershell|cmd>]
+```
+
+**Output:**
+
+```bash
+$ dr auth export
+export DATAROBOT_ENDPOINT='https://app.datarobot.com/api/v2'
+export DATAROBOT_API_TOKEN='<token>'
+```
+
+Only the statements go to stdout — every error, hint, and warning goes to stderr — so the output is always safe to evaluate.
+
+**Sourcing into your shell:**
+
+```bash
+# bash / zsh
+eval "$(dr auth export)"
+
+# fish
+dr auth export | source
+
+# PowerShell
+dr auth export | Out-String | Invoke-Expression
+
+# cmd.exe
+for /f "usebackq delims=" %i in (`dr auth export --shell cmd`) do @%i
+
+# Save for later sourcing
+dr auth export --shell bash > ~/.datarobot-env && source ~/.datarobot-env
+```
+
+The output syntax is chosen from the detected parent shell. Use `--shell` to override it — useful when generating a file for a different shell, or when detection fails (unrecognized shells fall back to POSIX `export` syntax).
+
+**Where credentials come from:**
+
+1. `DATAROBOT_ENDPOINT` (or `DATAROBOT_API_ENDPOINT`) and `DATAROBOT_API_TOKEN`, if both are set
+2. Otherwise the CLI config file written by `dr auth login`
+
+The endpoint is normalized to its canonical `/api/v2` form, so a config or environment value of `app.datarobot.com` is exported as `https://app.datarobot.com/api/v2`. A URL that already has a path (self-managed installs serving the API under a custom prefix) is left alone.
+
+**Machine-readable output:**
+
+```bash
+$ dr auth export --output-format json
+{
+  "environment": {
+    "DATAROBOT_API_TOKEN": "<token>",
+    "DATAROBOT_ENDPOINT": "https://app.datarobot.com/api/v2"
+  }
+}
+```
+
+**No credentials configured:**
+
+```bash
+$ dr auth export
+❌ No DataRobot credentials found.
+Run dr auth login to authenticate.
+```
+
+Nothing is written to stdout and the command exits non-zero, so `eval "$(dr auth export)"` cannot evaluate a partial result.
+
+> [!NOTE]
+> This command never starts a login flow and never calls the API, so it is safe to run from a shell startup file. It does not validate the credentials — run `dr auth check` for that.
+
+> [!WARNING]
+> The output contains your API token in plain text. Avoid piping it into a shared terminal, a log, or a file that is checked into version control.
 
 ### `set-url`
 
@@ -473,6 +547,12 @@ export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
+```
+
+To go the other way — take the credentials the CLI already has and put them in your shell environment for the DataRobot SDKs and other tools — use [`dr auth export`](#export):
+
+```bash
+eval "$(dr auth export)"
 ```
 
 ## Common issues

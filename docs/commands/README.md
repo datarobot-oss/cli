@@ -183,6 +183,9 @@ dr
 dr auth set-url https://app.datarobot.com
 dr auth login
 
+# Export credentials into the current shell session
+eval "$(dr auth export)"
+
 # Logout
 dr auth logout
 ```

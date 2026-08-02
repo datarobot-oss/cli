@@ -16,6 +16,7 @@ package auth
 
 import (
 	"github.com/datarobot/cli/cmd/auth/check"
+	"github.com/datarobot/cli/cmd/auth/export"
 	"github.com/datarobot/cli/cmd/auth/login"
 	"github.com/datarobot/cli/cmd/auth/logout"
 	"github.com/datarobot/cli/cmd/auth/seturl"
@@ -34,12 +35,14 @@ Manage your DataRobot credentials and connection settings:
   • Configure your DataRobot environment URL
   • Log in using OAuth authentication
   • Log out and clear stored credentials
+  • Export your credentials as environment variables
 
 🚀 Quick start: dr auth set-url && dr auth login`,
 	}
 
 	cmd.AddCommand(
 		check.Cmd(),
+		export.Cmd(),
 		login.Cmd(),
 		logout.Cmd(),
 		seturl.Cmd(),
