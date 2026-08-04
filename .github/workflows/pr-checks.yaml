@@ -30,6 +30,7 @@ jobs:
       deps: ${{ steps.changes.outputs.deps }}
       install_sh: ${{ steps.changes.outputs.install_sh }}
       test_config: ${{ steps.changes.outputs.test_config }}
+      lint_config: ${{ steps.changes.outputs.lint_config }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,10 +68,21 @@ jobs:
               - 'Taskfile.yaml'
               - '.github/workflows/pr-checks.yaml'
               - '.github/actions/setup/**'
+            # Re-run the lint job when the lint tooling itself changes, so a PR
+            # that only touches the Taskfile / golangci config still gets its
+            # lint behaviour validated (CFX-7138).
+            lint_config:
+              - 'Taskfile.yaml'
+              - '.golangci.yaml'
+              - '.github/workflows/pr-checks.yaml'
+              - '.github/actions/setup/**'
 
   lint:
     needs: detect-changes
-    if: needs.detect-changes.outputs.go_code == 'true'
+    if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.lint_config == 'true'
+    # CFX-7138: `task lint` runs golangci-lint once per GOOS in
+    # LINT_GOOS_TARGETS (linux/darwin/windows), so a single Ubuntu runner still
+    # covers every build-constrained file — no 3-OS runner matrix needed.
     runs-on: ubuntu-latest
     name: Lint Code
     timeout-minutes: 15
@@ -97,7 +109,9 @@ jobs:
             tmp/bin/golangci-lint
             tmp/bin/goreleaser
             ~/.cache/golangci-lint
-          key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yaml') }}
+          # Taskfile.yaml is in the key so changing LINT_GOOS_TARGETS (CFX-7138)
+          # invalidates a cache built for a different set of GOOS targets.
+          key: golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-${{ hashFiles('**/*.go', 'go.sum', '.golangci.yaml', 'Taskfile.yaml') }}
           restore-keys: |
             golangci-lint-${{ runner.os }}-${{ steps.golangci-version.outputs.version }}-
 
