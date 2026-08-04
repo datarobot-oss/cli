@@ -160,6 +160,7 @@ var expectedEnclaveTrackedCommands = []string{
 	"enclave get",
 	"enclave list",
 	"enclave deactivate",
+	"enclave reactivate",
 	"enclave delete",
 	"enclave access grant",
 	"enclave access revoke",
