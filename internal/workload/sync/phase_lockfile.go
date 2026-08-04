@@ -1,0 +1,160 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package sync
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/ignore"
+)
+
+const (
+	pyprojectFile = "pyproject.toml"
+	uvLockFile    = "uv.lock"
+
+	// uvLockTimeout bounds `uv lock`: dependency resolution hits the
+	// network and can hang on unreachable indexes.
+	uvLockTimeout = 2 * time.Minute
+)
+
+// errUvNotFound reports that the uv binary is not on PATH. The phase
+// maps it to an install hint instead of a generation-failure hint.
+var errUvNotFound = errors.New("uv is not installed")
+
+// LockfileRunner generates uv.lock in dir (used as the subprocess
+// working directory). Injected via Deps so tests can fake the exec.
+type LockfileRunner func(dir string) error
+
+// phaseLockfile lazily generates uv.lock when the project has a
+// pyproject.toml but no lock file. The workload-api image build requires
+// uv.lock (it runs `uv sync --frozen`), so generating it before the
+// phase-2 walk lets the normal diff/upload pipeline pick it up with no
+// changes downstream. This phase never fails the sync: when uv is
+// missing or resolution fails it records a hint for the cmd layer and
+// lets the sync proceed.
+func phaseLockfile(e *Engine) error {
+	if !fileExistsIn(e.projectDir, pyprojectFile) {
+		return nil
+	}
+
+	if fileExistsIn(e.projectDir, uvLockFile) {
+		return nil
+	}
+
+	log.Debug("pyproject.toml has no uv.lock; generating one with `uv lock`")
+
+	if err := e.lockfileFn(e.projectDir); err != nil {
+		if errors.Is(err, errUvNotFound) {
+			e.lockfileHint = "pyproject.toml found without uv.lock and uv is not installed. " +
+				"The image build will fail until you add one — install uv and run `uv lock`, then re-sync."
+		} else {
+			e.lockfileHint = fmt.Sprintf("Could not generate uv.lock (%v). "+
+				"The image build will fail until you add one — run `uv lock` and re-sync.", err)
+		}
+
+		log.Warn(e.lockfileHint)
+
+		return nil
+	}
+
+	e.lockfileGenerated = true
+
+	log.Warn("Generated uv.lock from pyproject.toml — commit it to your repo")
+
+	return nil
+}
+
+// runUvLock is the production LockfileRunner: `uv lock` in dir with the
+// user's own environment, so their uv config, private indexes, and
+// credentials all apply — exactly as if they ran it by hand.
+func runUvLock(dir string) error {
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		return errUvNotFound
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), uvLockTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, uvPath, "lock")
+	cmd.Dir = dir
+
+	var out bytes.Buffer
+
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	log.Debug("Running command: " + cmd.String())
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("uv lock timed out after %s", uvLockTimeout)
+		}
+
+		return fmt.Errorf("uv lock failed: %s", tailOf(out.String(), 400))
+	}
+
+	return nil
+}
+
+// warnIfLockfileIgnored surfaces a warning when .wapiignore excludes
+// uv.lock: that silently defeats both a user-committed lock and the
+// lockfile phase's generated one — the image build requires it, so warn
+// rather than upload a context that is doomed to fail. Called from
+// phase2 (the first point where the ignore matcher exists).
+func warnIfLockfileIgnored(e *Engine, matcher *ignore.Matcher) {
+	if e.lockfileHint != "" {
+		return
+	}
+
+	if !fileExistsIn(e.projectDir, pyprojectFile) || !fileExistsIn(e.projectDir, uvLockFile) {
+		return
+	}
+
+	if !matcher.Match(uvLockFile, false) {
+		return
+	}
+
+	e.lockfileHint = "uv.lock is excluded by .wapiignore, so it will not be uploaded. " +
+		"The image build requires it — remove the pattern from .wapiignore and re-sync."
+
+	log.Warn(e.lockfileHint)
+}
+
+func fileExistsIn(dir, name string) bool {
+	info, err := os.Stat(filepath.Join(dir, name))
+
+	return err == nil && !info.IsDir()
+}
+
+// tailOf returns the last n bytes of s — uv prints the resolution
+// error at the end of its output.
+func tailOf(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+
+	return "…" + s[len(s)-n:]
+}

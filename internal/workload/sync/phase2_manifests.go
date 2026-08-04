@@ -30,6 +30,8 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("load .wapiignore: %w", err)
 	}
 
+	warnIfLockfileIgnored(e, matcher)
+
 	var skippedSymlinks []string
 
 	walkOnSymlink := func(rel, _ string) {
