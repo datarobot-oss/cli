@@ -53,6 +53,8 @@ func TestCanonicalEndpoint(t *testing.T) {
 		{"strips query", "https://app.datarobot.com/api/v2?x=1", "https://app.datarobot.com/api/v2", false},
 		{"whitespace", "  https://app.datarobot.com  ", "https://app.datarobot.com/api/v2", false},
 		{"port preserved", "https://dr.corp.example:8443", "https://dr.corp.example:8443/api/v2", false},
+		{"single-quoted url is rejected", "'https://app.datarobot.com/api/v2'", "", true},
+		{"double-quoted url is rejected", `"https://app.datarobot.com/api/v2"`, "", true},
 		{"empty", "", "", true},
 		{"no host", "https://", "", true},
 	}
@@ -275,6 +277,7 @@ func TestRunE_JSONOutput(t *testing.T) {
 
 	var payload struct {
 		Environment map[string]string `json:"environment"`
+		Source      string            `json:"source"`
 	}
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
@@ -282,6 +285,60 @@ func TestRunE_JSONOutput(t *testing.T) {
 		"DATAROBOT_ENDPOINT":  "https://app.datarobot.com/api/v2",
 		"DATAROBOT_API_TOKEN": "secret-token",
 	}, payload.Environment)
+	assert.Equal(t, "drconfig.yaml", payload.Source)
+}
+
+func TestRunE_QuotedEnvEndpointFailsWithEvalHint(t *testing.T) {
+	viperx.Reset()
+	clearEnvCredentials(t)
+
+	// Reproduces the real footgun: `$(dr auth export)` (no eval) bakes the
+	// output's single quotes into DATAROBOT_ENDPOINT. The CLI must NOT strip
+	// them; it must fail and point the user at `eval "$(dr auth export)"`.
+	t.Setenv("DATAROBOT_ENDPOINT", "'https://staging.datarobot.com/api/v2'")
+	t.Setenv("DATAROBOT_API_TOKEN", "token")
+
+	defer viperx.Reset()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := Cmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--shell", "bash"})
+
+	err := cmd.Execute()
+	require.ErrorIs(t, err, cli.ErrSilent)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "DATAROBOT_ENDPOINT environment variable")
+	assert.NotContains(t, stderr.String(), "drconfig.yaml")
+	assert.Contains(t, stderr.String(), `eval "$(dr auth export)"`)
+}
+
+func TestRunE_QuotedConfigEndpointNamesSourceWithoutEvalHint(t *testing.T) {
+	viperx.Reset()
+	clearEnvCredentials(t)
+
+	// A quoted endpoint coming from the config file (not env) still fails and
+	// names drconfig.yaml as the source, but does NOT show the `eval` hint
+	// (that hint is specific to the env `$(...)` misuse).
+	viperx.Set(config.DataRobotURL, "'https://staging.datarobot.com/api/v2'")
+	viperx.Set(config.DataRobotAPIKey, "token")
+
+	defer viperx.Reset()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := Cmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--shell", "bash"})
+
+	err := cmd.Execute()
+	require.ErrorIs(t, err, cli.ErrSilent)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "drconfig.yaml")
+	assert.NotContains(t, stderr.String(), `eval "$(dr auth export)"`)
 }
 
 func TestRunE_NoCredentialsKeepsStdoutEmpty(t *testing.T) {

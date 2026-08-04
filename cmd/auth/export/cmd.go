@@ -53,10 +53,19 @@ var (
 	errNoToken       = errors.New("no DataRobot API token configured")
 )
 
+// Human-readable labels for where the exported credentials came from, surfaced
+// both in error messages and in the JSON envelope's "source" metadata.
+const (
+	sourceEnv    = "DATAROBOT_ENDPOINT environment variable"
+	sourceConfig = "drconfig.yaml"
+)
+
 // credentials is the endpoint/token pair this command renders.
 type credentials struct {
 	Endpoint string
 	Token    string
+	// Source names where the credentials were read from, for diagnostics.
+	Source string
 }
 
 // statementFunc renders a single "set this variable" statement for one shell.
@@ -69,6 +78,7 @@ type statementFunc func(name, value string) string
 // self-managed installs serving the API under a custom prefix keep working.
 func canonicalEndpoint(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
+
 	if trimmed == "" {
 		return "", errNoEndpoint
 	}
@@ -105,12 +115,13 @@ func canonicalEndpoint(raw string) (string, error) {
 // usable from shell startup files and non-interactive sessions.
 func rawCredentials() (credentials, error) {
 	if env := auth.GetEnvCredentials(); env.Endpoint != "" && env.Token != "" {
-		return credentials{Endpoint: env.Endpoint, Token: env.Token}, nil
+		return credentials{Endpoint: env.Endpoint, Token: env.Token, Source: sourceEnv}, nil
 	}
 
 	creds := credentials{
 		Endpoint: viperx.GetString(config.DataRobotURL),
 		Token:    viperx.GetString(config.DataRobotAPIKey),
+		Source:   sourceConfig,
 	}
 
 	switch {
@@ -145,8 +156,9 @@ func resolveCredentials() (credentials, error) {
 
 // printCredentialError explains on stderr why nothing was exported. stdout is
 // left empty so that `eval "$(dr auth export)"` cannot evaluate a partial or
-// non-executable result.
-func printCredentialError(w io.Writer, err error) {
+// non-executable result. creds carries the credential source so the user can
+// locate a bad value; sh selects a shell-appropriate remediation hint.
+func printCredentialError(w io.Writer, err error, creds credentials, sh internalShell.Shell) {
 	switch {
 	case errors.Is(err, errNoEndpoint):
 		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
@@ -159,7 +171,18 @@ func printCredentialError(w io.Writer, err error) {
 		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth login"))
 		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to authenticate."))
 	default:
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DataRobot URL configured: "+err.Error()))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DataRobot URL from "+creds.Source+": "+err.Error()))
+
+		// The most common cause of a quoted DATAROBOT_ENDPOINT is running
+		// `$(dr auth export)` instead of `eval "$(dr auth export)"`: command
+		// substitution bakes the output's single quotes into the value. Hint
+		// at the correct invocation for POSIX shells where that footgun exists.
+		// PowerShell/cmd have their own patterns (see --help) and are handled
+		// in a separate PR.
+		if creds.Source == sourceEnv && (sh == internalShell.Bash || sh == internalShell.Zsh) {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("If you ran `$(dr auth export)`, use `eval \"$(dr auth export)\"` instead."))
+		}
+
 		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
 		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"))
 		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to fix it."))
@@ -273,16 +296,19 @@ func RunE(cmd *cobra.Command, _ []string) error {
 
 	creds, err := resolveCredentials()
 	if err != nil {
-		printCredentialError(cmd.ErrOrStderr(), err)
+		printCredentialError(cmd.ErrOrStderr(), err, creds, sh)
 
 		return cli.ErrSilent
 	}
 
 	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
-		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), jsonEnvelopeKey, map[string]string{
-			endpointVar: creds.Endpoint,
-			tokenVar:    creds.Token,
-		})
+		return outputformat.PrintJSONEnvelopeWithMeta(cmd.OutOrStdout(), jsonEnvelopeKey,
+			map[string]string{
+				endpointVar: creds.Endpoint,
+				tokenVar:    creds.Token,
+			},
+			map[string]any{"source": creds.Source},
+		)
 	}
 
 	for _, statement := range renderExports(sh, creds) {

@@ -71,6 +71,12 @@ type EnvCredentials struct {
 
 // GetEnvCredentials reads DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from environment.
 // Falls back to DATAROBOT_API_ENDPOINT if DATAROBOT_ENDPOINT is not set.
+//
+// Values are returned verbatim; surrounding quotes are NOT stripped. The
+// DataRobot Python and R SDKs read these variables the same way, so stripping
+// here would let the CLI silently succeed where other SDKs fail. Callers that
+// need to report why env credentials failed should use EndpointProblem to
+// distinguish a malformed endpoint from an invalid token.
 func GetEnvCredentials() EnvCredentials {
 	endpoint := os.Getenv("DATAROBOT_ENDPOINT")
 	if endpoint == "" {
@@ -81,6 +87,22 @@ func GetEnvCredentials() EnvCredentials {
 		Endpoint: endpoint,
 		Token:    os.Getenv("DATAROBOT_API_TOKEN"),
 	}
+}
+
+// EndpointProblem returns a non-nil error when endpoint is not a usable
+// DataRobot URL (for example, it is wrapped in literal surrounding quotes that
+// make url.Parse fail). It lets callers distinguish a malformed
+// DATAROBOT_ENDPOINT from an expired/invalid token when reporting why
+// environment credentials failed verification. An empty endpoint returns nil
+// (that case is ErrEnvCredentialsNotSet, handled by the caller).
+func EndpointProblem(endpoint string) error {
+	if endpoint == "" {
+		return nil
+	}
+
+	_, err := config.SchemeHostOnly(endpoint)
+
+	return err
 }
 
 // VerifyEnvCredentials checks if environment variable credentials are valid.
@@ -154,9 +176,15 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 		skipAuthFlow = true
 	} else if creds.Token != "" {
-		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
-		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
-		PrintUnsetTokenInstructions()
+		if epErr := EndpointProblem(creds.Endpoint); epErr != nil {
+			fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_ENDPOINT environment variable is invalid:"))
+			fmt.Println(tui.BaseTextStyle.Render(epErr.Error()))
+			fmt.Println(tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
+		} else {
+			fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
+			fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
+			PrintUnsetTokenInstructions()
+		}
 
 		skipAuthFlow = true
 	}

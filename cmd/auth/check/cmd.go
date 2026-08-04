@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,13 +32,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func checkCLICredentials() bool {
+func checkCLICredentials(w io.Writer) bool {
 	allValid := true
 
 	// Check environment variables first (same pattern as EnsureAuthenticated)
 	creds, err := auth.VerifyEnvCredentials(context.Background())
 	if err == nil {
-		fmt.Println(tui.BaseTextStyle.Render("✅ Environment variable authentication is valid."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("✅ Environment variable authentication is valid."))
 
 		return true
 	}
@@ -47,16 +48,28 @@ func checkCLICredentials() bool {
 		if errors.Is(err, context.DeadlineExceeded) {
 			envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
 
-			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
-			fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
-			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+			fmt.Fprint(w, tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Fprint(w, tui.InfoStyle.Render(envDatarobotHost))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
 
 			return false
 		}
 
-		fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
-		fmt.Println(tui.BaseTextStyle.Render("Unset it and try again:"))
-		auth.PrintUnsetTokenInstructions()
+		// Distinguish a malformed DATAROBOT_ENDPOINT from an invalid token so
+		// the user fixes the right thing. A quoted endpoint (e.g. from running
+		// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
+		// and must not be reported as a token problem.
+		if epErr := auth.EndpointProblem(creds.Endpoint); epErr != nil {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_ENDPOINT environment variable is invalid: "+epErr.Error()))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
+		} else {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("Unset it and try again:"))
+			fmt.Fprint(w, tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
+			fmt.Fprint(w, tui.BaseTextStyle.Render(" (or "))
+			fmt.Fprint(w, tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" on Windows)"))
+		}
 
 		return false
 	}
@@ -64,10 +77,10 @@ func checkCLICredentials() bool {
 	// Fall back to config file credentials
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
-		fmt.Println(tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
-		fmt.Print(tui.BaseTextStyle.Render("Run "))
-		fmt.Print(tui.InfoStyle.Render("dr auth set-url"))
-		fmt.Println(tui.BaseTextStyle.Render(" to configure your DataRobot URL."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
+		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+		fmt.Fprint(w, tui.InfoStyle.Render("dr auth set-url"))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to configure your DataRobot URL."))
 
 		allValid = false
 	}
@@ -75,19 +88,19 @@ func checkCLICredentials() bool {
 	_, err = config.GetAPIKey(context.Background())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
-			fmt.Print(tui.InfoStyle.Render(datarobotHost))
-			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+			fmt.Fprint(w, tui.BaseTextStyle.Render("❌ Connection to "))
+			fmt.Fprint(w, tui.InfoStyle.Render(datarobotHost))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
 		} else {
-			fmt.Println(tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
-			fmt.Print(tui.BaseTextStyle.Render("Run "))
-			fmt.Print(tui.InfoStyle.Render("dr auth login"))
-			fmt.Println(tui.BaseTextStyle.Render(" to authenticate."))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
+			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+			fmt.Fprint(w, tui.InfoStyle.Render("dr auth login"))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" to authenticate."))
 		}
 
 		allValid = false
 	} else {
-		fmt.Println(tui.BaseTextStyle.Render("✅ CLI authentication is valid."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("✅ CLI authentication is valid."))
 	}
 
 	return allValid
@@ -222,7 +235,7 @@ func RunE(_ *cobra.Command, _ []string) error {
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
-		if checkCLICredentials() {
+		if checkCLICredentials(os.Stdout) {
 			return nil
 		}
 
@@ -233,7 +246,7 @@ func RunE(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if checkCLICredentials() {
+	if checkCLICredentials(os.Stdout) {
 		return nil
 	}
 

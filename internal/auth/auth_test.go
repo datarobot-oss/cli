@@ -321,6 +321,45 @@ func TestGetEnvCredentials(t *testing.T) {
 		assert.Empty(t, creds.Endpoint)
 		assert.Empty(t, creds.Token)
 	})
+
+	t.Run("preserves surrounding quotes verbatim", func(t *testing.T) {
+		// GetEnvCredentials must NOT strip quotes. The DataRobot PySDK and RSDK
+		// read these variables verbatim, so stripping here would let the CLI
+		// silently succeed where other SDKs fail.
+		t.Setenv("DATAROBOT_ENDPOINT", "'https://staging.datarobot.com/api/v2'")
+		t.Setenv("DATAROBOT_API_TOKEN", "'secret-token'")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "'https://staging.datarobot.com/api/v2'", creds.Endpoint)
+		assert.Equal(t, "'secret-token'", creds.Token)
+	})
+}
+
+func TestEndpointProblem(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{"empty returns nil", "", false},
+		{"valid url", "https://app.datarobot.com/api/v2", false},
+		{"bare host", "app.datarobot.com", false},
+		{"single quoted", "'https://staging.datarobot.com/api/v2'", true},
+		{"double quoted", `"https://staging.datarobot.com/api/v2"`, true},
+		{"mismatched quotes", `'https://staging.datarobot.com/api/v2"`, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := EndpointProblem(c.endpoint)
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestVerifyEnvCredentials(t *testing.T) {
