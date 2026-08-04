@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/enclave/del"
 	"github.com/datarobot/cli/cmd/enclave/get"
 	"github.com/datarobot/cli/cmd/enclave/list"
+	"github.com/datarobot/cli/cmd/enclave/reactivate"
 	"github.com/datarobot/cli/cmd/enclave/register"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ the installer reports in from the cluster; there is no manual activate step.`,
 		get.Cmd(),
 		list.Cmd(),
 		deactivate.Cmd(),
+		reactivate.Cmd(),
 		del.Cmd(),
 		access.Cmd(),
 	)

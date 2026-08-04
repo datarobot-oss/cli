@@ -151,6 +151,24 @@ func DeactivateEnclave(enclaveID string) (*Enclave, error) {
 	return &enclave, nil
 }
 
+// ReactivateEnclave returns a manually deactivated enclave to service and
+// returns the updated record. Like deactivate, the endpoint takes no request
+// body and replies 200 with the enclave.
+func ReactivateEnclave(enclaveID string) (*Enclave, error) {
+	url, err := config.GetEndpointURL(basePath + "/" + escapeID(enclaveID) + "/reactivate")
+	if err != nil {
+		return nil, err
+	}
+
+	var enclave Enclave
+
+	if err := drapi.PostJSON(url, "enclave", struct{}{}, &enclave); err != nil {
+		return nil, err
+	}
+
+	return &enclave, nil
+}
+
 // DeleteEnclave deletes an enclave. The server replies 204 on success and 404
 // when no enclave with the id exists.
 func DeleteEnclave(enclaveID string) error {

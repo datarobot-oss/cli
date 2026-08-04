@@ -238,6 +238,24 @@ func TestDeactivateEnclave(t *testing.T) {
 	assert.Equal(t, "DRAIN", e.Status)
 }
 
+func TestReactivateEnclave(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/covalent/api/v2/outposts/abc-123/reactivate", r.URL.Path)
+
+		_, _ = w.Write([]byte(`{"id": "abc-123", "name": "n", "status": "ACTIVE"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	e, err := ReactivateEnclave("abc-123")
+	require.NoError(t, err)
+	assert.Equal(t, "ACTIVE", e.Status)
+}
+
 func TestDeleteEnclave(t *testing.T) {
 	installSkipAuth(t)
 
