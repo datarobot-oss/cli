@@ -28,6 +28,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/tui"
 	"github.com/stretchr/testify/suite"
 )
@@ -165,7 +166,9 @@ func (suite *DotenvModelTestSuite) FinalModel(tm *teatest.TestModel) Model {
 		suite.T().Error(err)
 	}
 
-	finalModel := tm.FinalModel(suite.T())
+	// testutil.FinalModel, not tm.FinalModel — see its doc comment for the
+	// teatest race that otherwise hands back a nil model under load.
+	finalModel := testutil.FinalModel(suite.T(), tm)
 
 	// The model is wrapped in InterruptibleModel, so we need to unwrap it
 	if wrappedModel, ok := finalModel.(tui.InterruptibleModel); ok {
