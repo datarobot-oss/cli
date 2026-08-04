@@ -51,8 +51,9 @@ type LockfileRunner func(dir string) error
 // uv.lock (it runs `uv sync --frozen`), so generating it before the
 // phase-2 walk lets the normal diff/upload pipeline pick it up with no
 // changes downstream. This phase never fails the sync: when uv is
-// missing or resolution fails it records a hint for the cmd layer and
-// lets the sync proceed.
+// missing or resolution fails it logs a WARN with the fix and lets the
+// sync proceed (lockfileHint doubles as the once-only guard so phase 2's
+// .wapiignore check doesn't stack a second warning).
 func phaseLockfile(e *Engine) error {
 	if !fileExistsIn(e.projectDir, pyprojectFile) {
 		return nil
@@ -72,6 +73,20 @@ func phaseLockfile(e *Engine) error {
 			e.lockfileHint = fmt.Sprintf("Could not generate uv.lock (%v). "+
 				"The image build will fail until you add one — run `uv lock` and re-sync.", err)
 		}
+
+		log.Warn(e.lockfileHint)
+
+		return nil
+	}
+
+	// Don't trust the runner's exit code alone: in a uv workspace member
+	// directory `uv lock` succeeds but writes the lockfile at the workspace
+	// root, so projectDir gains no uv.lock and the upload would silently
+	// ship without one (and every future sync would rerun generation).
+	if !fileExistsIn(e.projectDir, uvLockFile) {
+		e.lockfileHint = "uv lock completed but did not create uv.lock in the project directory " +
+			"(uv workspaces write the lockfile at the workspace root). The image build requires " +
+			"uv.lock next to pyproject.toml in the synced directory — add one and re-sync."
 
 		log.Warn(e.lockfileHint)
 
@@ -99,6 +114,12 @@ func runUvLock(dir string) error {
 
 	cmd := exec.CommandContext(ctx, uvPath, "lock")
 	cmd.Dir = dir
+	// With Stdout/Stderr wired to a buffer, Run waits for the pipe-copy
+	// goroutines, not just the process — a uv child (build backend, git)
+	// surviving the timeout kill while holding the pipe would block Run
+	// indefinitely with the sync lock held. WaitDelay bounds that wait
+	// (same grace period as internal/plugin/exec.go).
+	cmd.WaitDelay = 5 * time.Second
 
 	var out bytes.Buffer
 

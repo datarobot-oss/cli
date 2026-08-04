@@ -189,9 +189,6 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
 	}
 
-	// uv.lock generation notes/warnings are logged by the engine phases
-	// themselves (log.Warn), matching the rest of the sync log stream.
-
 	return finishSync(cmd, engine, plan, outputFormat, flags, deps)
 }
 

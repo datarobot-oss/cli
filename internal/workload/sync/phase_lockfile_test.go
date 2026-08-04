@@ -77,8 +77,8 @@ func TestEngine_Plan_GeneratesLockfileWhenMissing(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{".wapiignore", "pyproject.toml", "app.py", "uv.lock"},
 		uploadPathsOf(plan))
-	assert.True(t, e.GeneratedLockfile())
-	assert.Empty(t, e.LockfileHint())
+	assert.True(t, e.lockfileGenerated)
+	assert.Empty(t, e.lockfileHint)
 }
 
 func TestEngine_Plan_LeavesExistingLockfileAlone(t *testing.T) {
@@ -100,8 +100,8 @@ func TestEngine_Plan_LeavesExistingLockfileAlone(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, runnerCalled, "runner must not run when uv.lock already exists")
-	assert.False(t, e.GeneratedLockfile())
-	assert.Empty(t, e.LockfileHint())
+	assert.False(t, e.lockfileGenerated)
+	assert.Empty(t, e.lockfileHint)
 }
 
 func TestEngine_Plan_SkipsLockfileWithoutPyproject(t *testing.T) {
@@ -120,7 +120,7 @@ func TestEngine_Plan_SkipsLockfileWithoutPyproject(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, runnerCalled, "runner must not run for non-Python projects")
-	assert.Empty(t, e.LockfileHint())
+	assert.Empty(t, e.lockfileHint)
 }
 
 func TestEngine_Plan_UvMissingHintsWithoutBlocking(t *testing.T) {
@@ -134,9 +134,9 @@ func TestEngine_Plan_UvMissingHintsWithoutBlocking(t *testing.T) {
 	require.NoError(t, err, "missing uv must not fail the sync")
 
 	assert.NotContains(t, uploadPathsOf(plan), "uv.lock")
-	assert.False(t, e.GeneratedLockfile())
-	assert.Contains(t, e.LockfileHint(), "uv is not installed")
-	assert.Contains(t, e.LockfileHint(), "uv lock")
+	assert.False(t, e.lockfileGenerated)
+	assert.Contains(t, e.lockfileHint, "uv is not installed")
+	assert.Contains(t, e.lockfileHint, "uv lock")
 }
 
 func TestEngine_Plan_LockGenerationFailureHintsWithoutBlocking(t *testing.T) {
@@ -152,8 +152,26 @@ func TestEngine_Plan_LockGenerationFailureHintsWithoutBlocking(t *testing.T) {
 	require.NoError(t, err, "lock-generation failure must not fail the sync")
 
 	assert.NotContains(t, uploadPathsOf(plan), "uv.lock")
-	assert.Contains(t, e.LockfileHint(), "Could not generate uv.lock")
-	assert.Contains(t, e.LockfileHint(), "left-pad")
+	assert.Contains(t, e.lockfileHint, "Could not generate uv.lock")
+	assert.Contains(t, e.lockfileHint, "left-pad")
+}
+
+func TestEngine_Plan_RunnerSucceedsButLockfileAbsentHints(t *testing.T) {
+	// uv workspace member: `uv lock` exits 0 but writes the lockfile at the
+	// workspace root, so projectDir gains no uv.lock. Must not claim success.
+	dir := initProject(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"x\"\n",
+	})
+
+	e := lockfileEngine(t, dir, func(string) error { return nil }) // exits 0, writes nothing
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+
+	assert.NotContains(t, uploadPathsOf(plan), "uv.lock")
+	assert.False(t, e.lockfileGenerated, "must not report success when no lockfile appeared")
+	assert.Contains(t, e.lockfileHint, "did not create uv.lock")
+	assert.Contains(t, e.lockfileHint, "workspace")
 }
 
 func TestEngine_Plan_WarnsWhenWapiignoreExcludesLockfile(t *testing.T) {
@@ -175,5 +193,5 @@ func TestEngine_Plan_WarnsWhenWapiignoreExcludesLockfile(t *testing.T) {
 
 	assert.False(t, runnerCalled, "lock exists; generation must not run")
 	assert.NotContains(t, uploadPathsOf(plan), "uv.lock", "ignored lock must not upload")
-	assert.Contains(t, e.LockfileHint(), "excluded by .wapiignore")
+	assert.Contains(t, e.lockfileHint, "excluded by .wapiignore")
 }

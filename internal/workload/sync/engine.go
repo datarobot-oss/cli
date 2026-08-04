@@ -223,15 +223,6 @@ func (e *Engine) Close() error {
 // from a previously crashed sync.
 func (e *Engine) StaleRollbackRestored() bool { return e.staleNote }
 
-// GeneratedLockfile reports whether the lockfile phase created uv.lock
-// from the project's pyproject.toml during Plan.
-func (e *Engine) GeneratedLockfile() bool { return e.lockfileGenerated }
-
-// LockfileHint returns a user-facing warning when uv.lock could not be
-// generated or would not be uploaded (e.g. excluded by .wapiignore);
-// empty when there is nothing to say.
-func (e *Engine) LockfileHint() string { return e.lockfileHint }
-
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {
 		return nil
