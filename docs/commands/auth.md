@@ -199,6 +199,8 @@ The output syntax is chosen from the detected parent shell. Use `--shell` to ove
 
 The endpoint is normalized to its canonical `/api/v2` form, so a config or environment value of `app.datarobot.com` is exported as `https://app.datarobot.com/api/v2`. A URL that already has a path (self-managed installs serving the API under a custom prefix) is left alone.
 
+A project's `.env` file is never consulted — this exports the CLI's own credentials. Use [`dr dotenv setup`](dotenv.md) to manage `.env` files.
+
 **Machine-readable output:**
 
 ```bash

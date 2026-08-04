@@ -29,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/outputformat"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/version"
@@ -248,8 +249,13 @@ func resolveShell(requested string) (internalShell.Shell, error) {
 
 	detected, err := internalShell.DetectShell()
 	if err != nil {
+		log.Debug("auth export: shell detection failed, falling back to POSIX syntax",
+			"error", err, "shell", internalShell.Bash)
+
 		return internalShell.Bash, nil
 	}
+
+	log.Debug("auth export: detected shell", "shell", detected)
 
 	return internalShell.Shell(detected), nil
 }
@@ -305,6 +311,9 @@ directly by your shell. Errors and hints go to stderr.
 Credentials are resolved the same way the rest of the CLI resolves them:
   • the ` + endpointVar + ` and ` + tokenVar + ` environment variables, if both are set
   • otherwise the CLI config file written by '` + version.CliName + ` auth login'
+
+A project's .env file is never consulted — this exports the CLI's own
+credentials. Use '` + version.CliName + ` dotenv setup' to manage .env files.
 
 Unlike most commands, this one never starts a login flow and never calls the
 API, so it is safe to run from a shell startup file. Run '` + version.CliName + ` auth check' first
