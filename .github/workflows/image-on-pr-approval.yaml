@@ -4,6 +4,12 @@ on:
   pull_request_review:
     types: [submitted]
 
+# Disabled: pull_request_review runs the workflow from the fork branch's HEAD,
+# not from main, so fixes here never reach existing fork PRs. Additionally,
+# fork PRs get a read-only GITHUB_TOKEN that can't push to org GHCR packages.
+# Replacing with an issue_comment-based approach. See CFX-7265.
+if: false
+
 concurrency:
   group: pr-image-${{ github.event.pull_request.number }}
   cancel-in-progress: true
