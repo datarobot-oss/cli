@@ -62,6 +62,11 @@ jobs:
 
   publish-image:
     needs: check-approval
+    # Fork PRs get a read-only GITHUB_TOKEN on pull_request_review events
+    # (no _target variant exists), so GHCR denies the org package write
+    # regardless of the permissions: block below. Skip to avoid a misleading
+    # red X. See CFX-7265.
+    if: needs.check-approval.outputs.is_fork == 'false'
     runs-on: ubuntu-latest
     name: Build and Push PR Image
     timeout-minutes: 20
