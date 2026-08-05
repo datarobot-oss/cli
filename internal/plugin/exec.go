@@ -78,7 +78,7 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 		return 1
 	}
 
-	skipAuth := viperx.GetBool("skip-auth")
+	skipAuth := viperx.GetBool(config.SkipAuthKey)
 
 	if manifest.Authentication && !skipAuth {
 		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)

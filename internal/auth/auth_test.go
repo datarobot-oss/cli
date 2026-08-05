@@ -165,8 +165,8 @@ func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	// Set skip_auth flag to true
-	viperx.Set("skip_auth", true)
+	// Set the skip-auth flag to true
+	viperx.Set(config.SkipAuthKey, true)
 
 	// Don't set any credentials
 	viperx.Set(config.DataRobotAPIKey, "")

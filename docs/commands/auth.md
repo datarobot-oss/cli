@@ -10,7 +10,7 @@ For most users, authentication is a two-step process:
 # 1. Set your DataRobot instance URL
 dr auth set-url [YOUR_DATA_ROBOT_INSTANCE_URL] # e.g. https://app.datarobot.com
 
-# 2. Log in (opens browser for OAuth)
+# 2. Log in (opens your browser to authorize the CLI)
 dr auth login
 ```
 
@@ -33,49 +33,71 @@ The `auth` command provides authentication management for the DataRobot CLI. It 
 
 ### `login`
 
-Authenticate with DataRobot using OAuth (Open Authorization). This is the recommended way to authenticate as it's secure and doesn't require you to manually copy API keys.
+Authenticate by authorizing the CLI in your browser, so you never have to copy an API key by hand.
 
 ```bash
 dr auth login
 ```
 
+**Options:**
+
+| Flag           | Description                                                |
+| -------------- | ---------------------------------------------------------- |
+| `--no-browser` | Print the login link instead of opening a browser (useful over SSH) |
+
 **What happens:**
 
-1. The CLI starts a temporary local web server (typically on port 8080).
-2. Your default web browser opens to DataRobot's authorization page.
+1. The CLI starts a temporary local web server on `localhost:51164`.
+2. Your default web browser opens to DataRobot's developer tools page.
 3. You log in to DataRobot (if not already logged in) and authorize the CLI.
-4. DataRobot sends an API key back to the CLI.
-5. The CLI securely stores the API key in your configuration file.
+4. DataRobot redirects back to the local server with your API key.
+5. The CLI stores the API key in your configuration file.
 
 > [!NOTE]
-> OAuth is a secure authentication method that allows the CLI to access DataRobot on your behalf without you needing to manually manage API keys.
+> Despite the name, this is not an OAuth grant: there is no `client_id`, no PKCE, and
+> no authorization-code exchange. DataRobot returns the API key directly to the local
+> callback server. The port is fixed at `51164` because the web app's redirect target
+> is part of the contract, so there is no fallback port.
 
 **Example:**
 
 ```bash
 $ dr auth login
-Opening browser for authentication...
-Waiting for authentication...
-✓ Successfully authenticated!
+⠋ Opening your browser to sign in to DataRobot…
+
+  Didn't open? Use this link:
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
 
 **Stored Credentials:**
 
 - Location: `~/.config/datarobot/drconfig.yaml` (Linux/macOS) or `%USERPROFILE%\.config\datarobot\drconfig.yaml` (Windows)
-- Format: Encrypted API key
+- Format: plaintext YAML, written with `0600` (owner read/write only). The token is
+  **not** encrypted — treat the file as a secret.
 
 **Troubleshooting:**
 
-If your browser doesn't open automatically, the CLI will display a URL to visit manually. For example:
+If the browser cannot be opened, the CLI says so and the link becomes the instruction
+rather than a footnote. The layout is otherwise identical, so the two paths read as the
+same command:
 
 ```bash
 $ dr auth login
-Failed to open browser automatically.
-Please visit: https://app.datarobot.com/oauth/authorize?client_id=...
+⠋ Waiting for authorization…
 
-# Port already in use
-# The CLI will try alternative ports automatically
+  ⚠ Couldn't open your browser automatically.
+  Open this link to finish signing in:
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
+
+If another `dr` process is already waiting on `localhost:51164`, the new one asks it to
+release the port and takes over. The wait times out after 5 minutes.
 
 ### `logout`
 
@@ -243,32 +265,41 @@ dr auth set-url [url]
 
 **Interactive mode:**
 
-If you run `dr auth set-url` without providing a URL, the CLI enters interactive mode and guides you through selecting your DataRobot instance:
+If you run `dr auth set-url` without providing a URL, the CLI shows a picker. Move with
+the arrow keys, confirm with Enter, cancel with Esc. US Cloud is preselected, so the
+common case is a single keystroke:
 
-```bash
-$ dr auth set-url
-🌐 DataRobot URL Configuration
+```text
+  DataRobot Environment
 
-Choose your DataRobot environment:
+▶ 🌎 US Cloud
+  https://app.datarobot.com
 
-┌────────────────────────────────────────────────────────┐
-│  [1] 🇺🇸 US Cloud        https://app.datarobot.com      │
-│  [2] 🇪🇺 EU Cloud        https://app.eu.datarobot.com   │
-│  [3] 🇯🇵 Japan Cloud     https://app.jp.datarobot.com   │
-│      🏢 Custom          Enter your custom URL          │
-└────────────────────────────────────────────────────────┘
+  🌍 EU Cloud
+  https://app.eu.datarobot.com
 
-🔗 Don't know which one? Check your DataRobot login page URL.
+  🌏 Japan Cloud
+  https://app.jp.datarobot.com
 
-Enter your choice:
+  🏢 Custom/On-Prem
+  Enter your custom DataRobot URL
 ```
 
-**Quick selection:**
+Choosing **Custom/On-Prem** opens a text field for a self-managed instance URL.
+
+**Non-interactive terminals:**
+
+When stdin is not a terminal, or `DATAROBOT_CLI_NON_INTERACTIVE` is set, the picker is
+replaced by a plain numbered prompt read from stdin, so redirected input and scripted
+runs keep working:
 
 - Enter `1` for US cloud (`https://app.datarobot.com`)
 - Enter `2` for EU cloud (`https://app.eu.datarobot.com`)
 - Enter `3` for Japan cloud (`https://app.jp.datarobot.com`)
 - Type your custom URL for self-managed instances
+
+Passing the URL as an argument (below) avoids the prompt entirely and is the best option
+for scripts.
 
 **Direct mode:**
 
@@ -393,27 +424,18 @@ $ dr auth login
 ### Debug authentication issues
 
 ```bash
-# Use verbose flag for details
-$ dr auth login --verbose
-[INFO] Starting OAuth server on port 8080
-[INFO] Opening browser to: https://app.datarobot.com/oauth/...
-[INFO] Waiting for callback...
-[INFO] Received authorization code
-[INFO] Exchanging code for token...
-[INFO] Token saved successfully
-✓ Successfully authenticated!
-
-# Use debug flag for even more details
+# Use debug flag for details
 $ dr auth login --debug
 [DEBUG] Config file: /Users/username/.config/datarobot/drconfig.yaml
 [DEBUG] Current URL: https://app.datarobot.com
-[DEBUG] Starting server on: 127.0.0.1:8080
+[DEBUG] Could not open the browser automatically: ...
+[DEBUG] Successfully consumed API key from callback request
 ...
 ```
 
 ## How authentication works
 
-The authentication process uses OAuth, a secure standard for authorization. Here's what happens behind the scenes:
+The CLI hands the browser off to DataRobot and waits on a local callback:
 
 ```text
 ┌──────────┐
@@ -423,45 +445,52 @@ The authentication process uses OAuth, a secure standard for authorization. Here
      │ dr auth login
      │
      v
-┌─────────────────┐       ┌──────────────┐
-│  Local Server   │◄──────┤   Browser    │
-│  (Port 8080)    │       │              │
-└────┬────────────┘       └──────▲───────┘
-     │                            │
-     │                            │ Opens
-     │                            │
-     v                            │
-┌─────────────────┐               │
-│  DataRobot      │───────────────┘
-│  OAuth Server   │
-└────┬────────────┘
+┌──────────────────────┐       ┌──────────────┐
+│  Local Server        │◄──────┤   Browser    │
+│  (localhost:51164)   │       │              │
+└────┬─────────────────┘       └──────▲───────┘
+     │                                 │
+     │                                 │ Opens
+     │                                 │
+     v                                 │
+┌──────────────────────┐               │
+│  DataRobot           │───────────────┘
+│  /account/           │
+│  developer-tools     │
+└────┬─────────────────┘
      │
-     │ Returns API Key
+     │ Redirects to localhost:51164/?key=<apiKey>
      │
      v
-┌─────────────────┐
-│  Config File    │
-│  (~/.config/    │
+┌──────────────────┐
+│  Config File     │
+│  (~/.config/     │
 │   datarobot/     │
 │   drconfig.yaml) │
-└─────────────────┘
+└──────────────────┘
 ```
 
 **Step-by-step:**
 
 1. You run `dr auth login`
-2. CLI starts a local server to receive the authorization response
-3. Your browser opens to DataRobot's login page
+2. CLI binds `localhost:51164` **before** opening the browser, so a fast redirect cannot
+   arrive before the listener exists
+3. Your browser opens to DataRobot's developer tools page
 4. You log in and authorize the CLI
-5. DataRobot sends an API key to the local server
-6. CLI saves the key securely to your config file
-7. Browser and server close automatically
+5. DataRobot redirects to `http://localhost:51164/?key=<apiKey>`
+6. CLI saves the key to your config file (mode `0600`) and shuts the server down
 
-This process is secure because:
+Properties of this flow:
 
-- You authenticate directly with DataRobot (not the CLI)
-- The API key is transmitted securely
-- No passwords are stored locally
+- You authenticate directly with DataRobot, never handing credentials to the CLI
+- No password is stored locally
+- The callback listener is bound to localhost only
+
+> [!IMPORTANT]
+> The API key arrives as a URL query parameter and is stored in plaintext. There is no
+> `state` parameter, so any local process able to reach `localhost:51164` while a login
+> is in flight could deliver a key. Treat `drconfig.yaml` as a secret and prefer
+> `DATAROBOT_API_TOKEN` in shared or automated environments.
 
 ## Configuration file
 
@@ -474,21 +503,27 @@ After authentication, credentials are stored in:
 
 **Format:**
 
-```yaml
-datarobot:
-  endpoint: https://app.datarobot.com
-  token: <encrypted_key>
+Keys are flat and top-level; there is no `datarobot:` or `preferences:` nesting:
 
-# User preferences
-preferences:
-  default_timeout: 30
-  verify_ssl: true
+```yaml
+endpoint: https://app.datarobot.com/api/v2
+token: <plaintext_api_key>
+api-consumer-tracking-enabled: true
 ```
+
+Only allowlisted keys are ever written back (see `config.PersistableKeys`), so transient
+flags such as `--yes` never leak into the file.
 
 **Permissions:**
 
-- File is created with restricted permissions (0600)
-- Only the user who created it can read/write
+- Created with, and tightened on every write to, `0600` — owner read/write only
+- The token is stored in plaintext, so the file permissions are the only thing
+  protecting it
+
+> [!NOTE]
+> CLI versions before this fix created the file with `0644`, leaving the token readable
+> by other users on the machine. Any `dr` command that writes credentials now corrects
+> the mode automatically; you can also run `chmod 600` yourself, as shown below.
 
 ## Security best practices
 
@@ -510,7 +545,7 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 >
 > - `~/.config/datarobot/drconfig.yaml`
 > - API keys
-> - OAuth tokens
+> - The contents of any `.env` file containing `DATAROBOT_API_TOKEN`
 
 ### Use per-environment authentication
 
@@ -563,21 +598,33 @@ eval "$(dr auth export)"
 
 **Problem:** Browser fails to open automatically.
 
-**Solution:**
+**Solution:** The CLI detects this and shows the link in a box — open it yourself, on any
+machine that can reach both DataRobot and this machine's `localhost:51164`. Use
+`--no-browser` to skip the launch attempt entirely:
 
 ```bash
-# Copy the URL from the output and open manually
-$ dr auth login
-Failed to open browser automatically.
-Please visit: https://app.datarobot.com/oauth/authorize?...
+$ dr auth login --no-browser
+⠋ Waiting for authorization…
+
+  Open this link to finish signing in:
+
+  ╭────────────────────────────────────────────────────────────────────╮
+  │ https://app.datarobot.com/account/developer-tools?cliRedirect=true │
+  ╰────────────────────────────────────────────────────────────────────╯
 ```
+
+`--no-browser` is not reported as a failure: it shows the same framed link as the error
+path, without the warning line.
+
+Run with `--debug` to see why the launch failed.
 
 ### Port already in use
 
-**Problem:** Port 8080 is already in use.
+**Problem:** `localhost:51164` is already in use.
 
-**Solution:**
-The CLI automatically tries alternative ports (8081, 8082, etc.)
+**Solution:** If the holder is another `dr` login, the new process asks it to release the
+port and takes over automatically. If an unrelated process holds it, free that port —
+there is no fallback, because the redirect target is fixed on the DataRobot side.
 
 ### Invalid credentials
 

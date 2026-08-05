@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package setup
+package hostpicker
 
 import (
 	"bytes"
@@ -33,20 +33,20 @@ type HostModelTestSuite struct {
 	suite.Suite
 }
 
-// hostModelWrapper wraps HostModel to satisfy tea.Model interface.
+// hostModelWrapper wraps Model to satisfy tea.Model interface.
 type hostModelWrapper struct {
-	HostModel
+	Model
 }
 
 func (w hostModelWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := w.HostModel.Update(msg)
-	w.HostModel = model
+	model, cmd := w.Model.Update(msg)
+	w.Model = model
 
 	return w, cmd
 }
 
-func (suite *HostModelTestSuite) NewTestModel(m HostModel) *teatest.TestModel {
-	wrapper := hostModelWrapper{HostModel: m}
+func (suite *HostModelTestSuite) NewTestModel(m Model) *teatest.TestModel {
+	wrapper := hostModelWrapper{Model: m}
 
 	return teatest.NewTestModel(suite.T(), wrapper, teatest.WithInitialTermSize(300, 100))
 }
@@ -70,7 +70,7 @@ func (suite *HostModelTestSuite) Quit(tm *teatest.TestModel) {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_Init() {
-	m := NewHostModel()
+	m := New()
 
 	suite.Equal(80, m.width)
 	suite.False(m.showCustom)
@@ -82,7 +82,7 @@ func (suite *HostModelTestSuite) TestHostModel_Init() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_SelectUSCloud() {
-	m := NewHostModel()
+	m := New()
 
 	var capturedURL string
 
@@ -120,7 +120,7 @@ func (suite *HostModelTestSuite) TestHostModel_SelectUSCloud() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_SelectEUCloud() {
-	m := NewHostModel()
+	m := New()
 
 	var capturedURL string
 
@@ -159,7 +159,7 @@ func (suite *HostModelTestSuite) TestHostModel_SelectEUCloud() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_SelectJapanCloud() {
-	m := NewHostModel()
+	m := New()
 
 	var capturedURL string
 
@@ -199,7 +199,7 @@ func (suite *HostModelTestSuite) TestHostModel_SelectJapanCloud() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_NavigateToCustom() {
-	m := NewHostModel()
+	m := New()
 
 	tm := suite.NewTestModel(m)
 
@@ -223,7 +223,7 @@ func (suite *HostModelTestSuite) TestHostModel_NavigateToCustom() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_CustomURLInput() {
-	m := NewHostModel()
+	m := New()
 
 	var capturedURL string
 
@@ -278,7 +278,7 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLInput() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_CustomURLEscape() {
-	m := NewHostModel()
+	m := New()
 
 	tm := suite.NewTestModel(m)
 
@@ -313,7 +313,7 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLEscape() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_CustomURLEmptySubmit() {
-	m := NewHostModel()
+	m := New()
 
 	var capturedURL string
 
@@ -360,7 +360,7 @@ func (suite *HostModelTestSuite) TestHostModel_CustomURLEmptySubmit() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_WindowResize() {
-	m := NewHostModel()
+	m := New()
 
 	// Send window resize message
 	msg := tea.WindowSizeMsg{
@@ -374,7 +374,7 @@ func (suite *HostModelTestSuite) TestHostModel_WindowResize() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_ListNavigation() {
-	m := NewHostModel()
+	m := New()
 
 	tm := suite.NewTestModel(m)
 
@@ -409,7 +409,7 @@ func (suite *HostModelTestSuite) TestHostModel_ListNavigation() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_ViewListMode() {
-	m := NewHostModel()
+	m := New()
 	m.showCustom = false
 
 	view := m.View()
@@ -420,7 +420,7 @@ func (suite *HostModelTestSuite) TestHostModel_ViewListMode() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_ViewCustomMode() {
-	m := NewHostModel()
+	m := New()
 	m.showCustom = true
 
 	view := m.View()
@@ -432,7 +432,7 @@ func (suite *HostModelTestSuite) TestHostModel_ViewCustomMode() {
 }
 
 func (suite *HostModelTestSuite) TestHostModel_InitReturnsNil() {
-	m := NewHostModel()
+	m := New()
 
 	cmd := m.Init()
 
