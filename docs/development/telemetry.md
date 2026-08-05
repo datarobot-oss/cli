@@ -34,8 +34,7 @@ Telemetry makes outbound HTTPS requests to two services. In network-restricted e
 
 | Host                                                       | Purpose                                                                                                       | Port |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---- |
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone, default) — event ingestion                                                       | 443  |
-| `api.eu.amplitude.com`                                     | Amplitude HTTP API (EU zone) — only if `ServerZone` is set to EU                                              | 443  |
+| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                | 443  |
 | *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
 
 The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
