@@ -57,7 +57,14 @@ func TestExists_ParentIsAFile(t *testing.T) {
 
 	_, err := os.Stat(nested)
 	require.Error(t, err)
-	require.False(t, os.IsNotExist(err), "this test is meaningless if ENOTDIR reports as not-exist")
+
+	if runtime.GOOS != "windows" {
+		// Unix reports ENOTDIR, which is not ErrNotExist and carries no
+		// FileInfo, so this is the case that used to panic. Windows maps it to
+		// ERROR_PATH_NOT_FOUND, which is ErrNotExist and was always handled.
+		// The behaviour asserted below has to hold either way.
+		require.False(t, os.IsNotExist(err))
+	}
 
 	assert.NotPanics(t, func() {
 		assert.False(t, DirExists(nested))
