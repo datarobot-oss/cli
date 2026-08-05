@@ -163,7 +163,7 @@ func TestVersions_NotLinked(t *testing.T) {
 }
 
 func TestVersions_NoCatalog(t *testing.T) {
-	// init creates .wapi/ with no catalogId set.
+	// init creates the state dir with no catalogId set.
 	dir := t.TempDir()
 	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "art-abc-123"}))
 

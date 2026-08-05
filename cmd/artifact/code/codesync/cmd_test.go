@@ -91,7 +91,7 @@ func stubReader(lines ...string) func() (string, error) {
 	}
 }
 
-// linkProject seeds a minimal .wapi/ directory so the cmd's
+// linkProject seeds a minimal state directory so the cmd's
 // "not linked" preflight passes.
 func linkProject(t *testing.T, dir string) {
 	t.Helper()
@@ -126,8 +126,8 @@ func runWithDeps(t *testing.T, deps Deps, flags map[string]string, extraArgs ...
 }
 
 // TestCmd_NotLinked confirms the command refuses to run when the
-// target directory has no .wapi/, with the expected hint pointing at
-// `code init`.
+// target directory has no state directory, with the expected hint pointing
+// at `code init`.
 func TestCmd_NotLinked(t *testing.T) {
 	dir := t.TempDir()
 

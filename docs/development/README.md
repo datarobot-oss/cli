@@ -24,7 +24,7 @@ If you're new to developing the CLI, start here:
 - **[Tool registry](tool-registry.md)**&mdash;how install-hint strategies and manager detection work; how to add a new tool or package manager.
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
-- **[Workload `.wapi/` validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
+- **[Workload state directory validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
 - **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
 

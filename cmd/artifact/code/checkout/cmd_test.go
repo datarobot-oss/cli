@@ -210,7 +210,7 @@ func TestCheckout_HappyPath_FullID(t *testing.T) {
 
 	out := buf.String()
 	assert.Contains(t, out, "Downloading version "+verA)
-	assert.Contains(t, out, "Checked out to: "+filepath.Join(".wapi", ".checkouts", verA))
+	assert.Contains(t, out, "Checked out to: "+filepath.Join(".datarobot", "wapi", ".checkouts", verA))
 	assert.Contains(t, out, "read-only snapshot")
 
 	checkoutDir := wapi.CheckoutDir(dir, verA)
@@ -226,7 +226,7 @@ func TestCheckout_HappyPath_FullID(t *testing.T) {
 	assert.Equal(t, verA, meta.VersionID)
 	assert.Equal(t, 2, meta.FileCount)
 
-	historyData, err := os.ReadFile(filepath.Join(dir, ".wapi", "history.log"))
+	historyData, err := os.ReadFile(filepath.Join(wapi.Dir(dir), "history.log"))
 	require.NoError(t, err)
 
 	lines := bytes.Split(bytes.TrimRight(historyData, "\n"), []byte("\n"))

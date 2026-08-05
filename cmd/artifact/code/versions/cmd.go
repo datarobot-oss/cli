@@ -62,8 +62,8 @@ func cmdWithDeps(deps Deps) *cobra.Command {
 project directory is linked to.
 
 The output marks the version that the artifact's codeRef currently
-points to with '*', and reports which version the local '.wapi/'
-state was last synced to.
+points to with '*', and reports which version the local
+'.datarobot/wapi/' state was last synced to.
 
 By default output is a human-readable table; use --output-format json
 for machine-parseable output.
@@ -108,7 +108,14 @@ func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, dep
 		return fmt.Errorf("invalid --limit %d: must be positive", limit)
 	}
 
-	cfg, err := loadProjectConfig(dirFlag)
+	absDir, err := resolveProjectDir(dirFlag)
+	if err != nil {
+		return err
+	}
+
+	wapi.EnsureMigrated(absDir)
+
+	cfg, err := loadProjectConfig(absDir)
 	if err != nil {
 		return err
 	}
@@ -121,7 +128,7 @@ func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, dep
 	return render(cmd.OutOrStdout(), outputFormat, v)
 }
 
-func loadProjectConfig(dirFlag string) (wapi.Config, error) {
+func resolveProjectDir(dirFlag string) (string, error) {
 	dir := dirFlag
 	if dir == "" {
 		dir = "."
@@ -129,16 +136,20 @@ func loadProjectConfig(dirFlag string) (wapi.Config, error) {
 
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return wapi.Config{}, fmt.Errorf("resolve dir %s: %w", dir, err)
+		return "", fmt.Errorf("resolve dir %s: %w", dir, err)
 	}
 
+	return absDir, nil
+}
+
+func loadProjectConfig(absDir string) (wapi.Config, error) {
 	if !wapi.Exists(absDir) {
 		return wapi.Config{}, errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")
 	}
 
 	cfg, err := wapi.LoadConfig(absDir)
 	if err != nil {
-		return wapi.Config{}, fmt.Errorf("read .wapi/config.json: %w", err)
+		return wapi.Config{}, fmt.Errorf("read %s: %w", wapi.ConfigPath(absDir), err)
 	}
 
 	if cfg.CatalogID == nil || *cfg.CatalogID == "" {

@@ -43,10 +43,10 @@ func Cmd() *cobra.Command {
 		Long: `Link a local project directory to an existing DataRobot
 artifact in your deployment infrastructure.
 
-This command creates a '.wapi/' state directory at the project root and
-records which artifact, catalog, and version the directory is bound to.
-Subsequent 'sync' invocations use this state to push local edits and
-pull remote changes.
+This command creates a '.datarobot/wapi/' state directory at the project
+root and records which artifact, catalog, and version the directory is
+bound to. Subsequent 'sync' invocations use this state to push local edits
+and pull remote changes.
 
 The artifact must already exist before running 'init'. Create it via
 'dr artifact create' or in the DataRobot UI.
@@ -101,6 +101,8 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	if err != nil {
 		return err
 	}
+
+	wapi.EnsureMigrated(dir)
 
 	if wapi.Exists(dir) {
 		return reportAlreadyLinked(dir)

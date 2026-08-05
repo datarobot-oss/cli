@@ -114,7 +114,7 @@ func TestRunE_ExistingCodeArtifact_EndToEnd(t *testing.T) {
 	assert.Equal(t, wapi.ManifestVersion, manifest.Version)
 	assert.Empty(t, manifest.Files)
 
-	historyData, err := os.ReadFile(filepath.Join(tmp, wapi.DirName, wapi.HistoryFile))
+	historyData, err := os.ReadFile(filepath.Join(wapi.Dir(tmp), wapi.HistoryFile))
 	require.NoError(t, err)
 
 	lines := strings.Split(strings.TrimSpace(string(historyData)), "\n")
@@ -163,7 +163,7 @@ func TestRunE_LockedArtifact(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "artifact is locked")
 
-	assert.False(t, wapi.Exists(tmp), ".wapi/ must not be created when artifact is locked")
+	assert.False(t, wapi.Exists(tmp), "state dir must not be created when artifact is locked")
 }
 
 func TestRunE_NotFound(t *testing.T) {
@@ -309,7 +309,7 @@ func TestRunE_NonInteractiveEnvVar(t *testing.T) {
 	cmd := newTestCmd(t, tmp, false, []string{"art-empty-001"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, wapi.Exists(tmp), ".wapi/ must be created in non-interactive mode via env var")
+	assert.True(t, wapi.Exists(tmp), "state dir must be created in non-interactive mode via env var")
 }
 
 // TestCmd_DoesNotClobberGlobalYesViper guards against re-introducing the

@@ -46,7 +46,7 @@ func Cmd() *cobra.Command {
 		Long: `Fetch the structured log stream for a build.
 
 When invoked with one positional argument the artifact-id is read from
-.wapi/config.json in the current directory. When invoked with two, the
+.datarobot/wapi/config.json in the current directory. When invoked with two, the
 first argument is the artifact-id and the second is the build-id.
 
 The server emits one structured JSON record per line; the default

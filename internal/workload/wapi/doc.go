@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package wapi manages the .wapi/ directory — the local, machine-managed sync
+// Package wapi manages the .datarobot/wapi/ directory — the local, machine-managed sync
 // state for a DataRobot workload project (conceptually .git/ for a workload).
 //
-// It exposes plain functions that read and write the files inside .wapi/:
+// It exposes plain functions that read and write the files inside it:
 // config.json (identity + sync state), manifest.json (the BASE manifest from
 // the last successful sync), .gitignore, and history.log (append-only JSONL
 // with 1 MB rotation). It also drops a .wapiignore template at the project

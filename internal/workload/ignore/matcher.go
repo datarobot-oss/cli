@@ -27,7 +27,12 @@ import (
 const wapiignoreFile = ".wapiignore"
 
 // systemExcludes are always-ignored paths, not overridable by .wapiignore.
-var systemExcludes = []string{".wapi", ".git", ".gitignore"}
+//
+// The state directory is listed at its full path, not as a bare ".datarobot":
+// entries match as prefixes, so a bare one would also exclude the CLI's own
+// tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
+// stays listed so an un-migrated project does not upload its state.
+var systemExcludes = []string{".datarobot/wapi", ".wapi", ".git", ".gitignore"}
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.

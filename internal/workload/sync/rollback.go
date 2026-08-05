@@ -21,14 +21,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-const rollbackDirName = ".rollback"
-
-// Rollback owns the .wapi/.rollback/ tree for a single sync run. Call
-// Backup before each destructive operation, then Discard on success or
-// Restore on failure. Newly created files go through TrackCreated so
-// Restore can remove them.
+// Rollback owns the rollback tree for a single sync run. Call Backup before
+// each destructive operation, then Discard on success or Restore on failure.
+// Newly created files go through TrackCreated so Restore can remove them.
 type Rollback struct {
 	projectDir string
 	rollDir    string
@@ -38,7 +37,7 @@ type Rollback struct {
 // NewRollback creates the rollback directory. Returns an error if a stale
 // rollback already exists; callers must run RestoreStaleIfPresent first.
 func NewRollback(projectDir string) (*Rollback, error) {
-	rollDir := filepath.Join(projectDir, ".wapi", rollbackDirName)
+	rollDir := wapi.RollbackDir(projectDir)
 
 	if err := os.Mkdir(rollDir, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -122,12 +121,28 @@ func (r *Rollback) Restore() error {
 	return restoreFromDir(r.rollDir, r.projectDir)
 }
 
-// RestoreStaleIfPresent restores any existing .wapi/.rollback/ tree and
-// removes it. The bool indicates whether a restore happened so callers
-// can warn the user.
+// RestoreStaleIfPresent restores any existing rollback tree and removes it.
+// The bool indicates whether a restore happened so callers can warn the user.
+// It sweeps every candidate location (see wapi.StaleRollbackDirs) so backups
+// left by a sync that crashed before the state directory moved still apply.
 func RestoreStaleIfPresent(projectDir string) (bool, error) {
-	rollDir := filepath.Join(projectDir, ".wapi", rollbackDirName)
+	restored := false
 
+	for _, rollDir := range wapi.StaleRollbackDirs(projectDir) {
+		did, err := restoreStaleDir(rollDir, projectDir)
+		restored = restored || did
+
+		if err != nil {
+			return restored, err
+		}
+	}
+
+	return restored, nil
+}
+
+// restoreStaleDir applies one rollback tree and removes it. A missing tree is
+// not an error.
+func restoreStaleDir(rollDir, projectDir string) (bool, error) {
 	info, err := os.Stat(rollDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

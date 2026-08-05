@@ -14,9 +14,9 @@
 
 // Package buildargs centralizes the positional argument shape shared by
 // `dr artifact build get` and `dr artifact build logs`. Both accept either
-// one positional (build-id, with the artifact-id read from .wapi/config.json)
-// or two positionals (artifact-id, build-id). Keeping the dispatch in one
-// place prevents the two leaves from drifting.
+// one positional (build-id, with the artifact-id read from the linked
+// project's config.json) or two positionals (artifact-id, build-id). Keeping
+// the dispatch in one place prevents the two leaves from drifting.
 
 package buildargs
 
@@ -29,10 +29,10 @@ import (
 // ResolveOptional maps cobra args to a single artifactID for commands that
 // accept an optional artifact-id (0 or 1 positional).
 //
-//   - 0 args -> artifact-id is read from .wapi.
-//   - 1 arg  -> args[0]=artifact-id (overrides .wapi).
+//   - 0 args -> artifact-id is read from the linked project.
+//   - 1 arg  -> args[0]=artifact-id (overrides the linked project).
 //
-// Returns an error if .wapi is required but missing.
+// Returns an error if the linked project is required but missing.
 func ResolveOptional(args []string) (string, error) {
 	explicit := ""
 	if len(args) == 1 {
@@ -46,11 +46,12 @@ func ResolveOptional(args []string) (string, error) {
 
 // ResolvePositional maps cobra args to (artifactID, buildID).
 //
-//   - 1 arg  -> arg is the build-id; artifact-id is read from .wapi.
-//   - 2 args -> args[0]=artifact-id, args[1]=build-id (overrides .wapi).
+//   - 1 arg  -> arg is the build-id; artifact-id is read from the linked project.
+//   - 2 args -> args[0]=artifact-id, args[1]=build-id (overrides the linked
+//     project).
 //
-// Returns an error if the wrong arity is given or .wapi is required but
-// missing.
+// Returns an error if the wrong arity is given or the linked project is
+// required but missing.
 func ResolvePositional(args []string) (string, string, error) {
 	switch len(args) {
 	case 1:

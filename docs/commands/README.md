@@ -370,7 +370,7 @@ For detailed documentation on each command, see:
 - **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
-  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.wapi/` state directory.
+  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/wapi/` state directory.
 
 - **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.

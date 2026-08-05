@@ -63,9 +63,9 @@ func cmdWithDeps(deps Deps) *cobra.Command {
 		Short:        "Download a version snapshot for read-only inspection.",
 		SilenceUsage: true,
 		Args:         cobra.MaximumNArgs(1),
-		Long: `Download a specific catalog version into '.wapi/.checkouts/<version-id>/'
-for read-only inspection. The working directory and '.wapi/' sync state
-are never modified.
+		Long: `Download a specific catalog version into
+'.datarobot/wapi/.checkouts/<version-id>/' for read-only inspection. The
+working directory and the sync state are never modified.
 
 The version argument may be a full version ID or any unique prefix.
 If omitted (and --yes is not set), you will be prompted.
@@ -111,6 +111,8 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 	if err != nil {
 		return err
 	}
+
+	wapi.EnsureMigrated(dir)
 
 	if !wapi.Exists(dir) {
 		return errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")

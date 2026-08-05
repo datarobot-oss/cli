@@ -27,7 +27,7 @@ import (
 func phase1Gather(e *Engine) error {
 	cfg, err := wapi.LoadConfig(e.projectDir)
 	if err != nil {
-		return fmt.Errorf("read .wapi/config.json: %w", err)
+		return fmt.Errorf("read %s: %w", wapi.ConfigPath(e.projectDir), err)
 	}
 
 	e.config = cfg
@@ -38,7 +38,7 @@ func phase1Gather(e *Engine) error {
 			return fmt.Errorf("manifest missing: %w", err)
 		}
 
-		return fmt.Errorf("read .wapi/manifest.json: %w", err)
+		return fmt.Errorf("read manifest.json in %s: %w", wapi.Dir(e.projectDir), err)
 	}
 
 	e.base = baseFromManifest(manifest)

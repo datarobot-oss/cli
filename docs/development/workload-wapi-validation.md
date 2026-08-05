@@ -1,12 +1,12 @@
-# Workload `.wapi/` validation reference
+# Workload state directory validation reference
 
-This page documents the struct-tag validation used for workload local state stored in `.wapi/` (for example `config.json` and `manifest.json`).
+This page documents the struct-tag validation used for workload local state stored in `.datarobot/wapi/` (for example `config.json` and `manifest.json`).
 
 Validation is implemented with `github.com/go-playground/validator/v10` and centralized in `internal/workload/wapi/validate.go`.
 
 ## Custom validator tags
 
-The workload `.wapi/` validation uses these custom tags (registered in `internal/workload/wapi/validate.go`):
+The state directory validation uses these custom tags (registered in `internal/workload/wapi/validate.go`):
 
 - **`dr_id`**: Non-empty identifier (max 256 chars) with no `/`, `\`, or `..` (safe for filesystem paths).
 - **`dr_nonempty_ptr`**: If a `*string` is non-nil, the pointed-to string must not be `""` (rejects JSON `""` where `null` was intended).
@@ -56,7 +56,7 @@ Some rules are enforced in code in addition to struct tags:
 
 - **`LoadConfig`**: calls `validateConfig` and returns a `*CorruptedError` on failure.
 - **`LoadManifest`**: calls `validateManifest` and returns a `*CorruptedError` on failure.
-- **`Initialize`**: calls `validateInitOptions` at the start and returns a plain `error` on failure (before `.wapi/` is created).
+- **`Initialize`**: calls `validateInitOptions` at the start and returns a plain `error` on failure (before the state directory is created).
 
 Validation is intentionally **not** run on `SaveConfig` / `SaveManifest` (trusted writers).
 

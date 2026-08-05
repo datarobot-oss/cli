@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// Config is the parsed representation of .wapi/config.json — the identity and
+// Config is the parsed representation of the project's config.json — the identity and
 // sync-state pointer for the project directory.
 //
 // CatalogID and LastSyncedVersionID use pointer semantics so that an empty
@@ -35,8 +35,8 @@ type Config struct {
 	CLIVersion          string    `json:"cliVersion" validate:"required"`
 }
 
-// LoadConfig reads and parses .wapi/config.json. Returns ErrNotInitialized if
-// .wapi/ (or config.json inside it) is missing, and a *CorruptedError
+// LoadConfig reads and parses the project's config.json. Returns ErrNotInitialized if
+// the state directory (or config.json inside it) is missing, and a *CorruptedError
 // wrapping parse or semantic validation failures if the file is unreadable,
 // malformed, or invalid.
 func LoadConfig(projectDir string) (Config, error) {
@@ -64,8 +64,8 @@ func LoadConfig(projectDir string) (Config, error) {
 	return cfg, nil
 }
 
-// SaveConfig atomically writes the config to .wapi/config.json. Returns
-// ErrNotInitialized if .wapi/ does not exist.
+// SaveConfig atomically writes the config to the project's config.json. Returns
+// ErrNotInitialized if the state directory does not exist.
 func SaveConfig(projectDir string, c Config) error {
 	if err := writeConfig(projectDir, c); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -78,9 +78,9 @@ func SaveConfig(projectDir string, c Config) error {
 	return nil
 }
 
-// writeConfig writes the config to .wapi/config.json. Shared by SaveConfig (which
+// writeConfig writes the config to config.json. Shared by SaveConfig (which
 // maps os.ErrNotExist → ErrNotInitialized) and by Initialize (which has
-// just mkdir'd .wapi/, so that error can't occur).
+// just mkdir'd the state directory, so that error can't occur).
 func writeConfig(projectDir string, c Config) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {

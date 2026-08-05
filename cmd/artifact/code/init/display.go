@@ -20,6 +20,7 @@ import (
 
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -86,10 +87,12 @@ func printLinkedEmptyArtifact(name, artifactID string) {
 }
 
 func printAlreadyLinked(artifactID, dir string) {
+	stateDir := wapi.Dir(dir)
+
 	fmt.Println(tui.ErrorStyle.Render(
-		fmt.Sprintf("Already linked to artifact %s; .wapi/ exists at %s.", artifactID, dir),
+		fmt.Sprintf("Already linked to artifact %s; state exists at %s.", artifactID, stateDir),
 	))
-	fmt.Println(tui.DimStyle.Render("Delete .wapi/ to re-init."))
+	fmt.Println(tui.DimStyle.Render(fmt.Sprintf("Delete %s to re-init.", stateDir)))
 }
 
 func shortVer(s string) string {

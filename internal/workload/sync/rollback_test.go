@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func setupProject(t *testing.T) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".wapi"), 0o755))
+	require.NoError(t, os.MkdirAll(wapi.Dir(dir), 0o755))
 
 	return dir
 }
@@ -84,7 +85,7 @@ func TestRollback_MissingFileNoop(t *testing.T) {
 
 func TestRollback_AlreadyExists(t *testing.T) {
 	dir := setupProject(t)
-	require.NoError(t, os.Mkdir(filepath.Join(dir, ".wapi", ".rollback"), 0o755))
+	require.NoError(t, os.Mkdir(wapi.RollbackDir(dir), 0o755))
 
 	_, err := NewRollback(dir)
 	require.Error(t, err)
@@ -95,7 +96,7 @@ func TestRestoreStaleIfPresent(t *testing.T) {
 	dir := setupProject(t)
 	writeProjectFile(t, dir, "agent.py", "WAS-BROKEN")
 
-	rollDir := filepath.Join(dir, ".wapi", ".rollback")
+	rollDir := wapi.RollbackDir(dir)
 	require.NoError(t, os.MkdirAll(rollDir, 0o755))
 
 	require.NoError(t, os.WriteFile(filepath.Join(rollDir, "agent.py"), []byte("intact"), 0o644))
@@ -114,6 +115,45 @@ func TestRestoreStaleIfPresent(t *testing.T) {
 
 func TestRestoreStaleIfPresent_None(t *testing.T) {
 	dir := setupProject(t)
+
+	restored, err := RestoreStaleIfPresent(dir)
+	require.NoError(t, err)
+	assert.False(t, restored)
+}
+
+// A sync that crashed before the state directory moved leaves its backups
+// under the legacy path. If the project also has a current state directory,
+// EnsureMigrated refuses to merge the two, so nothing relocates those
+// backups; recovery has to find them there or the user's overwritten files
+// are lost.
+func TestRestoreStaleIfPresent_RecoversFromLegacyLocation(t *testing.T) {
+	dir := t.TempDir()
+
+	// Current state dir exists, so EnsureMigrated would leave the legacy one
+	// in place rather than merging.
+	require.NoError(t, os.MkdirAll(wapi.Dir(dir), 0o755))
+
+	legacyRollback := filepath.Join(dir, wapi.LegacyDirName, wapi.RollbackDirName)
+	require.NoError(t, os.MkdirAll(legacyRollback, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(legacyRollback, "agent.py"), []byte("original\n"), 0o600))
+
+	// The working tree currently holds the half-applied server copy.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.py"), []byte("clobbered\n"), 0o600))
+
+	restored, err := RestoreStaleIfPresent(dir)
+	require.NoError(t, err)
+	assert.True(t, restored, "a stranded legacy rollback must be reported as restored")
+
+	body, err := os.ReadFile(filepath.Join(dir, "agent.py"))
+	require.NoError(t, err)
+	assert.Equal(t, "original\n", string(body), "the user's file must come back")
+
+	assert.NoDirExists(t, legacyRollback, "the tree is consumed once applied")
+}
+
+func TestRestoreStaleIfPresent_NoTreeAnywhere(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(wapi.Dir(dir), 0o755))
 
 	restored, err := RestoreStaleIfPresent(dir)
 	require.NoError(t, err)

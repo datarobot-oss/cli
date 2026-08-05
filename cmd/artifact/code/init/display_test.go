@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,8 +70,8 @@ func TestPrintAlreadyLinked_IncludesPath(t *testing.T) {
 		printAlreadyLinked("art-abc-123", "/tmp/proj")
 	})
 
-	assert.Contains(t, out, "Already linked to artifact art-abc-123; .wapi/ exists at /tmp/proj.")
-	assert.Contains(t, out, "Delete .wapi/ to re-init.")
+	assert.Contains(t, out, "Already linked to artifact art-abc-123; state exists at "+wapi.Dir("/tmp/proj")+".")
+	assert.Contains(t, out, "Delete "+wapi.Dir("/tmp/proj")+" to re-init.")
 }
 
 func TestRenderInitResult_TextWithCodeRef(t *testing.T) {

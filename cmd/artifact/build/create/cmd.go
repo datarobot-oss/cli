@@ -38,7 +38,7 @@ func Cmd() *cobra.Command {
 		Long: `Trigger a new container image build for an artifact.
 
 The artifact-id argument is optional when run inside a directory linked
-via 'dr artifact code init': the id is read from .wapi/config.json.
+via 'dr artifact code init': the id is read from .datarobot/wapi/config.json.
 
 By default the command prints the new build IDs (one per line) and
 exits. With --wait it polls each build until it reaches a terminal
