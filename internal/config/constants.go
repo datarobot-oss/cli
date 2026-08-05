@@ -36,8 +36,9 @@ const (
 	// zone override ("US" or "EU"). When unset, the telemetry package infers
 	// the zone from the configured DataRobot endpoint. Settable via the
 	// --telemetry-server-zone flag, the DATAROBOT_CLI_TELEMETRY_SERVER_ZONE
-	// env var, or the telemetry-server-zone config-file key. It is deliberately
-	// NOT a universal flag (not forwarded to plugin subprocesses).
+	// env var, or the telemetry-server-zone config-file key. It is a universal
+	// flag (forwarded to plugin subprocesses) so plugins that emit their own
+	// telemetry can honor the user's data-residency preference.
 	TelemetryServerZone = "telemetry-server-zone"
 
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment

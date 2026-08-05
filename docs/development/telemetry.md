@@ -54,7 +54,7 @@ Amplitude operates separate ingestion endpoints for its US and EU data centers (
 The EU host patterns live in `internal/telemetry/serverzone.go` (`euHostPatterns`) and are easy to extend — append a substring to the slice, no other changes required.
 
 > [!NOTE]
-> `--telemetry-server-zone` is **not** a [universal flag](flags.md). Telemetry events are emitted by the parent CLI process, not by plugin subprocesses, so the variable is not forwarded into plugin processes. This can be revisited if plugins ever emit their own telemetry directly.
+> `--telemetry-server-zone` is a [universal flag](flags.md), forwarded to plugin subprocesses as `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE` so plugins that emit their own telemetry can honor the user's data-residency preference. Plugins that don't emit telemetry simply ignore it. This mirrors `--disable-telemetry` and keeps behavior consistent with the Codespace env-injection path (CFX-6328), where the variable is already inherited by every process in the container.
 
 > [!NOTE]
 > Amplitude has no APAC data center. Users in APAC/Japan regions should set `disable-telemetry: true` (or `DATAROBOT_CLI_DISABLE_TELEMETRY=true`) as a stop-gap; `telemetry-server-zone` does not accept an APAC value.

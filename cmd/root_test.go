@@ -417,22 +417,24 @@ func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 }
 
 // TestTelemetryServerZoneFlagRegistered verifies that --telemetry-server-zone
-// is registered as a persistent root flag and is deliberately NOT marked
-// universal: telemetry events are emitted by the parent CLI process, not by
-// plugin subprocesses, so forwarding the env var into plugins serves no
-// purpose (see the design decision recorded on CFX-6327). This guard fails if
-// the flag is removed or accidentally wired through bindUniversal.
+// is registered as a persistent root flag and marked universal so it is
+// forwarded to plugin subprocesses as DATAROBOT_CLI_TELEMETRY_SERVER_ZONE.
+// This lets plugins that emit their own telemetry honor the user's
+// data-residency preference, and keeps behavior consistent with the
+// --disable-telemetry universal flag and the Codespace env-injection path
+// (CFX-6328). See the design decision recorded on CFX-6327. This guard fails
+// if the flag is removed or the universal annotation is dropped.
 func TestTelemetryServerZoneFlagRegistered(t *testing.T) {
 	flag := RootCmd.PersistentFlags().Lookup("telemetry-server-zone")
 	require.NotNil(t, flag, "--telemetry-server-zone should always be registered as a persistent root flag")
 
-	if flag.Annotations == nil {
-		return
-	}
+	require.NotNil(t, flag.Annotations, "--telemetry-server-zone should carry universal-flag annotations")
 
-	_, isUniversal := flag.Annotations[config.UniversalAnnotationKey]
-	assert.False(t, isUniversal,
-		"--telemetry-server-zone must NOT be a universal flag (not forwarded to plugin subprocesses)")
+	suffix, isUniversal := flag.Annotations[config.UniversalAnnotationKey]
+	require.True(t, isUniversal,
+		"--telemetry-server-zone must be a universal flag (forwarded to plugin subprocesses)")
+	require.Equal(t, []string{"TELEMETRY_SERVER_ZONE"}, suffix,
+		"--telemetry-server-zone universal env-var suffix should be TELEMETRY_SERVER_ZONE")
 }
 
 // TestShowFirstRunAnimationSkipsWhenNonInteractive guards against tools like
