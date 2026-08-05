@@ -239,7 +239,7 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
-	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable anonymous usage telemetry")
+	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable usage telemetry")
 
 	// Private CA / TLS flags
 	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")

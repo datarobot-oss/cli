@@ -26,7 +26,7 @@ If you're new to developing the CLI, start here:
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
 - **[Workload `.wapi/` validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
-- **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
+- **[Telemetry](telemetry.md)**&mdash;how usage analytics linked to your DataRobot user ID are collected, how to add events, and how to opt out.
 
 ## Quick reference
 
