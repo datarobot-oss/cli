@@ -1,18 +1,15 @@
 # Telemetry
 
-The CLI collects usage analytics linked to your DataRobot user ID via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is an optional feature that can be turned off at any time (see [Configuring and disabling telemetry](#configuring-and-disabling-telemetry)). All telemetry data is stored in the USA. Telemetry is implemented in `internal/telemetry/`. On each CLI invocation a `Client` is created with a set of `CommonProperties`, events are queued via `Client.Track()`, and the queue is flushed at process exit via `Client.Flush()`.
+The CLI collects usage analytics linked to your DataRobot user ID via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is an optional feature that can be turned off at any time (see [Configuring and disabling telemetry](#configuring-and-disabling-telemetry)). Telemetry is implemented in `internal/telemetry/`.
 
-When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
-
-> [!NOTE]
-> The entire telemetry system is subject to change. This document reflects the current implementation but should not be treated as a stable API contract.
+All telemetry data sent over the network is stored in the USA. When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
 
 ## Configuring and disabling telemetry
 
 Telemetry is enabled by default. Users can disable it at any time via any of the three methods below (listed in order of precedence — higher precedence wins):
 
 | Method               | How                                          |
-| -------------------- | -------------------------------------------- |
+|----------------------|----------------------------------------------|
 | Flag                 | `dr --disable-telemetry <command>`           |
 | Environment variable | `DATAROBOT_CLI_DISABLE_TELEMETRY=true`       |
 | Config file          | `disable-telemetry: true` in `drconfig.yaml` |
@@ -33,9 +30,8 @@ When telemetry is disabled, events are logged to the debug logger (visible with 
 Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
 
 | Host                                                       | Purpose                                                                                                       | Port |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---- |
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone, default) — event ingestion                                                       | 443  |
-| `api.eu.amplitude.com`                                     | Amplitude HTTP API (EU zone) — only if `ServerZone` is set to EU                                              | 443  |
+|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|------|
+| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                | 443  |
 | *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
 
 The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
@@ -102,7 +98,7 @@ This ensures correct behavior in shared environments (e.g., Codespaces) where tw
 ### Behavior summary
 
 | Scenario                                                         | `user_id` / `organization_id` / `tenant_id` behavior  |
-| ---------------------------------------------------------------- | ----------------------------------------------------- |
+|------------------------------------------------------------------|-------------------------------------------------------|
 | Authenticated, API succeeds                                      | `uid`, `org_id`, `tenant_id` from API, cached to disk |
 | Authenticated, cache hit (same endpoint + token, complete cache) | Cached `uid`, `org_id`, `tenant_id` (no API call)     |
 | Endpoint changed                                                 | Re-fetch from API, update cache                       |
@@ -120,22 +116,22 @@ The following are attached to every event:
 
 These map to Amplitude's built-in fields and power native segmentation (version filters, OS breakdowns, language charts, etc.).
 
-| Field         | Source                                                                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field         | Source                                                                                                                                                                          |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `user_id`     | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty if unauthenticated or cache miss — see [User ID](#user-id) |
-| `device_id`   | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above                                                                                                                |
-| `session_id`  | Unix millisecond timestamp generated once per process invocation — Amplitude uses this as the built-in Session ID for session-based analysis                                                |
-| `app_version` | CLI version set at build time via ldflags                                                                                                                                                   |
-| `platform`    | Always `"CLI"`                                                                                                                                                                              |
-| `os_name`     | OS name (e.g. `"macOS"`)                                                                                                                                                                    |
-| `os_version`  | OS version (e.g. `"15.7.5"`)                                                                                                                                                                |
-| `language`    | User locale tag (e.g. `"en-US"`), via `go-locale`; Amplitude maps to a display language name                                                                                                |
-| `ip`          | Always `"$remote"` — Amplitude resolves location server-side                                                                                                                                |
+| `device_id`   | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above                                                                                                    |
+| `session_id`  | Unix millisecond timestamp generated once per process invocation — Amplitude uses this as the built-in Session ID for session-based analysis                                    |
+| `app_version` | CLI version set at build time via ldflags                                                                                                                                       |
+| `platform`    | Always `"CLI"`                                                                                                                                                                  |
+| `os_name`     | OS name (e.g. `"macOS"`)                                                                                                                                                        |
+| `os_version`  | OS version (e.g. `"15.7.5"`)                                                                                                                                                    |
+| `language`    | User locale tag (e.g. `"en-US"`), via `go-locale`; Amplitude maps to a display language name                                                                                    |
+| `ip`          | Always `"$remote"` — Amplitude resolves location server-side                                                                                                                    |
 
 ### Event properties
 
 | Property             | Source                                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+|----------------------|---------------------------------------------------------------------------------------------------------------|
 | `install_method`     | Set at build time via ldflags (`release`, `source`, etc.)                                                     |
 | `os_arch`            | CPU architecture from `runtime.GOARCH`                                                                        |
 | `go_version`         | Go runtime version (e.g. `go1.26.4`) from `runtime.Version()`                                                 |
@@ -147,13 +143,12 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 | `template_name`      | Best-effort from `.datarobot/answers/` in the current repo                                                    |
 | `template_id`        | Stable ID of the DataRobot template used to create this project; absent when not inside a template project    |
 
-
 ## Event Wiring
 
 Telemetry events are wired declaratively at command-construction time using a small API exported by `internal/telemetry`:
 
 | Helper                              | Use when…                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------- |
+|-------------------------------------|---------------------------------------------------------------------------------|
 | `telemetry.Track(cmd)`              | The command needs no extra event properties beyond the common ones.             |
 | `telemetry.TrackWith(cmd, extract)` | The command needs dynamic event properties from flags or args at firing time.   |
 | `telemetry.TrackPlugin(cmd, ver)`   | The command comes from a plugin. Adds `plugin_version` and sets `command_kind`. |
@@ -200,10 +195,8 @@ RunE: func(cmd *cobra.Command, args []string) error {
 
 `internal/telemetry` is **stateless** — it defines `Client`, helpers, and `ClientContextKey` but holds no global variables. The two places that own state are:
 
-| Owner                                 | What                                                            | Why                                                                                                          |
-| ------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `cmd` package (`root.go` + `exit.go`) | `var telemetryClient *telemetry.Client`                         | Needed by `main.go`'s error path, which only has the signal context (no cobra context).                      |
-| cobra command context                 | `*telemetry.Client` stored under `telemetry.ClientContextKey{}` | Accessible to any sub-package that has a `*cobra.Command` without importing `cmd` (which would be circular). |
+1. The `cmd` package (`root.go` + `exit.go`) with the `telemetryClient` variable.
+2. The cobra command context, which stores a `*telemetry.Client` under `telemetry.ClientContextKey{}`.
 
 Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitWithContext` (exit-code path).
 
@@ -241,7 +234,7 @@ func RunE(_ *cobra.Command, args []string) error {
 
 ### Execution flow
 
-```
+```text
 User invokes command
     ↓
 Cobra parses flags
@@ -386,7 +379,7 @@ The Amplitude SDK emits its own internal logs (HTTP responses, client lifecycle,
 The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file (see [Logging](../../user-guide/configuration.md#logging)).
 
 | CLI flags   | Amplitude INFO appears as | Visible on stderr? |
-| ----------- | ------------------------- | ------------------ |
+|-------------|---------------------------|--------------------|
 | *(default)* | DEBUG                     | No                 |
 | `--verbose` | INFO                      | Yes                |
 | `--debug`   | INFO                      | Yes                |
