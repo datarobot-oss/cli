@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
@@ -413,6 +414,25 @@ func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 
 	assert.True(t, parsedDebug,
 		"--debug must be parsed by core when it appears after a core subcommand and its own flags")
+}
+
+// TestTelemetryServerZoneFlagRegistered verifies that --telemetry-server-zone
+// is registered as a persistent root flag and is deliberately NOT marked
+// universal: telemetry events are emitted by the parent CLI process, not by
+// plugin subprocesses, so forwarding the env var into plugins serves no
+// purpose (see the design decision recorded on CFX-6327). This guard fails if
+// the flag is removed or accidentally wired through bindUniversal.
+func TestTelemetryServerZoneFlagRegistered(t *testing.T) {
+	flag := RootCmd.PersistentFlags().Lookup("telemetry-server-zone")
+	require.NotNil(t, flag, "--telemetry-server-zone should always be registered as a persistent root flag")
+
+	if flag.Annotations == nil {
+		return
+	}
+
+	_, isUniversal := flag.Annotations[config.UniversalAnnotationKey]
+	assert.False(t, isUniversal,
+		"--telemetry-server-zone must NOT be a universal flag (not forwarded to plugin subprocesses)")
 }
 
 // TestShowFirstRunAnimationSkipsWhenNonInteractive guards against tools like

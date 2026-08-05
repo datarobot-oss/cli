@@ -32,6 +32,14 @@ const (
 	// either an LLM Gateway model id or a DataRobot deployment id.
 	DefaultLLMID = "default-llm-id"
 
+	// TelemetryServerZone is the config key for the explicit Amplitude server
+	// zone override ("US" or "EU"). When unset, the telemetry package infers
+	// the zone from the configured DataRobot endpoint. Settable via the
+	// --telemetry-server-zone flag, the DATAROBOT_CLI_TELEMETRY_SERVER_ZONE
+	// env var, or the telemetry-server-zone config-file key. It is deliberately
+	// NOT a universal flag (not forwarded to plugin subprocesses).
+	TelemetryServerZone = "telemetry-server-zone"
+
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment
 	// variables. Use this constant instead of hard-coding the string literal.
 	EnvPrefix = "DATAROBOT_CLI_"

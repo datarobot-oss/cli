@@ -240,6 +240,8 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable usage telemetry")
+	RootCmd.PersistentFlags().String("telemetry-server-zone", "",
+		"Amplitude ingest region for telemetry (US or EU; inferred from endpoint if unset)")
 
 	// Private CA / TLS flags
 	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
@@ -263,6 +265,7 @@ func init() {
 	_ = viperx.BindPFlag("plugin-discovery-timeout", RootCmd.PersistentFlags().Lookup("plugin-discovery-timeout"))
 	_ = viperx.BindPFlag("plugin-update-check-interval", RootCmd.PersistentFlags().Lookup("plugin-update-check-interval"))
 	_ = viperx.BindPFlag("skip-plugin-update-check", RootCmd.PersistentFlags().Lookup("skip-plugin-update-check"))
+	_ = viperx.BindPFlag("telemetry-server-zone", RootCmd.PersistentFlags().Lookup("telemetry-server-zone"))
 	_ = viperx.BindPFlag("output-format", RootCmd.PersistentFlags().Lookup("output-format"))
 
 	// Add command groups (plugin group added conditionally by registerPluginCommands)

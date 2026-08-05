@@ -162,6 +162,24 @@ disable-telemetry: true
 
 When telemetry is disabled, no data is sent over the network. See the [developer documentation](../development/telemetry.md) for details on what is collected and how the system works.
 
+#### Server zone (data residency)
+
+By default the CLI infers the Amplitude ingest region (US or EU) from your configured DataRobot endpoint. To override it explicitly:
+
+```bash
+# Per-invocation
+dr --telemetry-server-zone EU templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_TELEMETRY_SERVER_ZONE=EU
+
+# Permanently (config file)
+# Add to ~/.config/datarobot/drconfig.yaml:
+telemetry-server-zone: EU
+```
+
+Accepted values are `US` and `EU` (case-insensitive). An invalid value logs a warning to `.dr-tui-debug.log` and falls back to the inferred region. There is no APAC region — APAC users should disable telemetry instead. See [Server zone / data residency](../development/telemetry.md#server-zone--data-residency) for details.
+
 ### Advanced flags
 
 The CLI supports advanced command-line flags for special use cases:

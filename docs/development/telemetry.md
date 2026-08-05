@@ -38,6 +38,27 @@ The DataRobot endpoint call is only made when the user is authenticated and the 
 
 No other hosts are contacted by the telemetry subsystem.
 
+## Server zone / data residency
+
+Amplitude operates separate ingestion endpoints for its US and EU data centers (`api2.amplitude.com` and `api.eu.amplitude.com` respectively). The CLI selects the endpoint at telemetry-client initialization via the SDK's `ServerZone` field, using this precedence:
+
+1. **Explicit override** — the `telemetry-server-zone` config key, settable via any of:
+    - Flag: `dr --telemetry-server-zone EU <command>`
+    - Environment variable: `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE=EU`
+    - Config file: `telemetry-server-zone: EU` in `drconfig.yaml`
+
+    When set to a valid value (`US` or `EU`, case-insensitive), this takes precedence over inference.
+2. **Inferred from `datarobot_instance`** — if no override is set, the zone is inferred from the configured DataRobot endpoint URL. A host that contains `.eu.` or ends with `.eu` is treated as EU; everything else defaults to US.
+3. **Invalid override** — a value other than `US`/`EU` logs a warning to `.dr-tui-debug.log` and falls back to the inferred zone. Telemetry initialization never blocks or errors visibly.
+
+The EU host patterns live in `internal/telemetry/serverzone.go` (`euHostPatterns`) and are easy to extend — append a substring to the slice, no other changes required.
+
+> [!NOTE]
+> `--telemetry-server-zone` is **not** a [universal flag](flags.md). Telemetry events are emitted by the parent CLI process, not by plugin subprocesses, so the variable is not forwarded into plugin processes. This can be revisited if plugins ever emit their own telemetry directly.
+
+> [!NOTE]
+> Amplitude has no APAC data center. Users in APAC/Japan regions should set `disable-telemetry: true` (or `DATAROBOT_CLI_DISABLE_TELEMETRY=true`) as a stop-gap; `telemetry-server-zone` does not accept an APAC value.
+
 ## Device ID
 
 Amplitude requires a `device_id` or `user_id` on every event. The CLI uses a stable device identifier obtained in this order:
