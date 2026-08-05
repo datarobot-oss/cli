@@ -336,7 +336,7 @@ func TestGetEnvCredentials(t *testing.T) {
 	})
 }
 
-func TestEndpointProblem(t *testing.T) {
+func TestValidateEndpoint(t *testing.T) {
 	cases := []struct {
 		name     string
 		endpoint string
@@ -352,7 +352,7 @@ func TestEndpointProblem(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := EndpointProblem(c.endpoint)
+			err := ValidateEndpoint(c.endpoint)
 			if c.wantErr {
 				assert.Error(t, err)
 			} else {

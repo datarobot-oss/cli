@@ -59,7 +59,7 @@ func checkCLICredentials(w io.Writer) bool {
 		// the user fixes the right thing. A quoted endpoint (e.g. from running
 		// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
 		// and must not be reported as a token problem.
-		if epErr := auth.EndpointProblem(creds.Endpoint); epErr != nil {
+		if epErr := auth.ValidateEndpoint(creds.Endpoint); epErr != nil {
 			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_ENDPOINT environment variable is invalid: "+epErr.Error()))
 			fmt.Fprintln(w, tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
 		} else {
