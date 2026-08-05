@@ -232,8 +232,11 @@ Nothing is written to stdout and the command exits non-zero, so `eval "$(dr auth
 $ dr auth export
 ❌ Invalid DataRobot URL from DATAROBOT_ENDPOINT environment variable: parse "'https://app.datarobot.com/api/v2'": first path segment in URL cannot contain colon
 If you ran `$(dr auth export)`, use `eval "$(dr auth export)"` instead.
-Run dr auth set-url to fix it.
+Unset the invalid variable(s) and try again:
+  unset DATAROBOT_ENDPOINT DATAROBOT_API_TOKEN (or Remove-Item Env:\DATAROBOT_ENDPOINT, Env:\DATAROBOT_API_TOKEN on Windows)
 ```
+
+When the bad value comes from the environment, the hint recommends `unset` because env vars take precedence over `drconfig.yaml` — `dr auth set-url` only writes the config file and cannot clear poisoned env vars. For a malformed endpoint sourced from `drconfig.yaml`, the error suggests `dr auth set-url` instead.
 
 Surrounding quotes are not stripped from `DATAROBOT_ENDPOINT` — the DataRobot Python and R SDKs read it verbatim, so stripping would let the CLI silently succeed where other SDKs fail. The most common cause is running `$(dr auth export)` instead of `eval "$(dr auth export)"`, which bakes the output's single quotes into the value; the hint is shown for bash/zsh. The same endpoint-vs-token distinction is applied in `dr auth check` and the shared `EnsureAuthenticated` flow.
 

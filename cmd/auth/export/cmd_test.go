@@ -313,6 +313,8 @@ func TestRunE_QuotedEnvEndpointFailsWithEvalHint(t *testing.T) {
 	assert.Contains(t, stderr.String(), "DATAROBOT_ENDPOINT environment variable")
 	assert.NotContains(t, stderr.String(), "drconfig.yaml")
 	assert.Contains(t, stderr.String(), `eval "$(dr auth export)"`)
+	assert.Contains(t, stderr.String(), "unset DATAROBOT_ENDPOINT")
+	assert.NotContains(t, stderr.String(), "auth set-url")
 }
 
 func TestRunE_QuotedConfigEndpointNamesSourceWithoutEvalHint(t *testing.T) {
@@ -339,6 +341,8 @@ func TestRunE_QuotedConfigEndpointNamesSourceWithoutEvalHint(t *testing.T) {
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "drconfig.yaml")
 	assert.NotContains(t, stderr.String(), `eval "$(dr auth export)"`)
+	assert.Contains(t, stderr.String(), "auth set-url")
+	assert.NotContains(t, stderr.String(), "unset DATAROBOT_ENDPOINT")
 }
 
 func TestRunE_NoCredentialsKeepsStdoutEmpty(t *testing.T) {

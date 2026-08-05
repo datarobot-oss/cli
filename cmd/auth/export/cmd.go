@@ -179,13 +179,23 @@ func printCredentialError(w io.Writer, err error, creds credentials, sh internal
 		// at the correct invocation for POSIX shells where that footgun exists.
 		// PowerShell/cmd have their own patterns (see --help) and are handled
 		// in a separate PR.
-		if creds.Source == sourceEnv && (sh == internalShell.Bash || sh == internalShell.Zsh) {
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("If you ran `$(dr auth export)`, use `eval \"$(dr auth export)\"` instead."))
-		}
+		if creds.Source == sourceEnv {
+			if sh == internalShell.Bash || sh == internalShell.Zsh {
+				fmt.Fprintln(w, tui.BaseTextStyle.Render("If you ran `$(dr auth export)`, use `eval \"$(dr auth export)\"` instead."))
+			}
 
-		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"))
-		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to fix it."))
+			// Env vars take precedence over drconfig.yaml, so `dr auth set-url`
+			// cannot self-heal this; the user must unset the poisoned vars.
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("Unset the invalid variable(s) and try again:"))
+			fmt.Fprint(w, tui.InfoStyle.Render("  unset DATAROBOT_ENDPOINT DATAROBOT_API_TOKEN"))
+			fmt.Fprint(w, tui.BaseTextStyle.Render(" (or "))
+			fmt.Fprint(w, tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_ENDPOINT, Env:\\DATAROBOT_API_TOKEN"))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" on Windows)"))
+		} else {
+			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+			fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" to fix it."))
+		}
 	}
 }
 
