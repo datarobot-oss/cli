@@ -212,9 +212,11 @@ tasks:
       - go mod tidy
       - echo "🧹 Vetting…"
       - go vet ./...
-      - task: lint-goos
-        vars:
-          LINT_ARGS: "--new-from-rev HEAD"
+      # CFX-7138: deliberately host-GOOS only. The commit hook runs on every
+      # commit, and looping all targets here costs ~4-6s of interactive latency
+      # for little benefit — `task lint` and CI already enforce every GOOS.
+      - echo "🧹 Linting new changes…"
+      - "{{.BIN_DIR}}/golangci-lint run --new-from-rev HEAD ./..."
       - echo "🧹 Verifying golangci-lint config…"
       - "{{.BIN_DIR}}/golangci-lint config verify"
       - echo "🧹 Checking go.mod/go.sum are tidy…"

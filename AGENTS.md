@@ -95,10 +95,15 @@ it runs on. Without help, `*_windows.go` (and any `//go:build` file) would only 
 linted on that OS — so a violation in a Windows-only file ships undetected from a macOS
 laptop and from Linux CI alike (CFX-7138).
 
-To close that gap, `lint`, `delint`, and `precommit` all route their `golangci-lint run`
-through the internal `lint-goos` task, which loops over the `LINT_GOOS_TARGETS` variable
-in `Taskfile.yaml` (`linux darwin windows` — kept in sync with the `goos` lists in
-`goreleaser.yaml`). Output is labelled per leg, e.g. `🧹 Linting (GOOS=windows)…`.
+To close that gap, `lint` and `delint` route their `golangci-lint run` through the internal
+`lint-goos` task, which loops over the `LINT_GOOS_TARGETS` variable in `Taskfile.yaml`
+(`linux darwin windows` — kept in sync with the `goos` lists in `goreleaser.yaml`). Output
+is labelled per leg, e.g. `🧹 Linting (GOOS=windows)…`.
+
+`precommit` deliberately stays **host-GOOS only**. It runs on every commit, and looping all
+targets there costs ~4-6s of interactive latency for little benefit — `task lint` and CI
+already enforce every target, so a cross-platform violation is caught before merge either
+way.
 
 Practical notes:
 - Expect `task lint` to fail on a file your own OS never compiles. That is the point.
@@ -119,7 +124,7 @@ automatically by `task install-tools` and wired up by `task dev-init`.
 Hooks run automatically on `git commit`. Run manually with `task precommit`.
 Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
 
-- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only, once per target GOOS), verifies golangci-lint config, and checks go.mod/go.sum are tidy
+- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only, host GOOS only — see [Cross-Platform Linting](#cross-platform-linting)), verifies golangci-lint config, and checks go.mod/go.sum are tidy
 - **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
 
 Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
