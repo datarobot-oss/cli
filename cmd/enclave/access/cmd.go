@@ -29,9 +29,10 @@ user, group, or organization.
 
 These commands are thin wrappers over the enclave sharedRoles API. They take
 effect only when the server has ENCLAVE_RBAC_ENABLED=true; otherwise the call
-succeeds but grants nothing. The caller must hold CAN_SHARE on the enclave
-(owner or admin), and where ENCLAVE_ADMIN_ONLY=true is set, must also be a
-sysadmin or org admin.`,
+succeeds but grants nothing. The caller must hold CAN_SHARE on the enclave;
+system administrators may manage any enclave.
+
+To control who may create enclaves at all, see "dr enclave permission".`,
 	}
 
 	cmd.AddCommand(

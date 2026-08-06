@@ -54,8 +54,7 @@ organization with --org to cover every user in it.
 
 Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
 call succeeds but grants nothing. The caller must hold CAN_SHARE on the
-enclave (owner or admin), and where ENCLAVE_ADMIN_ONLY=true, must also be a
-sysadmin or org admin.
+enclave; system administrators may manage any enclave.
 
 Example:
   dr enclave access grant 3fa85f64-5717-4562-b3fc-2c963f66afa6 --role user --user alice@corp.io
