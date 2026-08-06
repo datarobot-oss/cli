@@ -15,10 +15,14 @@
 package create
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +59,55 @@ func TestCmd_InvalidSpecFailsBeforeNetwork(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one of 'artifactId'")
+}
+
+func TestCmd_PreflightRejectsReplicaCountWithAutoscaling(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	spec := `{
+		"name": "wl-conflict",
+		"artifactId": "art-1",
+		"runtime": {
+			"containerGroups": [{
+				"replicaCount": 1,
+				"autoscaling": {"enabled": true, "policies": []}
+			}]
+		}
+	}`
+	require.NoError(t, os.WriteFile(path, []byte(spec), 0o600))
+
+	var posted bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		posted = true
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	t.Cleanup(srv.Close)
+
+	prevSkip := viperx.GetBool("skip_auth")
+	prevTok := viperx.GetString(config.DataRobotAPIKey)
+	prevURL := viperx.GetString(config.DataRobotURL)
+
+	viperx.Set("skip_auth", true)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.DataRobotURL, srv.URL)
+
+	t.Cleanup(func() {
+		viperx.Set("skip_auth", prevSkip)
+		viperx.Set(config.DataRobotAPIKey, prevTok)
+		viperx.Set(config.DataRobotURL, prevURL)
+	})
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runtime.containerGroups[0]: replicaCount and autoscaling.enabled=true are mutually exclusive")
+	assert.False(t, posted)
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {

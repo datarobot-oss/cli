@@ -208,6 +208,25 @@ func assertProjection(t *testing.T, w *Workload, id, name, status string) {
 	assert.Equal(t, time.Date(2026, 6, 10, 8, 0, 0, 0, time.UTC), w.CreatedAt.UTC())
 }
 
+const workloadAutoscalingCreateSpec = `{
+	"name": "wl-autoscale",
+	"artifactId": "art-1",
+	"runtime": {
+		"containerGroups": [{
+			"name": "default",
+			"autoscaling": {
+				"enabled": true,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 3,
+				"policies": [{
+					"scalingMetric": "cpuAverageUtilization",
+					"target": 80
+				}]
+			}
+		}]
+	}
+}`
+
 func TestCreateWorkload_PostsSpecVerbatimAndParses201(t *testing.T) {
 	installSkipAuth(t)
 
@@ -235,6 +254,35 @@ func TestCreateWorkload_PostsSpecVerbatimAndParses201(t *testing.T) {
 	workload, err := CreateWorkload(json.RawMessage(spec))
 	require.NoError(t, err)
 	assertProjection(t, workload, "wl-id-1", "wl-1", "submitted")
+}
+
+// TestCreateWorkload_AutoscalingShapePostsVerbatimAndParses201 locks the create
+// path for the autoscaling payload shape (global bounds, slim policies).
+func TestCreateWorkload_AutoscalingShapePostsVerbatimAndParses201(t *testing.T) {
+	installSkipAuth(t)
+
+	spec := []byte(workloadAutoscalingCreateSpec)
+	require.NoError(t, ValidateWorkloadCreateRequest(spec))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v2/workloads/", r.URL.Path)
+
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		assert.JSONEq(t, string(spec), string(body))
+
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, serverWorkloadDoc("wl-autoscale-id", "wl-autoscale", "submitted"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	workload, err := CreateWorkload(json.RawMessage(spec))
+	require.NoError(t, err)
+	assertProjection(t, workload, "wl-autoscale-id", "wl-autoscale", "submitted")
 }
 
 func TestCreateWorkload_422SurfacesServerDetail(t *testing.T) {
