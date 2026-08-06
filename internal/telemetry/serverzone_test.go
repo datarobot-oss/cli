@@ -31,6 +31,7 @@ func TestInferServerZone(t *testing.T) {
 	}{
 		{name: "US default", baseURL: "https://app.datarobot.com", want: types.ServerZoneUS},
 		{name: "EU subdomain", baseURL: "https://app.eu.datarobot.com", want: types.ServerZoneEU},
+		{name: "Japan cloud routes to US (no APAC Amplitude DC)", baseURL: "https://app.jp.datarobot.com", want: types.ServerZoneUS},
 		{name: "EU suffix", baseURL: "https://mytenant.eu", want: types.ServerZoneEU},
 		{name: "EU suffix with explicit port", baseURL: "https://mytenant.eu:8443", want: types.ServerZoneEU},
 		{name: "EU subdomain with explicit port", baseURL: "https://app.eu.datarobot.com:443", want: types.ServerZoneEU},
