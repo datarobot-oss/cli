@@ -35,7 +35,7 @@ func Cmd() *cobra.Command {
 		Long: `Manage pipeline execution images.
 
 Images are named, immutable-versioned execution environments backed by
-pip packages, conda packages, a base Docker image, and optional NVIDIA GPU
+pip packages, conda packages, a base Docker image, and optional GPU
 support. Pipelines can be built against them. Each ` + "`update`" + ` creates
 a new version with a complete replacement definition; older versions can be
 deleted individually with ` + "`image version delete`" + `.`,
