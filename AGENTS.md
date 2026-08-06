@@ -77,16 +77,44 @@ func example() {
 - `go mod tidy -diff` - checks if go.mod/go.sum need updates
 - `gofumpt -l -d` - lists formatting issues and shows diffs
 - `go vet` - checks for suspicious constructs
-- `golangci-lint run` - comprehensive linting checks (includes wsl, revive, staticcheck)
+- `golangci-lint run` - comprehensive linting checks (includes wsl, revive, staticcheck), run once per target GOOS
 - `goreleaser check` - validates release configuration
 
 **`task delint`** (auto-fixes):
 - `go mod tidy` - fixes go.mod/go.sum
 - `go fmt` - fixes basic formatting
 - `gofumpt -l -w` - fixes aggressive Go formatting
-- `golangci-lint run --fix` - fixes linting issues where possible
+- `golangci-lint run --fix` - fixes linting issues where possible, run once per target GOOS
 
 All code must pass `task lint` before submitting.
+
+### Cross-Platform Linting
+
+`golangci-lint` only analyzes files selected by the build constraints of the platform
+it runs on. Without help, `*_windows.go` (and any `//go:build` file) would only ever be
+linted on that OS — so a violation in a Windows-only file ships undetected from a macOS
+laptop and from Linux CI alike (CFX-7138).
+
+To close that gap, `lint` and `delint` route their `golangci-lint run` through the internal
+`lint-goos` task, which loops over the `LINT_GOOS_TARGETS` variable in `Taskfile.yaml`
+(`linux darwin windows` — kept in sync with the `goos` lists in `goreleaser.yaml`). Output
+is labelled per leg, e.g. `🧹 Linting (GOOS=windows)…`.
+
+`precommit` deliberately stays **host-GOOS only**. It runs on every commit, and looping all
+targets there costs ~4-6s of interactive latency for little benefit — `task lint` and CI
+already enforce every target, so a cross-platform violation is caught before merge either
+way.
+
+Practical notes:
+- Expect `task lint` to fail on a file your own OS never compiles. That is the point.
+  `task delint` can auto-fix those files from any host.
+- The overhead is small (~1s per extra GOOS on a warm cache); each GOOS gets its own
+  golangci-lint analysis cache.
+- **When adding a new release platform, add it to `LINT_GOOS_TARGETS`.**
+- `go mod tidy`, `golangci-lint fmt`, and `goreleaser check` stay single-run — they are
+  GOOS-independent (the formatter walks files directly and is not build-constrained).
+- CI needs no OS matrix for lint: the single `ubuntu-latest` lint job covers all targets
+  because it just calls `task lint`.
 
 ### Git Hooks (Lefthook)
 
@@ -96,7 +124,7 @@ automatically by `task install-tools` and wired up by `task dev-init`.
 Hooks run automatically on `git commit`. Run manually with `task precommit`.
 Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
 
-- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only), verifies golangci-lint config, and checks go.mod/go.sum are tidy
+- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only, host GOOS only — see [Cross-Platform Linting](#cross-platform-linting)), verifies golangci-lint config, and checks go.mod/go.sum are tidy
 - **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
 
 Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
