@@ -12,23 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Copyright 2026 DataRobot, Inc. and its affiliates.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package telemetry
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/amplitude/analytics-go/amplitude/types"
@@ -52,6 +39,14 @@ var euHostPatterns = []string{".eu."}
 // string) defaults to ServerZoneUS.
 func inferServerZone(baseURL string) types.ServerZone {
 	host := strings.ToLower(baseURL)
+
+	// Match against the hostname (port-stripped) rather than the full URL so
+	// that an EU endpoint with an explicit port (e.g. "https://mytenant.eu:8443")
+	// still satisfies the ".eu" suffix rule. Fall back to the lowercased full
+	// string if parsing fails or no host is present.
+	if u, err := url.Parse(baseURL); err == nil && u.Hostname() != "" {
+		host = strings.ToLower(u.Hostname())
+	}
 
 	if strings.HasSuffix(host, ".eu") {
 		return types.ServerZoneEU
