@@ -206,33 +206,40 @@ func printImageVersionsHuman(versions []ImageVersion) {
 		Headers(headers...)
 
 	for _, ver := range versions {
-		baseImageStr := emptyValuePlaceholder
-		if ver.Definition.BaseImage != nil && *ver.Definition.BaseImage != "" {
-			baseImageStr = *ver.Definition.BaseImage
-		}
-
-		condaStr := emptyValuePlaceholder
-		if ver.Definition.Conda != nil && (len(ver.Definition.Conda.Deps) > 0 || len(ver.Definition.Conda.Channels) > 0) {
-			condaStr = formatCondaCell(ver.Definition.Conda)
-		}
-
-		pythonStr := emptyValuePlaceholder
-		if ver.Definition.PythonVersion != nil && *ver.Definition.PythonVersion != "" {
-			pythonStr = *ver.Definition.PythonVersion
-		}
-
-		t.Row(
-			fmt.Sprintf("v%d", ver.Version),
-			string(ver.Status),
-			joinPackages(ver.Definition.Pip),
-			condaStr,
-			pythonStr,
-			baseImageStr,
-			ver.UpdatedAt.UTC().Format(timestampFormat),
-		)
+		t.Row(imageVersionRow(ver)...)
 	}
 
 	fmt.Fprintln(os.Stdout, t.Render())
+}
+
+// imageVersionRow formats one ImageVersion into its human-table cells, in the
+// same column order as the headers in printImageVersionsHuman. Split out to
+// keep that function's cyclomatic complexity within budget.
+func imageVersionRow(ver ImageVersion) []string {
+	baseImageStr := emptyValuePlaceholder
+	if ver.Definition.BaseImage != nil && *ver.Definition.BaseImage != "" {
+		baseImageStr = *ver.Definition.BaseImage
+	}
+
+	condaStr := emptyValuePlaceholder
+	if ver.Definition.Conda != nil && (len(ver.Definition.Conda.Deps) > 0 || len(ver.Definition.Conda.Channels) > 0) {
+		condaStr = formatCondaCell(ver.Definition.Conda)
+	}
+
+	pythonStr := emptyValuePlaceholder
+	if ver.Definition.PythonVersion != nil && *ver.Definition.PythonVersion != "" {
+		pythonStr = *ver.Definition.PythonVersion
+	}
+
+	return []string{
+		fmt.Sprintf("v%d", ver.Version),
+		string(ver.Status),
+		joinPackages(ver.Definition.Pip),
+		condaStr,
+		pythonStr,
+		baseImageStr,
+		ver.UpdatedAt.UTC().Format(timestampFormat),
+	}
 }
 
 // printImageListJSON marshals a list of images as indented JSON through the DTO.
