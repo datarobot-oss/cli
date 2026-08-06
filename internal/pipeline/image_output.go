@@ -40,7 +40,7 @@ type imageVersionJSON struct {
 	Conda         any      `json:"conda,omitempty"`
 	PythonVersion *string  `json:"python_version,omitempty"`
 	BaseImage     *string  `json:"base_image,omitempty"`
-	Nvidia        bool     `json:"nvidia,omitempty"`
+	Gpu           bool     `json:"gpu,omitempty"`
 	Status        string   `json:"status"`
 	ErrorDetail   *string  `json:"error_detail,omitempty"`
 	ImageURI      *string  `json:"image_uri,omitempty"`
@@ -79,7 +79,7 @@ func toImageJSON(img Image) imageJSON {
 			Pip:           v.Definition.Pip,
 			PythonVersion: v.Definition.PythonVersion,
 			BaseImage:     v.Definition.BaseImage,
-			Nvidia:        v.Definition.Nvidia,
+			Gpu:           v.Definition.Gpu,
 			Status:        string(v.Status),
 			ErrorDetail:   v.ErrorDetail,
 			ImageURI:      v.ImageURI,

@@ -109,7 +109,7 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 					Pip:       []string{"torch"},
 					Conda:     &CondaValue{Channels: []string{"conda-forge"}, Deps: []string{"scipy"}},
 					BaseImage: &baseImage,
-					Nvidia:    true,
+					Gpu:       true,
 				},
 				CreatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 				UpdatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
