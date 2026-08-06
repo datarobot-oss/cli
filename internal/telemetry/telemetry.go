@@ -100,10 +100,11 @@ func NewClient(props *CommonProperties) *Client {
 
 	config := amplitude.NewConfig(AmplitudeAPIKey)
 	config.Logger = &amplitudeLogger{}
+	config.ServerZone = resolveServerZone()
+
+	log.Debug("Telemetry client initialized (Amplitude)", "server_zone", string(config.ServerZone))
 
 	client := amplitude.NewClient(config)
-
-	log.Debug("Telemetry client initialized (Amplitude)")
 
 	return &Client{
 		amp:   client,
