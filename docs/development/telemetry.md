@@ -2,7 +2,7 @@
 
 The CLI collects usage analytics linked to your DataRobot user ID via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is an optional feature that can be turned off at any time (see [Configuring and disabling telemetry](#configuring-and-disabling-telemetry)). Telemetry is implemented in `internal/telemetry/`.
 
-All telemetry data sent over the network is stored in the USA by default; when the EU server zone is selected (see [Server zone / data residency](#server-zone--data-residency)), it is stored in the EU. When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
+All telemetry data sent over the network is stored in US-based or EU-based servers. When the telemetry feature is disabled, events are only logged locally.
 
 ## Configuring and disabling telemetry
 
@@ -29,11 +29,9 @@ When telemetry is disabled, events are logged to the debug logger (visible with 
 
 Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
 
-| Host                                                       | Purpose                                                                                                       | Port |
-|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|------|
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone, default) — event ingestion                                                        | 443  |
-| `api.eu.amplitude.com`                                     | Amplitude HTTP API (EU zone) — event ingestion, only if `ServerZone` is set to EU (see [Server zone / data residency](#server-zone--data-residency)) | 443  |
-| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
+1. `api2.amplitude.com:443` - Amplitude HTTP API (US zone) — event ingestion, default
+2. `api.eu.amplitude.com:443` - Amplitude HTTP API (EU zone) — event ingestion, iff `ServerZone` is set to EU
+3. *configured DataRobot endpoint* (e.g. `app.datarobot.com`) - `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attributionv
 
 The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
 
@@ -50,15 +48,12 @@ Amplitude operates separate ingestion endpoints for its US and EU data centers (
 
     When set to a valid value (`US` or `EU`, case-insensitive), this takes precedence over inference.
 2. **Inferred from `datarobot_instance`** — if no override is set, the zone is inferred from the configured DataRobot endpoint URL. A host that contains `.eu.` or ends with `.eu` is treated as EU; everything else defaults to US.
-3. **Invalid override** — a value other than `US`/`EU` logs a warning to `.dr-tui-debug.log` and falls back to the inferred zone. Telemetry initialization never blocks or errors visibly.
-
-The EU host patterns live in `internal/telemetry/serverzone.go` (`euHostPatterns`) and are easy to extend — append a substring to the slice, no other changes required.
+3. **Invalid override** — a value other than `US`/`EU` logs a warning to `.dr-tui-debug.log` and falls back to the inferred zone.
 
 > [!NOTE]
-> `--telemetry-server-zone` is a [universal flag](flags.md), forwarded to plugin subprocesses as `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE` so plugins that emit their own telemetry can honor the user's data-residency preference. Plugins that don't emit telemetry simply ignore it. This mirrors `--disable-telemetry` and keeps behavior consistent with the Codespace env-injection path (CFX-6328), where the variable is already inherited by every process in the container.
+> `--telemetry-server-zone` is a [universal flag](flags.md), forwarded to plugin subprocesses as `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE` so plugins that emit their own telemetry can honor the user's data-residency preference. Plugins that don't emit telemetry simply ignore it.
 
-> [!NOTE]
-> Amplitude has no APAC data center. Users in APAC/Japan regions should set `disable-telemetry: true` (or `DATAROBOT_CLI_DISABLE_TELEMETRY=true`) as a stop-gap; `telemetry-server-zone` does not accept an APAC value.
+Additionally, the `telemetry-server-zone` setting only accepts `US` or `EU` values. Users in regions without a dedicated Amplitude data center (e.g., APAC/Japan) should disable telemetry as noted above.
 
 ## Device ID
 
