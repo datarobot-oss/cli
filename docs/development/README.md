@@ -7,8 +7,9 @@ This section provides comprehensive documentation for contributors and developer
 If you're new to developing the CLI, start here:
 
 1. **[Setup](setup.md)**&mdash;set up your development environment, install prerequisites, and clone the repository.
-2. **[Building](building.md)**&mdash;learn how to build the CLI from source, understand the build process, and explore available development tasks.
-3. **[Structure](structure.md)**&mdash;understand the codebase organization, key packages, and design patterns used throughout the project.
+2. **[Devcontainer](devcontainer.md)**&mdash;use the included devcontainer for local development, Codespaces, and Factory Droid Computers.
+3. **[Building](building.md)**&mdash;learn how to build the CLI from source, understand the build process, and explore available development tasks.
+4. **[Structure](structure.md)**&mdash;understand the codebase organization, key packages, and design patterns used throughout the project.
 
 ## Development guides
 

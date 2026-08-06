@@ -1,0 +1,9 @@
+{
+  "features": {
+    "ghcr.io/eitsupi/devcontainer-features/go-task:1": {
+      "version": "1.0.4",
+      "resolved": "ghcr.io/eitsupi/devcontainer-features/go-task@sha256:8a6c4b4f9d7559f32400da0c11d1bb11e59732f47f7db5defca68e7712544d13",
+      "integrity": "sha256:8a6c4b4f9d7559f32400da0c11d1bb11e59732f47f7db5defca68e7712544d13"
+    }
+  }
+}
