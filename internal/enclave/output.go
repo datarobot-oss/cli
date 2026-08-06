@@ -68,6 +68,34 @@ func RenderAccessChange(format outputformat.OutputFormat, change AccessChange) e
 	return nil
 }
 
+// PermissionChange is the stable JSON shape emitted after a collection-level
+// permission grant/revoke, and the data backing the text confirmation line.
+type PermissionChange struct {
+	Permission    string `json:"permission"`
+	Action        string `json:"action"` // granted | revoked
+	RecipientType string `json:"recipientType"`
+	Recipient     string `json:"recipient"`
+}
+
+// RenderPermissionChange prints the outcome of a permission grant/revoke. Text
+// mode prints a one-line confirmation; JSON mode emits the PermissionChange
+// document. There is no enclave id — the permission spans the collection.
+func RenderPermissionChange(format outputformat.OutputFormat, change PermissionChange) error {
+	if format == outputformat.OutputFormatJSON {
+		return printJSON(change)
+	}
+
+	recipient := change.RecipientType + " " + change.Recipient
+
+	if change.Action == "granted" {
+		fmt.Printf("granted enclave %s permission to %s\n", change.Permission, recipient)
+	} else {
+		fmt.Printf("revoked enclave %s permission from %s\n", change.Permission, recipient)
+	}
+
+	return nil
+}
+
 // RenderEnclave renders a single enclave (get / deactivate result).
 func RenderEnclave(format outputformat.OutputFormat, e Enclave) error {
 	if format == outputformat.OutputFormatJSON {
