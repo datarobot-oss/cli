@@ -146,7 +146,7 @@ export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 
 ### Telemetry
 
-The CLI collects usage analytics linked to your DataRobot user ID to help improve the tool. Telemetry is an optional feature that can be turned off at any time, and all telemetry data is stored in the USA. To disable telemetry:
+The CLI collects usage analytics linked to your DataRobot user ID to help improve the tool. Telemetry is an optional feature that can be turned off at any time. By default telemetry data is stored in the USA; selecting the EU server zone stores it in the EU (see [Server zone (data residency)](#server-zone-data-residency) below). To disable telemetry:
 
 ```bash
 # Per-invocation
