@@ -111,11 +111,15 @@ const (
 // Request structs (ImageCreateRequest, ImageUpdateRequest) use the "pip" /
 // "baseImage" aliases accepted by the API's backward-compat validator.
 type ImageDefinition struct {
-	Name      string      `json:"name"`
-	Pip       []string    `json:"packages"`
-	Conda     *CondaValue `json:"conda,omitempty"`
-	BaseImage *string     `json:"pythonBaseImage,omitempty"`
-	Nvidia    bool        `json:"nvidia"`
+	Name          string      `json:"name"`
+	Pip           []string    `json:"packages"`
+	Conda         *CondaValue `json:"conda,omitempty"`
+	PythonVersion *string     `json:"pythonVersion,omitempty"`
+	// BaseImage is DEPRECATED in favour of PythonVersion. A bare major.minor
+	// value is folded into PythonVersion by the API; a full image reference is
+	// accepted but ignored at build time.
+	BaseImage *string `json:"pythonBaseImage,omitempty"`
+	Nvidia    bool    `json:"nvidia"`
 }
 
 // ImageVersion mirrors PipelineImageVersionResponse.
@@ -153,29 +157,31 @@ type ImageSummary struct {
 
 // ImageCreateRequest mirrors PipelineImageCreateRequest.
 type ImageCreateRequest struct {
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Pip         []string    `json:"pip,omitempty"`
-	Conda       *CondaValue `json:"conda,omitempty"`
-	BaseImage   *string     `json:"baseImage,omitempty"`
-	Nvidia      bool        `json:"nvidia,omitempty"`
+	Name          string      `json:"name"`
+	Description   *string     `json:"description,omitempty"`
+	Pip           []string    `json:"pip,omitempty"`
+	Conda         *CondaValue `json:"conda,omitempty"`
+	PythonVersion *string     `json:"pythonVersion,omitempty"`
+	BaseImage     *string     `json:"baseImage,omitempty"` // DEPRECATED — use PythonVersion
+	Nvidia        bool        `json:"nvidia,omitempty"`
 }
 
 // ImageUpdateRequest mirrors PipelineImageUpdateRequest.
 // Name is required by the API; the server overrides it with the parent
 // image's canonical name so all versions share the same name.
 type ImageUpdateRequest struct {
-	Name      string      `json:"name"`
-	Pip       []string    `json:"pip,omitempty"`
-	Conda     *CondaValue `json:"conda,omitempty"`
-	BaseImage *string     `json:"baseImage,omitempty"`
-	Nvidia    bool        `json:"nvidia,omitempty"`
+	Name          string      `json:"name"`
+	Pip           []string    `json:"pip,omitempty"`
+	Conda         *CondaValue `json:"conda,omitempty"`
+	PythonVersion *string     `json:"pythonVersion,omitempty"`
+	BaseImage     *string     `json:"baseImage,omitempty"` // DEPRECATED — use PythonVersion
+	Nvidia        bool        `json:"nvidia,omitempty"`
 }
 
 // CreateImage POSTs a new image. The API returns 201 with the full Image
 // payload (a single CREATING version is returned immediately; READY status
 // is reached asynchronously by the covalent build).
-func CreateImage(name, description string, pip []string, conda *CondaValue, baseImage string, nvidia bool) (*Image, error) {
+func CreateImage(name, description string, pip []string, conda *CondaValue, pythonVersion, baseImage string, nvidia bool) (*Image, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images")
 	if err != nil {
 		return nil, err
@@ -189,6 +195,10 @@ func CreateImage(name, description string, pip []string, conda *CondaValue, base
 
 	if description != "" {
 		body.Description = &description
+	}
+
+	if pythonVersion != "" {
+		body.PythonVersion = &pythonVersion
 	}
 
 	if baseImage != "" {
@@ -288,7 +298,7 @@ func GetImageBuildLogs(imageID string, version int) (*ImageLogsResponse, error) 
 //
 // The API requires the image name in the body; UpdateImage fetches it
 // first so callers only need to supply the image ID.
-func UpdateImage(imageID string, pip []string, conda *CondaValue, baseImage string, nvidia bool) (*Image, error) {
+func UpdateImage(imageID string, pip []string, conda *CondaValue, pythonVersion, baseImage string, nvidia bool) (*Image, error) {
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
 	if err != nil {
 		return nil, err
@@ -312,6 +322,10 @@ func UpdateImage(imageID string, pip []string, conda *CondaValue, baseImage stri
 		Name:  current.Name,
 		Pip:   pip,
 		Conda: conda,
+	}
+
+	if pythonVersion != "" {
+		body.PythonVersion = &pythonVersion
 	}
 
 	if baseImage != "" {
