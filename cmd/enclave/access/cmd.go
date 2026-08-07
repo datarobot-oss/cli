@@ -17,15 +17,16 @@ package access
 import (
 	"github.com/datarobot/cli/cmd/enclave/access/grant"
 	"github.com/datarobot/cli/cmd/enclave/access/revoke"
+	"github.com/datarobot/cli/cmd/enclave/access/show"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "access",
-		Short: "Manage who can access an enclave.",
-		Long: `Manage enclave access: grant or revoke a role (owner, user, consumer) for a
-user, group, or organization.
+		Short: "Inspect and manage who can access an enclave.",
+		Long: `Inspect enclave access with "show", or grant/revoke a role (owner, user,
+consumer) for a user, group, or organization.
 
 These commands are thin wrappers over the enclave sharedRoles API. They take
 effect only when the server has ENCLAVE_RBAC_ENABLED=true; otherwise the call
@@ -36,6 +37,7 @@ To control who may create enclaves at all, see "dr enclave permission".`,
 	}
 
 	cmd.AddCommand(
+		show.Cmd(),
 		grant.Cmd(),
 		revoke.Cmd(),
 	)

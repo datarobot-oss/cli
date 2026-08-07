@@ -15,6 +15,7 @@
 package enclave
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,4 +73,27 @@ func TestUpdateCreateAccess_RequiresAnID(t *testing.T) {
 	err = RevokeCreatePermission(Recipient{Type: RecipientUser, Username: "alice@corp.io"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--user-id")
+}
+
+func TestRenderEnclavePermissions_JSONRoundTrip(t *testing.T) {
+	// The JSON shape is a contract for scripts; keep the keys stable.
+	p := EnclavePermissions{
+		EnclaveID:     "enc-1",
+		SubjectUserID: "u-1",
+		Permissions:   []string{"CAN_VIEW", "CAN_DEPLOY"},
+		RBACEnabled:   true,
+		ViaSysAdmin:   false,
+	}
+
+	data, err := json.Marshal(p)
+	require.NoError(t, err)
+
+	var back map[string]any
+
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, "enc-1", back["enclaveId"])
+	assert.Equal(t, "u-1", back["subjectUserId"])
+	assert.Equal(t, true, back["rbacEnabled"])
+	assert.Equal(t, false, back["viaSysAdmin"])
+	assert.Len(t, back["permissions"], 2)
 }
