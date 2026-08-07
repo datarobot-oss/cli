@@ -16,6 +16,7 @@ package enclave
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/datarobot/cli/internal/config"
@@ -118,7 +119,8 @@ func updateCreateAccess(operation string, r Recipient) error {
 			"the enclave create permission is granted by id: use --user-id, --group, or --org")
 	}
 
-	url, err := config.GetEndpointURL(basePath + createAccessPath)
+	// Named endpoint, not url: the net/url package is imported in this file.
+	endpoint, err := config.GetEndpointURL(basePath + createAccessPath)
 	if err != nil {
 		return err
 	}
@@ -129,7 +131,7 @@ func updateCreateAccess(operation string, r Recipient) error {
 		ID:                 r.ID,
 	}
 
-	return drapi.PatchJSON(url, "enclave", body, nil)
+	return drapi.PatchJSON(endpoint, "enclave", body, nil)
 }
 
 // GrantCreatePermission allows the recipient to create (register) enclaves.
@@ -140,4 +142,43 @@ func GrantCreatePermission(r Recipient) error {
 // RevokeCreatePermission withdraws the recipient's ability to create enclaves.
 func RevokeCreatePermission(r Recipient) error {
 	return updateCreateAccess(operationRevoke, r)
+}
+
+// permissionsSuffix is the effective-permissions sub-resource on an enclave:
+// GET /covalent/api/v2/outposts/{id}/permissions.
+const permissionsSuffix = "/permissions"
+
+// EnclavePermissions is the effective permission set a subject holds on an
+// enclave, plus how that set was reached. RBACEnabled=false or ViaSysAdmin=true
+// both yield the full set without any grant, which is otherwise
+// indistinguishable from genuinely being an owner.
+type EnclavePermissions struct {
+	EnclaveID     string   `json:"enclaveId"`
+	SubjectUserID string   `json:"subjectUserId"`
+	Permissions   []string `json:"permissions"`
+	RBACEnabled   bool     `json:"rbacEnabled"`
+	ViaSysAdmin   bool     `json:"viaSysAdmin"`
+}
+
+// GetEnclavePermissions fetches the effective permissions on an enclave. An empty
+// userID means the calling user; naming another user requires a system
+// administrator server-side.
+func GetEnclavePermissions(enclaveID, userID string) (*EnclavePermissions, error) {
+	path := basePath + "/" + escapeID(enclaveID) + permissionsSuffix
+	if userID != "" {
+		path += "?userId=" + url.QueryEscape(userID)
+	}
+
+	endpoint, err := config.GetEndpointURL(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var permissions EnclavePermissions
+
+	if err := drapi.GetJSON(endpoint, "enclave permissions", &permissions); err != nil {
+		return nil, err
+	}
+
+	return &permissions, nil
 }
