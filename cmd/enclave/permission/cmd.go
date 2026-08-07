@@ -16,16 +16,18 @@ package permission
 
 import (
 	"github.com/datarobot/cli/cmd/enclave/permission/grant"
+	"github.com/datarobot/cli/cmd/enclave/permission/list"
 	"github.com/datarobot/cli/cmd/enclave/permission/revoke"
+	"github.com/datarobot/cli/cmd/enclave/permission/show"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "permission",
-		Short: "Manage who can create enclaves.",
-		Long: `Manage collection-level enclave permissions — capabilities that are not tied to
-any single enclave.
+		Short: "Inspect and manage who can create enclaves.",
+		Long: `Inspect ("show", "list") or manage ("grant", "revoke") collection-level enclave
+permissions — capabilities that are not tied to any single enclave.
 
 Today the only such permission is "create": the right to register a new
 enclave. A system administrator grants it to org admins and other users, so
@@ -40,6 +42,8 @@ a system administrator.`,
 	}
 
 	cmd.AddCommand(
+		list.Cmd(),
+		show.Cmd(),
 		grant.Cmd(),
 		revoke.Cmd(),
 	)
