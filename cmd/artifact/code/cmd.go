@@ -29,10 +29,10 @@ func Cmd() *cobra.Command {
 		Long: `Manage the local-to-remote synchronization of code for an existing
 DataRobot artifact.
 
-These commands maintain a '.datarobot/wapi/' state directory at the
+These commands maintain a '.datarobot/workload/' state directory at the
 project root that tracks which artifact, catalog, and version a directory
 is bound to. The model is conceptually similar to '.git/' — local work
-happens in the project root, while '.datarobot/wapi/' captures the remote
+happens in the project root, while '.datarobot/workload/' captures the remote
 binding and last-synced state used to detect drift on each operation.
 
 Subcommands:
@@ -41,7 +41,7 @@ Subcommands:
   sync       Push local edits and pull remote changes.
   versions   List catalog versions for the linked artifact.
   checkout   Download a prior version into
-             '.datarobot/wapi/.checkouts/' for read-only inspection.
+             '.datarobot/workload/.checkouts/' for read-only inspection.
 
 Artifacts must already exist before running 'init'. Create them via
 'dr artifact create' or in the DataRobot UI — these commands

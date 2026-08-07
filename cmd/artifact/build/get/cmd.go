@@ -37,7 +37,7 @@ func Cmd() *cobra.Command {
 		Long: `Get a build by id.
 
 When invoked with one positional argument the artifact-id is read from
-.datarobot/wapi/config.json in the current directory. When invoked with two, the
+.datarobot/workload/config.json in the current directory. When invoked with two, the
 first argument is the artifact-id and the second is the build-id.
 
 With --wait the command polls the build until it reaches a terminal

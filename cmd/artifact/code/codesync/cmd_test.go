@@ -33,13 +33,14 @@ import (
 // flag to assert the cmd's branch decisions (dry-run, diff, conflict
 // prompt, JSON output).
 type fakeEngine struct {
-	plan       *sync.SyncPlan
-	planErr    error
-	result     *sync.Result
-	executeErr error
-	stale      bool
-	fetcher    display.ContentFetcher
-	closeErr   error
+	plan          *sync.SyncPlan
+	planErr       error
+	result        *sync.Result
+	executeErr    error
+	stale         bool
+	migrationNote string
+	fetcher       display.ContentFetcher
+	closeErr      error
 
 	executed bool
 	closed   bool
@@ -60,6 +61,8 @@ func (f *fakeEngine) Close() error {
 }
 
 func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
+
+func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
@@ -196,6 +199,27 @@ func TestRunE_PlanError_Propagates(t *testing.T) {
 	_, _, _, err := runWithDeps(t, deps, flags)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, upstream)
+}
+
+// Phase 0 moves the state directory before anything downstream can fail, so a
+// sync that dies in a later phase has still relocated it. Reporting the move
+// only on the success path would leave the user hunting for a directory the
+// failed command silently moved.
+func TestRunE_MigrationNoticeSurvivesPlanError(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		planErr:       errors.New("phase-3 boom"),
+		migrationNote: "Moved local state from .wapi/ to .datarobot/workload/.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true"}
+
+	_, stdout, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.Contains(t, stderr.String(), "Moved local state")
+	assert.NotContains(t, stdout.String(), "Moved local state", "housekeeping never lands on stdout")
 }
 
 // TestRunE_JSONOutput emits the plan plus result as two JSON

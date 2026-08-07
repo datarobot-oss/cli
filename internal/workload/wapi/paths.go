@@ -28,7 +28,9 @@ const (
 	RootDirName = ".datarobot"
 
 	// StateDirName is the sync state directory, nested inside RootDirName.
-	StateDirName = "wapi"
+	// It is named after the product surface rather than the package, so the
+	// path a user sees does not carry an internal codename.
+	StateDirName = "workload"
 
 	// LegacyDirName is where sync state lived before it moved under
 	// RootDirName. EnsureMigrated relocates it.
@@ -59,7 +61,7 @@ const (
 )
 
 // Dir is the directory holding this project's machine-managed sync state:
-// <projectDir>/.datarobot/wapi, falling back to a legacy <projectDir>/.wapi
+// <projectDir>/.datarobot/workload, falling back to a legacy <projectDir>/.wapi
 // that EnsureMigrated has not moved yet. The fallback is a stat rather than
 // cached state, so a migration that cannot complete degrades to reading the
 // old location instead of failing the command. It can go once the workload

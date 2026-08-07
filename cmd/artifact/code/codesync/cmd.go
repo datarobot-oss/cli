@@ -24,6 +24,7 @@ import (
 	"io"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -45,6 +46,7 @@ type engineRunner interface {
 	Execute(*sync.SyncPlan) (*sync.Result, error)
 	Close() error
 	StaleRollbackRestored() bool
+	StateMigrationNotice() string
 	Fetcher() display.ContentFetcher
 }
 
@@ -181,6 +183,12 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	}()
 
 	plan, err := engine.Plan()
+
+	// Before the error check: Phase 0 already moved the directory by the time
+	// anything later can fail, and a failed sync is exactly when a user goes
+	// looking for their state and needs to be told where it went.
+	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
+
 	if err != nil {
 		return err
 	}
