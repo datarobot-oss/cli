@@ -211,3 +211,58 @@ func ListSharedRoles(enclaveID string) ([]SharedRole, error) {
 
 	return roles, nil
 }
+
+// CollectionPermissions is what a subject may do that is not tied to a single
+// enclave (today: create one), plus how that answer was reached.
+type CollectionPermissions struct {
+	SubjectUserID      string   `json:"subjectUserId"`
+	Permissions        []string `json:"permissions"`
+	GrantedPermissions []string `json:"grantedPermissions"`
+	RBACEnabled        bool     `json:"rbacEnabled"`
+	ViaSysAdmin        bool     `json:"viaSysAdmin"`
+}
+
+// CreateAccessHolder is a recipient that may create enclaves.
+type CreateAccessHolder struct {
+	ShareRecipientType string   `json:"shareRecipientType"`
+	ID                 string   `json:"id"`
+	Permissions        []string `json:"permissions"`
+}
+
+// GetCollectionPermissions reports whether a subject may create enclaves. An empty
+// userID means the calling user; naming another requires a system administrator.
+func GetCollectionPermissions(userID string) (*CollectionPermissions, error) {
+	path := basePath + permissionsSuffix
+	if userID != "" {
+		path += "?userId=" + url.QueryEscape(userID)
+	}
+
+	endpoint, err := config.GetEndpointURL(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var permissions CollectionPermissions
+
+	if err := drapi.GetJSON(endpoint, "enclave permissions", &permissions); err != nil {
+		return nil, err
+	}
+
+	return &permissions, nil
+}
+
+// ListCreateAccess returns who may create enclaves. System administrators only.
+func ListCreateAccess() ([]CreateAccessHolder, error) {
+	endpoint, err := config.GetEndpointURL(basePath + createAccessPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var holders []CreateAccessHolder
+
+	if err := drapi.GetJSON(endpoint, "enclave create access", &holders); err != nil {
+		return nil, err
+	}
+
+	return holders, nil
+}
