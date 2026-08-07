@@ -123,6 +123,61 @@ func RenderEnclavePermissions(format outputformat.OutputFormat, p EnclavePermiss
 		fmt.Println("Source:      granted permissions")
 	}
 
+	// Only worth printing when it differs from the effective set: under a bypass the
+	// effective set is always full, so this is the only way to see whether the
+	// subject was granted anything at all.
+	if p.RBACEnabled && p.ViaSysAdmin {
+		if len(p.GrantedPermissions) == 0 {
+			fmt.Printf("Granted:     %s (no grants of its own)\n", emptyValuePlaceholder)
+		} else {
+			fmt.Printf("Granted:     %s\n", strings.Join(p.GrantedPermissions, ", "))
+		}
+	}
+
+	return nil
+}
+
+// RenderSharedRoles prints who holds which role on an enclave.
+func RenderSharedRoles(format outputformat.OutputFormat, roles []SharedRole) error {
+	if format == outputformat.OutputFormatJSON {
+		if roles == nil {
+			roles = []SharedRole{}
+		}
+
+		return outputformat.PrintJSONEnvelope(os.Stdout, "sharedRoles", roles)
+	}
+
+	if len(roles) == 0 {
+		fmt.Println("This enclave is not shared with anyone.")
+
+		return nil
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, _ int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			return cellStyle
+		}).
+		Headers("RECIPIENT TYPE", "NAME", "ID", "ROLE")
+
+	for _, r := range roles {
+		name := r.Name
+		if name == "" {
+			name = emptyValuePlaceholder
+		}
+
+		t.Row(r.ShareRecipientType, name, r.ID, r.Role)
+	}
+
+	fmt.Fprintln(os.Stdout, t.Render())
+
 	return nil
 }
 
