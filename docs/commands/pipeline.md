@@ -76,6 +76,7 @@ dr pipeline lock <pipeline-id>
 | `dr pipeline create`    | `POST   /api/v2/pipelines`           | Upload a Python file to register a new pipeline. |
 | `dr pipeline list`      | `GET    /api/v2/pipelines`           | Paginated list with mode filtering.              |
 | `dr pipeline get`       | `GET    /api/v2/pipelines/{id}`      | Pipeline detail including all versions.          |
+| `dr pipeline clone`     | `POST   /api/v2/pipelines/{id}/clone` | Clone a pipeline into a new draft (source, description, latest input, image). |
 | `dr pipeline update`    | `PATCH  /api/v2/pipelines/{id}`      | Re-upload a file to append a new version.        |
 | `dr pipeline delete`    | `DELETE /api/v2/pipelines/{id}`      | Remove a pipeline and all of its versions.       |
 | `dr pipeline lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
@@ -542,8 +543,8 @@ If the task ID is not found, the command prints `Task not found: <task-id>` and 
 | Status | Cause                                                                          |
 |--------|--------------------------------------------------------------------------------|
 | `400`  | Invalid Python file or mismatched pipeline name.                               |
-| `404`  | The provided `<pipeline-id>`, version, or run does not exist.                  |
-| `409`  | Tried to update a `locked` pipeline, or cancel an already-terminal run.        |
+| `404`  | The provided `<pipeline-id>`, version, run, or task does not exist.            |
+| `409`  | Tried to update a `locked` pipeline; cancelled an already-terminal run; requested `run task result` before the task reached `COMPLETED`; or addressed a fan-out `run task` (`get`/`logs`/`result`) without `--node-id` (message lists the candidate node ids). |
 
 ## See also
 
