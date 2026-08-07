@@ -64,6 +64,10 @@ type ContainerGroup struct {
 }
 
 type Container struct {
+	// Name is the container's identifier within its group. Workload runtime
+	// overrides (e.g. resourceAllocation) must reference the container by this
+	// name, so it is parsed for callers that build a runtime spec.
+	Name             string            `json:"name,omitempty"`
 	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
 	// ImageURI is the resolved container image reference. Server-managed:
 	// before a successful build this is the placeholder from create; after
@@ -71,8 +75,34 @@ type Container struct {
 	ImageURI string `json:"imageUri,omitempty"`
 	// *bool so an absent value round-trips as nil and omitempty drops it
 	// on marshal, instead of re-asserting `false` back to the server.
-	Primary *bool `json:"primary,omitempty"`
+	Primary         *bool            `json:"primary,omitempty"`
+	EnvironmentVars []EnvironmentVar `json:"environmentVars,omitempty"`
 }
+
+// EnvironmentVar is one entry in a container's environmentVars array. A plain
+// var carries Value directly; a credential-backed var has Source ==
+// "dr-credential" and carries DRCredentialID/Key instead, so the secret never
+// appears in the spec. Source is omitempty because the server defaults plain
+// vars to "string".
+//
+// Key selects which field of the credential to use, not to be confused with
+// Name (the env var's own name): one stored credential can bundle several
+// fields, as an S3 credential bundles awsAccessKeyId and awsSecretAccessKey.
+type EnvironmentVar struct {
+	Source         string `json:"source,omitempty"`
+	Name           string `json:"name"`
+	Value          string `json:"value,omitempty"`
+	DRCredentialID string `json:"drCredentialId,omitempty"`
+	Key            string `json:"key,omitempty"`
+}
+
+// EnvironmentVarSourceDRCredential marks a variable the platform resolves from
+// the credential store at container start.
+const EnvironmentVarSourceDRCredential = "dr-credential"
+
+// defaultPrimaryContainerName is the name the CLI writes into the specs it
+// generates, and the fallback for an unnamed primary container.
+const defaultPrimaryContainerName = "primary"
 
 type ImageBuildConfig struct {
 	CodeRef    *CodeRef    `json:"codeRef,omitempty"`
@@ -129,31 +159,38 @@ func (a *Artifact) IsLocked() bool {
 	return strings.EqualFold(a.Status, ArtifactStatusLocked)
 }
 
-// ExtractCodeRef mirrors the write-side selection in setPrimaryCodeRefInRawArtifact:
-// once a primary container is found it commits, returning nil if the primary
-// has no codeRef rather than falling through to a sidecar (which would surface
-// stale catalog info in display). Falls back to containerGroups[0].containers[0]
-// when no container is flagged primary.
-func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
-	for _, group := range artifact.Spec.ContainerGroups {
-		for _, container := range group.Containers {
-			if container.Primary == nil || !*container.Primary {
-				continue
+// primaryContainer is the single definition of which container the CLI reads
+// per-container fields from: the one flagged "primary": true, falling back to
+// containerGroups[0].containers[0], nil when the artifact has neither. Every
+// exported Primary* helper goes through it so they cannot disagree. Mirrors
+// setPrimaryCodeRefInRawArtifact: once a primary is found it commits rather
+// than falling through to a sidecar.
+func primaryContainer(artifact Artifact) *Container {
+	for i, group := range artifact.Spec.ContainerGroups {
+		for j, container := range group.Containers {
+			if container.Primary != nil && *container.Primary {
+				return &artifact.Spec.ContainerGroups[i].Containers[j]
 			}
-
-			return codeRefFromContainer(container)
 		}
 	}
 
-	if len(artifact.Spec.ContainerGroups) == 0 {
+	if len(artifact.Spec.ContainerGroups) == 0 || len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
 		return nil
 	}
 
-	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
+	return &artifact.Spec.ContainerGroups[0].Containers[0]
+}
+
+// ExtractCodeRef returns the primary container's codeRef, or nil when the
+// primary has no codeRef (rather than falling through to a sidecar, which
+// would surface stale catalog info in display).
+func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
+	container := primaryContainer(artifact)
+	if container == nil {
 		return nil
 	}
 
-	return codeRefFromContainer(artifact.Spec.ContainerGroups[0].Containers[0])
+	return codeRefFromContainer(*container)
 }
 
 func codeRefFromContainer(container Container) *DatarobotCodeRef {
@@ -164,31 +201,42 @@ func codeRefFromContainer(container Container) *DatarobotCodeRef {
 	return container.ImageBuildConfig.CodeRef.Datarobot
 }
 
-// GetPrimaryContainerImageURI returns the imageUri of the primary container
-// (the one flagged "primary": true), falling back to
-// containerGroups[0].containers[0] when no primary is marked. Mirrors
-// ExtractCodeRef's selection semantics so reads and writes target the same
-// container after a build updates the spec server-side.
+// GetPrimaryContainerImageURI returns the imageUri of the primary container.
+// Server-managed: the placeholder from create before a build, the produced
+// image after one completes.
 func GetPrimaryContainerImageURI(artifact Artifact) string {
-	for _, group := range artifact.Spec.ContainerGroups {
-		for _, container := range group.Containers {
-			if container.Primary == nil || !*container.Primary {
-				continue
-			}
-
-			return container.ImageURI
-		}
-	}
-
-	if len(artifact.Spec.ContainerGroups) == 0 {
+	container := primaryContainer(artifact)
+	if container == nil {
 		return ""
 	}
 
-	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
-		return ""
+	return container.ImageURI
+}
+
+// PrimaryEnvironmentVars returns the environmentVars of the primary container,
+// nil when the artifact has no containers.
+func PrimaryEnvironmentVars(artifact Artifact) []EnvironmentVar {
+	container := primaryContainer(artifact)
+	if container == nil {
+		return nil
 	}
 
-	return artifact.Spec.ContainerGroups[0].Containers[0].ImageURI
+	return container.EnvironmentVars
+}
+
+// PrimaryContainerName returns the name of the artifact's primary container.
+// Callers building a workload runtime spec need it because resourceAllocation
+// overrides are keyed by container name and must match a container in the
+// artifact. An unnamed primary falls back to "primary", which is the CLI's own
+// convention rather than a guarantee: a hand-written artifact that leaves its
+// primary blank will not match, and the server decides what to do with that.
+func PrimaryContainerName(artifact Artifact) string {
+	container := primaryContainer(artifact)
+	if container == nil || container.Name == "" {
+		return defaultPrimaryContainerName
+	}
+
+	return container.Name
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {

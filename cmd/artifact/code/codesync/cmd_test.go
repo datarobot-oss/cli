@@ -33,13 +33,14 @@ import (
 // flag to assert the cmd's branch decisions (dry-run, diff, conflict
 // prompt, JSON output).
 type fakeEngine struct {
-	plan       *sync.SyncPlan
-	planErr    error
-	result     *sync.Result
-	executeErr error
-	stale      bool
-	fetcher    display.ContentFetcher
-	closeErr   error
+	plan          *sync.SyncPlan
+	planErr       error
+	result        *sync.Result
+	executeErr    error
+	stale         bool
+	migrationNote string
+	fetcher       display.ContentFetcher
+	closeErr      error
 
 	executed bool
 	closed   bool
@@ -60,6 +61,8 @@ func (f *fakeEngine) Close() error {
 }
 
 func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
+
+func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
@@ -91,7 +94,7 @@ func stubReader(lines ...string) func() (string, error) {
 	}
 }
 
-// linkProject seeds a minimal .wapi/ directory so the cmd's
+// linkProject seeds a minimal state directory so the cmd's
 // "not linked" preflight passes.
 func linkProject(t *testing.T, dir string) {
 	t.Helper()
@@ -126,8 +129,8 @@ func runWithDeps(t *testing.T, deps Deps, flags map[string]string, extraArgs ...
 }
 
 // TestCmd_NotLinked confirms the command refuses to run when the
-// target directory has no .wapi/, with the expected hint pointing at
-// `code init`.
+// target directory has no state directory, with the expected hint pointing
+// at `code init`.
 func TestCmd_NotLinked(t *testing.T) {
 	dir := t.TempDir()
 

@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
 const syncLockFile = "sync.lock"
@@ -28,15 +30,17 @@ type SyncLock struct {
 	f    *os.File
 }
 
-// AcquireSyncLock opens .wapi/sync.lock and acquires an exclusive lock
-// without waiting. Cross-platform polish is tracked in RAPTOR-16928.
+// AcquireSyncLock opens sync.lock inside the project's state directory and
+// acquires an exclusive lock without waiting. The lock is advisory and
+// per-platform (flock on unix, LockFileEx on Windows), so it guards against a
+// second CLI process on the same machine, not against a shared filesystem.
 func AcquireSyncLock(projectDir string) (*SyncLock, error) {
-	wapiDir := filepath.Join(projectDir, ".wapi")
-	if _, err := os.Stat(wapiDir); err != nil {
+	stateDir := wapi.Dir(projectDir)
+	if _, err := os.Stat(stateDir); err != nil {
 		return nil, fmt.Errorf("acquire sync lock: %w", err)
 	}
 
-	path := filepath.Join(wapiDir, syncLockFile)
+	path := filepath.Join(stateDir, syncLockFile)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

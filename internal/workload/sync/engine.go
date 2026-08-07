@@ -109,6 +109,7 @@ type Engine struct {
 	result         *Result
 	startedAt      time.Time
 	staleNote      bool
+	migrationNote  string
 
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool
@@ -222,6 +223,11 @@ func (e *Engine) Close() error {
 // StaleRollbackRestored reports whether Phase 0 restored a stale rollback
 // from a previously crashed sync.
 func (e *Engine) StaleRollbackRestored() bool { return e.staleNote }
+
+// StateMigrationNotice is Phase 0's one-line account of where local state now
+// lives, empty when the location did not change. The preview modes never
+// migrate, so it is always empty for --dry-run and --diff.
+func (e *Engine) StateMigrationNotice() string { return e.migrationNote }
 
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {

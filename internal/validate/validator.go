@@ -115,7 +115,7 @@ func validateDRSHA256Hex(fl validator.FieldLevel) bool {
 // in a filesystem path segment.
 //
 // This is intended for IDs that may be used under a project directory (e.g.
-// `.wapi/.checkouts/<id>/...`) and therefore must not contain separators or
+// `.datarobot/workload/.checkouts/<id>/...`) and therefore must not contain separators or
 // traversal sequences.
 func IsValidDRID(s string) bool {
 	if s == "" || len(s) > maxDRIDLen {

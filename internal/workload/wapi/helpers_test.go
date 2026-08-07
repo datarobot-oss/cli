@@ -16,7 +16,6 @@ package wapi
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,13 +27,13 @@ func testHash(c byte) string {
 	return strings.Repeat(string(c), 64)
 }
 
-// initWapiDir creates an empty .wapi/ directory inside projectDir so that
+// initWapiDir creates an empty state directory inside projectDir so that
 // Load* / Save* / AppendHistory operations bypass their ErrNotInitialized
 // short-circuit. Used by config, manifest, and history tests that only care
 // about the read/write behaviour, not the Exists precondition.
 func initWapiDir(t *testing.T, projectDir string) {
 	t.Helper()
 
-	err := os.MkdirAll(filepath.Join(projectDir, DirName), 0o755)
+	err := os.MkdirAll(Dir(projectDir), 0o755)
 	require.NoError(t, err)
 }

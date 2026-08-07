@@ -34,6 +34,7 @@ import (
 func TestCreateConfigFile_IsOwnerOnly(t *testing.T) {
 	testutil.SetTestHomeDir(t, t.TempDir())
 	viperx.Reset()
+	t.Cleanup(viperx.Reset)
 
 	require.NoError(t, CreateConfigFileDirIfNotExists())
 
@@ -53,6 +54,7 @@ func TestUpdateConfigFile_TightensPreExistingLoosePermissions(t *testing.T) {
 	// path has to chmod explicitly or the token stays world-readable forever.
 	testutil.SetTestHomeDir(t, t.TempDir())
 	viperx.Reset()
+	t.Cleanup(viperx.Reset)
 
 	dir, err := GetConfigDir()
 	require.NoError(t, err)

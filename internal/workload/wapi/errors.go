@@ -20,24 +20,25 @@ import (
 )
 
 // ErrAlreadyLinked is returned by Initialize when the project directory
-// already contains a .wapi/ directory.
-var ErrAlreadyLinked = errors.New("Project already linked: .wapi/ exists.")
+// already has a state directory, at either the current or the legacy
+// location.
+var ErrAlreadyLinked = errors.New("Project already linked: state directory exists.")
 
 // ErrNotInitialized is returned by Load/Save/Append operations when the
-// project directory has no .wapi/ directory. CLI consumers are responsible
+// project directory has no state directory. CLI consumers are responsible
 // for translating this into a user-facing hint about how to initialize.
-var ErrNotInitialized = errors.New(".wapi/ not found.")
+var ErrNotInitialized = errors.New("State directory not found.")
 
 // CorruptedError wraps a read, parse, or semantic validation failure for a
-// specific file under .wapi/. It carries the absolute path of the corrupted
-// file so callers can include it in user-facing diagnostics.
+// specific file under the state directory. It carries the absolute path of the
+// corrupted file so callers can include it in user-facing diagnostics.
 type CorruptedError struct {
 	Path string
 	Err  error
 }
 
 func (e *CorruptedError) Error() string {
-	return fmt.Sprintf(".wapi/ file is corrupted at %s: %v", e.Path, e.Err)
+	return fmt.Sprintf("State file is corrupted at %s: %v", e.Path, e.Err)
 }
 
 func (e *CorruptedError) Unwrap() error {

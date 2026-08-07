@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,11 @@ func (suite *ConfigTestSuite) SetupTest() {
 	// Sets HOME + USERPROFILE (Windows) and clears XDG_CONFIG_HOME so the
 	// config dir resolves under the temp dir on every platform.
 	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
+
+	// viper is process-global, so without this the suite's results depend on
+	// what an earlier test in the -shuffle order happened to leave set.
+	viperx.Reset()
+	suite.T().Cleanup(viperx.Reset)
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirIfNotExists() {
@@ -67,24 +73,23 @@ func (suite *ConfigTestSuite) TestReadConfigFileNoPreviousFile() {
 }
 
 func (suite *ConfigTestSuite) TestReadConfigFileWithPreviousFile() {
-	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
+	suite.Require().NoError(CreateConfigFileDirIfNotExists())
+
 	yamlData := map[string]string{
 		"host":  "https://parakeet.jones.datarobot.com/api/v2",
 		"token": "squak-squak",
 	}
-	rawYamlData, _ := yaml.Marshal(&yamlData)
-	_ = os.WriteFile(expectedFilePath, rawYamlData, 0o644)
 
-	readYamlData := make(map[string]string)
+	rawYamlData, err := yaml.Marshal(&yamlData)
+	suite.Require().NoError(err)
 
-	err := ReadConfigFile("")
-	suite.Require().NoError(err, "Expected no error when reading config file without a previous file")
+	expectedFilePath := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
+	suite.Require().NoError(os.WriteFile(expectedFilePath, rawYamlData, 0o600))
 
-	host := viper.GetString("host")
-	suite.Equal(host, readYamlData["host"], "Expected config file to have the same host")
+	suite.Require().NoError(ReadConfigFile(""), "Expected no error when reading an existing config file")
 
-	token := viper.GetString("token")
-	suite.Equal(token, readYamlData["token"], "Expected config file to have the same token")
+	suite.Equal(yamlData["host"], viper.GetString("host"), "Expected config file to have the same host")
+	suite.Equal(yamlData["token"], viper.GetString("token"), "Expected config file to have the same token")
 }
 
 func (suite *ConfigTestSuite) TestCreateConfigFileDirWithXDGConfigHome() {

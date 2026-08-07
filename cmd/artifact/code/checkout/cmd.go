@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -63,9 +64,11 @@ func cmdWithDeps(deps Deps) *cobra.Command {
 		Short:        "Download a version snapshot for read-only inspection.",
 		SilenceUsage: true,
 		Args:         cobra.MaximumNArgs(1),
-		Long: `Download a specific catalog version into '.wapi/.checkouts/<version-id>/'
-for read-only inspection. The working directory and '.wapi/' sync state
-are never modified.
+		Long: `Download a specific catalog version into
+'.datarobot/workload/.checkouts/<version-id>/' for read-only inspection. Your
+working directory is never touched, and neither is the record of what the
+project is linked to or last synced. The snapshot and a history entry are
+written under the state directory.
 
 The version argument may be a full version ID or any unique prefix.
 If omitted (and --yes is not set), you will be prompted.
@@ -111,6 +114,8 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 	if err != nil {
 		return err
 	}
+
+	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
 	if !wapi.Exists(dir) {
 		return errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")

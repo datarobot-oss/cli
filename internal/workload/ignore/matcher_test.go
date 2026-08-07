@@ -30,13 +30,18 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		path string
 		want bool
 	}{
-		{".wapi", true},
-		{".wapi/config.json", true},
+		{".datarobot/workload", true},
+		{".datarobot/workload/config.json", true},
+		{".wapi", true},             // legacy, still excluded pre-migration
+		{".wapi/config.json", true}, // legacy, still excluded pre-migration
 		{".git", true},
 		{".git/HEAD", true},
 		{".gitignore", true},
 		{"agent.py", false},
-		{".wapiignore", false}, // user-editable, lives at root
+		{".wapiignore", false},     // user-editable, lives at root
+		{".datarobot.yaml", false}, // the committed manifest is a file, not the state dir
+		{".datarobot/cli", false},  // the CLI's own tool state is not sync state
+		{".datarobot/cli/state.yaml", false},
 	}
 
 	for _, tc := range cases {
@@ -46,13 +51,38 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 	}
 }
 
-func TestSystemExcludes_NotOverridable(t *testing.T) {
-	// User explicitly tries to un-ignore .wapi via negation. Must still be
-	// excluded — the system excludes win.
-	m := FromLines([]string{"!.wapi", "!.git"})
+// On macOS and Windows the state directory can end up inside a pre-existing
+// .Datarobot/ that the project already had: the filesystem preserves that
+// casing while treating it as the same directory, so the walk reports a path no
+// exact-match exclude would catch and the state files would sync.
+func TestSystemExcludes_FoldCase(t *testing.T) {
+	m := FromLines(nil)
 
+	for _, p := range []string{
+		".Datarobot/workload/config.json",
+		".DATAROBOT/WORKLOAD",
+		".datarobot/Workload/manifest.json",
+		".WAPI/config.json",
+		".Git/HEAD",
+	} {
+		t.Run(p, func(t *testing.T) {
+			assert.True(t, m.Match(p, false))
+		})
+	}
+
+	// Folding must not swallow neighbours that merely share a prefix.
+	assert.False(t, m.Match(".Datarobot/cli/state.yaml", false))
+	assert.False(t, m.Match(".Datarobot.yaml", false))
+}
+
+func TestSystemExcludes_NotOverridable(t *testing.T) {
+	// User explicitly tries to un-ignore the state dir via negation. Must
+	// still be excluded — the system excludes win.
+	m := FromLines([]string{"!.datarobot/workload", "!.wapi", "!.git"})
+
+	assert.True(t, m.Match(".datarobot/workload", true))
+	assert.True(t, m.Match(".datarobot/workload/manifest.json", false))
 	assert.True(t, m.Match(".wapi", true))
-	assert.True(t, m.Match(".wapi/manifest.json", false))
 	assert.True(t, m.Match(".git", true))
 }
 
@@ -97,7 +127,7 @@ func TestNew_NoWapiignore(t *testing.T) {
 	require.NoError(t, err)
 
 	// System excludes still apply.
-	assert.True(t, m.Match(".wapi/foo", false))
+	assert.True(t, m.Match(".datarobot/workload/foo", false))
 	// Without a user file, regular paths pass through.
 	assert.False(t, m.Match("agent.py", false))
 }

@@ -25,7 +25,7 @@ const (
 	DiskSpaceMarginMB = 100
 
 	// RollbackMaxFiles caps the rollback set so a single sync cannot
-	// produce a multi-gigabyte .wapi/.rollback/ tree.
+	// produce a multi-gigabyte rollback tree.
 	RollbackMaxFiles = 1000
 
 	// Stage path is used when files <= threshold AND bytes <= threshold;
