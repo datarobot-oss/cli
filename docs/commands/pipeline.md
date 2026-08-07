@@ -22,7 +22,7 @@ top-level `dr pipeline` subcommand operates on one of four resources:
 - pipeline **runs** — concrete executions on Covalent,
 - pipeline **schedules** — recurring runs on a cron expression,
 - pipeline **images** — named, immutable-versioned execution environments (pip
-  packages, conda packages, base image, NVIDIA GPU support) that pipelines can
+  packages, conda packages, base image, GPU support) that pipelines can
   be built against,
 - pipeline **tasks** — source code, function signature, and input payload
   for individual `@task`-decorated functions.
@@ -480,7 +480,7 @@ dr pipeline run task logs   --pipeline <id> --run <run-id> 3 --node-id 7 --strea
 ### `image`
 
 Manage pipeline execution images — named, immutable-versioned environments (pip
-packages, conda packages, base Docker image, NVIDIA GPU support) that pipelines
+packages, conda packages, base Docker image, GPU support) that pipelines
 can be built against. Each `update` appends a new version; individual older versions
 can be removed with `image version delete`.
 
@@ -491,13 +491,13 @@ dr pipeline image create --name <name> --package <pkg> [--package <pkg> …] [--
 # conda image (channels optional; --conda-channel requires at least one --conda)
 dr pipeline image create --name <name> --conda <pkg> [--conda <pkg> …] [--conda-channel <ch>]
 
-# combined pip + conda + base image + nvidia
+# combined pip + conda + base image + gpu
 dr pipeline image create --name gpu-base --package torch --conda scipy \
-    --base-image nvcr.io/nvidia/pytorch:24.01-py3 --nvidia
+    --base-image nvcr.io/nvidia/pytorch:24.01-py3 --gpu
 
 dr pipeline image list   [--offset N] [--limit N] [--output-format json]
 dr pipeline image update <image-id> --package <pkg> [--package <pkg> …] [--output-format json]
-dr pipeline image update <image-id> --conda <pkg> [--conda-channel <ch>] [--base-image <uri>] [--nvidia]
+dr pipeline image update <image-id> --conda <pkg> [--conda-channel <ch>] [--base-image <uri>] [--gpu]
 dr pipeline image delete <image-id>
 dr pipeline image version delete --image <image-id> <version>
 ```
@@ -516,7 +516,7 @@ active version (cascading to the parent if no active versions remain).
 - `--conda <spec>` — conda package spec (repeatable).
 - `--conda-channel <channel>` — conda channel (repeatable); requires at least one `--conda`.
 - `--base-image <uri>` — Docker base image URI (e.g. `python:3.12`).
-- `--nvidia` — enable NVIDIA GPU support.
+- `--gpu` — enable GPU support (rejected with 422 if the environment has no GPU capacity). `--nvidia` is a deprecated alias.
 
 ### `task`
 

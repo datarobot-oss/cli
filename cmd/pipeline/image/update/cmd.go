@@ -30,7 +30,9 @@ func Cmd() *cobra.Command {
 		rawPackages   []string
 		rawConda      []string
 		rawCondaChans []string
+		pythonVersion string
 		baseImage     string
+		gpu           bool
 		nvidia        bool
 		outputFormat  outputformat.OutputFormat
 	)
@@ -48,8 +50,8 @@ At least one of --package (pip) or --conda must be provided.
 
 Example:
   dr pipeline image update img-123 --package scikit-learn
-  dr pipeline image update img-123 --conda scipy --conda numpy
-  dr pipeline image update img-123 --package torch --nvidia --output-format json`,
+  dr pipeline image update img-123 --package numpy --python-version 3.11
+  dr pipeline image update img-123 --package torch --gpu --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -67,7 +69,8 @@ Example:
 				return errors.New("--conda-channel requires at least one --conda package")
 			}
 
-			result, err := pipeline.UpdateImage(args[0], pip, conda, baseImage, nvidia)
+			// --gpu is canonical; --nvidia is a deprecated alias for it.
+			result, err := pipeline.UpdateImage(args[0], pip, conda, pythonVersion, baseImage, gpu || nvidia)
 			if err != nil {
 				return fmt.Errorf("update image: %w", err)
 			}
@@ -81,8 +84,11 @@ Example:
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 	cmd.Flags().StringSliceVar(&rawConda, "conda", nil, "Conda package spec (repeatable)")
 	cmd.Flags().StringSliceVar(&rawCondaChans, "conda-channel", nil, "Conda channel (repeatable; if set, sends a structured CondaSpec)")
-	cmd.Flags().StringVar(&baseImage, "base-image", "", "Docker base image URI (e.g. python:3.12)")
-	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "Enable NVIDIA GPU support")
+	cmd.Flags().StringVar(&pythonVersion, "python-version", "", "Python interpreter version, e.g. 3.11 (allowed: 3.10-3.13)")
+	cmd.Flags().StringVar(&baseImage, "base-image", "", "DEPRECATED: use --python-version. A bare version (e.g. 3.11) is accepted; a full image reference is ignored at build time")
+	cmd.Flags().BoolVar(&gpu, "gpu", false, "Enable GPU support (rejected with 422 if the environment has no GPU capacity)")
+	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "DEPRECATED: use --gpu")
+	_ = cmd.Flags().MarkDeprecated("nvidia", "use --gpu")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		return map[string]any{

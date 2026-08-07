@@ -35,16 +35,17 @@ import (
 
 // imageVersionJSON is the DTO for a single ImageVersion in JSON output.
 type imageVersionJSON struct {
-	Version     int      `json:"version"`
-	Pip         []string `json:"pip,omitempty"`
-	Conda       any      `json:"conda,omitempty"`
-	BaseImage   *string  `json:"base_image,omitempty"`
-	Nvidia      bool     `json:"nvidia,omitempty"`
-	Status      string   `json:"status"`
-	ErrorDetail *string  `json:"error_detail,omitempty"`
-	ImageURI    *string  `json:"image_uri,omitempty"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
+	Version       int      `json:"version"`
+	Pip           []string `json:"pip,omitempty"`
+	Conda         any      `json:"conda,omitempty"`
+	PythonVersion *string  `json:"python_version,omitempty"`
+	BaseImage     *string  `json:"base_image,omitempty"`
+	Gpu           bool     `json:"gpu,omitempty"`
+	Status        string   `json:"status"`
+	ErrorDetail   *string  `json:"error_detail,omitempty"`
+	ImageURI      *string  `json:"image_uri,omitempty"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 // imageJSON is the CLI-facing DTO for `--output-format json` of an Image.
@@ -74,15 +75,16 @@ func toImageJSON(img Image) imageJSON {
 
 	for i, v := range img.Versions {
 		ver := imageVersionJSON{
-			Version:     v.Version,
-			Pip:         v.Definition.Pip,
-			BaseImage:   v.Definition.BaseImage,
-			Nvidia:      v.Definition.Nvidia,
-			Status:      string(v.Status),
-			ErrorDetail: v.ErrorDetail,
-			ImageURI:    v.ImageURI,
-			CreatedAt:   v.CreatedAt.UTC().Format(time.RFC3339),
-			UpdatedAt:   v.UpdatedAt.UTC().Format(time.RFC3339),
+			Version:       v.Version,
+			Pip:           v.Definition.Pip,
+			PythonVersion: v.Definition.PythonVersion,
+			BaseImage:     v.Definition.BaseImage,
+			Gpu:           v.Definition.Gpu,
+			Status:        string(v.Status),
+			ErrorDetail:   v.ErrorDetail,
+			ImageURI:      v.ImageURI,
+			CreatedAt:     v.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:     v.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 
 		if v.Definition.Conda != nil && (len(v.Definition.Conda.Deps) > 0 || len(v.Definition.Conda.Channels) > 0) {
@@ -183,7 +185,7 @@ func printImageVersionsHuman(versions []ImageVersion) {
 
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
-	headers := []string{"VERSION", "STATUS", "PIP", "CONDA", "BASE IMAGE", "UPDATED"}
+	headers := []string{"VERSION", "STATUS", "PIP", "CONDA", "PYTHON", "BASE IMAGE", "UPDATED"}
 
 	updatedCol := slices.Index(headers, "UPDATED")
 
@@ -204,27 +206,40 @@ func printImageVersionsHuman(versions []ImageVersion) {
 		Headers(headers...)
 
 	for _, ver := range versions {
-		baseImageStr := emptyValuePlaceholder
-		if ver.Definition.BaseImage != nil && *ver.Definition.BaseImage != "" {
-			baseImageStr = *ver.Definition.BaseImage
-		}
-
-		condaStr := emptyValuePlaceholder
-		if ver.Definition.Conda != nil && (len(ver.Definition.Conda.Deps) > 0 || len(ver.Definition.Conda.Channels) > 0) {
-			condaStr = formatCondaCell(ver.Definition.Conda)
-		}
-
-		t.Row(
-			fmt.Sprintf("v%d", ver.Version),
-			string(ver.Status),
-			joinPackages(ver.Definition.Pip),
-			condaStr,
-			baseImageStr,
-			ver.UpdatedAt.UTC().Format(timestampFormat),
-		)
+		t.Row(imageVersionRow(ver)...)
 	}
 
 	fmt.Fprintln(os.Stdout, t.Render())
+}
+
+// imageVersionRow formats one ImageVersion into its human-table cells, in the
+// same column order as the headers in printImageVersionsHuman. Split out to
+// keep that function's cyclomatic complexity within budget.
+func imageVersionRow(ver ImageVersion) []string {
+	baseImageStr := emptyValuePlaceholder
+	if ver.Definition.BaseImage != nil && *ver.Definition.BaseImage != "" {
+		baseImageStr = *ver.Definition.BaseImage
+	}
+
+	condaStr := emptyValuePlaceholder
+	if ver.Definition.Conda != nil && (len(ver.Definition.Conda.Deps) > 0 || len(ver.Definition.Conda.Channels) > 0) {
+		condaStr = formatCondaCell(ver.Definition.Conda)
+	}
+
+	pythonStr := emptyValuePlaceholder
+	if ver.Definition.PythonVersion != nil && *ver.Definition.PythonVersion != "" {
+		pythonStr = *ver.Definition.PythonVersion
+	}
+
+	return []string{
+		fmt.Sprintf("v%d", ver.Version),
+		string(ver.Status),
+		joinPackages(ver.Definition.Pip),
+		condaStr,
+		pythonStr,
+		baseImageStr,
+		ver.UpdatedAt.UTC().Format(timestampFormat),
+	}
 }
 
 // printImageListJSON marshals a list of images as indented JSON through the DTO.

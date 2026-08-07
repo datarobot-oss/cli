@@ -50,7 +50,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 			"name":"ml-base",
 			"description":"for testing",
 			"latestVersion":1,
-			"versions":[{"version":1,"definition":{"name":"ml-base","packages":["numpy","pandas==2.0"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
+			"versions":[{"version":1,"definition":{"name":"ml-base","packages":["numpy","pandas==2.0"],"gpu":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}],
 			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
 	}))
@@ -59,7 +59,7 @@ func TestCreateImage_PostsBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"}, nil, "", false)
+	got, err := CreateImage("ml-base", "for testing", []string{"numpy", "pandas==2.0"}, nil, "", "", false)
 	require.NoError(t, err)
 	assert.Equal(t, "img-1", got.ImageID)
 	assert.Equal(t, 1, got.LatestVersion)
@@ -86,7 +86,7 @@ func TestCreateImage_OmitsEmptyDescription(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := CreateImage("x", "", []string{"numpy"}, nil, "", false)
+	_, err := CreateImage("x", "", []string{"numpy"}, nil, "", "", false)
 	require.NoError(t, err)
 }
 
@@ -147,7 +147,7 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"img-1","name":"ml-base","latestVersion":1,
 				"versions":[
-					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"gpu":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 				],
 				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 			}`))
@@ -161,8 +161,8 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id":"img-1","name":"ml-base","latestVersion":2,
 				"versions":[
-					{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"nvidia":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
-					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+					{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"gpu":false},"status":"CREATING","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+					{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"gpu":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 				],
 				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 			}`))
@@ -176,7 +176,7 @@ func TestUpdateImage_PatchesBody(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	got, err := UpdateImage("img-1", []string{"scikit-learn"}, nil, "", false)
+	got, err := UpdateImage("img-1", []string{"scikit-learn"}, nil, "", "", false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.LatestVersion)
 	require.Len(t, got.Versions, 2)
@@ -251,8 +251,8 @@ func TestGetImage_ReturnsFullDetail(t *testing.T) {
 			"description":"test image",
 			"latestVersion":2,
 			"versions":[
-				{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"pythonBaseImage":"python:3.12","nvidia":false},"status":"READY","imageUri":"registry.example.com/img-1:v2","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
-				{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"nvidia":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
+				{"version":2,"definition":{"name":"ml-base","packages":["scikit-learn"],"pythonBaseImage":"python:3.12","gpu":false},"status":"READY","imageUri":"registry.example.com/img-1:v2","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"},
+				{"version":1,"definition":{"name":"ml-base","packages":["numpy"],"gpu":false},"status":"READY","createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}
 			],
 			"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 		}`))
@@ -293,7 +293,7 @@ func TestGetImage_DefinitionUsesCanonicalKeys(t *testing.T) {
 			"id":"img-2","name":"base","latestVersion":1,
 			"versions":[{
 				"version":1,
-				"definition":{"name":"base","packages":["torch","transformers"],"pythonBaseImage":"my-registry/python:3.11","nvidia":true},
+				"definition":{"name":"base","packages":["torch","transformers"],"pythonBaseImage":"my-registry/python:3.11","gpu":true},
 				"status":"READY",
 				"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"
 			}],
@@ -316,7 +316,7 @@ func TestGetImage_DefinitionUsesCanonicalKeys(t *testing.T) {
 		assert.Equal(t, baseImage, *def.BaseImage)
 	}
 
-	assert.True(t, def.Nvidia)
+	assert.True(t, def.Gpu)
 }
 
 func TestGetImage_PropagatesNotFound(t *testing.T) {
