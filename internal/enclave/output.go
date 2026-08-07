@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
@@ -91,6 +92,35 @@ func RenderPermissionChange(format outputformat.OutputFormat, change PermissionC
 		fmt.Printf("granted enclave %s permission to %s\n", change.Permission, recipient)
 	} else {
 		fmt.Printf("revoked enclave %s permission from %s\n", change.Permission, recipient)
+	}
+
+	return nil
+}
+
+// RenderEnclavePermissions prints the effective permissions on an enclave. Text
+// mode explains *why* the set is what it is, since a full set from the sys-admin
+// bypass or from RBAC being off looks identical to being an owner.
+func RenderEnclavePermissions(format outputformat.OutputFormat, p EnclavePermissions) error {
+	if format == outputformat.OutputFormatJSON {
+		return printJSON(p)
+	}
+
+	fmt.Printf("Enclave:     %s\n", p.EnclaveID)
+	fmt.Printf("Subject:     %s\n", p.SubjectUserID)
+
+	if len(p.Permissions) == 0 {
+		fmt.Printf("Permissions: %s (no access)\n", emptyValuePlaceholder)
+	} else {
+		fmt.Printf("Permissions: %s\n", strings.Join(p.Permissions, ", "))
+	}
+
+	switch {
+	case !p.RBACEnabled:
+		fmt.Println("Source:      enclave RBAC is disabled server-side — nothing is enforced")
+	case p.ViaSysAdmin:
+		fmt.Println("Source:      system administrator (bypasses enclave permissions)")
+	default:
+		fmt.Println("Source:      granted permissions")
 	}
 
 	return nil
