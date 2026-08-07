@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
@@ -43,7 +44,7 @@ func Cmd() *cobra.Command {
 		Long: `Link a local project directory to an existing DataRobot
 artifact in your deployment infrastructure.
 
-This command creates a '.datarobot/wapi/' state directory at the project
+This command creates a '.datarobot/workload/' state directory at the project
 root and records which artifact, catalog, and version the directory is
 bound to. Subsequent 'sync' invocations use this state to push local edits
 and pull remote changes.
@@ -102,7 +103,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	wapi.EnsureMigrated(dir)
+	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
 	if wapi.Exists(dir) {
 		return reportAlreadyLinked(dir)

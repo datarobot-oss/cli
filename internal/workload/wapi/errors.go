@@ -30,9 +30,8 @@ var ErrAlreadyLinked = errors.New("Project already linked: state directory exist
 var ErrNotInitialized = errors.New("State directory not found.")
 
 // CorruptedError wraps a read, parse, or semantic validation failure for a
-// specific file under the state directory. It carries the absolute path of
-// the corrupted
-// file so callers can include it in user-facing diagnostics.
+// specific file under the state directory. It carries the absolute path of the
+// corrupted file so callers can include it in user-facing diagnostics.
 type CorruptedError struct {
 	Path string
 	Err  error

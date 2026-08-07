@@ -15,6 +15,7 @@
 package format
 
 import (
+	"bytes"
 	"math"
 	"strings"
 	"testing"
@@ -59,4 +60,22 @@ func TestBytes_NoPanicAtExtreme(t *testing.T) {
 
 	got = Bytes(math.MaxInt64)
 	assert.True(t, strings.HasSuffix(got, " PB"), "expected PB suffix at MaxInt64, got %q", got)
+}
+
+// An empty notice must print nothing at all, not a blank line: callers pass
+// wapi.EnsureMigrated's result straight through on every command, and the
+// common case is that there was nothing to migrate.
+func TestStateNotice(t *testing.T) {
+	t.Parallel()
+
+	var quiet bytes.Buffer
+
+	StateNotice(&quiet, "")
+	assert.Empty(t, quiet.String())
+
+	var loud bytes.Buffer
+
+	StateNotice(&loud, "Moved local state.")
+	assert.Contains(t, loud.String(), "Moved local state.")
+	assert.True(t, strings.HasSuffix(loud.String(), "\n"), "the notice is one line, terminated")
 }

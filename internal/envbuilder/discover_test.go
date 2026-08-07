@@ -19,7 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -225,4 +227,29 @@ func TestDepth(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// Component discovery walks .datarobot for YAML, and the workload state
+// directory now lives there too. Nothing it writes is YAML today, so nothing is
+// picked up; this pins that, because a state file that ever arrives as YAML
+// would silently register the CLI's own bookkeeping as a template component.
+func TestDiscoverIgnoresWorkloadState(t *testing.T) {
+	root := t.TempDir()
+	drDir := filepath.Join(root, wapi.RootDirName)
+
+	require.NoError(t, os.MkdirAll(drDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(drDir, "component.yaml"), []byte(testYamlFile1), 0o600))
+
+	// A linked project's state, including a checkout snapshot of user source
+	// that may well contain YAML of its own.
+	stateDir := wapi.Dir(root)
+	checkout := filepath.Join(wapi.CheckoutDir(root, "66f0000000000000000000aa"), "config")
+
+	require.NoError(t, os.MkdirAll(checkout, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "config.json"), []byte(`{"artifactId":"art-1"}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "values.yaml"), []byte(testYamlFile2), 0o600))
+
+	found, err := Discover(root, 5)
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(drDir, "component.yaml")}, found)
 }

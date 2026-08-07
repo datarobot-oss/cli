@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -63,7 +64,7 @@ project directory is linked to.
 
 The output marks the version that the artifact's codeRef currently
 points to with '*', and reports which version the local
-'.datarobot/wapi/' state was last synced to.
+'.datarobot/workload/' state was last synced to.
 
 By default output is a human-readable table; use --output-format json
 for machine-parseable output.
@@ -113,7 +114,7 @@ func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, dep
 		return err
 	}
 
-	wapi.EnsureMigrated(absDir)
+	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(absDir))
 
 	cfg, err := loadProjectConfig(absDir)
 	if err != nil {

@@ -31,7 +31,7 @@ import (
 // fall back to the legacy location on their own.
 func phase0Preflight(e *Engine) error {
 	if !e.opts.DryRun && !e.opts.ShowDiffs {
-		wapi.EnsureMigrated(e.projectDir)
+		e.migrationNote = wapi.EnsureMigrated(e.projectDir)
 	}
 
 	restored, err := RestoreStaleIfPresent(e.projectDir)

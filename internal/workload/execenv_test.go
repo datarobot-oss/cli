@@ -138,6 +138,91 @@ func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), `"nope" not found`)
 }
 
+// Environment names are not unique: the platform catalog and a tenant's own
+// copies can share one. Picking the server's first hit would build against the
+// wrong base image and surface as a puzzling runtime failure, so an ambiguous
+// name is an error naming the candidates.
+func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
+	installSkipAuth(t)
+
+	var srv *httptest.Server
+
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			fmt.Fprintf(w, `{"data": [%s], "next": ""}`, eeDoc("ee-2", "Python 3.11", "ver-2"))
+
+			return
+		}
+
+		fmt.Fprintf(w, `{"data": [%s], "next": %q}`,
+			eeDoc("ee-1", "Python 3.11", "ver-1"),
+			srv.URL+"/api/v2/executionEnvironments/?page=2",
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, _, err := ResolveExecutionEnvironment("Python 3.11")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ambiguous")
+	assert.Contains(t, err.Error(), "ee-1")
+	assert.Contains(t, err.Error(), "ee-2", "the duplicate on a later page counts too")
+}
+
+// Ids are unique, so an id match is answered from the page it appears on
+// without scanning the rest for name collisions.
+func TestResolveExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"data": [%s, %s], "next": ""}`,
+			eeDoc("ee-1", "Shared", "ver-1"),
+			eeDoc("ee-2", "Shared", "ver-2"),
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	id, versionID, err := ResolveExecutionEnvironment("ee-2")
+	require.NoError(t, err)
+	assert.Equal(t, "ee-2", id)
+	assert.Equal(t, "ver-2", versionID)
+}
+
+// Unlike the limit-bounded listings this one scans for a match, so a server
+// that keeps handing back a next cursor has no natural stopping point. The cap
+// turns a hung command into an error.
+func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
+	installSkipAuth(t)
+
+	var (
+		srv   *httptest.Server
+		pages int
+	)
+
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pages++
+
+		fmt.Fprintf(w, `{"data": [%s], "next": %q}`,
+			eeDoc("ee-1", "Other", "ver-1"),
+			srv.URL+"/api/v2/executionEnvironments/?limit=100",
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, _, err := ResolveExecutionEnvironment("Wanted")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pages")
+	assert.Equal(t, maxExecEnvPages, pages, "the walk stops at the cap rather than running forever")
+}
+
 // A next link pointing at another host is an SSRF vector, so pagination must
 // refuse to follow it.
 func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {

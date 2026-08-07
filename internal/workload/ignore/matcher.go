@@ -32,7 +32,9 @@ const wapiignoreFile = ".wapiignore"
 // entries match as prefixes, so a bare one would also exclude the CLI's own
 // tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
 // stays listed so an un-migrated project does not upload its state.
-var systemExcludes = []string{".datarobot/wapi", ".wapi", ".git", ".gitignore"}
+//
+// Entries must be lowercase: matchesSystemExclude folds the path it is given.
+var systemExcludes = []string{".datarobot/workload", ".wapi", ".git", ".gitignore"}
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.
@@ -96,9 +98,18 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 
 // matchesSystemExclude reports whether relPath is or lives inside a
 // system-excluded directory.
+//
+// The comparison folds case because macOS and Windows preserve case without
+// distinguishing it: a project that already holds a differently-cased
+// .Datarobot/ gets the state directory created inside it, and an exact-match
+// exclude would then let config.json and manifest.json sync to the remote. The
+// cost is that a case-sensitive filesystem also excludes a genuine .Git or
+// .DataRobot, which is not a directory anyone keeps alongside the real ones.
 func matchesSystemExclude(relPath string) bool {
+	lowered := strings.ToLower(relPath)
+
 	for _, name := range systemExcludes {
-		if relPath == name || strings.HasPrefix(relPath, name+"/") {
+		if lowered == name || strings.HasPrefix(lowered, name+"/") {
 			return true
 		}
 	}

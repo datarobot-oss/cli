@@ -1,6 +1,6 @@
 # Workload state directory validation reference
 
-This page documents the struct-tag validation used for workload local state stored in `.datarobot/wapi/` (for example `config.json` and `manifest.json`).
+This page documents the struct-tag validation used for workload local state stored in `.datarobot/workload/` (for example `config.json` and `manifest.json`).
 
 Validation is implemented with `github.com/go-playground/validator/v10` and centralized in `internal/workload/wapi/validate.go`.
 

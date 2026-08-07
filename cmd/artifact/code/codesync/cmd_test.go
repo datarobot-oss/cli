@@ -33,13 +33,14 @@ import (
 // flag to assert the cmd's branch decisions (dry-run, diff, conflict
 // prompt, JSON output).
 type fakeEngine struct {
-	plan       *sync.SyncPlan
-	planErr    error
-	result     *sync.Result
-	executeErr error
-	stale      bool
-	fetcher    display.ContentFetcher
-	closeErr   error
+	plan          *sync.SyncPlan
+	planErr       error
+	result        *sync.Result
+	executeErr    error
+	stale         bool
+	migrationNote string
+	fetcher       display.ContentFetcher
+	closeErr      error
 
 	executed bool
 	closed   bool
@@ -60,6 +61,8 @@ func (f *fakeEngine) Close() error {
 }
 
 func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
+
+func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
