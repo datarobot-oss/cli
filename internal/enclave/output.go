@@ -348,3 +348,79 @@ func kubectlLiterals(data map[string]string) string {
 
 	return out
 }
+
+// RenderCollectionPermissions prints whether the subject may create enclaves, and
+// where that comes from.
+func RenderCollectionPermissions(
+	format outputformat.OutputFormat, p CollectionPermissions,
+) error {
+	if format == outputformat.OutputFormatJSON {
+		return printJSON(p)
+	}
+
+	fmt.Printf("Subject:     %s\n", p.SubjectUserID)
+
+	if len(p.Permissions) == 0 {
+		fmt.Printf("Permissions: %s (may not create enclaves)\n", emptyValuePlaceholder)
+	} else {
+		fmt.Printf("Permissions: %s\n", strings.Join(p.Permissions, ", "))
+	}
+
+	switch {
+	case !p.RBACEnabled:
+		fmt.Println("Source:      enclave RBAC is disabled server-side — nothing is enforced")
+	case p.ViaSysAdmin:
+		fmt.Println("Source:      system administrator (bypasses enclave permissions)")
+	default:
+		fmt.Println("Source:      granted permissions")
+	}
+
+	if p.RBACEnabled && p.ViaSysAdmin {
+		if len(p.GrantedPermissions) == 0 {
+			fmt.Printf("Granted:     %s (no grants of its own)\n", emptyValuePlaceholder)
+		} else {
+			fmt.Printf("Granted:     %s\n", strings.Join(p.GrantedPermissions, ", "))
+		}
+	}
+
+	return nil
+}
+
+// RenderCreateAccess prints who may create enclaves.
+func RenderCreateAccess(format outputformat.OutputFormat, holders []CreateAccessHolder) error {
+	if format == outputformat.OutputFormatJSON {
+		if holders == nil {
+			holders = []CreateAccessHolder{}
+		}
+
+		return outputformat.PrintJSONEnvelope(os.Stdout, "createAccess", holders)
+	}
+
+	if len(holders) == 0 {
+		fmt.Println("Nobody has been granted the enclave create permission.")
+
+		return nil
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, _ int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			return cellStyle
+		}).
+		Headers("RECIPIENT TYPE", "ID", "PERMISSIONS")
+
+	for _, h := range holders {
+		t.Row(h.ShareRecipientType, h.ID, strings.Join(h.Permissions, ", "))
+	}
+
+	fmt.Fprintln(os.Stdout, t.Render())
+
+	return nil
+}
