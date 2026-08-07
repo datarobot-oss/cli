@@ -156,8 +156,12 @@ type EnclavePermissions struct {
 	EnclaveID     string   `json:"enclaveId"`
 	SubjectUserID string   `json:"subjectUserId"`
 	Permissions   []string `json:"permissions"`
-	RBACEnabled   bool     `json:"rbacEnabled"`
-	ViaSysAdmin   bool     `json:"viaSysAdmin"`
+	// GrantedPermissions is what the subject was actually granted. It differs from
+	// Permissions when the answer came from a bypass, which is the only way to tell
+	// whether a share landed.
+	GrantedPermissions []string `json:"grantedPermissions"`
+	RBACEnabled        bool     `json:"rbacEnabled"`
+	ViaSysAdmin        bool     `json:"viaSysAdmin"`
 }
 
 // GetEnclavePermissions fetches the effective permissions on an enclave. An empty
@@ -181,4 +185,29 @@ func GetEnclavePermissions(enclaveID, userID string) (*EnclavePermissions, error
 	}
 
 	return &permissions, nil
+}
+
+// SharedRole is one recipient of an enclave and the role they hold on it.
+type SharedRole struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	ShareRecipientType string `json:"shareRecipientType"`
+	Role               string `json:"role"`
+}
+
+// ListSharedRoles returns who holds which role on the enclave. An empty result
+// means nothing has been shared yet (or the server has RBAC disabled).
+func ListSharedRoles(enclaveID string) ([]SharedRole, error) {
+	endpoint, err := config.GetEndpointURL(basePath + "/" + escapeID(enclaveID) + sharedRolesSuffix)
+	if err != nil {
+		return nil, err
+	}
+
+	var roles []SharedRole
+
+	if err := drapi.GetJSON(endpoint, "enclave shared roles", &roles); err != nil {
+		return nil, err
+	}
+
+	return roles, nil
 }
