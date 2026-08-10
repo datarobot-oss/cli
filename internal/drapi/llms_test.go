@@ -20,7 +20,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -238,4 +240,65 @@ func TestGetLLMsAndDeployed_BothFail(t *testing.T) {
 
 	_, err := GetLLMsAndDeployed()
 	assert.Error(t, err)
+}
+
+// TestGetLLMsAndDeployed_FetchesConcurrently holds each route until the other
+// has been entered. A serial fetch can never satisfy both, so this is what
+// stops the two sources from silently reverting to sum-of-both latency; the
+// union and soft-degrade tests pass either way.
+func TestGetLLMsAndDeployed_FetchesConcurrently(t *testing.T) {
+	var (
+		arrived atomic.Int32
+		both    = make(chan struct{})
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if arrived.Add(1) == 2 {
+			close(both)
+		}
+
+		select {
+		case <-both:
+		case <-time.After(3 * time.Second):
+			t.Error("requests did not overlap: the two sources are being fetched serially")
+		}
+
+		body := gatewayBody
+		if strings.Contains(r.URL.Path, "/deployments") {
+			body = deployedBody
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	list, err := GetLLMsAndDeployed()
+	require.NoError(t, err)
+	assert.Len(t, list.LLMs, 2)
+}
+
+// TestGetLLMsAndDeployed_ColdTokenIsRaceFree drives the concurrent fetch with an
+// unresolved token so both goroutines race to populate the `token` global. It
+// only fails under -race, which is how the suite runs.
+func TestGetLLMsAndDeployed_ColdTokenIsRaceFree(t *testing.T) {
+	setupRoutedServer(t, routeResponse{body: gatewayBody}, routeResponse{body: deployedBody})
+
+	previous := token
+	token = ""
+
+	t.Cleanup(func() { token = previous })
+
+	list, err := GetLLMsAndDeployed()
+	require.NoError(t, err)
+	assert.Len(t, list.LLMs, 2)
 }

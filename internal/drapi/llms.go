@@ -17,6 +17,7 @@ package drapi
 import (
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
@@ -219,9 +220,34 @@ func GetDeployedLLMs() ([]LLM, error) {
 // is logged and the other source is still returned, so an empty or disabled
 // gateway (common on-prem) or missing deployment access does not blank the
 // list. An error is returned only when both sources fail.
+//
+// The two sources are fetched concurrently: each is a paginated round-trip set,
+// so serial fetching made the caller pay their sum rather than the slower of
+// the two.
 func GetLLMsAndDeployed() (*LLMList, error) {
-	gateway, gwErr := GetLLMs()
-	deployed, depErr := GetDeployedLLMs()
+	var (
+		gateway  *LLMList
+		deployed []LLM
+		gwErr    error
+		depErr   error
+		wg       sync.WaitGroup
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		gateway, gwErr = GetLLMs()
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		deployed, depErr = GetDeployedLLMs()
+	}()
+
+	wg.Wait()
 
 	var warnings []string
 

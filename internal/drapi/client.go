@@ -23,6 +23,7 @@ package drapi
 
 import (
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -30,10 +31,20 @@ import (
 // callers don't specify their own.
 const DefaultClientTimeout = 30 * time.Second
 
+// tokenMu guards the lazy resolve-and-cache in getToken. Callers that fetch
+// from more than one endpoint concurrently (GetLLMsAndDeployed) would otherwise
+// race on the `token` global, and holding the lock across resolveToken keeps
+// the first concurrent caller's round-trip from being duplicated by the rest.
+var tokenMu sync.Mutex
+
 // getToken returns the memoized API token, resolving and caching it on first
-// use to avoid repeated VerifyToken() round-trips. The underlying `token`
-// variable and resolveToken() function are defined in get.go.
+// use to avoid repeated VerifyToken() round-trips. A failed resolve is not
+// cached, so a later call retries. The underlying `token` variable and
+// resolveToken() function are defined in get.go.
 func getToken() (string, error) {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	if token != "" {
 		return token, nil
 	}
