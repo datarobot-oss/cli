@@ -101,6 +101,33 @@ func TestClonePipeline_NameOverride(t *testing.T) {
 	assert.Equal(t, "My Clone", got.Name)
 }
 
+func TestClonePipeline_EscapesPipelineID(t *testing.T) {
+	installSkipAuth(t)
+
+	var gotRequestURI string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// RequestURI is the raw, undecoded wire target — unlike r.URL.Path it
+		// preserves %2F, so it is the only value that proves the id was escaped
+		// (a rewritten "p/1" would arrive here as ".../p/1/clone").
+		gotRequestURI = r.RequestURI
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"p-2","name":"Clone of wf","mode":"draft","createdAt":"2026-04-29T10:00:00Z"}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	// A reserved "/" in the id must be percent-encoded so it stays a single
+	// path segment instead of altering the request path.
+	_, err := ClonePipeline("p/1", "")
+	require.NoError(t, err)
+
+	assert.Equal(t, "/api/v2/pipelines/p%2F1/clone", gotRequestURI)
+}
+
 func TestClonePipeline_404NotFound(t *testing.T) {
 	installSkipAuth(t)
 
