@@ -97,6 +97,11 @@ Example:
 	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "DEPRECATED: use --gpu")
 	_ = cmd.Flags().MarkDeprecated("nvidia", "use --gpu")
 
+	// --base-image is the deprecated way to pick a Python interpreter; passing
+	// it together with the canonical --python-version would send two competing
+	// values on the wire, so reject the combination up front.
+	cmd.MarkFlagsMutuallyExclusive("python-version", "base-image")
+
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"output_format": string(outputFormat),

@@ -94,6 +94,7 @@ func TestFormatCondaCell_ChannelsAndDeps(t *testing.T) {
 
 func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 	baseImage := "python:3.12"
+	pythonVersion := "3.11"
 	img := Image{
 		ImageID:       "img-1",
 		Name:          "ml-base",
@@ -105,11 +106,12 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 				Version: 1,
 				Status:  ImageStatusReady,
 				Definition: ImageDefinition{
-					Name:      "ml-base",
-					Pip:       []string{"torch"},
-					Conda:     &CondaValue{Channels: []string{"conda-forge"}, Deps: []string{"scipy"}},
-					BaseImage: &baseImage,
-					Gpu:       true,
+					Name:          "ml-base",
+					Pip:           []string{"torch"},
+					Conda:         &CondaValue{Channels: []string{"conda-forge"}, Deps: []string{"scipy"}},
+					PythonVersion: &pythonVersion,
+					BaseImage:     &baseImage,
+					Gpu:           true,
 				},
 				CreatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 				UpdatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
@@ -121,6 +123,8 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 
 	assert.Contains(t, out, "[conda-forge]", "channels must appear in human output")
 	assert.Contains(t, out, "scipy", "dependencies must appear in human output")
+	assert.Contains(t, out, "PYTHON", "PYTHON column header must appear in human output")
+	assert.Contains(t, out, "3.11", "python version must appear in the PYTHON column")
 }
 
 func TestPrintImageHuman_HidesCondaWhenEmpty(t *testing.T) {
