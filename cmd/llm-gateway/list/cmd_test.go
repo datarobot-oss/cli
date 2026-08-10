@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -63,6 +65,67 @@ func setupLLMServer(t *testing.T, llms []drapi.LLM) {
 		srv.Close()
 		viperx.Reset()
 	})
+}
+
+const (
+	sourceGatewayBody  = `{"data":[{"llmId":"llm-001","name":"GPT-4o","provider":"azure","model":"gpt-4o","isActive":true}],"count":1,"totalCount":1}`
+	sourceDeployedBody = `{"data":[{"id":"dep-001","label":"RAG LLM","status":"active","model":{"targetType":"TextGeneration"}}],"count":1,"totalCount":1}`
+)
+
+// hitRecorder counts requests per source route so a test can assert that a
+// --source filter skipped a request rather than merely discarding its rows.
+type hitRecorder struct {
+	catalog     atomic.Int32
+	deployments atomic.Int32
+}
+
+// setupSourceServer serves the catalog and deployments routes separately and
+// records which were reached. A non-zero catalogFail or deployedFail makes that
+// route respond with the given status instead of a body.
+func setupSourceServer(t *testing.T, catalogFail, deployedFail int) *hitRecorder {
+	t.Helper()
+
+	hits := &hitRecorder{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, fail := sourceGatewayBody, catalogFail
+
+		switch {
+		case strings.Contains(r.URL.Path, "/deployments"):
+			hits.deployments.Add(1)
+
+			body, fail = sourceDeployedBody, deployedFail
+		case strings.Contains(r.URL.Path, "/catalog"):
+			hits.catalog.Add(1)
+		default:
+			http.NotFound(w, r)
+
+			return
+		}
+
+		if fail != 0 {
+			http.Error(w, "boom", fail)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	// skip_auth trusts the viper token directly; without it resolveToken makes a
+	// verification request this routed handler would 404.
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	return hits
 }
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what was written.
@@ -311,4 +374,149 @@ func TestPrintLLMTable_DeployedRow(t *testing.T) {
 
 	// The sentinel model is blanked to "-" in the table (JSON-only contract).
 	assert.NotContains(t, out, "datarobot/datarobot-deployed-llm")
+}
+
+// --- --source ---
+
+func TestSource_SetValid(t *testing.T) {
+	for _, want := range []Source{SourceAll, SourceGateway, SourceDeployed} {
+		var got Source
+
+		require.NoError(t, got.Set(string(want)))
+		assert.Equal(t, want, got)
+	}
+}
+
+func TestSource_SetInvalid(t *testing.T) {
+	var s Source
+
+	err := s.Set("deployments")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid source")
+	assert.Contains(t, err.Error(), "gateway")
+}
+
+// The flag values must stay equal to the strings the SOURCE column and the
+// JSON "source" field emit, so a filter can be copied out of a listing.
+func TestSource_MatchesOutputValues(t *testing.T) {
+	assert.Equal(t, drapi.LLMKindGateway, string(SourceGateway))
+	assert.Equal(t, drapi.LLMKindDeployed, string(SourceDeployed))
+}
+
+// TestListCmd_SourceGatewaySkipsDeployments is the point of the flag: the
+// deployments request is not made at all, not merely filtered out afterwards.
+func TestListCmd_SourceGatewaySkipsDeployments(t *testing.T) {
+	hits := setupSourceServer(t, 0, 0)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--source", "gateway", "--output-format", "json"})
+
+	out := captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+
+	assert.Positive(t, hits.catalog.Load())
+	assert.Zero(t, hits.deployments.Load())
+
+	var envelope struct {
+		LLMs []LLMOutput `json:"llms"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+	require.Len(t, envelope.LLMs, 1)
+	assert.Equal(t, "llm-001", envelope.LLMs[0].ID)
+	assert.Equal(t, drapi.LLMKindGateway, envelope.LLMs[0].Source)
+}
+
+func TestListCmd_SourceDeployedSkipsCatalog(t *testing.T) {
+	hits := setupSourceServer(t, 0, 0)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--source", "deployed", "--output-format", "json"})
+
+	out := captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+
+	assert.Positive(t, hits.deployments.Load())
+	assert.Zero(t, hits.catalog.Load())
+
+	var envelope struct {
+		LLMs []LLMOutput `json:"llms"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+	require.Len(t, envelope.LLMs, 1)
+	assert.Equal(t, "dep-001", envelope.LLMs[0].ID)
+	assert.Equal(t, "dep-001", envelope.LLMs[0].DeploymentID)
+	assert.Equal(t, drapi.LLMKindDeployed, envelope.LLMs[0].Source)
+}
+
+// Omitting --source must keep the pre-flag behavior: both sources queried.
+func TestListCmd_SourceDefaultsToAll(t *testing.T) {
+	hits := setupSourceServer(t, 0, 0)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--output-format", "json"})
+
+	out := captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+
+	assert.Positive(t, hits.catalog.Load())
+	assert.Positive(t, hits.deployments.Load())
+
+	var envelope struct {
+		LLMs []LLMOutput `json:"llms"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+	assert.Len(t, envelope.LLMs, 2)
+}
+
+func TestListCmd_SourceInvalidValue(t *testing.T) {
+	setupSourceServer(t, 0, 0)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--source", "bogus"})
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+
+	err := root.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid source")
+}
+
+// A single-source request has no remainder to fall back on, so its failure is
+// an error rather than the union path's soft-degrade to the other source.
+func TestListCmd_SingleSourceFailureIsAnError(t *testing.T) {
+	setupSourceServer(t, 0, http.StatusInternalServerError)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--source", "deployed"})
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+
+	require.Error(t, root.Execute())
+}
+
+// The same failure under the default --source all still degrades to the
+// reachable source, unchanged by the flag.
+func TestListCmd_AllStillSoftDegrades(t *testing.T) {
+	setupSourceServer(t, 0, http.StatusInternalServerError)
+
+	root := newTestCmd(t)
+	root.SetArgs([]string{"list", "--output-format", "json"})
+
+	out := captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+
+	var envelope struct {
+		LLMs []LLMOutput `json:"llms"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+	require.Len(t, envelope.LLMs, 1)
+	assert.Equal(t, drapi.LLMKindGateway, envelope.LLMs[0].Source)
 }

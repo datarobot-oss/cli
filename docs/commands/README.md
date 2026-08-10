@@ -248,6 +248,10 @@ dr llm-gateway list
 # List as JSON
 dr llm-gateway list --output-format json
 
+# Restrict to one source (skips the other source's request)
+dr llm-gateway list --source gateway
+dr llm-gateway list --source deployed
+
 # Select a default LLM interactively (TUI picker)
 dr llm-gateway select
 

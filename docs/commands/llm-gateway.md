@@ -34,6 +34,9 @@ dr llm ls               # shortest alias
 **Flags:**
 
 - `--output-format <json>` — emit machine-parseable JSON instead of a table.
+- `--source <all|gateway|deployed>` — which sources to query. Defaults to `all`. `gateway` and `deployed` skip the request the other source would have made, so a script that needs one source does not wait on both. The values are the same strings the `SOURCE` column and the JSON `source` field carry.
+
+When `--source` names a single source, a failure to reach it is an error. Only the default `all` degrades to the source that is still reachable — with one source requested there is no remainder to show, and reporting an empty list would read as an instance with no models.
 
 **Output columns (table):**
 
@@ -74,6 +77,10 @@ dr llm-gateway list
 
 # JSON output
 dr llm-gateway list --output-format json
+
+# One source only — skips the request the other source would have made
+dr llm-gateway list --source gateway
+dr llm-gateway list --source deployed --output-format json
 
 # Aliases
 dr llm list
