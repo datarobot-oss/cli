@@ -58,6 +58,10 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
+			if err := pipeline.ValidatePythonVersion(pythonVersion); err != nil {
+				return err
+			}
+
 			pip := pipeline.NormalizePackageList(rawPackages)
 			conda := pipeline.BuildCondaValue(rawConda, rawCondaChans)
 
@@ -89,6 +93,7 @@ Example:
 	cmd.Flags().BoolVar(&gpu, "gpu", false, "Enable GPU support (rejected with 422 if the environment has no GPU capacity)")
 	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "DEPRECATED: use --gpu")
 	_ = cmd.Flags().MarkDeprecated("nvidia", "use --gpu")
+	_ = cmd.Flags().MarkDeprecated("base-image", "use --python-version")
 
 	// --base-image is the deprecated way to pick a Python interpreter; passing
 	// it together with the canonical --python-version would send two competing

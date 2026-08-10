@@ -32,15 +32,37 @@ package pipeline
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 )
+
+// SupportedPythonVersions are the interpreter versions the pipelines-api accepts
+// for --python-version. Mirrors SUPPORTED_PYTHON_VERSIONS in the pipelines-api
+// image schema (the set proven build-to-READY); widen only when the server does.
+var SupportedPythonVersions = []string{"3.10", "3.11", "3.12", "3.13"}
+
+// ValidatePythonVersion rejects a --python-version value the API would reject,
+// giving the user immediate feedback instead of a server round-trip. An empty
+// value is allowed — the flag is optional.
+func ValidatePythonVersion(v string) error {
+	if v == "" || slices.Contains(SupportedPythonVersions, v) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"invalid --python-version %q: allowed values are %s",
+		v, strings.Join(SupportedPythonVersions, ", "),
+	)
+}
 
 // ImageStatus mirrors PipelineImageStatus in the API.
 type ImageStatus string

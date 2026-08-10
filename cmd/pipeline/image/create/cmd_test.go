@@ -66,3 +66,9 @@ func TestCmd_RejectsPythonVersionWithBaseImage(t *testing.T) {
 	assert.Contains(t, err.Error(), "python-version")
 	assert.Contains(t, err.Error(), "base-image")
 }
+
+func TestCmd_RejectsInvalidPythonVersion(t *testing.T) {
+	err := runCmd(t, "--name", "x", "--package", "numpy", "--python-version", "3.9")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "python-version")
+}
