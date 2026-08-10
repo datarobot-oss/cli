@@ -16,6 +16,7 @@ package pipeline
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,6 +95,7 @@ func TestFormatCondaCell_ChannelsAndDeps(t *testing.T) {
 
 func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 	baseImage := "python:3.12"
+	pythonVersion := "3.11"
 	img := Image{
 		ImageID:       "img-1",
 		Name:          "ml-base",
@@ -105,11 +107,12 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 				Version: 1,
 				Status:  ImageStatusReady,
 				Definition: ImageDefinition{
-					Name:      "ml-base",
-					Pip:       []string{"torch"},
-					Conda:     &CondaValue{Channels: []string{"conda-forge"}, Deps: []string{"scipy"}},
-					BaseImage: &baseImage,
-					Nvidia:    true,
+					Name:          "ml-base",
+					Pip:           []string{"torch"},
+					Conda:         &CondaValue{Channels: []string{"conda-forge"}, Deps: []string{"scipy"}},
+					PythonVersion: &pythonVersion,
+					BaseImage:     &baseImage,
+					Gpu:           true,
 				},
 				CreatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 				UpdatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
@@ -121,6 +124,8 @@ func TestPrintImageHuman_ShowsCondaChannels(t *testing.T) {
 
 	assert.Contains(t, out, "[conda-forge]", "channels must appear in human output")
 	assert.Contains(t, out, "scipy", "dependencies must appear in human output")
+	assert.Contains(t, out, "PYTHON", "PYTHON column header must appear in human output")
+	assert.Contains(t, out, "3.11", "python version must appear in the PYTHON column")
 }
 
 func TestPrintImageHuman_HidesCondaWhenEmpty(t *testing.T) {
@@ -147,6 +152,41 @@ func TestPrintImageHuman_HidesCondaWhenEmpty(t *testing.T) {
 	out := captureStdout(t, func() { printImageHuman(img) })
 
 	assert.Contains(t, out, emptyValuePlaceholder, "conda cell should show placeholder when no conda packages")
+}
+
+// --- imageVersionRow stays aligned with its headers ---
+
+func TestImageVersionRow_MatchesHeaders(t *testing.T) {
+	pv := "3.11"
+	bi := "python:3.12"
+	ver := ImageVersion{
+		Version: 5,
+		Status:  ImageStatusReady,
+		Definition: ImageDefinition{
+			Pip:           []string{"numpy"},
+			Conda:         &CondaValue{Deps: []string{"scipy"}},
+			PythonVersion: &pv,
+			BaseImage:     &bi,
+		},
+		UpdatedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	row := imageVersionRow(ver)
+	headers := imageVersionHeaders()
+
+	require.Len(t, row, len(headers), "cell count must match header count")
+
+	// Every column carries a distinct value, so a cell that drifts to the wrong
+	// column (a reorder in one place but not the other) surfaces as a mismatch.
+	cell := func(name string) string { return row[slices.Index(headers, name)] }
+
+	assert.Equal(t, "v5", cell("VERSION"))
+	assert.Equal(t, string(ImageStatusReady), cell("STATUS"))
+	assert.Equal(t, "numpy", cell("PIP"))
+	assert.Equal(t, "scipy", cell("CONDA"))
+	assert.Equal(t, "3.11", cell("PYTHON"))
+	assert.Equal(t, "python:3.12", cell("BASE IMAGE"))
+	assert.Contains(t, cell("UPDATED"), "2026-05-01")
 }
 
 // --- imageJSON includes imageUri ---

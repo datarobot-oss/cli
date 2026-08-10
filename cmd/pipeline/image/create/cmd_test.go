@@ -55,7 +55,20 @@ func TestCmd_RejectsMissingPackages(t *testing.T) {
 func TestCmd_HasExpectedFlags(t *testing.T) {
 	cmd := Cmd()
 
-	for _, name := range []string{"name", "description", "package", "output-format"} {
+	for _, name := range []string{"name", "description", "package", "output-format", "python-version", "base-image"} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
+}
+
+func TestCmd_RejectsPythonVersionWithBaseImage(t *testing.T) {
+	err := runCmd(t, "--name", "x", "--package", "numpy", "--python-version", "3.11", "--base-image", "python:3.12")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "python-version")
+	assert.Contains(t, err.Error(), "base-image")
+}
+
+func TestCmd_RejectsInvalidPythonVersion(t *testing.T) {
+	err := runCmd(t, "--name", "x", "--package", "numpy", "--python-version", "3.9")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "python-version")
 }
