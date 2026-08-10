@@ -83,6 +83,12 @@ func TestCreateImage_OmitsEmptyDescription(t *testing.T) {
 		_, hasDesc := raw["description"]
 		assert.False(t, hasDesc, "description should be omitted when empty")
 
+		_, hasPython := raw["pythonVersion"]
+		assert.False(t, hasPython, "pythonVersion should be omitted when empty")
+
+		_, hasGpu := raw["gpu"]
+		assert.False(t, hasGpu, "gpu should be omitted when false")
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"img-1","name":"x","latestVersion":1,"versions":[],"createdAt":"2026-04-29T10:00:00Z","updatedAt":"2026-04-29T10:00:00Z"}`))

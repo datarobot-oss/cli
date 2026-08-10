@@ -185,7 +185,7 @@ func printImageVersionsHuman(versions []ImageVersion) {
 
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
-	headers := []string{"VERSION", "STATUS", "PIP", "CONDA", "PYTHON", "BASE IMAGE", "UPDATED"}
+	headers := imageVersionHeaders()
 
 	updatedCol := slices.Index(headers, "UPDATED")
 
@@ -212,9 +212,16 @@ func printImageVersionsHuman(versions []ImageVersion) {
 	fmt.Fprintln(os.Stdout, t.Render())
 }
 
+// imageVersionHeaders lists the image-version human-table columns in render
+// order. imageVersionRow must return cells in this exact order; sharing one
+// definition keeps the header row and each data row from drifting apart.
+func imageVersionHeaders() []string {
+	return []string{"VERSION", "STATUS", "PIP", "CONDA", "PYTHON", "BASE IMAGE", "UPDATED"}
+}
+
 // imageVersionRow formats one ImageVersion into its human-table cells, in the
-// same column order as the headers in printImageVersionsHuman. Split out to
-// keep that function's cyclomatic complexity within budget.
+// same column order as imageVersionHeaders. Split out to keep
+// printImageVersionsHuman's cyclomatic complexity within budget.
 func imageVersionRow(ver ImageVersion) []string {
 	baseImageStr := emptyValuePlaceholder
 	if ver.Definition.BaseImage != nil && *ver.Definition.BaseImage != "" {
