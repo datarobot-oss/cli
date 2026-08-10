@@ -256,6 +256,18 @@ func printCreateResponseHuman(result CreateResponse) {
 		tasks = strings.Join(result.TaskNames, ", ")
 	}
 
+	// A fresh draft (clone, or a just-created pipeline) carries no version or
+	// status yet, so render a placeholder instead of a bare "0" / empty cell.
+	version := emptyValuePlaceholder
+	if result.Version > 0 {
+		version = strconv.Itoa(result.Version)
+	}
+
+	status := emptyValuePlaceholder
+	if result.Status != "" {
+		status = result.Status
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "Pipeline ID:\t%s\n", result.PipelineID)
@@ -265,8 +277,8 @@ func printCreateResponseHuman(result CreateResponse) {
 		fmt.Fprintf(w, "Description:\t%s\n", *result.Description)
 	}
 
-	fmt.Fprintf(w, "Version:\t%d\n", result.Version)
-	fmt.Fprintf(w, "Status:\t%s\n", result.Status)
+	fmt.Fprintf(w, "Version:\t%s\n", version)
+	fmt.Fprintf(w, "Status:\t%s\n", status)
 	fmt.Fprintf(w, "Mode:\t%s\n", result.Mode)
 	fmt.Fprintf(w, "Tasks:\t%s\n", tasks)
 

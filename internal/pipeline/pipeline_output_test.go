@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// fieldValue returns the trailing value of the tabwriter line beginning with
+// label (the whitespace padding between label and value is normalised away), or
+// ("", false) when no such line exists.
+func fieldValue(out, label string) (string, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, label) {
+			return strings.TrimSpace(strings.TrimPrefix(line, label)), true
+		}
+	}
+
+	return "", false
+}
 
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
@@ -111,6 +125,59 @@ func TestRenderCreateResponse_Human_NoTasks(t *testing.T) {
 	})
 
 	assert.Contains(t, out, emptyValuePlaceholder)
+}
+
+func TestRenderCreateResponse_Human_DraftPlaceholders(t *testing.T) {
+	// A fresh draft (e.g. a clone, or POST /pipelines) returns no version or
+	// status; the human output must show the placeholder for those two fields
+	// specifically rather than a bare "0" / empty cell.
+	result := CreateResponse{
+		PipelineID: "p-2",
+		Name:       "Clone of wf",
+		Version:    0,
+		Status:     "",
+		Mode:       "draft",
+		TaskNames:  []string{"e1"},
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderCreateResponse(outputformat.OutputFormatText, result))
+	})
+
+	got, ok := fieldValue(out, "Version:")
+	require.True(t, ok, "Version field must be rendered")
+	assert.Equal(t, emptyValuePlaceholder, got, "zero version must render as placeholder")
+
+	got, ok = fieldValue(out, "Status:")
+	require.True(t, ok, "Status field must be rendered")
+	assert.Equal(t, emptyValuePlaceholder, got, "empty status must render as placeholder")
+
+	// A populated field must NOT be turned into a placeholder.
+	got, ok = fieldValue(out, "Tasks:")
+	require.True(t, ok, "Tasks field must be rendered")
+	assert.Equal(t, "e1", got)
+}
+
+func TestRenderCreateResponse_Human_LockedKeepsValues(t *testing.T) {
+	// Guard the other direction: a locked pipeline with a real version/status
+	// must render those values verbatim, not the draft placeholder.
+	result := CreateResponse{
+		PipelineID: "p-9",
+		Name:       "locked_wf",
+		Version:    3,
+		Status:     "READY",
+		Mode:       "locked",
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderCreateResponse(outputformat.OutputFormatText, result))
+	})
+
+	got, _ := fieldValue(out, "Version:")
+	assert.Equal(t, "3", got)
+
+	got, _ = fieldValue(out, "Status:")
+	assert.Equal(t, "READY", got)
 }
 
 // ── RenderPipeline ──────────────────────────────────────────────────────────
