@@ -242,14 +242,17 @@ func TestGetLLMsAndDeployed_BothFail(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestGetLLMsAndDeployed_FetchesConcurrently holds each route until the other
-// has been entered. A serial fetch can never satisfy both, so this is what
-// stops the two sources from silently reverting to sum-of-both latency; the
-// union and soft-degrade tests pass either way.
+// TestGetLLMsAndDeployed_FetchesConcurrently makes each route block until the
+// other one has arrived. A serial fetch deadlocks on that: the second request
+// cannot start until the first returns, and the first is waiting on the second.
+// It stalls until the timeout and fails. Only overlapping requests get through.
 //
-// The barrier keys on the route, not on a request count: if either fixture ever
-// grows a Next page, two pages from one source would satisfy a counter and the
-// test would go green against a serial implementation.
+// Every other test in this file passes either way, so this is the only thing
+// standing between a later refactor and a silent return to sum-of-both latency.
+//
+// The barrier keys on the route rather than counting requests: if either
+// fixture grows a Next page, two pages from one source would satisfy a counter
+// and the test would pass against a serial fetch.
 func TestGetLLMsAndDeployed_FetchesConcurrently(t *testing.T) {
 	var (
 		mu    sync.Mutex

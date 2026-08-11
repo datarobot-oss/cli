@@ -21,9 +21,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Source selects which LLM sources the list command queries. The gateway and
-// deployed values are the same strings the SOURCE column and the JSON "source"
-// field carry, so a filter can be copied straight out of a listing.
+// Source selects which LLM sources the list command queries. Its gateway and
+// deployed values are the strings the SOURCE column and the JSON "source" field
+// already carry, so a filter can be copied straight out of a listing.
 type Source string
 
 const (
@@ -57,13 +57,12 @@ func (s *Source) Type() string {
 	return "source"
 }
 
-// fetchLLMs queries only the sources the filter needs, skipping the request the
-// other source would have made.
+// fetchLLMs skips the request the unselected source would have made.
 //
 // A single-source request returns its error rather than degrading to an empty
-// list: the union path can fall back on the other source, but here there is no
-// remainder to show, and reporting "no models" for an unreachable catalog reads
-// as an empty instance.
+// list. The union path can fall back on the other source; here there is no
+// remainder to show, and "no models" for an unreachable catalog reads as an
+// empty instance.
 func fetchLLMs(source Source) (*drapi.LLMList, error) {
 	if source == SourceGateway {
 		gateway, err := drapi.GetLLMs()

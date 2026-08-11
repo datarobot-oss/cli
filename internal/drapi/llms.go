@@ -221,15 +221,13 @@ func GetDeployedLLMs() ([]LLM, error) {
 // gateway (common on-prem) or missing deployment access does not blank the
 // list. An error is returned only when both sources fail.
 //
-// The two sources are fetched concurrently: each is a paginated round-trip set,
-// so serial fetching made the caller pay their sum rather than the slower of
-// the two.
+// The sources are fetched concurrently. Each is a paginated round-trip set, so
+// the caller waits on the slower one instead of both.
 //
-// Both goroutines log through internal/log, whose stderrLogger global is
-// rewritten by tui.Run via StopStderr/StartStderr. Nothing overlaps today
-// because select starts its picker only after this returns. Driving this call
-// from inside a running TUI (a spinner around the fetch, say) would make that a
-// live race, so keep the fetch outside the TUI.
+// Keep this call outside a running TUI. Both goroutines log through
+// internal/log, whose stderrLogger global tui.Run rewrites. Nothing overlaps
+// today because select starts its picker after this returns, but wrapping the
+// fetch in a spinner would make that a live race.
 func GetLLMsAndDeployed() (*LLMList, error) {
 	var (
 		gateway  *LLMList
