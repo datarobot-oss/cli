@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wapi
+package fsutil
 
 import (
 	"os"
@@ -28,20 +28,55 @@ func TestAtomicWriteFile_CreatesNew(t *testing.T) {
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "new.json")
 
-	err := atomicWriteFile(target, []byte(`{"hello":"world"}`))
+	err := AtomicWriteFile(target, []byte(`{"hello":"world"}`))
 	require.NoError(t, err)
 
 	got, err := os.ReadFile(target)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"hello":"world"}`, string(got))
 
-	info, err := os.Stat(target)
+	assertSameModeAsPlainWrite(t, target)
+}
+
+// assertSameModeAsPlainWrite compares against a file the standard library
+// just created with the same requested mode, so the assertion holds under any
+// umask rather than only the developer's. It is also the contract: a file the
+// CLI writes should be no wider than one the user's own tools would write.
+func assertSameModeAsPlainWrite(t *testing.T, path string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		// Windows does not enforce Unix permission bits.
+		return
+	}
+
+	reference := filepath.Join(t.TempDir(), "reference")
+	require.NoError(t, os.WriteFile(reference, nil, DefaultFileMode))
+
+	want, err := os.Stat(reference)
 	require.NoError(t, err)
 
-	if runtime.GOOS != "windows" {
-		// Windows does not enforce Unix permission bits.
-		assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+	got, err := os.Stat(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, want.Mode().Perm(), got.Mode().Perm())
+}
+
+// A file that already exists keeps the mode it had: tightening a manifest to
+// 0600 should survive an unrelated edit such as the workload-id write-back.
+func TestAtomicWriteFile_PreservesAnExistingMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix permission bits")
 	}
+
+	target := filepath.Join(t.TempDir(), "tightened")
+	require.NoError(t, os.WriteFile(target, []byte("old"), 0o600))
+
+	require.NoError(t, AtomicWriteFile(target, []byte("new")))
+
+	info, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
@@ -51,7 +86,7 @@ func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
 	err := os.WriteFile(target, []byte("old"), 0o644)
 	require.NoError(t, err)
 
-	err = atomicWriteFile(target, []byte("new"))
+	err = AtomicWriteFile(target, []byte("new"))
 	require.NoError(t, err)
 
 	got, err := os.ReadFile(target)
@@ -69,7 +104,7 @@ func TestAtomicWriteFile_CleansTmpWhenRenameFails(t *testing.T) {
 	err := os.Mkdir(target, 0o755)
 	require.NoError(t, err)
 
-	err = atomicWriteFile(target, []byte("payload"))
+	err = AtomicWriteFile(target, []byte("payload"))
 	require.Error(t, err)
 
 	entries, err := os.ReadDir(tmp)

@@ -16,9 +16,14 @@ package manifest
 
 import "gopkg.in/yaml.v3"
 
-// nullTag is the yaml.v3 tag for an explicit YAML null, the one scalar kind
-// the helpers below reject.
-const nullTag = "!!null"
+// yaml.v3 scalar tags the helpers below discriminate on. nullTag is the one
+// scalar kind scalarString rejects; the other two keep a typed read from
+// accepting a quoted lookalike.
+const (
+	nullTag = "!!null"
+	intTag  = "!!int"
+	boolTag = "!!bool"
+)
 
 // resolveAlias follows an alias to the node it anchors, so the helpers below
 // see through YAML anchors/aliases the same way they see a literal value.
@@ -68,6 +73,41 @@ func scalarString(node *yaml.Node) (string, bool) {
 	}
 
 	return node.Value, true
+}
+
+// scalarInt returns a scalar node's integer value; ok is false for nil,
+// non-scalar and non-numeric nodes. YAML's own tag resolution decides what
+// counts as a number, so quoted "8080" is a string and does not pass.
+func scalarInt(node *yaml.Node) (int, bool) {
+	if node == nil || node.Kind != yaml.ScalarNode || node.Tag != intTag {
+		return 0, false
+	}
+
+	// Decoded rather than parsed by hand: YAML writes integers in more ways
+	// than Atoi reads (8_080, 0x10, 0o17), and a reader that disagrees with
+	// its own parser rejects files that plainly state a number.
+	var value int
+
+	if err := node.Decode(&value); err != nil {
+		return 0, false
+	}
+
+	return value, true
+}
+
+// isTrue reports whether node is the YAML boolean true. Anything else,
+// including a missing node and the string "true", is false.
+func isTrue(node *yaml.Node) bool {
+	node = resolveAlias(node)
+	if node == nil || node.Kind != yaml.ScalarNode || node.Tag != boolTag {
+		return false
+	}
+
+	// Decoded for the same reason as scalarInt: True and TRUE are the same
+	// boolean to YAML, and comparing the raw text reads them as false.
+	var value bool
+
+	return node.Decode(&value) == nil && value
 }
 
 // joinPath extends a YAML path with a key, leaving no leading dot on the
