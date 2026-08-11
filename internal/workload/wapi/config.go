@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // Config is the parsed representation of the project's config.json — the identity and
@@ -87,7 +89,7 @@ func writeConfig(projectDir string, c Config) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	return atomicWriteFile(configPath(projectDir), data)
+	return fsutil.AtomicWriteFile(configPath(projectDir), data)
 }
 
 // stringPtr lets callers express "absent" as nil so optional Config fields

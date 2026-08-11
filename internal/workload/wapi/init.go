@@ -81,12 +81,12 @@ func Initialize(projectDir string, opts InitOptions) error {
 		return err
 	}
 
-	if err := atomicWriteFile(gitignorePath(projectDir), []byte(gitignoreContents)); err != nil {
+	if err := fsutil.AtomicWriteFile(gitignorePath(projectDir), []byte(gitignoreContents)); err != nil {
 		return err
 	}
 
 	if !fsutil.FileExists(wapiignorePath(projectDir)) {
-		if err := atomicWriteFile(wapiignorePath(projectDir), wapiignoreTemplate); err != nil {
+		if err := fsutil.AtomicWriteFile(wapiignorePath(projectDir), wapiignoreTemplate); err != nil {
 			return err
 		}
 	}

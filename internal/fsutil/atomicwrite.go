@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wapi
+package fsutil
 
 import (
 	"fmt"
@@ -20,14 +20,50 @@ import (
 	"path/filepath"
 )
 
-const atomicFileMode os.FileMode = 0o644
+// DefaultFileMode is the permission CLI-written data files get: readable by
+// anyone who can read the project, writable by the owner. Exported so callers
+// that open a file themselves (an append-only log, say) stay consistent with
+// what AtomicWriteFile leaves behind.
+const DefaultFileMode os.FileMode = 0o644
 
-// atomicWriteFile writes data to a sibling temp file in the same directory as
+// targetMode is the permission the written file should end up with.
+//
+// Replacing a file keeps the mode it already had: a user who tightened
+// something to 0600 should not find it widened by an unrelated edit. A new
+// file gets what a plain create would give it, umask included, because
+// os.CreateTemp makes the temp file 0600 and chmodding to a fixed mode would
+// hand a developer with a restrictive umask a wider file than everything else
+// they write.
+func targetMode(path string) (os.FileMode, error) {
+	if info, err := os.Stat(path); err == nil {
+		return info.Mode().Perm(), nil
+	}
+
+	// The cheapest way to learn what the umask allows is to let the kernel
+	// apply it, in the directory the file is going to live in.
+	probe, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, DefaultFileMode)
+	if err != nil {
+		// Something else created it in between, or the directory refuses; the
+		// rename below reports whichever it is.
+		return DefaultFileMode, nil
+	}
+
+	_ = probe.Close()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	return info.Mode().Perm(), nil
+}
+
+// AtomicWriteFile writes data to a sibling temp file in the same directory as
 // path, fsyncs it, then renames it over path. os.Rename is atomic on POSIX
 // and handled as replace-on-existing by Go on Windows. The parent directory
 // is fsynced after rename so the new dentry survives a crash. The temp file
 // is removed on any failure before rename so no .tmp.* leftovers remain.
-func atomicWriteFile(path string, data []byte) (err error) {
+func AtomicWriteFile(path string, data []byte) (err error) {
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
@@ -57,7 +93,12 @@ func atomicWriteFile(path string, data []byte) (err error) {
 		return fmt.Errorf("close temp file %s: %w", tmp.Name(), err)
 	}
 
-	if err = os.Chmod(tmp.Name(), atomicFileMode); err != nil {
+	mode, err := targetMode(path)
+	if err != nil {
+		return err
+	}
+
+	if err = os.Chmod(tmp.Name(), mode); err != nil {
 		return fmt.Errorf("chmod temp file %s: %w", tmp.Name(), err)
 	}
 

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
@@ -104,5 +106,5 @@ func writeManifest(projectDir string, m Manifest) error {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	return atomicWriteFile(manifestPath(projectDir), data)
+	return fsutil.AtomicWriteFile(manifestPath(projectDir), data)
 }
