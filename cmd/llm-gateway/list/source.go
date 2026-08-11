@@ -66,7 +66,17 @@ func (s *Source) Type() string {
 // as an empty instance.
 func fetchLLMs(source Source) (*drapi.LLMList, error) {
 	if source == SourceGateway {
-		return drapi.GetLLMs()
+		gateway, err := drapi.GetLLMs()
+		if err != nil {
+			return nil, err
+		}
+
+		// GetLLMs leaves Count and TotalCount as the last decoded page reported
+		// them, which is not the filtered row count. Restate them over the rows
+		// actually returned so all three branches agree on what the fields mean.
+		gateway.Count, gateway.TotalCount = len(gateway.LLMs), len(gateway.LLMs)
+
+		return gateway, nil
 	}
 
 	if source == SourceDeployed {

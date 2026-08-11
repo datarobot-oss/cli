@@ -520,3 +520,55 @@ func TestListCmd_AllStillSoftDegrades(t *testing.T) {
 	require.Len(t, envelope.LLMs, 1)
 	assert.Equal(t, drapi.LLMKindGateway, envelope.LLMs[0].Source)
 }
+
+// TestFetchLLMs_CountMatchesRowsAcrossSources pins the one contract fetchLLMs
+// owns: Count and TotalCount describe the rows returned, whatever --source was
+// asked for. The gateway branch needs a paginated catalog to be meaningful,
+// since GetLLMs otherwise leaves the last page's own counts in place and they
+// happen to agree.
+func TestFetchLLMs_CountMatchesRowsAcrossSources(t *testing.T) {
+	var srv *httptest.Server
+
+	catalogPage := 0
+
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.Contains(r.URL.Path, "/deployments") {
+			_, _ = io.WriteString(w, sourceDeployedBody)
+
+			return
+		}
+
+		// Two catalog pages, one active model each, with per-page counts that
+		// do not describe the merged result.
+		catalogPage++
+		if catalogPage == 1 {
+			_, _ = io.WriteString(w, `{"data":[{"llmId":"llm-001","name":"One","isActive":true}],"count":1,"totalCount":2,"next":"`+srv.URL+`/api/v2/genai/llmgw/catalog/?offset=100"}`)
+
+			return
+		}
+
+		_, _ = io.WriteString(w, `{"data":[{"llmId":"llm-002","name":"Two","isActive":true}],"count":1,"totalCount":2,"next":""}`)
+	}))
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	for _, source := range []Source{SourceGateway, SourceDeployed, SourceAll} {
+		catalogPage = 0
+
+		got, err := fetchLLMs(source)
+		require.NoError(t, err, source)
+
+		assert.Equal(t, len(got.LLMs), got.Count, "Count for --source %s", source)
+		assert.Equal(t, len(got.LLMs), got.TotalCount, "TotalCount for --source %s", source)
+	}
+}
