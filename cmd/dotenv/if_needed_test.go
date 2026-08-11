@@ -173,4 +173,31 @@ DATAROBOT_API_TOKEN=test-token
 		require.NoError(t, err)
 		require.False(t, shouldSkip, "Should not skip when DATAROBOT_ENDPOINT is missing")
 	})
+
+	t.Run("should not skip when core variables are set via environment but missing from .env", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte("root: []"), 0o644)
+		require.NoError(t, err)
+
+		// Create .env with template variables but no core DataRobot variables
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `INFRA_ENABLE_LLM=deployed_llm.py
+LLM_DEPLOYMENT_ID=6a21895b92a225e438d83cc2
+USE_DATAROBOT_LLM_GATEWAY=0
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		// Core variables are set via environment, but should be ignored for skip decision
+		t.Setenv("DATAROBOT_ENDPOINT", "https://app.datarobot.com/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.False(t, shouldSkip, "Should not skip when .env is missing core variables even if env vars provide them")
+	})
 }
