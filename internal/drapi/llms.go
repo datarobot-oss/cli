@@ -224,6 +224,12 @@ func GetDeployedLLMs() ([]LLM, error) {
 // The two sources are fetched concurrently: each is a paginated round-trip set,
 // so serial fetching made the caller pay their sum rather than the slower of
 // the two.
+//
+// Both goroutines log through internal/log, whose stderrLogger global is
+// rewritten by tui.Run via StopStderr/StartStderr. Nothing overlaps today
+// because select starts its picker only after this returns. Driving this call
+// from inside a running TUI (a spinner around the fetch, say) would make that a
+// live race, so keep the fetch outside the TUI.
 func GetLLMsAndDeployed() (*LLMList, error) {
 	var (
 		gateway  *LLMList
