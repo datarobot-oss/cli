@@ -43,15 +43,25 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
+// token is the cached API token. Every read and write takes tokenMu (declared
+// in client.go), including the accessors below: GetLLMsAndDeployed fetches two
+// endpoints at once, so a refresh path calling SetToken mid-fetch would race
+// the readers.
 var token string
 
 // GetToken returns the current cached API token.
 func GetToken() string {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	return token
 }
 
 // SetToken sets the cached API token.
 func SetToken(value string) {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	token = value
 }
 

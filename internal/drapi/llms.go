@@ -17,6 +17,7 @@ package drapi
 import (
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
@@ -219,9 +220,38 @@ func GetDeployedLLMs() ([]LLM, error) {
 // is logged and the other source is still returned, so an empty or disabled
 // gateway (common on-prem) or missing deployment access does not blank the
 // list. An error is returned only when both sources fail.
+//
+// The sources are fetched concurrently. Each is a paginated round-trip set, so
+// the caller waits on the slower one instead of both.
+//
+// Keep this call outside a running TUI. Both goroutines log through
+// internal/log, whose stderrLogger global tui.Run rewrites. Nothing overlaps
+// today because select starts its picker after this returns, but wrapping the
+// fetch in a spinner would make that a live race.
 func GetLLMsAndDeployed() (*LLMList, error) {
-	gateway, gwErr := GetLLMs()
-	deployed, depErr := GetDeployedLLMs()
+	var (
+		gateway  *LLMList
+		deployed []LLM
+		gwErr    error
+		depErr   error
+		wg       sync.WaitGroup
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		gateway, gwErr = GetLLMs()
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		deployed, depErr = GetDeployedLLMs()
+	}()
+
+	wg.Wait()
 
 	var warnings []string
 

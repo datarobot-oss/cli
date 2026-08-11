@@ -51,6 +51,8 @@ type LLMOutput struct {
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
+	source := SourceAll
+
 	cmd := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
@@ -59,7 +61,7 @@ func Cmd() *cobra.Command {
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			llmList, err := drapi.GetLLMsAndDeployed()
+			llmList, err := fetchLLMs(source)
 			if err != nil {
 				return err
 			}
@@ -81,9 +83,17 @@ func Cmd() *cobra.Command {
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
+	cmd.Flags().Var(&source, "source",
+		fmt.Sprintf("LLM sources to list (%s, %s, %s)", SourceAll, SourceGateway, SourceDeployed))
+
+	_ = cmd.RegisterFlagCompletionFunc("source", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{string(SourceAll), string(SourceGateway), string(SourceDeployed)}, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"output_format": string(outputFormat),
+			"source":        string(source),
 		}
 	})
 
