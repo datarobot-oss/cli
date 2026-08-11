@@ -13,10 +13,10 @@ dr llm [flags]           # alias
 
 The `dr llm-gateway` group exposes two subcommands:
 
-- **`list`** — fetch available LLMs from two sources and display them as a table or JSON: active LLM Gateway catalog models (`/api/v2/genai/llmgw/catalog/`) and DataRobot-deployed LLMs (`/api/v2/deployments/`, deployments whose champion model is a `TextGeneration` model). A `SOURCE` column / `source` field distinguishes the two.
+- **`list`** — fetch available LLMs from two sources and display them as a table or JSON: active LLM Gateway catalog models (`/api/v2/genai/llmgw/catalog/`) and DataRobot-deployed LLMs (`/api/v2/deployments/`, deployments whose champion model is a `TextGeneration` model). A `SOURCE` column / `source` field distinguishes the two. `--source` narrows it to one.
 - **`select`** — choose a default LLM, either by ID or through an interactive TUI picker. The selection is persisted to `drconfig.yaml` and read by other CLI commands.
 
-Each source is best-effort: if one source cannot be reached (e.g. an empty LLM Gateway on-prem, or no deployment access), the command logs a warning and lists the other. It errors only when both sources fail.
+When both sources are queried (`select`, and `list` without `--source`), each is best-effort: if one cannot be reached (e.g. an empty LLM Gateway on-prem, or no deployment access), the command logs a warning and lists the other, and errors only when both fail. The two are fetched in parallel, so the command waits on the slower source rather than on both in turn. Asking `list` for a single source instead makes a failure to reach it an error, since there is no other source left to show.
 
 **Aliases:** `llm`, `llm-gateways`
 
@@ -34,9 +34,7 @@ dr llm ls               # shortest alias
 **Flags:**
 
 - `--output-format <json>` — emit machine-parseable JSON instead of a table.
-- `--source <all|gateway|deployed>` — which sources to query. Defaults to `all`. `gateway` and `deployed` skip the request the other source would have made, so a script that needs one source does not wait on both. The values are the same strings the `SOURCE` column and the JSON `source` field carry.
-
-When `--source` names a single source, a failure to reach it is an error. Only the default `all` degrades to the source that is still reachable — with one source requested there is no remainder to show, and reporting an empty list would read as an instance with no models.
+- `--source <all|gateway|deployed>` — which sources to query. Defaults to `all`. `gateway` and `deployed` skip the request the other source would have made, so a script that needs one source does not wait on both. The values are the same strings the `SOURCE` column and the JSON `source` field carry. A single source that cannot be reached is an error rather than an empty list.
 
 **Output columns (table):**
 
@@ -78,7 +76,7 @@ dr llm-gateway list
 # JSON output
 dr llm-gateway list --output-format json
 
-# One source only — skips the request the other source would have made
+# One source only. Skips the request the other source would have made.
 dr llm-gateway list --source gateway
 dr llm-gateway list --source deployed --output-format json
 
