@@ -242,3 +242,75 @@ func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "not found", "a cross-host next must fail loudly, not fall through to not-found")
 }
+
+// The base-image picker offers only what a build can actually target: an
+// environment with no successful version would fail at build time with
+// nothing the user could do about it.
+func TestListExecutionEnvironments_SkipsVersionlessEnvironments(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"data": [%s, %s, %s], "next": ""}`,
+			eeDoc("ee-1", "Python 3.11", "ver-1"),
+			eeDoc("ee-2", "Never built", ""),
+			eeDoc("ee-3", "Python 3.12", "ver-3"),
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	environments, err := ListExecutionEnvironments(50)
+	require.NoError(t, err)
+
+	require.Len(t, environments, 2)
+	assert.Equal(t, "ee-1", environments[0].ID)
+	assert.Equal(t, "ee-3", environments[1].ID)
+}
+
+func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
+	installSkipAuth(t)
+
+	// next is filled in once the server has an address; the handler only ever
+	// echoes this test's own value, never anything from the request.
+	var next string
+
+	pages := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pages++
+
+		fmt.Fprintf(w, `{"data": [%s, %s], "next": %q}`,
+			eeDoc(fmt.Sprintf("ee-%da", pages), "A", "ver-a"),
+			eeDoc(fmt.Sprintf("ee-%db", pages), "B", "ver-b"),
+			next,
+		)
+	}))
+
+	defer srv.Close()
+
+	next = srv.URL + "/api/v2/executionEnvironments/?limit=100&page=2"
+
+	installEndpoint(t, srv.URL)
+
+	environments, err := ListExecutionEnvironments(3)
+	require.NoError(t, err)
+
+	assert.Len(t, environments, 3)
+	assert.Equal(t, 2, pages, "paging stops as soon as the limit is reached")
+}
+
+func TestListExecutionEnvironments_ServerError(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListExecutionEnvironments(50)
+	require.Error(t, err)
+}
