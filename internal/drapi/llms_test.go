@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -246,25 +246,45 @@ func TestGetLLMsAndDeployed_BothFail(t *testing.T) {
 // has been entered. A serial fetch can never satisfy both, so this is what
 // stops the two sources from silently reverting to sum-of-both latency; the
 // union and soft-degrade tests pass either way.
+//
+// The barrier keys on the route, not on a request count: if either fixture ever
+// grows a Next page, two pages from one source would satisfy a counter and the
+// test would go green against a serial implementation.
 func TestGetLLMsAndDeployed_FetchesConcurrently(t *testing.T) {
 	var (
-		arrived atomic.Int32
-		both    = make(chan struct{})
+		mu    sync.Mutex
+		seen  = map[string]bool{}
+		both  = make(chan struct{})
+		route = func(path string) string {
+			if strings.Contains(path, "/deployments") {
+				return "deployments"
+			}
+
+			return "catalog"
+		}
 	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if arrived.Add(1) == 2 {
-			close(both)
+		name := route(r.URL.Path)
+
+		mu.Lock()
+		if !seen[name] {
+			seen[name] = true
+
+			if len(seen) == 2 {
+				close(both)
+			}
 		}
+		mu.Unlock()
 
 		select {
 		case <-both:
 		case <-time.After(3 * time.Second):
-			t.Error("requests did not overlap: the two sources are being fetched serially")
+			t.Errorf("%s did not overlap the other source: the two are being fetched serially", name)
 		}
 
 		body := gatewayBody
-		if strings.Contains(r.URL.Path, "/deployments") {
+		if name == "deployments" {
 			body = deployedBody
 		}
 
