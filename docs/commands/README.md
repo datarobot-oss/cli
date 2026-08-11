@@ -353,7 +353,7 @@ For detailed documentation on each command, see:
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
 - **[llm-gateway](llm-gateway.md)**&mdash;list and configure the default LLM, across LLM Gateway catalog models and DataRobot-deployed LLMs (aliases: `llm`, `llm-gateways`).
-  - `list` (`ls`)&mdash;fetch available LLMs from both sources and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
+  - `list` (`ls`)&mdash;fetch available LLMs and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Both sources are queried in parallel by default; `--source gateway` or `--source deployed` narrows it to one and skips the other request. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
   - `select [llm-id]`&mdash;set the default LLM. Without an argument, launches an interactive TUI picker. With an argument (a gateway model id or a deployment id), validates it against the available LLMs and persists it immediately. The selection is saved to `drconfig.yaml` under the key `default-llm-id`.
 
 - **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
