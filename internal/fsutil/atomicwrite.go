@@ -98,12 +98,33 @@ func AtomicWriteFile(path string, data []byte) (err error) {
 		return err
 	}
 
-	if err = os.Chmod(tmp.Name(), mode); err != nil {
-		return fmt.Errorf("chmod temp file %s: %w", tmp.Name(), err)
+	return renameIntoPlace(tmp.Name(), path, dir, mode)
+}
+
+// renameIntoPlace sets the temp file's mode, clears any read-only attribute
+// on the destination (Windows only, see golang/go#38287), renames the temp
+// over the target, and fsyncs the parent directory so the rename is durable.
+// The mode passed in is what targetMode decided the file should end up with:
+// the existing file's preserved mode on a replace, or umask-applied
+// DefaultFileMode on a new file.
+func renameIntoPlace(tmpPath, targetPath, dir string, mode os.FileMode) error {
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		return fmt.Errorf("chmod temp file %s: %w", tmpPath, err)
 	}
 
-	if err = os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("rename %s to %s: %w", tmp.Name(), path, err)
+	// On Windows, os.Rename fails with "Access is denied" when the
+	// destination is read-only (golang/go#38287). Clear the attribute first
+	// so a read-only file is replaced the way it would be on POSIX. The chmod
+	// above already set the temp file's mode, so the rename lands the right
+	// permissions; targetMode returned the existing file's mode, which on
+	// Windows is 0o444 for a read-only file, so the read-only attribute is
+	// restored by that chmod.
+	if err := clearReadOnlyBeforeRename(targetPath); err != nil {
+		return fmt.Errorf("cannot clear read-only attribute on %s: %w", targetPath, err)
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmpPath, targetPath, err)
 	}
 
 	// Best-effort fsync of the parent directory so the rename is durable.

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+//go:build windows
 
 package fsutil
 
@@ -35,40 +35,34 @@ func TestAtomicWriteFile_CreatesNew(t *testing.T) {
 	got, err := os.ReadFile(target)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"hello":"world"}`, string(got))
-
-	assertSameModeAsPlainWrite(t, target)
 }
 
-// assertSameModeAsPlainWrite compares against a file the standard library
-// just created with the same requested mode, so the assertion holds under any
-// umask rather than only the developer's. It is also the contract: a file the
-// CLI writes should be no wider than one the user's own tools would write.
-func assertSameModeAsPlainWrite(t *testing.T, path string) {
-	t.Helper()
-
-	reference := filepath.Join(t.TempDir(), "reference")
-	require.NoError(t, os.WriteFile(reference, nil, DefaultFileMode))
-
-	want, err := os.Stat(reference)
-	require.NoError(t, err)
-
-	got, err := os.Stat(path)
-	require.NoError(t, err)
-
-	assert.Equal(t, want.Mode().Perm(), got.Mode().Perm())
-}
-
-// A file that already exists keeps the mode it had: tightening a manifest to
-// 0600 should survive an unrelated edit such as the workload-id write-back.
+// On Windows, os.Stat reports a read-only file as 0o444 and a writable file
+// as 0o666; the Unix permission bits do not round-trip. What does round-trip
+// is the FILE_ATTRIBUTE_READONLY attribute, which Go maps to the 0o400
+// owner-read bit. A file that was read-only before an atomic write must stay
+// read-only after, so a user who locked a manifest is not surprised by a
+// write-back widening it.
+//
+// This test would fail without clearReadOnlyBeforeRename: os.Rename on
+// Windows refuses to replace a read-only destination with "Access is denied"
+// (golang/go#38287, unfixed through Go 1.26). The helper clears the attribute
+// before the rename, and the chmod that precedes it sets the temp file to the
+// existing file's mode (0o444), so the read-only attribute is restored by the
+// rename itself.
 func TestAtomicWriteFile_PreservesAnExistingMode(t *testing.T) {
-	target := filepath.Join(t.TempDir(), "tightened")
-	require.NoError(t, os.WriteFile(target, []byte("old"), 0o600))
+	target := filepath.Join(t.TempDir(), "locked")
+	require.NoError(t, os.WriteFile(target, []byte("old"), 0o644))
+
+	// Mark the file read-only the way a user would.
+	require.NoError(t, os.Chmod(target, 0o444))
 
 	require.NoError(t, AtomicWriteFile(target, []byte("new")))
 
 	info, err := os.Stat(target)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o444), info.Mode().Perm(),
+		"a read-only file must stay read-only after an atomic write")
 }
 
 func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
