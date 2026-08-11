@@ -16,23 +16,34 @@ package manifest
 
 import "gopkg.in/yaml.v3"
 
-// yaml.v3 tag names for the scalar kinds the helpers below distinguish.
-const (
-	strTag  = "!!str"
-	nullTag = "!!null"
-)
+// nullTag is the yaml.v3 tag for an explicit YAML null, the one scalar kind
+// the helpers below reject.
+const nullTag = "!!null"
+
+// resolveAlias follows an alias to the node it anchors, so the helpers below
+// see through YAML anchors/aliases the same way they see a literal value.
+// yaml.v3 aliases point directly at the anchored node, never at another
+// alias, so one hop is enough.
+func resolveAlias(node *yaml.Node) *yaml.Node {
+	if node != nil && node.Kind == yaml.AliasNode {
+		return node.Alias
+	}
+
+	return node
+}
 
 // mapValue returns the value node for key in a mapping node, nil when the
 // key is absent or node is not a mapping. Nil-safe so lookups chain:
 // mapValue(mapValue(root, "artifact"), "spec").
 func mapValue(node *yaml.Node, key string) *yaml.Node {
+	node = resolveAlias(node)
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
 
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if node.Content[i].Value == key {
-			return node.Content[i+1]
+			return resolveAlias(node.Content[i+1])
 		}
 	}
 
@@ -41,6 +52,7 @@ func mapValue(node *yaml.Node, key string) *yaml.Node {
 
 // seqItems returns a sequence node's items, nil for anything else.
 func seqItems(node *yaml.Node) []*yaml.Node {
+	node = resolveAlias(node)
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}

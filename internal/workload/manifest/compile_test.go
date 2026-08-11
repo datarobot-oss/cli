@@ -143,6 +143,77 @@ artifact: null
 	}`, string(compiled.Payload))
 }
 
+// A manifest may define a shared environmentVars block anywhere and alias it
+// into containerGroups, e.g. to keep several containers' variables in sync.
+// The anchor itself sits under a key other than environmentVars, so the only
+// place the credential walk can find this reference at all is by resolving
+// the alias at its environmentVars usage.
+func TestCompile_ExpandsCredentialShorthandThroughAlias(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+definitions:
+  sharedEnv: &sharedEnv
+    - name: OPENAI_API_KEY
+      value: dr-credential:68f0cccc0000000000000003/apiToken
+artifact:
+  spec:
+    containerGroups:
+      - containers:
+          - name: primary
+            imageUri: a:1
+            environmentVars: *sharedEnv
+`), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	require.Len(t, compiled.CredentialRefs, 1)
+	assert.Equal(t, "68f0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)
+
+	var payload struct {
+		Artifact struct {
+			Spec struct {
+				ContainerGroups []struct {
+					Containers []struct {
+						EnvironmentVars []workload.EnvironmentVar `json:"environmentVars"`
+					} `json:"containers"`
+				} `json:"containerGroups"`
+			} `json:"spec"`
+		} `json:"artifact"`
+	}
+	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
+
+	envVars := payload.Artifact.Spec.ContainerGroups[0].Containers[0].EnvironmentVars
+	require.Len(t, envVars, 1)
+	assert.Equal(t, workload.EnvironmentVar{
+		Source:         workload.EnvironmentVarSourceDRCredential,
+		Name:           "OPENAI_API_KEY",
+		DRCredentialID: "68f0cccc0000000000000003",
+		Key:            "apiToken",
+	}, envVars[0])
+}
+
+func TestCompile_MalformedShorthandThroughAliasFails(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+definitions:
+  sharedEnv: &sharedEnv
+    - name: KEY
+      value: dr-credential:no-key-part
+artifact:
+  spec:
+    containerGroups:
+      - containers:
+          - imageUri: a:1
+            environmentVars: *sharedEnv
+`), "")
+	require.NoError(t, err)
+
+	_, err = m.Compile()
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "must be dr-credential:<credential-id>/<key>")
+}
+
 func TestCompile_MalformedShorthandFails(t *testing.T) {
 	m, err := Parse([]byte(`name: my-app
 artifact:

@@ -24,11 +24,12 @@
 // moves faster than any struct would, so unknown blocks pass through to the
 // API untouched and platform additions need no CLI release. The package
 // parses the file once into a yaml.Node tree and derives everything from it:
-// Validate walks the nodes so every finding carries its manifest line,
-// Compile lowers the tree to the JSON create payload, and WriteWorkloadID
-// performs the package's only write, a single-key edit that keeps the user's
-// comments, unknown keys and their order intact. config never rewrites an
-// existing manifest; after the first write the file is the interface.
+// Compile lowers the tree to the JSON create payload. A stacked follow-up
+// adds Validate, walking the same tree so every finding carries its manifest
+// line, and WriteWorkloadID, the package's only write: a single-key edit
+// that keeps the user's comments, unknown keys and their order intact.
+// config never rewrites an existing manifest; after the first write the
+// file is the interface.
 //
 // Non-scope: no HTTP. Compile returns CredentialRefs so callers can verify
 // each referenced credential against the store (one GET per credential)

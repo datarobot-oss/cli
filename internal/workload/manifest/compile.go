@@ -177,6 +177,11 @@ type refCollector struct {
 }
 
 func (c *refCollector) walk(node *yaml.Node, path string) {
+	node = resolveAlias(node)
+	if node == nil {
+		return
+	}
+
 	switch node.Kind {
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
@@ -194,7 +199,9 @@ func (c *refCollector) walk(node *yaml.Node, path string) {
 			c.walk(item, fmt.Sprintf("%s[%d]", path, i))
 		}
 	case yaml.DocumentNode, yaml.ScalarNode, yaml.AliasNode:
-		// Leaves, and containers the walk does not descend into.
+		// Leaves. AliasNode is unreachable here: resolveAlias above already
+		// replaced it with the node it anchors, but the exhaustive linter
+		// wants every yaml.Kind accounted for.
 	}
 }
 
