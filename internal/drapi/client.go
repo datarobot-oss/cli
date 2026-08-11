@@ -31,10 +31,11 @@ import (
 // callers don't specify their own.
 const DefaultClientTimeout = 30 * time.Second
 
-// tokenMu guards the lazy resolve-and-cache in getToken. Callers that fetch
-// from more than one endpoint concurrently (GetLLMsAndDeployed) would otherwise
-// race on the `token` global, and holding the lock across resolveToken keeps
-// the first concurrent caller's round-trip from being duplicated by the rest.
+// tokenMu guards every access to the `token` global (declared in get.go),
+// including GetToken and SetToken. Callers that fetch from more than one
+// endpoint concurrently (GetLLMsAndDeployed) would otherwise race on it.
+// getToken holds the lock across resolveToken as well, so the first concurrent
+// caller's verification round-trip is not duplicated by the rest.
 var tokenMu sync.Mutex
 
 // getToken returns the memoized API token, resolving and caching it on first
