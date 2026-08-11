@@ -256,6 +256,17 @@ func ApplyGeneratedValues(prompts []UserPrompt) ([]UserPrompt, error) {
 }
 
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
+	return gatherUserPrompts(rootDir, variables, true)
+}
+
+// GatherUserPromptsFromFile gathers user prompts using only .env file values,
+// ignoring OS environment variables. This is used for --if-needed skip checks
+// where we want to know whether the .env file itself is complete.
+func GatherUserPromptsFromFile(rootDir string, variables Variables) ([]UserPrompt, error) {
+	return gatherUserPrompts(rootDir, variables, false)
+}
+
+func gatherUserPrompts(rootDir string, variables Variables, includeEnv bool) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to discover task yaml files: %w", err)
@@ -274,7 +285,7 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 		allPrompts = append(allPrompts, prompts...)
 	}
 
-	allPrompts = promptsWithValues(allPrompts, variables)
+	allPrompts = promptsWithValues(allPrompts, variables, includeEnv)
 
 	allPrompts, err = ApplyGeneratedValues(allPrompts)
 	if err != nil {

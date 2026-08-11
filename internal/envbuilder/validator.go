@@ -86,12 +86,23 @@ func (r EnvironmentValidationError) Error() string {
 // 2. Validates all required UserPrompts in active sections
 // 3. Validates core DataRobot variables (DATAROBOT_ENDPOINT, DATAROBOT_API_TOKEN).
 func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValidationError {
+	return validateEnvironment(repoRoot, variables, true)
+}
+
+// ValidateEnvironmentFileOnly validates that all required environment variables are set
+// using only the .env file contents, ignoring OS environment variables. This is used
+// for --if-needed skip checks where we want to know whether the .env file itself is complete.
+func ValidateEnvironmentFileOnly(repoRoot string, variables Variables) EnvironmentValidationError {
+	return validateEnvironment(repoRoot, variables, false)
+}
+
+func validateEnvironment(repoRoot string, variables Variables, includeEnv bool) EnvironmentValidationError {
 	result := EnvironmentValidationError{
 		Results: make([]ValidationResult, 0),
 	}
 
 	// Gather all user prompts from the repository
-	userPrompts, err := GatherUserPrompts(repoRoot, variables)
+	userPrompts, err := gatherUserPrompts(repoRoot, variables, includeEnv)
 	if err != nil {
 		result.Results = append(result.Results, ValidationResult{
 			Field:   "prompts",
@@ -110,7 +121,9 @@ func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValida
 
 // promptsWithValues updates slice of prompts with values from .env file contents
 // and environment variables (environment variables take precedence).
-func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
+// When includeEnv is false, OS environment variables are ignored and only
+// .env file values (plus defaults and viper config) are used.
+func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv bool) []UserPrompt {
 	// Special handling for PULUMI_CONFIG_PASSPHRASE from viper config
 	// This happens regardless of whether variables exist
 	for p := range prompts {
@@ -130,22 +143,38 @@ func promptsWithValues(prompts []UserPrompt, variables Variables) []UserPrompt {
 	}
 
 	for p, prompt := range prompts {
-		// Capture existing env var values (highest priority)
-		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
-			prompt.Value = existingEnvValue
-		} else if v, found := variables.find(prompt); found {
-			// .env file value overrides viper config
-			prompt.Value = v.Value
-			prompt.Commented = v.Commented
-		} else if prompt.Value == "" {
-			// Only fall back to default if nothing else (including viper config) set a value
-			prompt.Value = prompt.Default
-		}
-
-		prompts[p] = prompt
+		prompts[p] = resolvePromptValue(prompt, variables, includeEnv)
 	}
 
 	return prompts
+}
+
+// resolvePromptValue determines the effective value for a prompt based on
+// .env file contents and optionally OS environment variables.
+func resolvePromptValue(prompt UserPrompt, variables Variables, includeEnv bool) UserPrompt {
+	if includeEnv {
+		// Capture existing env var values (highest priority)
+		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
+			prompt.Value = existingEnvValue
+
+			return prompt
+		}
+	}
+
+	if v, found := variables.find(prompt); found {
+		// .env file value overrides viper config
+		prompt.Value = v.Value
+		prompt.Commented = v.Commented
+
+		return prompt
+	}
+
+	if prompt.Value == "" {
+		// Only fall back to default if nothing else (including viper config) set a value
+		prompt.Value = prompt.Default
+	}
+
+	return prompt
 }
 
 func indexByName(value string) func(v Variable) bool {
