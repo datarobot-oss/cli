@@ -19,10 +19,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -52,16 +54,43 @@ func PrintUnsetTokenInstructions() {
 // FprintUnsetTokenInstructions writes platform-specific instructions for
 // unsetting DATAROBOT_API_TOKEN to w.
 func FprintUnsetTokenInstructions(w io.Writer) {
-	fmt.Fprint(w, tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
-	fmt.Fprint(w, tui.BaseTextStyle.Render(" (or "))
-	fmt.Fprint(w, tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-	fmt.Fprintln(w, tui.BaseTextStyle.Render(" on Windows)"))
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, info.Render("  unset DATAROBOT_API_TOKEN"))
+	fmt.Fprint(w, base.Render(" (or "))
+	fmt.Fprint(w, info.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+	fmt.Fprintln(w, base.Render(" on Windows)"))
+}
+
+// writerStyles binds the shared text styles to w's renderer. The package
+// defaults probe stdout for color support, so styled text sent to a different
+// stream (stderr redirected to a file while stdout is a TTY, or a buffer in
+// tests) would otherwise carry ANSI codes the destination cannot display.
+func writerStyles(w io.Writer) (base, info lipgloss.Style) {
+	r := lipgloss.NewRenderer(w)
+
+	return tui.BaseTextStyle.Renderer(r), tui.InfoStyle.Renderer(r)
 }
 
 // EnvCredentials holds environment variable authentication credentials.
 type EnvCredentials struct {
 	Endpoint string
 	Token    string
+	// EndpointVar is the environment variable Endpoint was read from:
+	// DATAROBOT_ENDPOINT, or the SDK-style DATAROBOT_API_ENDPOINT fallback.
+	// Error messages name it so the user fixes the variable that is actually
+	// set.
+	EndpointVar string
+}
+
+// endpointVarName returns EndpointVar, defaulting to DATAROBOT_ENDPOINT for
+// zero-value credentials constructed outside GetEnvCredentials.
+func (c *EnvCredentials) endpointVarName() string {
+	if c.EndpointVar == "" {
+		return "DATAROBOT_ENDPOINT"
+	}
+
+	return c.EndpointVar
 }
 
 // GetEnvCredentials reads DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from environment.
@@ -73,14 +102,18 @@ type EnvCredentials struct {
 // need to report why env credentials failed should use ValidateEndpoint to
 // distinguish a malformed endpoint from an invalid token.
 func GetEnvCredentials() EnvCredentials {
-	endpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	endpointVar := "DATAROBOT_ENDPOINT"
+
+	endpoint := os.Getenv(endpointVar)
 	if endpoint == "" {
-		endpoint = os.Getenv("DATAROBOT_API_ENDPOINT")
+		endpointVar = "DATAROBOT_API_ENDPOINT"
+		endpoint = os.Getenv(endpointVar)
 	}
 
 	return EnvCredentials{
-		Endpoint: endpoint,
-		Token:    os.Getenv("DATAROBOT_API_TOKEN"),
+		Endpoint:    endpoint,
+		Token:       os.Getenv("DATAROBOT_API_TOKEN"),
+		EndpointVar: endpointVar,
 	}
 }
 
@@ -102,32 +135,52 @@ func ValidateEndpoint(endpoint string) error {
 
 // ReportEnvCredentialsError writes a classified explanation of why an
 // explicitly supplied DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair failed
-// verification: a network timeout, a malformed endpoint, or an invalid token.
-// Shared by EnsureAuthenticated (writing to stderr) and `dr auth check`.
+// verification: a network timeout, a malformed endpoint, an unreachable
+// endpoint, or an invalid token. Shared by EnsureAuthenticated (writing to
+// stderr) and `dr auth check`.
 func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
+	base, info := writerStyles(w)
+
 	if errors.Is(err, context.DeadlineExceeded) {
 		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
 
-		fmt.Fprint(w, tui.BaseTextStyle.Render("❌ Connection to "))
-		fmt.Fprint(w, tui.InfoStyle.Render(envDatarobotHost))
-		fmt.Fprintln(w, tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
+		fmt.Fprint(w, base.Render("❌ Connection to "))
+		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprintln(w, base.Render(" timed out. Check your network and try again."))
 
 		return
 	}
 
-	// Distinguish a malformed DATAROBOT_ENDPOINT from an invalid token so the
-	// user fixes the right thing. A quoted endpoint (e.g. from running
+	// Distinguish a malformed endpoint from an invalid token so the user
+	// fixes the right thing. A quoted endpoint (e.g. from running
 	// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
 	// and must not be reported as a token problem.
 	if epErr := ValidateEndpoint(creds.Endpoint); epErr != nil {
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_ENDPOINT environment variable is invalid: "+epErr.Error()))
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+epErr.Error()))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
 
 		return
 	}
 
-	fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
-	fmt.Fprintln(w, tui.BaseTextStyle.Render("Unset it and try again:"))
+	// A transport-level failure (connection refused, DNS, TLS, proxy) means
+	// the instance was never reached and the token was never judged, so
+	// advising the user to unset the token would point them at the wrong
+	// thing. VerifyToken wraps transport errors in *url.Error; a rejected
+	// token comes back as a plain error from the HTTP status check.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+		fmt.Fprint(w, base.Render("❌ Could not connect to "))
+		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprintln(w, base.Render(": "+urlErr.Err.Error()))
+		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+" and your network, then try again."))
+
+		return
+	}
+
+	fmt.Fprintln(w, base.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
+	fmt.Fprintln(w, base.Render("Unset it and try again:"))
 	FprintUnsetTokenInstructions(w)
 }
 
@@ -146,11 +199,13 @@ func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
 		requestedHost = host
 	}
 
-	fmt.Fprint(w, tui.BaseTextStyle.Render("Environment credentials for "))
-	fmt.Fprint(w, tui.InfoStyle.Render(requestedHost))
-	fmt.Fprint(w, tui.BaseTextStyle.Render(" failed to verify; not falling back to the stored profile for "))
-	fmt.Fprint(w, tui.InfoStyle.Render(storedHost))
-	fmt.Fprintln(w, tui.BaseTextStyle.Render("."))
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, base.Render("Environment credentials for "))
+	fmt.Fprint(w, info.Render(requestedHost))
+	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored profile for "))
+	fmt.Fprint(w, info.Render(storedHost))
+	fmt.Fprintln(w, base.Render("."))
 }
 
 // VerifyEnvCredentials checks if environment variable credentials are valid.
