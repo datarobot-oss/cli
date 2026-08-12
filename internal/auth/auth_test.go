@@ -234,6 +234,38 @@ func TestReportEnvCredentialsError(t *testing.T) {
 		assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
 	})
 
+	t.Run("scheme-less endpoint is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "app.example.com/api/v2", Token: "some-token"}
+		dialErr := &url.Error{
+			Op:  "Get",
+			URL: creds.Endpoint + "/version/",
+			Err: errors.New(`unsupported protocol scheme ""`),
+		}
+		ReportEnvCredentialsError(&buf, creds, dialErr)
+
+		assert.Contains(t, buf.String(), "missing URL scheme")
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
+	t.Run("raw parse failure is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		// Leading whitespace fails VerifyToken's raw url.Parse but survives
+		// ValidateEndpoint, which trims before parsing.
+		creds := &EnvCredentials{Endpoint: " https://app.example.com/api/v2", Token: "some-token"}
+		parseErr := &url.Error{
+			Op:  "parse",
+			URL: creds.Endpoint,
+			Err: errors.New("first path segment in URL cannot contain colon"),
+		}
+		ReportEnvCredentialsError(&buf, creds, parseErr)
+
+		assert.Contains(t, buf.String(), "environment variable is invalid")
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
 	t.Run("unreachable endpoint is not a token problem", func(t *testing.T) {
 		var buf bytes.Buffer
 

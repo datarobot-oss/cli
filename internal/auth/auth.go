@@ -162,13 +162,34 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 		return
 	}
 
+	// VerifyToken dials the raw endpoint value, while ValidateEndpoint above
+	// forgives what SchemeHostOnly can clean up (a bare host without a
+	// scheme, stray whitespace). Catch those as endpoint problems here so the
+	// transport branch below only ever names a host that was actually dialed.
+	var urlErr *url.Error
+
+	hasURLErr := errors.As(err, &urlErr)
+
+	if !strings.Contains(strings.TrimSpace(creds.Endpoint), "://") {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: missing URL scheme (https://...)"))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
+
+		return
+	}
+
+	if hasURLErr && urlErr.Op == "parse" {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+urlErr.Err.Error()))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
+
+		return
+	}
+
 	// A transport-level failure (connection refused, DNS, TLS, proxy) means
 	// the instance was never reached and the token was never judged, so
 	// advising the user to unset the token would point them at the wrong
 	// thing. VerifyToken wraps transport errors in *url.Error; a rejected
 	// token comes back as a plain error from the HTTP status check.
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
+	if hasURLErr {
 		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
 
 		fmt.Fprint(w, base.Render("❌ Could not connect to "))
