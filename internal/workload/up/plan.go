@@ -1,0 +1,138 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package up
+
+// Actions are what a run will do, and what the JSON envelope reports. A run
+// does exactly one of them, so when several could apply the most significant
+// wins: creating beats rolling, rolling beats retuning, retuning beats
+// starting.
+const (
+	ActionCreated   = "created"
+	ActionRolled    = "rolled"
+	ActionUpdated   = "updated"
+	ActionStarted   = "started"
+	ActionUnchanged = "unchanged"
+)
+
+// CodeChange is the working tree measured against what the platform already
+// holds. It only means anything when the manifest asks the platform to build
+// the image; a container that names a published image has no code to sync,
+// and reporting file counts for it would invite the reader to expect a
+// rebuild that is never going to happen.
+type CodeChange struct {
+	// Applies is false when the manifest names an image rather than a build,
+	// in which case the rest of this struct is meaningless.
+	Applies bool
+
+	// Files is how many differ. Zero with Applies true means the tree matches.
+	Files int
+
+	// FirstDeploy marks a project with nothing to compare against yet, so
+	// every file is new rather than changed.
+	FirstDeploy bool
+}
+
+// Changed reports whether the code needs syncing and rebuilding.
+func (c CodeChange) Changed() bool {
+	return c.Applies && (c.FirstDeploy || c.Files > 0)
+}
+
+// Plan is what a run intends to do, computed before it does any of it.
+type Plan struct {
+	// State is the live workload, so a plan can be printed for something that
+	// cannot actually be deployed onto.
+	State State
+
+	// Creates is a workload that does not exist yet, in which case Artifact
+	// and Runtime are empty: everything in the file is new, and listing it
+	// field by field would be noise rather than a plan.
+	Creates bool
+
+	Code     CodeChange
+	Artifact []Change
+	Runtime  []Change
+}
+
+// Empty reports that the live state already matches the file. `up` prints
+// "Already up to date" and exits 0, having touched nothing.
+//
+// A stopped workload is never empty even when nothing differs: the user asked
+// to deploy, and a workload that is not running has not been deployed.
+func (p Plan) Empty() bool {
+	return !p.Creates &&
+		!p.Code.Changed() &&
+		len(p.Artifact) == 0 &&
+		len(p.Runtime) == 0 &&
+		p.State != StateStopped
+}
+
+// RollsArtifact reports whether a new artifact version has to be minted and
+// rolled in. Code and spec are one question here because they have one
+// answer: both produce a new immutable version, and a run that has to rebuild
+// also has to replace.
+func (p Plan) RollsArtifact() bool {
+	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
+}
+
+// Action names the outcome, for the summary line and the JSON envelope.
+func (p Plan) Action() string {
+	switch {
+	case p.Creates:
+		return ActionCreated
+	case p.RollsArtifact():
+		return ActionRolled
+	case len(p.Runtime) > 0:
+		return ActionUpdated
+	case p.State == StateStopped:
+		return ActionStarted
+	default:
+		return ActionUnchanged
+	}
+}
+
+// Build works out what differs between the file and the live workload.
+//
+// code is passed in rather than computed here so this package never acquires
+// the project lock the sync engine holds between plan and execute, and so the
+// tests never touch a filesystem. The caller runs the sync engine's own plan
+// and hands over the count.
+func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
+	plan := Plan{
+		State:   live.State,
+		Creates: live.State == StateUnbound,
+		Code:    code,
+	}
+
+	// Nothing exists to compare against, so every field is trivially an
+	// addition. Saying so once is a plan; saying it per field is a wall.
+	if plan.Creates {
+		return plan, nil
+	}
+
+	spec, err := loaded.Spec()
+	if err != nil {
+		return Plan{}, err
+	}
+
+	runtime, err := loaded.Runtime()
+	if err != nil {
+		return Plan{}, err
+	}
+
+	plan.Artifact = Subset(spec, live.Spec)
+	plan.Runtime = Subset(runtime, live.Runtime)
+
+	return plan, nil
+}
