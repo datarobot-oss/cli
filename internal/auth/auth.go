@@ -167,8 +167,9 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 }
 
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
-// triggers the login flow automatically. Returns an error if authentication
-// fails, suitable for use in Cobra PreRunE hooks.
+// triggers the login flow automatically (see EnsureAuthenticated for the
+// exceptions). Returns an error if authentication fails, suitable for use in
+// Cobra PreRunE hooks.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 	if !EnsureAuthenticated(cmd.Context()) {
 		return errors.New("Authentication failed.")
@@ -180,6 +181,12 @@ func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 // EnsureAuthenticated checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns true if authentication
 // is valid or was successfully obtained.
+//
+// A complete DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair that fails
+// verification returns false without falling back to the stored profile and
+// without starting the login flow: environment credentials are an explicit
+// instance request, and substituting the profile would silently run against
+// the wrong instance.
 func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	if viperx.GetBool(config.SkipAuthKey) {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
