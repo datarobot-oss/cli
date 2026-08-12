@@ -13,6 +13,7 @@ vars:
   GOLANGCI_LINT_VERSION: "v2.11.4"
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
+  GORELEASER_VERSION: "v2.17.1"
 
 dotenv: [".env"]
 
@@ -36,7 +37,28 @@ tasks:
         export GOBIN={{.BIN_DIR}}
 
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
-        go install github.com/goreleaser/goreleaser/v2@latest
+        # goreleaser: download the prebuilt binary instead of `go install`, which
+        # compiles a large dependency tree from source and slows container/CI setup.
+        GORELEASER_OS=$(go env GOOS)
+        GORELEASER_ARCH=$(go env GOARCH)
+        case "$GORELEASER_OS-$GORELEASER_ARCH" in
+          darwin-arm64)  GORELEASER_ASSET="goreleaser_Darwin_arm64.tar.gz" ;;
+          darwin-amd64)  GORELEASER_ASSET="goreleaser_Darwin_x86_64.tar.gz" ;;
+          linux-arm64)   GORELEASER_ASSET="goreleaser_Linux_arm64.tar.gz" ;;
+          linux-amd64)   GORELEASER_ASSET="goreleaser_Linux_x86_64.tar.gz" ;;
+          windows-amd64) GORELEASER_ASSET="goreleaser_Windows_x86_64.zip" ;;
+          *) echo "Unsupported platform for goreleaser: $GORELEASER_ASSET on $GORELEASER_OS-$GORELEASER_ARCH"; exit 1 ;;
+        esac
+        GORELEASER_TMP=$(mktemp -d)
+        curl -sSfL "https://github.com/goreleaser/goreleaser/releases/download/{{.GORELEASER_VERSION}}/${GORELEASER_ASSET}" -o "$GORELEASER_TMP/archive"
+        if [ "$GORELEASER_OS" = "windows" ]; then
+          unzip -o "$GORELEASER_TMP/archive" -d "$GORELEASER_TMP"
+          mv "$GORELEASER_TMP/goreleaser.exe" {{.BIN_DIR}}/
+        else
+          tar -xzf "$GORELEASER_TMP/archive" -C "$GORELEASER_TMP"
+          mv "$GORELEASER_TMP/goreleaser" {{.BIN_DIR}}/
+        fi
+        rm -rf "$GORELEASER_TMP"
 
         # jscpd: download prebuilt Rust binary from GitHub releases
         JSCPD_OS=$(go env GOOS)
@@ -51,7 +73,26 @@ tasks:
         esac
         curl -sSfL "https://github.com/kucherenko/jscpd/releases/download/v{{.JSCPD_VERSION}}/${JSCPD_ASSET}.tar.gz" | tar -xz -C {{.BIN_DIR}}
 
-        go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
+        # lefthook: download the prebuilt binary instead of `go install` for the
+        # same reason as goreleaser (avoids compiling its dependency tree from source).
+        LEFTHOOK_OS=$(go env GOOS)
+        LEFTHOOK_ARCH=$(go env GOARCH)
+        LEFTHOOK_VER={{.LEFTHOOK_VERSION}}
+        LEFTHOOK_VER=${LEFTHOOK_VER#v}
+        case "$LEFTHOOK_OS-$LEFTHOOK_ARCH" in
+          darwin-arm64)  LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_MacOS_arm64.gz" ;;
+          darwin-amd64)  LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_MacOS_x86_64.gz" ;;
+          linux-arm64)   LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Linux_arm64.gz" ;;
+          linux-amd64)   LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Linux_x86_64.gz" ;;
+          windows-amd64) LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Windows_x86_64.exe" ;;
+          *) echo "Unsupported platform for lefthook: $LEFTHOOK_OS-$LEFTHOOK_ARCH"; exit 1 ;;
+        esac
+        if [ "$LEFTHOOK_OS" = "windows" ]; then
+          curl -sSfL "https://github.com/evilmartians/lefthook/releases/download/{{.LEFTHOOK_VERSION}}/${LEFTHOOK_ASSET}" -o {{.BIN_DIR}}/lefthook.exe
+        else
+          curl -sSfL "https://github.com/evilmartians/lefthook/releases/download/{{.LEFTHOOK_VERSION}}/${LEFTHOOK_ASSET}" | gunzip > {{.BIN_DIR}}/lefthook
+          chmod +x {{.BIN_DIR}}/lefthook
+        fi
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
