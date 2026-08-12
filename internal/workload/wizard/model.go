@@ -785,6 +785,12 @@ func (f *flow) render() error {
 		return err
 	}
 
+	// A name the workload already declares keeps its running value, so it is
+	// not one this run adds. Narrowing before Apply rather than leaving it to
+	// Apply's own skip is what keeps the summary the command prints equal to
+	// what reached the file.
+	f.draft.EnvVars = f.live.NewEnvVars(f.draft.EnvVars)
+
 	applied, err := f.live.Apply(f.draft)
 	if err != nil {
 		return err

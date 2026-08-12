@@ -341,7 +341,9 @@ func TestAnswers_A2AFlagSemantics(t *testing.T) {
 	_, err = Run(headless(dir, Answers{Name: "my-app", A2AEnabled: true, Type: manifest.TypeAgent}))
 	require.NoError(t, err)
 
-	err = Answers{A2AEnabled: true}.check()
+	// The rule is judged against the kind that will be written, so it runs
+	// once the draft has one. With nothing bound, that is the default.
+	_, err = Answers{A2AEnabled: true}.draft(Detect(dir))
 	require.Error(t, err, "with the default kind being service, the pair is still a contradiction")
 	assert.Contains(t, err.Error(), "--a2a-enabled applies to --type agent")
 }
@@ -1282,4 +1284,47 @@ func TestFlow_SettingsRejectsNonFiniteCPU(t *testing.T) {
 			assert.Equal(t, screenSettings, model.at)
 		})
 	}
+}
+
+// The summary the command prints counts what reached the file. A bound
+// workload keeps the values it already declares, so a variable it has is not
+// one this run added.
+func TestFlow_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3",
+				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"}]}]}]}}`))
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
+		[]byte("LOG_LEVEL=debug\nFEATURE_X=on\n"), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter", "enter", "enter") // kind, source, keep the live image
+	require.Equal(t, screenSettings, model.at)
+
+	model = press(t, model, "enter")
+	require.Equal(t, screenEnv, model.at)
+
+	model = press(t, model, "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	_, draft, err := press(t, model, "enter").result()
+	require.NoError(t, err)
+
+	assert.Len(t, draft.EnvVars, 1, "LOG_LEVEL was already there, so only FEATURE_X was added")
+	assert.Equal(t, "FEATURE_X", draft.EnvVars[0].Name)
+	// The running value stands: .env is the developer's copy and may be stale.
+	assert.Contains(t, string(model.content), "value: info")
+	assert.NotContains(t, string(model.content), "value: debug")
 }
