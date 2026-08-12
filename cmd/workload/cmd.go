@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"github.com/datarobot/cli/cmd/workload/config"
 	"github.com/datarobot/cli/cmd/workload/create"
 	"github.com/datarobot/cli/cmd/workload/del"
 	"github.com/datarobot/cli/cmd/workload/endpoint"
@@ -44,6 +45,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 	cmd.AddCommand(
 		// The workload itself is the primary resource: direct verbs, like
 		// `dr pipeline create|get|...`.
+		config.Cmd(),
 		create.Cmd(),
 		del.Cmd(),
 		endpoint.Cmd(),
