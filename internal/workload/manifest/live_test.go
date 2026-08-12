@@ -373,6 +373,52 @@ func TestLive_ApplyDoesNotInventAReadinessProbe(t *testing.T) {
 	assert.NotContains(t, string(rendered), "/ready", "no probe means nothing to point")
 }
 
+// A workload can carry probes the wizard has no question for. Changing the
+// port has to take them along: a startup probe left behind on the old port is
+// a workload that builds, starts, and then never reports ready.
+func TestLive_ApplyMovesPreservedProbesWithThePort(t *testing.T) {
+	live := liveFixture(t)
+
+	draft := live.Defaults()
+	draft.Port = 9000
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), keyStartupProbe)
+	assert.NotContains(t, string(rendered), "8000", "every probe watching the container's port follows it")
+	assert.Contains(t, string(rendered), "failureThreshold: 60", "the rest of the probe is untouched")
+}
+
+// A probe on a port of its own was pointed there deliberately, so it stays
+// where it is rather than being dragged along with the container's port.
+func TestLive_ApplyLeavesAProbeOnItsOwnPort(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 8080, "imageUri": "registry/a:v1",
+         "livenessProbe": {"path": "/admin/live", "port": 9900}}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	draft.Port = 9000
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "port: 9900")
+}
+
 // A spec that flags no primary container still has one traffic reaches, and
 // the file must say so or the ledger rejects the port it just wrote.
 func TestLive_ApplyFlagsTheContainerItEdits(t *testing.T) {
@@ -405,6 +451,167 @@ func TestLive_DefaultsReadTheLiveSizing(t *testing.T) {
 	assert.Equal(t, 0, runtime.Replicas, "an autoscaled group has no replica count to report")
 	assert.InEpsilon(t, 3.0, runtime.CPU, 0.0001)
 	assert.Equal(t, "22GB", runtime.Memory)
+}
+
+// The runtime list is joined to the artifact by name, not by position. Reading
+// the sizing from whichever container the server happened to list first would
+// show the user a sidecar's allocation, and accepting it would then write that
+// onto the primary and shrink what is running.
+func TestLive_DefaultsReadThePrimaryNotTheFirstListed(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "sidecar-first",
+      "runtime": {"containerGroups": [{"name": "default", "replicaCount": 2, "containers": [
+        {"name": "metrics-bridge", "resourceAllocation": {"cpu": 0.25, "memory": "256MB"}},
+        {"name": "app", "resourceAllocation": {"cpu": 4, "memory": "8GB"}}]}]}
+    }`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "sidecar-first-artifact",
+      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+        {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"},
+        {"name": "metrics-bridge", "imageUri": "example/bridge:v1"}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", workloadDoc, artifactDoc)
+
+	draft := live.Defaults()
+	assert.InEpsilon(t, 4.0, draft.Runtime.CPU, 0.0001)
+	assert.Equal(t, "8GB", draft.Runtime.Memory)
+
+	// Accepting what was shown leaves both containers exactly as they were.
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "cpu: 4")
+	assert.Contains(t, string(rendered), "memory: 8GB")
+	assert.Contains(t, string(rendered), "cpu: 0.25", "the sidecar keeps its own sizing")
+	assert.Contains(t, string(rendered), "memory: 256MB")
+}
+
+// An autoscaling block that is switched off is not autoscaling, which is the
+// rule both the create-payload check and the manifest ledger already apply.
+// Live dissenting from it dropped the user's replica answer for a workload
+// that was not autoscaling at all, and said nothing about it.
+func TestLive_DisabledAutoscalingKeepsTheReplicaAnswer(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "paused-autoscaling",
+      "runtime": {"containerGroups": [{"name": "default", "replicaCount": 3,
+        "autoscaling": {"enabled": false, "minReplicaCount": 1, "maxReplicaCount": 4},
+        "containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}]}
+    }`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+        {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", workloadDoc, artifactDoc)
+
+	draft := live.Defaults()
+	assert.Equal(t, 3, draft.Runtime.Replicas, "the group's own count, not the autoscaled zero")
+
+	draft.Runtime.Replicas = 9
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "replicaCount: 9")
+	assert.Contains(t, string(rendered), "enabled: false", "the policy is preserved as it stands")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(), "the ledger allows a count alongside disabled autoscaling")
+}
+
+// Environment variables merge rather than replace. A name the workload already
+// declares keeps its running value, because .env is the developer's copy and
+// may well be stale, while a name only .env knows about is appended.
+func TestLive_ApplyMergesEnvVars(t *testing.T) {
+	live := liveFixture(t)
+
+	draft := live.Defaults()
+	draft.EnvVars = []EnvVar{
+		{Name: "HF_HOME", Value: "/home/dev/.cache/hf"},
+		{Name: "LOG_LEVEL", Value: "debug"},
+		{Name: "OPENAI_API_KEY", Secret: true},
+	}
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "value: /tmp/hf", "the running value wins over the local copy")
+	assert.NotContains(t, string(rendered), "/home/dev/.cache/hf")
+	assert.Contains(t, string(rendered), "LOG_LEVEL")
+	assert.Contains(t, string(rendered), "value: debug")
+	assert.Contains(t, string(rendered), "dr-credential:"+CredentialPlaceholder+"/apiToken")
+
+	// Both reference forms have to survive to the payload: the object form the
+	// server sent, and the shorthand this merge just wrote.
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+
+	compiled, err := parsed.Compile()
+	require.NoError(t, err)
+
+	referenced := make([]string, 0, len(compiled.CredentialRefs))
+	for _, ref := range compiled.CredentialRefs {
+		referenced = append(referenced, ref.EnvName)
+	}
+
+	assert.ElementsMatch(t, []string{"HUGGING_FACE_HUB_TOKEN", "OPENAI_API_KEY"}, referenced)
+}
+
+// BuildMode reads a parsed manifest rather than a live document: setup asks it
+// what the file already says before offering to change it. Driven through
+// Render so the reader and the writer are held to the same vocabulary.
+func TestManifest_BuildMode(t *testing.T) {
+	generated := Build{
+		Mode:                          BuildModeGenerated,
+		ExecutionEnvironmentID:        "68a1b2c3d4e5f6a7b8c9d0e1",
+		ExecutionEnvironmentVersionID: "68a1b2c3d4e5f6a7b8c9d0e2",
+		Entrypoint:                    []string{"python", "main.py"},
+	}
+
+	for want, build := range map[string]Build{
+		BuildModeDockerfile: {Mode: BuildModeDockerfile},
+		BuildModeGenerated:  generated,
+		BuildModeImage:      {Mode: BuildModeImage, ImageURI: "nginx:latest"},
+	} {
+		t.Run(want, func(t *testing.T) {
+			draft := serviceDraft()
+			draft.Build = build
+
+			out, err := draft.Render()
+			require.NoError(t, err)
+
+			m, err := Parse(out, "")
+			require.NoError(t, err)
+
+			assert.Equal(t, want, m.BuildMode())
+		})
+	}
+}
+
+// A manifest bound to an artifact by id carries no inline spec to read.
+func TestManifest_BuildModeWithoutAnInlineArtifact(t *testing.T) {
+	m, err := Parse([]byte("name: my-app\nartifactId: 68a0000000000000000000a1\n"), "")
+	require.NoError(t, err)
+
+	assert.Empty(t, m.BuildMode())
 }
 
 // Sizing answers reach the runtime block, and an autoscaled group keeps its

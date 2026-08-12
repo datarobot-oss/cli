@@ -27,6 +27,16 @@ import (
 // because the create spec has no legitimate key by these names anywhere.
 var serverManagedKeys = []string{"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId"}
 
+// Probe field names. They live here rather than with the ledger's spec keys
+// because no validation rule reads them: binding is the only thing in this
+// package that has to tell a probe from any other block it preserves.
+const (
+	keyReadinessProbe = "readinessProbe"
+	keyStartupProbe   = "startupProbe"
+	keyLivenessProbe  = "livenessProbe"
+	keyPath           = "path"
+)
+
 // Live is a running workload, downloaded so a manifest can be written that
 // says everything the workload already says. Setup uses it when the user
 // binds to an existing workload: the alternative, generating a file from the
@@ -96,7 +106,7 @@ func (l Live) Defaults() Draft {
 		draft.Port = port
 	}
 
-	if path := stringAt(mapAt(container, "readinessProbe"), "path"); path != "" {
+	if path := stringAt(mapAt(container, keyReadinessProbe), keyPath); path != "" {
 		draft.HealthPath = path
 	}
 
@@ -170,16 +180,21 @@ func (l Live) runtimeDefaults() Runtime {
 		runtime.Replicas = replicas
 	}
 
-	if mapAt(group, keyAutoscaling) != nil {
+	if autoscalingActive(group) {
 		runtime.Replicas = 0
 	}
 
-	containers := slicesAt(group, keyContainers)
-	if len(containers) == 0 {
+	// The container Apply writes to, not whichever the server listed first. A
+	// group can list a sidecar ahead of the primary, and seeding the wizard
+	// from that would have the user accept the sidecar's sizing onto the
+	// primary and silently shrink what is running. A group that does not list
+	// the primary at all has no sizing to report, and Apply creates the entry.
+	container := findRuntimeContainer(group, l.primaryContainerName())
+	if container == nil {
 		return runtime
 	}
 
-	allocation := mapAt(containers[0], keyResourceAllocation)
+	allocation := mapAt(container, keyResourceAllocation)
 
 	if cpu, ok := floatAt(allocation, "cpu"); ok {
 		runtime.CPU = cpu
@@ -306,7 +321,7 @@ func (l *Live) applyRuntime(runtime Runtime) {
 	// Writing a replica count onto an autoscaled group would produce a file
 	// the ledger rejects, so an autoscaled workload keeps its autoscaling and
 	// the answer is dropped.
-	if runtime.Replicas > 0 && mapAt(group, keyAutoscaling) == nil {
+	if runtime.Replicas > 0 && !autoscalingActive(group) {
 		group[keyReplicaCount] = runtime.Replicas
 	}
 
@@ -355,10 +370,51 @@ func (l *Live) runtimeGroup() map[string]any {
 	return group
 }
 
+// autoscalingActive reports whether the group is actually autoscaling. A block
+// that is present but switched off is not, which is the rule the create-payload
+// check and the manifest ledger already apply. Live agreeing with them is what
+// keeps a replica answer from being dropped for a workload that is not
+// autoscaling: the file it would produce is one the ledger accepts.
+func autoscalingActive(group map[string]any) bool {
+	autoscaling := mapAt(group, keyAutoscaling)
+	if autoscaling == nil {
+		return false
+	}
+
+	// Absent means on, matching the platform's own default.
+	enabled, present := autoscaling[keyEnabled]
+	if !present || enabled == nil {
+		return true
+	}
+
+	on, ok := enabled.(bool)
+
+	return ok && on
+}
+
 // runtimeContainer is the sizing entry for name, created when the group does
 // not list it yet. The runtime and artifact lists are joined by name, so a
 // container invented here has to carry the artifact's.
 func runtimeContainer(group map[string]any, name string) map[string]any {
+	if name == "" {
+		return nil
+	}
+
+	if container := findRuntimeContainer(group, name); container != nil {
+		return container
+	}
+
+	container := map[string]any{keyName: name}
+	existing, _ := group[keyContainers].([]any)
+	group[keyContainers] = append(existing, container)
+
+	return container
+}
+
+// findRuntimeContainer is the sizing entry for name, nil when the group does
+// not list one. Kept separate from runtimeContainer so the read path can ask
+// the question without the write path's side effect of inventing an entry.
+func findRuntimeContainer(group map[string]any, name string) map[string]any {
 	if name == "" {
 		return nil
 	}
@@ -369,11 +425,7 @@ func runtimeContainer(group map[string]any, name string) map[string]any {
 		}
 	}
 
-	container := map[string]any{keyName: name}
-	existing, _ := group[keyContainers].([]any)
-	group[keyContainers] = append(existing, container)
-
-	return container
+	return nil
 }
 
 // artifactGroupName and primaryContainerName name the artifact's own group
@@ -402,6 +454,8 @@ func (l Live) primaryContainerName() string {
 // wizard's default /health, which a container that does not serve it would
 // never pass.
 func applyReadiness(container map[string]any, draft Draft) {
+	previous, hadPort := intAt(container, keyPort)
+
 	container[keyPort] = draft.Port
 
 	// The container being edited is the one traffic reaches, and the ledger
@@ -409,13 +463,27 @@ func applyReadiness(container map[string]any, draft Draft) {
 	// nothing would otherwise produce a file rejecting its own port.
 	container[keyPrimary] = true
 
-	probe := mapAt(container, "readinessProbe")
-	if probe == nil {
+	if probe := mapAt(container, keyReadinessProbe); probe != nil {
+		probe[keyPath] = draft.HealthPath
+		probe[keyPort] = draft.Port
+	}
+
+	if !hadPort || previous == draft.Port {
 		return
 	}
 
-	probe["path"] = draft.HealthPath
-	probe[keyPort] = draft.Port
+	// The other probes are blocks the wizard has no question for, and they are
+	// preserved as they stand. One that was watching the container's port still
+	// has to follow it: a startup probe left behind on the old port is how a
+	// changed port becomes a deploy that never reports ready. A probe aimed
+	// somewhere else was aimed there deliberately and keeps its own port.
+	for _, key := range []string{keyStartupProbe, keyLivenessProbe} {
+		probe := mapAt(container, key)
+
+		if port, ok := intAt(probe, keyPort); ok && port == previous {
+			probe[keyPort] = draft.Port
+		}
+	}
 }
 
 // applyBuild sets the image source, editing the live build block in place
