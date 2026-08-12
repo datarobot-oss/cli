@@ -55,7 +55,7 @@ var (
 	getArtifactFn        = workload.GetArtifactDocument
 	resolveExecEnvFn     = workload.ResolveExecutionEnvironment
 	isStdinTerminalFn    = reader.IsStdinTerminal
-	runInteractiveFlowFn = interactiveFlowUnavailable
+	runInteractiveFlowFn = runInteractiveFlow
 )
 
 // Actions a run can report, mirroring what the JSON envelope carries.
@@ -552,14 +552,4 @@ func ShortPath(path string) string {
 	}
 
 	return relative
-}
-
-// interactiveFlowUnavailable stands in until the wizard screens land. The
-// command is behind a feature gate, so the only way to reach this is to run
-// the gated command on a terminal without flags.
-func interactiveFlowUnavailable(_ Options, _ Detected) ([]byte, manifest.Draft, error) {
-	const msg = "interactive setup is not available yet; " +
-		"pass --yes with the flags that answer each question"
-
-	return nil, manifest.Draft{}, errors.New(msg)
 }
