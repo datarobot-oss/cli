@@ -1,9 +1,24 @@
 {
   "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "1.10.0",
+      "resolved": "ghcr.io/devcontainers/features/docker-outside-of-docker@sha256:c2c2cf829505ead8e4892c88c31b6594ae94a2bbb209e16e1fac456c1a3a624e",
+      "integrity": "sha256:c2c2cf829505ead8e4892c88c31b6594ae94a2bbb209e16e1fac456c1a3a624e"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "1.1.0",
+      "resolved": "ghcr.io/devcontainers/features/github-cli@sha256:d22f50b70ed75339b4eed1ba9ecde3a1791f90e88d37936517e3bace0bbad671",
+      "integrity": "sha256:d22f50b70ed75339b4eed1ba9ecde3a1791f90e88d37936517e3bace0bbad671"
+    },
     "ghcr.io/eitsupi/devcontainer-features/go-task:1": {
       "version": "1.0.4",
       "resolved": "ghcr.io/eitsupi/devcontainer-features/go-task@sha256:8a6c4b4f9d7559f32400da0c11d1bb11e59732f47f7db5defca68e7712544d13",
       "integrity": "sha256:8a6c4b4f9d7559f32400da0c11d1bb11e59732f47f7db5defca68e7712544d13"
+    },
+    "ghcr.io/va-h/devcontainers-features/uv:1": {
+      "version": "1.1.4",
+      "resolved": "ghcr.io/va-h/devcontainers-features/uv@sha256:a15737142539d150ef4d358e2d6a7424a0a2f3dc43b29a3aa1b50162a8b11bc1",
+      "integrity": "sha256:a15737142539d150ef4d358e2d6a7424a0a2f3dc43b29a3aa1b50162a8b11bc1"
     }
   }
 }
