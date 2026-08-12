@@ -342,6 +342,32 @@ func TestArtifactName(t *testing.T) {
 	assert.Equal(t, "my-app-artifact", ArtifactName("my-app"))
 }
 
+// A cpu allocation is written as the number it is: plainly when whole, with
+// its decimals otherwise, and never with a !!float tag on a value that reads
+// as an integer. The last two rows are far outside anything a resource bundle
+// offers and are here to show the rule needs no magnitude bound to hold: the
+// digits decide, so there is no conversion that could quietly return a
+// different number.
+func TestDecimal(t *testing.T) {
+	for _, tc := range []struct {
+		in        float64
+		tag, want string
+	}{
+		{0.25, "!!float", "0.25"},
+		{0.5, "!!float", "0.5"},
+		{1, intTag, "1"},
+		{2, intTag, "2"},
+		{1.5, "!!float", "1.5"},
+		{1e15, intTag, "1000000000000000"},
+		{1e19, intTag, "10000000000000000000"},
+	} {
+		node := decimal(tc.in)
+
+		assert.Equal(t, tc.tag, node.Tag, "tag for %v", tc.in)
+		assert.Equal(t, tc.want, node.Value, "value for %v", tc.in)
+	}
+}
+
 // A value that is not a secret is written as the literal it is. A secret is
 // written as a reference carrying the placeholder, so the entry is present
 // and visibly unfinished: a deploy then fails naming the variable, where a

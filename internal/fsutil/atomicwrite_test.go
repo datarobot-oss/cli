@@ -58,6 +58,47 @@ func assertSameModeAsPlainWrite(t *testing.T, path string) {
 	assert.Equal(t, want.Mode().Perm(), got.Mode().Perm())
 }
 
+// targetMode used to measure the umask by creating the destination itself,
+// which meant any failure after that point left an empty file where there had
+// been none: exactly the state AtomicWriteFile promises never to produce.
+// Nothing it does may touch the destination, and the scratch path it measures
+// on has to be gone by the time it returns.
+func TestTargetMode_LeavesTheDestinationAlone(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "new.json")
+	probe := filepath.Join(dir, "new.json.probe")
+
+	mode, err := targetMode(target, probe)
+	require.NoError(t, err)
+	assert.NotZero(t, mode)
+
+	assert.NoFileExists(t, target)
+	assert.NoFileExists(t, probe)
+}
+
+// When the umask cannot be measured the answer has to narrow rather than
+// widen. Returning DefaultFileMode here would chmod the file to 0644 whatever
+// the umask says, which is the widening the measurement exists to prevent.
+func TestTargetMode_NarrowsWhenTheProbeFails(t *testing.T) {
+	dir := t.TempDir()
+	taken := filepath.Join(dir, "taken")
+	require.NoError(t, os.WriteFile(taken, nil, DefaultFileMode))
+
+	mode, err := targetMode(filepath.Join(dir, "new.json"), taken)
+	require.NoError(t, err)
+	assert.Equal(t, ownerOnlyFileMode, mode)
+}
+
+func TestAtomicWriteFile_LeavesNoScratchFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, AtomicWriteFile(filepath.Join(dir, "new.json"), []byte("payload")))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "the write left scratch files behind: %v", entries)
+}
+
 // A file that already exists keeps the mode it had: tightening a manifest to
 // 0600 should survive an unrelated edit such as the workload-id write-back.
 func TestAtomicWriteFile_PreservesAnExistingMode(t *testing.T) {

@@ -102,6 +102,11 @@ func Parse(data []byte, dir string) (*Manifest, error) {
 		return nil, errors.New("root must be a YAML mapping")
 	}
 
+	// Before anything walks the tree, including the check just below.
+	if err := checkAliases(root); err != nil {
+		return nil, err
+	}
+
 	if !hasRecognizedKey(root) {
 		return nil, fmt.Errorf("does not look like a DataRobot workload manifest (none of %s present)",
 			strings.Join(recognizedKeys, ", "))

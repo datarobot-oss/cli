@@ -15,6 +15,7 @@
 package fsutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,12 @@ import (
 // what AtomicWriteFile leaves behind.
 const DefaultFileMode os.FileMode = 0o644
 
+// ownerOnlyFileMode is what a new file gets when the umask cannot be measured.
+// Narrower than DefaultFileMode on purpose: the measurement exists to stop a
+// file being widened past what the user's umask allows, so failing it must not
+// hand out the very mode that was in question.
+const ownerOnlyFileMode os.FileMode = 0o600
+
 // targetMode is the permission the written file should end up with.
 //
 // Replacing a file keeps the mode it already had: a user who tightened
@@ -34,25 +41,38 @@ const DefaultFileMode os.FileMode = 0o644
 // os.CreateTemp makes the temp file 0600 and chmodding to a fixed mode would
 // hand a developer with a restrictive umask a wider file than everything else
 // they write.
-func targetMode(path string) (os.FileMode, error) {
-	if info, err := os.Stat(path); err == nil {
+//
+// probePath is where the umask gets measured: a scratch path in the directory
+// the file will live in, never the destination itself. Measuring on the
+// destination would create it here, and any later failure would then leave an
+// empty file where there had been none, which is the one outcome
+// AtomicWriteFile promises never to produce.
+func targetMode(path, probePath string) (os.FileMode, error) {
+	info, err := os.Stat(path)
+	if err == nil {
 		return info.Mode().Perm(), nil
+	}
+
+	if !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
 	}
 
 	// The cheapest way to learn what the umask allows is to let the kernel
 	// apply it, in the directory the file is going to live in.
-	probe, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, DefaultFileMode)
+	probe, err := os.OpenFile(probePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, DefaultFileMode)
 	if err != nil {
-		// Something else created it in between, or the directory refuses; the
-		// rename below reports whichever it is.
-		return DefaultFileMode, nil
+		return ownerOnlyFileMode, nil
 	}
 
-	_ = probe.Close()
+	defer func() { _ = os.Remove(probePath) }()
 
-	info, err := os.Stat(path)
+	if err = probe.Close(); err != nil {
+		return 0, fmt.Errorf("close %s: %w", probePath, err)
+	}
+
+	info, err = os.Stat(probePath)
 	if err != nil {
-		return 0, fmt.Errorf("stat %s: %w", path, err)
+		return 0, fmt.Errorf("stat %s: %w", probePath, err)
 	}
 
 	return info.Mode().Perm(), nil
@@ -93,7 +113,10 @@ func AtomicWriteFile(path string, data []byte) (err error) {
 		return fmt.Errorf("close temp file %s: %w", tmp.Name(), err)
 	}
 
-	mode, err := targetMode(path)
+	// The umask probe borrows the temp file's name so that two writers racing
+	// for the same destination cannot collide on it. targetMode removes it
+	// before returning.
+	mode, err := targetMode(path, tmp.Name()+".mode")
 	if err != nil {
 		return err
 	}

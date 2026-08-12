@@ -521,12 +521,22 @@ func number(value int) *yaml.Node {
 // 1.0 and not the !!float tag yaml.v3 would otherwise emit to keep the type):
 // the spec's examples write cpu: 1, and a tagged scalar in a generated file
 // reads like a mistake.
+//
+// Whole-ness is decided on the formatted digits rather than on the float,
+// which is what keeps this free of a magnitude bound. FormatFloat with -1
+// precision prints the shortest text that reads back as exactly this value, so
+// "no decimal point in it" is the entire test, and no int64 conversion happens
+// whose range would then have to be guarded. NaN and ±Inf format as words
+// instead of digits and so take the float branch, which is where they were
+// before: a cpu that is not a number is the flag layer's problem, and this
+// function should not launder it into a plausible-looking integer.
 func decimal(value float64) *yaml.Node {
-	if value == math.Trunc(value) && math.Abs(value) < 1e15 {
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: intTag, Value: strconv.FormatInt(int64(value), 10)}
+	text := strconv.FormatFloat(value, 'f', -1, 64)
+	if strings.Contains(text, ".") || math.IsNaN(value) || math.IsInf(value, 0) {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: text}
 	}
 
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: strconv.FormatFloat(value, 'f', -1, 64)}
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: intTag, Value: text}
 }
 
 func boolean(value bool) *yaml.Node {
