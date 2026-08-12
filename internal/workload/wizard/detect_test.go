@@ -93,10 +93,11 @@ func TestDetect_SuggestsANameFromTheDirectory(t *testing.T) {
 
 	for dirName, want := range tests {
 		t.Run(dirName, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), dirName)
-			require.NoError(t, os.Mkdir(dir, 0o755))
-
-			assert.Equal(t, want, Detect(dir).Name)
+			// The directory is deliberately not created. The name comes from
+			// the path, so nothing here needs one to exist, and "..." is a
+			// name Windows refuses to create: it strips trailing dots, so the
+			// path resolves to the parent and the mkdir fails as EEXIST.
+			assert.Equal(t, want, Detect(filepath.Join(t.TempDir(), dirName)).Name)
 		})
 	}
 }
