@@ -22,6 +22,7 @@ For BYOM (Bring Your Own Machine), see the [BYOM docs](https://docs.factory.ai/c
 A [devcontainer](https://containers.dev/) configuration is provided at `.devcontainer/devcontainer.json`. It pins Go 1.26 and installs Task automatically.
 
 - **VS Code**: Open the repo and select "Reopen in Container"
+- **Zed**: Open the repo and click **Open in Container** when prompted. If you modify `.devcontainer/devcontainer.json`, Zed does not auto-rebuild — kill the container manually (`docker kill <container-id>`) and use **Project: Open Remote** to reconnect.
 - **GitHub Codespaces**: Create a codespace from this repo
 - **Droid Computers**: The devcontainer can be used to provision the environment
 
