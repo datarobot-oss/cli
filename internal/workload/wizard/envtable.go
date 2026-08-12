@@ -155,3 +155,9 @@ func plan(kind EnvKind) string {
 
 	return "literal value"
 }
+
+// resize refits the grid to a new terminal size, keeping the cursor and every
+// verdict the user has changed.
+func (t *envTable) resize(width, height int) {
+	t.grid.resize(width, height)
+}

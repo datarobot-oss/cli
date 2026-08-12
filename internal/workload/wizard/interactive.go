@@ -43,12 +43,14 @@ const execEnvPickLimit = 200
 // about (the runtime sizing) and the binding, which would otherwise be lost
 // and turn a bind into a create.
 func (a Answers) partialDraft(detected Detected) manifest.Draft {
+	kind := orDefault(a.Type, manifest.TypeService)
+
 	draft := manifest.Draft{
 		WorkloadID: a.WorkloadID,
 		Name:       orDefault(a.Name, detected.Name),
 		Importance: manifest.DefaultImportance,
-		Type:       a.effectiveType(),
-		A2AEnabled: a.A2AEnabled && a.effectiveType() == manifest.TypeAgent,
+		Type:       kind,
+		A2AEnabled: a.A2AEnabled && kind == manifest.TypeAgent,
 		Port:       a.Port,
 		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),
 		Runtime:    a.runtime(),
@@ -65,6 +67,35 @@ func (a Answers) partialDraft(detected Detected) manifest.Draft {
 		draft.Build = build
 	} else {
 		draft.Build = defaultBuild(detected)
+	}
+
+	return draft
+}
+
+// partialApplyTo is applyTo without the parts a screen can still settle: the
+// bound counterpart of partialDraft. The flags are layered over the live spec
+// so an interactive bind keeps what the command line already said, exactly as
+// the headless bind does; a build the flags cannot complete leaves the live
+// build alone, because the source screen is where that gets answered and it
+// opens on what the workload already does.
+func (a Answers) partialApplyTo(defaults manifest.Draft, detected Detected) manifest.Draft {
+	draft := defaults
+
+	if a.Name != "" {
+		draft.Name = a.Name
+	}
+
+	a.applyKind(&draft)
+	a.applyReadiness(&draft)
+	a.applySizing(&draft)
+	a.applyEnv(&draft, detected)
+
+	// An agent flag on a service is not an answer to anything the file can
+	// carry, and Apply would drop it anyway.
+	draft.A2AEnabled = draft.A2AEnabled && draft.Type == manifest.TypeAgent
+
+	if err := a.applyBuild(&draft, detected); err != nil {
+		draft.Build = defaults.Build
 	}
 
 	return draft

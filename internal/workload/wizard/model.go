@@ -17,10 +17,12 @@ package wizard
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -64,6 +66,11 @@ type flow struct {
 	draft manifest.Draft
 	live  *manifest.Live
 
+	// answers is what the flags said, kept because some of it is needed after
+	// the run has started: binding downloads the live spec mid-flow, and the
+	// answers have to be layered over it rather than replaced by it.
+	answers Answers
+
 	// at is the current screen; history is what Back walks, so a skipped
 	// screen is skipped in both directions without a second rule set.
 	at      screen
@@ -84,6 +91,11 @@ type flow struct {
 	// it changes when a live workload is bound.
 	content []byte
 	diff    string
+	// preview scrolls whichever of those two the confirm screen shows. A
+	// manifest is routinely taller than the terminal once a bound workload
+	// brings its sidecars and environment across, and agreeing to a file you
+	// cannot read to the end is not consent.
+	preview viewport.Model
 
 	// fatal ends the run with a reason rather than as a cancellation, for the
 	// failures no screen can recover from.
@@ -119,7 +131,7 @@ type editedMsg struct {
 }
 
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
-	f := flow{detected: detected, workloads: workloads, pendingBind: answers.WorkloadID}
+	f := flow{detected: detected, workloads: workloads, answers: answers, pendingBind: answers.WorkloadID}
 
 	draft, err := answers.draft(detected)
 	if err != nil {
@@ -180,6 +192,22 @@ func (f flow) Init() tea.Cmd {
 	return fetchLiveCmd(f.pendingBind)
 }
 
+// resizeComponents refits whatever has been built to the terminal's real
+// size. Each component fixes its columns and height when it is constructed,
+// and the first size message arrives after the opening screen already exists,
+// so recording the numbers alone would leave that screen at the fallback for
+// its whole life and later resizes would never reach the current screen
+// either. Everything built so far is refitted rather than only the visible
+// one, so walking back to a screen does not find it at the old size.
+func (f *flow) resizeComponents() {
+	f.picker.resize(f.width, f.height)
+	f.envTable.resize(f.width, f.height)
+
+	if len(f.content) > 0 {
+		f.buildPreview()
+	}
+}
+
 // fetchLiveCmd downloads a workload so the file can say everything it says.
 func fetchLiveCmd(workloadID string) tea.Cmd {
 	return func() tea.Msg {
@@ -193,8 +221,8 @@ func (f flow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		f.width, f.height = msg.Width, msg.Height
-		// The screens rebuild themselves at the new width when they are next
-		// entered; nothing on screen has to be resized in place.
+		f.resizeComponents()
+
 		return f, nil
 
 	case liveLoadedMsg:
@@ -290,8 +318,11 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return f, cmd
 
 	case screenConfirm:
-		// The confirm screen has no component of its own.
-		return f, nil
+		var cmd tea.Cmd
+
+		f.preview, cmd = f.preview.Update(msg)
+
+		return f, cmd
 	}
 
 	return f, nil
@@ -412,7 +443,10 @@ func (f flow) branch() (screen, bool) {
 	case screenSource:
 		return f.afterSource()
 	case screenSettings:
-		return screenEnv, f.detected.HasEnvFile()
+		// --skip-env is an answer, not a headless-only shortcut: showing the
+		// screen anyway would ask a question the user already declined, and
+		// accepting it refills the EnvVars the flag deliberately emptied.
+		return screenEnv, f.detected.HasEnvFile() && !f.answers.SkipEnv
 	case screenName, screenA2A, screenExecEnv, screenEntrypoint, screenImage, screenEnv, screenConfirm:
 		// These always go where the table says.
 		return 0, false
@@ -595,6 +629,48 @@ func (f *flow) acceptImage() (tea.Cmd, error) {
 	return nil, nil
 }
 
+// acceptReplicas reads the replica count, which is not a question at all for
+// a workload that scales itself: its policy decides the number, applyRuntime
+// drops any answer given while that policy is active, and the field arrives
+// seeded with the zero that says so. Demanding "1 or more" there would trap
+// the screen behind a value that could not be used, and taking a number would
+// promise something the file will not carry.
+func (f flow) acceptReplicas() (int, error) {
+	text := strings.TrimSpace(f.field(2))
+
+	if f.autoscaled() {
+		if text == "" || text == "0" {
+			return 0, nil
+		}
+
+		return 0, errors.New("this workload scales itself, so its replica count comes from that policy; leave the field at 0")
+	}
+
+	replicas, err := strconv.Atoi(text)
+	if err != nil || replicas < 1 {
+		return 0, errors.New("replicas must be a whole number, 1 or more")
+	}
+
+	return replicas, nil
+}
+
+// acceptCPU reads the cores field. ParseFloat takes NaN and Inf, and neither
+// of them is <= 0, so a plain positivity check lets both through to a file
+// carrying a quantity nothing can schedule.
+func (f flow) acceptCPU() (float64, error) {
+	cpu, err := strconv.ParseFloat(strings.TrimSpace(f.field(3)), 64)
+	if err != nil || cpu <= 0 || math.IsNaN(cpu) || math.IsInf(cpu, 0) {
+		return 0, errors.New("cpu must be a positive number, such as 0.5 or 2")
+	}
+
+	return cpu, nil
+}
+
+// autoscaled reports whether the bound workload manages its own replica count.
+func (f flow) autoscaled() bool {
+	return f.live != nil && f.live.Autoscaled()
+}
+
 // acceptSettings validates every field before recording any of them, so a
 // screen that is refused leaves the answers exactly as the user left them.
 func (f *flow) acceptSettings() (tea.Cmd, error) {
@@ -612,14 +688,14 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 		return nil, errors.New("the health path must start with /")
 	}
 
-	replicas, err := strconv.Atoi(f.field(2))
-	if err != nil || replicas < 1 {
-		return nil, errors.New("replicas must be a whole number, 1 or more")
+	replicas, err := f.acceptReplicas()
+	if err != nil {
+		return nil, err
 	}
 
-	cpu, err := strconv.ParseFloat(f.field(3), 64)
-	if err != nil || cpu <= 0 {
-		return nil, errors.New("cpu must be a positive number, such as 0.5 or 2")
+	cpu, err := f.acceptCPU()
+	if err != nil {
+		return nil, err
 	}
 
 	memory := f.field(4)
@@ -699,6 +775,7 @@ func (f *flow) render() error {
 
 		f.content = content
 		f.diff = ""
+		f.buildPreview()
 
 		return nil
 	}
@@ -720,6 +797,7 @@ func (f *flow) render() error {
 
 	f.content = content
 	f.diff = unifiedDiff(f.live.Name, string(before), string(content))
+	f.buildPreview()
 
 	return nil
 }
@@ -744,7 +822,11 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 
 	live := msg.live
 	f.live = &live
-	f.draft = live.Defaults()
+	// The live spec is the new set of defaults, not the new set of answers:
+	// --replicas and --memory were given before the fetch and still stand.
+	// Replacing the draft outright would drop every flag the wizard has no
+	// screen to re-ask, which is the same layering the headless bind does.
+	f.draft = f.answers.partialApplyTo(live.Defaults(), f.detected)
 	f.pendingBind = ""
 
 	// Only the binding screen has somewhere to go back to; a flag-driven bind
@@ -797,6 +879,8 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 
 		f.diff = unifiedDiff(f.live.Name, string(before), string(f.content))
 	}
+
+	f.buildPreview()
 
 	return f, nil
 }

@@ -17,6 +17,7 @@ package wizard
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,6 +66,9 @@ type rowTable struct {
 	model   table.Model
 	all     []tableRow
 	visible []tableRow
+	// headers is kept so the table can be refitted to a new terminal width,
+	// which means recomputing the columns it was built with.
+	headers []string
 
 	// maxHeight is what the terminal allows; the table itself shrinks to fit
 	// however many rows the filter leaves.
@@ -75,7 +79,7 @@ type rowTable struct {
 }
 
 func newRowTable(headers []string, rows []tableRow, filterable bool, width, height int) rowTable {
-	t := rowTable{all: rows, filterable: filterable, maxHeight: tableHeight(height)}
+	t := rowTable{all: rows, headers: headers, filterable: filterable, maxHeight: tableHeight(height)}
 	t.model = table.New(
 		table.WithColumns(columnsFor(headers, rows, width)),
 		table.WithHeight(t.maxHeight),
@@ -86,6 +90,25 @@ func newRowTable(headers []string, rows []tableRow, filterable bool, width, heig
 	t.apply()
 
 	return t
+}
+
+// resize refits the table to a terminal it did not know about when it was
+// built, keeping the filter and the row under the cursor. Columns and height
+// are decided at construction, so without this a table built before the first
+// size message is stuck at the fallback for the rest of the run.
+func (t *rowTable) resize(width, height int) {
+	if len(t.all) == 0 {
+		return
+	}
+
+	cursor := t.model.Cursor()
+
+	t.maxHeight = tableHeight(height)
+	t.model.SetColumns(columnsFor(t.headers, t.all, width))
+	t.syncRows()
+	t.model.SetCursor(cursor)
+	t.syncRows()
+	t.fit()
 }
 
 // tableStyles dresses bubbles/table in the shared palette, so it matches the
@@ -188,7 +211,11 @@ func (t *rowTable) update(msg tea.KeyMsg) bool {
 			return false
 		}
 
-		t.filter = t.filter[:len(t.filter)-1]
+		// One keystroke removes one character, not one byte: a workload named
+		// in anything but ASCII would otherwise take several backspaces per
+		// letter and leave a broken encoding in between.
+		_, size := utf8.DecodeLastRuneInString(t.filter)
+		t.filter = t.filter[:len(t.filter)-size]
 
 		t.apply()
 

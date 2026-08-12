@@ -17,12 +17,14 @@ package wizard
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/workload"
@@ -1027,4 +1029,257 @@ func TestRowTable_MarkerFollowsARestoredCursor(t *testing.T) {
 	}
 
 	assert.Contains(t, marked, "THIRD", "the marker is on the row the cursor is on")
+}
+
+// A filter is a string of characters, not of bytes. One backspace has to undo
+// one keystroke whatever the workload was named.
+func TestRowTable_BackspaceRemovesOneRune(t *testing.T) {
+	table := newRowTable([]string{"NAME"}, []tableRow{{cells: []string{"zażółć"}}}, true, 80, 20)
+
+	for _, r := range "żó" {
+		table.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	require.Equal(t, "żó", table.filter)
+
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "ż", table.filter, "one keystroke, one character")
+	assert.True(t, utf8.ValidString(table.filter))
+
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Empty(t, table.filter)
+}
+
+// A table squeezed to fit a narrow terminal has to get its width back when
+// the terminal turns out to be wider, which means recomputing the columns
+// rather than only remembering the number.
+func TestRowTable_ResizeRecoversSqueezedColumns(t *testing.T) {
+	rows := []tableRow{
+		{cells: []string{"a-workload-with-a-name-long-enough-to-be-squeezed", "running"}},
+		{cells: []string{"another-workload-with-a-similarly-long-name", "stopped"}},
+	}
+
+	table := newRowTable([]string{"NAME", "STATUS"}, rows, true, 50, 10)
+	squeezed := columnsWidth(table)
+
+	table.resize(200, 40)
+
+	assert.Greater(t, columnsWidth(table), squeezed, "the columns have to take the width they were given")
+	assert.Equal(t, tableHeight(40), table.maxHeight)
+}
+
+// The first size message arrives after the opening screen is already built,
+// so recording the numbers is not enough: the flow has to refit what is on
+// screen, and doing so must not lose the answer in progress.
+func TestFlow_ResizeRefitsTheActivePicker(t *testing.T) {
+	workloads := []workload.Workload{
+		{ID: "68b0", Name: "triage-agent", Status: "running", UpdatedAt: time.Now()},
+		{ID: "68b1", Name: "billing-service", Status: "stopped", UpdatedAt: time.Now()},
+	}
+
+	model := newFlow(dockerfileProject(t), workloads, Answers{})
+	require.Equal(t, screenBinding, model.at)
+
+	model.picker.moveCursor(tea.KeyMsg{Type: tea.KeyDown})
+	before := model.picker.selected()
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 160, Height: 50})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	assert.Equal(t, tableHeight(50), model.picker.maxHeight, "the new height has to reach the table")
+	assert.Equal(t, before, model.picker.selected(), "the row under the cursor is an answer in progress")
+}
+
+func columnsWidth(t rowTable) int {
+	total := 0
+	for _, column := range t.model.Columns() {
+		total += column.Width
+	}
+
+	return total
+}
+
+// Confirming is consenting, and consent to a file you cannot read to the end
+// is not consent. The preview is bounded and scrolls.
+func TestFlow_ConfirmPreviewScrollsALongManifest(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+
+	var env strings.Builder
+	for i := range 60 {
+		fmt.Fprintf(&env, "SETTING_%02d=value-%02d\n", i, i)
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName), []byte(env.String()), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{})
+	model.width, model.height = 100, 30
+
+	model = press(t, pastName(t, model), "enter", "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	require.Greater(t, model.preview.TotalLineCount(), model.preview.Height,
+		"the fixture has to be taller than the window for this to test anything")
+
+	assert.True(t, model.scrollablePreview())
+	assert.Contains(t, model.keys(), "scroll", "a key that exists is a key the legend names")
+
+	first := model.preview.View()
+	assert.Contains(t, first, "name: test-app", "the window opens at the top")
+	assert.NotContains(t, first, "SETTING_59")
+
+	// Paging reaches the end, which is the whole point: the last thing in the
+	// file is as much a part of what is being agreed to as the first.
+	var ok bool
+
+	for range 20 {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+
+		model, ok = updated.(flow)
+		require.True(t, ok)
+	}
+
+	assert.NotEqual(t, first, model.preview.View(), "the preview has to move")
+	assert.Contains(t, model.View(), "SETTING_59", "the tail is reachable")
+}
+
+// A short manifest needs no scrolling, and the legend must not offer a key
+// that does nothing.
+func TestFlow_ConfirmPreviewDoesNotOfferScrollingItDoesNotNeed(t *testing.T) {
+	model := newFlow(dockerfileProject(t), nil, Answers{})
+	model.width, model.height = 100, 60
+
+	model = press(t, pastName(t, model), "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+
+	assert.False(t, model.scrollablePreview())
+	assert.NotContains(t, model.keys(), "scroll")
+	assert.Contains(t, model.View(), "name: test-app")
+}
+
+// No screen can settle --workload-id against --name, so the wizard must not
+// open on it: the error would sit behind the loading view, the fetch would
+// run anyway, and arriving at the first screen would clear it.
+func TestRunInteractiveFlow_RejectsWorkloadIDWithName(t *testing.T) {
+	_, _, err := runInteractiveFlow(
+		Options{Dir: t.TempDir(), Answers: Answers{WorkloadID: "68b0", Name: "my-app"}},
+		dockerfileProject(t))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "exclusive")
+}
+
+// Binding downloads a new set of defaults, not a new set of answers. Flags
+// given before the fetch still stand, exactly as they do headlessly.
+func TestFlow_BindKeepsTheFlagsGivenBeforeTheFetch(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
+
+	model := newFlow(dockerfileProject(t), nil, Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		Replicas:   9,
+		Memory:     "32GB",
+	})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	assert.Equal(t, 9, model.draft.Runtime.Replicas, "--replicas was given and nothing has asked again")
+	assert.Equal(t, "32GB", model.draft.Runtime.Memory)
+	// What the flags did not mention still comes from the workload.
+	assert.Equal(t, 9001, model.draft.Port)
+	assert.Equal(t, "registry/triage:v3", model.draft.Build.ImageURI)
+}
+
+func mustFetchLive(t *testing.T, id string) manifest.Live {
+	t.Helper()
+
+	live, err := fetchLive(id)
+	require.NoError(t, err)
+
+	return live
+}
+
+// --skip-env is an answer. Interactively it has to skip the screen, not show
+// it and then let accepting it refill what the flag emptied.
+func TestFlow_SkipEnvSkipsTheEnvScreen(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
+		[]byte("LOG_LEVEL=debug\nAPI_KEY=sk-abcdefghijklmnopqrstuvwxyz01\n"), 0o600))
+
+	detected := Detect(dir)
+	require.True(t, detected.HasEnvFile())
+
+	model := press(t, pastName(t, newFlow(detected, nil, Answers{SkipEnv: true})), "enter", "enter", "enter")
+
+	assert.Equal(t, screenConfirm, model.at, "the env screen is not a question the user left open")
+	assert.Empty(t, model.draft.EnvVars)
+	assert.NotContains(t, string(model.content), "environmentVars")
+
+	// Without the flag the same project stops at the env screen.
+	withEnv := press(t, pastName(t, newFlow(detected, nil, Answers{})), "enter", "enter", "enter")
+	assert.Equal(t, screenEnv, withEnv.at)
+}
+
+// A workload that scales itself has no replica count to give, and the screen
+// must not demand one: applyRuntime would drop the answer anyway.
+func TestFlow_AutoscaledBoundWorkloadPassesTheSettingsScreen(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default",
+				"autoscaling": {"enabled": true, "minReplicaCount": 2, "maxReplicaCount": 9},
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
+
+	model := newFlow(dockerfileProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	require.True(t, model.autoscaled())
+
+	model = press(t, model, "enter") // kind
+	model = press(t, model, "enter") // image source
+	model = press(t, model, "enter") // keep the live image
+	require.Equal(t, screenSettings, model.at)
+
+	// The field says why it is empty rather than showing a zero nobody typed.
+	assert.Empty(t, model.inputs[2].Value())
+	assert.Contains(t, model.inputs[2].Placeholder, "autoscaling")
+
+	model = press(t, model, "enter")
+	require.NoError(t, model.failed, "the screen must not block on a count the file cannot carry")
+	assert.Equal(t, screenConfirm, model.at)
+
+	// The policy survives untouched.
+	assert.Contains(t, string(model.content), "maxReplicaCount: 9")
+	assert.NotContains(t, string(model.content), "replicaCount: 1")
+}
+
+// ParseFloat takes NaN and Inf, and neither is <= 0, so a plain positivity
+// check lets both through to a file nothing can schedule.
+func TestFlow_SettingsRejectsNonFiniteCPU(t *testing.T) {
+	for _, text := range []string{"NaN", "+Inf", "-Inf", "inf"} {
+		t.Run(text, func(t *testing.T) {
+			model := press(t, pastName(t, newFlow(dockerfileProject(t), nil, Answers{})), "enter", "enter")
+			require.Equal(t, screenSettings, model.at)
+
+			model.inputs[3].SetValue(text)
+			model = press(t, model, "enter")
+
+			require.Error(t, model.failed)
+			assert.Contains(t, model.failed.Error(), "cpu must be a positive number")
+			assert.Equal(t, screenSettings, model.at)
+		})
+	}
 }

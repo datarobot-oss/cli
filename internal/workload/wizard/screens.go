@@ -24,6 +24,7 @@ import (
 
 	"github.com/aymanbagabas/go-udiff"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
@@ -48,6 +49,14 @@ const namePlaceholder = "my-app-name"
 // agreed to. The workload list is fetched up front because the first screen
 // depends on it: with nothing to bind to, there is no binding question.
 func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft, error) {
+	// No screen can settle this one, so it is not a question the wizard gets
+	// to ask. Started anyway, the error would sit behind the loading view
+	// while the fetch ran, and arriving at the first screen would clear it
+	// and drop --name without saying so.
+	if err := opts.Answers.checkBinding(); err != nil {
+		return nil, manifest.Draft{}, err
+	}
+
 	var workloads []workload.Workload
 
 	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
@@ -203,7 +212,7 @@ func (f *flow) enterInputs(at screen) {
 		f.inputs = []textinput.Model{
 			newInput(strconv.Itoa(f.draft.Port), "8080"),
 			newInput(f.draft.HealthPath, manifest.DefaultHealthPath),
-			newInput(strconv.Itoa(f.draft.Runtime.Replicas), "1"),
+			newInput(replicaValue(f.draft.Runtime.Replicas), replicaPlaceholder(f.autoscaled())),
 			newInput(formatCPU(f.draft.Runtime.CPU), "0.5"),
 			newInput(f.draft.Runtime.Memory, manifest.DefaultMemory),
 			newInput(f.draft.Importance, manifest.DefaultImportance),
@@ -574,15 +583,59 @@ func (f flow) confirmBody() string {
 		return ""
 	}
 
-	body := indent(string(f.content))
+	return indent(f.preview.View())
+}
 
+// previewText is what the confirm screen is asking about: the file itself, or
+// for a bound workload the change it makes to something already running.
+func (f flow) previewText() string {
 	if f.diff != "" {
-		body = indent(f.diff)
-	} else if f.diff == "" && f.live != nil {
-		body = indent(string(f.content)) + "\n  " + tui.HintStyle.Render("no change to the running workload")
+		return f.diff
 	}
 
-	return body
+	if f.live != nil {
+		return string(f.content) + "\n" + tui.HintStyle.Render("no change to the running workload")
+	}
+
+	return string(f.content)
+}
+
+// buildPreview fits the preview to the terminal. It runs wherever the content
+// is settled rather than at screen entry, because the render happens after
+// enter and the editor can replace the file afterwards.
+func (f *flow) buildPreview() {
+	text := strings.TrimRight(f.previewText(), "\n")
+	lines := strings.Count(text, "\n") + 1
+
+	// A short manifest keeps its own height: padding it out to a fixed window
+	// would put the key legend below the fold for no reason.
+	f.preview = viewport.New(contentWidth(f.width), min(previewHeight(f.height), lines))
+	f.preview.SetContent(text)
+}
+
+// scrollablePreview reports whether the confirm screen has more than it can
+// show, which decides whether the legend offers a key for it.
+func (f flow) scrollablePreview() bool {
+	return f.preview.TotalLineCount() > f.preview.Height
+}
+
+// How much of the manifest the confirm screen shows at once: everything the
+// terminal has left once the question, the note under it and the key legend
+// are accounted for. There is no upper cap, because the whole point of the
+// screen is to read the file, and none below the point where scrolling is all
+// there is to see.
+const (
+	defaultPreviewHeight = 20
+	minPreviewHeight     = 6
+	previewChrome        = 12
+)
+
+func previewHeight(terminalHeight int) int {
+	if terminalHeight <= 0 {
+		return defaultPreviewHeight
+	}
+
+	return max(terminalHeight-previewChrome, minPreviewHeight)
 }
 
 // confirmNote is what the user is agreeing to, beyond the file itself: where
@@ -667,6 +720,12 @@ func (f flow) keys() string {
 	bindings, ok := screenKeys[f.at]
 	if !ok {
 		bindings = defaultKeys
+	}
+
+	// Offered only when there is something below the fold, so the legend
+	// never advertises a key that does nothing.
+	if f.at == screenConfirm && f.scrollablePreview() {
+		bindings = append([]keyBinding{{Key: "↑/↓", Does: "scroll"}}, bindings...)
 	}
 
 	// With a filter in place, esc undoes that first. Saying "back" would be a
@@ -808,6 +867,26 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, heigh
 	}
 
 	return newRowTable([]string{"BASE IMAGE", "ID"}, rows, true, width, height)
+}
+
+// replicaValue leaves the field empty rather than showing a zero, which is
+// how an autoscaled workload arrives and is not a count anyone typed.
+func replicaValue(replicas int) string {
+	if replicas < 1 {
+		return ""
+	}
+
+	return strconv.Itoa(replicas)
+}
+
+// replicaPlaceholder says why the field is empty when the workload's own
+// policy owns the number.
+func replicaPlaceholder(autoscaled bool) string {
+	if autoscaled {
+		return "set by autoscaling"
+	}
+
+	return "1"
 }
 
 func newInput(value, placeholder string) textinput.Model {

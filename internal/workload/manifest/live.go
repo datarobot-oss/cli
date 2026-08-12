@@ -830,3 +830,16 @@ func orDefaultString(value, fallback string) string {
 
 	return value
 }
+
+// Autoscaled reports whether the workload's runtime group scales itself. A
+// caller asking the user for a replica count needs to know: applyRuntime
+// drops the answer while autoscaling is on, so the question would be one
+// whose answer could not be used.
+func (l Live) Autoscaled() bool {
+	groups := slicesAt(l.Runtime, keyContainerGroups)
+	if len(groups) == 0 {
+		return false
+	}
+
+	return autoscalingActive(groups[0])
+}
