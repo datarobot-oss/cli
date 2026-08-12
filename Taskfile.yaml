@@ -95,7 +95,8 @@ tasks:
           exit 1
         fi
         echo "Go $GO_INSTALLED matches go.mod"
-      - task: dev-init
+      - task: install-tools
+      - "{{.BIN_DIR}}/lefthook install"
       - task: build
 
   lint:
