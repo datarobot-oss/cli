@@ -213,6 +213,16 @@ func GuardNoActiveReplacement(workloadID string) error {
 		return confirmWorkloadExists(workloadID)
 	}
 
+	// A settled replacement stays readable for a while after it ends, and
+	// WaitForReplacement returns the moment it sees a terminal status, so the
+	// record is usually still there when the next command looks. Refusing on
+	// it would block a retry, or a follow-up deploy, on a rollout that is
+	// already over, with a message that contradicts itself by reporting the
+	// status as "completed" while calling it in progress.
+	if IsTerminalReplacementStatus(active.Status) {
+		return nil
+	}
+
 	return fmt.Errorf(
 		"workload %s already has a replacement in progress (to artifact %s, status %s); wait for it to settle before starting another",
 		workloadID, active.ArtifactID, active.Status,
@@ -277,7 +287,10 @@ func WaitForReplacement(
 
 		if replacement == nil {
 			if lastSeen == nil {
-				return nil, fmt.Errorf("no active replacement found for workload %s immediately after starting one", workloadID)
+				// Only reachable when started was nil, since lastSeen begins
+				// as started: this is the attach path, and the caller asked
+				// to follow a rollout that is not running.
+				return nil, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
 			}
 
 			return lastSeen, nil

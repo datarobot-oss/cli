@@ -320,6 +320,28 @@ func TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive(t *testi
 	assert.Zero(t, atomic.LoadInt32(&workloadFetches))
 }
 
+// TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock covers the gap
+// between a rollout ending and the platform collecting its record.
+// WaitForReplacement returns the instant it sees a terminal status, so that
+// record is usually still readable when the next command looks. Treating it
+// as in-flight would refuse a retry, and would say so with a message naming
+// the status as "completed" while calling it in progress.
+func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
+	for _, status := range []string{
+		ReplacementStatusCompleted,
+		ReplacementStatusFailed,
+		ReplacementStatusErrored,
+	} {
+		t.Run(status, func(t *testing.T) {
+			serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprintf(w, `{"candidateArtifactId":"art-2","status":"%s"}`, status)
+			})
+
+			assert.NoError(t, GuardNoActiveReplacement("wl-1"))
+		})
+	}
+}
+
 func TestGuardNoActiveReplacement_PropagatesLookupFailure(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -397,7 +419,9 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Nil(t, replacement)
-	assert.Contains(t, err.Error(), "no active replacement")
+	assert.Contains(t, err.Error(), "no replacement is in flight")
+	assert.NotContains(t, err.Error(), "after starting one",
+		"this branch is only reachable when the caller did not start one")
 }
 
 // TestWaitForReplacement_StartedSeedsTheWait covers the race the unseeded
