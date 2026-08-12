@@ -313,8 +313,8 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		// it (a complete pair was handled above), so the token was never
 		// verified. Point at it rather than starting a login flow that would
 		// shadow it.
-		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
-		fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
+		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable is set"))
+		fmt.Println(tui.BaseTextStyle.Render("without a DATAROBOT_ENDPOINT. Set that too, or unset the token:"))
 		PrintUnsetTokenInstructions()
 
 		skipAuthFlow = true
