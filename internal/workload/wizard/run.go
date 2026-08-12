@@ -126,6 +126,10 @@ func Run(opts Options) (Result, error) {
 
 	detected := Detect(dir)
 
+	if !opts.Answers.SkipEnv {
+		warnUnreadEnvFile(opts.Stderr, detected)
+	}
+
 	content, draft, err := opts.resolve(detected)
 	if err != nil {
 		return Result{}, err
@@ -249,6 +253,12 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 		return nil, manifest.Draft{}, err
 	}
 
+	// A name the workload already declares keeps its running value, so it is
+	// not something this run added. Narrowing the draft here rather than
+	// leaving it to Apply's own skip is what keeps the reported counts equal
+	// to what reached the file.
+	draft.EnvVars = live.NewEnvVars(draft.EnvVars)
+
 	applied, err := live.Apply(draft)
 	if err != nil {
 		return nil, manifest.Draft{}, err
@@ -281,6 +291,10 @@ func (a Answers) applyTo(defaults manifest.Draft, detected Detected) (manifest.D
 	a.applyReadiness(&draft)
 	a.applySizing(&draft)
 	a.applyEnv(&draft, detected)
+
+	if err := a.checkA2A(draft.Type); err != nil {
+		return manifest.Draft{}, err
+	}
 
 	if err := a.applyBuild(&draft, detected); err != nil {
 		return manifest.Draft{}, err
@@ -337,9 +351,20 @@ func (a Answers) applySizing(draft *manifest.Draft) {
 	}
 }
 
+// applyBuild layers the image-source flags. Staying on the mode the workload
+// already uses is an edit to that build, so only the fields actually passed
+// change and the rest keep their live values: --entrypoint alone changes a
+// generated build's command without demanding its environment be repeated.
+// Switching modes is the other thing entirely, and there the mode's companion
+// flags are required, because nothing in the old build answers for the new one.
 func (a Answers) applyBuild(draft *manifest.Draft, detected Detected) error {
-	if !a.explicitBuild() || a.buildMode(detected) == "" {
+	mode := a.buildMode(detected)
+	if !a.explicitBuild() || mode == "" {
 		return nil
+	}
+
+	if mode == draft.Build.Mode {
+		return a.mergeBuild(&draft.Build)
 	}
 
 	build, err := a.build(detected)
@@ -348,6 +373,40 @@ func (a Answers) applyBuild(draft *manifest.Draft, detected Detected) error {
 	}
 
 	draft.Build = build
+
+	return nil
+}
+
+// mergeBuild edits a build already in the requested mode, field by field.
+func (a Answers) mergeBuild(build *manifest.Build) error {
+	switch build.Mode {
+	case manifest.BuildModeImage:
+		if a.Image != "" {
+			build.ImageURI = a.Image
+		}
+
+	case manifest.BuildModeGenerated:
+		if a.Entrypoint != "" {
+			entrypoint, err := splitCommand(a.Entrypoint)
+			if err != nil {
+				return fmt.Errorf("--entrypoint %q: %w", a.Entrypoint, err)
+			}
+
+			build.Entrypoint = entrypoint
+		}
+
+		if a.ExecutionEnvironment != "" {
+			id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+			if err != nil {
+				return err
+			}
+
+			build.ExecutionEnvironmentID, build.ExecutionEnvironmentVersionID = id, versionID
+		}
+
+	case manifest.BuildModeDockerfile:
+		// The mode is the whole answer; there is nothing else to carry.
+	}
 
 	return nil
 }
@@ -461,6 +520,21 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 	fmt.Fprintf(stderr,
 		"Warning: a manifest already exists at %s. Writing one in %s means a deploy from either directory reads a different file.\n",
 		found, dir)
+}
+
+// warnUnreadEnvFile says so when a .env is there but contributed nothing.
+// Setup continues, because the import is a convenience and the manifest is
+// valid without it, but it cannot pass in silence: the whole reason the file
+// is read is that `up` never reads it, so an import that quietly did not
+// happen surfaces as a container missing its configuration at runtime.
+func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
+	if stderr == nil || detected.EnvErr == nil {
+		return
+	}
+
+	fmt.Fprintf(stderr,
+		"Warning: %v. Nothing from it was imported; add the variables to %s by hand.\n",
+		detected.EnvErr, manifest.FileName)
 }
 
 // ShortPath names a path relative to the working directory when it is under

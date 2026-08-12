@@ -32,8 +32,13 @@
 // serves a laptop and CI. Without a terminal nothing prompts: a missing
 // required answer is an error that names the flag.
 //
+// A project's .env is read here and its variables are classified by name and
+// by value, because `up` deploys the manifest and never reads .env: anything
+// kept only there would not reach the container. Ordinary settings are copied
+// in as literals; a secret becomes a credential reference with a placeholder
+// id, since creating the credential needs an API the CLI does not have yet.
+//
 // Non-scope: the manifest format itself (that is the manifest package, which
-// renders, validates and writes the file), the .env import and its
-// credentials (a separate command flag and a separate ticket), and the NIM
-// track.
+// renders, validates and writes the file), creating the credentials those
+// placeholders stand in for, and the NIM track.
 package wizard

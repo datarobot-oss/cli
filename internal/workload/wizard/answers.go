@@ -17,6 +17,7 @@ package wizard
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -89,20 +90,21 @@ func (a Answers) checkKind() error {
 			a.Type, manifest.TypeService, manifest.TypeAgent)
 	}
 
-	// The check is against the type that will be written, not against the
-	// flag: omitting --type does not turn --a2a-enabled into a service flag,
-	// it just means the default applies.
-	if a.A2AEnabled && a.effectiveType() != manifest.TypeAgent {
-		return fmt.Errorf("--a2a-enabled applies to --type %s, not %s",
-			manifest.TypeAgent, a.effectiveType())
-	}
-
 	return nil
 }
 
-// effectiveType is the kind that will be written when nothing else changes it.
-func (a Answers) effectiveType() string {
-	return orDefault(a.Type, manifest.TypeService)
+// checkA2A runs against the type that will be written rather than against the
+// flag, and so it runs once the draft has one. Omitting --type does not turn
+// --a2a-enabled into a service flag, it means whatever the draft started from
+// stands: the documented default for a new workload, the live kind for a bound
+// one. Checking the flag alone would reject --a2a-enabled on a bound agent
+// unless the caller redundantly repeated --type agent.
+func (a Answers) checkA2A(draftType string) error {
+	if a.A2AEnabled && draftType != manifest.TypeAgent {
+		return fmt.Errorf("--a2a-enabled applies to --type %s, not %s", manifest.TypeAgent, draftType)
+	}
+
+	return nil
 }
 
 func (a Answers) checkImageSource() error {
@@ -153,6 +155,14 @@ func (a Answers) checkSizing() error {
 		return fmt.Errorf("--replicas %d is negative", a.Replicas)
 	}
 
+	// ParseFloat accepts NaN and Inf, and neither compares as negative, so
+	// without this they reach the file as `cpu: !!float NaN`, which the
+	// manifest's own validator has no opinion about and the platform cannot
+	// schedule.
+	if math.IsNaN(a.CPU) || math.IsInf(a.CPU, 0) {
+		return fmt.Errorf("--cpu %v is not a number of cores", a.CPU)
+	}
+
 	if a.CPU < 0 {
 		return fmt.Errorf("--cpu %v is negative", a.CPU)
 	}
@@ -196,6 +206,10 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),
 		Runtime:    a.runtime(),
 		EnvVars:    a.envVars(detected),
+	}
+
+	if err := a.checkA2A(draft.Type); err != nil {
+		return manifest.Draft{}, err
 	}
 
 	if draft.Port == 0 {

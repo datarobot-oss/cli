@@ -15,6 +15,7 @@
 package wizard
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,9 +38,11 @@ const DockerfileName = "Dockerfile"
 // that says so.
 const DefaultDockerfilePath = "./" + DockerfileName
 
-// EnvFileName is the local environment file the wizard looks for. It is not
-// read for values, only counted: deploys come from the manifest, and saying
-// so is the point of noticing the file at all.
+// EnvFileName is the local environment file the wizard looks for. It is read
+// in full: `up` deploys the manifest and never reads .env, so anything kept
+// only there would not reach the container. Ordinary settings are copied into
+// the manifest as literals and secrets become credential references, which is
+// why the values are classified rather than merely counted.
 const EnvFileName = ".env"
 
 // maxDockerfileSize bounds the read. A Dockerfile is a few kilobytes; a
@@ -74,6 +77,11 @@ type Detected struct {
 	// written: an ordinary value as a literal, a secret as a credential
 	// reference whose id the user fills in. Every row is overridable.
 	EnvVars []EnvVar
+	// EnvErr is why a .env that is present contributed nothing. Setup still
+	// proceeds, because a manifest without the import is a working manifest,
+	// but it must be reported: silence here reads as "there was nothing to
+	// import" and the missing variables surface as a runtime failure instead.
+	EnvErr error
 }
 
 // HasEnvFile reports whether the project has a .env worth asking about.
@@ -101,8 +109,9 @@ func Detect(dir string) Detected {
 		HasDockerfile: fsutil.FileExists(filepath.Join(dir, DockerfileName)),
 		Port:          manifest.DefaultPort,
 		PortSource:    "the default for a web service; edit if yours differs",
-		EnvVars:       envVars(filepath.Join(dir, EnvFileName)),
 	}
+
+	detected.EnvVars, detected.EnvErr = envVars(filepath.Join(dir, EnvFileName))
 
 	if !detected.HasDockerfile {
 		return detected
@@ -165,27 +174,42 @@ func exposedPort(path string) (int, bool) {
 	return 0, false
 }
 
-// envVars reads and classifies a .env, nil when there is none or it cannot be
-// read. The values are used here and dropped: only names and verdicts leave
-// this function, so nothing downstream is holding a secret it could write out.
+// envVars reads and classifies a .env, and reports separately why a file that
+// exists yielded nothing. Both returns are empty when there is no .env at all,
+// which is not a problem and has nothing to say. The values travel with the
+// verdicts: an ordinary setting is written to the manifest as it stands, and a
+// secret's value is what a later credential is created from.
+//
 // The file is read a second time for order, because godotenv returns a map and
 // a scrambled list would not match what the user sees in their editor.
-func envVars(path string) []EnvVar {
+func envVars(path string) ([]EnvVar, error) {
 	info, err := os.Stat(path)
-	if err != nil || info.IsDir() || info.Size() > maxEnvFileSize {
-		return nil
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory, not a file", path)
+	}
+
+	if info.Size() > maxEnvFileSize {
+		return nil, fmt.Errorf("%s is %d bytes, larger than the %d this reads", path, info.Size(), maxEnvFileSize)
 	}
 
 	values, err := godotenv.Read(path)
-	if err != nil || len(values) == 0 {
+	if err != nil {
 		// A .env this parser cannot read is still a .env, but listing keys we
 		// are not sure of would be worse than listing none.
-		return nil
+		return nil, fmt.Errorf("cannot parse %s: %w", path, err)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
 
 	classified := make([]EnvVar, 0, len(values))
@@ -193,7 +217,7 @@ func envVars(path string) []EnvVar {
 		classified = append(classified, ClassifyEnv(name, values[name]))
 	}
 
-	return classified
+	return classified, nil
 }
 
 // orderedKeys walks the file to recover the order godotenv's map loses, so

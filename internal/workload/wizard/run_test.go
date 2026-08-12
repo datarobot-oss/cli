@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,6 +108,9 @@ func TestRun_DryRunWritesNothing(t *testing.T) {
 
 	assert.NotEmpty(t, result.Content)
 	assert.NoFileExists(t, result.Path)
+	// The action is what a script keys on to tell a plan from a file that now
+	// exists, so a dry run reporting ActionCreated would be a silent lie.
+	assert.Equal(t, ActionPlanned, result.Action)
 }
 
 // Setup is a one-time act. A configured project gets a pointer at its file,
@@ -315,4 +319,195 @@ func TestRun_NoTerminalNeverPrompts(t *testing.T) {
 
 	_, err := Run(Options{Dir: dir, Answers: Answers{Name: "my-app"}, Stderr: &bytes.Buffer{}})
 	require.NoError(t, err)
+}
+
+// writeEnvFile puts a .env in dir and hands back the directory, so a test
+// reads as one line of setup.
+func writeEnvFile(t *testing.T, dir, content string) string {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName), []byte(content), 0o600))
+
+	return dir
+}
+
+// liveGeneratedAgent is a running agent built from an execution environment,
+// which is the case where binding has live values worth keeping.
+func liveGeneratedAgent(t *testing.T) {
+	t.Helper()
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "spec": {"type": "agent",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated",
+				   "entrypoint": ["python", "old.py"],
+				   "executionEnvironmentId": "68e1", "executionEnvironmentVersionId": "68e2"}}}]}]}}`))
+}
+
+// Staying on the mode the workload already uses is an edit to that build, so
+// the flags that were not passed keep their live values. Demanding
+// --execution-environment again to change the entrypoint would contradict the
+// rest of binding, where an omitted field means "leave it alone".
+func TestRun_BoundBuildKeepsWhatTheFlagsDidNotMention(t *testing.T) {
+	liveGeneratedAgent(t)
+
+	result, err := Run(headless(t.TempDir(), Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		Entrypoint: "python new.py",
+	}))
+	require.NoError(t, err)
+
+	written := string(result.Content)
+
+	assert.Contains(t, written, "- new.py")
+	assert.NotContains(t, written, "old.py")
+	assert.Contains(t, written, `executionEnvironmentId: "68e1"`)
+	assert.Contains(t, written, `executionEnvironmentVersionId: "68e2"`)
+	assert.Contains(t, written, "source: generated")
+}
+
+// Switching modes is the other thing entirely: nothing in the old build
+// answers for the new one, so the new mode's own flags are required.
+func TestRun_BoundBuildModeSwitchNeedsItsOwnFlags(t *testing.T) {
+	liveGeneratedAgent(t)
+
+	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", BuildMode: "image"}))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--image is required")
+}
+
+func TestRun_BoundBuildModeSwitchReplacesTheBuild(t *testing.T) {
+	liveGeneratedAgent(t)
+
+	result, err := Run(headless(t.TempDir(), Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		BuildMode:  "image",
+		Image:      "registry/new:v1",
+	}))
+	require.NoError(t, err)
+
+	written := string(result.Content)
+
+	assert.Contains(t, written, "imageUri: registry/new:v1")
+	assert.NotContains(t, written, "imageBuildConfig")
+}
+
+// --a2a-enabled is judged against the kind that will be written. For a bound
+// agent that is the live kind, so the caller does not have to repeat --type.
+func TestRun_BoundAgentTakesA2AWithoutRepeatingTheType(t *testing.T) {
+	liveGeneratedAgent(t)
+
+	result, err := Run(headless(t.TempDir(), Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		A2AEnabled: true,
+	}))
+	require.NoError(t, err)
+
+	assert.Contains(t, string(result.Content), "a2aEnabled: true")
+}
+
+// A service is still a service, bound or not.
+func TestRun_BoundServiceRejectsA2A(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9"}]}]}}`))
+
+	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", A2AEnabled: true}))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--a2a-enabled applies to --type agent")
+}
+
+// The summary counts what reached the file. A name the workload already
+// declares keeps its running value, so claiming it was added would describe a
+// run that did not happen.
+func TestRun_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
+				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"},
+				                     {"name": "OPENAI_API_KEY", "value": "live"}]}]}]}}`))
+
+	dir := writeEnvFile(t, t.TempDir(),
+		"LOG_LEVEL=debug\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345\nFEATURE_X=on\n")
+
+	result, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvKeysListed)
+	assert.Equal(t, 0, result.EnvSecretsPending)
+
+	written := string(result.Content)
+
+	assert.Contains(t, written, "FEATURE_X")
+	// The live values stand: .env is the developer's copy and may be stale.
+	assert.Contains(t, written, "value: info")
+	assert.Contains(t, written, "value: live")
+}
+
+// A .env that cannot be parsed is the one case where saying nothing is worst:
+// the manifest looks complete and the container starts without its
+// configuration.
+func TestRun_WarnsAboutAnUnreadableEnvFile(t *testing.T) {
+	dir := writeEnvFile(t, writeDockerfile(t, t.TempDir(), "FROM scratch\n"),
+		"LOG_LEVEL=debug\n\"unterminated\n")
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{Name: "my-app"})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), EnvFileName)
+	assert.Contains(t, stderr.String(), "Nothing from it was imported")
+	assert.Equal(t, 0, result.EnvKeysListed)
+	assert.NotContains(t, string(result.Content), "environmentVars")
+}
+
+// Non-finite is not a quantity of cores. Both parse as float64, and neither
+// compares as negative, so the sizing check has to name them.
+func TestRun_RejectsNonFiniteCPU(t *testing.T) {
+	for name, cpu := range map[string]float64{
+		"NaN":  math.NaN(),
+		"+Inf": math.Inf(1),
+		"-Inf": math.Inf(-1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+
+			_, err := Run(headless(dir, Answers{Name: "my-app", CPU: cpu}))
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "--cpu")
+			assert.NoFileExists(t, manifest.Path(dir))
+		})
+	}
+}
+
+// Declining the import means the file is not the wizard's business, broken or
+// not.
+func TestRun_SkipEnvSilencesTheUnreadableEnvWarning(t *testing.T) {
+	dir := writeEnvFile(t, writeDockerfile(t, t.TempDir(), "FROM scratch\n"),
+		"LOG_LEVEL=debug\n\"unterminated\n")
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{Name: "my-app", SkipEnv: true})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Empty(t, stderr.String())
 }

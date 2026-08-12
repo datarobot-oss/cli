@@ -283,14 +283,7 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 	}
 
 	existing, _ := container[keyEnvironmentVars].([]any)
-
-	declared := make(map[string]bool, len(existing))
-
-	for _, entry := range existing {
-		if typed, ok := entry.(map[string]any); ok {
-			declared[stringAt(typed, keyName)] = true
-		}
-	}
+	declared := declaredEnvNames(existing)
 
 	for _, v := range vars {
 		if declared[v.Name] {
@@ -306,6 +299,44 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 	}
 
 	container[keyEnvironmentVars] = existing
+}
+
+// NewEnvVars is the subset of vars that Apply would actually add: the names
+// the workload does not already declare. A caller reporting what a bind did
+// has to count these rather than everything it classified, or it claims to
+// have added variables that kept their running values.
+func (l Live) NewEnvVars(vars []EnvVar) []EnvVar {
+	container := primaryContainerOf(l.Spec)
+	if container == nil {
+		return vars
+	}
+
+	existing, _ := container[keyEnvironmentVars].([]any)
+
+	declared := declaredEnvNames(existing)
+	fresh := make([]EnvVar, 0, len(vars))
+
+	for _, v := range vars {
+		if !declared[v.Name] {
+			fresh = append(fresh, v)
+		}
+	}
+
+	return fresh
+}
+
+// declaredEnvNames is the set of variable names an environmentVars list
+// already carries.
+func declaredEnvNames(existing []any) map[string]bool {
+	declared := make(map[string]bool, len(existing))
+
+	for _, entry := range existing {
+		if typed, ok := entry.(map[string]any); ok {
+			declared[stringAt(typed, keyName)] = true
+		}
+	}
+
+	return declared
 }
 
 // applyRuntime writes the sizing answers onto the live runtime block, leaving

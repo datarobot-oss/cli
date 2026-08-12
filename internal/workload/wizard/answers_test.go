@@ -58,9 +58,9 @@ func TestSplitCommand(t *testing.T) {
 
 func TestSplitCommand_Rejects(t *testing.T) {
 	tests := map[string]string{
-		"unbalanced quote":  `sh -c "echo hello`,
-		"trailing backlash": `run \`,
-		"empty":             "   ",
+		"unbalanced quote":   `sh -c "echo hello`,
+		"trailing backslash": `run \`,
+		"empty":              "   ",
 	}
 
 	for name, command := range tests {
@@ -82,9 +82,6 @@ func TestAnswers_Check(t *testing.T) {
 		"unsupported type": {
 			Answers{Type: "nim"}, `--type "nim" is not supported`,
 		},
-		"a2a on a service": {
-			Answers{Type: manifest.TypeService, A2AEnabled: true}, "--a2a-enabled applies to --type agent",
-		},
 		"unsupported build mode": {
 			Answers{BuildMode: "magic"}, `--build-mode "magic" is not supported`,
 		},
@@ -103,6 +100,20 @@ func TestAnswers_Check(t *testing.T) {
 			assert.Contains(t, err.Error(), test.want)
 		})
 	}
+}
+
+// --a2a-enabled is judged against the kind that will be written rather than
+// against the flag, so the check runs once the draft has a type. On a new
+// workload that is the documented default; binding covers the other half.
+func TestAnswers_A2AIsCheckedAgainstTheDraftType(t *testing.T) {
+	detected := Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\n"))
+
+	_, err := Answers{Name: "my-app", A2AEnabled: true}.draft(detected)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--a2a-enabled applies to --type agent")
+
+	_, err = Answers{Name: "my-app", Type: manifest.TypeAgent, A2AEnabled: true}.draft(detected)
+	require.NoError(t, err)
 }
 
 // The Dockerfile track needs no flags at all: this is the headless half of

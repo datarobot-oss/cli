@@ -136,9 +136,18 @@ const minSecretEntropy = 3.4
 
 // ClassifyEnv decides where one `.env` entry belongs. Every verdict carries
 // the value, secrets included, for the reason EnvVar.Value gives.
+//
+// Surrounding whitespace is ignored when reading the value and kept when
+// writing it. A quoted `GREETING=" hello "` means those spaces, and a
+// classifier is no place to decide otherwise.
 func ClassifyEnv(name, value string) EnvVar {
-	value = strings.TrimSpace(value)
+	classified := classify(name, strings.TrimSpace(value))
+	classified.Value = value
 
+	return classified
+}
+
+func classify(name, value string) EnvVar {
 	for _, signal := range secretValuePatterns {
 		if signal.pattern.MatchString(value) {
 			return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "looks like " + signal.reason}
