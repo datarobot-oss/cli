@@ -170,6 +170,11 @@ $ dr auth check
 ❌ DATAROBOT_API_TOKEN environment variable is invalid or expired.
 Unset it and try again:
   unset DATAROBOT_API_TOKEN (or Remove-Item Env:\DATAROBOT_API_TOKEN on Windows)
+
+# Unreachable endpoint (the token was never checked, so it is not blamed)
+$ dr auth check
+❌ Could not connect to https://app.example.com: dial tcp: lookup app.example.com: no such host
+Check DATAROBOT_ENDPOINT and your network, then try again.
 ```
 
 > [!TIP]
