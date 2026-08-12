@@ -6,7 +6,7 @@ This repo includes a [devcontainer](https://containers.dev/) configuration at `.
 
 - **Go 1.26** (pinned via `mcr.microsoft.com/devcontainers/go:2-1.26-bookworm`)
 - **Task** (installed via the [go-task devcontainer feature](https://github.com/eitsupi/devcontainer-features/tree/main/src/go-task))
-- **Automatic Go version sync** — if the image's Go patch version doesn't match `go.mod`, it is upgraded automatically during container creation
+- **Automatic Go version sync** — if the image's Go patch version doesn't match `go.mod`, it is upgraded automatically during container creation. The official SHA256 is fetched from Go's release feed and verified before the old toolchain is removed, so a failed download never leaves the container without Go
 - **One-command bootstrap** — `task bootstrap` runs automatically, installing all development tools (golangci-lint, goreleaser, jscpd, lefthook), setting up git hooks, and building the CLI
 - **uv** (installed via the [uv devcontainer feature](https://github.com/va-h/devcontainers-features/tree/main/src/uv)) — enables `task docs-serve` for local documentation preview with MkDocs
 - **Docker** (installed via the [docker-outside-of-docker feature](https://github.com/devcontainers/features/tree/main/src/docker-outside-of-docker)) — enables `task copyright` which runs `docker run` for Apache Skywalking Eyes license header management
