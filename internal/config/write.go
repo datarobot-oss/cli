@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
@@ -81,8 +82,19 @@ func UpdateConfigFile(keys ...string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configFile, out, 0o600); err != nil {
+	if err := os.WriteFile(configFile, out, configFileMode); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// os.WriteFile only applies its perm argument when it creates the file, so a
+	// config left at 0644 by an earlier CLI version would keep the API token
+	// world-readable forever. Tighten it explicitly on every write.
+	//
+	// Best effort: on Windows os.Chmod only toggles the read-only bit, and a config
+	// owned by another user is not ours to re-permission. Neither case should fail
+	// the write, so log and carry on.
+	if err := os.Chmod(configFile, configFileMode); err != nil {
+		log.Debugf("Could not set %s to %#o: %v", configFile, configFileMode, err)
 	}
 
 	return nil

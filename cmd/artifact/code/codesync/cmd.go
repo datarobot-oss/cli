@@ -24,6 +24,7 @@ import (
 	"io"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -45,6 +46,7 @@ type engineRunner interface {
 	Execute(*sync.SyncPlan) (*sync.Result, error)
 	Close() error
 	StaleRollbackRestored() bool
+	StateMigrationNotice() string
 	Fetcher() display.ContentFetcher
 }
 
@@ -184,6 +186,8 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	if err != nil {
 		return err
 	}
+
+	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))

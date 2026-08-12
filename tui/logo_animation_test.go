@@ -22,6 +22,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -222,7 +223,9 @@ func TestLogoAnimationIntegrationSkipViaKeypress(t *testing.T) {
 
 	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
 
-	fm := tm.FinalModel(t)
+	// testutil.FinalModel, not tm.FinalModel — see its doc comment for the
+	// teatest race that otherwise hands back a nil model under load.
+	fm := testutil.FinalModel(t, tm)
 	result, ok := fm.(LogoAnimationModel)
 	require.True(t, ok, "final model is not LogoAnimationModel")
 	assert.True(t, result.Done)

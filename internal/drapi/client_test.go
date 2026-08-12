@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,14 +48,14 @@ func resetTokenCache(t *testing.T) {
 func withSkipAuth(t *testing.T, value string) string {
 	t.Helper()
 
-	prevSkip := viperx.GetBool("skip_auth")
+	prevSkip := viperx.GetBool(config.SkipAuthKey)
 	prevKey := viperx.GetString(config.DataRobotAPIKey)
 
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 	viperx.Set(config.DataRobotAPIKey, value)
 
 	t.Cleanup(func() {
-		viperx.Set("skip_auth", prevSkip)
+		viperx.Set(config.SkipAuthKey, prevSkip)
 		viperx.Set(config.DataRobotAPIKey, prevKey)
 	})
 
@@ -119,4 +120,35 @@ func TestAuthorizeRequest_DoesNotConsumeBody(t *testing.T) {
 	body, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "payload", string(body))
+}
+
+// TestTokenAccessorsAreGuarded drives SetToken and GetToken against getToken
+// concurrently. All three touch the same package global, and getToken is
+// reached from two goroutines whenever GetLLMsAndDeployed runs, so a re-auth
+// path calling SetToken mid-fetch must not race the readers. Only fails under
+// -race, which is how the suite runs.
+func TestTokenAccessorsAreGuarded(t *testing.T) {
+	resetTokenCache(t)
+	want := withSkipAuth(t, "concurrent-token")
+
+	var wg sync.WaitGroup
+
+	for range 8 {
+		wg.Add(3)
+
+		go func() { defer wg.Done(); SetToken(want) }()
+		go func() { defer wg.Done(); _ = GetToken() }()
+
+		go func() {
+			defer wg.Done()
+
+			got, err := getToken()
+			assert.NoError(t, err)
+			assert.Equal(t, want, got)
+		}()
+	}
+
+	wg.Wait()
+
+	assert.Equal(t, want, GetToken())
 }

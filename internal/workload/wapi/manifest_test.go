@@ -65,7 +65,7 @@ func TestManifest_EmptyFilesMap(t *testing.T) {
 	err := SaveManifest(tmp, Manifest{Version: ManifestVersion})
 	require.NoError(t, err)
 
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, manifestFile))
+	raw, err := os.ReadFile(filepath.Join(Dir(tmp), manifestFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any
@@ -124,7 +124,7 @@ func TestManifest_LoadCorrupted(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, manifestFile)
+	path := filepath.Join(Dir(tmp), manifestFile)
 	err := os.WriteFile(path, []byte("not json"), 0o644)
 	require.NoError(t, err)
 
@@ -181,7 +181,7 @@ func TestManifest_LoadInvalid(t *testing.T) {
 			tmp := t.TempDir()
 			initWapiDir(t, tmp)
 
-			path := filepath.Join(tmp, DirName, manifestFile)
+			path := filepath.Join(Dir(tmp), manifestFile)
 			err := os.WriteFile(path, []byte(tc.json), 0o644)
 			require.NoError(t, err)
 

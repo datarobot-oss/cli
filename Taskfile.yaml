@@ -14,6 +14,8 @@ vars:
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
   GORELEASER_VERSION: "v2.17.1"
+  # Keep this in sync with the GOOS lists in goreleaser.yaml.
+  LINT_GOOS_TARGETS: "linux darwin windows"
 
 dotenv: [".env"]
 
@@ -151,8 +153,7 @@ tasks:
       - "{{.BIN_DIR}}/golangci-lint fmt --diff"
       - echo "🧹 Vetting…"
       - go vet ./...
-      - echo "🧹 Linting…"
-      - "{{.BIN_DIR}}/golangci-lint run ./..."
+      - task: lint-goos
       - echo "🧹 Checking GoReleaser config…"
       - "{{.BIN_DIR}}/goreleaser check"
 
@@ -165,8 +166,24 @@ tasks:
       - go mod tidy
       - echo "🧹 Formatting files…"
       - "{{.BIN_DIR}}/golangci-lint fmt"
-      - echo "🧹 Fixing lint issues…"
-      - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
+      - task: lint-goos
+        vars:
+          LINT_ARGS: "--fix"
+
+  # CFX-7138: run golangci-lint once per target GOOS so build-constrained files
+  # (*_windows.go, //go:build linux, …) are enforced no matter which OS the
+  # linter runs on. Without this, a macOS dev only lints the darwin/!windows
+  # files and CI (ubuntu) only the linux/!windows ones, so windows-only files
+  # are linted by nobody. Callers pass LINT_ARGS to select the mode.
+  lint-goos:
+    internal: true
+    silent: true
+    deps: [install-tools]
+    cmds:
+      - for: { var: LINT_GOOS_TARGETS, split: " " }
+        cmd: |
+          echo "🧹 Linting (GOOS={{.ITEM}})…"
+          GOOS={{.ITEM}} {{.BIN_DIR}}/golangci-lint run {{.LINT_ARGS}} ./...
 
   run:
     silent: true
@@ -250,6 +267,9 @@ tasks:
       - go mod tidy
       - echo "🧹 Vetting…"
       - go vet ./...
+      # CFX-7138: deliberately host-GOOS only. The commit hook runs on every
+      # commit, and looping all targets here costs ~4-6s of interactive latency
+      # for little benefit — `task lint` and CI already enforce every GOOS.
       - echo "🧹 Linting new changes…"
       - "{{.BIN_DIR}}/golangci-lint run --new-from-rev HEAD ./..."
       - echo "🧹 Verifying golangci-lint config…"

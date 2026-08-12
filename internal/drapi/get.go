@@ -43,15 +43,25 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
+// token is the cached API token. Every read and write takes tokenMu (declared
+// in client.go), including the accessors below: GetLLMsAndDeployed fetches two
+// endpoints at once, so a refresh path calling SetToken mid-fetch would race
+// the readers.
 var token string
 
 // GetToken returns the current cached API token.
 func GetToken() string {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	return token
 }
 
 // SetToken sets the cached API token.
 func SetToken(value string) {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	token = value
 }
 
@@ -60,7 +70,7 @@ func SetToken(value string) {
 // is in viper without contacting the server, so local development against
 // stub APIs that don't implement /version/ still works.
 func resolveToken() (string, error) {
-	if viperx.GetBool("skip_auth") {
+	if viperx.GetBool(config.SkipAuthKey) {
 		return viperx.GetString(config.DataRobotAPIKey), nil
 	}
 

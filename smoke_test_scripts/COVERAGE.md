@@ -44,6 +44,8 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | `dr auth setURL` (interactive) | ✅ | ⚠️ | Windows sets config directly |
 | Config file updated with correct endpoint | ✅ | ✅ | |
 | `dr auth login` (interactive) | ✅ | ⚠️ | Windows falls back to `dr auth check` |
+| `dr auth export` emits both canonical variables | ✅ | ✅ | `--shell bash` / `--shell powershell` |
+| Exported statements populate the shell when sourced | ✅ | ✅ | `eval` / `Invoke-Expression` |
 | **Templates** | | | |
 | `dr templates setup` (interactive clone) | ✅ | ⏭️ | Skipped on Windows (no `expect`) |
 | Cloned directory exists after setup | ✅ | ⏭️ | |

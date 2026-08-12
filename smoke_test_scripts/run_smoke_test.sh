@@ -166,6 +166,32 @@ start_timer "dr auth login (expect)"
 expect ./smoke_test_scripts/expect_auth_login.exp
 stop_timer
 
+start_timer "dr auth export"
+# Only the shell statements may reach stdout, otherwise `eval` breaks.
+auth_export_output=$(dr auth export --shell bash)
+if [[ "$auth_export_output" == *"export DATAROBOT_ENDPOINT="* && "$auth_export_output" == *"export DATAROBOT_API_TOKEN="* ]]; then
+  echo "✅ Assertion passed: 'dr auth export' emitted both canonical variables."
+else
+  echo "❌ Assertion failed: 'dr auth export' did not emit both canonical variables."
+  # Redact values so no token reaches CI logs.
+  echo "$auth_export_output" | sed 's/=.*/=<redacted>/'
+  exit 1
+fi
+
+# Sourcing the output must actually populate the current shell. Run in a
+# subshell so the token does not leak into the rest of the suite's environment.
+(
+  eval "$auth_export_output"
+  if [[ "$DATAROBOT_ENDPOINT" == "${testing_url}/api/v2" && -n "$DATAROBOT_API_TOKEN" ]]; then
+    echo "✅ Assertion passed: eval of 'dr auth export' set the canonical variables."
+  else
+    echo "❌ Assertion failed: eval of 'dr auth export' did not set the canonical variables."
+    echo "DATAROBOT_ENDPOINT=${DATAROBOT_ENDPOINT}"
+    exit 1
+  fi
+) || exit 1
+stop_timer
+
 start_timer "dr templates setup + dotenv"
 if [ "$url_accessible" -eq 0 ]; then
   echo "ℹ️ URL (${testing_url}) is not accessible so skipping 'dr templates setup' test."

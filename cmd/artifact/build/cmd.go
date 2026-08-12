@@ -31,7 +31,7 @@ artifacts.
 
 When run inside a directory linked via 'dr artifact code init', the
 <artifact-id> argument may be omitted on every subcommand and is read from
-.wapi/config.json.`,
+.datarobot/workload/config.json.`,
 	}
 
 	cmd.AddCommand(

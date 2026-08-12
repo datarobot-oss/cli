@@ -183,6 +183,9 @@ dr
 dr auth set-url https://app.datarobot.com
 dr auth login
 
+# Export credentials into the current shell session
+eval "$(dr auth export)"
+
 # Logout
 dr auth logout
 ```
@@ -244,6 +247,10 @@ dr llm-gateway list
 
 # List as JSON
 dr llm-gateway list --output-format json
+
+# Restrict to one source (skips the other source's request)
+dr llm-gateway list --source gateway
+dr llm-gateway list --source deployed
 
 # Select a default LLM interactively (TUI picker)
 dr llm-gateway select
@@ -346,7 +353,7 @@ For detailed documentation on each command, see:
 - **[plugin](plugins.md)**&mdash;inspect and manage installed CLI plugins (alias: `plugins`).
 
 - **[llm-gateway](llm-gateway.md)**&mdash;list and configure the default LLM, across LLM Gateway catalog models and DataRobot-deployed LLMs (aliases: `llm`, `llm-gateways`).
-  - `list` (`ls`)&mdash;fetch available LLMs from both sources and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
+  - `list` (`ls`)&mdash;fetch available LLMs and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Both sources are queried in parallel by default; `--source gateway` or `--source deployed` narrows it to one and skips the other request. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
   - `select [llm-id]`&mdash;set the default LLM. Without an argument, launches an interactive TUI picker. With an argument (a gateway model id or a deployment id), validates it against the available LLMs and persists it immediately. The selection is saved to `drconfig.yaml` under the key `default-llm-id`.
 
 - **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
@@ -367,7 +374,7 @@ For detailed documentation on each command, see:
 - **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
-  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.wapi/` state directory.
+  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory.
 
 - **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.

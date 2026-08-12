@@ -38,7 +38,7 @@ func TestResolvePositional_OneArgNoWAPIFails(t *testing.T) {
 
 	_, _, err := ResolvePositional([]string{"b-1"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no .wapi project")
+	assert.Contains(t, err.Error(), "no linked project")
 }
 
 func TestResolvePositional_WrongArity(t *testing.T) {
@@ -64,5 +64,5 @@ func TestResolveOptional_NoArgsNoWAPIFails(t *testing.T) {
 
 	_, err := ResolveOptional([]string{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no .wapi project")
+	assert.Contains(t, err.Error(), "no linked project")
 }

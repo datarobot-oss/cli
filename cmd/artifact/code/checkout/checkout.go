@@ -200,7 +200,7 @@ type preflightResult struct {
 func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
 	cfg, err := wapi.LoadConfig(dir)
 	if err != nil {
-		return preflightResult{}, fmt.Errorf("read .wapi/config.json: %w", err)
+		return preflightResult{}, fmt.Errorf("read %s: %w", wapi.ConfigPath(dir), err)
 	}
 
 	if cfg.CatalogID == nil || *cfg.CatalogID == "" {
@@ -225,7 +225,7 @@ func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
 
 func prepareCheckoutsParent(parent string, totalSize int64) error {
 	if err := os.MkdirAll(parent, checkoutDirPerm); err != nil {
-		return fmt.Errorf("create .wapi/.checkouts dir: %w", err)
+		return fmt.Errorf("create checkouts dir %s: %w", parent, err)
 	}
 
 	if err := sync.EnsureSpaceFor(parent, totalSize); err != nil {

@@ -91,6 +91,18 @@ if format == outputformat.OutputFormatJSON {
 
 The envelope format is `{"<key>": <data>}`, which ensures output is always a JSON object (never a bare array). This makes the output forward-compatible for adding metadata, pagination, or warnings without breaking callers.
 
+### PrintJSONEnvelopeWithMeta
+
+When you need top-level metadata siblings alongside the primary data key (for example, a `source` field naming where data came from), use `outputformat.PrintJSONEnvelopeWithMeta`:
+
+```go
+return outputformat.PrintJSONEnvelopeWithMeta(cmd.OutOrStdout(), "items", outputs,
+    map[string]any{"source": "drconfig.yaml"},
+)
+```
+
+This yields `{"items": <data>, "source": "drconfig.yaml"}`. It is otherwise identical to `PrintJSONEnvelope`; a metadata key that collides with the primary data key is not overwritten.
+
 ### JSON output purity
 
 When the effective format is JSON, **stdout must contain only valid JSON**. Anything that would break `dr <cmd> --output-format json | jq .` (or `... 2>&1 | jq .`) is a bug.

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // Package ignore decides which files the sync engine excludes. The
-// effective set is the union of hardcoded system excludes (.wapi, .git)
+// effective set is the union of hardcoded system excludes (the state
+// directory, .git)
 // and patterns from <project-root>/.wapiignore in gitignore syntax.
 package ignore

@@ -24,15 +24,14 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
-	// short-circuit if skip_auth is enabled. This allows users to avoid login prompts
+	// short-circuit if skip-auth is enabled. This allows users to avoid login prompts
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
-	if viperx.GetBool("skip_auth") {
+	if viperx.GetBool(config.SkipAuthKey) {
 		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
 		log.Error(err)
 
@@ -77,16 +76,10 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// Clear existing token and get new one
 	viperx.Set(config.DataRobotAPIKey, "")
 
-	var key string
+	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
-	auth.PrintAuthInstructions(auth.AuthCallbackURL(datarobotHost))
-
-	err = tui.RunWithSpinner("Waiting for browser authorization…", func() error {
-		var waitErr error
-
-		key, waitErr = auth.WaitForAPIKeyCallback(cmd.Context(), datarobotHost)
-
-		return waitErr
+	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
+		NoBrowser: noBrowser,
 	})
 	if err != nil {
 		log.Error(err)
@@ -115,17 +108,26 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 }
 
 func Cmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "login [url]",
-		Short: "🔐 Log in to DataRobot using OAuth authentication.",
-		Long: `Log in to DataRobot using OAuth authentication in your browser.
+		Short: "🔐 Log in to DataRobot in your browser.",
+		Long: `Log in to DataRobot by authorizing the CLI in your browser.
 
 This command will:
   1. Open your default browser.
   2. Redirect you to the DataRobot login page.
-  3. Securely store your API key for future CLI operations.`,
+  3. Securely store your API key for future CLI operations.
+
+If the browser cannot be opened, the CLI prints a link to open yourself. Pass
+--no-browser to skip the browser launch entirely, which is useful over SSH.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,
 	}
+
+	// Read directly from cobra rather than binding to viper: this is a transient
+	// per-invocation flag and must never be persisted to drconfig.yaml.
+	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+
+	return cmd
 }

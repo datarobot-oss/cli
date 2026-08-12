@@ -332,10 +332,14 @@ for ($i = 0; $i -lt 20; $i++) {
     if ($auth_proc.HasExited) { break }
 }
 
+# Whether the process was still running tells a hang apart from an early exit, so
+# capture it before the kill below makes it moot.
+$auth_still_running = -not $auth_proc.HasExited
+
 # No browser round-trip happens in tests, so stop the waiting process. Guard the
 # kill: the process may exit between the check and the Kill() call, which would
 # otherwise throw under $ErrorActionPreference = "Stop".
-if (-not $auth_proc.HasExited) {
+if ($auth_still_running) {
     try {
         $auth_proc.Kill()
         $auth_proc.WaitForExit()
@@ -344,13 +348,69 @@ if (-not $auth_proc.HasExited) {
     }
 }
 
-Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
-
 if ($auth_url_shown) {
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
     Write-SuccessMsg "Assertion passed: 'dr auth login' displayed the OAuth redirect URL."
 } else {
+    # Dump both streams before deleting them. Without this the failure says only
+    # "the URL was not on stdout", which cannot distinguish the three causes that
+    # look identical from here: the link went to stderr instead, the process never
+    # got as far as printing it (a browser launcher that blocks would do that), or
+    # it exited early with an error.
     Write-ErrorMsg "Assertion failed: 'dr auth login' did not display the auth URL (cliRedirect=true)."
+    Write-InfoMsg "Process still running when polling gave up: $auth_still_running"
+
+    foreach ($stream in @(@{ Name = "stdout"; Path = $auth_out }, @{ Name = "stderr"; Path = $auth_err })) {
+        Write-InfoMsg "--- dr auth login $($stream.Name) ---"
+
+        if (Test-Path $stream.Path) {
+            $content = Get-Content $stream.Path -Raw
+
+            if ([string]::IsNullOrWhiteSpace($content)) {
+                Write-Host "(empty)"
+            } else {
+                Write-Host $content
+            }
+        } else {
+            Write-Host "(file never created)"
+        }
+    }
+
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
 }
+Write-End
+
+# Test auth export
+#
+# Verifies the PowerShell rendering and that piping it to Invoke-Expression
+# actually populates $env:. Values are never echoed, so no token reaches the
+# CI log.
+Write-Delimiter "Testing dr auth export"
+
+$auth_export_output = (dr auth export --shell powershell) -join "`n"
+
+if ($auth_export_output -match '\$env:DATAROBOT_ENDPOINT = ' -and
+    $auth_export_output -match '\$env:DATAROBOT_API_TOKEN = ') {
+    Write-SuccessMsg "Assertion passed: 'dr auth export' emitted both canonical variables."
+} else {
+    Write-ErrorMsg "Assertion failed: 'dr auth export' did not emit both canonical variables."
+}
+
+# Snapshot and restore so the token does not leak into the rest of the suite.
+$saved_endpoint = $env:DATAROBOT_ENDPOINT
+$saved_token = $env:DATAROBOT_API_TOKEN
+
+$auth_export_output | Invoke-Expression
+
+if ($env:DATAROBOT_ENDPOINT -eq "${testing_url}/api/v2" -and -not [string]::IsNullOrEmpty($env:DATAROBOT_API_TOKEN)) {
+    Write-SuccessMsg "Assertion passed: Invoke-Expression of 'dr auth export' set the canonical variables."
+} else {
+    Write-Host "DATAROBOT_ENDPOINT=$($env:DATAROBOT_ENDPOINT)"
+    Write-ErrorMsg "Assertion failed: Invoke-Expression of 'dr auth export' did not set the canonical variables."
+}
+
+$env:DATAROBOT_ENDPOINT = $saved_endpoint
+$env:DATAROBOT_API_TOKEN = $saved_token
 Write-End
 
 # Test templates (if URL is accessible)

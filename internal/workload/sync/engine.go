@@ -65,11 +65,13 @@ func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionI
 }
 
 // Deps are the external dependencies injected into an Engine. Use
-// defaultDeps for production wiring; tests build their own.
+// defaultDeps for production wiring; tests build their own. A nil
+// Lockfile falls back to the production runner (runUvLock).
 type Deps struct {
 	Files     filesapi.Client
 	Artifacts artifactStore
 	Now       func() time.Time
+	Lockfile  LockfileRunner
 }
 
 func defaultDeps() Deps {
@@ -77,6 +79,7 @@ func defaultDeps() Deps {
 		Files:     filesapi.New(),
 		Artifacts: workloadArtifactStore{},
 		Now:       time.Now,
+		Lockfile:  runUvLock,
 	}
 }
 
@@ -106,6 +109,11 @@ type Engine struct {
 	result         *Result
 	startedAt      time.Time
 	staleNote      bool
+	migrationNote  string
+
+	lockfileFn        LockfileRunner
+	lockfileGenerated bool
+	lockfileHint      string
 }
 
 // New constructs an Engine bound to projectDir with production deps.
@@ -120,12 +128,17 @@ func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 		return nil, errors.New("sync.New: projectDir is required")
 	}
 
+	if deps.Lockfile == nil {
+		deps.Lockfile = runUvLock
+	}
+
 	return &Engine{
 		projectDir: projectDir,
 		opts:       opts,
 		files:      deps.Files,
 		artifacts:  deps.Artifacts,
 		nowFn:      deps.Now,
+		lockfileFn: deps.Lockfile,
 	}, nil
 }
 
@@ -138,6 +151,9 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 		e,
 		phase{name: "preflight", run: phase0Preflight},
 		phase{name: "gather", run: phase1Gather},
+		// Before the manifest walk so a generated uv.lock is collected,
+		// diffed, and uploaded by the normal pipeline.
+		phase{name: "lockfile", run: phaseLockfile},
 		phase{name: "manifests", run: phase2Manifests},
 		phase{name: "diff", run: phase3Diff},
 		phase{name: "preview", run: phase4Preview},
@@ -207,6 +223,11 @@ func (e *Engine) Close() error {
 // StaleRollbackRestored reports whether Phase 0 restored a stale rollback
 // from a previously crashed sync.
 func (e *Engine) StaleRollbackRestored() bool { return e.staleNote }
+
+// StateMigrationNotice is Phase 0's one-line account of where local state now
+// lives, empty when the location did not change. The preview modes never
+// migrate, so it is always empty for --dry-run and --diff.
+func (e *Engine) StateMigrationNotice() string { return e.migrationNote }
 
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package telemetry provides anonymous usage analytics for the DataRobot CLI.
+// Package telemetry provides usage analytics for the DataRobot CLI.
 //
 // Telemetry is collected via the Amplitude analytics-go SDK. When telemetry is
 // disabled (via --disable-telemetry flag, DATAROBOT_CLI_DISABLE_TELEMETRY env var,

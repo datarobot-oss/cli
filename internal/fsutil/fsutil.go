@@ -16,20 +16,22 @@ package fsutil
 
 import "os"
 
-// FileExists checks if a given file exists.
+// FileExists checks if a given file exists. Every stat error is false, not
+// just ErrNotExist: ENOTDIR and EACCES return no FileInfo to inspect.
 func FileExists(path string) bool {
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 
 	return !info.IsDir()
 }
 
-// DirExists checks if a given directory exists.
+// DirExists checks if a given directory exists, with the same error handling
+// as FileExists.
 func DirExists(path string) bool {
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,9 +35,19 @@ const validResolveConfig = `{
 func writeWAPIConfig(t *testing.T, dir, body string) {
 	t.Helper()
 
-	wapiDir := filepath.Join(dir, ".wapi")
-	require.NoError(t, os.MkdirAll(wapiDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(wapiDir, "config.json"), []byte(body), 0o600))
+	stateDir := wapi.Dir(dir)
+	require.NoError(t, os.MkdirAll(stateDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "config.json"), []byte(body), 0o600))
+}
+
+// writeLegacyWAPIConfig seeds the pre-migration project-root location, which
+// stays readable until a command migrates it.
+func writeLegacyWAPIConfig(t *testing.T, dir, body string) {
+	t.Helper()
+
+	legacy := filepath.Join(dir, wapi.LegacyDirName)
+	require.NoError(t, os.MkdirAll(legacy, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.json"), []byte(body), 0o600))
 }
 
 func TestResolveArtifactID_ExplicitWinsOverWAPI(t *testing.T) {
@@ -70,7 +81,7 @@ func TestResolveArtifactID_NotInitializedHasUserHint(t *testing.T) {
 
 	_, _, err := ResolveArtifactID("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no .wapi project")
+	assert.Contains(t, err.Error(), "no linked project")
 	assert.Contains(t, err.Error(), "dr artifact code init")
 }
 
@@ -82,5 +93,17 @@ func TestResolveArtifactID_CorruptConfigPropagates(t *testing.T) {
 
 	_, _, err := ResolveArtifactID("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), ".wapi/config.json")
+	assert.Contains(t, err.Error(), filepath.Join(wapi.RootDirName, wapi.StateDirName, "config.json"))
+}
+
+func TestResolveArtifactID_ReadsLegacyStateDir(t *testing.T) {
+	dir := t.TempDir()
+
+	writeLegacyWAPIConfig(t, dir, validResolveConfig)
+	t.Chdir(dir)
+
+	id, source, err := ResolveArtifactID("")
+	require.NoError(t, err)
+	assert.Equal(t, "art-from-wapi-000000000", id)
+	assert.Equal(t, ArtifactIDSourceWAPI, source)
 }

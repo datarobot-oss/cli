@@ -20,7 +20,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -66,7 +68,7 @@ func setupRoutedServer(t *testing.T, catalog, deployments routeResponse) {
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 	// skip_auth trusts the viper token directly; without it resolveToken makes a
 	// server-side verification request the routed handler would 404.
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -121,7 +123,7 @@ func TestGetDeployedLLMs_Pagination(t *testing.T) {
 	viperx.Reset()
 	viperx.Set(config.DataRobotURL, srv.URL)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -214,7 +216,7 @@ func TestGetDeployedLLMs_SendsFilterAndLimit(t *testing.T) {
 	viperx.Reset()
 	viperx.Set(config.DataRobotURL, srv.URL)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	t.Cleanup(func() {
 		srv.Close()
@@ -238,4 +240,88 @@ func TestGetLLMsAndDeployed_BothFail(t *testing.T) {
 
 	_, err := GetLLMsAndDeployed()
 	assert.Error(t, err)
+}
+
+// TestGetLLMsAndDeployed_FetchesConcurrently makes each route block until the
+// other one has arrived. A serial fetch deadlocks on that: the second request
+// cannot start until the first returns, and the first is waiting on the second.
+// It stalls until the timeout and fails. Only overlapping requests get through.
+//
+// Every other test in this file passes either way, so this is the only thing
+// standing between a later refactor and a silent return to sum-of-both latency.
+//
+// The barrier keys on the route rather than counting requests: if either
+// fixture grows a Next page, two pages from one source would satisfy a counter
+// and the test would pass against a serial fetch.
+func TestGetLLMsAndDeployed_FetchesConcurrently(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		seen  = map[string]bool{}
+		both  = make(chan struct{})
+		route = func(path string) string {
+			if strings.Contains(path, "/deployments") {
+				return "deployments"
+			}
+
+			return "catalog"
+		}
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := route(r.URL.Path)
+
+		mu.Lock()
+		if !seen[name] {
+			seen[name] = true
+
+			if len(seen) == 2 {
+				close(both)
+			}
+		}
+		mu.Unlock()
+
+		select {
+		case <-both:
+		case <-time.After(3 * time.Second):
+			t.Errorf("%s did not overlap the other source: the two are being fetched serially", name)
+		}
+
+		body := gatewayBody
+		if name == "deployments" {
+			body = deployedBody
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(func() {
+		srv.Close()
+		viperx.Reset()
+	})
+
+	list, err := GetLLMsAndDeployed()
+	require.NoError(t, err)
+	assert.Len(t, list.LLMs, 2)
+}
+
+// TestGetLLMsAndDeployed_ColdTokenIsRaceFree drives the concurrent fetch with an
+// unresolved token so both goroutines race to populate the `token` global. It
+// only fails under -race, which is how the suite runs.
+func TestGetLLMsAndDeployed_ColdTokenIsRaceFree(t *testing.T) {
+	setupRoutedServer(t, routeResponse{body: gatewayBody}, routeResponse{body: deployedBody})
+
+	previous := token
+	token = ""
+
+	t.Cleanup(func() { token = previous })
+
+	list, err := GetLLMsAndDeployed()
+	require.NoError(t, err)
+	assert.Len(t, list.LLMs, 2)
 }
