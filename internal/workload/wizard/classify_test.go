@@ -91,12 +91,38 @@ func TestClassifyEnv(t *testing.T) {
 	}
 }
 
-// Whatever the verdict, the value never travels with it.
-func TestClassifyEnv_CarriesNoValue(t *testing.T) {
+// The reason is shown on a screen and can end up in a debug log, so it
+// describes the value without ever quoting it.
+func TestClassifyEnv_ReasonNeverEchoesTheValue(t *testing.T) {
 	got := ClassifyEnv("OPENAI_API_KEY", "sk-abcdefghijklmnopqrstuvwxyz012345")
 
 	assert.NotContains(t, got.Reason, "sk-")
 	assert.NotContains(t, got.Name, "sk-")
+}
+
+// A secret keeps its value like any other verdict. The table lets the user
+// disagree with the classifier, and a value dropped here could not come back:
+// the row would reach the manifest with an empty value and the container would
+// start without it. Nothing writes a secret's value to the file; the render
+// substitutes a credential reference.
+func TestClassifyEnv_EveryVerdictKeepsItsValue(t *testing.T) {
+	for name, test := range map[string]struct {
+		name, value string
+		want        EnvKind
+	}{
+		"issuer prefix":       {"OPENAI_API_KEY", "sk-abcdefghijklmnopqrstuvwxyz012345", EnvSecret},
+		"password in a URL":   {"DATABASE_URL", "postgres://app:hunter2@db.internal:5432/prod", EnvSecret},
+		"named like a secret": {"SESSION_SECRET", "ZmFrZS1zZXNzaW9uLXNlY3JldA", EnvSecret},
+		"ordinary setting":    {"LOG_LEVEL", "debug", EnvConfig},
+		"local only":          {"VITE_API_URL", "http://localhost:3000", EnvLocal},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := ClassifyEnv(test.name, test.value)
+
+			assert.Equal(t, test.want, got.Kind, "reason given: %s", got.Reason)
+			assert.Equal(t, test.value, got.Value)
+		})
+	}
 }
 
 func TestEnvKind_String(t *testing.T) {

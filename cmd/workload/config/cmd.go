@@ -42,7 +42,8 @@ type configResult struct {
 	// is created by the first `dr workload up`.
 	CreateOnUp bool   `json:"createOnUp"`
 	BuildMode  string `json:"buildMode"`
-	// Action is created or unchanged.
+	// Action is created, unchanged or planned. A caller keying on it has to be
+	// able to tell a dry run's planned from a file that now exists.
 	Action string `json:"action"`
 }
 

@@ -134,19 +134,19 @@ const minSecretLength = 16
 // costs a leak.
 const minSecretEntropy = 3.4
 
-// ClassifyEnv decides where one `.env` entry belongs. name and value are both
-// read; only the verdict is returned.
+// ClassifyEnv decides where one `.env` entry belongs. Every verdict carries
+// the value, secrets included, for the reason EnvVar.Value gives.
 func ClassifyEnv(name, value string) EnvVar {
 	value = strings.TrimSpace(value)
 
 	for _, signal := range secretValuePatterns {
 		if signal.pattern.MatchString(value) {
-			return EnvVar{Name: name, Kind: EnvSecret, Reason: "looks like " + signal.reason}
+			return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "looks like " + signal.reason}
 		}
 	}
 
 	if user, ok := credentialInURL(value); ok {
-		return EnvVar{Name: name, Kind: EnvSecret, Reason: "a URL with " + user + "'s password in it"}
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "a URL with " + user + "'s password in it"}
 	}
 
 	if kind, reason, ok := classifyLocal(name, value); ok {
@@ -181,7 +181,7 @@ func classifyBySecrecy(name, value string) EnvVar {
 
 	if looksGenerated(value) {
 		// A DATABASE_URL-style name with an opaque token inside it.
-		return EnvVar{Name: name, Kind: EnvSecret, Reason: "the value looks like a random token"}
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "the value looks like a random token"}
 	}
 
 	return EnvVar{Name: name, Kind: EnvConfig, Value: value, Reason: "an ordinary setting"}
@@ -195,11 +195,11 @@ func classifyNamedSecret(name, value string) EnvVar {
 		// LOG_LEVEL_KEY=debug. The name matched; the value cannot be a secret.
 		return EnvVar{Name: name, Kind: EnvConfig, Value: value, Reason: "named like a secret, but the value is a plain setting"}
 	case value == "":
-		return EnvVar{Name: name, Kind: EnvSecret, Reason: "named like a secret, and empty here"}
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "named like a secret, and empty here"}
 	case looksGenerated(value):
-		return EnvVar{Name: name, Kind: EnvSecret, Reason: "named like a secret, and the value looks random"}
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "named like a secret, and the value looks random"}
 	default:
-		return EnvVar{Name: name, Kind: EnvSecret, Reason: "named like a secret"}
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "named like a secret"}
 	}
 }
 
