@@ -128,13 +128,7 @@ func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv boo
 	// This happens regardless of whether variables exist
 	for p := range prompts {
 		if prompts[p].Env == "PULUMI_CONFIG_PASSPHRASE" {
-			// Check if already set in environment
-			if _, ok := os.LookupEnv(prompts[p].Env); !ok {
-				// Not in environment, check viper config
-				if configValue := viperx.GetString("pulumi_config_passphrase"); configValue != "" {
-					prompts[p].Value = configValue
-				}
-			}
+			prompts[p].Value = resolvePulumiPassphrase(prompts[p].Value, includeEnv)
 		}
 	}
 
@@ -147,6 +141,30 @@ func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv boo
 	}
 
 	return prompts
+}
+
+// resolvePulumiPassphrase determines the PULUMI_CONFIG_PASSPHRASE value.
+// In file-only mode, always check viper config. Otherwise, prefer OS env over viper.
+func resolvePulumiPassphrase(currentValue string, includeEnv bool) string {
+	if !includeEnv {
+		// File-only mode: ignore OS env, always check viper config
+		if configValue := viperx.GetString("pulumi_config_passphrase"); configValue != "" {
+			return configValue
+		}
+
+		return currentValue
+	}
+
+	// Normal mode: check OS env first, then viper config
+	if _, ok := os.LookupEnv("PULUMI_CONFIG_PASSPHRASE"); ok {
+		return currentValue
+	}
+
+	if configValue := viperx.GetString("pulumi_config_passphrase"); configValue != "" {
+		return configValue
+	}
+
+	return currentValue
 }
 
 // resolvePromptValue determines the effective value for a prompt based on
