@@ -43,7 +43,10 @@ func checkCLICredentials(w io.Writer) bool {
 		return true
 	}
 
-	// If env vars were set but invalid, report the error
+	// If env vars were set but invalid, report the error. Unlike
+	// EnsureAuthenticated this deliberately skips the "not falling back to
+	// the stored profile" line: check evaluates the stored profile itself
+	// right below and reports that result on its own.
 	if !errors.Is(err, auth.ErrEnvCredentialsNotSet) {
 		auth.ReportEnvCredentialsError(w, creds, err)
 
