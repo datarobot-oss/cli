@@ -19,6 +19,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
@@ -123,6 +124,61 @@ func TestFlow_DockerfileHappyPathIsAllEnterAfterTheName(t *testing.T) {
 	require.NoError(t, model.failed)
 	assert.Contains(t, string(model.content), "source: provided")
 	assert.Contains(t, string(model.content), "port: 3000")
+}
+
+// setEditor points the external-editor setting somewhere for one test.
+func setEditor(t *testing.T, editor string) {
+	t.Helper()
+	t.Cleanup(func() { viperx.Set("external-editor", nil) })
+
+	viperx.Set("external-editor", editor)
+}
+
+// [e] opens whatever the rest of the CLI opens, which is the external-editor
+// setting and not the two environment variables sitting behind it. Reading
+// those directly would have made this the one editor in the CLI that a
+// configured preference could not reach.
+func TestEditorCommand_UsesTheConfiguredEditor(t *testing.T) {
+	setEditor(t, "code --wait")
+
+	editor, args := editorCommand()
+
+	assert.Equal(t, "code", editor)
+	assert.Equal(t, []string{"--wait"}, args)
+}
+
+// An unset setting is what a caller that never ran the root command's
+// initialization sees, and it still has to get an editor.
+func TestEditorCommand_FallsBackWhenNothingIsConfigured(t *testing.T) {
+	setEditor(t, "   ")
+
+	editor, args := editorCommand()
+
+	assert.Equal(t, defaultEditor, editor)
+	assert.Nil(t, args)
+}
+
+// The settings screen keys four things by field position: the inputs, the
+// labels, the notes and the reads in acceptSettings. Sizing the tables by
+// settingsFieldCount makes a stray entry a compile error, but an entry left out
+// is a zero value that renders as a blank row and explains nothing, so that
+// half is checked here.
+func TestFlow_EverySettingsFieldIsWiredUp(t *testing.T) {
+	model := press(t, pastName(t, newFlow(dockerfileProject(t), nil, Answers{})), "enter", "enter")
+	require.Equal(t, screenSettings, model.at)
+
+	require.Len(t, model.inputs, settingsFieldCount, "one input per field, in the order the fields are named")
+
+	for field := range settingsFieldCount {
+		assert.NotEmptyf(t, settingsLabels[field], "field %d has no label", field)
+		assert.NotEmptyf(t, settingsNotes[field], "field %d has no note", field)
+	}
+
+	// Position is the whole coupling, so the labels have to be the ones the
+	// reads in acceptSettings expect to find at those positions.
+	assert.Equal(t, "Port", settingsLabels[fieldPort])
+	assert.Equal(t, "Replicas", settingsLabels[fieldReplicas])
+	assert.Equal(t, "Importance", settingsLabels[fieldImportance])
 }
 
 func TestFlow_BindingScreenLeadsWhenThereAreWorkloads(t *testing.T) {

@@ -27,6 +27,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
@@ -36,7 +37,9 @@ import (
 // picker can return it through the same channel as a real workload.
 const createNewID = "\x00create-new"
 
-// defaultEditor is what [e] opens when the environment names none.
+// defaultEditor is what [e] opens when nothing names an editor. It matches the
+// default the root command registers for the same setting, so the wizard opens
+// the same thing whether or not that registration has run.
 const defaultEditor = "vi"
 
 // namePlaceholder shows the shape of a workload name without proposing one.
@@ -209,14 +212,15 @@ func (f *flow) enterInputs(at screen) {
 		f.inputs = []textinput.Model{newInput(f.draft.Build.ImageURI, "registry.example.com/team/app:v1")}
 
 	case screenSettings:
-		f.inputs = []textinput.Model{
-			newInput(strconv.Itoa(f.draft.Port), "8080"),
-			newInput(f.draft.HealthPath, manifest.DefaultHealthPath),
-			newInput(replicaValue(f.draft.Runtime.Replicas), replicaPlaceholder(f.autoscaled())),
-			newInput(formatCPU(f.draft.Runtime.CPU), "0.5"),
-			newInput(f.draft.Runtime.Memory, manifest.DefaultMemory),
-			newInput(f.draft.Importance, manifest.DefaultImportance),
-		}
+		inputs := make([]textinput.Model, settingsFieldCount)
+		inputs[fieldPort] = newInput(strconv.Itoa(f.draft.Port), "8080")
+		inputs[fieldHealthPath] = newInput(f.draft.HealthPath, manifest.DefaultHealthPath)
+		inputs[fieldReplicas] = newInput(replicaValue(f.draft.Runtime.Replicas), replicaPlaceholder(f.autoscaled()))
+		inputs[fieldCPU] = newInput(formatCPU(f.draft.Runtime.CPU), "0.5")
+		inputs[fieldMemory] = newInput(f.draft.Runtime.Memory, manifest.DefaultMemory)
+		inputs[fieldImportance] = newInput(f.draft.Importance, manifest.DefaultImportance)
+
+		f.inputs = inputs
 
 		for i := range f.inputs[1:] {
 			f.inputs[i+1].Blur()
@@ -467,23 +471,50 @@ func (f flow) body() string {
 	return ""
 }
 
-// settingsLabels name the fields in the order they are asked, which is the
+// The settings screen's fields, in the order they are asked, which is the
 // order the file reads: how the container is reached, then how much of it
-// runs. Everything here has a working default, so the screen is a review as
-// much as a question.
-var settingsLabels = []string{"Port", "Health path", "Replicas", "CPU", "Memory", "Importance"}
+// runs.
+//
+// Four things are keyed by this order — the inputs enterInputs builds, the
+// labels beside them, the notes under them, and the reads in acceptSettings —
+// so the position is named here once instead of written as a number in each of
+// them. A number that falls out of step with the others reads the wrong field
+// or panics, and neither announces itself.
+const (
+	fieldPort = iota
+	fieldHealthPath
+	fieldReplicas
+	fieldCPU
+	fieldMemory
+	fieldImportance
+
+	// settingsFieldCount sizes everything indexed by the above, so an entry
+	// added past the end is a compile error rather than a silent no-op.
+	settingsFieldCount
+)
+
+// settingsLabels name the fields. Everything here has a working default, so
+// the screen is a review as much as a question.
+var settingsLabels = [settingsFieldCount]string{
+	fieldPort:       "Port",
+	fieldHealthPath: "Health path",
+	fieldReplicas:   "Replicas",
+	fieldCPU:        "CPU",
+	fieldMemory:     "Memory",
+	fieldImportance: "Importance",
+}
 
 // settingsNotes explain the field the cursor is on, one at a time. They sit
 // under the fields rather than beside them: an inline hint on the widest row
 // runs off a narrow terminal, and only the field being edited needs
 // explaining anyway.
-var settingsNotes = []string{
-	"Port the container listens on. Must be 1024 or above: containers run unprivileged.",
-	"Readiness probe path. Traffic is withheld until this endpoint reports success.",
-	"Container instances to run. Reported as protons in status output and logs.",
-	"CPU cores per replica. Fractional values are allowed.",
-	"Memory per replica. A byte count or a 1000-based unit (" + strings.Join(manifest.MemoryUnits(), ", ") + "). Binary units such as Gi are rejected: they would be read as their decimal equivalents.",
-	"Scheduling priority when capacity is constrained: " + strings.Join(manifest.ImportanceLevels, ", ") + ".",
+var settingsNotes = [settingsFieldCount]string{
+	fieldPort:       "Port the container listens on. Must be 1024 or above: containers run unprivileged.",
+	fieldHealthPath: "Readiness probe path. Traffic is withheld until this endpoint reports success.",
+	fieldReplicas:   "Container instances to run. Reported as protons in status output and logs.",
+	fieldCPU:        "CPU cores per replica. Fractional values are allowed.",
+	fieldMemory:     "Memory per replica. A byte count or a 1000-based unit (" + strings.Join(manifest.MemoryUnits(), ", ") + "). Binary units such as Gi are rejected: they would be read as their decimal equivalents.",
+	fieldImportance: "Scheduling priority when capacity is constrained: " + strings.Join(manifest.ImportanceLevels, ", ") + ".",
 }
 
 func (f flow) settingsView() string {
@@ -683,7 +714,7 @@ func (f flow) nextStep() string {
 var screenKeys = map[screen][]keyBinding{
 	screenConfirm: {
 		{Key: "enter", Does: "write the file"},
-		{Key: "e", Does: "open in $EDITOR"},
+		{Key: "e", Does: "open in your editor"},
 		{Key: "esc", Does: "back"},
 	},
 	screenBinding: {
@@ -783,14 +814,17 @@ func (f flow) openEditor() tea.Cmd {
 	})
 }
 
-// editorCommand splits $EDITOR the way a shell would, so "code --wait" works
-// as well as "vim".
+// editorCommand names the editor to open, split the way a shell would so
+// "code --wait" works as well as "vim".
+//
+// The choice comes from the CLI's own external-editor setting, which is where
+// VISUAL and EDITOR are already mapped and where a configured preference or
+// the flag can override them. Reading the two variables here directly would
+// have made this the one editor in the CLI that a configured preference could
+// not reach. The fallback below stays for callers that arrive without the root
+// command's initialization, which is what leaves the setting unset.
 func editorCommand() (string, []string) {
-	editor := os.Getenv("VISUAL")
-	if editor == "" {
-		editor = os.Getenv("EDITOR")
-	}
-
+	editor := strings.TrimSpace(viperx.GetString("external-editor"))
 	if editor == "" {
 		return defaultEditor, nil
 	}

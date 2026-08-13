@@ -269,6 +269,11 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 		return nil, manifest.Draft{}, err
 	}
 
+	// Read off the workload as it arrived, not off applied: the point is what
+	// the platform was already serving in the clear, and a run that failed
+	// above has no file to warn about.
+	warnLiveSecretLiterals(o.Stderr, live)
+
 	return content, draft, nil
 }
 
@@ -535,6 +540,49 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 	fmt.Fprintf(stderr,
 		"Warning: %v. Nothing from it was imported; add the variables to %s by hand.\n",
 		detected.EnvErr, manifest.FileName)
+}
+
+// warnLiveSecretLiterals names the variables a bound workload already declares
+// in the clear whose values say what they are.
+//
+// The .env import classifies what it carries and writes a secret as a
+// reference. The live spec gets no such treatment, by design: binding
+// preserves what the workload is running, and rewriting a value the platform
+// serves would change the running configuration on the next deploy. So a token
+// someone pasted into the UI arrives verbatim in a file headed for git.
+//
+// Interactively the confirm screen is the answer, since the whole file is on
+// screen before Enter writes it. Headlessly there is no screen, which is why
+// this exists and why it is called from that path only. Names and the reason,
+// never the value: this is printed to warn about disclosure and would
+// otherwise be the disclosure.
+//
+// Uncapped, unlike the literal listing the command prints for a fresh
+// manifest. That one lists everything ordinary and is bounded to stay
+// readable; this lists only values carrying an issuer's own signature, of
+// which any number is worth reading to the end.
+func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
+	if stderr == nil {
+		return
+	}
+
+	named := make([]string, 0)
+
+	for _, v := range live.LiteralEnvVars() {
+		if reason, ok := evidentSecret(v.Value); ok {
+			named = append(named, fmt.Sprintf("%s (%s)", v.Name, reason))
+		}
+	}
+
+	if len(named) == 0 {
+		return
+	}
+
+	fmt.Fprintf(stderr,
+		"Warning: %s declares %d %s whose value looks like a secret, and binding copies it as it stands: %s.\n"+
+			"  Replace the value in %s with a %s<credential-id>/<key> reference before committing the file.\n",
+		live.Name, len(named), Plural(len(named), "variable", "variables"), strings.Join(named, ", "),
+		manifest.FileName, manifest.CredentialShorthandPrefix)
 }
 
 // ShortPath names a path relative to the working directory when it is under

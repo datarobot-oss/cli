@@ -274,6 +274,24 @@ func TestWriteWorkloadID_ReplacesExisting(t *testing.T) {
 	assert.Equal(t, "68b0ffff0000000000000009", m.WorkloadID())
 }
 
+// The write-back is the one way into this package that does not go through
+// Parse, so it runs the alias guard itself rather than inheriting one. Nothing
+// in it expands an alias today; the guard is what keeps that from being a
+// property of two other functions that nobody is watching.
+func TestWriteWorkloadID_RejectsAnAliasBomb(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), aliasBomb)
+
+	err := WriteWorkloadID(path, "68b0ffff0000000000000009")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "too large")
+
+	// The file is the user's, and a refusal must not have edited it.
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, aliasBomb, string(got))
+}
+
 // The write-back is a single-key edit, not a regeneration: comments, unknown
 // keys and their order are the user's, and up leaves them alone.
 func TestWriteWorkloadID_PreservesTheRestOfTheFile(t *testing.T) {

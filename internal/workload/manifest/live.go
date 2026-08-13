@@ -17,6 +17,7 @@ package manifest
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,16 +27,6 @@ import (
 // back is either ignored or rejected. Stripping them recursively is safe
 // because the create spec has no legitimate key by these names anywhere.
 var serverManagedKeys = []string{"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId"}
-
-// Probe field names. They live here rather than with the ledger's spec keys
-// because no validation rule reads them: binding is the only thing in this
-// package that has to tell a probe from any other block it preserves.
-const (
-	keyReadinessProbe = "readinessProbe"
-	keyStartupProbe   = "startupProbe"
-	keyLivenessProbe  = "livenessProbe"
-	keyPath           = "path"
-)
 
 // Live is a running workload, downloaded so a manifest can be written that
 // says everything the workload already says. Setup uses it when the user
@@ -77,7 +68,7 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the
 // workload already is.
 func (l Live) Type() string {
-	return stringAt(l.Spec, "type")
+	return stringAt(l.Spec, keyType)
 }
 
 // Defaults reads the live spec into the answers the wizard's screens open on.
@@ -90,7 +81,7 @@ func (l Live) Defaults() Draft {
 		Name:       l.Name,
 		Importance: orDefaultString(l.Importance, DefaultImportance),
 		Type:       orDefaultString(l.Type(), TypeService),
-		A2AEnabled: boolAt(l.Spec, "a2aEnabled"),
+		A2AEnabled: boolAt(l.Spec, keyA2AEnabled),
 		Port:       DefaultPort,
 		HealthPath: DefaultHealthPath,
 		Build:      Build{Mode: BuildModeDockerfile},
@@ -196,7 +187,7 @@ func (l Live) runtimeDefaults() Runtime {
 
 	allocation := mapAt(container, keyResourceAllocation)
 
-	if cpu, ok := floatAt(allocation, "cpu"); ok {
+	if cpu, ok := floatAt(allocation, keyCPU); ok {
 		runtime.CPU = cpu
 	}
 
@@ -249,12 +240,12 @@ func (l Live) Apply(draft Draft) (Live, error) {
 		applied.Spec = map[string]any{}
 	}
 
-	applied.Spec["type"] = draft.Type
+	applied.Spec[keyType] = draft.Type
 
 	if draft.Type == TypeAgent && draft.A2AEnabled {
-		applied.Spec["a2aEnabled"] = true
+		applied.Spec[keyA2AEnabled] = true
 	} else {
-		delete(applied.Spec, "a2aEnabled")
+		delete(applied.Spec, keyA2AEnabled)
 	}
 
 	container := primaryContainerOf(applied.Spec)
@@ -325,6 +316,44 @@ func (l Live) NewEnvVars(vars []EnvVar) []EnvVar {
 	return fresh
 }
 
+// LiteralEnvVars is the variables the workload already declares with the value
+// written out, rather than as a reference to a credential.
+//
+// Binding preserves the live spec, which is what stops it downgrading a
+// running workload, and that applies to these entries too: a value the
+// platform holds in the clear is copied into a file meant to be committed.
+// Nothing here can be fixed automatically, because only the platform can say
+// whether a given value is sensitive. A caller that wants to raise it needs
+// the values to judge them by, so they come out with the names.
+func (l Live) LiteralEnvVars() []EnvVar {
+	container := primaryContainerOf(l.Spec)
+	if container == nil {
+		return nil
+	}
+
+	existing, _ := container[keyEnvironmentVars].([]any)
+	literals := make([]EnvVar, 0, len(existing))
+
+	for _, entry := range existing {
+		typed, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// A credential-backed entry has no value to read: the object form
+		// names an id and a key instead, and the shorthand carries them in a
+		// string that is a reference rather than the secret it points at.
+		value := stringAt(typed, keyValue)
+		if value == "" || strings.HasPrefix(value, CredentialShorthandPrefix) {
+			continue
+		}
+
+		literals = append(literals, EnvVar{Name: stringAt(typed, keyName), Value: value})
+	}
+
+	return literals
+}
+
 // declaredEnvNames is the set of variable names an environmentVars list
 // already carries.
 func declaredEnvNames(existing []any) map[string]bool {
@@ -368,7 +397,7 @@ func (l *Live) applyRuntime(runtime Runtime) {
 	}
 
 	if runtime.CPU > 0 {
-		allocation["cpu"] = runtime.CPU
+		allocation[keyCPU] = runtime.CPU
 	}
 
 	if runtime.Memory != "" {

@@ -636,7 +636,7 @@ func (f *flow) acceptImage() (tea.Cmd, error) {
 // the screen behind a value that could not be used, and taking a number would
 // promise something the file will not carry.
 func (f flow) acceptReplicas() (int, error) {
-	text := strings.TrimSpace(f.field(2))
+	text := strings.TrimSpace(f.field(fieldReplicas))
 
 	if f.autoscaled() {
 		if text == "" || text == "0" {
@@ -658,7 +658,7 @@ func (f flow) acceptReplicas() (int, error) {
 // of them is <= 0, so a plain positivity check lets both through to a file
 // carrying a quantity nothing can schedule.
 func (f flow) acceptCPU() (float64, error) {
-	cpu, err := strconv.ParseFloat(strings.TrimSpace(f.field(3)), 64)
+	cpu, err := strconv.ParseFloat(strings.TrimSpace(f.field(fieldCPU)), 64)
 	if err != nil || cpu <= 0 || math.IsNaN(cpu) || math.IsInf(cpu, 0) {
 		return 0, errors.New("cpu must be a positive number, such as 0.5 or 2")
 	}
@@ -674,7 +674,7 @@ func (f flow) autoscaled() bool {
 // acceptSettings validates every field before recording any of them, so a
 // screen that is refused leaves the answers exactly as the user left them.
 func (f *flow) acceptSettings() (tea.Cmd, error) {
-	port, err := strconv.Atoi(f.field(0))
+	port, err := strconv.Atoi(f.field(fieldPort))
 	if err != nil {
 		return nil, errors.New("the port must be a number")
 	}
@@ -683,7 +683,7 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 		return nil, err
 	}
 
-	path := f.field(1)
+	path := f.field(fieldHealthPath)
 	if !strings.HasPrefix(path, "/") {
 		return nil, errors.New("the health path must start with /")
 	}
@@ -698,7 +698,7 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 		return nil, err
 	}
 
-	memory := f.field(4)
+	memory := f.field(fieldMemory)
 	if !manifest.ValidMemory(memory) {
 		return nil, fmt.Errorf("memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
 			strings.Join(manifest.MemoryUnits(), ", "))
@@ -706,7 +706,7 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 
 	memory = manifest.NormalizeMemory(memory)
 
-	importance := strings.ToLower(f.field(5))
+	importance := strings.ToLower(f.field(fieldImportance))
 	if !manifest.ValidImportance(importance) {
 		return nil, fmt.Errorf("importance must be one of %s",
 			strings.Join(manifest.ImportanceLevels, ", "))
