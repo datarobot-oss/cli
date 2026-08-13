@@ -18,10 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -45,16 +48,49 @@ var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
 
 // PrintUnsetTokenInstructions prints platform-specific instructions for unsetting DATAROBOT_API_TOKEN.
 func PrintUnsetTokenInstructions() {
-	fmt.Print(tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
-	fmt.Print(tui.BaseTextStyle.Render(" (or "))
-	fmt.Print(tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-	fmt.Println(tui.BaseTextStyle.Render(" on Windows)"))
+	FprintUnsetTokenInstructions(os.Stdout)
+}
+
+// FprintUnsetTokenInstructions writes platform-specific instructions for
+// unsetting DATAROBOT_API_TOKEN to w.
+func FprintUnsetTokenInstructions(w io.Writer) {
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, info.Render("  unset DATAROBOT_API_TOKEN"))
+	fmt.Fprint(w, base.Render(" (or "))
+	fmt.Fprint(w, info.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
+	fmt.Fprintln(w, base.Render(" on Windows)"))
+}
+
+// writerStyles binds the shared text styles to w's renderer. The package
+// defaults probe stdout for color support, so styled text sent to a different
+// stream (stderr redirected to a file while stdout is a TTY, or a buffer in
+// tests) would otherwise carry ANSI codes the destination cannot display.
+func writerStyles(w io.Writer) (base, info lipgloss.Style) {
+	r := lipgloss.NewRenderer(w)
+
+	return tui.BaseTextStyle.Renderer(r), tui.InfoStyle.Renderer(r)
 }
 
 // EnvCredentials holds environment variable authentication credentials.
 type EnvCredentials struct {
 	Endpoint string
 	Token    string
+	// EndpointVar is the environment variable Endpoint was read from:
+	// DATAROBOT_ENDPOINT, or the SDK-style DATAROBOT_API_ENDPOINT fallback.
+	// Error messages name it so the user fixes the variable that is actually
+	// set.
+	EndpointVar string
+}
+
+// endpointVarName returns EndpointVar, defaulting to DATAROBOT_ENDPOINT for
+// zero-value credentials constructed outside GetEnvCredentials.
+func (c *EnvCredentials) endpointVarName() string {
+	if c.EndpointVar == "" {
+		return "DATAROBOT_ENDPOINT"
+	}
+
+	return c.EndpointVar
 }
 
 // GetEnvCredentials reads DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from environment.
@@ -66,14 +102,18 @@ type EnvCredentials struct {
 // need to report why env credentials failed should use ValidateEndpoint to
 // distinguish a malformed endpoint from an invalid token.
 func GetEnvCredentials() EnvCredentials {
-	endpoint := os.Getenv("DATAROBOT_ENDPOINT")
+	endpointVar := "DATAROBOT_ENDPOINT"
+
+	endpoint := os.Getenv(endpointVar)
 	if endpoint == "" {
-		endpoint = os.Getenv("DATAROBOT_API_ENDPOINT")
+		endpointVar = "DATAROBOT_API_ENDPOINT"
+		endpoint = os.Getenv(endpointVar)
 	}
 
 	return EnvCredentials{
-		Endpoint: endpoint,
-		Token:    os.Getenv("DATAROBOT_API_TOKEN"),
+		Endpoint:    endpoint,
+		Token:       os.Getenv("DATAROBOT_API_TOKEN"),
+		EndpointVar: endpointVar,
 	}
 }
 
@@ -93,6 +133,104 @@ func ValidateEndpoint(endpoint string) error {
 	return err
 }
 
+// ReportEnvCredentialsError writes a classified explanation of why an
+// explicitly supplied DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair failed
+// verification: a network timeout, a malformed endpoint, an unreachable
+// endpoint, or an invalid token. Shared by EnsureAuthenticated (writing to
+// stderr) and `dr auth check`.
+func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
+	base, info := writerStyles(w)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+		fmt.Fprint(w, base.Render("❌ Connection to "))
+		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprintln(w, base.Render(" timed out. Check your network and try again."))
+
+		return
+	}
+
+	// Distinguish a malformed endpoint from an invalid token so the user
+	// fixes the right thing. A quoted endpoint (e.g. from running
+	// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
+	// and must not be reported as a token problem.
+	if epErr := ValidateEndpoint(creds.Endpoint); epErr != nil {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+epErr.Error()))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
+
+		return
+	}
+
+	// VerifyToken uses the endpoint value exactly as the user set it, but
+	// ValidateEndpoint above is more forgiving: it accepts a bare host with
+	// no scheme and trims stray whitespace. The two checks below catch the
+	// values that slipped through that gap, so they are reported as a bad
+	// endpoint instead of as a connection failure naming a URL the CLI never
+	// actually requested.
+	var urlErr *url.Error
+
+	hasURLErr := errors.As(err, &urlErr)
+
+	if !strings.Contains(strings.TrimSpace(creds.Endpoint), "://") {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: missing URL scheme (https://...)"))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
+
+		return
+	}
+
+	if hasURLErr && urlErr.Op == "parse" {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+urlErr.Err.Error()))
+		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
+
+		return
+	}
+
+	// A transport-level failure (connection refused, DNS, TLS, proxy) means
+	// the instance was never reached and the token was never judged, so
+	// advising the user to unset the token would point them at the wrong
+	// thing. VerifyToken wraps transport errors in *url.Error; a rejected
+	// token comes back as a plain error from the HTTP status check.
+	if hasURLErr {
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+		fmt.Fprint(w, base.Render("❌ Could not connect to "))
+		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprintln(w, base.Render(": "+urlErr.Err.Error()))
+		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+" and your network, then try again."))
+
+		return
+	}
+
+	fmt.Fprintln(w, base.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
+	fmt.Fprintln(w, base.Render("Unset it and try again:"))
+	FprintUnsetTokenInstructions(w)
+}
+
+// reportStoredProfileNotUsed names both sides of the substitution this CLI
+// refuses to make: the endpoint the environment asked for and the stored
+// profile it will NOT fall back to. Printed only when a stored profile exists,
+// since otherwise there is nothing to substitute.
+func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
+	storedHost := config.GetBaseURL()
+	if storedHost == "" {
+		return
+	}
+
+	requestedHost := creds.Endpoint
+	if host, err := config.SchemeHostOnly(creds.Endpoint); err == nil {
+		requestedHost = host
+	}
+
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, base.Render("Environment credentials for "))
+	fmt.Fprint(w, info.Render(requestedHost))
+	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored profile for "))
+	fmt.Fprint(w, info.Render(storedHost))
+	fmt.Fprintln(w, base.Render("."))
+}
+
 // VerifyEnvCredentials checks if environment variable credentials are valid.
 // Returns credentials and nil error if valid, credentials and error otherwise.
 func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
@@ -107,11 +245,12 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 }
 
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
-// triggers the login flow automatically. Returns an error if authentication
-// fails, suitable for use in Cobra PreRunE hooks.
+// triggers the login flow automatically (see EnsureAuthenticated for the
+// exceptions). Returns an error if authentication fails, suitable for use in
+// Cobra PreRunE hooks.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 	if !EnsureAuthenticated(cmd.Context()) {
-		return errors.New("Authentication failed.")
+		return errors.New("authentication failed")
 	}
 
 	return nil
@@ -120,6 +259,12 @@ func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 // EnsureAuthenticated checks if valid authentication exists, and if not,
 // triggers the login flow automatically. Returns true if authentication
 // is valid or was successfully obtained.
+//
+// A complete DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair that fails
+// verification returns false without falling back to the stored profile and
+// without starting the login flow: environment credentials are an explicit
+// instance request, and substituting the profile would silently run against
+// the wrong instance.
 func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	if viperx.GetBool(config.SkipAuthKey) {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
@@ -140,6 +285,17 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return true
 	}
 
+	// A complete pair of environment credentials is an explicit request for
+	// that instance (the same precedence `dr auth export` documents). Falling
+	// back to the stored profile here would silently swap instances, so fail
+	// loudly instead and never touch the profile.
+	if !errors.Is(envErr, ErrEnvCredentialsNotSet) {
+		ReportEnvCredentialsError(os.Stderr, creds, envErr)
+		reportStoredProfileNotUsed(os.Stderr, creds)
+
+		return false
+	}
+
 	datarobotHost := GetBaseURLOrAsk()
 	if datarobotHost == "" {
 		// Appropriate error message was already displayed in GetBaseURLOrAsk() and SetURLAction()
@@ -154,25 +310,14 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	skipAuthFlow := false
 
-	if errors.Is(envErr, context.DeadlineExceeded) {
-		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
-
-		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
-		fmt.Print(tui.InfoStyle.Render(envDatarobotHost))
-		fmt.Println(tui.BaseTextStyle.Render(" from DATAROBOT_ENDPOINT environment variable timed out."))
-		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
-
-		skipAuthFlow = true
-	} else if creds.Token != "" {
-		if epErr := ValidateEndpoint(creds.Endpoint); epErr != nil {
-			fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_ENDPOINT environment variable is invalid:"))
-			fmt.Println(tui.BaseTextStyle.Render(epErr.Error()))
-			fmt.Println(tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
-		} else {
-			fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable"))
-			fmt.Println(tui.BaseTextStyle.Render("contains an expired or invalid token. Unset it:"))
-			PrintUnsetTokenInstructions()
-		}
+	if creds.Token != "" {
+		// Partial env: DATAROBOT_API_TOKEN is set but no endpoint accompanies
+		// it (a complete pair was handled above), so the token was never
+		// verified. Point at it rather than starting a login flow that would
+		// shadow it.
+		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable is set"))
+		fmt.Println(tui.BaseTextStyle.Render("without a DATAROBOT_ENDPOINT. Set that too, or unset the token:"))
+		PrintUnsetTokenInstructions()
 
 		skipAuthFlow = true
 	}

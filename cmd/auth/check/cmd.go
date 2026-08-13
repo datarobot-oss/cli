@@ -43,33 +43,12 @@ func checkCLICredentials(w io.Writer) bool {
 		return true
 	}
 
-	// If env vars were set but invalid, report the error
+	// If env vars were set but invalid, report the error. Unlike
+	// EnsureAuthenticated this deliberately skips the "not falling back to
+	// the stored profile" line: check evaluates the stored profile itself
+	// right below and reports that result on its own.
 	if !errors.Is(err, auth.ErrEnvCredentialsNotSet) {
-		if errors.Is(err, context.DeadlineExceeded) {
-			envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
-
-			fmt.Fprint(w, tui.BaseTextStyle.Render("❌ Connection to "))
-			fmt.Fprint(w, tui.InfoStyle.Render(envDatarobotHost))
-			fmt.Fprintln(w, tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
-
-			return false
-		}
-
-		// Distinguish a malformed DATAROBOT_ENDPOINT from an invalid token so
-		// the user fixes the right thing. A quoted endpoint (e.g. from running
-		// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
-		// and must not be reported as a token problem.
-		if epErr := auth.ValidateEndpoint(creds.Endpoint); epErr != nil {
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_ENDPOINT environment variable is invalid: "+epErr.Error()))
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("Set it to a valid DataRobot URL and try again."))
-		} else {
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("Unset it and try again:"))
-			fmt.Fprint(w, tui.InfoStyle.Render("  unset DATAROBOT_API_TOKEN"))
-			fmt.Fprint(w, tui.BaseTextStyle.Render(" (or "))
-			fmt.Fprint(w, tui.InfoStyle.Render("Remove-Item Env:\\DATAROBOT_API_TOKEN"))
-			fmt.Fprintln(w, tui.BaseTextStyle.Render(" on Windows)"))
-		}
+		auth.ReportEnvCredentialsError(w, creds, err)
 
 		return false
 	}
