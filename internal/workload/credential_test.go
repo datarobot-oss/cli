@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -66,4 +67,44 @@ func TestGetCredential_EscapesID(t *testing.T) {
 
 	_, err := GetCredential("a/b")
 	require.NoError(t, err)
+}
+
+func TestCreateCredential_PostsTheValueAndReturnsTheID(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v2/credentials/", r.URL.Path)
+
+		var body map[string]string
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, "my-app/OPENAI_API_KEY", body["name"])
+		assert.Equal(t, CredentialTypeAPIToken, body["credentialType"])
+		assert.Equal(t, "sk-live-abc123", body["apiToken"])
+
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"credentialId":"66f1a2b3c4d5e6f7a8b9c0d1","name":"my-app/OPENAI_API_KEY"}`)
+	}))
+
+	cred, err := CreateCredential("my-app/OPENAI_API_KEY", "sk-live-abc123")
+	require.NoError(t, err)
+	assert.Equal(t, "66f1a2b3c4d5e6f7a8b9c0d1", cred.CredentialID)
+}
+
+// A name already in use is the caller's decision, not this function's:
+// reusing whatever credential holds that name would deploy a value the user
+// never supplied.
+func TestCreateCredential_ConflictSurvivesAsAnHTTPError(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"detail":"credential name already exists"}`)
+	}))
+
+	_, err := CreateCredential("my-app/OPENAI_API_KEY", "sk-live-abc123")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
+	assert.Contains(t, err.Error(), "already exists")
 }

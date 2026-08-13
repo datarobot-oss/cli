@@ -101,6 +101,13 @@ type flow struct {
 	// failures no screen can recover from.
 	fatal error
 
+	// imports is what storing the secrets did, read once the flow has ended
+	// and the terminal is back. imported stops a second attempt: the confirm
+	// screen can be reached twice, and a credential already stored must not be
+	// stored again under a second name.
+	imports  Import
+	imported bool
+
 	// nameGiven distinguishes a name the user chose from the one the
 	// directory suggested, so returning to the screen shows the answer that
 	// was given there and never re-offers a suggestion as a typed value.
@@ -128,6 +135,13 @@ type execEnvsLoadedMsg struct {
 type editedMsg struct {
 	content []byte
 	err     error
+}
+
+// secretsStoredMsg carries the variables with their credential ids filled in,
+// and the record of which of them made it.
+type secretsStoredMsg struct {
+	vars   []manifest.EnvVar
+	report Import
 }
 
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
@@ -233,6 +247,9 @@ func (f flow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editedMsg:
 		return f.edited(msg)
+
+	case secretsStoredMsg:
+		return f.secretsStored(msg)
 
 	case tea.KeyMsg:
 		return f.key(msg)
@@ -479,6 +496,54 @@ var accepting = map[screen]func(*flow) (tea.Cmd, error){
 	screenImage:      (*flow).acceptImage,
 	screenSettings:   (*flow).acceptSettings,
 	screenEnv:        (*flow).acceptEnv,
+	screenConfirm:    (*flow).acceptConfirm,
+}
+
+// acceptConfirm stores the secrets, and is the last thing that happens before
+// the file is written.
+//
+// Here rather than when the env table is left, because a credential outlives
+// the run that created it: someone who walks the wizard to the end and then
+// cancels should not have left a secret on the platform. The cost is that the
+// confirm screen shows the reference carrying the placeholder while the file
+// written a moment later carries the id. That is the right way round; the
+// screen is where a secret's value could leak, and no value is on it either
+// way.
+func (f *flow) acceptConfirm() (tea.Cmd, error) {
+	if f.imported || pendingSecrets(f.draft.EnvVars) == 0 {
+		return nil, nil
+	}
+
+	f.loading = "Storing secrets…"
+
+	vars, detected, name := f.draft.EnvVars, f.detected, f.draft.Name
+
+	return func() tea.Msg {
+		stored, report := importSecrets(vars, detected, name)
+
+		return secretsStoredMsg{vars: stored, report: report}
+	}, nil
+}
+
+// secretsStored records the ids and re-renders, so what is written is what was
+// on screen with the placeholders resolved. A render that fails now is fatal:
+// the credentials exist, and ending as a cancellation would say nothing
+// happened.
+func (f flow) secretsStored(msg secretsStoredMsg) (tea.Model, tea.Cmd) {
+	f.loading = ""
+	f.imported = true
+	f.imports = msg.report
+	f.draft.EnvVars = msg.vars
+
+	if err := f.render(); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
+	f.done = true
+
+	return f, tea.Quit
 }
 
 // accept validates and records the current screen's answer. A non-nil command

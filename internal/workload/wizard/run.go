@@ -157,7 +157,7 @@ func Run(opts Options) (Result, error) {
 		Content:           content,
 		Draft:             draft,
 		EnvKeysListed:     len(draft.EnvVars),
-		EnvSecretsPending: countSecrets(draft.EnvVars),
+		EnvSecretsPending: pendingSecrets(draft.EnvVars),
 	}
 
 	if opts.DryRun {
@@ -169,19 +169,6 @@ func Run(opts Options) (Result, error) {
 	}
 
 	return result, nil
-}
-
-// countSecrets is how many entries are waiting on a credential.
-func countSecrets(vars []manifest.EnvVar) int {
-	pending := 0
-
-	for _, v := range vars {
-		if v.Secret {
-			pending++
-		}
-	}
-
-	return pending
 }
 
 // existing reports the manifest that is already there, and reads it rather
@@ -231,12 +218,34 @@ func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, err
 		return nil, manifest.Draft{}, err
 	}
 
+	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
+
 	content, err := draft.Render()
 	if err != nil {
 		return nil, manifest.Draft{}, err
 	}
 
 	return content, draft, nil
+}
+
+// storeSecrets sends each secret to the credential store and reports what
+// happened, so the render that follows writes credential ids rather than
+// placeholders.
+//
+// It runs after the answers are settled and before anything is written, which
+// is the only moment both facts are available: which variables the user calls
+// secret, and what they are worth. Nothing is stored under --dry-run, because
+// a run that promises to change nothing must not leave a credential behind.
+func (o Options) storeSecrets(vars []manifest.EnvVar, detected Detected, workloadName string) []manifest.EnvVar {
+	if o.DryRun {
+		return vars
+	}
+
+	stored, report := importSecrets(vars, detected, workloadName)
+
+	reportImport(o.Stderr, report)
+
+	return stored
 }
 
 // resolveHeadlessBound binds to a live workload without prompting: the live
@@ -256,8 +265,10 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// A name the workload already declares keeps its running value, so it is
 	// not something this run added. Narrowing the draft here rather than
 	// leaving it to Apply's own skip is what keeps the reported counts equal
-	// to what reached the file.
+	// to what reached the file, and keeps a credential from being stored for a
+	// variable the workload is already serving.
 	draft.EnvVars = live.NewEnvVars(draft.EnvVars)
+	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
 
 	applied, err := live.Apply(draft)
 	if err != nil {

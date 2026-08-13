@@ -125,9 +125,23 @@ type EnvVar struct {
 	// value belongs in the credential store and never in this file.
 	Value string
 	// Secret means the value belongs in the credential store, so the entry is
-	// written as a reference carrying CredentialPlaceholder in place of an id
-	// that does not exist yet.
+	// written as a reference rather than as a literal.
 	Secret bool
+	// CredentialID is the credential holding the secret, when one was stored
+	// for it. Empty means none was, and the reference is written carrying
+	// CredentialPlaceholder instead: an entry that is visibly unfinished, which
+	// a deploy refuses by name.
+	CredentialID string
+}
+
+// credentialID is the id to write for a secret, and the placeholder when the
+// secret never reached the credential store.
+func (v EnvVar) credentialID() string {
+	if v.CredentialID == "" {
+		return CredentialPlaceholder
+	}
+
+	return v.CredentialID
 }
 
 // CredentialPlaceholder stands in for a credential id until one is created.
@@ -402,7 +416,8 @@ func (d Draft) runtime() *yaml.Node {
 }
 
 // environmentVars renders the .env variables the manifest carries. Ordinary
-// settings become literals. Secrets become credential references carrying
+// settings become literals. A secret becomes a credential reference: to the
+// credential that was stored for it, or, when none was, to
 // CredentialPlaceholder, so the entry is present and obviously unfinished
 // rather than absent and easy to miss.
 func (d Draft) environmentVars() *yaml.Node {
@@ -412,14 +427,20 @@ func (d Draft) environmentVars() *yaml.Node {
 		value := scalar(v.Value)
 		entry := []field{{key: keyName, value: scalar(v.Name)}}
 
-		if v.Secret {
+		switch {
+		case v.Secret && v.CredentialID == "":
 			value = scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
 			entry = append(entry, field{
 				key:     keyValue,
 				value:   value,
 				comment: "replace " + CredentialPlaceholder + " with the credential id",
 			})
-		} else {
+
+		case v.Secret:
+			value = scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey)
+			entry = append(entry, field{key: keyValue, value: value})
+
+		default:
 			entry = append(entry, field{key: keyValue, value: value})
 		}
 
