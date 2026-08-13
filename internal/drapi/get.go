@@ -93,7 +93,7 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	}
 
 	if info != "" {
-		log.Infof("Fetching %s from: %s", info, url)
+		log.Debugf("Fetching %s from: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))

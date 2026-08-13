@@ -754,6 +754,55 @@ func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
 	assert.Equal(t, "art-existing", decodePayload(t, tr.workloadIn)["artifactId"])
 }
 
+// The platform allows one workload per draft artifact, so a stale link sends
+// the deploy at an artifact that is already spoken for. Its own message names
+// an id and nothing about where that id came from, which leaves the reader
+// with a conflict and no idea what chose the thing that conflicted.
+func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	f.list = func(int, []string) ([]workload.Workload, error) {
+		return []workload.Workload{{ID: "wl-owner", Name: "someone-else", ArtifactID: "art-existing"}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-existing", "the artifact the link chose")
+	assert.Contains(t, err.Error(), ".datarobot", "where that choice is recorded")
+	assert.Contains(t, err.Error(), "wl-owner", "the workload that already has it")
+	assert.Contains(t, err.Error(), "workloadId: wl-owner", "a line the reader can paste")
+}
+
+// The same conflict against an artifact this run just minted is not a stale
+// link, so it must not be explained as one.
+func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	f.list = func(int, []string) ([]workload.Workload, error) { return nil, nil }
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "only one workload per draft artifact")
+}
+
 // A locked artifact can take neither code nor an image, so the deploy stops
 // before the sync rather than failing halfway through with the platform's
 // 403, which says nothing about what to do next.
@@ -1046,7 +1095,7 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
-	assert.Contains(t, stderr, "first sync of this project")
+	assert.Contains(t, stderr, "uploaded for the first time")
 }
 
 // stoppedWorkload is the live fixture, off. Everything else about it still

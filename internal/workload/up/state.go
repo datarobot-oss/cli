@@ -60,7 +60,7 @@ const (
 func (s State) String() string {
 	switch s {
 	case StateUnbound:
-		return "not created yet"
+		return "no workload yet"
 	case StateMissing:
 		return "missing"
 	case StateTerminated:

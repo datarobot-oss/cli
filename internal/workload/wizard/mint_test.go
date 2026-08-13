@@ -217,8 +217,8 @@ func TestImportSecrets_AlreadyStoredIsLeftAlone(t *testing.T) {
 // An unnamed workload still produces a usable credential name rather than an
 // empty prefix and a stray slash.
 func TestCredentialName_WithoutAWorkloadName(t *testing.T) {
-	assert.Equal(t, "my-app/OPENAI_API_KEY", credentialName("my-app", "OPENAI_API_KEY"))
-	assert.Equal(t, "OPENAI_API_KEY", credentialName("", "OPENAI_API_KEY"))
+	assert.Equal(t, "my-app/OPENAI_API_KEY", CredentialName("my-app", "OPENAI_API_KEY"))
+	assert.Equal(t, "OPENAI_API_KEY", CredentialName("", "OPENAI_API_KEY"))
 }
 
 // Interactively the secrets are stored when the confirm screen is accepted,

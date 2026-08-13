@@ -87,7 +87,7 @@ func TestState_TheOffStatusesReduceToStopped(t *testing.T) {
 }
 
 func TestState_String(t *testing.T) {
-	assert.Equal(t, "not created yet", StateUnbound.String())
+	assert.Equal(t, "no workload yet", StateUnbound.String())
 	assert.Equal(t, "missing", StateMissing.String())
 	assert.Equal(t, "terminated", StateTerminated.String())
 	assert.Equal(t, "stopped", StateStopped.String())

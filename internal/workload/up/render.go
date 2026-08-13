@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/tui"
 )
 
 // Summary names what a plan is about. It comes from the live workload when
@@ -50,11 +53,11 @@ const envVarsSegment = ".environmentVars["
 func Render(w io.Writer, s Summary, plan Plan) error {
 	var b strings.Builder
 
-	b.WriteString(header(s, plan))
+	b.WriteString(planTitleStyle.Render(header(s, plan)))
 	b.WriteString("\n")
 
 	if plan.Empty() {
-		b.WriteString("\nAlready up to date\n")
+		b.WriteString("\n" + tui.SuccessStyle.Render("✓ Already up to date") + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -102,7 +105,7 @@ func lines(plan Plan) []string {
 	var out []string
 
 	if plan.Creates {
-		out = append(out, entry("+", "workload", "created on this run, with its first artifact"))
+		out = append(out, entry("+", "workload", "new, with its first artifact"))
 	}
 
 	// A stopped workload is the one plan whose reason to act is the state
@@ -126,7 +129,7 @@ func lines(plan Plan) []string {
 // codeDetail says how much of the tree is going up.
 func codeDetail(code CodeChange) string {
 	if code.FirstDeploy {
-		return "first sync of this project"
+		return "the whole project, uploaded for the first time"
 	}
 
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))
@@ -168,8 +171,24 @@ func runtimeLines(plan Plan) []string {
 
 // entry formats one plan line: a marker, the class, and what happens to it.
 func entry(marker, class, detail string) string {
-	return fmt.Sprintf("  %s %-10s %s", marker, class, detail)
+	style := changeStyle
+	if marker == "+" {
+		style = addStyle
+	}
+
+	return fmt.Sprintf("  %s %s %s",
+		style.Render(marker),
+		style.Render(fmt.Sprintf("%-10s", class)),
+		tui.HintStyle.Render(detail))
 }
+
+// The plan block's palette: an addition reads as new, a change as something
+// being moved, and the detail after either is commentary on it.
+var (
+	planTitleStyle = lipgloss.NewStyle().Bold(true)
+	addStyle       = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).Bold(true)
+	changeStyle    = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).Bold(true)
+)
 
 // details lists individual changes under their entry, capped, saying out loud
 // how many it left out.

@@ -41,7 +41,7 @@ func Post(url, info string, body any) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	if info != "" {
-		log.Infof("Creating %s at: %s", info, url)
+		log.Debugf("Creating %s at: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))

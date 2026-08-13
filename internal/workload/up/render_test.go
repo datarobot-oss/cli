@@ -38,7 +38,7 @@ var appSummary = Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}
 func TestRender_Empty(t *testing.T) {
 	out := render(t, appSummary, Plan{State: StateRunning, Code: builtCode(0)})
 
-	assert.Equal(t, "my-app (68b0c1d2), running\n\nAlready up to date\n", out)
+	assert.Equal(t, "my-app (68b0c1d2), running\n\n✓ Already up to date\n", out)
 }
 
 func TestRender_TheThreeClasses(t *testing.T) {
@@ -92,10 +92,10 @@ func TestRender_FirstDeploy(t *testing.T) {
 		Code:    CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "my-app, not created yet")
+	assert.Contains(t, out, "my-app, no workload yet")
 	assert.NotContains(t, out, "(", "there is no id to show yet")
-	assert.Contains(t, out, "+ workload   created on this run, with its first artifact")
-	assert.Contains(t, out, "~ code       first sync of this project")
+	assert.Contains(t, out, "+ workload   new, with its first artifact")
+	assert.Contains(t, out, "~ code       the whole project, uploaded for the first time")
 }
 
 // TestRender_PublishedImageNeverMentionsCode: a manifest naming an image has
@@ -203,7 +203,7 @@ func TestRender_ShortIDLeavesShortIDsAlone(t *testing.T) {
 func TestRender_UnnamedWorkloadStillRenders(t *testing.T) {
 	out := render(t, Summary{}, Plan{State: StateUnbound, Creates: true})
 
-	assert.Contains(t, out, "workload, not created yet")
+	assert.Contains(t, out, "workload, no workload yet")
 }
 
 func TestPlanJSON_Shape(t *testing.T) {

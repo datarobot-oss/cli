@@ -15,6 +15,9 @@
 package workload
 
 import (
+	"net/url"
+	"strconv"
+
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -32,6 +35,43 @@ type Credential struct {
 // field, which is the shape every secret imported from a .env takes: one name,
 // one value, and nothing about what the value is for.
 const CredentialTypeAPIToken = "api_token"
+
+// CredentialList is one page of the credentials route.
+type CredentialList struct {
+	Data []Credential `json:"data"`
+	Next string       `json:"next"`
+}
+
+// FindCredentialNamed returns the credential called name, or nil when the
+// organisation has none. Names are unique tenant-wide, so this is how a
+// caller turns a name it expected to create into the id that already holds it.
+func FindCredentialNamed(name string, limit int) (*Credential, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+
+	pageURL, err := drapi.EndpointURL("/credentials/", query)
+	if err != nil {
+		return nil, err
+	}
+
+	for pageURL != "" {
+		var list CredentialList
+
+		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {
+			return nil, err
+		}
+
+		for i := range list.Data {
+			if list.Data[i].Name == name {
+				return &list.Data[i], nil
+			}
+		}
+
+		pageURL = list.Next
+	}
+
+	return nil, nil
+}
 
 // CreateCredential stores a secret and returns the credential holding it, so a
 // manifest can reference it by id instead of carrying the value.

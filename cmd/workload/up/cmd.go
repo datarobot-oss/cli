@@ -21,6 +21,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/up"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -355,10 +357,45 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		return nil
 	}
 
-	// stdout carries the endpoint and nothing else, so it can be piped.
+	// stdout carries the endpoint and nothing else, so it can be piped. The
+	// label goes to stderr with no newline, so a terminal shows one sentence
+	// while `dr workload up | xargs curl` still receives the bare URL.
 	if result.Endpoint != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "\n  %s Workload endpoint: ", tui.SuccessStyle.Render("✓"))
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
+	nextSteps(cmd.ErrOrStderr(), result)
+
 	return nil
+}
+
+// nextSteps lists what to run against the workload this deploy just touched,
+// on stderr so the endpoint on stdout stays pipeable. Nothing is printed for a
+// run that produced no workload: a list of commands that need an id is no help
+// to someone who has not got one.
+func nextSteps(w io.Writer, result up.Result) {
+	if result.WorkloadID == "" {
+		return
+	}
+
+	steps := [][2]string{
+		{"dr workload logs " + result.WorkloadID, "what the container is saying"},
+		{"dr workload status " + result.WorkloadID, "whether it is healthy"},
+		{"dr workload stop " + result.WorkloadID, "switch it off, keeping the version"},
+	}
+
+	if result.BuildID != "" {
+		steps = append(steps, [2]string{
+			"dr artifact build logs " + result.ArtifactID + " " + result.BuildID,
+			"how the image was built",
+		})
+	}
+
+	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
+
+	for _, step := range steps {
+		fmt.Fprintf(w, "  %s  %s\n",
+			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	}
 }
