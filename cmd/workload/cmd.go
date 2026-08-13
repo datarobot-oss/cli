@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/start"
 	"github.com/datarobot/cli/cmd/workload/status"
 	"github.com/datarobot/cli/cmd/workload/stop"
+	"github.com/datarobot/cli/cmd/workload/up"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +60,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		start.Cmd(),
 		status.Cmd(),
 		stop.Cmd(),
+		up.Cmd(),
 	)
 
 	return cmd
