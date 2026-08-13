@@ -82,6 +82,80 @@ func ResolveExecutionEnvironment(nameOrID string) (id, versionID string, err err
 	return "", "", fmt.Errorf("execution environment %q not found; check the name in the DataRobot UI under Registry > Environments", nameOrID)
 }
 
+// ListExecutionEnvironments returns up to limit environments that have a
+// version to build from, for the setup wizard's base-image picker. Ones with
+// no successful version are dropped rather than offered: picking one would
+// fail at build time with nothing the user could do about it.
+func ListExecutionEnvironments(limit int) ([]ExecutionEnvironment, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive, got %d", limit)
+	}
+
+	pageURL, err := config.GetEndpointURL("/api/v2/executionEnvironments/?limit=100")
+	if err != nil {
+		return nil, err
+	}
+
+	environments := make([]ExecutionEnvironment, 0, limit)
+
+	for pages := 0; pageURL != ""; pages++ {
+		if pages >= maxExecEnvPages {
+			// Silently returning a partial list would read as "these are all
+			// the base images", which is the wrong thing to choose from.
+			return nil, fmt.Errorf("execution environments did not finish listing after %d pages", maxExecEnvPages)
+		}
+
+		var list executionEnvironmentList
+
+		if err := drapi.GetJSON(pageURL, "execution environments", &list); err != nil {
+			return nil, err
+		}
+
+		if environments = appendBuildable(environments, list.Data, limit); len(environments) == limit {
+			return environments, nil
+		}
+
+		next, err := nextPage(list.Next)
+		if err != nil {
+			return nil, err
+		}
+
+		pageURL = next
+	}
+
+	return environments, nil
+}
+
+// appendBuildable adds the environments a build can target, stopping at limit.
+func appendBuildable(into, page []ExecutionEnvironment, limit int) []ExecutionEnvironment {
+	for _, ee := range page {
+		if ee.LatestSuccessfulVersion == nil {
+			continue
+		}
+
+		into = append(into, ee)
+
+		if len(into) == limit {
+			return into
+		}
+	}
+
+	return into
+}
+
+// nextPage validates a paging cursor, returning "" at the end of the listing.
+func nextPage(next string) (string, error) {
+	if next == "" {
+		return "", nil
+	}
+
+	if err := drapi.AssertNextOnSameHost(next); err != nil {
+		return "", err
+	}
+
+	return next, nil
+}
+
 // scanExecutionEnvironments walks the paged listing once, returning the unique
 // id match if one turned up and every environment carrying the name. It stops
 // early on an id hit; a name has to be checked against the whole list before it
