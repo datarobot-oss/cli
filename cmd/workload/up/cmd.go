@@ -234,7 +234,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		return runErr
 	}
 
-	if err := render(cmd, f, format, result); err != nil {
+	if err := render(cmd, f, format, result, runErr != nil); err != nil {
 		return err
 	}
 
@@ -336,7 +336,7 @@ func reportable(result up.Result) bool {
 	return result.WorkloadID != "" || result.BuildID != ""
 }
 
-func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result) error {
+func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
 			WorkloadID: result.WorkloadID,
@@ -360,8 +360,17 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	// stdout carries the endpoint and nothing else, so it can be piped. The
 	// label goes to stderr with no newline, so a terminal shows one sentence
 	// while `dr workload up | xargs curl` still receives the bare URL.
+	//
+	// render also runs on a failed deploy that got far enough to have an
+	// endpoint, and a tick above an error reads as though both happened, so
+	// the mark is only claimed when the run is actually a success.
 	if result.Endpoint != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "\n  %s Workload endpoint: ", tui.SuccessStyle.Render("✓"))
+		mark := tui.SuccessStyle.Render("✓")
+		if failed {
+			mark = " "
+		}
+
+		fmt.Fprintf(cmd.ErrOrStderr(), "\n  %s Workload endpoint: ", mark)
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
@@ -385,12 +394,12 @@ func nextSteps(w io.Writer, result up.Result) {
 		{"dr workload stop " + result.WorkloadID, "switch it off, keeping the version"},
 	}
 
-	if result.BuildID != "" {
-		steps = append(steps, [2]string{
-			"dr artifact build logs " + result.ArtifactID + " " + result.BuildID,
-			"how the image was built",
-		})
-	}
+	// No build-logs line. It needs an artifact id as well as a build id, and
+	// on a roll the two deliberately belong to different artifacts: BuildID is
+	// the candidate's, ArtifactID stays on the version still serving until the
+	// swap lands. Pairing them would send the reader to a 404 at exactly the
+	// moment they need the logs. The error from a failed build already names
+	// the right pair.
 
 	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
 

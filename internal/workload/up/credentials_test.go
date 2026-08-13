@@ -168,3 +168,42 @@ func TestVerifyCredentials_NonHTTPErrorPropagates(t *testing.T) {
 func verifyRefs(refs []manifest.CredentialRef) error {
 	return verifyCredentials(refs, "my-app")
 }
+
+// The commonest reason setup leaves a placeholder is that the name it wanted
+// was taken, which means the id the file needs already exists. Naming it, with
+// the caveat that a tenant-wide name says nothing about what is stored under
+// it, turns the message into an edit rather than an errand.
+func TestVerifyCredentials_PlaceholderNamesTheCredentialThatExists(t *testing.T) {
+	var asked string
+
+	restore := findCredentialFn
+	findCredentialFn = func(name string, _ int) (*workload.Credential, error) {
+		asked = name
+
+		return &workload.Credential{CredentialID: "66f0aaaa0000000000000001", Name: name}, nil
+	}
+
+	t.Cleanup(func() { findCredentialFn = restore })
+
+	err := verifyCredentials([]manifest.CredentialRef{
+		{CredentialID: manifest.CredentialPlaceholder, Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 22},
+	}, "my-app")
+
+	require.Error(t, err)
+	assert.Equal(t, "my-app/OPENAI_API_KEY", asked, "the lookup uses the name setup would have created")
+	assert.Contains(t, err.Error(), "66f0aaaa0000000000000001", "the id that belongs on the line")
+	assert.Contains(t, err.Error(), manifest.CredentialPlaceholder, "what to replace")
+	assert.Contains(t, err.Error(), "tenant-wide", "a name is not proof of the value behind it")
+}
+
+// With nothing of that name, the message says what to do rather than pointing
+// at a credential that does not exist.
+func TestVerifyCredentials_PlaceholderWithNoMatchStillSaysWhatToDo(t *testing.T) {
+	err := verifyCredentials([]manifest.CredentialRef{
+		{CredentialID: manifest.CredentialPlaceholder, Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 22},
+	}, "my-app")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Store the value as a credential")
+	assert.Contains(t, err.Error(), "replace "+manifest.CredentialPlaceholder)
+}

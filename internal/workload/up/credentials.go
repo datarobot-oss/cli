@@ -97,16 +97,18 @@ func placeholderProblem(ref manifest.CredentialRef, workloadName string) string 
 
 	if existing, err := findCredentialFn(name, credentialSearchLimit); err == nil && existing != nil {
 		return fmt.Sprintf(
-			"%s:%d  %s says %s. The credential it wants already exists, called %s: "+
-				"put its id, %s, on that line",
+			"%s:%d  %s still says %s. A credential named %s already exists, so replacing %s with %s "+
+				"is probably what you want, having checked that credential holds this variable's value: "+
+				"a name is tenant-wide and says nothing about what is stored under it",
 			manifest.FileName, ref.Line, ref.EnvName, manifest.CredentialPlaceholder,
-			name, existing.CredentialID)
+			name, manifest.CredentialPlaceholder, existing.CredentialID)
 	}
 
 	return fmt.Sprintf(
-		"%s:%d  %s says %s instead of a credential id, so its value would never reach the container. "+
-			"Store the value as a credential and put that credential's id here",
-		manifest.FileName, ref.Line, ref.EnvName, manifest.CredentialPlaceholder)
+		"%s:%d  %s still says %s, so its value would never reach the container. "+
+			"Store the value as a credential, then replace %s with that credential's id",
+		manifest.FileName, ref.Line, ref.EnvName, manifest.CredentialPlaceholder,
+		manifest.CredentialPlaceholder)
 }
 
 // missingProblem describes an id the platform does not know. It names the

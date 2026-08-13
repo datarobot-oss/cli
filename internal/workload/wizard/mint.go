@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -172,8 +171,8 @@ func reportImport(stderr io.Writer, report Import) {
 
 	for _, failure := range report.Failed {
 		fmt.Fprintf(stderr, "  %s %s\n    %s\n    %s\n",
-			warnStyle.Render("!"),
-			warnStyle.Render(failure.Name+" was not stored"),
+			tui.WarnStyle.Render("!"),
+			tui.WarnStyle.Render(failure.Name+" was not stored"),
 			failure.Reason,
 			tui.HintStyle.Render(fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
 				manifest.FileName, manifest.CredentialPlaceholder)))
@@ -212,7 +211,3 @@ func pendingSecrets(vars []manifest.EnvVar) int {
 // createCredentialFn is the seam the tests replace: storing a secret is the
 // one call in setup that cannot be allowed to reach a real tenant by accident.
 var createCredentialFn = workload.CreateCredential
-
-// warnStyle marks something that did not happen but did not stop the run.
-var warnStyle = lipgloss.NewStyle().
-	Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).Bold(true)

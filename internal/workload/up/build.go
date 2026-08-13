@@ -17,7 +17,6 @@ package up
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -89,28 +88,25 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 		return createErr
 	}
 
-	var b strings.Builder
-
-	fmt.Fprintf(&b,
-		"this project is linked to artifact %s, which already has a workload, "+
-			"and the platform allows only one workload per draft artifact.\n"+
-			"  The link lives in %s and is what makes repeated deploys update one artifact "+
-			"rather than making a new one each time.\n",
-		artifactID, wapi.Dir(projectDir))
-
-	if owner := workloadOn(artifactID); owner != "" {
-		fmt.Fprintf(&b,
-			"  Workload %s is the one that has it. To deploy to that workload, add 'workloadId: %s' to %s.\n",
-			owner, owner, manifest.FileName)
+	// Only rewrite once the claim is verified. A 409 on this path is just as
+	// likely to be a duplicate workload name, which create() has already
+	// explained accurately; replacing that with advice to delete the link
+	// directory would send the user to orphan an artifact for no reason.
+	owner := workloadOn(artifactID)
+	if owner == "" {
+		return createErr
 	}
 
-	fmt.Fprintf(&b,
-		"  To deploy a separate workload from this directory instead, delete %s: "+
-			"the next run then creates an artifact of its own.\n"+
-			"  The platform's own words: %s",
-		wapi.Dir(projectDir), createErr)
-
-	return errors.New(b.String())
+	return fmt.Errorf(
+		"this project is linked to artifact %s, which workload %s already has, and the platform allows "+
+			"only one workload per draft artifact.\n"+
+			"  The link lives in %s and is what makes repeated deploys update one artifact rather than "+
+			"making a new one each time.\n"+
+			"  To deploy to that workload, add 'workloadId: %s' to %s.\n"+
+			"  To deploy a separate workload from this directory, delete %s: the next run then creates "+
+			"an artifact of its own.\n"+
+			"  %w",
+		artifactID, owner, wapi.Dir(projectDir), owner, manifest.FileName, wapi.Dir(projectDir), createErr)
 }
 
 // workloadOn names the workload already using artifactID, "" when the lookup

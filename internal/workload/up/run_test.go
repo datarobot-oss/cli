@@ -133,17 +133,18 @@ runtime:
 // reach the network by omission and a test only wires what it means to
 // exercise.
 type fakes struct {
-	wizard    func(wizard.Options) (wizard.Result, error)
-	create    func(any) (*workload.Workload, error)
-	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-	list      func(int, []string) ([]workload.Workload, error)
-	start     func(string) (*workload.WorkloadOperationResponse, error)
-	lock      func(string) (*workload.Artifact, error)
-	cred      func(string) (*workload.Credential, error)
-	writeID   func(string, string) error
-	code      func(Loaded, Live) (CodeChange, error)
-	workloadD func(string) (workload.Document, error)
-	artifactD func(string) (workload.Document, error)
+	wizard         func(wizard.Options) (wizard.Result, error)
+	create         func(any) (*workload.Workload, error)
+	wait           func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	list           func(int, []string) ([]workload.Workload, error)
+	start          func(string) (*workload.WorkloadOperationResponse, error)
+	lock           func(string) (*workload.Artifact, error)
+	cred           func(string) (*workload.Credential, error)
+	findCredential func(string, int) (*workload.Credential, error)
+	writeID        func(string, string) error
+	code           func(Loaded, Live) (CodeChange, error)
+	workloadD      func(string) (workload.Document, error)
+	artifactD      func(string) (workload.Document, error)
 
 	// The build track: create an artifact, link the project to it, push the
 	// code, turn it into an image.
@@ -187,6 +188,13 @@ func install(t *testing.T, f fakes) {
 
 		return nil, nil
 	})
+
+	// The placeholder message looks a credential up by name. Left unwired it
+	// would list credentials from whatever tenant the developer is logged
+	// into; answering "no such credential" is the quiet default every test
+	// that does not care about the lookup wants.
+	force(t, &findCredentialFn, func(string, int) (*workload.Credential, error) { return nil, nil })
+	swap(t, &findCredentialFn, f.findCredential)
 
 	swap(t, &runWizardFn, f.wizard)
 	swap(t, &createWorkloadFn, f.create)
@@ -783,6 +791,36 @@ func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
 	assert.Contains(t, err.Error(), ".datarobot", "where that choice is recorded")
 	assert.Contains(t, err.Error(), "wl-owner", "the workload that already has it")
 	assert.Contains(t, err.Error(), "workloadId: wl-owner", "a line the reader can paste")
+}
+
+// A 409 on a linked project is just as likely to be a duplicate workload
+// name, which create() has already explained accurately. Rewriting that as a
+// link problem would send the user to delete the link and orphan an artifact
+// for a reason that was never the cause.
+func TestRun_NameConflictOnALinkedProjectKeepsItsOwnMessage(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	// Nothing holds the artifact; the name is what collided.
+	f.list = func(int, []string) ([]workload.Workload, error) {
+		return []workload.Workload{{ID: "wl-1", Name: "my-app", ArtifactID: "art-somewhere-else"}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "workloadId: wl-1", "the name conflict's own advice")
+	assert.NotContains(t, err.Error(), "delete", "nothing here calls for deleting the link")
 }
 
 // The same conflict against an artifact this run just minted is not a stale

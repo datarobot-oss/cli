@@ -92,7 +92,7 @@ func TestRender_FirstDeploy(t *testing.T) {
 		Code:    CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "my-app, no workload yet")
+	assert.Contains(t, out, "my-app, no workload bound yet")
 	assert.NotContains(t, out, "(", "there is no id to show yet")
 	assert.Contains(t, out, "+ workload   new, with its first artifact")
 	assert.Contains(t, out, "~ code       the whole project, uploaded for the first time")
@@ -203,7 +203,7 @@ func TestRender_ShortIDLeavesShortIDsAlone(t *testing.T) {
 func TestRender_UnnamedWorkloadStillRenders(t *testing.T) {
 	out := render(t, Summary{}, Plan{State: StateUnbound, Creates: true})
 
-	assert.Contains(t, out, "workload, no workload yet")
+	assert.Contains(t, out, "workload, no workload bound yet")
 }
 
 func TestPlanJSON_Shape(t *testing.T) {

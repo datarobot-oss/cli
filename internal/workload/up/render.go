@@ -84,10 +84,23 @@ func header(s Summary, plan Plan) string {
 	}
 
 	if plan.Creates || s.WorkloadID == "" {
-		return fmt.Sprintf("%s, %s", name, plan.State)
+		return fmt.Sprintf("%s, %s", name, headerState(plan.State))
 	}
 
-	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), plan.State)
+	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), headerState(plan.State))
+}
+
+// headerState is how a state reads at the top of a plan block, which is not
+// always how it reads in the JSON envelope. "not created yet" sounds like a
+// claim about the platform; in the header, directly above a line saying a
+// workload will be created, what the reader needs to know is that this file is
+// not bound to one. State.String stays as it is because scripts match on it.
+func headerState(state State) string {
+	if state == StateUnbound {
+		return "no workload bound yet"
+	}
+
+	return state.String()
 }
 
 // shortID trims an id to something a person can compare at a glance.
@@ -186,8 +199,8 @@ func entry(marker, class, detail string) string {
 // being moved, and the detail after either is commentary on it.
 var (
 	planTitleStyle = lipgloss.NewStyle().Bold(true)
-	addStyle       = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrGreen, tui.DrGreenDark)).Bold(true)
-	changeStyle    = lipgloss.NewStyle().Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).Bold(true)
+	addStyle       = tui.SuccessStyle
+	changeStyle    = tui.WarnStyle
 )
 
 // details lists individual changes under their entry, capped, saying out loud

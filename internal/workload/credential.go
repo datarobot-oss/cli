@@ -67,6 +67,17 @@ func FindCredentialNamed(name string, limit int) (*Credential, error) {
 			}
 		}
 
+		if list.Next == "" {
+			break
+		}
+
+		// Every paginator in this package checks this: drapi attaches the
+		// user's token to whatever URL it is given, so a next link naming
+		// another host would send it there.
+		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
+			return nil, err
+		}
+
 		pageURL = list.Next
 	}
 
