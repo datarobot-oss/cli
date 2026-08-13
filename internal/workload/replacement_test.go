@@ -37,7 +37,9 @@ const (
 	workloadPath    = "/api/v2/workloads/wl-1/"
 )
 
-// notFound writes the platform's empty-replacement answer.
+// notFound writes the platform's empty-replacement answer: the 404 and the
+// notActiveBody that comes with it, so a test reading the response sees the
+// same pair the route sends.
 func notFound(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNotFound)
 	fmt.Fprint(w, notActiveBody)
@@ -429,6 +431,13 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 // record before the very first poll lands, so the wait never observes a
 // status. Handed what StartReplacement returned, it knows the rollout was
 // real and reports success instead of failing a deploy that worked.
+//
+// It also pins the two things that follow from the seed being the only record
+// there is. The status that comes back is the seed's own, non-terminal one,
+// which is why the docstring sends callers to IsTerminalReplacementStatus
+// before rendering it. And onTick stays silent, because it reports poll
+// results and this wait had none, rather than replaying the seed as if it
+// were an observation.
 func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		notFound(w)
@@ -436,10 +445,14 @@ func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 
 	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
 
-	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, func(*Replacement) {
+		t.Error("onTick must not fire when the seed carries the wait")
+	})
 	require.NoError(t, err)
 	require.NotNil(t, replacement)
 	assert.Equal(t, "art-2", replacement.ArtifactID)
+	assert.Equal(t, "submitted", replacement.Status,
+		"the seed comes back as it was; a nil error here does not mean the status is terminal")
 }
 
 // TestWaitForReplacement_NonTerminalClearedViaNotFoundIsSuccess is the other

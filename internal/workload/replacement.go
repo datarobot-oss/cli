@@ -266,6 +266,13 @@ func confirmWorkloadExists(workloadID string) error {
 // an error unconditionally, which was wrong whenever the platform settled a
 // fast rollout before the first poll landed: passing started lets the wait
 // tell "it finished before I looked" from "it was never there".
+//
+// A settled rollout does not guarantee a terminal Status on the way out. When
+// the record is collected before the first poll lands, the seed is the only
+// record there is, so what comes back is started itself, carrying whatever
+// the POST answered, typically "submitted". A caller that renders a final
+// status should ask IsTerminalReplacementStatus rather than read a nil error
+// as "completed".
 func WaitForReplacement(
 	workloadID string,
 	started *Replacement,
