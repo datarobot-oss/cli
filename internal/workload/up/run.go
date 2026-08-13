@@ -254,14 +254,9 @@ func create(loaded Loaded, result Result, opts Options) (Result, error) {
 	var created *workload.Workload
 
 	err := report.run("Creating workload", func() error {
-		wl, err := createWorkloadFn(loaded.Compiled.Payload)
-		if err != nil {
-			adopted, adoptErr := adopt(err, result.Name)
-			if adoptErr != nil {
-				return adoptErr
-			}
-
-			wl = adopted
+		wl, createErr := createWorkloadFn(loaded.Compiled.Payload)
+		if createErr != nil {
+			return nameTaken(createErr, result.Name, loaded.Path)
 		}
 
 		created = wl
@@ -294,34 +289,52 @@ func create(loaded Loaded, result Result, opts Options) (Result, error) {
 	return settle(created.ID, result, opts, report)
 }
 
-// adopt turns a create conflict into the workload that caused it. A 409 means
-// something of that name is already there, and failing would leave the user
-// with a name they cannot deploy and no way to reach what owns it.
-func adopt(createErr error, workloadName string) (*workload.Workload, error) {
+// nameTaken turns a create conflict into an error naming what owns the name.
+// A 409 says only that something of that name is already there; the id is what
+// the user needs next and the one thing they cannot see from here.
+//
+// What this deliberately does not do is deploy onto it. Nothing tells "the
+// workload this project made, whose id failed to be written back" apart from
+// "an unrelated workload that happens to share a name", and the two want
+// opposite things. Adopting the first is how a room full of people deploying
+// the same template all bind to whoever ran it first, are told their own
+// deploy succeeded, and under --lock permanently lock a stranger's artifact.
+// The plan they were shown said a workload would be created; nothing about the
+// file would have reached the one they were given.
+//
+// So the run stops and hands the choice back, which costs one line in the
+// manifest in the case where adopting would have been right.
+func nameTaken(createErr error, workloadName, path string) error {
 	if !isConflict(createErr) || workloadName == "" {
-		return nil, createErr
+		return createErr
 	}
 
-	existing, err := listWorkloadsFn(adoptSearchLimit, nil)
+	existing, err := listWorkloadsFn(conflictSearchLimit, nil)
 	if err != nil {
 		// The conflict is the real story; a failure to look up what caused it
 		// is a footnote that should not replace it.
-		return nil, createErr
+		return createErr
 	}
 
 	for i := range existing {
-		if existing[i].Name == workloadName {
-			return &existing[i], nil
+		if existing[i].Name != workloadName {
+			continue
 		}
+
+		return fmt.Errorf(
+			"a workload named %s already exists (%s) and nothing was deployed onto it. "+
+				"If it is this project's, add 'workloadId: %s' to %s and deploy again, which will print "+
+				"what would change before changing it. If it is not, rename this one in %s: %w",
+			workloadName, existing[i].ID, existing[i].ID, path, path, createErr)
 	}
 
-	return nil, createErr
+	return createErr
 }
 
-// adoptSearchLimit bounds the lookup behind a create conflict. Past this many
-// workloads a name scan is the wrong tool, and the conflict itself is still
-// reported.
-const adoptSearchLimit = 100
+// conflictSearchLimit bounds the lookup behind a create conflict. Past this
+// many workloads a name scan is the wrong tool, and the conflict itself is
+// still reported.
+const conflictSearchLimit = 100
 
 // isConflict reports whether err is the API's 409.
 func isConflict(err error) bool {

@@ -367,9 +367,11 @@ func TestRun_WriteBackFailureTellsTheUserHowToRecover(t *testing.T) {
 	assert.Equal(t, "wl-new", result.WorkloadID, "the id has to survive the error or the workload is unfindable")
 }
 
-// TestRun_ConflictAdoptsTheExistingWorkload: failing here would leave the
-// user with a name they cannot deploy and no pointer to what owns it.
-func TestRun_ConflictAdoptsTheExistingWorkload(t *testing.T) {
+// A name that is taken is reported with the id that owns it, and nothing
+// else happens. Deploying onto it instead would bind this project to a
+// workload nothing in the plan described, and report the create that never
+// happened as a success.
+func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
@@ -377,14 +379,30 @@ func TestRun_ConflictAdoptsTheExistingWorkload(t *testing.T) {
 		list: func(int, []string) ([]workload.Workload, error) {
 			return []workload.Workload{{ID: "wl-other", Name: "someone-else"}, *running("wl-existing")}, nil
 		},
+		writeID: func(string, string) error {
+			t.Fatal("a workload this run did not create must not be bound to")
+
+			return nil
+		},
 		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
-			return running("wl-existing"), nil
+			t.Fatal("nothing was deployed, so there is nothing to wait for")
+
+			return nil, nil
 		},
 	})
 
-	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
-	require.NoError(t, err)
-	assert.Equal(t, "wl-existing", result.WorkloadID)
+	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, Lock: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "wl-existing", "the id is what the user cannot see from here")
+	assert.Contains(t, err.Error(), "workloadId: wl-existing")
+	assert.Contains(t, err.Error(), ".datarobot.yaml")
+	assert.Empty(t, result.WorkloadID, "reporting an id would say this run reached that workload")
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr, "the platform's own refusal survives")
+	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
 func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
