@@ -30,3 +30,18 @@ const (
 	keyValue           = "value"
 	keyWorkloadID      = "workloadId"
 )
+
+// Spec field names no validation rule reads, which is why the ledger does not
+// declare them. Both halves of the package still write them: the renderer
+// builds them out of a draft, and binding edits them in place on a live spec.
+// That is two files per rename, which is the situation this one exists to
+// prevent, so they are named here rather than inline in either.
+const (
+	keyA2AEnabled     = "a2aEnabled"
+	keyCPU            = "cpu"
+	keyLivenessProbe  = "livenessProbe"
+	keyPath           = "path"
+	keyReadinessProbe = "readinessProbe"
+	keyStartupProbe   = "startupProbe"
+	keyType           = "type"
+)

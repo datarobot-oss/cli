@@ -269,6 +269,43 @@ func TestLive_ApplyWithoutAPrimaryContainer(t *testing.T) {
 	assert.Contains(t, err.Error(), "no primary container")
 }
 
+// LiteralEnvVars answers one question: which of the workload's variables would
+// a bind copy with the value in the open. A credential-backed entry would not,
+// in either spelling, and reporting one as a literal would send the caller
+// looking for a leak that is not there.
+func TestLive_LiteralEnvVarsSkipsCredentialReferences(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 8080, "imageUri": "nginx:latest",
+         "environmentVars": [
+           {"name": "LOG_LEVEL", "value": "debug"},
+           {"name": "SHORTHAND", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
+           {"name": "OBJECT", "source": "credential",
+            "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"},
+           {"name": "REGION", "value": "eu-west-1"}
+         ]}
+      ]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	assert.Equal(t, []EnvVar{
+		{Name: "LOG_LEVEL", Value: "debug"},
+		{Name: "REGION", Value: "eu-west-1"},
+	}, live.LiteralEnvVars())
+}
+
+// A spec with no container has nothing declared, which is not the same as
+// having something this cannot read.
+func TestLive_LiteralEnvVarsWithoutAContainer(t *testing.T) {
+	live := NewLive("68b0", map[string]any{"name": "empty"}, map[string]any{"name": "empty-artifact"})
+
+	assert.Empty(t, live.LiteralEnvVars())
+}
+
 // An unflagged spec still has a container traffic reaches: the first one.
 func TestLive_PrimaryFallsBackToTheFirstContainer(t *testing.T) {
 	var artifactDoc map[string]any

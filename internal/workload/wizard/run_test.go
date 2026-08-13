@@ -268,6 +268,82 @@ func TestRun_UnknownWorkloadID(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot bind to workload nope")
 }
 
+// boundWithLiveEnv stubs a workload whose artifact declares the given
+// environmentVars JSON, which is the block binding copies verbatim.
+func boundWithLiveEnv(t *testing.T, envVars string) {
+	t.Helper()
+
+	stubLive(t,
+		documentFrom(t, `{"name": "live-app", "importance": "high", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
+			"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
+				 "environmentVars": `+envVars+`}]}]}}`))
+}
+
+// boundRun binds headlessly and returns what reached stderr.
+func boundRun(t *testing.T) string {
+	t.Helper()
+
+	stderr := &bytes.Buffer{}
+	opts := headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	return stderr.String()
+}
+
+// Binding preserves the live spec, so a secret the platform holds in the clear
+// is copied into a file meant to be committed. Nothing can fix that
+// automatically, and headlessly no screen shows the file before it is written,
+// so the warning is the only thing standing between the two.
+func TestRun_BoundWorkloadWarnsAboutLiveSecretLiterals(t *testing.T) {
+	boundWithLiveEnv(t, `[{"name": "LOG_LEVEL", "value": "debug"},
+		{"name": "OPENAI_API_KEY", "value": "sk-live-51H8xQvZmNpKdRt7YwLbG3JfA9"},
+		{"name": "DATABASE_URL", "value": "postgres://carol:hunter2@db.example.com:5432/app"}]`)
+
+	stderr := boundRun(t)
+
+	assert.Contains(t, stderr, "Warning: live-app declares 2 variables whose value looks like a secret")
+	assert.Contains(t, stderr, "OPENAI_API_KEY (looks like an OpenAI-style API key)")
+	assert.Contains(t, stderr, "DATABASE_URL (a URL with carol's password in it)")
+	assert.Contains(t, stderr, manifest.CredentialShorthandPrefix)
+
+	// The warning exists because these values must not spread, so it cannot be
+	// the thing that spreads them.
+	assert.NotContains(t, stderr, "sk-live-51H8xQvZmNpKdRt7YwLbG3JfA9")
+	assert.NotContains(t, stderr, "hunter2")
+
+	// An ordinary setting is not a finding: a warning that fires on LOG_LEVEL
+	// is one the reader learns to skip.
+	assert.NotContains(t, stderr, "LOG_LEVEL")
+}
+
+// The name test and the entropy test are deliberately not used here. Both are
+// calibrated for a screen that can be corrected in one keystroke, and this
+// warning has no such screen behind it.
+func TestRun_BoundWorkloadDoesNotGuessAtLiveValues(t *testing.T) {
+	boundWithLiveEnv(t, `[{"name": "API_URL", "value": "https://api.example.com/v2"},
+		{"name": "BUILD_ID", "value": "a7f3c9d1e5b2f8a4c6d0"},
+		{"name": "SESSION_TOKEN", "value": "short"}]`)
+
+	assert.NotContains(t, boundRun(t), "looks like a secret")
+}
+
+// A value the platform already keeps in the credential store is not in the
+// clear, in either spelling, so neither is a finding.
+func TestRun_BoundWorkloadIgnoresCredentialReferences(t *testing.T) {
+	boundWithLiveEnv(t, `[{"name": "SHORTHAND_KEY", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
+		{"name": "OBJECT_KEY", "source": "credential",
+		 "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}]`)
+
+	assert.NotContains(t, boundRun(t), "looks like a secret")
+}
+
 func TestRun_BoundWorkloadWithoutAnArtifact(t *testing.T) {
 	stubLive(t, documentFrom(t, `{"name": "live-app"}`), nil)
 

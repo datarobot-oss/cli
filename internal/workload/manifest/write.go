@@ -249,6 +249,13 @@ func Write(path string, data []byte) error {
 // workload exists, so the next run finds it. Comments, unknown keys and their
 // order are preserved, because the file is re-emitted from the tree it was
 // parsed into rather than regenerated.
+//
+// This is the one way into the package that does not go through Parse, so it
+// runs the alias guard itself. Reaching here means the file already parsed
+// once, and neither the top-level walk below nor the encoder expands an alias,
+// so nothing known today needs the check. It is here because that reasoning is
+// about the current implementation of two other functions, and a guard that
+// holds only while nobody edits them is not one.
 func WriteWorkloadID(path, workloadID string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -263,6 +270,10 @@ func WriteWorkloadID(path, workloadID string) error {
 
 	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("cannot record the workload id in %s: root must be a YAML mapping", path)
+	}
+
+	if err := checkAliases(doc.Content[0]); err != nil {
+		return fmt.Errorf("cannot record the workload id in %s: %w", path, err)
 	}
 
 	setWorkloadID(doc.Content[0], workloadID)
@@ -334,18 +345,18 @@ func (d Draft) topLevelFields(build field) []field {
 // artifact renders the half that says what runs: the versioned, lockable
 // definition.
 func (d Draft) artifact(build field) *yaml.Node {
-	spec := []field{{key: "type", value: scalar(d.Type)}}
+	spec := []field{{key: keyType, value: scalar(d.Type)}}
 
 	if d.A2AEnabled {
 		spec = append(spec, field{
-			key:     "a2aEnabled",
+			key:     keyA2AEnabled,
 			value:   boolean(true),
 			comment: "discoverable tenant-wide",
 		})
 	}
 
 	probe := mapping(
-		field{key: "path", value: scalar(d.HealthPath)},
+		field{key: keyPath, value: scalar(d.HealthPath)},
 		field{key: keyPort, value: number(d.Port)},
 	)
 
@@ -354,7 +365,7 @@ func (d Draft) artifact(build field) *yaml.Node {
 		{key: keyPrimary, value: boolean(true)},
 		{key: keyPort, value: number(d.Port), comment: "must be 1024 or above"},
 		build,
-		{key: "readinessProbe", value: probe},
+		{key: keyReadinessProbe, value: probe},
 	}
 
 	if vars := d.environmentVars(); vars != nil {
@@ -375,7 +386,7 @@ func (d Draft) artifact(build field) *yaml.Node {
 // runtime renders the half that says how much it runs with.
 func (d Draft) runtime() *yaml.Node {
 	allocation := mapping(
-		field{key: "cpu", value: decimal(d.Runtime.CPU)},
+		field{key: keyCPU, value: decimal(d.Runtime.CPU)},
 		field{key: keyMemory, value: scalar(d.Runtime.Memory)},
 	)
 	allocation.Style = yaml.FlowStyle

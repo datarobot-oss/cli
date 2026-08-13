@@ -147,6 +147,32 @@ func ClassifyEnv(name, value string) EnvVar {
 	return classified
 }
 
+// evidentSecret reports what a value proves about itself, using only the two
+// signals that need no help from the name: an issuer's token shape, and a
+// password embedded in a URL.
+//
+// This is the subset of classify that can be pointed at a value nobody is
+// going to be asked about. The name test and the entropy test are left out
+// deliberately: both are calibrated for a screen where a wrong verdict costs
+// one keystroke, and a caller with no screen to offer cannot pay that. A
+// warning that cries wolf over API_URL is one the reader learns to skip, and
+// the warnings worth reading go with it.
+func evidentSecret(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+
+	for _, signal := range secretValuePatterns {
+		if signal.pattern.MatchString(trimmed) {
+			return "looks like " + signal.reason, true
+		}
+	}
+
+	if user, ok := credentialInURL(trimmed); ok {
+		return "a URL with " + user + "'s password in it", true
+	}
+
+	return "", false
+}
+
 func classify(name, value string) EnvVar {
 	for _, signal := range secretValuePatterns {
 		if signal.pattern.MatchString(value) {

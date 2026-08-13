@@ -64,6 +64,13 @@ const maxExpandedNodes = 1 << 20
 //     nodes that expands to more than a billion. Nothing is stored twice, so
 //     memory looks fine while the walk runs for hours.
 //
+// Depth is not a third shape to guard here. Every caller reaches this through
+// yaml.Unmarshal, which refuses a document nested past its own limit before any
+// of this runs, and an alias chain cannot get a walk deeper than the document
+// either: YAML requires an anchor to be declared before it is used, so the
+// shallow end of a chain is always reached and memoised first.
+// TestParse_RejectsRunawayNesting holds the library to that.
+//
 // A manifest is not necessarily trusted input: cloning a repository and
 // running any command that locates its manifest is enough to reach here.
 func checkAliases(root *yaml.Node) error {

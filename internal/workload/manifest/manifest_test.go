@@ -17,6 +17,7 @@ package manifest
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -139,6 +140,26 @@ func TestParse_RejectsAliasBomb(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "too large")
+}
+
+// Every walk in this package recurses once per level of the document, and the
+// node cap does not bound that: one long chain of nesting is one node per
+// level, so it passes the count while the walk descends the whole way.
+//
+// The bound comes from yaml.Unmarshal, which refuses the document before any
+// walk sees it. That is a guarantee of the library rather than of this package,
+// which is the reason to pin it: were a future version to lift its limit, this
+// fails here rather than as a stack overflow inside Validate.
+func TestParse_RejectsRunawayNesting(t *testing.T) {
+	const depth = 100_000
+
+	// One node per level, so nothing here is near the node cap.
+	require.Less(t, depth, maxExpandedNodes)
+
+	_, err := Parse([]byte("name: my-app\nartifact: "+strings.Repeat("[", depth)+strings.Repeat("]", depth)+"\n"), "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "exceeded max depth")
 }
 
 // What the guard rejects is unbounded expansion, not anchors. Reusing one is
