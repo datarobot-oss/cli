@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/datarobot/cli/internal/version"
@@ -133,7 +134,22 @@ func RedactedReqInfo(req *http.Request) string {
 		return ""
 	}
 
-	return string(requestDump)
+	return RedactSecretFields(string(requestDump))
+}
+
+// secretBodyFields matches a JSON field whose value is a secret. The dump
+// above includes the request body, and bodies carry secrets: POST
+// /credentials/ sends one by definition. Without this, `dr --debug` writes
+// the user's token into the debug log file, permanently and in the clear.
+var secretBodyFields = regexp.MustCompile(
+	`(?i)"(apiToken|password|passwd|secret|privateKey|clientSecret|refreshToken|accessToken|token)"\s*:\s*"[^"]*"`)
+
+// RedactSecretFields replaces the value of every known secret-bearing JSON
+// field in s. It is deliberately keyed on field names rather than on the value
+// looking secret: a redactor that has to recognise a secret will one day fail
+// to, and this one only has to recognise the handful of names the API uses.
+func RedactSecretFields(s string) string {
+	return secretBodyFields.ReplaceAllString(s, `"$1": "[REDACTED]"`)
 }
 
 // TODO: I believe we want to delete this function as there is SetURLToConfig function

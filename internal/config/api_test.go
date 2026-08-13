@@ -22,6 +22,7 @@ import (
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -227,5 +228,26 @@ func (suite *APITestSuite) TestCommandPathToTraceWithAliases() {
 			trace := CommandPathToTrace(cmd.CommandPath())
 			suite.Equal(tc.expectedTrace, trace)
 		})
+	}
+}
+
+// A credential POST sends a secret in its body, and the debug dump includes
+// bodies. Without redaction `dr --debug` writes the user's token into the log
+// file it leaves in their home directory.
+func TestRedactSecretFields(t *testing.T) {
+	const body = `{"name":"my-app/OPENAI_API_KEY","credentialType":"api_token","apiToken":"sk-live-abc123"}`
+
+	out := RedactSecretFields(body)
+
+	assert.NotContains(t, out, "sk-live-abc123")
+	assert.Contains(t, out, "[REDACTED]")
+	assert.Contains(t, out, "my-app/OPENAI_API_KEY", "the name is not a secret and is what makes a log useful")
+	assert.Contains(t, out, "api_token", "the type is not a secret either")
+}
+
+func TestRedactSecretFields_CoversTheOtherNames(t *testing.T) {
+	for _, field := range []string{"password", "secret", "privateKey", "clientSecret", "refreshToken", "token"} {
+		out := RedactSecretFields(`{"` + field + `":"hunter2"}`)
+		assert.NotContains(t, out, "hunter2", "field %q", field)
 	}
 }
