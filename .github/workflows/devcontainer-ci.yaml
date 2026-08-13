@@ -1,0 +1,39 @@
+name: Devcontainer CI
+
+# Validate that the devcontainer image can build the repo and run quality
+# checks, advancing the goal of using the devcontainer image for CI so that
+# local, Codespaces, Droid Computers, and CI share one environment.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .devcontainer/**
+      - Taskfile.yaml
+      - go.mod
+      - .github/workflows/devcontainer-ci.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcontainer-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  devcontainer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and lint inside the devcontainer
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3.1900000450
+        with:
+          # Self-contained and idempotent: sync Go to go.mod, bootstrap
+          # tools/hooks/binary, then run read-only lint. Re-running the
+          # lifecycle hooks is safe even if the action already ran them, and
+          # guarantees a deterministic result if it did not.
+          push: never
+          runCmd: bash .devcontainer/sync-go.sh && task bootstrap && task lint
+          # To also exercise the test suite in the image, append: && task test
