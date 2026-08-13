@@ -131,6 +131,7 @@ type fakes struct {
 	create    func(any) (*workload.Workload, error)
 	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	list      func(int, []string) ([]workload.Workload, error)
+	start     func(string) (*workload.WorkloadOperationResponse, error)
 	lock      func(string) (*workload.Artifact, error)
 	cred      func(string) (*workload.Credential, error)
 	writeID   func(string, string) error
@@ -153,6 +154,7 @@ func install(t *testing.T, f fakes) {
 	swap(t, &createWorkloadFn, f.create)
 	swap(t, &waitWorkloadFn, f.wait)
 	swap(t, &listWorkloadsFn, f.list)
+	swap(t, &startWorkloadFn, f.start)
 	swap(t, &lockArtifactFn, f.lock)
 	swap(t, &getCredentialFn, f.cred)
 	swap(t, &writeWorkloadIDFn, f.writeID)
@@ -507,7 +509,6 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 		{workload.WorkloadStatusTerminated, "remove workloadId"},
 		{workload.WorkloadStatusErrored, "dr workload logs"},
 		{workload.WorkloadStatusProvisioning, "still settling"},
-		{workload.WorkloadStatusStopped, "starting a stopped workload"},
 	}
 
 	for _, c := range cases {
@@ -629,6 +630,121 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "first sync of this project")
+}
+
+// stoppedWorkload is the live fixture, off. Everything else about it still
+// matches boundLiveManifest, so the only thing a plan can find is that it is
+// not running.
+func stoppedWorkload(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveWorkloadJSON)
+	d["status"] = workload.WorkloadStatusStopped
+
+	return d
+}
+
+// TestRun_StartsAStoppedWorkload: `up` means make the file true, and a
+// workload the file describes exactly but which is switched off is not true
+// yet. Nothing is created and nothing is rolled; it is one POST.
+func TestRun_StartsAStoppedWorkload(t *testing.T) {
+	var started string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			started = id
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "queued"}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("the workload exists; starting it is not creating a second one")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started)
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Equal(t, workload.WorkloadStatusRunning, result.Status)
+	assert.Contains(t, stderr, "Starting workload")
+}
+
+// A plan that asks for more than a start is refused whole. Starting the
+// workload first would bring it up on the version it was stopped on and then
+// report a failure, which leaves the user worse off than refusing did.
+func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a refused plan must not have started anything")
+
+			return nil, nil
+		},
+	})
+
+	// One resource figure differs, which makes the run a retune as well as a
+	// start, and retuning is not wired.
+	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 4", 1)
+
+	_, _, err := runIn(t, drifted, Options{NonInteractive: true})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotWired)
+}
+
+func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+		},
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatal("there is nothing to wait for when the start was refused")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot start workload 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+func TestRun_DetachedStartDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatal("--detach returns as soon as the start is requested")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Contains(t, stderr, "start requested")
 }
 
 // TestRun_BadCredentialStopsBeforeTheCreate is the whole point of the check:

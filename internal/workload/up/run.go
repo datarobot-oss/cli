@@ -36,6 +36,7 @@ var (
 	createWorkloadFn  = workload.CreateWorkload
 	waitWorkloadFn    = workload.WaitForWorkload
 	listWorkloadsFn   = workload.ListWorkloads
+	startWorkloadFn   = workload.StartWorkload
 	lockArtifactFn    = workload.LockArtifact
 	getCredentialFn   = workload.GetCredential
 	writeWorkloadIDFn = manifest.WriteWorkloadID
@@ -181,6 +182,15 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return result, err
 	}
 
+	// Starting is checked before the roll refusal so that a stopped workload
+	// the file already agrees with gets deployed rather than turned away.
+	// When the file asks for more than a start, the refusal wins: bringing the
+	// workload up on the version it was stopped on would report a failure
+	// having already changed something, which is the worst of both.
+	if plan.Action() == ActionStarted {
+		return start(result, opts)
+	}
+
 	if !plan.Creates {
 		return result, fmt.Errorf("%w: %s. The plan above is correct; applying it is the next change",
 			ErrNotWired, unwired(plan))
@@ -219,6 +229,10 @@ func unwired(plan Plan) string {
 // deployable refuses the live states that cannot take a deploy, one message
 // each. None of them are guesses: a workload that is gone stays gone, and one
 // that is unsettled may still be on its way somewhere.
+//
+// Stopped is not among them. A stopped workload is one POST away from being
+// deployable, and `up` means "make the file true", which for something that
+// is not running means starting it.
 func deployable(live Live, workloadName string) error {
 	switch live.State {
 	case StateMissing, StateTerminated:
@@ -239,11 +253,7 @@ func deployable(live Live, workloadName string) error {
 			"workload %s is still settling. Wait for it to finish, then deploy",
 			workloadName)
 
-	case StateStopped:
-		return fmt.Errorf(
-			"%w: starting a stopped workload before deploying onto it", ErrNotWired)
-
-	case StateUnbound, StateRunning:
+	case StateUnbound, StateRunning, StateStopped:
 		return nil
 
 	default:
@@ -294,6 +304,37 @@ func create(loaded Loaded, result Result, opts Options) (Result, error) {
 	}
 
 	return settle(created.ID, result, opts, report)
+}
+
+// start brings a stopped workload back up. It is the whole apply for a plan
+// that found nothing else to change: the file and the live spec already
+// agree, and the only thing standing between them and a served request is
+// that the workload is off.
+//
+// Nothing is written back and nothing is compiled here, because nothing is
+// being changed. The workload keeps the artifact it was stopped on, which is
+// the version this run just confirmed the file still describes.
+func start(result Result, opts Options) (Result, error) {
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	err := report.run("Starting workload", func() error {
+		_, startErr := startWorkloadFn(result.WorkloadID)
+
+		return startErr
+	})
+	if err != nil {
+		return result, fmt.Errorf("cannot start workload %s: %w", result.WorkloadID, err)
+	}
+
+	result.Action = ActionStarted
+
+	if opts.Detach {
+		report.say("  Workload %s start requested; not waiting.\n", result.WorkloadID)
+
+		return result, nil
+	}
+
+	return settle(result.WorkloadID, result, opts, report)
 }
 
 // nameTaken turns a create conflict into an error naming what owns the name.
