@@ -182,13 +182,20 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return result, err
 	}
 
+	// Starting counts: it is when the container resolves its references, so a
+	// credential deleted while the workload was off fails minutes later as a
+	// container that will not come up.
+	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+		return result, err
+	}
+
 	// Starting is checked before the roll refusal so that a stopped workload
 	// the file already agrees with gets deployed rather than turned away.
 	// When the file asks for more than a start, the refusal wins: bringing the
 	// workload up on the version it was stopped on would report a failure
 	// having already changed something, which is the worst of both.
 	if plan.Action() == ActionStarted {
-		return start(result, opts)
+		return start(live, result, opts)
 	}
 
 	if !plan.Creates {
@@ -206,12 +213,6 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 			ErrNotWired, mode)
 	}
 
-	// Last check before the first mutation, and the only one that needs the
-	// network: a credential id is the one thing the local ledger cannot judge.
-	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
-		return result, err
-	}
-
 	return create(loaded, result, opts)
 }
 
@@ -219,11 +220,18 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 // roll is wrong for a runtime-only plan, which mints no artifact: the printed
 // plan and the refusal underneath it then disagree about what is missing.
 func unwired(plan Plan) string {
-	if plan.Action() == ActionUpdated {
-		return "changing the runtime settings of a live workload"
+	// Calling a stopped workload "live" contradicts the plan block above,
+	// whose first line says it is to be started.
+	subject := "a live workload"
+	if plan.State == StateStopped {
+		subject = "a stopped workload, which is also not being started"
 	}
 
-	return "rolling a live workload onto a new version"
+	if plan.Action() == ActionUpdated {
+		return "changing the runtime settings of " + subject
+	}
+
+	return "rolling " + subject + " onto a new version"
 }
 
 // deployable refuses the live states that cannot take a deploy, one message
@@ -253,12 +261,30 @@ func deployable(live Live, workloadName string) error {
 			"workload %s is still settling. Wait for it to finish, then deploy",
 			workloadName)
 
-	case StateUnbound, StateRunning, StateStopped:
+	case StateUnbound, StateRunning:
 		return nil
+
+	case StateStopped:
+		return startable(live, workloadName)
 
 	default:
 		return nil
 	}
+}
+
+// startable refuses the one off status that cannot be started. The platform
+// no-ops a start of a suspended workload, so accepting it would poll until
+// the timeout for a transition that is never coming. Interrupted can be
+// started.
+func startable(live Live, workloadName string) error {
+	if live.Status != workload.WorkloadStatusSuspended {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"workload %s is suspended, which a deploy cannot undo: the platform ignores a start while it is "+
+			"in that state. Find out why it was suspended before deploying again",
+		workloadName)
 }
 
 // create makes the workload from the compiled manifest and waits for it to
@@ -314,11 +340,14 @@ func create(loaded Loaded, result Result, opts Options) (Result, error) {
 // Nothing is written back and nothing is compiled here, because nothing is
 // being changed. The workload keeps the artifact it was stopped on, which is
 // the version this run just confirmed the file still describes.
-func start(result Result, opts Options) (Result, error) {
+func start(live Live, result Result, opts Options) (Result, error) {
 	report := newReporter(opts.Stderr, opts.Spinner)
 
+	var ack *workload.WorkloadOperationResponse
+
 	err := report.run("Starting workload", func() error {
-		_, startErr := startWorkloadFn(result.WorkloadID)
+		response, startErr := startWorkloadFn(result.WorkloadID)
+		ack = response
 
 		return startErr
 	})
@@ -326,15 +355,39 @@ func start(result Result, opts Options) (Result, error) {
 		return result, fmt.Errorf("cannot start workload %s: %w", result.WorkloadID, err)
 	}
 
+	// The only place the platform says it did nothing: a start it no-ops comes
+	// back 200 with a message saying so.
+	if ack != nil && ack.Status != "" {
+		report.say("  %s\n", ack.Status)
+	}
+
 	result.Action = ActionStarted
 
 	if opts.Detach {
+		// Without this the envelope reports "stopped" beside an action of
+		// "started", which reads as a run that did nothing.
+		result.Status = startingStatus(live.Status)
+
 		report.say("  Workload %s start requested; not waiting.\n", result.WorkloadID)
 
 		return result, nil
 	}
 
 	return settle(result.WorkloadID, result, opts, report)
+}
+
+// startingStatus is what to report for a start nobody waited for. An
+// unrecognised status is passed through rather than overwritten.
+func startingStatus(was string) string {
+	switch was {
+	case workload.WorkloadStatusStopped,
+		workload.WorkloadStatusSuspended,
+		workload.WorkloadStatusInterrupted:
+		return workload.WorkloadStatusSubmitted
+
+	default:
+		return was
+	}
 }
 
 // nameTaken turns a create conflict into an error naming what owns the name.
@@ -429,6 +482,11 @@ func settle(workloadID string, result Result, opts Options, report *reporter) (R
 // would leave something undeletable behind and a workload that cannot be
 // rolled off it.
 func lock(result Result, report *reporter) (Result, error) {
+	// Already locked, and locking twice is not a no-op at the platform.
+	if result.Locked {
+		return result, nil
+	}
+
 	if result.ArtifactID == "" {
 		return result, errors.New("cannot lock: the platform did not report which artifact is running")
 	}

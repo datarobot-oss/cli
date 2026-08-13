@@ -57,6 +57,10 @@ type Live struct {
 	// change the deploy.
 	State State
 
+	// Status is the platform's own word. Three statuses reduce to
+	// StateStopped and only some of them can be started.
+	Status string
+
 	// ArtifactID is the artifact currently running, "" when there is none.
 	ArtifactID string
 
@@ -100,9 +104,12 @@ func Look(workloadID string) (Live, error) {
 		return Live{}, err
 	}
 
+	status := workloadDoc.String(keyStatus)
+
 	return Live{
 		Live:       manifest.NewLive(workloadID, workloadDoc, artifactDoc),
-		State:      stateFor(workloadDoc.String(keyStatus)),
+		State:      stateFor(status),
+		Status:     status,
 		ArtifactID: artifactID,
 		Endpoint:   workloadDoc.String(keyEndpoint),
 		Locked:     isLocked(artifactDoc.String(keyStatus)),
