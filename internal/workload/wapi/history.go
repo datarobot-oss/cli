@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // HistoryEntry is one JSONL record in the project's history.log. It is deliberately
@@ -47,7 +49,7 @@ func AppendHistory(projectDir string, entry HistoryEntry) error {
 		return fmt.Errorf("marshal history entry: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, atomicFileMode)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fsutil.DefaultFileMode)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrNotInitialized

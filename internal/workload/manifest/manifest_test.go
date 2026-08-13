@@ -101,6 +101,68 @@ func TestParse_InvalidYAML(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid YAML")
 }
 
+// A self-referencing anchor parses without complaint and then makes every walk
+// in this package run forever. yaml.v3 catches the cycle only when decoding
+// into a Go value, which happens after Validate and Compile have walked the
+// raw tree, so Parse is the only place that can stop it.
+func TestParse_RejectsSelfReferencingAnchor(t *testing.T) {
+	_, err := Parse([]byte("name: my-app\nruntime: &rt\n  containerGroups: *rt\n"), "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), `anchor "rt" on line 2 contains itself`)
+}
+
+// aliasBomb is ten levels of eight-wide aliasing: a hundred or so nodes on
+// disk, over a billion once a walk follows every alias. Nothing is stored
+// twice, so neither the file size nor memory use hints at the cost.
+const aliasBomb = `name: my-app
+artifact:
+  l0: &l0 [a, b, c, d, e, f, g, h]
+  l1: &l1 [*l0, *l0, *l0, *l0, *l0, *l0, *l0, *l0]
+  l2: &l2 [*l1, *l1, *l1, *l1, *l1, *l1, *l1, *l1]
+  l3: &l3 [*l2, *l2, *l2, *l2, *l2, *l2, *l2, *l2]
+  l4: &l4 [*l3, *l3, *l3, *l3, *l3, *l3, *l3, *l3]
+  l5: &l5 [*l4, *l4, *l4, *l4, *l4, *l4, *l4, *l4]
+  l6: &l6 [*l5, *l5, *l5, *l5, *l5, *l5, *l5, *l5]
+  l7: &l7 [*l6, *l6, *l6, *l6, *l6, *l6, *l6, *l6]
+  l8: &l8 [*l7, *l7, *l7, *l7, *l7, *l7, *l7, *l7]
+  l9: &l9 [*l8, *l8, *l8, *l8, *l8, *l8, *l8, *l8]
+`
+
+func TestParse_RejectsAliasBomb(t *testing.T) {
+	_, err := Parse([]byte(aliasBomb), "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "too large")
+}
+
+// What the guard rejects is unbounded expansion, not anchors. Reusing one is
+// ordinary YAML, and the value still has to arrive intact at every use.
+func TestParse_KeepsReusedAnchors(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+x-shared: &shared
+  - name: OPENAI_API_KEY
+    value: dr-credential:68b0cccc0000000000000003/apiToken
+artifact:
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars: *shared
+          - name: sidecar
+            environmentVars: *shared
+`), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	require.Len(t, compiled.CredentialRefs, 2)
+	assert.Equal(t, "68b0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)
+	assert.Equal(t, "apiToken", compiled.CredentialRefs[0].Key)
+}
+
 func TestManifest_WorkloadIDAbsent(t *testing.T) {
 	m, err := Parse([]byte("name: my-app\n"), "")
 	require.NoError(t, err)
