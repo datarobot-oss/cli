@@ -246,13 +246,9 @@ func init() {
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
-// Returns true if .env file exists and all required variables are valid.
-//
-// Note: This uses ParseVariablesOnly to read only what's in the .env file, but
-// ValidateEnvironment also checks OS environment variables via os.LookupEnv.
-// This means validation can pass if required variables are set as environment
-// variables even if they're not in the .env file. This is intentional - if the
-// app can run (because vars are available from any source), setup can be skipped.
+// Returns true if .env file exists and all required variables are present in the
+// .env file itself. OS environment variables are intentionally ignored for the
+// skip decision so that an incomplete .env file still triggers the wizard.
 func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	if _, err := os.Stat(dotenvFile); err != nil {
 		// .env doesn't exist, don't skip
@@ -262,7 +258,7 @@ func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
-	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+	result := envbuilder.ValidateEnvironmentFileOnly(repositoryRoot, variables)
 
 	return !result.HasErrors(), nil
 }

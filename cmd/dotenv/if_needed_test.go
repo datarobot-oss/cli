@@ -173,4 +173,104 @@ DATAROBOT_API_TOKEN=test-token
 		require.NoError(t, err)
 		require.False(t, shouldSkip, "Should not skip when DATAROBOT_ENDPOINT is missing")
 	})
+
+	t.Run("should not skip when core variables are set via environment but missing from .env", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		err := os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte("root: []"), 0o644)
+		require.NoError(t, err)
+
+		// Create .env with template variables but no core DataRobot variables
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		envContent := `INFRA_ENABLE_LLM=deployed_llm.py
+LLM_DEPLOYMENT_ID=6a21895b92a225e438d83cc2
+USE_DATAROBOT_LLM_GATEWAY=0
+`
+		err = os.WriteFile(dotenvFile, []byte(envContent), 0o644)
+		require.NoError(t, err)
+
+		// Core variables are set via environment, but should be ignored for skip decision
+		t.Setenv("DATAROBOT_ENDPOINT", "https://app.datarobot.com/api/v2")
+		t.Setenv("DATAROBOT_API_TOKEN", "test-token")
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.False(t, shouldSkip, "Should not skip when .env is missing core variables even if env vars provide them")
+	})
+}
+
+// TestShouldSkipSetup_PresenceOnly covers the synthesis leaks that the file-only mode
+// must not paper over: YAML defaults, auto-generated secrets, and commented-out entries
+// must not satisfy the skip check. The wizard should run whenever the .env file itself
+// does not contain an effective, uncommented value for every required variable.
+func TestShouldSkipSetup_PresenceOnly(t *testing.T) {
+	// helper to scaffold a repo with a parakeet.yaml and a .env, then assert skip.
+	assertSkip := func(t *testing.T, parakeetYaml, envContent string, wantSkip bool, msg string) {
+		t.Helper()
+
+		tmpDir := t.TempDir()
+
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".datarobot", "cli"), 0o755))
+
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".datarobot", "cli", "parakeet.yaml"), []byte(parakeetYaml), 0o644))
+
+		dotenvFile := filepath.Join(tmpDir, ".env")
+		require.NoError(t, os.WriteFile(dotenvFile, []byte(envContent), 0o644))
+
+		shouldSkip, err := shouldSkipSetup(tmpDir, dotenvFile)
+		require.NoError(t, err)
+		require.Equal(t, wantSkip, shouldSkip, msg)
+	}
+
+	t.Run("does not skip when a required var is satisfied only by a YAML default", func(t *testing.T) {
+		parakeetYaml := `root:
+  - env: REQUIRED_WITH_DEFAULT
+    default: some-default-value
+    help: A required variable that has a default`
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+DATAROBOT_API_TOKEN=test-token
+`
+		assertSkip(t, parakeetYaml, envContent, false,
+			"Should not skip when REQUIRED_WITH_DEFAULT is absent from .env even though it has a YAML default")
+	})
+
+	t.Run("does not skip when a required secret is satisfied only by generate:true", func(t *testing.T) {
+		parakeetYaml := `root:
+  - env: GENERATED_SECRET
+    type: secret_string
+    generate: true
+    help: A required generated secret`
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+DATAROBOT_API_TOKEN=test-token
+`
+		assertSkip(t, parakeetYaml, envContent, false,
+			"Should not skip when GENERATED_SECRET is absent from .env even though it would be auto-generated")
+	})
+
+	t.Run("does not skip when a required var is commented out in .env", func(t *testing.T) {
+		parakeetYaml := `root:
+  - env: REQUIRED_VAR
+    help: A required variable`
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+DATAROBOT_API_TOKEN=test-token
+# REQUIRED_VAR=commented-out-value
+`
+		assertSkip(t, parakeetYaml, envContent, false,
+			"Should not skip when REQUIRED_VAR is commented out in .env")
+	})
+
+	t.Run("skips when a required var is present and uncommented in .env", func(t *testing.T) {
+		parakeetYaml := `root:
+  - env: REQUIRED_VAR
+    help: A required variable`
+		envContent := `DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2
+DATAROBOT_API_TOKEN=test-token
+REQUIRED_VAR=value
+`
+		assertSkip(t, parakeetYaml, envContent, true,
+			"Should skip when all required vars are present and uncommented in .env")
+	})
 }
