@@ -75,3 +75,32 @@ func TestCmd_RejectsPositionalArgs(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 }
+
+func TestCmd_BlankEnclaveFailsBeforeNetwork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"name": "wl", "artifactId": "art-1"}`), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", ""})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --enclave")
+}
+
+func TestCmd_EnclaveConflictsWithSpecPin(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	spec := `{"name": "wl", "artifactId": "art-1", "runtime": {"enclaves": ["prod-west"], "enclaveSelectionPolicy": "manual"}}`
+	require.NoError(t, os.WriteFile(path, []byte(spec), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already sets")
+}
