@@ -46,6 +46,16 @@
 // because a typed round trip silently drops every field this release has not
 // heard of, and half the point is that those survive.
 //
+// A deploy comes in two shapes, decided by whether the manifest names a
+// published image or asks the platform to build one. The first is a single
+// create. The second has to make an artifact, push the working tree to it and
+// wait for an image before there is anything for a workload to run, and it
+// does them in that order so a run that dies partway leaves something the
+// next one picks up rather than a workload pointing at an image that does not
+// exist. Which artifact a checkout pushes to is local state, kept beside the
+// code rather than in the committed manifest, because it is a property of the
+// clone and not of the project.
+//
 // Non-scope: no terminal output and no cobra. Rendering a plan and running
 // the phases belong to the command; this package hands back values.
 package up

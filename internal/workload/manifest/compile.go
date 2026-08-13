@@ -93,6 +93,71 @@ func (m *Manifest) Compile() (*Compiled, error) {
 	return &Compiled{Payload: payload, WorkloadID: workloadID, CredentialRefs: refs}, nil
 }
 
+// ArtifactPayload is the inline artifact block on its own, which is exactly
+// what POST /artifacts/ accepts: the manifest carries the create request
+// verbatim, so there is nothing to translate.
+//
+// A deploy needs this whenever the platform builds the image, because the
+// artifact has to exist before there is anywhere to sync code to, and it has
+// to be built before there is an image for a workload to run. A manifest that
+// binds an existing artifact by id has no block to hand over and says so.
+func (c *Compiled) ArtifactPayload() (json.RawMessage, error) {
+	payload, err := c.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	artifact, ok := payload[keyArtifact]
+	if !ok {
+		return nil, fmt.Errorf("the manifest has no %s block to create", keyArtifact)
+	}
+
+	raw, err := json.Marshal(artifact)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the %s block to JSON: %w", keyArtifact, err)
+	}
+
+	return raw, nil
+}
+
+// BindArtifact is the create payload with the inline artifact swapped for a
+// reference to one that already exists. The two forms are mutually exclusive
+// in the API as they are in the manifest, so the block is removed rather than
+// left alongside the id.
+//
+// This is what a built deploy sends. The artifact was created from the block,
+// then filled with code and an image; sending the block again would ask the
+// platform for a second, empty artifact.
+func (c *Compiled) BindArtifact(artifactID string) (json.RawMessage, error) {
+	payload, err := c.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	delete(payload, keyArtifact)
+	payload[keyArtifactID] = artifactID
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the manifest to JSON: %w", err)
+	}
+
+	return raw, nil
+}
+
+// decode reads the compiled payload back into a tree. It is decoded per call
+// rather than cached because each caller edits its copy, and a shared one
+// would let one deploy's edit leak into another's payload.
+func (c *Compiled) decode() (map[string]any, error) {
+	var payload map[string]any
+
+	if err := json.Unmarshal(c.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("cannot read the compiled manifest: %w", err)
+	}
+
+	return payload, nil
+}
+
 // expandCredentialShorthand rewrites every environmentVars entry carrying
 // the shorthand into the API object form. The walk is shape-agnostic so
 // environmentVars is found wherever the spec puts it: containerGroups,

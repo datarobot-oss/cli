@@ -245,3 +245,125 @@ func TestCompile_PayloadIsValidCreateSpec(t *testing.T) {
 
 	assert.NoError(t, workload.ValidateWorkloadCreateRequest(compiled.Payload))
 }
+
+// buildManifest asks the platform to build, which is the only case where the
+// artifact has to be created on its own before a workload can reference it.
+const buildManifest = `name: my-app
+importance: low
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageBuildConfig:
+              dockerfile:
+                source: provided
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+`
+
+// The manifest carries the artifact-create request verbatim, so lifting the
+// block out is the whole of the translation.
+func TestArtifactPayload_IsTheBlockItself(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.ArtifactPayload()
+	require.NoError(t, err)
+
+	var artifact map[string]any
+
+	require.NoError(t, json.Unmarshal(payload, &artifact))
+	assert.Equal(t, "my-app-artifact", artifact["name"])
+	assert.Contains(t, artifact, "spec")
+	assert.NotContains(t, artifact, "runtime", "the sizing half is the workload's, not the artifact's")
+}
+
+// Credential shorthand is expanded on the way out here as it is everywhere
+// else, because this payload reaches the API without passing through the
+// workload create.
+func TestArtifactPayload_CarriesExpandedCredentials(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - containers:
+          - name: primary
+            imageUri: a:1
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:68f0cccc0000000000000003/apiToken
+`), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.ArtifactPayload()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(payload), "drCredentialId")
+	assert.NotContains(t, string(payload), CredentialShorthandPrefix)
+}
+
+func TestArtifactPayload_NoBlockToCreate(t *testing.T) {
+	m, err := Parse([]byte("name: my-app\nartifactId: 68b0bbbb0000000000000002\n"), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	_, err = compiled.ArtifactPayload()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no artifact block")
+}
+
+// The two forms are mutually exclusive in the API as they are in the file, so
+// binding removes the block rather than leaving it beside the id. Sending
+// both would ask the platform for a second, empty artifact.
+func TestBindArtifact_ReplacesTheInlineBlock(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.BindArtifact("68a0000000000000000000a1")
+	require.NoError(t, err)
+
+	var bound map[string]any
+
+	require.NoError(t, json.Unmarshal(payload, &bound))
+	assert.Equal(t, "68a0000000000000000000a1", bound["artifactId"])
+	assert.NotContains(t, bound, "artifact")
+	assert.Equal(t, "my-app", bound["name"])
+	assert.Contains(t, bound, "runtime")
+	assert.Contains(t, bound, "importance", "everything the file said about the workload still travels")
+}
+
+// Each call edits its own copy, so one deploy's binding cannot leak into
+// another's payload.
+func TestBindArtifact_LeavesTheCompiledPayloadAlone(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	_, err = compiled.BindArtifact("68a0000000000000000000a1")
+	require.NoError(t, err)
+
+	assert.Contains(t, string(compiled.Payload), `"artifact"`)
+	assert.NotContains(t, string(compiled.Payload), "artifactId")
+}
