@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/up"
@@ -49,12 +50,21 @@ func stubRun(t *testing.T, result up.Result, err error) *up.Options {
 func runCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
+	return runCmdWithInput(t, "", args...)
+}
+
+// runCmdWithInput is runCmd with something waiting on stdin, for the one
+// question the deploy asks.
+func runCmdWithInput(t *testing.T, input string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+
 	cmd := Cmd()
 
 	var out, errOut bytes.Buffer
 
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(input))
 	cmd.SetArgs(args)
 
 	// The command's own PreRunE authenticates, which a unit test must not do.
@@ -286,6 +296,53 @@ func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.Contains(t, err.Error(), "manifest")
+}
+
+// The deploy asks one question, and only the exact name answers it. The
+// question goes to stderr because stdout carries the endpoint.
+func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
+	cases := []struct {
+		typed string
+		want  bool
+	}{
+		{"my-app\n", true},
+		{"  my-app  \n", true},
+		{"y\n", false},
+		{"My-App\n", false},
+		{"\n", false},
+		{"", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.typed, func(t *testing.T) {
+			cmd := Cmd()
+
+			var errOut bytes.Buffer
+
+			cmd.SetErr(&errOut)
+			cmd.SetIn(strings.NewReader(c.typed))
+
+			agreed, err := typedConfirm(cmd)("Type the workload name: ", "my-app")
+			require.NoError(t, err)
+
+			assert.Equal(t, c.want, agreed)
+			assert.Contains(t, errOut.String(), "Type the workload name: ")
+		})
+	}
+}
+
+// The question reaches the deploy wired up, so a locked production roll can
+// actually be answered from a terminal.
+func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmdWithInput(t, "my-app\n")
+	require.NoError(t, err)
+	require.NotNil(t, seen.Confirm)
+
+	agreed, err := seen.Confirm("anything? ", "my-app")
+	require.NoError(t, err)
+	assert.True(t, agreed)
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {

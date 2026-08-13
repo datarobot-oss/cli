@@ -33,24 +33,27 @@ import (
 
 // Test seams. The deploy is mostly network, and the tests are not.
 var (
-	runWizardFn       = wizard.Run
-	createWorkloadFn  = workload.CreateWorkload
-	waitWorkloadFn    = workload.WaitForWorkload
-	listWorkloadsFn   = workload.ListWorkloads
-	startWorkloadFn   = workload.StartWorkload
-	createArtifactFn  = workload.CreateArtifact
-	getArtifactFn     = workload.GetArtifact
-	lockArtifactFn    = workload.LockArtifact
-	triggerBuildFn    = workload.TriggerArtifactBuild
-	waitBuildFn       = workload.WaitForBuild
-	listBuildsFn      = workload.ListArtifactBuilds
-	getCredentialFn   = workload.GetCredential
-	writeWorkloadIDFn = manifest.WriteWorkloadID
-	codeChangeFn      = defaultCodeChange
-	projectLinkedFn   = wapi.Exists
-	loadProjectFn     = wapi.LoadConfig
-	initProjectFn     = wapi.Initialize
-	syncProjectFn     = defaultSync
+	runWizardFn        = wizard.Run
+	createWorkloadFn   = workload.CreateWorkload
+	waitWorkloadFn     = workload.WaitForWorkload
+	listWorkloadsFn    = workload.ListWorkloads
+	startWorkloadFn    = workload.StartWorkload
+	createArtifactFn   = workload.CreateArtifact
+	getArtifactFn      = workload.GetArtifact
+	lockArtifactFn     = workload.LockArtifact
+	triggerBuildFn     = workload.TriggerArtifactBuild
+	waitBuildFn        = workload.WaitForBuild
+	listBuildsFn       = workload.ListArtifactBuilds
+	getCredentialFn    = workload.GetCredential
+	guardReplacementFn = workload.GuardNoActiveReplacement
+	startReplacementFn = workload.StartReplacement
+	waitReplacementFn  = workload.WaitForReplacement
+	writeWorkloadIDFn  = manifest.WriteWorkloadID
+	codeChangeFn       = defaultCodeChange
+	projectLinkedFn    = wapi.Exists
+	loadProjectFn      = wapi.LoadConfig
+	initProjectFn      = wapi.Initialize
+	syncProjectFn      = defaultSync
 )
 
 // ErrNotWired reports a path the plan understands but the apply cannot take
@@ -80,6 +83,12 @@ type Options struct {
 	// which it can be when code reached the artifact through
 	// `dr artifact code sync` rather than through a deploy.
 	ForceBuild bool
+
+	// Confirm asks the user a question that only typing want exactly may
+	// answer. It is used once, before rolling a locked production version,
+	// and nil when there is no terminal to ask on. Reading the answer is the
+	// caller's job because only it knows where the user's input comes from.
+	Confirm func(question, want string) (bool, error)
 
 	// Lock makes the artifact that ends up live immutable and permanent.
 	// Locking is one-way, so it happens last, only after the workload is
@@ -251,12 +260,21 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return start(live, result, opts)
 	}
 
-	if !plan.Creates {
+	// What is left is a runtime-only change: no new version is minted, so
+	// none of the machinery below applies and a settings update is its own
+	// call, which the platform has not given the CLI yet.
+	if !plan.Creates && !plan.RollsArtifact() {
 		return result, fmt.Errorf("%w: %s. The plan above is correct; applying it is the next change",
 			ErrNotWired, unwired(plan))
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
+
+	// A workload that already exists is replaced rather than created: the
+	// endpoint has to survive, and something is serving on it meanwhile.
+	if plan.RollsArtifact() {
+		return roll(loaded, live, plan, result, opts, report)
+	}
 
 	// A published image is one POST. Anything the platform builds has to be
 	// given somewhere to put the code and time to turn it into an image
@@ -268,22 +286,16 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	return create(loaded, loaded.Compiled.Payload, result, opts, report)
 }
 
-// unwired names the change the plan asks for. Calling every live workload a
-// roll is wrong for a runtime-only plan, which mints no artifact: the printed
-// plan and the refusal underneath it then disagree about what is missing.
+// unwired names the change the plan asks for. Now that the roll is wired that
+// is only ever a runtime-only one, and calling a stopped workload "live"
+// contradicts the plan block above, whose first line says it is to be started.
 func unwired(plan Plan) string {
-	// Calling a stopped workload "live" contradicts the plan block above,
-	// whose first line says it is to be started.
 	subject := "a live workload"
 	if plan.State == StateStopped {
 		subject = "a stopped workload, which is also not being started"
 	}
 
-	if plan.Action() == ActionUpdated {
-		return "changing the runtime settings of " + subject
-	}
-
-	return "rolling " + subject + " onto a new version"
+	return "changing the runtime settings of " + subject
 }
 
 // deployable refuses the live states that cannot take a deploy, one message
@@ -542,7 +554,8 @@ func settle(workloadID string, result Result, opts Options, report *reporter) (R
 // would leave something undeletable behind and a workload that cannot be
 // rolled off it.
 func lock(result Result, report *reporter) (Result, error) {
-	// Already locked, and locking twice is not a no-op at the platform.
+	// Already locked, either by a roll onto locked production or before the
+	// workload was stopped. Locking twice is not a no-op at the platform.
 	if result.Locked {
 		return result, nil
 	}

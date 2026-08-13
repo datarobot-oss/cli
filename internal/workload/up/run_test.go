@@ -156,6 +156,12 @@ type fakes struct {
 	build       func(string) (*workload.BuildTriggerResponse, error)
 	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	builds      func(string, int) ([]workload.Build, error)
+
+	// The roll track: refuse to queue a second swap, start one, follow it.
+	guard       func(string) error
+	replace     func(string, string) (*workload.Replacement, error)
+	waitReplace func(string, *workload.Replacement, time.Duration, time.Duration,
+		func(*workload.Replacement)) (*workload.Replacement, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -202,6 +208,13 @@ func install(t *testing.T, f fakes) {
 	swap(t, &triggerBuildFn, f.build)
 	swap(t, &waitBuildFn, f.waitBuild)
 	swap(t, &listBuildsFn, f.builds)
+
+	// Nothing stands in the way of a rollout unless a test says so, because
+	// the quiet answer is the one every other roll test wants.
+	force(t, &guardReplacementFn, func(string) error { return nil })
+	swap(t, &guardReplacementFn, f.guard)
+	swap(t, &startReplacementFn, f.replace)
+	swap(t, &waitReplacementFn, f.waitReplace)
 }
 
 // swap installs fake over the seam at target, and does nothing when the test

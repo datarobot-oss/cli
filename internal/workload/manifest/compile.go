@@ -60,6 +60,12 @@ type Compiled struct {
 	Payload json.RawMessage
 	// WorkloadID is the stripped binding, "" when the manifest is unbound.
 	WorkloadID string
+	// ArtifactID is the artifact the file binds to by id, "" when the file
+	// describes one inline instead. Unlike WorkloadID it stays in Payload,
+	// because it is the platform's own field rather than a CLI convenience.
+	// A deploy reads it to know there is nothing to create: the version being
+	// rolled onto already exists.
+	ArtifactID string
 	// CredentialRefs lists every credential the payload references.
 	CredentialRefs []CredentialRef
 }
@@ -81,6 +87,7 @@ func (m *Manifest) Compile() (*Compiled, error) {
 	}
 
 	workloadID := m.WorkloadID()
+	artifactID, _ := scalarString(mapValue(m.root, keyArtifactID))
 
 	delete(doc, keyWorkloadID)
 	expandCredentialShorthand(doc)
@@ -90,7 +97,12 @@ func (m *Manifest) Compile() (*Compiled, error) {
 		return nil, fmt.Errorf("cannot convert manifest to JSON: %w", err)
 	}
 
-	return &Compiled{Payload: payload, WorkloadID: workloadID, CredentialRefs: refs}, nil
+	return &Compiled{
+		Payload:        payload,
+		WorkloadID:     workloadID,
+		ArtifactID:     artifactID,
+		CredentialRefs: refs,
+	}, nil
 }
 
 // ArtifactPayload is the inline artifact block on its own, which is exactly
