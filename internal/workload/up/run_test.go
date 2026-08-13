@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,33 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
 
+// unboundCredentialManifest names a stored credential, which is the one thing
+// in the file no local check can judge.
+const unboundCredentialManifest = `name: my-app
+importance: low
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:68b0cccc0000000000000003/apiToken
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
 // fakes collects the seams a run touches. A zero value is a run where every
 // call fails loudly, so a test only wires what it means to exercise.
 type fakes struct {
@@ -104,74 +132,58 @@ type fakes struct {
 	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	list      func(int, []string) ([]workload.Workload, error)
 	lock      func(string) (*workload.Artifact, error)
+	cred      func(string) (*workload.Credential, error)
 	writeID   func(string, string) error
 	code      func(Loaded, Live) (CodeChange, error)
 	workloadD func(string) (workload.Document, error)
 	artifactD func(string) (workload.Document, error)
 }
 
-// install swaps every seam and restores them afterwards.
+// install swaps in the seams the test supplied and restores them afterwards.
 func install(t *testing.T, f fakes) {
 	t.Helper()
 
-	prev := struct {
-		wizard    func(wizard.Options) (wizard.Result, error)
-		create    func(any) (*workload.Workload, error)
-		wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-		list      func(int, []string) ([]workload.Workload, error)
-		lock      func(string) (*workload.Artifact, error)
-		writeID   func(string, string) error
-		code      func(Loaded, Live) (CodeChange, error)
-		workloadD func(string) (workload.Document, error)
-		artifactD func(string) (workload.Document, error)
-	}{
-		runWizardFn, createWorkloadFn, waitWorkloadFn, listWorkloadsFn,
-		lockArtifactFn, writeWorkloadIDFn, codeChangeFn, getWorkloadDocFn, getArtifactDocFn,
+	// Two seams default to doing nothing rather than to the real thing. A
+	// test that cares about neither the write-back nor the working tree
+	// should not have to say so, and neither may touch a real project.
+	force(t, &writeWorkloadIDFn, func(string, string) error { return nil })
+	force(t, &codeChangeFn, func(Loaded, Live) (CodeChange, error) { return CodeChange{}, nil })
+
+	swap(t, &runWizardFn, f.wizard)
+	swap(t, &createWorkloadFn, f.create)
+	swap(t, &waitWorkloadFn, f.wait)
+	swap(t, &listWorkloadsFn, f.list)
+	swap(t, &lockArtifactFn, f.lock)
+	swap(t, &getCredentialFn, f.cred)
+	swap(t, &writeWorkloadIDFn, f.writeID)
+	swap(t, &codeChangeFn, f.code)
+	swap(t, &getWorkloadDocFn, f.workloadD)
+	swap(t, &getArtifactDocFn, f.artifactD)
+}
+
+// swap installs fake over the seam at target, and does nothing when the test
+// did not supply one. reflect is what makes that distinction possible: a nil
+// func in a type parameter is still a value, so there is no way to compare it
+// against nil directly.
+func swap[F any](t *testing.T, target *F, fake F) {
+	t.Helper()
+
+	if reflect.ValueOf(fake).IsNil() {
+		return
 	}
 
-	if f.wizard != nil {
-		runWizardFn = f.wizard
-	}
+	force(t, target, fake)
+}
 
-	if f.create != nil {
-		createWorkloadFn = f.create
-	}
+// force installs value unconditionally, restoring what was there when the
+// test ends.
+func force[F any](t *testing.T, target *F, value F) {
+	t.Helper()
 
-	if f.wait != nil {
-		waitWorkloadFn = f.wait
-	}
+	prev := *target
+	*target = value
 
-	if f.list != nil {
-		listWorkloadsFn = f.list
-	}
-
-	if f.lock != nil {
-		lockArtifactFn = f.lock
-	}
-
-	writeWorkloadIDFn = func(path, id string) error { return nil }
-	if f.writeID != nil {
-		writeWorkloadIDFn = f.writeID
-	}
-
-	codeChangeFn = func(Loaded, Live) (CodeChange, error) { return CodeChange{}, nil }
-	if f.code != nil {
-		codeChangeFn = f.code
-	}
-
-	if f.workloadD != nil {
-		getWorkloadDocFn = f.workloadD
-	}
-
-	if f.artifactD != nil {
-		getArtifactDocFn = f.artifactD
-	}
-
-	t.Cleanup(func() {
-		runWizardFn, createWorkloadFn, waitWorkloadFn, listWorkloadsFn = prev.wizard, prev.create, prev.wait, prev.list
-		lockArtifactFn, writeWorkloadIDFn, codeChangeFn = prev.lock, prev.writeID, prev.code
-		getWorkloadDocFn, getArtifactDocFn = prev.workloadD, prev.artifactD
-	})
+	t.Cleanup(func() { *target = prev })
 }
 
 // runIn deploys the manifest written into a fresh directory.
@@ -617,4 +629,58 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "first sync of this project")
+}
+
+// TestRun_BadCredentialStopsBeforeTheCreate is the whole point of the check:
+// the reference is syntactically fine, so nothing local can catch it, and
+// without the lookup the mistake would surface as a container that will not
+// start once the deploy has already been paid for.
+func TestRun_BadCredentialStopsBeforeTheCreate(t *testing.T) {
+	install(t, fakes{
+		cred: func(string) (*workload.Credential, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("nothing may be created before the credentials are known to resolve")
+
+			return nil, nil
+		},
+	})
+
+	_, stderr, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OPENAI_API_KEY")
+	assert.Contains(t, err.Error(), "does not exist")
+	assert.Contains(t, stderr, "+ workload", "the plan is printed before the refusal, as on any other track")
+}
+
+// A dry run reaches no mutation, so it never spends the lookups. Verifying
+// would make --dry-run fail on a file it was asked only to describe.
+func TestRun_DryRunDoesNotVerifyCredentials(t *testing.T) {
+	install(t, fakes{
+		cred: func(string) (*workload.Credential, error) {
+			t.Fatal("a dry run mutates nothing, so it has nothing to verify against")
+
+			return nil, nil
+		},
+	})
+
+	_, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+}
+
+func TestRun_ResolvedCredentialDeploys(t *testing.T) {
+	install(t, fakes{
+		cred: func(id string) (*workload.Credential, error) {
+			return &workload.Credential{CredentialID: id, Name: "my-app/OPENAI_API_KEY"}, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-1"), nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-1"), nil
+		},
+	})
+
+	result, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, "wl-1", result.WorkloadID)
 }

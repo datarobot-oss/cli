@@ -37,6 +37,7 @@ var (
 	waitWorkloadFn    = workload.WaitForWorkload
 	listWorkloadsFn   = workload.ListWorkloads
 	lockArtifactFn    = workload.LockArtifact
+	getCredentialFn   = workload.GetCredential
 	writeWorkloadIDFn = manifest.WriteWorkloadID
 	codeChangeFn      = defaultCodeChange
 )
@@ -193,6 +194,12 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 			"%w: creating a workload whose image the platform builds (%s mode). "+
 				"Publishing the image yourself and switching the manifest to an imageUri works today",
 			ErrNotWired, mode)
+	}
+
+	// Last check before the first mutation, and the only one that needs the
+	// network: a credential id is the one thing the local ledger cannot judge.
+	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+		return result, err
 	}
 
 	return create(loaded, result, opts)
@@ -440,11 +447,3 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 
 	return CodeChange{Applies: true, Files: len(plan.Uploads) + len(plan.Deletes)}, nil
 }
-
-// Credentials are not verified before the deploy yet. Compile hands back
-// every dr-credential reference precisely so each can be checked with one GET
-// before anything mutates, which turns a mistyped id from a container that
-// will not start into an error printed in milliseconds. The lookup itself
-// lives with the other workload API clients and reaches this stack only once
-// that change is merged; wiring it is a few lines over Compiled.CredentialRefs
-// at the top of Run.
