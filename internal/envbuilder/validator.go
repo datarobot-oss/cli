@@ -86,23 +86,29 @@ func (r EnvironmentValidationError) Error() string {
 // 2. Validates all required UserPrompts in active sections
 // 3. Validates core DataRobot variables (DATAROBOT_ENDPOINT, DATAROBOT_API_TOKEN).
 func ValidateEnvironment(repoRoot string, variables Variables) EnvironmentValidationError {
-	return validateEnvironment(repoRoot, variables, true)
+	return validateEnvironment(repoRoot, variables, true, true)
 }
 
-// ValidateEnvironmentFileOnly validates that all required environment variables are set
-// using only the .env file contents, ignoring OS environment variables. This is used
-// for --if-needed skip checks where we want to know whether the .env file itself is complete.
+// ValidateEnvironmentFileOnly validates that all required environment variables are present
+// as effective, uncommented entries in the .env file. It ignores OS environment variables,
+// YAML defaults, and auto-generated secrets, so a variable that is satisfied only by a
+// default or a generated value does not count as present. This is used for --if-needed
+// skip checks where we want to know whether the .env file itself is complete.
+//
+// The PULUMI_CONFIG_PASSPHRASE viper-config value is an intentional non-file exception
+// (see resolvePulumiPassphrase); it counts as present even though it is stored in the CLI
+// config rather than the .env file.
 func ValidateEnvironmentFileOnly(repoRoot string, variables Variables) EnvironmentValidationError {
-	return validateEnvironment(repoRoot, variables, false)
+	return validateEnvironment(repoRoot, variables, false, false)
 }
 
-func validateEnvironment(repoRoot string, variables Variables, includeEnv bool) EnvironmentValidationError {
+func validateEnvironment(repoRoot string, variables Variables, includeEnv, synthesize bool) EnvironmentValidationError {
 	result := EnvironmentValidationError{
 		Results: make([]ValidationResult, 0),
 	}
 
 	// Gather all user prompts from the repository
-	userPrompts, err := gatherUserPrompts(repoRoot, variables, includeEnv)
+	userPrompts, err := gatherUserPrompts(repoRoot, variables, includeEnv, synthesize)
 	if err != nil {
 		result.Results = append(result.Results, ValidationResult{
 			Field:   "prompts",
@@ -123,7 +129,9 @@ func validateEnvironment(repoRoot string, variables Variables, includeEnv bool) 
 // and environment variables (environment variables take precedence).
 // When includeEnv is false, OS environment variables are ignored and only
 // .env file values (plus defaults and viper config) are used.
-func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv bool) []UserPrompt {
+// When synthesize is false (presence-only mode), commented .env entries count as
+// absent and YAML defaults are not applied.
+func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv, synthesize bool) []UserPrompt {
 	// Special handling for PULUMI_CONFIG_PASSPHRASE from viper config
 	// This happens regardless of whether variables exist
 	for p := range prompts {
@@ -137,7 +145,7 @@ func promptsWithValues(prompts []UserPrompt, variables Variables, includeEnv boo
 	}
 
 	for p, prompt := range prompts {
-		prompts[p] = resolvePromptValue(prompt, variables, includeEnv)
+		prompts[p] = resolvePromptValue(prompt, variables, includeEnv, synthesize)
 	}
 
 	return prompts
@@ -169,7 +177,10 @@ func resolvePulumiPassphrase(currentValue string, includeEnv bool) string {
 
 // resolvePromptValue determines the effective value for a prompt based on
 // .env file contents and optionally OS environment variables.
-func resolvePromptValue(prompt UserPrompt, variables Variables, includeEnv bool) UserPrompt {
+// In presence-only mode (synthesize false), commented .env entries are treated as
+// absent and YAML defaults are not applied, so only an uncommented file entry (or the
+// PULUMI_CONFIG_PASSPHRASE viper-config exception) can satisfy the prompt.
+func resolvePromptValue(prompt UserPrompt, variables Variables, includeEnv, synthesize bool) UserPrompt {
 	if includeEnv {
 		// Capture existing env var values (highest priority)
 		if existingEnvValue, ok := os.LookupEnv(prompt.Env); ok {
@@ -180,6 +191,13 @@ func resolvePromptValue(prompt UserPrompt, variables Variables, includeEnv bool)
 	}
 
 	if v, found := variables.find(prompt); found {
+		// In presence-only mode, a commented .env entry counts as absent: leave Value
+		// unset so the prompt fails validation. Any prior value (e.g. the PULUMI
+		// passphrase from viper config) is preserved.
+		if !synthesize && v.Commented {
+			return prompt
+		}
+
 		// .env file value overrides viper config
 		prompt.Value = v.Value
 		prompt.Commented = v.Commented
@@ -187,8 +205,9 @@ func resolvePromptValue(prompt UserPrompt, variables Variables, includeEnv bool)
 		return prompt
 	}
 
-	if prompt.Value == "" {
-		// Only fall back to default if nothing else (including viper config) set a value
+	// Only apply YAML defaults when synthesizing; in presence-only mode an absent
+	// variable stays absent.
+	if synthesize && prompt.Value == "" {
 		prompt.Value = prompt.Default
 	}
 
