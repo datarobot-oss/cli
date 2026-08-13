@@ -112,7 +112,7 @@ artifact:
 	var payload map[string]any
 
 	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
-	assert.NotContains(t, string(compiled.Payload), credentialShorthandPrefix+"68f0")
+	assert.NotContains(t, string(compiled.Payload), CredentialShorthandPrefix+"68f0")
 
 	require.Len(t, compiled.CredentialRefs, 1)
 	assert.Equal(t, "68f0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)

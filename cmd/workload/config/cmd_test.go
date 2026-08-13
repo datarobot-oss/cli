@@ -18,8 +18,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -222,4 +224,87 @@ func TestCmd_YesImpliesNonInteractive(t *testing.T) {
 	_, _, err := runCmd(t, "--dir", project(t), "--yes", "--name", "my-app")
 	require.NoError(t, err)
 	assert.False(t, ran)
+}
+
+// projectWithEnv is a buildable project carrying a .env, which is what puts
+// the classifier and the reporting below in play.
+func projectWithEnv(t *testing.T, env string) string {
+	t.Helper()
+
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte(env), 0o600))
+
+	return dir
+}
+
+// A pipeline reading only the envelope has to be able to see that the file it
+// just generated names a placeholder rather than a credential, or it will
+// deploy something that cannot start.
+func TestCmd_JSONEnvelopeCarriesTheEnvCounts(t *testing.T) {
+	dir := projectWithEnv(t, "LOG_LEVEL=debug\nAPI_TOKEN=sk-live-51H8xQvZmNpKdRt7YwLbG3JfA9\n")
+
+	stdout, _, err := runCmd(t, "--dir", dir, "--name", "my-app", "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope struct {
+		Config struct {
+			EnvKeysListed     int      `json:"envKeysListed"`
+			EnvSecretsPending int      `json:"envSecretsPending"`
+			EnvLiterals       []string `json:"envLiterals"`
+		} `json:"config"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+
+	assert.Equal(t, 2, envelope.Config.EnvKeysListed)
+	assert.Equal(t, 1, envelope.Config.EnvSecretsPending)
+	assert.Equal(t, []string{"LOG_LEVEL"}, envelope.Config.EnvLiterals)
+}
+
+// The classifier prefers to call a doubtful value secret, but it is a
+// heuristic and nothing prompts on a headless run. Naming what went in as a
+// literal is the only chance to catch a misread before the file is committed.
+func TestCmd_NamesTheValuesWrittenInTheClear(t *testing.T) {
+	dir := projectWithEnv(t, "LOG_LEVEL=debug\nREGION=eu-west-1\nAPI_TOKEN=sk-live-51H8xQvZmNpKdRt7YwLbG3JfA9\n")
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "Values written in the clear: LOG_LEVEL, REGION.")
+	assert.Contains(t, stderr.String(), manifest.CredentialShorthandPrefix)
+
+	// The secret is named nowhere, and its value nowhere at all.
+	assert.NotContains(t, stderr.String(), "in the clear: LOG_LEVEL, REGION, API_TOKEN")
+	assert.NotContains(t, stderr.String(), "sk-live-51H8xQvZmNpKdRt7YwLbG3JfA9")
+}
+
+// A long .env would bury the summary the listing qualifies, so it is capped
+// and the remainder counted.
+func TestCmd_CapsTheListOfLiterals(t *testing.T) {
+	var env strings.Builder
+
+	for i := range 12 {
+		fmt.Fprintf(&env, "PLAIN_%d=value%d\n", i, i)
+	}
+
+	_, stderr, err := runCmd(t, "--dir", projectWithEnv(t, env.String()), "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "PLAIN_7 and 4 more.")
+	assert.NotContains(t, stderr.String(), "PLAIN_8")
+}
+
+// A .env the parser chokes on still reaches the user as a warning. The
+// parser's own message carries the rest of the file, values included, so the
+// property under test is that none of it survives to stderr.
+func TestCmd_UnparseableEnvFileLeaksNoValues(t *testing.T) {
+	dir := projectWithEnv(t, "GOOD=1\nBAD-NAME=x\nAPI_TOKEN=sk-live-do-not-print\nDB_PASSWORD=hunter2\n")
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "Warning:")
+	assert.Contains(t, stderr.String(), "on line 2")
+	assert.NotContains(t, stderr.String(), "sk-live-do-not-print")
+	assert.NotContains(t, stderr.String(), "hunter2")
 }

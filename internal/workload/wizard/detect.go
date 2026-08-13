@@ -180,8 +180,9 @@ func exposedPort(path string) (int, bool) {
 // verdicts: an ordinary setting is written to the manifest as it stands, and a
 // secret's value is what a later credential is created from.
 //
-// The file is read a second time for order, because godotenv returns a map and
-// a scrambled list would not match what the user sees in their editor.
+// One read serves both purposes: godotenv returns a map, so the same bytes are
+// walked again for the order it loses, a scrambled list being one the user
+// could not match against their editor.
 func envVars(path string) ([]EnvVar, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -200,24 +201,80 @@ func envVars(path string) ([]EnvVar, error) {
 		return nil, fmt.Errorf("%s is %d bytes, larger than the %d this reads", path, info.Size(), maxEnvFileSize)
 	}
 
-	values, err := godotenv.Read(path)
-	if err != nil {
-		// A .env this parser cannot read is still a .env, but listing keys we
-		// are not sure of would be worse than listing none.
-		return nil, fmt.Errorf("cannot parse %s: %w", path, err)
-	}
-
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
 
+	text := string(content)
+
+	// Parsed from the bytes already in hand rather than from the path again,
+	// so the keys and the order they are recovered in come from one read.
+	values, err := godotenv.Unmarshal(text)
+	if err != nil {
+		// A .env this parser cannot read is still a .env, but listing keys we
+		// are not sure of would be worse than listing none. The parser's own
+		// error is deliberately not wrapped; see parseProblem.
+		return nil, fmt.Errorf("cannot parse %s: %s", path, parseProblem(err, text))
+	}
+
 	classified := make([]EnvVar, 0, len(values))
-	for _, name := range orderedKeys(string(content), values) {
+	for _, name := range orderedKeys(text, values) {
 		classified = append(classified, ClassifyEnv(name, values[name]))
 	}
 
 	return classified, nil
+}
+
+// parseProblem says why a .env would not parse without repeating any of it.
+// The parser reports the unparsed remainder of the input as part of its
+// message, so a malformed name on the second line would print every value
+// below it, and a headless run prints that to stderr and from there into
+// whatever log is capturing the build. Only the fixed half of a message this
+// code recognizes is repeated; anything else is described generically,
+// because a message it has not seen cannot be assumed free of file content.
+func parseProblem(err error, content string) string {
+	msg := err.Error()
+
+	// Tested before the split below, and by its opening rather than by any
+	// substring: this message ends in the raw value, so a value that happened
+	// to contain " near " would otherwise be cut in half and the first half
+	// printed.
+	if strings.HasPrefix(msg, unterminatedQuotedValue) {
+		return "a quoted value is never closed"
+	}
+
+	// "unexpected character %q in variable name near %q". What precedes
+	// " near " holds only the offending character, which comes from a name
+	// and is the one detail worth repeating; the rest is the payload.
+	if strings.HasPrefix(msg, unexpectedCharacter) {
+		if fixed, remainder, found := strings.Cut(msg, " near "); found {
+			return fixed + atLine(content, remainder)
+		}
+	}
+
+	return "it is not in KEY=value form"
+}
+
+// The godotenv messages this code repeats any part of. Each continues with
+// text lifted out of the file, so each is recognized by its fixed opening;
+// a message that matches neither is described in this package's own words.
+const (
+	unterminatedQuotedValue = "unterminated quoted value"
+	unexpectedCharacter     = "unexpected character "
+)
+
+// atLine converts the remainder the parser choked on into the line number it
+// begins at, which is the one part of that payload worth showing. The
+// remainder is a suffix of the file, so everything before it is what parsed.
+// An unrecognizable payload yields no line rather than a guessed one.
+func atLine(content, quotedRemainder string) string {
+	remainder, err := strconv.Unquote(quotedRemainder)
+	if err != nil || !strings.HasSuffix(content, remainder) {
+		return ""
+	}
+
+	return fmt.Sprintf(" on line %d", strings.Count(content[:len(content)-len(remainder)], "\n")+1)
 }
 
 // orderedKeys walks the file to recover the order godotenv's map loses, so

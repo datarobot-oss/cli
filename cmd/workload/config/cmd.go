@@ -21,8 +21,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -45,6 +47,15 @@ type configResult struct {
 	// Action is created, unchanged or planned. A caller keying on it has to be
 	// able to tell a dry run's planned from a file that now exists.
 	Action string `json:"action"`
+	// EnvKeysListed is how many .env variables the file carries and
+	// EnvSecretsPending how many of those still name the placeholder instead
+	// of a credential id. Without them a pipeline reading only this envelope
+	// would see a created manifest and no sign that it cannot deploy yet.
+	EnvKeysListed     int `json:"envKeysListed"`
+	EnvSecretsPending int `json:"envSecretsPending"`
+	// EnvLiterals names the variables whose values the file carries in the
+	// clear, so an audit step can check them without parsing the YAML.
+	EnvLiterals []string `json:"envLiterals"`
 }
 
 // flags is the flag set, held together so the run path reads as one answer
@@ -124,7 +135,14 @@ Examples:
 
 func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory (default: current directory).")
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Do not prompt; answer every question from flags and defaults.")
+	// Not the --yes of `dr dotenv setup`, which invents an answer for
+	// everything it was not given. Here the flags are the answers, and the
+	// only guessing is what the project directory can be read for, so the
+	// help text has to say that rather than leave "defaults" to be read as
+	// the other command's meaning.
+	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false,
+		"Do not prompt; answer every question from flags and what the project directory shows. "+
+			"A question neither of those answers is an error naming the flag that would settle it.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the manifest and write nothing.")
 	cmd.Flags().BoolVar(&f.answers.SkipEnv, "skip-env", false,
 		"Do not carry the project's .env into the manifest. By default its variables are written there: "+
@@ -212,12 +230,15 @@ func checkDockerfileFlag(cmd *cobra.Command, path string) error {
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result wizard.Result) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "config", configResult{
-			Path:       result.Path,
-			Name:       result.Draft.Name,
-			WorkloadID: result.Draft.WorkloadID,
-			CreateOnUp: result.Draft.WorkloadID == "",
-			BuildMode:  result.Draft.Build.Mode,
-			Action:     result.Action,
+			Path:              result.Path,
+			Name:              result.Draft.Name,
+			WorkloadID:        result.Draft.WorkloadID,
+			CreateOnUp:        result.Draft.WorkloadID == "",
+			BuildMode:         result.Draft.Build.Mode,
+			Action:            result.Action,
+			EnvKeysListed:     result.EnvKeysListed,
+			EnvSecretsPending: result.EnvSecretsPending,
+			EnvLiterals:       literalNames(result.Draft.EnvVars),
 		})
 	}
 
@@ -236,6 +257,8 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			fmt.Fprintf(stderr, "  %d %s from %s added%s.\n",
 				result.EnvKeysListed, wizard.Plural(result.EnvKeysListed, "variable", "variables"),
 				wizard.EnvFileName, secretSuffix(result.EnvSecretsPending))
+
+			warnLiterals(stderr, result.Draft.EnvVars)
 		}
 
 		fmt.Fprint(stderr, "\nNext: dr workload up\n")
@@ -245,6 +268,48 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	fmt.Fprintln(cmd.OutOrStdout(), result.Path)
 
 	return nil
+}
+
+// literalListLimit caps how many names are printed, because a long .env
+// would bury the summary the list is there to qualify.
+const literalListLimit = 8
+
+// literalNames is the variables whose values the manifest carries in the
+// clear. The classifier prefers to call a doubtful value secret, but it is
+// still a heuristic: a short secret under an ordinary name reads as
+// configuration, and its value goes into a file meant to be committed.
+func literalNames(vars []manifest.EnvVar) []string {
+	names := make([]string, 0, len(vars))
+
+	for _, v := range vars {
+		if !v.Secret {
+			names = append(names, v.Name)
+		}
+	}
+
+	return names
+}
+
+// warnLiterals names those variables. Nothing prompts on a headless run and
+// the classifier's verdict is final there, so this listing is the only chance
+// the user gets to catch a misread before the file is committed. Names only:
+// the values are the thing being protected.
+func warnLiterals(stderr io.Writer, vars []manifest.EnvVar) {
+	names := literalNames(vars)
+	if len(names) == 0 {
+		return
+	}
+
+	shown := names
+	suffix := ""
+
+	if len(names) > literalListLimit {
+		shown = names[:literalListLimit]
+		suffix = fmt.Sprintf(" and %d more", len(names)-literalListLimit)
+	}
+
+	fmt.Fprintf(stderr, "  Values written in the clear: %s%s. Anything secret among them belongs in a %s reference instead.\n",
+		strings.Join(shown, ", "), suffix, manifest.CredentialShorthandPrefix)
 }
 
 // secretSuffix names the entries that still need a credential id, because a

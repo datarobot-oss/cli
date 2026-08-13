@@ -292,7 +292,7 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 
 		value := v.Value
 		if v.Secret {
-			value = credentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey
+			value = CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey
 		}
 
 		existing = append(existing, map[string]any{keyName: v.Name, keyValue: value})
