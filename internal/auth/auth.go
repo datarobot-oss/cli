@@ -250,7 +250,7 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 // Cobra PreRunE hooks.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 	if !EnsureAuthenticated(cmd.Context()) {
-		return errors.New("Authentication failed.")
+		return errors.New("authentication failed")
 	}
 
 	return nil
