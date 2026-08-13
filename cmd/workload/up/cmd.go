@@ -130,6 +130,11 @@ already serving keeps serving until the new one is ready. When that version is
 locked, meaning production, an interactive run asks for the workload name to
 be typed back. A run with no terminal, or --yes, rolls without asking.
 
+A change that moves only the sizing, such as a replica count or a resource
+allocation, is applied in place instead. Nothing is built and no version is
+made, because what the workload runs has not changed. A deploy that moves both
+sends the sizing with the rollout, so the new version comes up with it.
+
 Examples:
   dr workload up
   dr workload up --dry-run

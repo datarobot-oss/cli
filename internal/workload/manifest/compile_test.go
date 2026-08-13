@@ -329,6 +329,38 @@ func TestArtifactPayload_NoBlockToCreate(t *testing.T) {
 	assert.Contains(t, err.Error(), "no artifact block")
 }
 
+// The mirror of ArtifactPayload: the sizing half on its own, with nothing in
+// it about what the workload runs.
+func TestRuntimePayload_IsTheBlockItself(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.RuntimePayload()
+	require.NoError(t, err)
+
+	var runtime map[string]any
+
+	require.NoError(t, json.Unmarshal(payload, &runtime))
+	assert.Contains(t, runtime, "containerGroups")
+	assert.NotContains(t, runtime, "spec", "what it runs is the artifact's half")
+	assert.NotContains(t, runtime, "name", "the workload's own name is not a runtime setting")
+}
+
+func TestRuntimePayload_NoBlockToApply(t *testing.T) {
+	m, err := Parse([]byte("name: my-app\nartifactId: 68b0bbbb0000000000000002\n"), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	_, err = compiled.RuntimePayload()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no runtime block")
+}
+
 // The two forms are mutually exclusive in the API as they are in the file, so
 // binding removes the block rather than leaving it beside the id. Sending
 // both would ask the platform for a second, empty artifact.

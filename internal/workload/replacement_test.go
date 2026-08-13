@@ -175,14 +175,37 @@ func TestStartReplacement_PostsArtifactIDAndRollingStrategy(t *testing.T) {
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, "art-2", body["artifactId"])
 		assert.Equal(t, "rolling", body["strategy"])
+		assert.NotContains(t, body, "runtime",
+			"a swap that changes no sizing must not read as a settings change as well")
 
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"submitted"}`)
 	})
 
-	replacement, err := StartReplacement("wl-1", "art-2")
+	replacement, err := StartReplacement("wl-1", "art-2", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "art-2", replacement.ArtifactID)
 	assert.Equal(t, "submitted", replacement.Status)
+}
+
+// A deploy that changes the sizing and the version sends both, so the
+// candidate comes up under the sizing it was asked for rather than under the
+// one it is replacing.
+func TestStartReplacement_CarriesTheRuntimeWhenThereIsOne(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		runtime, ok := body["runtime"].(map[string]any)
+		if assert.True(t, ok, "the runtime block travels with the swap") {
+			assert.InDelta(t, 3, runtime["replicaCount"], 0)
+		}
+
+		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"submitted"}`)
+	})
+
+	_, err := StartReplacement("wl-1", "art-2", json.RawMessage(`{"replicaCount":3}`))
+	require.NoError(t, err)
 }
 
 // TestStartReplacement_ErrorPropagates covers the only call in this file that
@@ -195,7 +218,7 @@ func TestStartReplacement_ErrorPropagates(t *testing.T) {
 		fmt.Fprint(w, `{"detail":"candidate artifact must be locked"}`)
 	})
 
-	replacement, err := StartReplacement("wl-1", "art-2")
+	replacement, err := StartReplacement("wl-1", "art-2", nil)
 	require.Error(t, err)
 	assert.Nil(t, replacement)
 

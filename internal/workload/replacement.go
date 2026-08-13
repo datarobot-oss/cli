@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -136,15 +137,28 @@ func GetActiveReplacement(workloadID string) (*Replacement, error) {
 // before this is called. That is not enforced here because the caller is the
 // one holding both statuses, and the lock has to happen between the guard and
 // this call.
-func StartReplacement(workloadID, artifactID string) (*Replacement, error) {
+//
+// runtime is optional and may be nil. When a deploy changes the sizing as well
+// as the version, sending both here is what brings the candidate up under the
+// sizing it was asked for: applying them as two operations either resizes the
+// version being rolled off, or starts the new one under the old sizing, which
+// is how a larger model meets a bundle that cannot hold it.
+func StartReplacement(workloadID, artifactID string, runtime json.RawMessage) (*Replacement, error) {
 	url, err := replacementURL(workloadID)
 	if err != nil {
 		return nil, err
 	}
 
-	body := map[string]string{
+	body := map[string]any{
 		"artifactId": artifactID,
 		"strategy":   rollingStrategy,
+	}
+
+	// Omitted rather than sent as null when there is nothing to change, so a
+	// rollout that only swaps the version does not read as a settings change
+	// as well.
+	if len(runtime) > 0 {
+		body["runtime"] = runtime
 	}
 
 	var replacement Replacement

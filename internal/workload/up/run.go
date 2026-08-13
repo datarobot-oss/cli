@@ -48,6 +48,7 @@ var (
 	guardReplacementFn = workload.GuardNoActiveReplacement
 	startReplacementFn = workload.StartReplacement
 	waitReplacementFn  = workload.WaitForReplacement
+	updateSettingsFn   = workload.UpdateWorkloadSettings
 	writeWorkloadIDFn  = manifest.WriteWorkloadID
 	codeChangeFn       = defaultCodeChange
 	projectLinkedFn    = wapi.Exists
@@ -57,11 +58,6 @@ var (
 	patchCodeRefFn     = workload.PatchArtifactCodeRef
 	syncProjectFn      = defaultSync
 )
-
-// ErrNotWired reports a path the plan understands but the apply cannot take
-// yet. It is a sentinel so the command can say so in its own words, and so a
-// test can tell "we refused" from "we broke".
-var ErrNotWired = errors.New("not wired yet")
 
 // Options is everything a run needs from its caller.
 type Options struct {
@@ -243,32 +239,46 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return result, err
 	}
 
-	// Checked before every path below, which either mutates or refuses. A
-	// start counts as a mutation: it is when the container resolves its
-	// references, so a credential deleted while the workload was off would
-	// surface minutes later as a container that will not come up. On a path
-	// about to be refused it shadows ErrNotWired, deliberately: one run to
-	// learn about both beats two.
-	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
-		return result, err
-	}
-
 	// Starting is checked before the roll refusal so that a stopped workload
 	// the file already agrees with gets deployed rather than turned away.
 	// When the file asks for more than a start, the refusal wins: bringing the
 	// workload up on the version it was stopped on would report a failure
 	// having already changed something, which is the worst of both.
 	if plan.Action() == ActionStarted {
+		// A start is when the container resolves its references, so a
+		// credential deleted while the workload was off would otherwise fail
+		// minutes later as a container that will not come up.
+		if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+			return result, err
+		}
+
 		return start(live, result, opts)
 	}
 
-	// A runtime change is its own call, which the CLI has not been given yet.
-	// Refused whether or not a version is also being rolled: rolling and
-	// leaving the sizing behind would carry out half the plan that was just
-	// printed and report the whole of it as done.
-	if !plan.Creates && (len(plan.Runtime) > 0 || !plan.RollsArtifact()) {
-		return result, fmt.Errorf("%w: %s. The plan above is correct; applying it is the next change",
-			ErrNotWired, unwired(plan))
+	// Everything below this changes a workload that is running: a rollout
+	// promotes onto something serving, and a settings change is followed by a
+	// wait for the workload to come back. Starting first and then applying the
+	// rest would bring the workload up on the version it was stopped on and
+	// report a failure afterwards, which is worse than refusing.
+	if live.State == StateStopped {
+		return result, fmt.Errorf(
+			"workload %s is stopped and the file asks for more than starting it. "+
+				"Start it with 'dr workload start %s' and deploy again, so the change lands on "+
+				"something that is running",
+			result.Name, live.WorkloadID)
+	}
+
+	// A runtime-only change sends no environment at all: the artifact keeps
+	// every variable it already has, so a credential this run does not touch
+	// must not be able to refuse a resize.
+	if !plan.Creates && !plan.RollsArtifact() {
+		return retune(loaded, result, opts, newReporter(opts.Stderr, opts.Spinner))
+	}
+
+	// Last check before the first mutation, and the only one that needs the
+	// network: a credential id is the one thing the local ledger cannot judge.
+	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+		return result, err
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
@@ -287,25 +297,6 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	}
 
 	return create(loaded, loaded.Compiled.Payload, result, opts, report)
-}
-
-// unwired names the change the plan asks for. Now that the roll is wired the
-// runtime block is the only thing left that cannot be applied, on its own or
-// alongside a roll. Calling a stopped workload "live" contradicts the plan
-// block above, whose first line says it is to be started.
-func unwired(plan Plan) string {
-	subject := "a live workload"
-	if plan.State == StateStopped {
-		subject = "a stopped workload, which is also not being started"
-	}
-
-	// Naming only the roll would read as though the rollout were the missing
-	// piece, when the rollout is the half that works.
-	if plan.RollsArtifact() {
-		return "changing the runtime settings of " + subject + " in the same deploy as a new version"
-	}
-
-	return "changing the runtime settings of " + subject
 }
 
 // deployable refuses the live states that cannot take a deploy, one message

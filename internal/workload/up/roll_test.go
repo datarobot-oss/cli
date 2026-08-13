@@ -121,8 +121,9 @@ func wiredRoll(tr *track) fakes {
 
 			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
 		},
-		replace: func(workloadID, artifactID string) (*workload.Replacement, error) {
+		replace: func(workloadID, artifactID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "replace:"+artifactID)
+			tr.rolledRuntime = runtime
 
 			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID, ArtifactID: artifactID}, nil
 		},
@@ -314,22 +315,6 @@ func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle",
 	}, tr.steps)
 	assert.True(t, result.Locked)
-}
-
-// A plan with both halves is refused rather than half-applied. Rolling and
-// leaving the sizing behind would carry out part of the plan just printed and
-// report the whole of it as done, which is worse than not starting.
-func TestRun_RollThatAlsoResizesIsRefusedWholesale(t *testing.T) {
-	var tr track
-
-	install(t, wiredRoll(&tr))
-
-	both := strings.Replace(newImage(), "cpu: 0.5", "cpu: 2", 1)
-
-	_, _, err := runIn(t, both, Options{NonInteractive: true})
-	require.ErrorIs(t, err, ErrNotWired)
-	assert.Contains(t, err.Error(), "runtime settings")
-	assert.Empty(t, tr.steps, "nothing may be rolled while half the plan cannot be applied")
 }
 
 // Locking cannot be undone and a locked artifact cannot be deleted, so a lock

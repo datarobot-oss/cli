@@ -161,9 +161,12 @@ type fakes struct {
 
 	// The roll track: refuse to queue a second swap, start one, follow it.
 	guard       func(string) error
-	replace     func(string, string) (*workload.Replacement, error)
+	replace     func(string, string, json.RawMessage) (*workload.Replacement, error)
 	waitReplace func(string, *workload.Replacement, time.Duration, time.Duration,
 		func(*workload.Replacement)) (*workload.Replacement, error)
+
+	// settings is the in-place path: a change that moved only the sizing.
+	settings func(string, json.RawMessage) (*workload.Workload, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -229,6 +232,7 @@ func install(t *testing.T, f fakes) {
 	swap(t, &guardReplacementFn, f.guard)
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
+	swap(t, &updateSettingsFn, f.settings)
 }
 
 // swap installs fake over the seam at target, and does nothing when the test
@@ -630,6 +634,10 @@ type track struct {
 	// is the (artifact, catalog, version) a spec-only roll inherited.
 	savedCfg wapi.Config
 	carried  []string
+
+	// rolledRuntime is the sizing that travelled with the swap, nil when the
+	// deploy changed only the version.
+	rolledRuntime json.RawMessage
 }
 
 // wiredBuild is a build path where every step works, over the track that
@@ -1029,30 +1037,6 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 	assert.Equal(t, ActionCreated, result.Action)
 }
 
-// The refusal has to name the change the plan asks for. Calling a
-// runtime-only plan a roll contradicts the plan printed right above it.
-func TestRun_RuntimeOnlyRefusalDoesNotClaimARoll(t *testing.T) {
-	install(t, fakes{
-		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
-		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
-		create: func(any) (*workload.Workload, error) {
-			t.Fatal("a live workload is not created again")
-
-			return nil, nil
-		},
-	})
-
-	// Same artifact as the live one, one runtime number moved: no new version
-	// is minted, so nothing here is a roll.
-	retuned := strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 6", 1)
-	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + retuned
-
-	_, _, err := runIn(t, bound, Options{NonInteractive: true})
-	require.ErrorIs(t, err, ErrNotWired)
-	assert.Contains(t, err.Error(), "runtime settings")
-	assert.NotContains(t, err.Error(), "new version", "nothing here mints an artifact")
-}
-
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	install(t, fakes{
 		code: func(Loaded, Live) (CodeChange, error) {
@@ -1127,13 +1111,14 @@ func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
 	})
 
 	// One resource figure differs, which makes the run a retune as well as a
-	// start, and retuning is not wired.
+	// start.
 	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
 		strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 4", 1)
 
 	_, _, err := runIn(t, drifted, Options{NonInteractive: true})
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNotWired)
+	assert.Contains(t, err.Error(), "dr workload start")
+	assert.Contains(t, err.Error(), "more than starting it")
 }
 
 func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
