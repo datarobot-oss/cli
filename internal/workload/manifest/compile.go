@@ -23,11 +23,11 @@ import (
 )
 
 const (
-	// credentialShorthandPrefix starts the manifest's compact credential
+	// CredentialShorthandPrefix starts the manifest's compact credential
 	// value form, dr-credential:<credential-id>/<key>. The compiler rewrites
 	// it into the API's object form; the object form is accepted in the file
 	// as well.
-	credentialShorthandPrefix = "dr-credential:"
+	CredentialShorthandPrefix = "dr-credential:"
 
 	// credentialSource is the API's source discriminator for
 	// credential-backed environment variables. It mirrors the workload
@@ -127,7 +127,7 @@ func expandVarsList(value any) {
 		}
 
 		raw, ok := entry[keyValue].(string)
-		if !ok || !strings.HasPrefix(raw, credentialShorthandPrefix) {
+		if !ok || !strings.HasPrefix(raw, CredentialShorthandPrefix) {
 			continue
 		}
 
@@ -149,7 +149,7 @@ func expandVarsList(value any) {
 // its parts; ok is false when either part is empty. The key may itself
 // contain slashes: only the first one separates.
 func parseCredentialShorthand(value string) (id, key string, ok bool) {
-	rest := strings.TrimPrefix(value, credentialShorthandPrefix)
+	rest := strings.TrimPrefix(value, CredentialShorthandPrefix)
 
 	id, key, found := strings.Cut(rest, "/")
 	if !found || id == "" || key == "" {
@@ -210,7 +210,7 @@ func (c *refCollector) collectFromVars(vars *yaml.Node, path string) {
 		entryPath := fmt.Sprintf("%s[%d]", path, i)
 		name, _ := scalarString(mapValue(entry, keyName))
 
-		if value, ok := scalarString(mapValue(entry, keyValue)); ok && strings.HasPrefix(value, credentialShorthandPrefix) {
+		if value, ok := scalarString(mapValue(entry, keyValue)); ok && strings.HasPrefix(value, CredentialShorthandPrefix) {
 			c.addShorthand(mapValue(entry, keyValue), entryPath, name, value)
 			continue
 		}
@@ -227,7 +227,7 @@ func (c *refCollector) addShorthand(node *yaml.Node, path, name, value string) {
 		c.errs = append(c.errs, FieldError{
 			Path: path + "." + keyValue,
 			Line: node.Line,
-			Msg:  fmt.Sprintf("credential reference %q must be %s<credential-id>/<key>", value, credentialShorthandPrefix),
+			Msg:  fmt.Sprintf("credential reference %q must be %s<credential-id>/<key>", value, CredentialShorthandPrefix),
 		})
 
 		return

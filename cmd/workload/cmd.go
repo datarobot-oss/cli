@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"github.com/datarobot/cli/cmd/workload/config"
 	"github.com/datarobot/cli/cmd/workload/create"
 	"github.com/datarobot/cli/cmd/workload/del"
 	"github.com/datarobot/cli/cmd/workload/endpoint"
@@ -42,6 +43,11 @@ Manage and monitor workloads in your deployment infrastructure.`,
 	features.SetGate(cmd, "workload")
 
 	cmd.AddCommand(
+		// Setup, and the one subcommand here that never calls the API: it
+		// writes the committed .datarobot.yaml that `up` deploys from. Listed
+		// apart from the verbs below so it does not read as one of them.
+		config.Cmd(),
+
 		// The workload itself is the primary resource: direct verbs, like
 		// `dr pipeline create|get|...`.
 		create.Cmd(),

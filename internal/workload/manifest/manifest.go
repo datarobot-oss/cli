@@ -95,7 +95,12 @@ func Parse(data []byte, dir string) (*Manifest, error) {
 	}
 
 	if root.Kind == 0 {
-		return nil, errors.New("file is empty")
+		// Named with its remedy because the likeliest way to get here is a
+		// write that was killed between reserving the path and filling it.
+		// The reservation is what stops two setups racing, so it is kept, and
+		// what it can leave behind is a file the user has to be told to
+		// delete rather than one they are left guessing at.
+		return nil, errors.New("file is empty, which an interrupted write can leave behind: delete it and run the command again")
 	}
 
 	if root.Kind != yaml.MappingNode {

@@ -55,6 +55,11 @@ func TestLoad_EmptyFileRejected(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "file is empty")
+
+	// Write reserves the path before it fills it, so a crash in between
+	// leaves exactly this file. Naming the fix is what keeps that a
+	// self-service recovery rather than a support question.
+	assert.Contains(t, err.Error(), "delete it and run the command again")
 }
 
 func TestLoad_CommentOnlyFileRejected(t *testing.T) {

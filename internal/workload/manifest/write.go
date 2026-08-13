@@ -206,14 +206,21 @@ func (d Draft) Render() ([]byte, error) {
 }
 
 // Write creates the manifest at path. It refuses to overwrite an existing
-// one, and it is all-or-nothing: a failed write leaves no file at all, rather
-// than a truncated manifest that the refuse-to-overwrite rule would then stop
-// anyone from repairing.
+// one, and no caller ever sees a truncated manifest: the content arrives
+// through an atomic rename, so the file either has all of it or does not
+// exist, and a write that fails takes its own reservation back.
 //
 // The exclusive create is what makes the refusal a check rather than a race:
 // two processes configuring the same directory cannot both believe they wrote
 // the file. It is a reservation, immediately released, so the content still
 // arrives through the atomic rename.
+//
+// The one residue this cannot clean up is a crash between the two steps,
+// which leaves the empty reservation on disk. Collapsing them into a single
+// rename would fix that and lose the exclusive create, trading a file Parse
+// rejects by name for the chance of silently replacing a manifest someone
+// else just wrote. The empty file is the better failure, so it is the one
+// kept, and Parse names the fix.
 func Write(path string, data []byte) error {
 	reservation, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fsutil.DefaultFileMode)
 	if err != nil {
@@ -395,7 +402,7 @@ func (d Draft) environmentVars() *yaml.Node {
 		entry := []field{{key: keyName, value: scalar(v.Name)}}
 
 		if v.Secret {
-			value = scalar(credentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
+			value = scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
 			entry = append(entry, field{
 				key:     keyValue,
 				value:   value,
