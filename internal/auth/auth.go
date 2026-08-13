@@ -162,10 +162,12 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 		return
 	}
 
-	// VerifyToken dials the raw endpoint value, while ValidateEndpoint above
-	// forgives what SchemeHostOnly can clean up (a bare host without a
-	// scheme, stray whitespace). Catch those as endpoint problems here so the
-	// transport branch below only ever names a host that was actually dialed.
+	// VerifyToken uses the endpoint value exactly as the user set it, but
+	// ValidateEndpoint above is more forgiving: it accepts a bare host with
+	// no scheme and trims stray whitespace. The two checks below catch the
+	// values that slipped through that gap, so they are reported as a bad
+	// endpoint instead of as a connection failure naming a URL the CLI never
+	// actually requested.
 	var urlErr *url.Error
 
 	hasURLErr := errors.As(err, &urlErr)
