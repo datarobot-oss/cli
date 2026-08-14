@@ -32,8 +32,8 @@ The hook functions are outlined below.
 1. **Checks environment credentials first**: A complete `DATAROBOT_ENDPOINT` (or `DATAROBOT_API_ENDPOINT`) and `DATAROBOT_API_TOKEN` pair takes precedence over the config file. If the pair fails verification, the command fails with the reason (timeout, malformed endpoint, unreachable endpoint, a non-2xx status from the instance, or an invalid token; only a 401 or 403 blames the token). It never falls back to the stored profile and never starts the login flow, because that would silently run the command against a different DataRobot instance than the one requested.
 2. **Checks for valid credentials**: With no complete environment pair, checks if a valid API key already exists in the config file.
 3. **Auto-configures URL if missing**: If no DataRobot URL is configured, prompts you to set it up.
-4. **Retrieves new credentials**: If config-file credentials are missing or expired, the hook automatically triggers the browser-based login flow.
-5. **Fails early**: If authentication cannot be established, the command will not run and returns an error.
+4. **Retrieves new credentials**: If the stored credentials are missing, or the instance rejected them with a 401 or 403, the hook automatically triggers the browser-based login flow. A timeout, an unreachable host, or any other status means the instance never judged the credentials, so the login flow does not start and the stored token is left intact.
+5. **Fails early**: If authentication cannot be established, the command will not run and returns an error. Every diagnostic the hook writes goes to stderr, so `--output-format json` leaves stdout parseable.
 
 ### Direct call for non-command code
 

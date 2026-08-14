@@ -47,10 +47,9 @@ func AuthCallbackURL(datarobotHost string) string {
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
 var ErrEnvCredentialsNotSet = errors.New("environment credentials not set")
 
-// PrintUnsetTokenInstructions prints platform-specific instructions for unsetting DATAROBOT_API_TOKEN.
-func PrintUnsetTokenInstructions() {
-	FprintUnsetTokenInstructions(os.Stdout)
-}
+// ErrMissingScheme is an endpoint with no scheme. SchemeHostOnly defaults https,
+// but VerifyToken dials the raw value and gets `unsupported protocol scheme ""`.
+var ErrMissingScheme = errors.New("missing URL scheme (https://...)")
 
 // FprintUnsetTokenInstructions writes platform-specific instructions for
 // unsetting DATAROBOT_API_TOKEN to w.
@@ -119,7 +118,7 @@ func GetEnvCredentials() EnvCredentials {
 }
 
 // ValidateEndpoint rejects an endpoint the CLI cannot use: one that will not
-// parse (surrounding quotes) or a scheme other than http/https. Empty is nil.
+// parse (surrounding quotes), one with no scheme, or a scheme beyond http/https.
 func ValidateEndpoint(endpoint string) error {
 	if endpoint == "" {
 		return nil
@@ -130,7 +129,12 @@ func ValidateEndpoint(endpoint string) error {
 		return err
 	}
 
-	// Checked here, not in SchemeHostOnly, which set-url and export share.
+	// Both checked here, not in SchemeHostOnly, which set-url and export share
+	// and which defaults a bare host to https. VerifyToken dials the raw value.
+	if !strings.Contains(strings.TrimSpace(endpoint), "://") {
+		return ErrMissingScheme
+	}
+
 	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
 		return fmt.Errorf("unsupported URL scheme %q, use https://", scheme)
 	}
@@ -138,95 +142,144 @@ func ValidateEndpoint(endpoint string) error {
 	return nil
 }
 
-// ReportEnvCredentialsError writes a classified explanation of why an
-// explicitly supplied DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair failed
-// verification: a network timeout, a malformed endpoint, an unreachable
-// endpoint, or an invalid token. Shared by EnsureAuthenticated (writing to
-// stderr) and `dr auth check`.
+// ReportEnvCredentialsError explains why an explicit endpoint/token pair failed
+// verification. Shared by EnsureAuthenticated (stderr) and `dr auth check`.
 func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 	base, info := writerStyles(w)
 
 	if errors.Is(err, context.DeadlineExceeded) {
-		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
-
 		fmt.Fprint(w, base.Render("❌ Connection to "))
-		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprint(w, info.Render(hostOrEndpoint(creds.Endpoint)))
 		fmt.Fprintln(w, base.Render(" timed out. Check your network and try again."))
 
 		return
 	}
 
-	// Distinguish a malformed endpoint from an invalid token so the user
-	// fixes the right thing. A quoted endpoint (e.g. from running
-	// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
+	// A quoted endpoint, from `$(dr auth export)` without the eval, lands here
 	// and must not be reported as a token problem.
-	if epErr := ValidateEndpoint(creds.Endpoint); epErr != nil {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+epErr.Error()))
+	if reason := unusableEndpoint(creds.Endpoint, err); reason != "" {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+reason))
 		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
 
 		return
 	}
 
-	// VerifyToken uses the endpoint value exactly as the user set it, but
-	// ValidateEndpoint above is more forgiving: it accepts a bare host with
-	// no scheme and trims stray whitespace. The two checks below catch the
-	// values that slipped through that gap, so they are reported as a bad
-	// endpoint instead of as a connection failure naming a URL the CLI never
-	// actually requested.
-	var urlErr *url.Error
-
-	hasURLErr := errors.As(err, &urlErr)
-
-	if !strings.Contains(strings.TrimSpace(creds.Endpoint), "://") {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: missing URL scheme (https://...)"))
-		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
-
+	if FprintTransportError(w, creds.Endpoint, creds.endpointVarName(), err) {
 		return
 	}
 
-	if hasURLErr && urlErr.Op == "parse" {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+urlErr.Err.Error()))
-		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
-
-		return
-	}
-
-	// A transport-level failure (connection refused, DNS, TLS, proxy) means
-	// the instance was never reached and the token was never judged, so
-	// advising the user to unset the token would point them at the wrong
-	// thing. VerifyToken wraps transport errors in *url.Error; a rejected
-	// token comes back as a plain error from the HTTP status check.
-	if hasURLErr {
-		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
-
-		fmt.Fprint(w, base.Render("❌ Could not connect to "))
-		fmt.Fprint(w, info.Render(envDatarobotHost))
-		fmt.Fprintln(w, base.Render(": "+urlErr.Err.Error()))
-		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+" and your network, then try again."))
-
-		return
-	}
-
-	// Only 401 and 403 mean the token was judged and rejected. Blaming it for
-	// a 404, 429, or 5xx would tell the user to unset working credentials.
-	var statusErr *config.HTTPStatusError
-	if errors.As(err, &statusErr) &&
-		statusErr.StatusCode != http.StatusUnauthorized &&
-		statusErr.StatusCode != http.StatusForbidden {
-		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
-
-		fmt.Fprint(w, base.Render("❌ "))
-		fmt.Fprint(w, info.Render(envDatarobotHost))
-		fmt.Fprintln(w, base.Render(fmt.Sprintf(" answered HTTP %d, so the CLI could not verify your credentials.",
-			statusErr.StatusCode)))
-		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+", and the instance's status if it persists."))
-
+	if FprintServerStatus(w, creds.Endpoint, creds.endpointVarName(), err) {
 		return
 	}
 
 	fmt.Fprintln(w, base.Render("❌ DATAROBOT_API_TOKEN environment variable is invalid or expired."))
 	fmt.Fprintln(w, base.Render("Unset it and try again:"))
 	FprintUnsetTokenInstructions(w)
+}
+
+// StoredEndpointName names the stored profile's endpoint the way a user changes
+// it, for messages asking them to correct it.
+const StoredEndpointName = "the endpoint saved by dr auth set-url"
+
+// ReportUnjudged explains a verification failure that produced no verdict on the
+// credentials and reports whether it did. False means the instance rejected them.
+func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool {
+	base, info := writerStyles(w)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		fmt.Fprint(w, base.Render("❌ Connection to "))
+		fmt.Fprint(w, info.Render(hostOrEndpoint(endpoint)))
+		fmt.Fprintln(w, base.Render(" timed out. Check your network and try again."))
+
+		return true
+	}
+
+	// Naming the host SchemeHostOnly invented would name a URL never requested.
+	if reason := unusableEndpoint(endpoint, err); reason != "" {
+		fmt.Fprintln(w, base.Render("❌ "+endpointName+" is invalid: "+reason))
+
+		return true
+	}
+
+	return FprintServerStatus(w, endpoint, endpointName, err) ||
+		FprintTransportError(w, endpoint, endpointName, err)
+}
+
+// unusableEndpoint returns why the CLI cannot dial endpoint, or "" when it can.
+// ValidateEndpoint trims, so VerifyToken's raw parse failure is checked too.
+func unusableEndpoint(endpoint string, err error) string {
+	if epErr := ValidateEndpoint(endpoint); epErr != nil {
+		return epErr.Error()
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Op == "parse" {
+		return urlErr.Err.Error()
+	}
+
+	return ""
+}
+
+// FprintTransportError explains a failure that never reached the instance and
+// reports whether it did. Test DeadlineExceeded first: a timeout is a *url.Error too.
+func FprintTransportError(w io.Writer, endpoint, endpointName string, err error) bool {
+	var urlErr *url.Error
+
+	if !errors.As(err, &urlErr) {
+		return false
+	}
+
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, base.Render("❌ Could not connect to "))
+	fmt.Fprint(w, info.Render(hostOrEndpoint(endpoint)))
+	fmt.Fprintln(w, base.Render(": "+urlErr.Err.Error()))
+	fmt.Fprintln(w, base.Render("Check "+endpointName+" and your network, then try again."))
+
+	return true
+}
+
+// FprintServerStatus explains a non-200 verification failure and reports whether
+// it did. 401/403 and status-less errors return false.
+func FprintServerStatus(w io.Writer, endpoint, endpointName string, err error) bool {
+	var statusErr *config.HTTPStatusError
+
+	if !errors.As(err, &statusErr) ||
+		statusErr.StatusCode == http.StatusUnauthorized ||
+		statusErr.StatusCode == http.StatusForbidden {
+		return false
+	}
+
+	base, info := writerStyles(w)
+
+	fmt.Fprint(w, base.Render("❌ "))
+	fmt.Fprint(w, info.Render(hostOrEndpoint(endpoint)))
+	fmt.Fprintln(w, base.Render(fmt.Sprintf(" answered HTTP %d, so the CLI could not verify your credentials.",
+		statusErr.StatusCode)))
+	fmt.Fprintln(w, base.Render("Check "+endpointName+", and the instance's status if it persists."))
+
+	return true
+}
+
+// hostOrEndpoint reduces an endpoint to scheme and host, falling back to the
+// endpoint as given so a message never names an empty host.
+func hostOrEndpoint(endpoint string) string {
+	if host, err := config.SchemeHostOnly(endpoint); err == nil {
+		return redacted(host)
+	}
+
+	return redacted(endpoint)
+}
+
+// redacted hides a password an endpoint carries in its userinfo. Every message
+// that prints an endpoint goes through here; url.URL.String() would print it.
+func redacted(endpoint string) string {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || parsed.User == nil {
+		return endpoint
+	}
+
+	return parsed.Redacted()
 }
 
 // reportStoredProfileNotUsed names both sides of the substitution this CLI
@@ -332,24 +385,22 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	skipAuthFlow := false
 
+	// Everything this gate says goes to stderr: it runs in PreRunE, and
+	// --output-format json must leave stdout parseable.
 	if creds.Token != "" {
-		// Partial env: DATAROBOT_API_TOKEN is set but no endpoint accompanies
-		// it (a complete pair was handled above), so the token was never
-		// verified. Point at it rather than starting a login flow that would
-		// shadow it.
-		fmt.Println(tui.BaseTextStyle.Render("Your DATAROBOT_API_TOKEN environment variable is set"))
-		fmt.Println(tui.BaseTextStyle.Render("without a DATAROBOT_ENDPOINT. Set that too, or unset the token:"))
-		PrintUnsetTokenInstructions()
+		// A token with no endpoint was never verified; a login flow would shadow it.
+		base, _ := writerStyles(os.Stderr)
+
+		fmt.Fprintln(os.Stderr, base.Render("Your DATAROBOT_API_TOKEN environment variable is set"))
+		fmt.Fprintln(os.Stderr, base.Render("without a DATAROBOT_ENDPOINT. Set that too, or unset the token:"))
+		FprintUnsetTokenInstructions(os.Stderr)
 
 		skipAuthFlow = true
 	}
 
-	if errors.Is(viperErr, context.DeadlineExceeded) {
-		fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
-		fmt.Print(tui.InfoStyle.Render(datarobotHost))
-		fmt.Println(tui.BaseTextStyle.Render(" from dr cli config timed out."))
-		fmt.Println(tui.BaseTextStyle.Render("Check your network and try again."))
-
+	// dr auth login cannot fix a 404, a 5xx, or an unreachable host, and
+	// starting it would wipe a stored token the instance never rejected.
+	if ReportUnjudged(os.Stderr, viperx.GetString(config.DataRobotURL), StoredEndpointName, viperErr) {
 		skipAuthFlow = true
 	}
 
@@ -357,8 +408,6 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return false
 	}
 
-	// Reached for any non-timeout failure, including a 5xx from the instance.
-	// Restricting the login flow to rejected credentials is a planned follow-up.
 	log.Warn("No valid API key found. Starting authentication flow...")
 
 	// Auto-retrieve new credentials without prompting
