@@ -23,10 +23,17 @@ import (
 
 // retune applies a change that moved only the sizing: a replica count, a
 // resource allocation, a bundle, an autoscaling policy. The file says nothing
-// new about what the workload runs, so no version is minted and nothing is
-// swapped. It is one call and a wait, which is the whole reason this is not a
-// roll: a resize should not cost a build, a new immutable artifact and a
-// rollout.
+// new about what the workload runs, so no version is minted, which is the
+// whole reason this is not a roll: a resize should not cost a build and a new
+// immutable artifact.
+//
+// It is still a rollout. The platform applies new sizing by replacing the
+// workload with itself, on the artifact it is already running, so this call
+// starts a replacement and hands one back. Waiting on the workload alone would
+// prove nothing: its status stays running for the whole swap, so the wait
+// returns at once and reports a resize that may still fail as done. The
+// replacement is what has to be followed, and the settle afterwards is what
+// says the containers came back.
 //
 // The whole runtime block is sent rather than the fields that differ. It is
 // the same block the plan was computed from, the platform takes it as a unit,
@@ -38,11 +45,11 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 		return result, err
 	}
 
-	var updated *workload.Workload
+	var started *workload.Replacement
 
 	err = report.run("Updating the runtime settings", func() error {
-		wl, updateErr := updateSettingsFn(result.WorkloadID, runtime)
-		updated = wl
+		replacement, updateErr := updateSettingsFn(result.WorkloadID, runtime)
+		started = replacement
 
 		return updateErr
 	})
@@ -52,20 +59,43 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 
 	result.Action = ActionUpdated
 
-	if updated != nil {
-		result.Status = updated.Status
-	}
-
 	if opts.Detach {
 		report.say("  Settings update for %s requested; not waiting.\n", result.WorkloadID)
 
 		return result, nil
 	}
 
-	// The wait is the same one every other path ends with. A settings change
-	// can restart containers, so reporting success the moment the platform
-	// accepts it would name a workload that is on its way down.
+	if err := awaitResize(result.WorkloadID, started, opts, report); err != nil {
+		return result, err
+	}
+
 	return settle(result.WorkloadID, result, opts, report)
+}
+
+// awaitResize follows the replacement a settings change starts. A failed one
+// leaves the workload on the sizing it had, so it is the difference between a
+// resize that happened and one that was merely accepted.
+func awaitResize(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
+	var settled *workload.Replacement
+
+	err := report.run("Waiting for the new settings", func() error {
+		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
+		settled = replacement
+
+		return waitErr
+	})
+	if err == nil {
+		return nil
+	}
+
+	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+		return fmt.Errorf(
+			"the settings update for workload %s ended as %s, so it is still running with the sizing it had; "+
+				"check 'dr workload status %s': %w",
+			workloadID, settled.Status, workloadID, err)
+	}
+
+	return err
 }
 
 // rollRuntime is the runtime block to carry with a swap, and nil when the file

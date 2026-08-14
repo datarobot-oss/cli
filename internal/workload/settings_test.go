@@ -39,13 +39,29 @@ func TestUpdateWorkloadSettings_PatchesTheRuntimeBlock(t *testing.T) {
 			assert.InDelta(t, 3, runtime["replicaCount"], 0)
 		}
 
-		fmt.Fprint(w, `{"id":"wl-1","name":"my-app","status":"running"}`)
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{"id":"rep-9","workloadId":"wl-1","candidateArtifactId":"art-1","status":"pending"}`)
 	}))
 
-	updated, err := UpdateWorkloadSettings("wl-1", json.RawMessage(`{"replicaCount":3}`))
+	started, err := UpdateWorkloadSettings("wl-1", json.RawMessage(`{"replicaCount":3}`))
 	require.NoError(t, err)
-	assert.Equal(t, "wl-1", updated.ID)
-	assert.Equal(t, WorkloadStatusRunning, updated.Status)
+	assert.Equal(t, "rep-9", started.ID, "the replacement is the handle the caller has to follow")
+	assert.Equal(t, "wl-1", started.WorkloadID)
+}
+
+// The route answers 202, not 200: the platform applies new sizing by rolling
+// the workload onto the artifact it is already running, so the call starts
+// work rather than finishing it. Treating Accepted as a failure reported every
+// resize the platform had taken on as broken.
+func TestUpdateWorkloadSettings_AcceptsTheAcceptedStatus(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{"id":"rep-9","workloadId":"wl-1","status":"pending"}`)
+	}))
+
+	started, err := UpdateWorkloadSettings("wl-1", json.RawMessage(`{"replicaCount":3}`))
+	require.NoError(t, err, "202 is how this route says yes")
+	assert.Equal(t, "rep-9", started.ID)
 }
 
 // A id that has to stay one path segment is the same hazard here as

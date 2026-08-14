@@ -30,14 +30,15 @@ import (
 //
 // runtime is the manifest's runtime block, sent as it stands. Passing an empty
 // one is refused rather than sent: a PATCH with nothing in it would come back
-// 200 having changed nothing, which is indistinguishable from success.
+// having changed nothing, which is indistinguishable from success.
 //
-// Known limitation. Unlike the rest of this package, this route has not been
-// exercised against a live instance; it is what the platform's own workload
-// documentation describes. If it turns out to want the runtime fields at the
-// top level rather than under a runtime key, or a different path segment, this
-// function is the only place that has to change.
-func UpdateWorkloadSettings(workloadID string, runtime json.RawMessage) (*Workload, error) {
+// What comes back is a Replacement, not a workload, and the status is 202: the
+// platform carries out a settings change by rolling the workload onto the
+// artifact it is already running with the new sizing applied. So this call
+// only starts the work, and the caller has to follow the replacement to know
+// whether the new sizing was promoted. The workload's own status is no help,
+// since it stays running throughout.
+func UpdateWorkloadSettings(workloadID string, runtime json.RawMessage) (*Replacement, error) {
 	if len(runtime) == 0 {
 		return nil, errors.New("no runtime settings to update")
 	}
@@ -49,11 +50,11 @@ func UpdateWorkloadSettings(workloadID string, runtime json.RawMessage) (*Worklo
 
 	body := map[string]json.RawMessage{"runtime": runtime}
 
-	var updated Workload
+	var started Replacement
 
-	if err := drapi.PatchJSON(url, "workload settings", body, &updated); err != nil {
+	if err := drapi.PatchJSON(url, "workload settings", body, &started); err != nil {
 		return nil, err
 	}
 
-	return &updated, nil
+	return &started, nil
 }

@@ -166,7 +166,7 @@ type fakes struct {
 		func(*workload.Replacement)) (*workload.Replacement, error)
 
 	// settings is the in-place path: a change that moved only the sizing.
-	settings func(string, json.RawMessage) (*workload.Workload, error)
+	settings func(string, json.RawMessage) (*workload.Replacement, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.

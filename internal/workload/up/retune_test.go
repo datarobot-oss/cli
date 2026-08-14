@@ -34,16 +34,25 @@ func retuned(from, to string) string {
 		strings.Replace(boundLiveManifest, from, to, 1)
 }
 
-// wiredRetune answers the settings call and the wait that follows it.
+// wiredRetune answers the settings call and the two waits that follow it: the
+// replacement the platform starts to apply the sizing, then the workload.
 func wiredRetune(tr *track, sent *json.RawMessage) fakes {
 	return fakes{
 		workloadD: func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil },
 		artifactD: func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil },
-		settings: func(workloadID string, runtime json.RawMessage) (*workload.Workload, error) {
+		settings: func(workloadID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "settings:"+workloadID)
 			*sent = runtime
 
-			return &workload.Workload{ID: workloadID, Status: workload.WorkloadStatusProvisioning}, nil
+			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID}, nil
+		},
+		waitReplace: func(_ string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			tr.steps = append(tr.steps, "await-resize")
+			started.Status = workload.ReplacementStatusCompleted
+
+			return started, nil
 		},
 		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			tr.steps = append(tr.steps, "settle")
@@ -82,7 +91,9 @@ func TestRun_RuntimeOnlyChangeIsAppliedInPlace(t *testing.T) {
 	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"settings:68b0c1d2e3f4a5b6c7d8e9f0", "settle"}, tr.steps)
+	assert.Equal(t,
+		[]string{"settings:68b0c1d2e3f4a5b6c7d8e9f0", "await-resize", "settle"}, tr.steps,
+		"the platform resizes by rolling a replacement, so that is what has to be followed")
 	assert.Equal(t, ActionUpdated, result.Action)
 	assert.Equal(t, workload.WorkloadStatusRunning, result.Status, "the wait has the last word on status")
 	assert.Equal(t, "68a0000000000000000000a1", result.ArtifactID, "the version serving does not change")
@@ -145,7 +156,7 @@ func TestRun_RetuneFailureNamesTheWorkload(t *testing.T) {
 	)
 
 	f := wiredRetune(&tr, &sent)
-	f.settings = func(string, json.RawMessage) (*workload.Workload, error) {
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
 		return nil, errors.New("replicaCount and autoscaling are mutually exclusive")
 	}
 	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
@@ -163,6 +174,37 @@ func TestRun_RetuneFailureNamesTheWorkload(t *testing.T) {
 	assert.Equal(t, ActionUpdated, result.Plan.Action(), "the plan still says what was asked for")
 }
 
+// The workload stays running for the whole swap, so its status can never say
+// a resize failed. Only the replacement can, and a run that ignored it would
+// report the old sizing as the new one.
+func TestRun_RetuneReportsAReplacementThatFailed(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	f := wiredRetune(&tr, &sent)
+	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusFailed
+
+		return started, errors.New("replacement ended as FAILED")
+	}
+	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		t.Fatal("a resize that failed leaves nothing to settle")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still running with the sizing it had")
+	assert.Contains(t, err.Error(), "68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
 func TestRun_DetachedRetuneDoesNotWait(t *testing.T) {
 	var (
 		tr   track
@@ -174,9 +216,13 @@ func TestRun_DetachedRetuneDoesNotWait(t *testing.T) {
 	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true, Detach: true})
 	require.NoError(t, err)
 
+	assert.NotContains(t, tr.steps, "await-resize")
 	assert.NotContains(t, tr.steps, "settle")
 	assert.Equal(t, ActionUpdated, result.Action)
-	assert.Equal(t, workload.WorkloadStatusProvisioning, result.Status)
+	// The status is the live one, because nobody looked again. A settings
+	// change leaves the workload running while the replacement swaps under
+	// it, so there is no other status to report without waiting.
+	assert.Equal(t, workload.WorkloadStatusRunning, result.Status)
 	assert.Contains(t, stderr, "not waiting")
 }
 
@@ -189,7 +235,7 @@ func TestRun_RollCarriesTheRuntimeWithTheSwap(t *testing.T) {
 	f := builtRoll(&tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("68a0000000000000000000a1")
-	f.settings = func(string, json.RawMessage) (*workload.Workload, error) {
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
 		t.Fatal("the swap carries the sizing; a second call would apply it twice")
 
 		return nil, nil

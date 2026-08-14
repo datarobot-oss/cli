@@ -64,8 +64,13 @@ func Patch(url, info string, body any) (*http.Response, error) {
 	return resp, err
 }
 
+// isPatchSuccess accepts 202 as well as 200 and 204. A route that starts work
+// rather than finishing it answers Accepted with a handle to follow, which the
+// workload settings route does: it applies new sizing by rolling a
+// replacement. Reading that as a failure would report every accepted change as
+// broken while the platform got on with it.
 func isPatchSuccess(code int) bool {
-	return code == http.StatusOK || code == http.StatusNoContent
+	return code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent
 }
 
 func PatchJSON(url, info string, body, v any) error {
