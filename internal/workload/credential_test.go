@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -138,4 +140,56 @@ func TestCreateCredential_TheFieldItSendsIsOneTheDebugLogRedacts(t *testing.T) {
 
 	assert.NotContains(t, redacted, "sk-live-abc123", "and the debug log never does")
 	assert.Contains(t, redacted, "REDACTED")
+}
+
+// The limit bounds the whole scan, not one page. This is a courtesy lookup
+// that improves an error message, so a large tenant must not turn every
+// refusal into a walk through every credential it has.
+func TestFindCredentialNamed_StopsAtTheScanLimit(t *testing.T) {
+	var (
+		pages int
+		base  string
+	)
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pages++
+
+		// Always another page, and never the name being looked for: with no
+		// bound this answers for as long as it is asked.
+		fmt.Fprintf(w, `{"data":[{"credentialId":"c%d","name":"other"}],"next":%q}`,
+			pages, base+"?page="+strconv.Itoa(pages+1))
+	}))
+
+	// Built from the configured endpoint, which serveAPI has just pointed at
+	// the test server, rather than from the request the handler was sent.
+	base, err := drapi.EndpointURL("/credentials/", url.Values{})
+	require.NoError(t, err)
+
+	found, err := FindCredentialNamed("wanted", 3)
+	require.NoError(t, err)
+	assert.Nil(t, found, "reaching the bound reads the same as not being there: no id to offer")
+	assert.Equal(t, 3, pages, "one row per page, so the bound is three pages")
+}
+
+// drapi attaches the user's token to whatever URL it is given, so a next link
+// naming another host would send the token there.
+func TestFindCredentialNamed_RefusesANextOnAnotherHost(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w,
+			`{"data":[{"credentialId":"c1","name":"other"}],"next":"https://elsewhere.example.com/api/v2/credentials/"}`)
+	}))
+
+	_, err := FindCredentialNamed("wanted", 200)
+	require.Error(t, err)
+}
+
+// A name nothing holds is not an error: the caller asked whether one existed.
+func TestFindCredentialNamed_AnswersNilWhenThereIsNone(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data":[],"next":""}`)
+	}))
+
+	found, err := FindCredentialNamed("wanted", 200)
+	require.NoError(t, err)
+	assert.Nil(t, found)
 }

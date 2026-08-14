@@ -45,6 +45,12 @@ type CredentialList struct {
 // FindCredentialNamed returns the credential called name, or nil when the
 // organisation has none. Names are unique tenant-wide, so this is how a
 // caller turns a name it expected to create into the id that already holds it.
+//
+// limit bounds the whole scan, not the page: this is a courtesy lookup that
+// improves an error message, and following next links until a large tenant
+// runs out would turn every refusal into a long walk. Reaching the bound
+// answers nil, the same as a name that is genuinely not there, because to the
+// caller the two mean the same thing: no id to offer.
 func FindCredentialNamed(name string, limit int) (*Credential, error) {
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(limit))
@@ -54,7 +60,7 @@ func FindCredentialNamed(name string, limit int) (*Credential, error) {
 		return nil, err
 	}
 
-	for pageURL != "" {
+	for scanned := 0; pageURL != "" && scanned < limit; {
 		var list CredentialList
 
 		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {
@@ -67,7 +73,11 @@ func FindCredentialNamed(name string, limit int) (*Credential, error) {
 			}
 		}
 
-		if list.Next == "" {
+		scanned += len(list.Data)
+
+		// A page that came back empty would otherwise leave scanned where it
+		// was and follow next for ever.
+		if list.Next == "" || len(list.Data) == 0 {
 			break
 		}
 
