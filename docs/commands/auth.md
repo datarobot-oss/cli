@@ -175,6 +175,16 @@ Unset it and try again:
 $ dr auth check
 ❌ Could not connect to https://app.example.com: dial tcp: lookup app.example.com: no such host
 Check DATAROBOT_ENDPOINT and your network, then try again.
+
+# The instance answered, but not with a credential verdict (only 401/403 blame the token)
+$ dr auth check
+❌ https://app.example.com answered HTTP 503, so the CLI could not verify your credentials.
+Check DATAROBOT_ENDPOINT, and the instance's status if it persists.
+
+# Endpoint scheme the CLI cannot use
+$ dr auth check
+❌ DATAROBOT_ENDPOINT environment variable is invalid: unsupported URL scheme "ftp", use https://
+Set it to a valid DataRobot URL and try again.
 ```
 
 > [!TIP]

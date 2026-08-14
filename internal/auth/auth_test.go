@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -295,6 +296,50 @@ func TestReportEnvCredentialsError(t *testing.T) {
 		assert.Contains(t, buf.String(), "DATAROBOT_API_ENDPOINT environment variable is invalid")
 		assert.NotContains(t, buf.String(), "DATAROBOT_ENDPOINT environment variable is invalid")
 	})
+
+	t.Run("unsupported scheme is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "ftp://app.example.com/api/v2", Token: "some-token"}
+		dialErr := &url.Error{
+			Op:  "Get",
+			URL: creds.Endpoint + "/version/",
+			Err: errors.New(`unsupported protocol scheme "ftp"`),
+		}
+		ReportEnvCredentialsError(&buf, creds, dialErr)
+
+		assert.Contains(t, buf.String(), `unsupported URL scheme "ftp"`)
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
+	// Only 401 and 403 may blame the token; every other status is the server
+	// failing to answer the version check.
+	creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "some-token"}
+
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(fmt.Sprintf("%d blames the token", status), func(t *testing.T) {
+			var buf bytes.Buffer
+
+			ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: status})
+
+			assert.Contains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+			assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+		})
+	}
+
+	for _, status := range []int{
+		http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError,
+	} {
+		t.Run(fmt.Sprintf("%d blames the instance", status), func(t *testing.T) {
+			var buf bytes.Buffer
+
+			ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: status})
+
+			assert.Contains(t, buf.String(), fmt.Sprintf("answered HTTP %d", status))
+			assert.Contains(t, buf.String(), "https://app.example.com")
+			assert.NotContains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+		})
+	}
 }
 
 // TestEnsureAuthenticated_EnvUnreachableStoredValid proves VerifyToken's
@@ -531,6 +576,9 @@ func TestValidateEndpoint(t *testing.T) {
 		{"single quoted", "'https://staging.datarobot.com/api/v2'", true},
 		{"double quoted", `"https://staging.datarobot.com/api/v2"`, true},
 		{"mismatched quotes", `'https://staging.datarobot.com/api/v2"`, true},
+		{"plain http", "http://localhost:8080/api/v2", false},
+		{"uppercase scheme", "HTTPS://app.datarobot.com/api/v2", false},
+		{"ftp scheme", "ftp://app.datarobot.com/api/v2", true},
 	}
 
 	for _, c := range cases {

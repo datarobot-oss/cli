@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -117,20 +118,24 @@ func GetEnvCredentials() EnvCredentials {
 	}
 }
 
-// ValidateEndpoint returns a non-nil error when endpoint is not a usable
-// DataRobot URL (for example, it is wrapped in literal surrounding quotes that
-// make url.Parse fail). It lets callers distinguish a malformed
-// DATAROBOT_ENDPOINT from an expired/invalid token when reporting why
-// environment credentials failed verification. An empty endpoint returns nil
-// (that case is ErrEnvCredentialsNotSet, handled by the caller).
+// ValidateEndpoint rejects an endpoint the CLI cannot use: one that will not
+// parse (surrounding quotes) or a scheme other than http/https. Empty is nil.
 func ValidateEndpoint(endpoint string) error {
 	if endpoint == "" {
 		return nil
 	}
 
-	_, err := config.SchemeHostOnly(endpoint)
+	baseURL, err := config.SchemeHostOnly(endpoint)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Checked here, not in SchemeHostOnly, which set-url and export share.
+	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q, use https://", scheme)
+	}
+
+	return nil
 }
 
 // ReportEnvCredentialsError writes a classified explanation of why an
@@ -198,6 +203,23 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 		fmt.Fprint(w, info.Render(envDatarobotHost))
 		fmt.Fprintln(w, base.Render(": "+urlErr.Err.Error()))
 		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+" and your network, then try again."))
+
+		return
+	}
+
+	// Only 401 and 403 mean the token was judged and rejected. Blaming it for
+	// a 404, 429, or 5xx would tell the user to unset working credentials.
+	var statusErr *config.HTTPStatusError
+	if errors.As(err, &statusErr) &&
+		statusErr.StatusCode != http.StatusUnauthorized &&
+		statusErr.StatusCode != http.StatusForbidden {
+		envDatarobotHost, _ := config.SchemeHostOnly(creds.Endpoint)
+
+		fmt.Fprint(w, base.Render("❌ "))
+		fmt.Fprint(w, info.Render(envDatarobotHost))
+		fmt.Fprintln(w, base.Render(fmt.Sprintf(" answered HTTP %d, so the CLI could not verify your credentials.",
+			statusErr.StatusCode)))
+		fmt.Fprintln(w, base.Render("Check "+creds.endpointVarName()+", and the instance's status if it persists."))
 
 		return
 	}
@@ -335,7 +357,8 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return false
 	}
 
-	// No valid token, attempt to get one
+	// Reached for any non-timeout failure, including a 5xx from the instance.
+	// Restricting the login flow to rejected credentials is a planned follow-up.
 	log.Warn("No valid API key found. Starting authentication flow...")
 
 	// Auto-retrieve new credentials without prompting
