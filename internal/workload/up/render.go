@@ -53,8 +53,10 @@ const envVarsSegment = ".environmentVars["
 func Render(w io.Writer, s Summary, plan Plan) error {
 	var b strings.Builder
 
-	b.WriteString(planTitleStyle.Render(header(s, plan)))
-	b.WriteString("\n")
+	if head := header(s, plan); head != "" {
+		b.WriteString(planTitleStyle.Render(head))
+		b.WriteString("\n")
+	}
 
 	if plan.Empty() {
 		b.WriteString("\n" + tui.SuccessStyle.Render("✓ Already up to date") + "\n")
@@ -66,7 +68,7 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 
 	b.WriteString("\n")
 
-	for _, line := range lines(plan) {
+	for _, line := range lines(s, plan) {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -76,31 +78,23 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	return err
 }
 
-// header names the workload and says what state it is in.
+// header names the workload being deployed onto and says what state it is in.
+//
+// There is nothing to head a plan with when no workload exists yet: naming a
+// state the reader is about to leave, above a line saying what is about to be
+// created, says the same thing twice and the second time is clearer. The
+// create line carries the name instead.
 func header(s Summary, plan Plan) string {
+	if plan.Creates || s.WorkloadID == "" {
+		return ""
+	}
+
 	name := s.Name
 	if name == "" {
 		name = "workload"
 	}
 
-	if plan.Creates || s.WorkloadID == "" {
-		return fmt.Sprintf("%s, %s", name, headerState(plan.State))
-	}
-
-	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), headerState(plan.State))
-}
-
-// headerState is how a state reads at the top of a plan block, which is not
-// always how it reads in the JSON envelope. "not created yet" sounds like a
-// claim about the platform; in the header, directly above a line saying a
-// workload will be created, what the reader needs to know is that this file is
-// not bound to one. State.String stays as it is because scripts match on it.
-func headerState(state State) string {
-	if state == StateUnbound {
-		return "no workload bound yet"
-	}
-
-	return state.String()
+	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), plan.State)
 }
 
 // shortID trims an id to something a person can compare at a glance.
@@ -114,11 +108,11 @@ func shortID(id string) string {
 
 // lines is the body of the plan, one entry per class of change plus the
 // details each one carries.
-func lines(plan Plan) []string {
+func lines(s Summary, plan Plan) []string {
 	var out []string
 
 	if plan.Creates {
-		out = append(out, entry("+", "workload", "new, with its first artifact"))
+		out = append(out, entry("+", "workload", createDetail(s)))
 	}
 
 	// A stopped workload is the one plan whose reason to act is the state
@@ -139,10 +133,21 @@ func lines(plan Plan) []string {
 	return out
 }
 
+// createDetail names the workload about to be created. The plan is printed
+// before anything happens, and --dry-run prints it instead of acting, so it
+// says what will happen rather than what has.
+func createDetail(s Summary) string {
+	if s.Name == "" {
+		return "will be created, with its first artifact"
+	}
+
+	return s.Name + " will be created, with its first artifact"
+}
+
 // codeDetail says how much of the tree is going up.
 func codeDetail(code CodeChange) string {
 	if code.FirstDeploy {
-		return "the whole project, uploaded for the first time"
+		return "all project files, uploaded for the first time"
 	}
 
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))

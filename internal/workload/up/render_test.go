@@ -92,10 +92,10 @@ func TestRender_FirstDeploy(t *testing.T) {
 		Code:    CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "my-app, no workload bound yet")
 	assert.NotContains(t, out, "(", "there is no id to show yet")
-	assert.Contains(t, out, "+ workload   new, with its first artifact")
-	assert.Contains(t, out, "~ code       the whole project, uploaded for the first time")
+	assert.Contains(t, out, "+ workload   my-app will be created, with its first artifact",
+		"the create line carries the name, so nothing has to head the block")
+	assert.Contains(t, out, "~ code       all project files, uploaded for the first time")
 }
 
 // TestRender_PublishedImageNeverMentionsCode: a manifest naming an image has
@@ -203,7 +203,7 @@ func TestRender_ShortIDLeavesShortIDsAlone(t *testing.T) {
 func TestRender_UnnamedWorkloadStillRenders(t *testing.T) {
 	out := render(t, Summary{}, Plan{State: StateUnbound, Creates: true})
 
-	assert.Contains(t, out, "workload, no workload bound yet")
+	assert.Contains(t, out, "+ workload   will be created, with its first artifact")
 }
 
 func TestPlanJSON_Shape(t *testing.T) {
