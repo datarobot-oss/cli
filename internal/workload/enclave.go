@@ -59,6 +59,13 @@ func ApplyEnclavePin(spec []byte, enclave string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid spec: %w", err)
 	}
 
+	// A top-level null decodes successfully into a nil map, and assigning
+	// runtime into that would panic. Any other non-object (array, string)
+	// already fails Decode above.
+	if doc == nil {
+		return nil, errors.New("invalid spec: the spec must be a JSON object")
+	}
+
 	runtime := map[string]any{}
 
 	if raw, ok := doc["runtime"]; ok && raw != nil {

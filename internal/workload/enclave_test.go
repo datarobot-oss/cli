@@ -117,3 +117,11 @@ func TestApplyEnclavePin_RejectsInvalidJSON(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid spec")
 }
+
+func TestApplyEnclavePin_RejectsNullSpec(t *testing.T) {
+	// A top-level null decodes into a nil map without error; the pin must
+	// reject it rather than panic assigning runtime into a nil map.
+	_, err := ApplyEnclavePin([]byte(`null`), "prod-east")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a JSON object")
+}
