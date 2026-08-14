@@ -6,7 +6,7 @@ This page outlines how to set up your development environment to build and devel
 
 ## Prerequisites
 
-- [Go 1.26.5](https://golang.org/dl/)
+- [Go 1.26.6](https://golang.org/dl/)
 - Git for version control
 - [Task](https://taskfile.dev/installation/) (A task runner)
 
@@ -60,7 +60,7 @@ The devcontainer's `postCreateCommand` runs `task bootstrap`, which verifies the
 
 #### Option B: Local setup (no container)
 
-If you prefer not to use a devcontainer, install the [prerequisites](#prerequisites) listed above (Go 1.26.5, Git, Task), then run:
+If you prefer not to use a devcontainer, install the [prerequisites](#prerequisites) listed above (Go 1.26.6, Git, Task), then run:
 
 ```bash
 task bootstrap
