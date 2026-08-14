@@ -33,7 +33,7 @@ The hook functions are outlined below.
 2. **Checks for valid credentials**: With no complete environment pair, checks if a valid API key already exists in the config file.
 3. **Auto-configures URL if missing**: If no DataRobot URL is configured, prompts you to set it up.
 4. **Retrieves new credentials**: If the stored credentials are missing, or the instance rejected them with a 401 or 403, the hook automatically triggers the browser-based login flow. A timeout, an unreachable host, or any other status means the instance never judged the credentials, so the login flow does not start and the stored token is left intact.
-5. **Fails early**: If authentication cannot be established, the command will not run and returns an error. Every diagnostic the hook writes goes to stderr, so `--output-format json` leaves stdout parseable.
+5. **Fails early**: If authentication cannot be established, the command will not run and returns an error. Credential failures are explained on stderr, so `--output-format json` leaves stdout empty when the gate rejects your credentials. The interactive paths still use stdout: the browser login flow and the URL prompt.
 
 ### Direct call for non-command code
 
