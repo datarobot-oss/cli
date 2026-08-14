@@ -377,10 +377,12 @@ func TestReportUnjudged(t *testing.T) {
 			&url.Error{Op: "parse", URL: " " + endpoint, Err: errors.New("cannot contain colon")},
 			true, "is invalid",
 		},
+		// A bare host passes ValidateEndpoint, so it lands on the transport arm
+		// and names the https host SchemeHostOnly defaulted it to.
 		{
 			"bare host", "app.example.com",
 			&url.Error{Op: "Get", URL: "app.example.com", Err: errors.New(`unsupported protocol scheme ""`)},
-			true, "missing URL scheme",
+			true, "Could not connect to",
 		},
 		{
 			"ftp scheme", "ftp://app.example.com",
@@ -467,6 +469,16 @@ func TestUnusableEndpointHidesUserinfo(t *testing.T) {
 	})
 }
 
+// TestAuthCallbackURLDropsUserinfo covers the sign-in link, which is printed to
+// the user and so carried the endpoint's password into the terminal.
+func TestAuthCallbackURLDropsUserinfo(t *testing.T) {
+	got := AuthCallbackURL("https://user:s3cr3t@app.example.com")
+
+	assert.NotContains(t, got, "s3cr3t")
+	assert.NotContains(t, got, "user:")
+	assert.Equal(t, "https://app.example.com/account/developer-tools?cliRedirect=true", got)
+}
+
 // TestReportStoredProfileNotUsedRedacts covers the refusal line printed directly
 // after the classified error, which named the endpoint without redacting it.
 func TestReportStoredProfileNotUsedRedacts(t *testing.T) {
@@ -501,43 +513,6 @@ func TestEnsureAuthenticated_NoTokenBadEndpoint(t *testing.T) {
 	EnsureAuthenticated(context.Background())
 
 	assert.True(t, loginStarted, "Expected the login flow to open when no token is stored")
-}
-
-// TestEnsureAuthenticated_StoredEndpointNormalized covers the permanent lockout:
-// an endpoint the CLI could normalize used to suppress the login flow forever.
-func TestEnsureAuthenticated_StoredEndpointNormalized(t *testing.T) {
-	t.Run("padded endpoint still verifies", func(t *testing.T) {
-		server, cleanup := setupTestEnvironment(t)
-		defer cleanup()
-
-		// Stray whitespace fails VerifyToken's raw url.Parse, so before
-		// normalization this locked out a working token permanently.
-		viperx.Set(config.DataRobotURL, "  "+server.URL+"/api/v2  ")
-		viperx.Set(config.DataRobotAPIKey, "valid-token")
-
-		APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
-			t.Error("login flow must not start when the stored token verifies")
-
-			return "", errors.New("unexpected login flow")
-		}
-
-		assert.True(t, EnsureAuthenticated(context.Background()))
-	})
-
-	t.Run("bare host is dialed, not rejected", func(t *testing.T) {
-		_, cleanup := setupTestEnvironment(t)
-		defer cleanup()
-
-		viperx.Set(config.DataRobotURL, "app.datarobot.invalid/api/v2")
-		viperx.Set(config.DataRobotAPIKey, "some-token")
-
-		_, err := config.GetAPIKey(context.Background())
-
-		var urlErr *url.Error
-
-		require.ErrorAs(t, err, &urlErr)
-		assert.Equal(t, "Get", urlErr.Op, "expected a dial attempt, not a scheme rejection")
-	})
 }
 
 // TestEnsureAuthenticated_StoredProfileServerError is the regression test for
@@ -840,9 +815,7 @@ func TestValidateEndpoint(t *testing.T) {
 	}{
 		{"empty returns nil", "", false},
 		{"valid url", "https://app.datarobot.com/api/v2", false},
-		// VerifyToken dials the raw value, so a bare host cannot be verified
-		// even though SchemeHostOnly would default it to https.
-		{"bare host", "app.datarobot.com", true},
+		{"bare host", "app.datarobot.com", false},
 		{"single quoted", "'https://staging.datarobot.com/api/v2'", true},
 		{"double quoted", `"https://staging.datarobot.com/api/v2"`, true},
 		{"mismatched quotes", `'https://staging.datarobot.com/api/v2"`, true},

@@ -99,9 +99,7 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 }
 
 func GetAPIKey(ctx context.Context) (string, error) {
-	// Normalized, so a scheme-less stored endpoint verifies against the same host
-	// the login flow opens instead of failing as an endpoint the CLI cannot dial.
-	viperEndpoint := EndpointWithScheme(viper.GetString(DataRobotURL))
+	viperEndpoint := viper.GetString(DataRobotURL)
 	viperToken := viper.GetString(DataRobotAPIKey)
 
 	// Returns valid API key if there is one, otherwise returns an empty string

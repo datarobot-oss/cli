@@ -29,17 +29,6 @@ const DRAPIURLSuffix = "/api/v2"
 
 var ErrInvalidURL = errors.New("Invalid URL.")
 
-// EndpointWithScheme defaults a scheme-less endpoint to https, keeping the API
-// path SchemeHostOnly strips. VerifyToken dials this value verbatim.
-func EndpointWithScheme(endpoint string) string {
-	trimmed := strings.TrimSpace(endpoint)
-	if trimmed == "" || strings.Contains(trimmed, "://") {
-		return trimmed
-	}
-
-	return "https://" + trimmed
-}
-
 // SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
 // returns https://app.datarobot.com (no trailing slash).
 //
