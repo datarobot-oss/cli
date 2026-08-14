@@ -300,8 +300,8 @@ func hostOrEndpoint(endpoint string) string {
 	return redacted(endpoint)
 }
 
-// redacted hides a password an endpoint carries in its userinfo. Fails closed: a
-// value url.Parse rejects loses everything before the first `@`.
+// redacted hides a password an endpoint carries in its userinfo. Fails closed: on
+// a value url.Parse rejects, everything before the last `@` (the password) is cut.
 func redacted(endpoint string) string {
 	trimmed := strings.TrimSpace(endpoint)
 
@@ -314,8 +314,8 @@ func redacted(endpoint string) string {
 		return parsed.Redacted()
 	}
 
-	if _, host, found := strings.Cut(trimmed, "@"); found {
-		return "[redacted]@" + host
+	if at := strings.LastIndex(trimmed, "@"); at != -1 {
+		return "[redacted]@" + trimmed[at+1:]
 	}
 
 	return endpoint

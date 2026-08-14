@@ -467,6 +467,15 @@ func TestUnusableEndpointHidesUserinfo(t *testing.T) {
 		assert.NotContains(t, redacted(quoted), "s3cr3t")
 		assert.NotContains(t, hostOrEndpoint(quoted), "s3cr3t")
 	})
+
+	t.Run("redacted cuts at the last @ so an @ in the password cannot leak", func(t *testing.T) {
+		// The %zz invalid escape makes url.Parse reject it, so the fallback runs;
+		// pa@ss holds an @, which cutting at the first @ would have leaked.
+		got := redacted("https://user:pa@ss@host%zz")
+
+		assert.Equal(t, "[redacted]@host%zz", got)
+		assert.NotContains(t, got, "ss")
+	})
 }
 
 // TestAuthCallbackURLDropsUserinfo covers the sign-in link, which is printed to
