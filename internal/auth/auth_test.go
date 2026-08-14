@@ -377,12 +377,12 @@ func TestReportUnjudged(t *testing.T) {
 			&url.Error{Op: "parse", URL: " " + endpoint, Err: errors.New("cannot contain colon")},
 			true, "is invalid",
 		},
-		// A bare host passes ValidateEndpoint, so it lands on the transport arm
-		// and names the https host SchemeHostOnly defaulted it to.
+		// Reported as the missing scheme it is, not as a failure to reach the
+		// https host SchemeHostOnly would have invented.
 		{
 			"bare host", "app.example.com",
 			&url.Error{Op: "Get", URL: "app.example.com", Err: errors.New(`unsupported protocol scheme ""`)},
-			true, "Could not connect to",
+			true, "missing URL scheme",
 		},
 		{
 			"ftp scheme", "ftp://app.example.com",

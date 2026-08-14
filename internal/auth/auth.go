@@ -246,6 +246,12 @@ func unusableEndpoint(endpoint string, err error) string {
 		return reasonWithoutURL(epErr)
 	}
 
+	// ValidateEndpoint accepts a bare host, but VerifyToken dials the value as
+	// given, so catch that gap rather than naming an invented https URL.
+	if !strings.Contains(strings.TrimSpace(endpoint), "://") {
+		return "missing URL scheme (https://...)"
+	}
+
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Op == "parse" {
 		return reasonWithoutURL(urlErr)
