@@ -130,7 +130,7 @@ type fakes struct {
 	wizard    func(wizard.Options) (wizard.Result, error)
 	create    func(any) (*workload.Workload, error)
 	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-	list      func(int, []string) ([]workload.Workload, error)
+	list      func(int, int, []string) ([]workload.Workload, error)
 	lock      func(string) (*workload.Artifact, error)
 	cred      func(string) (*workload.Credential, error)
 	writeID   func(string, string) error
@@ -388,7 +388,7 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) {
+		list: func(int, int, []string) ([]workload.Workload, error) {
 			return []workload.Workload{{ID: "wl-other", Name: "someone-else"}, *running("wl-existing")}, nil
 		},
 		writeID: func(string, string) error {
@@ -422,7 +422,7 @@ func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) { return nil, errors.New("list unavailable") },
+		list: func(int, int, []string) ([]workload.Workload, error) { return nil, errors.New("list unavailable") },
 	})
 
 	_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})

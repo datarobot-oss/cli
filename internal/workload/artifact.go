@@ -491,8 +491,8 @@ func DeleteArtifact(artifactID string) error {
 	return drapi.DeleteJSON(url, "artifact", nil, nil)
 }
 
-func ListArtifacts(limit int, status Status) ([]Artifact, error) {
-	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit)
+func ListArtifacts(limit, offset int, status Status) ([]Artifact, error) {
+	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit) + "&offset=" + strconv.Itoa(offset)
 
 	if status != "" {
 		endpoint += "&status=" + string(status)

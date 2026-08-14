@@ -30,6 +30,7 @@ func Cmd() *cobra.Command {
 
 	var (
 		limit    int
+		offset   int
 		statuses []string
 	)
 
@@ -48,6 +49,8 @@ By default, output is a human-readable table. Use --output-format json for machi
 Example:
   dr workload list
   dr workload list --limit 10
+  dr workload list --offset 100
+  dr workload list --offset 100 --limit 50
   dr workload list --status running
   dr workload list --status errored --status interrupted
   dr workload list --output-format json`,
@@ -61,12 +64,16 @@ Example:
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
 
+			if offset < 0 {
+				return fmt.Errorf("invalid --offset %d: must be non-negative", offset)
+			}
+
 			parsedStatuses, err := workload.ParseWorkloadStatuses(statuses)
 			if err != nil {
 				return err
 			}
 
-			workloads, err := workload.ListWorkloads(limit, parsedStatuses)
+			workloads, err := workload.ListWorkloads(limit, offset, parsedStatuses)
 			if err != nil {
 				return err
 			}
@@ -78,14 +85,17 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Number of workloads to skip before returning results")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
+		offset, _ := c.Flags().GetInt("offset")
 
 		return map[string]any{
 			"limit":         limit,
+			"offset":        offset,
 			"output_format": string(outputFormat),
 			"status":        strings.Join(statuses, ","),
 		}

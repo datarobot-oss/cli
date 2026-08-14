@@ -406,13 +406,18 @@ type WorkloadList struct {
 // page size is clamped and larger totals are satisfied via next-links.
 const maxWorkloadPageSize = 100
 
-func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
+func ListWorkloads(limit, offset int, statuses []string) ([]Workload, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
+	if offset < 0 {
+		return nil, fmt.Errorf("invalid offset %d: must be non-negative", offset)
+	}
+
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
+	query.Set("offset", strconv.Itoa(offset))
 
 	for _, s := range statuses {
 		query.Add("status", s)
