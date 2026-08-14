@@ -415,3 +415,46 @@ func TestExtra_AndSubsetAnswerDifferentQuestions(t *testing.T) {
 	assert.Len(t, Subset(want, have), 1, "the port the file moved")
 	assert.Len(t, Extra(want, have), 1, "the variable the file dropped")
 }
+
+// The platform stores a size as bytes and returns it that way, so "512MB" in
+// the file and 512000000 in the live workload are one sizing written twice.
+// Reporting that as drift meant a workload could never be up to date: every
+// run rebuilt and rolled a project nobody had touched.
+func TestSubset_MemoryIsTheSameSizeWrittenTwoWays(t *testing.T) {
+	want := map[string]any{
+		"containerGroups": []any{map[string]any{
+			"name": "default",
+			"containers": []any{map[string]any{
+				"name":               "primary",
+				"resourceAllocation": map[string]any{"cpu": 0.5, "memory": "512MB"},
+			}},
+		}},
+	}
+	have := map[string]any{
+		"containerGroups": []any{map[string]any{
+			"name": "default",
+			"containers": []any{map[string]any{
+				"name":               "primary",
+				"resourceAllocation": map[string]any{"cpu": 0.5, "memory": 512000000.0},
+			}},
+		}},
+	}
+
+	assert.Empty(t, Subset(want, have), "512MB and 512000000 are the same sizing")
+}
+
+func TestSubset_ADifferentSizeIsStillDrift(t *testing.T) {
+	want := map[string]any{"resourceAllocation": map[string]any{"memory": "1GB"}}
+	have := map[string]any{"resourceAllocation": map[string]any{"memory": 512000000.0}}
+
+	assert.Len(t, Subset(want, have), 1, "1GB is not 512MB")
+}
+
+// The loose comparison is keyed on the field name, so a numeric string
+// elsewhere does not quietly compare equal to its number.
+func TestSubset_OnlyMemoryComparesAcrossTypes(t *testing.T) {
+	want := map[string]any{"port": "8080"}
+	have := map[string]any{"port": 8080.0}
+
+	assert.Len(t, Subset(want, have), 1, "a port written as a string is still a difference")
+}

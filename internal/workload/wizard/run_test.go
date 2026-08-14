@@ -164,8 +164,8 @@ func TestRun_ExistingManifestThatDoesNotValidate(t *testing.T) {
 	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(`name: broken
 artifact:
   name: broken-artifact
+  type: service
   spec:
-    type: service
     containerGroups:
       - name: default
         containers:
@@ -233,8 +233,7 @@ func TestRun_BindsToALiveWorkload(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "high", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "autoscaling": {"enabled": true, "maxReplicaCount": 9},
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 2, "memory": "4GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9"}]}]}}`))
 
 	dir := t.TempDir()
@@ -277,8 +276,7 @@ func boundWithLiveEnv(t *testing.T, envVars string) {
 		documentFrom(t, `{"name": "live-app", "importance": "high", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "environmentVars": `+envVars+`}]}]}}`))
 }
@@ -414,8 +412,7 @@ func liveGeneratedAgent(t *testing.T) {
 		documentFrom(t, `{"name": "live-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-agent-artifact", "spec": {"type": "agent",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "agent", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000,
 				 "imageBuildConfig": {"dockerfile": {"source": "generated",
 				   "entrypoint": ["python", "old.py"],
@@ -491,8 +488,7 @@ func TestRun_BoundServiceRejectsA2A(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9"}]}]}}`))
 
 	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", A2AEnabled: true}))
@@ -509,8 +505,7 @@ func TestRun_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"},
 				                     {"name": "OPENAI_API_KEY", "value": "live"}]}]}]}}`))

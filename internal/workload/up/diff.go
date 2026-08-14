@@ -17,9 +17,12 @@ package up
 import (
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
 // Change is one field the manifest asks for that the live object does not
@@ -86,7 +89,7 @@ func walk(path string, want, have any, present bool, out *[]Change) {
 	case []any:
 		walkList(path, w, have, out)
 	default:
-		if !equal(want, have) {
+		if !equalAt(path, want, have) {
 			*out = append(*out, Change{Path: path, Want: want, Have: have})
 		}
 	}
@@ -198,6 +201,58 @@ func byName(list []any) map[string]map[string]any {
 // enough; there is no int-versus-float mismatch to normalise away.
 func equal(a, b any) bool {
 	return reflect.DeepEqual(a, b)
+}
+
+// memoryField is the one leaf whose two sides are written differently: the
+// file says "512MB" and the platform stores and returns 512000000.
+const memoryField = ".memory"
+
+// equalAt compares a leaf, knowing which field it is.
+//
+// Only a size is compared loosely, and only where the path says the leaf is
+// one. Without this the same sizing written two ways reads as drift on every
+// run, for ever, so a workload can never report itself up to date; with it
+// applied everywhere, an unrelated numeric string would quietly compare equal
+// to its number.
+func equalAt(path string, a, b any) bool {
+	if equal(a, b) {
+		return true
+	}
+
+	return strings.HasSuffix(path, memoryField) && sameMemory(a, b)
+}
+
+// sameMemory reports whether two values are the same size written differently.
+// It answers false unless both sides parse as a size, so nothing else is
+// compared loosely by accident.
+func sameMemory(a, b any) bool {
+	left, ok := memoryBytes(a)
+	if !ok {
+		return false
+	}
+
+	right, ok := memoryBytes(b)
+
+	return ok && left == right
+}
+
+// memoryBytes reads a size from either shape the two sides use: the file's
+// string, or the platform's number.
+func memoryBytes(v any) (int64, bool) {
+	switch typed := v.(type) {
+	case string:
+		return manifest.MemoryBytes(typed)
+	case float64:
+		// JSON numbers arrive as float64. A size is a whole number of bytes,
+		// so anything fractional is not one.
+		if typed != math.Trunc(typed) {
+			return 0, false
+		}
+
+		return int64(typed), true
+	default:
+		return 0, false
+	}
 }
 
 // join builds a dotted path, skipping the leading dot at the root.

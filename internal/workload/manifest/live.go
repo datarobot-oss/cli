@@ -43,6 +43,9 @@ type Live struct {
 	Name         string
 	Importance   string
 	ArtifactName string
+	// ArtifactType is the artifact's kind, which the platform keeps beside the
+	// spec rather than inside it.
+	ArtifactType string
 	Spec         map[string]any
 	Runtime      map[string]any
 }
@@ -56,6 +59,7 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 		Name:         stringAt(workloadDoc, keyName),
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
+		ArtifactType: stringAt(artifactDoc, keyType),
 		Spec:         stripServerManaged(mapAt(artifactDoc, keySpec)),
 		Runtime:      stripServerManaged(mapAt(workloadDoc, keyRuntime)),
 	}
@@ -68,7 +72,7 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the
 // workload already is.
 func (l Live) Type() string {
-	return stringAt(l.Spec, keyType)
+	return l.ArtifactType
 }
 
 // Defaults reads the live spec into the answers the wizard's screens open on.
@@ -240,7 +244,11 @@ func (l Live) Apply(draft Draft) (Live, error) {
 		applied.Spec = map[string]any{}
 	}
 
-	applied.Spec[keyType] = draft.Type
+	applied.ArtifactType = draft.Type
+
+	// Any type the server echoed inside the spec is noise: it pops spec.type
+	// on the way in and reads the artifact's own type instead.
+	delete(applied.Spec, keyType)
 
 	if draft.Type == TypeAgent && draft.A2AEnabled {
 		applied.Spec[keyA2AEnabled] = true
@@ -620,6 +628,10 @@ func (l Live) Render() ([]byte, error) {
 	}
 
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
+	if l.ArtifactType != "" {
+		artifact = append(artifact, field{key: keyType, value: scalar(l.ArtifactType)})
+	}
+
 	if spec != nil {
 		artifact = append(artifact, field{key: keySpec, value: spec})
 	}

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
@@ -92,6 +93,43 @@ func NormalizeMemory(value string) string {
 	}
 
 	return match[1] + match[2]
+}
+
+// memoryScale is what each suffix multiplies by. Decimal, not binary: the
+// platform reads MB as a million bytes, which is why Mi and friends are
+// refused rather than converted.
+var memoryScale = map[string]int64{
+	"":   1,
+	"B":  1,
+	"KB": 1_000,
+	"MB": 1_000_000,
+	"GB": 1_000_000_000,
+	"TB": 1_000_000_000_000,
+}
+
+// MemoryBytes reads a size into bytes, reporting whether it could.
+//
+// The platform stores a size as a number of bytes and hands it back that way,
+// so "512MB" in the file and 512000000 in the live workload are the same
+// sizing written two ways. Anything comparing the two has to do it here or it
+// finds a difference on every run, for ever.
+func MemoryBytes(value string) (int64, bool) {
+	match := memoryPattern.FindStringSubmatch(strings.ToUpper(strings.TrimSpace(value)))
+	if match == nil {
+		return 0, false
+	}
+
+	amount, err := strconv.ParseInt(match[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	scale, ok := memoryScale[match[2]]
+	if !ok {
+		return 0, false
+	}
+
+	return amount * scale, true
 }
 
 // MemoryUnits lists the suffixes a size may carry, for a prompt that would

@@ -38,9 +38,11 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		{".git/HEAD", true},
 		{".gitignore", true},
 		{"agent.py", false},
-		{".wapiignore", false},     // user-editable, lives at root
-		{".datarobot.yaml", false}, // the committed manifest is a file, not the state dir
-		{".datarobot/cli", false},  // the CLI's own tool state is not sync state
+		{".wapiignore", false}, // user-editable, lives at root
+		// The manifest is rewritten by a deploy after the sync, so uploading it
+		// would make the tree differ from what was synced on every later run.
+		{".datarobot.yaml", true},
+		{".datarobot/cli", false}, // the CLI's own tool state is not sync state
 		{".datarobot/cli/state.yaml", false},
 	}
 
@@ -72,7 +74,7 @@ func TestSystemExcludes_FoldCase(t *testing.T) {
 
 	// Folding must not swallow neighbours that merely share a prefix.
 	assert.False(t, m.Match(".Datarobot/cli/state.yaml", false))
-	assert.False(t, m.Match(".Datarobot.yaml", false))
+	assert.True(t, m.Match(".Datarobot.yaml", false), "the manifest is excluded whatever its casing")
 }
 
 func TestSystemExcludes_NotOverridable(t *testing.T) {
