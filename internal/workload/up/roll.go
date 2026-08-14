@@ -31,10 +31,15 @@ import (
 // replacement POSTed while one is in flight queues another swap rather than
 // being refused, so the check that matters is the one immediately before the
 // call, and an early one saves a doomed run from creating anything. The
-// candidate is minted next, and locked before the rollout when production is
-// locked, because the platform will not replace a locked artifact with a
-// draft and locking is one-way: it has to happen to the new version, after
-// the user has agreed, and before the swap.
+// candidate is minted next, and the question of locking is put then, while
+// the answer still costs nothing.
+//
+// The lock itself is last, inside replace, between the final guard and the
+// POST. The platform will not replace a locked artifact with a draft, so the
+// candidate has to be locked to go; but locking is one-way, and an artifact
+// locked for a rollout that is then refused can be neither unlocked nor
+// deleted. Taking the lock only once nothing is left that can say no is what
+// keeps a lost race from leaving one behind.
 func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
 	if live.State == StateStopped {
 		return result, fmt.Errorf(
@@ -71,14 +76,14 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 	// swap leaves the old version running, so an envelope naming the
 	// candidate would send someone to read the wrong artifact.
 
-	locked, err := matchLock(live, candidate, fresh, result.Name, opts, report)
+	// Asked now, locked later. Agreeing costs nothing that cannot be undone;
+	// the lock is taken inside replace, once the last guard has passed.
+	lock, err := confirmLock(live, result.Name, opts)
 	if err != nil {
 		return result, err
 	}
 
-	result.Locked = locked
-
-	return replace(live.WorkloadID, candidate, result, opts, report)
+	return replace(live.WorkloadID, candidate, lock, fresh, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto, and whether this run made
@@ -110,14 +115,14 @@ func candidateArtifact(loaded Loaded, report *reporter) (string, bool, error) {
 	return created.ID, true, nil
 }
 
-// matchLock makes the candidate immutable when the version it replaces is,
-// and reports whether it did. Draft replaces draft and locked replaces
-// locked; the platform rejects a mismatch.
+// confirmLock asks whether to roll a locked version, and reports whether the
+// candidate has to be locked to match. Draft replaces draft and locked
+// replaces locked; the platform rejects a mismatch.
 //
-// This is the point of no return, which is why the question is asked here
-// rather than earlier: everything before it can be abandoned, and a locked
-// artifact cannot be unlocked or deleted.
-func matchLock(live Live, candidate string, fresh bool, workloadName string, opts Options, report *reporter) (bool, error) {
+// Only the question is asked here. The lock itself waits until immediately
+// before the swap, because locking is one-way and an artifact locked for a
+// rollout that never starts can be neither unlocked nor deleted.
+func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 	if !live.Locked {
 		return false, nil
 	}
@@ -131,6 +136,16 @@ func matchLock(live Live, candidate string, fresh bool, workloadName string, opt
 		return false, fmt.Errorf("cancelled: workload %s is still running the version it was", workloadName)
 	}
 
+	return true, nil
+}
+
+// matchLock makes the candidate immutable, and reports whether it is.
+//
+// It runs between the final in-flight guard and the swap. That window is the
+// whole point: the platform wants the lock in place before the replacement is
+// POSTed, and by then everything that could still refuse the rollout has had
+// its say, so a lock taken here is one the run is committed to using.
+func matchLock(candidate string, fresh bool, report *reporter) (bool, error) {
 	// A candidate the file named may already be locked, and locking twice is
 	// not a no-op at the platform. One created here is always a draft.
 	if !fresh {
@@ -144,7 +159,7 @@ func matchLock(live Live, candidate string, fresh bool, workloadName string, opt
 		}
 	}
 
-	err = report.run("Locking the new version", func() error {
+	err := report.run("Locking the new version", func() error {
 		_, lockErr := lockArtifactFn(candidate)
 
 		return lockErr
@@ -194,12 +209,27 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 }
 
 // replace starts the rollout and follows it to the end.
-func replace(workloadID, artifactID string, result Result, opts Options, report *reporter) (Result, error) {
+func replace(
+	workloadID, artifactID string,
+	lock, fresh bool,
+	result Result,
+	opts Options,
+	report *reporter,
+) (Result, error) {
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
 	if err := guardReplacementFn(workloadID); err != nil {
 		return result, err
+	}
+
+	if lock {
+		locked, err := matchLock(artifactID, fresh, report)
+		if err != nil {
+			return result, err
+		}
+
+		result.Locked = locked
 	}
 
 	var started *workload.Replacement

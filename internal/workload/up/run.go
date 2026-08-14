@@ -260,10 +260,11 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return start(live, result, opts)
 	}
 
-	// What is left is a runtime-only change: no new version is minted, so
-	// none of the machinery below applies and a settings update is its own
-	// call, which the platform has not given the CLI yet.
-	if !plan.Creates && !plan.RollsArtifact() {
+	// A runtime change is its own call, which the CLI has not been given yet.
+	// Refused whether or not a version is also being rolled: rolling and
+	// leaving the sizing behind would carry out half the plan that was just
+	// printed and report the whole of it as done.
+	if !plan.Creates && (len(plan.Runtime) > 0 || !plan.RollsArtifact()) {
 		return result, fmt.Errorf("%w: %s. The plan above is correct; applying it is the next change",
 			ErrNotWired, unwired(plan))
 	}
@@ -286,13 +287,20 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	return create(loaded, loaded.Compiled.Payload, result, opts, report)
 }
 
-// unwired names the change the plan asks for. Now that the roll is wired that
-// is only ever a runtime-only one, and calling a stopped workload "live"
-// contradicts the plan block above, whose first line says it is to be started.
+// unwired names the change the plan asks for. Now that the roll is wired the
+// runtime block is the only thing left that cannot be applied, on its own or
+// alongside a roll. Calling a stopped workload "live" contradicts the plan
+// block above, whose first line says it is to be started.
 func unwired(plan Plan) string {
 	subject := "a live workload"
 	if plan.State == StateStopped {
 		subject = "a stopped workload, which is also not being started"
+	}
+
+	// Naming only the roll would read as though the rollout were the missing
+	// piece, when the rollout is the half that works.
+	if plan.RollsArtifact() {
+		return "changing the runtime settings of " + subject + " in the same deploy as a new version"
 	}
 
 	return "changing the runtime settings of " + subject

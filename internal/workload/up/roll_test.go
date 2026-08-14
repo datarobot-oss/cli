@@ -242,11 +242,62 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "create-artifact", "lock:art-2", "guard", "replace:art-2", "await-rollout", "settle"},
-		tr.steps, "the successor is locked before the swap, not after")
+		[]string{"guard", "create-artifact", "guard", "lock:art-2", "replace:art-2", "await-rollout", "settle"},
+		tr.steps, "the successor is locked after the last guard and before the swap")
 	assert.Contains(t, asked, "production")
 	assert.Equal(t, "my-app", expect, "the name is what has to be typed")
 	assert.True(t, result.Locked)
+}
+
+// A plan with both halves is refused rather than half-applied. Rolling and
+// leaving the sizing behind would carry out part of the plan just printed and
+// report the whole of it as done, which is worse than not starting.
+func TestRun_RollThatAlsoResizesIsRefusedWholesale(t *testing.T) {
+	var tr track
+
+	install(t, wiredRoll(&tr))
+
+	both := strings.Replace(newImage(), "cpu: 0.5", "cpu: 2", 1)
+
+	_, _, err := runIn(t, both, Options{NonInteractive: true})
+	require.ErrorIs(t, err, ErrNotWired)
+	assert.Contains(t, err.Error(), "runtime settings")
+	assert.Empty(t, tr.steps, "nothing may be rolled while half the plan cannot be applied")
+}
+
+// Locking cannot be undone and a locked artifact cannot be deleted, so a lock
+// taken before the final guard is stranded when that guard refuses. The guard
+// has to lose the race first.
+func TestRun_LockIsNotTakenWhenTheFinalGuardRefuses(t *testing.T) {
+	var (
+		tr    track
+		calls int
+	)
+
+	f := lockedLive(wiredRoll(&tr))
+
+	// The first guard passes and the second finds a rollout someone else
+	// started meanwhile, which is the race this ordering exists for.
+	f.guard = func(string) error {
+		tr.steps = append(tr.steps, "guard")
+		calls++
+
+		if calls == 1 {
+			return nil
+		}
+
+		return errors.New("workload wl-1 already has a replacement in progress")
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(string, string) (bool, error) { return true, nil },
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already has a replacement in progress")
+	assert.NotContains(t, tr.steps, "lock:art-2",
+		"a refused rollout must not leave an artifact locked for a swap that never happened")
 }
 
 func TestRun_LockedProductionLeftAloneWhenTheAnswerIsNo(t *testing.T) {
