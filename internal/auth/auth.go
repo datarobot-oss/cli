@@ -177,9 +177,9 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 	FprintUnsetTokenInstructions(w)
 }
 
-// StoredEndpointName names the stored profile's endpoint the way a user changes
-// it, for messages asking them to correct it.
-const StoredEndpointName = "the endpoint saved by dr auth set-url"
+// StoredEndpointName names the endpoint in messages about the stored profile.
+// Not dr auth set-url: DATAROBOT_CLI_ENDPOINT can supply it and outranks the file.
+const StoredEndpointName = "the configured DataRobot endpoint"
 
 // ReportUnjudged explains a verification failure that produced no verdict on the
 // credentials and reports whether it did. False means the instance rejected them.
@@ -209,15 +209,26 @@ func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool 
 // ValidateEndpoint trims, so VerifyToken's raw parse failure is checked too.
 func unusableEndpoint(endpoint string, err error) string {
 	if epErr := ValidateEndpoint(endpoint); epErr != nil {
-		return epErr.Error()
+		return reasonWithoutURL(epErr)
 	}
 
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Op == "parse" {
-		return urlErr.Err.Error()
+		return reasonWithoutURL(urlErr)
 	}
 
 	return ""
+}
+
+// reasonWithoutURL drops the copy of the endpoint url.Parse embeds in its error,
+// which would print the userinfo password every other message redacts.
+func reasonWithoutURL(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err.Error()
+	}
+
+	return err.Error()
 }
 
 // FprintTransportError explains a failure that never reached the instance and
@@ -262,7 +273,7 @@ func FprintServerStatus(w io.Writer, endpoint, endpointName string, err error) b
 }
 
 // hostOrEndpoint reduces an endpoint to scheme and host, falling back to the
-// endpoint as given so a message never names an empty host.
+// endpoint as given when it will not parse. Redacted either way.
 func hostOrEndpoint(endpoint string) string {
 	if host, err := config.SchemeHostOnly(endpoint); err == nil {
 		return redacted(host)
@@ -271,15 +282,25 @@ func hostOrEndpoint(endpoint string) string {
 	return redacted(endpoint)
 }
 
-// redacted hides a password an endpoint carries in its userinfo. Every message
-// that prints an endpoint goes through here; url.URL.String() would print it.
+// redacted hides a password an endpoint carries in its userinfo. Fails closed: a
+// value url.Parse rejects loses everything before the first `@`.
 func redacted(endpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || parsed.User == nil {
-		return endpoint
+	trimmed := strings.TrimSpace(endpoint)
+
+	parsed, err := url.Parse(trimmed)
+	if err == nil {
+		if parsed.User == nil {
+			return endpoint
+		}
+
+		return parsed.Redacted()
 	}
 
-	return parsed.Redacted()
+	if _, host, found := strings.Cut(trimmed, "@"); found {
+		return "[redacted]@" + host
+	}
+
+	return endpoint
 }
 
 // reportStoredProfileNotUsed names both sides of the substitution this CLI
@@ -292,17 +313,12 @@ func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
 		return
 	}
 
-	requestedHost := creds.Endpoint
-	if host, err := config.SchemeHostOnly(creds.Endpoint); err == nil {
-		requestedHost = host
-	}
-
 	base, info := writerStyles(w)
 
 	fmt.Fprint(w, base.Render("Environment credentials for "))
-	fmt.Fprint(w, info.Render(requestedHost))
+	fmt.Fprint(w, info.Render(hostOrEndpoint(creds.Endpoint)))
 	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored profile for "))
-	fmt.Fprint(w, info.Render(storedHost))
+	fmt.Fprint(w, info.Render(redacted(storedHost)))
 	fmt.Fprintln(w, base.Render("."))
 }
 
@@ -398,9 +414,10 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		skipAuthFlow = true
 	}
 
-	// dr auth login cannot fix a 404, a 5xx, or an unreachable host, and
-	// starting it would wipe a stored token the instance never rejected.
-	if ReportUnjudged(os.Stderr, viperx.GetString(config.DataRobotURL), StoredEndpointName, viperErr) {
+	// Only a stored token can be wrongly discarded, so only its failures suppress
+	// the login flow. With nothing stored there is no verdict to respect.
+	if viperx.GetString(config.DataRobotAPIKey) != "" &&
+		ReportUnjudged(os.Stderr, viperx.GetString(config.DataRobotURL), StoredEndpointName, viperErr) {
 		skipAuthFlow = true
 	}
 

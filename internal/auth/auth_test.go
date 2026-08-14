@@ -438,6 +438,71 @@ func TestEndpointUserinfoRedacted(t *testing.T) {
 	}
 }
 
+// TestUnusableEndpointHidesUserinfo covers url.Parse embedding the endpoint in
+// its own error text, which carried the password past every other redaction.
+func TestUnusableEndpointHidesUserinfo(t *testing.T) {
+	// Quoted, so SchemeHostOnly's url.Parse rejects it outright.
+	const quoted = `"https://user:s3cr3t@app.example.com/api/v2"`
+
+	t.Run("ReportEnvCredentialsError", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: quoted, Token: "some-token"}
+		ReportEnvCredentialsError(&buf, creds, errors.New("invalid token"))
+
+		assert.Contains(t, buf.String(), "DATAROBOT_ENDPOINT environment variable is invalid")
+		assert.NotContains(t, buf.String(), "s3cr3t")
+	})
+
+	t.Run("ReportUnjudged", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		require.True(t, ReportUnjudged(&buf, quoted, StoredEndpointName, errors.New("invalid token")))
+		assert.NotContains(t, buf.String(), "s3cr3t")
+	})
+
+	t.Run("redacted fails closed on a value url.Parse rejects", func(t *testing.T) {
+		assert.NotContains(t, redacted(quoted), "s3cr3t")
+		assert.NotContains(t, hostOrEndpoint(quoted), "s3cr3t")
+	})
+}
+
+// TestReportStoredProfileNotUsedRedacts covers the refusal line printed directly
+// after the classified error, which named the endpoint without redacting it.
+func TestReportStoredProfileNotUsedRedacts(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	var buf bytes.Buffer
+
+	creds := &EnvCredentials{Endpoint: "https://user:s3cr3t@requested.example.com/api/v2", Token: "bad-token"}
+	reportStoredProfileNotUsed(&buf, creds)
+
+	assert.Contains(t, buf.String(), "not falling back to the stored profile")
+	assert.NotContains(t, buf.String(), "s3cr3t")
+}
+
+// TestEnsureAuthenticated_NoTokenBadEndpoint is the lockout regression test: an
+// endpoint the CLI cannot dial must not withhold the login flow that fixes it.
+func TestEnsureAuthenticated_NoTokenBadEndpoint(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotURL, "app.datarobot.invalid")
+	viperx.Set(config.DataRobotAPIKey, "")
+
+	loginStarted := false
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		loginStarted = true
+
+		return "fresh-token", nil
+	}
+
+	EnsureAuthenticated(context.Background())
+
+	assert.True(t, loginStarted, "Expected the login flow to open when no token is stored")
+}
+
 // TestEnsureAuthenticated_StoredProfileServerError is the regression test for
 // the token-wiping bug: a 503 never judged the token, so it must survive.
 func TestEnsureAuthenticated_StoredProfileServerError(t *testing.T) {
