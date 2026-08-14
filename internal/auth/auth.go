@@ -228,7 +228,8 @@ func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool 
 		return true
 	}
 
-	// Naming the host SchemeHostOnly invented would name a URL never requested.
+	// An unusable endpoint is reported as the user wrote it. SchemeHostOnly
+	// defaults a bare host to https, a URL the CLI never actually requested.
 	if reason := unusableEndpoint(endpoint, err); reason != "" {
 		fmt.Fprintln(w, base.Render("❌ "+endpointName+" is invalid: "+reason))
 
