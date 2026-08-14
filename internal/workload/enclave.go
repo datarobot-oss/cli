@@ -30,20 +30,11 @@ const (
 	EnclaveSelectionPolicyManual       = "manual"
 )
 
-// ApplyEnclavePin pins a workload create spec to a single Enclave by name:
+// ApplyEnclavePin pins a JSON workload create spec to a single Enclave:
 // runtime.enclaveSelectionPolicy becomes "manual" and runtime.enclaves the
-// one-element list the server accepts today. spec must already be JSON
-// (ReadSpecFile converts YAML before this point).
-//
-// The pin refuses to fight the spec: when the spec already carries either
-// field the caller gets an error instead of a silent rewrite, because the
-// spec file is the reviewable artifact and a flag that quietly overrides it
-// would leave the file lying about where the workload runs.
-//
-// Applying the pin re-encodes the spec, so the byte-for-byte passthrough
-// promise of a plain create no longer holds; numbers survive verbatim via
-// json.Number, but key order does not. The server does not care about
-// either.
+// one-element list the server accepts today. It errors if the spec already
+// sets either field rather than silently rewriting it. Re-encodes the spec:
+// numbers survive via json.Number, key order does not.
 func ApplyEnclavePin(spec []byte, enclave string) ([]byte, error) {
 	name := strings.TrimSpace(enclave)
 	if name == "" {
