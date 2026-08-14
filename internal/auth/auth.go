@@ -164,11 +164,11 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 		return
 	}
 
-	if FprintTransportError(w, creds.Endpoint, creds.endpointVarName(), err) {
+	if fprintServerStatus(w, creds.Endpoint, creds.endpointVarName(), err) {
 		return
 	}
 
-	if FprintServerStatus(w, creds.Endpoint, creds.endpointVarName(), err) {
+	if fprintTransportError(w, creds.Endpoint, creds.endpointVarName(), err) {
 		return
 	}
 
@@ -201,8 +201,8 @@ func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool 
 		return true
 	}
 
-	return FprintServerStatus(w, endpoint, endpointName, err) ||
-		FprintTransportError(w, endpoint, endpointName, err)
+	return fprintServerStatus(w, endpoint, endpointName, err) ||
+		fprintTransportError(w, endpoint, endpointName, err)
 }
 
 // unusableEndpoint returns why the CLI cannot dial endpoint, or "" when it can.
@@ -231,9 +231,9 @@ func reasonWithoutURL(err error) string {
 	return err.Error()
 }
 
-// FprintTransportError explains a failure that never reached the instance and
+// fprintTransportError explains a failure that never reached the instance and
 // reports whether it did. Test DeadlineExceeded first: a timeout is a *url.Error too.
-func FprintTransportError(w io.Writer, endpoint, endpointName string, err error) bool {
+func fprintTransportError(w io.Writer, endpoint, endpointName string, err error) bool {
 	var urlErr *url.Error
 
 	if !errors.As(err, &urlErr) {
@@ -250,9 +250,9 @@ func FprintTransportError(w io.Writer, endpoint, endpointName string, err error)
 	return true
 }
 
-// FprintServerStatus explains a non-200 verification failure and reports whether
+// fprintServerStatus explains a non-200 verification failure and reports whether
 // it did. 401/403 and status-less errors return false.
-func FprintServerStatus(w io.Writer, endpoint, endpointName string, err error) bool {
+func fprintServerStatus(w io.Writer, endpoint, endpointName string, err error) bool {
 	var statusErr *config.HTTPStatusError
 
 	if !errors.As(err, &statusErr) ||
