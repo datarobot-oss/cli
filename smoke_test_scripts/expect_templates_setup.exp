@@ -10,8 +10,13 @@ puts "DATAROBOT_CLI_CONFIG: $env(DATAROBOT_CLI_CONFIG)"
 
 spawn dr templates setup --config $env(DATAROBOT_CLI_CONFIG)
 
-# Handle potential authentication prompt with longer timeout
-set timeout 10
+# Handle potential authentication prompt with longer timeout.
+# dr templates setup makes two token-verification round-trips (EnsureAuthenticated
+# in PreRunE, then AuthorizeRequest when the TUI fetches templates) plus the
+# template list fetch before rendering. Each VerifyToken call has a 30s client
+# timeout, so under slow API conditions the combined startup can exceed 10s.
+# 30s gives ample headroom while still failing fast on a genuine hang.
+set timeout 30
 expect {
     "to connect your DataRobot credentials" {
         # Auth prompt appeared - this means token validation failed
