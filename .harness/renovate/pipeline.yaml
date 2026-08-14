@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://json.schemastore.org/harness-pipeline
+---
+# Harness CI pipeline: Renovate self-hosted
+#
+# Runs the Renovate Docker image on a daily schedule to create PRs for version
+# pins that Dependabot cannot see (Go toolchain directive, Taskfile tool
+# versions). Renovate's built-in managers are disabled in renovate.json so
+# there is no overlap with Dependabot's gomod / github-actions coverage.
+#
+# Decision context:
+#   https://datarobot.atlassian.net/wiki/spaces/CFX/pages/7950729316
+#
+# Prerequisites:
+#   - A Harness secret named RENOVATE_GITHUB_TOKEN containing a GitHub PAT
+#     (or GitHub App token) with repo scope for datarobot-oss/cli.
+#   - A Harness Docker connector (DOCKER_HUB_CONNECTOR) for pulling the
+#     renovate/renovate image.
+#   - The pipeline must be triggered by a cron schedule configured in the
+#     Harness UI (or via the trigger block below if your Harness edition
+#     supports inline cron triggers).
+
+pipeline:
+  name: renovate
+  identifier: renovate
+  projectIdentifier: cli
+  orgIdentifier: datarobot_oss
+  tags:
+    purpose: dependency-updates
+    tool: renovate
+
+  # Run daily at 06:00 UTC. Adjust frequency as needed.
+  triggers:
+    - type: Schedule
+      spec:
+        type: Cron
+        expression: "0 6 * * *"
+
+  stages:
+    - stage:
+        name: run-renovate
+        identifier: run_renovate
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Run Renovate
+                  identifier: run_renovate
+                  spec:
+                    connectorRef: DOCKER_HUB_CONNECTOR
+                    image: renovate/renovate:latest
+                    envVariables:
+                      # GitHub PAT / App token for PR creation.
+                      GITHUB_TOKEN: "<+secrets.getValue('RENOVATE_GITHUB_TOKEN')>"
+                      # Point Renovate at the repo-level config.
+                      RENOVATE_CONFIG_FILE: "renovate.json"
+                      # Log level — set to debug during initial rollout.
+                      LOG_LEVEL: "info"
+                      # Limit to this repo only.
+                      RENOVATE_REPOSITORIES: "datarobot-oss/cli"
+                      # Do not create the dependency dashboard issue.
+                      RENOVATE_DEPENDENCY_DASHBOARD: "false"
+                      # Onboarding PR is not needed; config is already in-repo.
+                      RENOVATE_ONBOARDING: "false"
+                      # Require approval before merging (draft PRs).
+                      RENOVATE_DRAFT_PR: "true"
+                    command: |
+                      renovate
