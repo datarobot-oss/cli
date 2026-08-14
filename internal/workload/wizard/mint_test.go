@@ -261,3 +261,58 @@ func TestFlow_CancelStoresNothing(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, *stored)
 }
+
+// --dry-run promises to change nothing, and a credential is a change that
+// outlives the run. The interactive path has to mean by it what the headless
+// one does.
+func TestFlow_DryRunStoresNothing(t *testing.T) {
+	stored := credentialStore(t)
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
+		[]byte("OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz01\n"), 0o600))
+
+	start := newFlow(Detect(dir), nil, Answers{})
+	start.dryRun = true
+
+	model := press(t, pastName(t, start), "enter", "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+
+	accepted := press(t, model, "enter")
+
+	assert.Empty(t, *stored, "a run that writes no file must create no credential")
+	assert.True(t, accepted.done)
+	assert.Contains(t, string(accepted.content), "PLACEHOLDER",
+		"with nothing stored there is no id to write, and the entry stays visibly unfinished")
+}
+
+// The confirm screen's [e] is the last chance to change the file, and the
+// secrets are stored after it. Re-rendering from the draft at that point threw
+// the edit away, silently, in the one step between agreeing and the write.
+func TestFlow_ConfirmKeepsAHandEditWhenSecretsAreStored(t *testing.T) {
+	stored := credentialStore(t)
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
+		[]byte("OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz01\n"), 0o600))
+
+	model := press(t, pastName(t, newFlow(Detect(dir), nil, Answers{})), "enter", "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+
+	// What the editor left: the rendered file with one line the wizard would
+	// never produce.
+	edit := strings.Replace(string(model.content), "importance: low", "importance: high", 1)
+	require.NotEqual(t, string(model.content), edit, "the fixture has to actually change something")
+
+	edited, _ := model.edited(editedMsg{content: []byte(edit)})
+	model, ok := edited.(flow)
+	require.True(t, ok)
+
+	accepted := press(t, model, "enter")
+	require.Len(t, *stored, 1)
+
+	assert.Contains(t, string(accepted.content), "importance: high", "the hand edit survives to the file")
+	assert.Contains(t, string(accepted.content), "dr-credential:66f000000000000000000001/apiToken",
+		"and the credential the run stored is still the one referenced")
+	assert.NotContains(t, string(accepted.content), "PLACEHOLDER")
+}
