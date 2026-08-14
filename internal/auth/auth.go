@@ -45,8 +45,8 @@ func AuthCallbackURL(datarobotHost string) string {
 	return withoutUserinfo(datarobotHost) + "/account/developer-tools?cliRedirect=true"
 }
 
-// withoutUserinfo strips a user:password@ prefix. Unlike redacted it leaves no
-// placeholder behind, so the result is still usable as a URL.
+// withoutUserinfo strips a user:password@ prefix, leaving a still-usable URL:
+// https://user:pass@app.datarobot.com/api/v2 -> https://app.datarobot.com/api/v2
 func withoutUserinfo(endpoint string) string {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.User == nil {
@@ -163,36 +163,10 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 		return
 	}
 
-	// Distinguish a malformed endpoint from an invalid token so the user
-	// fixes the right thing. A quoted endpoint (e.g. from running
-	// `$(dr auth export)` instead of `eval "$(dr auth export)"`) fails here
-	// and must not be reported as a token problem.
-	if epErr := ValidateEndpoint(creds.Endpoint); epErr != nil {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+reasonWithoutURL(epErr)))
-		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
-
-		return
-	}
-
-	// VerifyToken uses the endpoint value exactly as the user set it, but
-	// ValidateEndpoint above is more forgiving: it accepts a bare host with
-	// no scheme and trims stray whitespace. The two checks below catch the
-	// values that slipped through that gap, so they are reported as a bad
-	// endpoint instead of as a connection failure naming a URL the CLI never
-	// actually requested.
-	var urlErr *url.Error
-
-	hasURLErr := errors.As(err, &urlErr)
-
-	if !strings.Contains(strings.TrimSpace(creds.Endpoint), "://") {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: missing URL scheme (https://...)"))
-		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
-
-		return
-	}
-
-	if hasURLErr && urlErr.Op == "parse" {
-		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+urlErr.Err.Error()))
+	// A quoted, scheme-less, or unparseable endpoint is the user's to fix, not
+	// the token. `$(dr auth export)` without the eval is the usual cause.
+	if reason := unusableEndpoint(creds.Endpoint, err); reason != "" {
+		fmt.Fprintln(w, base.Render("❌ "+creds.endpointVarName()+" environment variable is invalid: "+reason))
 		fmt.Fprintln(w, base.Render("Set it to a valid DataRobot URL and try again."))
 
 		return
@@ -212,7 +186,7 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 }
 
 // StoredEndpointName names the endpoint in messages about the stored profile.
-// Not dr auth set-url: DATAROBOT_CLI_ENDPOINT can supply it and outranks the file.
+// It avoids naming dr auth set-url, since DATAROBOT_CLI_ENDPOINT can override the file.
 const StoredEndpointName = "the configured DataRobot endpoint"
 
 // ReportUnjudged explains a verification failure that produced no verdict on the
