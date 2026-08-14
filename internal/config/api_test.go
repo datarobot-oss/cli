@@ -229,3 +229,26 @@ func (suite *APITestSuite) TestCommandPathToTraceWithAliases() {
 		})
 	}
 }
+
+// EndpointWithScheme differs from SchemeHostOnly in the one way that matters to
+// VerifyToken: it keeps the /api/v2 path instead of stripping it.
+func TestEndpointWithScheme(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"empty stays empty", "", ""},
+		{"bare host gains https", "app.datarobot.com", "https://app.datarobot.com"},
+		{"bare host keeps its path", "app.datarobot.com/api/v2", "https://app.datarobot.com/api/v2"},
+		{"bare host keeps its port", "localhost:8080/api/v2", "https://localhost:8080/api/v2"},
+		{"https untouched", "https://app.datarobot.com/api/v2", "https://app.datarobot.com/api/v2"},
+		{"http untouched", "http://localhost:8080/api/v2", "http://localhost:8080/api/v2"},
+		{"other schemes untouched", "ftp://app.datarobot.com", "ftp://app.datarobot.com"},
+		{"whitespace trimmed", "  app.datarobot.com/api/v2  ", "https://app.datarobot.com/api/v2"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := EndpointWithScheme(c.in); got != c.want {
+				t.Errorf("EndpointWithScheme(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}

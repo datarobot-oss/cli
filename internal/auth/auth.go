@@ -416,8 +416,9 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	// Only a stored token can be wrongly discarded, so only its failures suppress
 	// the login flow. With nothing stored there is no verdict to respect.
+	storedEndpoint := config.EndpointWithScheme(viperx.GetString(config.DataRobotURL))
 	if viperx.GetString(config.DataRobotAPIKey) != "" &&
-		ReportUnjudged(os.Stderr, viperx.GetString(config.DataRobotURL), StoredEndpointName, viperErr) {
+		ReportUnjudged(os.Stderr, storedEndpoint, StoredEndpointName, viperErr) {
 		skipAuthFlow = true
 	}
 

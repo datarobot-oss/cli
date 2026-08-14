@@ -503,6 +503,43 @@ func TestEnsureAuthenticated_NoTokenBadEndpoint(t *testing.T) {
 	assert.True(t, loginStarted, "Expected the login flow to open when no token is stored")
 }
 
+// TestEnsureAuthenticated_StoredEndpointNormalized covers the permanent lockout:
+// an endpoint the CLI could normalize used to suppress the login flow forever.
+func TestEnsureAuthenticated_StoredEndpointNormalized(t *testing.T) {
+	t.Run("padded endpoint still verifies", func(t *testing.T) {
+		server, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		// Stray whitespace fails VerifyToken's raw url.Parse, so before
+		// normalization this locked out a working token permanently.
+		viperx.Set(config.DataRobotURL, "  "+server.URL+"/api/v2  ")
+		viperx.Set(config.DataRobotAPIKey, "valid-token")
+
+		APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+			t.Error("login flow must not start when the stored token verifies")
+
+			return "", errors.New("unexpected login flow")
+		}
+
+		assert.True(t, EnsureAuthenticated(context.Background()))
+	})
+
+	t.Run("bare host is dialed, not rejected", func(t *testing.T) {
+		_, cleanup := setupTestEnvironment(t)
+		defer cleanup()
+
+		viperx.Set(config.DataRobotURL, "app.datarobot.invalid/api/v2")
+		viperx.Set(config.DataRobotAPIKey, "some-token")
+
+		_, err := config.GetAPIKey(context.Background())
+
+		var urlErr *url.Error
+
+		require.ErrorAs(t, err, &urlErr)
+		assert.Equal(t, "Get", urlErr.Op, "expected a dial attempt, not a scheme rejection")
+	})
+}
+
 // TestEnsureAuthenticated_StoredProfileServerError is the regression test for
 // the token-wiping bug: a 503 never judged the token, so it must survive.
 func TestEnsureAuthenticated_StoredProfileServerError(t *testing.T) {
