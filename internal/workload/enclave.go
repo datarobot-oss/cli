@@ -50,9 +50,6 @@ func ApplyEnclavePin(spec []byte, enclave string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid spec: %w", err)
 	}
 
-	// A top-level null decodes successfully into a nil map, and assigning
-	// runtime into that would panic. Any other non-object (array, string)
-	// already fails Decode above.
 	if doc == nil {
 		return nil, errors.New("invalid spec: the spec must be a JSON object")
 	}
@@ -66,9 +63,6 @@ func ApplyEnclavePin(spec []byte, enclave string) ([]byte, error) {
 		}
 	}
 
-	// Presence alone is the conflict, not a differing value: a spec that says
-	// enclaves: [] pinned nothing on purpose, and "the flag agrees with the
-	// file" is not worth a second code path.
 	if _, ok := runtime["enclaveSelectionPolicy"]; ok {
 		return nil, errors.New(
 			"spec already sets runtime.enclaveSelectionPolicy; remove it from the spec or drop --enclave")
