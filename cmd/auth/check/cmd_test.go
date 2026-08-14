@@ -52,6 +52,9 @@ func TestVerifyDotenvToken_StatusErrorKeepsMessage(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	orig := os.Stdout
+
+	t.Cleanup(func() { os.Stdout = orig })
+
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 

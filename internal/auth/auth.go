@@ -357,7 +357,8 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return false
 	}
 
-	// No valid token, attempt to get one
+	// Reached for any non-timeout failure, including a 5xx from the instance.
+	// Restricting the login flow to rejected credentials is a planned follow-up.
 	log.Warn("No valid API key found. Starting authentication flow...")
 
 	// Auto-retrieve new credentials without prompting
