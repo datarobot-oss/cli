@@ -15,12 +15,17 @@
 package up
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
+
+// keyArtifactName is the artifact block's own name field, dropped before the
+// spec comparison below.
+const keyArtifactName = "name"
 
 // version is the artifact a roll promotes, and what making it cost.
 type version struct {
@@ -82,7 +87,7 @@ func buildVersion(loaded Loaded, live Live, code CodeChange, opts Options, repor
 // versionArtifact returns the artifact to fill and build, reusing the one an
 // earlier attempt left behind rather than adding to a pile of drafts.
 func versionArtifact(loaded Loaded, live Live, report *reporter) (version, error) {
-	if id, ok := abandoned(loaded.ProjectDir, live); ok {
+	if id, ok := abandoned(loaded, live); ok {
 		report.say("  Continuing with artifact %s from an earlier attempt.\n", id)
 
 		return version{ID: id}, nil
@@ -113,7 +118,8 @@ func createVersion(loaded Loaded, report *reporter) (version, error) {
 	return version{ID: created.ID, Fresh: true}, nil
 }
 
-// abandoned reports an artifact a previous roll made and never promoted.
+// abandoned reports an artifact a previous roll made and never promoted, and
+// which still describes what the file asks for.
 //
 // The project's link is the only record of it, and it is only a candidate
 // when it is not the version currently serving: linked to the live one means
@@ -121,12 +127,21 @@ func createVersion(loaded Loaded, report *reporter) (version, error) {
 // A locked one is no use either, since nothing more can be pushed into it,
 // which is the state a roll onto production leaves behind when it dies
 // between the lock and the swap.
-func abandoned(projectDir string, live Live) (string, bool) {
-	if !projectLinkedFn(projectDir) {
+//
+// The spec is checked as well, because an artifact's is fixed when it is
+// created. Between the attempt that left this one behind and now, the file
+// may have moved a port, a probe or an environment variable; the draft still
+// carries the old answer, and promoting it would roll out a version the file
+// no longer describes, report success, and leave the same drift to be found
+// again next run. A draft that no longer matches is left where it is and a
+// new one minted, which is what happens anyway when there is nothing to
+// reuse.
+func abandoned(loaded Loaded, live Live) (string, bool) {
+	if !projectLinkedFn(loaded.ProjectDir) {
 		return "", false
 	}
 
-	cfg, err := loadProjectFn(projectDir)
+	cfg, err := loadProjectFn(loaded.ProjectDir)
 	if err != nil || cfg.ArtifactID == "" || cfg.ArtifactID == live.ArtifactID {
 		return "", false
 	}
@@ -136,7 +151,45 @@ func abandoned(projectDir string, live Live) (string, bool) {
 		return "", false
 	}
 
+	if !describes(loaded, cfg.ArtifactID) {
+		return "", false
+	}
+
 	return cfg.ArtifactID, true
+}
+
+// describes reports whether the draft still says what the file's artifact
+// block says. The comparison is the plan's own, one-directional: a field the
+// file does not mention is not a difference, so a draft carrying something
+// the platform filled in for itself is still a match.
+//
+// A read that fails answers no. Minting a second draft costs an artifact
+// nobody promotes; promoting one whose spec was never confirmed costs a
+// rollout of the wrong thing.
+func describes(loaded Loaded, artifactID string) bool {
+	payload, err := loaded.Compiled.ArtifactPayload()
+	if err != nil {
+		return false
+	}
+
+	var want map[string]any
+
+	if err := json.Unmarshal(payload, &want); err != nil {
+		return false
+	}
+
+	doc, err := getArtifactDocFn(artifactID)
+	if err != nil {
+		return false
+	}
+
+	// The name is the CLI's own, derived from the workload's, and the block
+	// carries it only so a create has one to send. It says nothing about what
+	// the version runs, and an artifact renamed in the UI is not a reason to
+	// mint another.
+	delete(want, keyArtifactName)
+
+	return len(Subset(want, doc)) == 0
 }
 
 // linkProject points the project at the new version, so the sync uploads into

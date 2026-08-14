@@ -642,6 +642,9 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	// The leftover was made from the file this run is reading, so it says
+	// what the file says. That is what makes it the version to roll onto.
+	f.artifactD = artifactDocs("art-abandoned", 9000)
 	f.newArtifact = func(any) (*workload.Artifact, error) {
 		t.Fatal("an unpromoted draft is already the version to roll onto")
 
@@ -658,6 +661,52 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// An artifact's spec is fixed when it is created, so a draft left by an
+// attempt that read an older file describes that older file. Promoting it
+// would roll out a version the yaml no longer asks for and report the deploy
+// as done, leaving the same drift to be found again next run.
+func TestRun_RollDoesNotReuseADraftTheFileHasMovedPast(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	// The leftover still carries the port the file had when it was made; the
+	// file has since asked for another.
+	f.artifactD = artifactDocs("art-abandoned", 8500)
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a draft describing an older file is not the version to roll onto")
+	assert.NotContains(t, tr.steps, "replace:art-abandoned")
+}
+
+// artifactDocs answers the document read: the leftover draft at the port it
+// was created with, and the live artifact for everything else.
+func artifactDocs(abandonedID string, port int) func(string) (workload.Document, error) {
+	return func(id string) (workload.Document, error) {
+		d := docOf(liveArtifactJSON)
+		d["status"] = workload.ArtifactStatusDraft
+
+		if id != abandonedID {
+			return d, nil
+		}
+
+		groups, _ := d["spec"].(map[string]any)["containerGroups"].([]any)
+		container, _ := groups[0].(map[string]any)["containers"].([]any)[0].(map[string]any)
+		container["port"] = float64(port)
+
+		return d, nil
+	}
 }
 
 // A locked draft can take neither code nor an image, which is what a roll
