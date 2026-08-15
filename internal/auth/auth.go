@@ -40,22 +40,8 @@ import (
 var APIKeyCallbackFunc = RunBrowserLogin
 
 // AuthCallbackURL returns the DataRobot URL the user must visit to authorize the CLI.
-// Userinfo is dropped: this URL gets printed, and the sign-in is interactive anyway.
 func AuthCallbackURL(datarobotHost string) string {
-	return withoutUserinfo(datarobotHost) + "/account/developer-tools?cliRedirect=true"
-}
-
-// withoutUserinfo strips a user:password@ prefix, leaving a still-usable URL:
-// https://user:pass@app.datarobot.com/api/v2 -> https://app.datarobot.com/api/v2
-func withoutUserinfo(endpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || parsed.User == nil {
-		return endpoint
-	}
-
-	parsed.User = nil
-
-	return parsed.String()
+	return datarobotHost + "/account/developer-tools?cliRedirect=true"
 }
 
 // ErrEnvCredentialsNotSet is returned when environment credentials are not fully configured.
@@ -218,7 +204,7 @@ func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool 
 // ValidateEndpoint trims, so VerifyToken's raw parse failure is checked too.
 func unusableEndpoint(endpoint string, err error) string {
 	if epErr := ValidateEndpoint(endpoint); epErr != nil {
-		return reasonWithoutURL(epErr)
+		return epErr.Error()
 	}
 
 	// ValidateEndpoint accepts a bare host, but VerifyToken dials the value as
@@ -229,7 +215,7 @@ func unusableEndpoint(endpoint string, err error) string {
 
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Op == "parse" {
-		return reasonWithoutURL(urlErr)
+		return urlErr.Err.Error()
 	}
 
 	return ""
@@ -279,43 +265,11 @@ func fprintServerStatus(w io.Writer, endpoint, endpointName string, err error) b
 	return true
 }
 
-// reasonWithoutURL drops the copy of the endpoint url.Parse embeds in its error,
-// which would print the userinfo password every other message redacts.
-func reasonWithoutURL(err error) string {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return urlErr.Err.Error()
-	}
-
-	return err.Error()
-}
-
 // hostOrEndpoint reduces an endpoint to scheme and host, falling back to the
-// endpoint as given when it will not parse. Redacted either way.
+// endpoint as given when it will not parse.
 func hostOrEndpoint(endpoint string) string {
 	if host, err := config.SchemeHostOnly(endpoint); err == nil {
-		return redacted(host)
-	}
-
-	return redacted(endpoint)
-}
-
-// redacted hides a password an endpoint carries in its userinfo. Fails closed: on
-// a value url.Parse rejects, everything before the last `@` (the password) is cut.
-func redacted(endpoint string) string {
-	trimmed := strings.TrimSpace(endpoint)
-
-	parsed, err := url.Parse(trimmed)
-	if err == nil {
-		if parsed.User == nil {
-			return endpoint
-		}
-
-		return parsed.Redacted()
-	}
-
-	if at := strings.LastIndex(trimmed, "@"); at != -1 {
-		return "[redacted]@" + trimmed[at+1:]
+		return host
 	}
 
 	return endpoint
@@ -336,7 +290,7 @@ func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
 	fmt.Fprint(w, base.Render("Environment credentials for "))
 	fmt.Fprint(w, info.Render(hostOrEndpoint(creds.Endpoint)))
 	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored profile for "))
-	fmt.Fprint(w, info.Render(redacted(storedHost)))
+	fmt.Fprint(w, info.Render(storedHost))
 	fmt.Fprintln(w, base.Render("."))
 }
 
