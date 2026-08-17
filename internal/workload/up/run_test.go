@@ -857,6 +857,55 @@ func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 	assert.True(t, result.Locked)
 }
 
+// unlockedArtifact is the live artifact as a draft. liveArtifactJSON is
+// locked, which is the right shape for most of these tests and the wrong one
+// for asking whether --lock still does anything.
+func unlockedArtifact(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
+}
+
+// The other half of --lock on the start path. The test above starts from an
+// artifact that is already locked, so it only reaches the skip branch; this
+// one has to actually lock, and not until the workload is serving.
+func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
+	var order []string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return unlockedArtifact(t), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			order = append(order, "start")
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			order = append(order, "wait")
+
+			return running(id), nil
+		},
+		lock: func(id string) (*workload.Artifact, error) {
+			order = append(order, "lock:"+id)
+
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --lock has to work on this path too")
+	assert.Equal(t, []string{"start", "wait", "lock:art-1"}, order,
+		"locking is one-way, so it waits until the workload is actually serving")
+	assert.True(t, result.Locked)
+}
+
 // The live pair for unboundCredentialManifest, stopped. It agrees with the
 // file in every respect, so the only thing the plan can find is that the
 // workload is off, which is what makes this a start rather than a roll.

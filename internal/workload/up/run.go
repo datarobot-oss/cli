@@ -182,9 +182,12 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return result, err
 	}
 
-	// Starting counts: it is when the container resolves its references, so a
-	// credential deleted while the workload was off fails minutes later as a
-	// container that will not come up.
+	// Checked before every path below, which either mutates or refuses. A
+	// start counts as a mutation: it is when the container resolves its
+	// references, so a credential deleted while the workload was off would
+	// surface minutes later as a container that will not come up. On a path
+	// about to be refused it shadows ErrNotWired, deliberately: one run to
+	// learn about both beats two.
 	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
 		return result, err
 	}
@@ -272,7 +275,7 @@ func deployable(live Live, workloadName string) error {
 	}
 }
 
-// startable refuses the one off status that cannot be started. The platform
+// startable refuses the one status that cannot be started. The platform
 // no-ops a start of a suspended workload, so accepting it would poll until
 // the timeout for a transition that is never coming. Interrupted can be
 // started.
