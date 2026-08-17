@@ -72,17 +72,17 @@ func TestStateFor_EveryPlatformStatusIsMapped(t *testing.T) {
 	}
 }
 
-// TestState_OnlyRunningIsDeployable pins the distinction that matters most:
-// a stopped workload has to be started first, so folding it into running
-// would apply a plan against something that is not there.
-func TestState_OnlyRunningIsDeployable(t *testing.T) {
-	all := []State{
-		StateUnbound, StateMissing, StateTerminated,
-		StateStopped, StateSettling, StateRunning, StateErrored,
-	}
-
-	for _, s := range all {
-		assert.Equal(t, s == StateRunning, s.Deployable(), "state %s", s)
+// The statuses that mean "off" reduce to one state, because the plan is the
+// same for all three: the workload is not serving and `up` has to say so.
+// Which of them can actually be started is a question for the apply, and is
+// answered there rather than by the reduction.
+func TestState_TheOffStatusesReduceToStopped(t *testing.T) {
+	for _, status := range []string{
+		workload.WorkloadStatusStopped,
+		workload.WorkloadStatusSuspended,
+		workload.WorkloadStatusInterrupted,
+	} {
+		assert.Equal(t, StateStopped, stateFor(status), "status %q", status)
 	}
 }
 

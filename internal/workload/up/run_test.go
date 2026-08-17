@@ -124,13 +124,16 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
 
-// fakes collects the seams a run touches. A zero value is a run where every
-// call fails loudly, so a test only wires what it means to exercise.
+// fakes collects the seams a run touches. A seam a test does not wire is
+// replaced by one that fails the test if it is reached, so a run can never
+// reach the network by omission and a test only wires what it means to
+// exercise.
 type fakes struct {
 	wizard    func(wizard.Options) (wizard.Result, error)
 	create    func(any) (*workload.Workload, error)
 	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	list      func(int, []string) ([]workload.Workload, error)
+	start     func(string) (*workload.WorkloadOperationResponse, error)
 	lock      func(string) (*workload.Artifact, error)
 	cred      func(string) (*workload.Credential, error)
 	writeID   func(string, string) error
@@ -149,10 +152,20 @@ func install(t *testing.T, f fakes) {
 	force(t, &writeWorkloadIDFn, func(string, string) error { return nil })
 	force(t, &codeChangeFn, func(Loaded, Live) (CodeChange, error) { return CodeChange{}, nil })
 
+	// swap leaves a seam alone when the test supplied nothing, so without this
+	// a stopped fixture with no start fake POSTs to whatever tenant the
+	// developer is logged into.
+	force(t, &startWorkloadFn, func(id string) (*workload.WorkloadOperationResponse, error) {
+		t.Fatalf("the run started workload %s, which this test did not wire", id)
+
+		return nil, nil
+	})
+
 	swap(t, &runWizardFn, f.wizard)
 	swap(t, &createWorkloadFn, f.create)
 	swap(t, &waitWorkloadFn, f.wait)
 	swap(t, &listWorkloadsFn, f.list)
+	swap(t, &startWorkloadFn, f.start)
 	swap(t, &lockArtifactFn, f.lock)
 	swap(t, &getCredentialFn, f.cred)
 	swap(t, &writeWorkloadIDFn, f.writeID)
@@ -507,7 +520,6 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 		{workload.WorkloadStatusTerminated, "remove workloadId"},
 		{workload.WorkloadStatusErrored, "dr workload logs"},
 		{workload.WorkloadStatusProvisioning, "still settling"},
-		{workload.WorkloadStatusStopped, "starting a stopped workload"},
 	}
 
 	for _, c := range cases {
@@ -629,6 +641,343 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "first sync of this project")
+}
+
+// stoppedWorkload is the live fixture, off. Everything else about it still
+// matches boundLiveManifest, so the only thing a plan can find is that it is
+// not running.
+func stoppedWorkload(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveWorkloadJSON)
+	d["status"] = workload.WorkloadStatusStopped
+
+	return d
+}
+
+// TestRun_StartsAStoppedWorkload: `up` means make the file true, and a
+// workload the file describes exactly but which is switched off is not true
+// yet. Nothing is created and nothing is rolled; it is one POST.
+func TestRun_StartsAStoppedWorkload(t *testing.T) {
+	var started string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			started = id
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "queued"}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("the workload exists; starting it is not creating a second one")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started)
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Equal(t, workload.WorkloadStatusRunning, result.Status)
+	assert.Contains(t, stderr, "Starting workload")
+}
+
+// A plan that asks for more than a start is refused whole. Starting the
+// workload first would bring it up on the version it was stopped on and then
+// report a failure, which leaves the user worse off than refusing did.
+func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a refused plan must not have started anything")
+
+			return nil, nil
+		},
+	})
+
+	// One resource figure differs, which makes the run a retune as well as a
+	// start, and retuning is not wired.
+	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 4", 1)
+
+	_, _, err := runIn(t, drifted, Options{NonInteractive: true})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotWired)
+}
+
+func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+		},
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatal("there is nothing to wait for when the start was refused")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot start workload 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+func TestRun_DetachedStartDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatal("--detach returns as soon as the start is requested")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Contains(t, stderr, "start requested")
+	assert.Equal(t, workload.WorkloadStatusSubmitted, result.Status,
+		"reporting the status it was asked to leave reads as a run that did nothing")
+}
+
+// The platform no-ops a start of a suspended workload, so accepting one would
+// poll for a transition that is never coming.
+func TestRun_SuspendedIsRefusedRatherThanPolled(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusSuspended
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "suspended")
+}
+
+// An interrupted workload is one the platform took down and will start again.
+func TestRun_InterruptedStartsLikeAnyStoppedWorkload(t *testing.T) {
+	var started string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusInterrupted
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			started = id
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started)
+	assert.Equal(t, ActionStarted, result.Action)
+}
+
+// A start the platform ignored comes back 200 with a message saying so, and a
+// green checkmark alone would be the whole account of it.
+func TestRun_StartAcknowledgementIsPrinted(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "Proton is already running"}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "already running")
+}
+
+// --lock on a workload already running a locked artifact has nothing to do,
+// and locking twice is not a no-op at the platform.
+func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+		lock: func(string) (*workload.Artifact, error) {
+			t.Fatal("the artifact this workload runs is already locked")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+	assert.True(t, result.Locked)
+}
+
+// unlockedArtifact is the live artifact as a draft. liveArtifactJSON is
+// locked, which is the right shape for most of these tests and the wrong one
+// for asking whether --lock still does anything.
+func unlockedArtifact(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
+}
+
+// The other half of --lock on the start path. The test above starts from an
+// artifact that is already locked, so it only reaches the skip branch; this
+// one has to actually lock, and not until the workload is serving.
+func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
+	var order []string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return unlockedArtifact(t), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			order = append(order, "start")
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			order = append(order, "wait")
+
+			return running(id), nil
+		},
+		lock: func(id string) (*workload.Artifact, error) {
+			order = append(order, "lock:"+id)
+
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --lock has to work on this path too")
+	assert.Equal(t, []string{"start", "wait", "lock:art-1"}, order,
+		"locking is one-way, so it waits until the workload is actually serving")
+	assert.True(t, result.Locked)
+}
+
+// The live pair for unboundCredentialManifest, stopped. It agrees with the
+// file in every respect, so the only thing the plan can find is that the
+// workload is off, which is what makes this a start rather than a roll.
+const (
+	stoppedCredWorkloadJSON = `{
+  "id": "68b0c1d2e3f4a5b6c7d8e9f0",
+  "name": "my-app",
+  "status": "stopped",
+  "importance": "low",
+  "artifactId": "68a0000000000000000000a1",
+  "runtime": {
+    "containerGroups": [
+      {
+        "name": "default",
+        "replicaCount": 1,
+        "containers": [
+          {"name": "primary", "resourceAllocation": {"cpu": 0.5, "memory": "512MB"}}
+        ]
+      }
+    ]
+  }
+}`
+
+	credArtifactJSON = `{
+  "id": "68a0000000000000000000a1",
+  "name": "my-app-artifact",
+  "status": "draft",
+  "spec": {
+    "type": "service",
+    "containerGroups": [
+      {
+        "name": "default",
+        "containers": [
+          {
+            "name": "primary", "primary": true, "port": 8080,
+            "imageUri": "registry/team/app:v1",
+            "environmentVars": [
+              {"source": "dr-credential", "name": "OPENAI_API_KEY",
+               "drCredentialId": "68b0cccc0000000000000003", "key": "apiToken"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}`
+)
+
+// A credential deleted while the workload was off would otherwise surface as
+// a container that will not come up, minutes later, saying nothing about the
+// manifest.
+func TestRun_StartVerifiesCredentialsFirst(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, stoppedCredWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, credArtifactJSON), nil },
+		cred: func(string) (*workload.Credential, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("nothing may start before the credentials are known to resolve")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundCredentialManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Equal(t, ActionStarted, result.Plan.Action(),
+		"the fixtures have to agree, or this is testing the roll path instead")
+	assert.Contains(t, err.Error(), "OPENAI_API_KEY")
 }
 
 // TestRun_BadCredentialStopsBeforeTheCreate is the whole point of the check:

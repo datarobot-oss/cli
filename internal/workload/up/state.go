@@ -78,13 +78,6 @@ func (s State) String() string {
 	}
 }
 
-// Deployable reports whether `up` can apply a plan against this state
-// directly. StateStopped is deployable only after a start, which is why it is
-// excluded here rather than folded into StateRunning.
-func (s State) Deployable() bool {
-	return s == StateRunning
-}
-
 // stateFor maps a platform status onto the branch `up` takes.
 //
 // Two of these are judgement calls rather than transcription. "unknown" is
