@@ -147,5 +147,27 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 		})
 	}
 
+	kind, err := loaded.ArtifactType()
+	if err != nil {
+		return Plan{}, err
+	}
+
+	// The type is the same kind of blind spot for the same reason. It sits
+	// beside the spec because the platform reads the discriminator off the
+	// artifact and pops any type sent inside the spec, so the walk above
+	// cannot see it either. Turning a service into an agent is a real change
+	// and needs a new version; without this it reads as already up to date.
+	//
+	// Only when the file names one. Saying nothing about the type is not the
+	// same as asking for a service, and this walk never reverts what the file
+	// leaves out.
+	if kind != "" && kind != live.ArtifactType {
+		plan.Artifact = append(plan.Artifact, Change{
+			Path: keyArtifactType,
+			Have: live.ArtifactType,
+			Want: kind,
+		})
+	}
+
 	return plan, nil
 }
