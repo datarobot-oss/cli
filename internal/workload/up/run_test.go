@@ -156,6 +156,12 @@ type fakes struct {
 	build       func(string) (*workload.BuildTriggerResponse, error)
 	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	builds      func(string, int) ([]workload.Build, error)
+
+	// The roll track: refuse to queue a second swap, start one, follow it.
+	guard       func(string) error
+	replace     func(string, string) (*workload.Replacement, error)
+	waitReplace func(string, *workload.Replacement, time.Duration, time.Duration,
+		func(*workload.Replacement)) (*workload.Replacement, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -193,6 +199,16 @@ func install(t *testing.T, f fakes) {
 	// by accident, and an unlinked project is the state a first deploy starts
 	// from.
 	force(t, &projectLinkedFn, func(string) bool { return false })
+
+	// Unlike the seams below it, this one is reached by the lock path as well
+	// as the build track, so leaving it unset would send a test that gets
+	// there to whatever tenant the developer is logged into.
+	force(t, &getArtifactFn, func(id string) (*workload.Artifact, error) {
+		t.Fatalf("the run read artifact %s, which this test did not wire", id)
+
+		return nil, nil
+	})
+
 	swap(t, &createArtifactFn, f.newArtifact)
 	swap(t, &getArtifactFn, f.getArtifact)
 	swap(t, &projectLinkedFn, f.linked)
@@ -202,6 +218,13 @@ func install(t *testing.T, f fakes) {
 	swap(t, &triggerBuildFn, f.build)
 	swap(t, &waitBuildFn, f.waitBuild)
 	swap(t, &listBuildsFn, f.builds)
+
+	// Nothing stands in the way of a rollout unless a test says so, because
+	// the quiet answer is the one every other roll test wants.
+	force(t, &guardReplacementFn, func(string) error { return nil })
+	swap(t, &guardReplacementFn, f.guard)
+	swap(t, &startReplacementFn, f.replace)
+	swap(t, &waitReplacementFn, f.waitReplace)
 }
 
 // swap installs fake over the seam at target, and does nothing when the test

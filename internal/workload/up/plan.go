@@ -134,5 +134,18 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	plan.Artifact = Subset(spec, live.Spec)
 	plan.Runtime = Subset(runtime, live.Runtime)
 
+	// A file that names an artifact by id describes no spec to compare, so
+	// the walk above has nothing to say about it. Pointing at a different
+	// version than the one running is still the whole plan: it is a roll, and
+	// without this the run reports "already up to date" while the file and
+	// the workload disagree about what should be serving.
+	if bound := loaded.Compiled.ArtifactID; bound != "" && bound != live.ArtifactID {
+		plan.Artifact = append(plan.Artifact, Change{
+			Path: keyArtifactID,
+			Have: live.ArtifactID,
+			Want: bound,
+		})
+	}
+
 	return plan, nil
 }

@@ -18,9 +18,11 @@
 package up
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
@@ -44,6 +46,11 @@ const (
 // behaviour (flag refusal, stream separation, envelope shape) can be checked
 // without a network.
 var runFn = up.Run
+
+// isStdinTerminalFn answers whether a person is there to be asked. A test
+// harness always pipes stdin, so the tests that are about what happens on a
+// terminal replace it.
+var isStdinTerminalFn = reader.IsStdinTerminal
 
 // upResult is the stable JSON shape emitted by --output-format json. BuildID
 // is a pointer so it is null rather than empty when no build happened, which
@@ -117,6 +124,12 @@ for an image first, so the first deploy of such a project takes as long as the
 build does. A build the deploy believes would produce the image already on the
 artifact is skipped; --force-build says otherwise.
 
+Deploying onto a workload that already exists rolls it: a new version is made
+from the file and swapped in, the endpoint does not change, and the version
+already serving keeps serving until the new one is ready. When that version is
+locked, meaning production, an interactive run asks for the workload name to
+be typed back. A run with no terminal, or --yes, rolls without asking.
+
 Examples:
   dr workload up
   dr workload up --dry-run
@@ -152,7 +165,9 @@ Examples:
 
 func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Do not prompt. With no manifest this is an error rather than a wizard.")
+	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false,
+		"Do not prompt. With no manifest this is an error rather than a wizard, "+
+			"and rolling a locked production version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
@@ -187,9 +202,11 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 	json := format == outputformat.OutputFormatJSON
 
+	yes := f.yes || viperx.GetBool("yes")
+
 	// JSON output implies non-interactive: a wizard drawn on stderr while
 	// stdout is being parsed is a trap for whoever is parsing it.
-	nonInteractive := f.yes || viperx.GetBool("yes") || json || !reader.IsStdinTerminal()
+	nonInteractive := yes || json || !isStdinTerminalFn()
 
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
@@ -197,6 +214,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
+		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
 		PollInterval:   poll.Interval,
 		PollTimeout:    poll.Timeout,
@@ -254,6 +272,50 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 	}
 
 	return nil
+}
+
+// rollConfirm is how a locked production roll gets its answer, and nil when
+// there is nobody to ask or the answer is already in. --yes is that answer,
+// and a run with no terminal has nobody to give one.
+//
+// Deliberately not keyed on --output json. That flag says how to format
+// stdout; it is not consent, and folding it in here would mean
+// `dr workload up --output json` on a terminal rolls production without a
+// word. The question and its answer never touch stdout, so a run that asks
+// still emits exactly one document.
+func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool, error) {
+	if yes || !isStdinTerminalFn() {
+		return nil
+	}
+
+	return typedConfirm(cmd)
+}
+
+// typedConfirm asks a question that only the exact expected word answers.
+//
+// It goes to stderr and reads a single line, like everything else the deploy
+// says: stdout is the endpoint, or one JSON document, and a question printed
+// into it would break whatever is parsing it. A y/n would not do here, since
+// the one thing this is asked about is rolling production.
+//
+// The deploy calls it only on an interactive run, so it never has to decide
+// whether prompting is allowed. An answer that cannot be read at all is a no,
+// which leaves the workload running what it was running.
+func typedConfirm(cmd *cobra.Command) func(question, want string) (bool, error) {
+	return func(question, want string) (bool, error) {
+		fmt.Fprint(cmd.ErrOrStderr(), question)
+
+		scanner := bufio.NewScanner(cmd.InOrStdin())
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return false, fmt.Errorf("cannot read the answer: %w", err)
+			}
+
+			return false, nil
+		}
+
+		return strings.TrimSpace(scanner.Text()) == want, nil
+	}
 }
 
 // reportable says whether a failed run left behind anything worth printing.

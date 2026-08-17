@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/up"
@@ -49,12 +50,21 @@ func stubRun(t *testing.T, result up.Result, err error) *up.Options {
 func runCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
+	return runCmdWithInput(t, "", args...)
+}
+
+// runCmdWithInput is runCmd with something waiting on stdin, for the one
+// question the deploy asks.
+func runCmdWithInput(t *testing.T, input string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+
 	cmd := Cmd()
 
 	var out, errOut bytes.Buffer
 
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(input))
 	cmd.SetArgs(args)
 
 	// The command's own PreRunE authenticates, which a unit test must not do.
@@ -286,6 +296,107 @@ func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.Contains(t, err.Error(), "manifest")
+}
+
+// The deploy asks one question, and only the exact name answers it. The
+// question goes to stderr because stdout carries the endpoint.
+func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
+	cases := []struct {
+		typed string
+		want  bool
+	}{
+		{"my-app\n", true},
+		{"  my-app  \n", true},
+		{"y\n", false},
+		{"My-App\n", false},
+		{"\n", false},
+		{"", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.typed, func(t *testing.T) {
+			cmd := Cmd()
+
+			var errOut bytes.Buffer
+
+			cmd.SetErr(&errOut)
+			cmd.SetIn(strings.NewReader(c.typed))
+
+			agreed, err := typedConfirm(cmd)("Type the workload name: ", "my-app")
+			require.NoError(t, err)
+
+			assert.Equal(t, c.want, agreed)
+			assert.Contains(t, errOut.String(), "Type the workload name: ")
+		})
+	}
+}
+
+// The question reaches the deploy wired up, so a locked production roll can
+// actually be answered from a terminal.
+func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmdWithInput(t, "my-app\n")
+	require.NoError(t, err)
+	require.NotNil(t, seen.Confirm)
+
+	agreed, err := seen.Confirm("anything? ", "my-app")
+	require.NoError(t, err)
+	assert.True(t, agreed)
+}
+
+// onATerminal makes the run look like one a person is watching. A test
+// harness always pipes stdin, so without this every test is the CI case.
+func onATerminal(t *testing.T) {
+	t.Helper()
+
+	prev := isStdinTerminalFn
+	isStdinTerminalFn = func() bool { return true }
+
+	t.Cleanup(func() { isStdinTerminalFn = prev })
+}
+
+// --yes is the answer, so there is nothing left to ask and the deploy is
+// handed no way to ask it.
+func TestCmd_YesHandsTheDeployNoQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--yes")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm, "--yes already said yes")
+}
+
+// --output-format json keeps the wizard off the terminal, but it says how to
+// format stdout rather than that production may be rolled without a word.
+// Somebody is still there, so the question still reaches the deploy.
+func TestCmd_JSONOutputStillHandsOverTheQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive, "no wizard may be drawn into the document")
+	assert.NotNil(t, seen.Confirm, "but there is still someone to ask about production")
+}
+
+// With no terminal there is nobody to ask, which is the CI case: the deploy
+// gets no question and rolls on the review the pipeline already had.
+func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm)
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {

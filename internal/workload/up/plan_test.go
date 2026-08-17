@@ -245,6 +245,45 @@ func TestBuild_SplitsDriftIntoItsTwoHalves(t *testing.T) {
 	assert.Equal(t, ActionRolled, plan.Action(), "a spec change mints a version even with sizing alongside")
 }
 
+// A file bound to an artifact by id describes no spec, so the field walk has
+// nothing to compare. Pointing at a version other than the one running is
+// still the entire plan, and reporting "already up to date" while the file
+// and the workload disagree would be the worst kind of wrong.
+func TestBuild_BoundToAnotherArtifactIsARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`),
+		ArtifactID: "68b0bbbb0000000000000002",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifactId"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action())
+	assert.False(t, plan.Empty())
+}
+
+// The same file against the workload already running that artifact plans
+// nothing, or every deploy would roll a version onto itself.
+func TestBuild_BoundToTheRunningArtifactIsEmpty(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68a0000000000000000000a1"}`),
+		ArtifactID: "68a0000000000000000000a1",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}
+
 func TestBuild_RuntimeOnlyDriftDoesNotRoll(t *testing.T) {
 	resized := `{
 	  "name": "my-app",
