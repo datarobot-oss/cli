@@ -101,6 +101,24 @@ type flow struct {
 	// failures no screen can recover from.
 	fatal error
 
+	// imports is what storing the secrets did, read once the flow has ended
+	// and the terminal is back. imported stops a second attempt: the confirm
+	// screen can be reached twice, and a credential already stored must not be
+	// stored again under a second name.
+	imports  Import
+	imported bool
+
+	// dryRun stops the confirm screen storing anything. A run that promises
+	// to write no file must not leave a credential behind either, and a
+	// credential outlives the run that made it.
+	dryRun bool
+
+	// handEdited records that the confirm screen's [e] was used, so the file
+	// about to be written is the user's bytes rather than a render of the
+	// draft. It decides how the credential ids get in: re-rendering would
+	// throw the edit away.
+	handEdited bool
+
 	// nameGiven distinguishes a name the user chose from the one the
 	// directory suggested, so returning to the screen shows the answer that
 	// was given there and never re-offers a suggestion as a typed value.
@@ -128,6 +146,13 @@ type execEnvsLoadedMsg struct {
 type editedMsg struct {
 	content []byte
 	err     error
+}
+
+// secretsStoredMsg carries the variables with their credential ids filled in,
+// and the record of which of them made it.
+type secretsStoredMsg struct {
+	vars   []manifest.EnvVar
+	report Import
 }
 
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
@@ -233,6 +258,9 @@ func (f flow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editedMsg:
 		return f.edited(msg)
+
+	case secretsStoredMsg:
+		return f.secretsStored(msg)
 
 	case tea.KeyMsg:
 		return f.key(msg)
@@ -479,6 +507,92 @@ var accepting = map[screen]func(*flow) (tea.Cmd, error){
 	screenImage:      (*flow).acceptImage,
 	screenSettings:   (*flow).acceptSettings,
 	screenEnv:        (*flow).acceptEnv,
+	screenConfirm:    (*flow).acceptConfirm,
+}
+
+// acceptConfirm stores the secrets, and is the last thing that happens before
+// the file is written.
+//
+// Here rather than when the env table is left, because a credential outlives
+// the run that created it: someone who walks the wizard to the end and then
+// cancels should not have left a secret on the platform. The cost is that the
+// confirm screen shows the reference carrying the placeholder while the file
+// written a moment later carries the id. That is the right way round; the
+// screen is where a secret's value could leak, and no value is on it either
+// way.
+func (f *flow) acceptConfirm() (tea.Cmd, error) {
+	// A dry run stores nothing, the same as the headless path. The references
+	// keep their placeholders, which is what a file nobody created a
+	// credential for should say.
+	if f.imported || f.dryRun || pendingSecrets(f.draft.EnvVars) == 0 {
+		return nil, nil
+	}
+
+	f.loading = "Storing secrets…"
+
+	vars, detected, name := f.draft.EnvVars, f.detected, f.draft.Name
+
+	return func() tea.Msg {
+		stored, report := importSecrets(vars, detected, name)
+
+		return secretsStoredMsg{vars: stored, report: report}
+	}, nil
+}
+
+// secretsStored records the ids and puts them in the file, so what is written
+// is what was on screen with the placeholders resolved. A failure now is
+// fatal: the credentials exist, and ending as a cancellation would say nothing
+// happened.
+func (f flow) secretsStored(msg secretsStoredMsg) (tea.Model, tea.Cmd) {
+	f.loading = ""
+	f.imported = true
+	f.imports = msg.report
+	f.draft.EnvVars = msg.vars
+
+	if err := f.resolveContent(); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
+	f.done = true
+
+	return f, tea.Quit
+}
+
+// resolveContent puts the new credential ids into what is about to be written.
+//
+// A file nobody touched is re-rendered from the draft, which now carries them.
+// One edited by hand on the confirm screen is not: re-rendering would throw
+// that edit away silently, at the last moment before the write, including any
+// credential id the user pasted in themselves. The placeholders in their own
+// bytes are rewritten instead.
+func (f *flow) resolveContent() error {
+	if !f.handEdited {
+		return f.render()
+	}
+
+	resolved, err := manifest.ResolveCredentials(f.content, credentialIDs(f.draft.EnvVars))
+	if err != nil {
+		return err
+	}
+
+	f.content = resolved
+
+	return f.rediff()
+}
+
+// credentialIDs is the id stored for each variable, by variable name.
+func credentialIDs(vars []manifest.EnvVar) map[string]string {
+	ids := make(map[string]string, len(vars))
+
+	for _, v := range vars {
+		if v.Secret && v.CredentialID != "" {
+			ids[v.Name] = v.CredentialID
+		}
+	}
+
+	return ids
 }
 
 // accept validates and records the current screen's answer. A non-nil command
@@ -871,16 +985,27 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	f.content = msg.content
+	f.handEdited = true
 
 	// The diff has to be recomputed against what the editor left, not
 	// cleared: an empty diff is how the screen says "nothing changes for the
 	// running workload", which an edited file has no business claiming.
+	if err := f.rediff(); err != nil {
+		f.failed = err
+
+		return f, nil
+	}
+
+	return f, nil
+}
+
+// rediff recomputes what the confirm screen shows against the current bytes,
+// which is only meaningful when a live workload is being changed.
+func (f *flow) rediff() error {
 	if f.live != nil {
 		before, err := f.live.Render()
 		if err != nil {
-			f.failed = err
-
-			return f, nil
+			return err
 		}
 
 		f.diff = unifiedDiff(f.live.Name, string(before), string(f.content))
@@ -888,7 +1013,7 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 
 	f.buildPreview()
 
-	return f, nil
+	return nil
 }
 
 func (f flow) result() ([]byte, manifest.Draft, error) {

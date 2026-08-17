@@ -76,8 +76,14 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// screen and every redraw there, so `dr workload config` inside a command
 	// substitution would capture escape sequences ahead of the path.
 	//
+	started := newFlow(detected, workloads, opts.Answers)
+	// Carried into the flow because the confirm screen is where secrets would
+	// be stored, and --dry-run has to mean the same thing on a terminal as it
+	// does headless: nothing created, here or on the platform.
+	started.dryRun = opts.DryRun
+
 	// tui.Run already wraps the model for Ctrl-C, so it is not wrapped here.
-	final, err := tui.Run(newFlow(detected, workloads, opts.Answers),
+	final, err := tui.Run(started,
 		tea.WithAltScreen(), tea.WithOutput(interactiveOutput(opts.Stderr)))
 	if err != nil {
 		return nil, manifest.Draft{}, err
@@ -87,6 +93,11 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	if !ok {
 		return nil, manifest.Draft{}, ErrCancelled
 	}
+
+	// Printed here rather than from inside the flow: until tui.Run returns,
+	// the alt screen owns the terminal and anything written to stderr lands
+	// underneath a full-screen redraw.
+	reportImport(opts.Stderr, finished.imports)
 
 	return finished.result()
 }

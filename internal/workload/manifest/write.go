@@ -125,9 +125,23 @@ type EnvVar struct {
 	// value belongs in the credential store and never in this file.
 	Value string
 	// Secret means the value belongs in the credential store, so the entry is
-	// written as a reference carrying CredentialPlaceholder in place of an id
-	// that does not exist yet.
+	// written as a reference rather than as a literal.
 	Secret bool
+	// CredentialID is the credential holding the secret, when one was stored
+	// for it. Empty means none was, and the reference is written carrying
+	// CredentialPlaceholder instead: an entry that is visibly unfinished, which
+	// a deploy refuses by name.
+	CredentialID string
+}
+
+// credentialID is the id to write for a secret, and the placeholder when the
+// secret never reached the credential store.
+func (v EnvVar) credentialID() string {
+	if v.CredentialID == "" {
+		return CredentialPlaceholder
+	}
+
+	return v.CredentialID
 }
 
 // CredentialPlaceholder stands in for a credential id until one is created.
@@ -402,7 +416,8 @@ func (d Draft) runtime() *yaml.Node {
 }
 
 // environmentVars renders the .env variables the manifest carries. Ordinary
-// settings become literals. Secrets become credential references carrying
+// settings become literals. A secret becomes a credential reference: to the
+// credential that was stored for it, or, when none was, to
 // CredentialPlaceholder, so the entry is present and obviously unfinished
 // rather than absent and easy to miss.
 func (d Draft) environmentVars() *yaml.Node {
@@ -412,14 +427,20 @@ func (d Draft) environmentVars() *yaml.Node {
 		value := scalar(v.Value)
 		entry := []field{{key: keyName, value: scalar(v.Name)}}
 
-		if v.Secret {
+		switch {
+		case v.Secret && v.CredentialID == "":
 			value = scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
 			entry = append(entry, field{
 				key:     keyValue,
 				value:   value,
 				comment: "replace " + CredentialPlaceholder + " with the credential id",
 			})
-		} else {
+
+		case v.Secret:
+			value = scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey)
+			entry = append(entry, field{key: keyValue, value: value})
+
+		default:
 			entry = append(entry, field{key: keyValue, value: value})
 		}
 
@@ -589,4 +610,116 @@ func opensBlock(line string) bool {
 	}
 
 	return false
+}
+
+// ResolveCredentials rewrites every credential reference still carrying
+// CredentialPlaceholder to the id stored for that variable, keyed by ids on
+// the environment variable's name.
+//
+// This exists for one case: the setup wizard's confirm screen lets the file be
+// edited by hand before it is written, and the credentials are stored after
+// that, deliberately, so walking to the end and cancelling leaves nothing
+// behind. Re-rendering from the draft at that point would produce a file
+// carrying the new ids and none of the user's edit. Editing their own bytes
+// keeps both.
+//
+// Matching is by variable name because the placeholder text is identical for
+// every secret in the file: two of them differ only in which entry they sit
+// in, so a textual substitution could not tell them apart. A name the map does
+// not mention is left alone, placeholder and all, which is what an entry no
+// credential was stored for should look like.
+func ResolveCredentials(content []byte, ids map[string]string) ([]byte, error) {
+	if len(ids) == 0 {
+		return content, nil
+	}
+
+	var doc yaml.Node
+
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return nil, fmt.Errorf("cannot parse the manifest to record the credential ids: %w", err)
+	}
+
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, errors.New("cannot record the credential ids: root must be a YAML mapping")
+	}
+
+	if err := checkAliases(doc.Content[0]); err != nil {
+		return nil, fmt.Errorf("cannot record the credential ids: %w", err)
+	}
+
+	setCredentialIDs(doc.Content[0], ids)
+
+	var buf bytes.Buffer
+
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+
+	if err := enc.Encode(&doc); err != nil {
+		return nil, fmt.Errorf("cannot render the manifest: %w", err)
+	}
+
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("cannot render the manifest: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// setCredentialIDs walks every environmentVars sequence in the tree, wherever
+// the spec puts it, and fills in the placeholders it finds.
+func setCredentialIDs(node *yaml.Node, ids map[string]string) {
+	node = resolveAlias(node)
+	if node == nil {
+		return
+	}
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == keyEnvironmentVars {
+				fillPlaceholders(node.Content[i+1], ids)
+			}
+
+			setCredentialIDs(node.Content[i+1], ids)
+		}
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			setCredentialIDs(item, ids)
+		}
+	case yaml.DocumentNode, yaml.ScalarNode, yaml.AliasNode:
+		// Leaves. AliasNode is unreachable: resolveAlias replaced it above.
+	}
+}
+
+// fillPlaceholders rewrites one environmentVars sequence.
+func fillPlaceholders(vars *yaml.Node, ids map[string]string) {
+	placeholder := CredentialShorthandPrefix + CredentialPlaceholder + "/"
+
+	for _, entry := range seqItems(vars) {
+		name, ok := scalarString(mapValue(entry, keyName))
+		if !ok {
+			continue
+		}
+
+		id, ok := ids[name]
+		if !ok || id == "" {
+			continue
+		}
+
+		value := mapValue(entry, keyValue)
+		if value == nil {
+			continue
+		}
+
+		current, ok := scalarString(value)
+		if !ok || !strings.HasPrefix(current, placeholder) {
+			continue
+		}
+
+		value.SetString(CredentialShorthandPrefix + id + "/" + strings.TrimPrefix(current, placeholder))
+
+		// The comment told the reader to replace the placeholder, which has
+		// now happened.
+		value.LineComment = ""
+	}
 }

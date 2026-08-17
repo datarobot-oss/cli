@@ -421,10 +421,12 @@ func TestInteractiveOutput_NeverStdout(t *testing.T) {
 	assert.Same(t, os.Stderr, interactiveOutput(&bytes.Buffer{}))
 }
 
-// The .env keys reach the file as commented placeholders by default, because
-// a deploy that silently drops the app's configuration is the worse default.
-// Values never do.
+// The .env keys reach the file by default, because a deploy that silently
+// drops the app's configuration is the worse default. Values never do: an
+// ordinary setting is a literal, a secret is a reference.
 func TestRun_EnvKeysAreListedByDefault(t *testing.T) {
+	noCredentialStore(t, errors.New("no store in this test"))
+
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
 		[]byte("LOG_LEVEL=debug\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz01\n"), 0o600))
@@ -440,8 +442,8 @@ func TestRun_EnvKeysAreListedByDefault(t *testing.T) {
 	assert.Contains(t, written, "- name: LOG_LEVEL")
 	assert.Contains(t, written, "value: debug")
 
-	// The secret is a reference carrying the placeholder, and its value never
-	// leaves .env.
+	// With no store to send it to, the secret is a reference carrying the
+	// placeholder. Its value never leaves .env either way.
 	assert.Contains(t, written, "- name: OPENAI_API_KEY")
 	assert.Contains(t, written, "dr-credential:PLACEHOLDER/apiToken")
 	assert.NotContains(t, written, "sk-abcdefghijklmnopqrstuvwxyz01")
@@ -494,7 +496,10 @@ func TestFlow_EnvTableIsPerRowAndOverridable(t *testing.T) {
 	assert.Contains(t, view, "←/→", "the legend names the keys that change a row")
 
 	// Accepting the classifier's proposal lists the two deployable keys and
-	// drops the local-only one.
+	// drops the local-only one. The preview shows the placeholder because
+	// nothing has been stored yet: the secrets are sent when the confirm
+	// screen is accepted, so a wizard that is cancelled leaves no credential
+	// behind.
 	accepted := press(t, model, "enter")
 	require.Equal(t, screenConfirm, accepted.at)
 	assert.Contains(t, string(accepted.content), "- name: LOG_LEVEL")
@@ -901,6 +906,7 @@ func TestFlow_BindingSelectionSurvivesBackNavigation(t *testing.T) {
 // entirely while the command still reported them as written.
 func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 	stubLiveDocs(t)
+	credentialStore(t)
 
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
@@ -914,7 +920,8 @@ func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 	assert.Equal(t, 2, result.EnvKeysListed)
 	assert.Contains(t, written, "LOG_LEVEL")
 	assert.Contains(t, written, "debug")
-	assert.Contains(t, written, "dr-credential:PLACEHOLDER/apiToken")
+	assert.Contains(t, written, "dr-credential:66f000000000000000000001/apiToken",
+		"binding stores its secrets like any other run")
 	assert.NotContains(t, written, "Xk9mPq2vLw8nRt5yBc3z", "a secret's value stays in .env")
 
 	parsed, err := manifest.Load(result.Path)

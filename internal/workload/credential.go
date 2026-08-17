@@ -28,6 +28,50 @@ type Credential struct {
 	CredentialType string `json:"credentialType"`
 }
 
+// CredentialTypeAPIToken stores a single opaque token under the apiToken
+// field, which is the shape every secret imported from a .env takes: one name,
+// one value, and nothing about what the value is for.
+const CredentialTypeAPIToken = "api_token"
+
+// CreateCredential stores a secret and returns the credential holding it, so a
+// manifest can reference it by id instead of carrying the value.
+//
+// This is the one call in the CLI that sends a secret. The value goes from
+// wherever the caller read it straight to the platform and never reaches the
+// manifest, which is the whole point: the reference that ends up committed
+// names a credential, and the credential is the only place the secret lives.
+//
+// Not reaching the manifest is this function's own guarantee. Not reaching
+// disk at all takes one more thing, because the debug log dumps outgoing
+// request bodies and this body is a secret by definition; that is what the
+// redaction in config.RedactedReqInfo is for, and why it belongs in the same
+// change as this call rather than a later one.
+//
+// A name already in use comes back as a 409 wrapped in *drapi.HTTPError.
+// Callers decide what that means, because reusing a credential of the same
+// name would silently deploy whatever value it already holds, which may not be
+// the one the user just supplied.
+func CreateCredential(name, value string) (*Credential, error) {
+	url, err := config.GetEndpointURL("/api/v2/credentials/")
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]string{
+		"name":           name,
+		"credentialType": CredentialTypeAPIToken,
+		"apiToken":       value,
+	}
+
+	var cred Credential
+
+	if err := drapi.PostJSON(url, "credential", body, &cred); err != nil {
+		return nil, err
+	}
+
+	return &cred, nil
+}
+
 // GetCredential fetches a stored credential by id. A missing id comes back as
 // a 404 wrapped in *drapi.HTTPError.
 //

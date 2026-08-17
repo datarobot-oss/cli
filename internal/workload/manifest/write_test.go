@@ -434,3 +434,73 @@ func TestRender_NoEnvKeysWritesNoBlock(t *testing.T) {
 	assert.NotContains(t, string(out), "environmentVars")
 	assert.NotContains(t, string(out), ".env")
 }
+
+// Two secrets render the same placeholder text, differing only in which entry
+// they sit in, so the id has to be matched to the variable by name. A textual
+// substitution could not tell them apart and would give both the same
+// credential.
+func TestResolveCredentials_MatchesEachSecretByName(t *testing.T) {
+	content := []byte(`name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:PLACEHOLDER/apiToken # replace PLACEHOLDER with the credential id
+              - name: DATABASE_URL
+                value: dr-credential:PLACEHOLDER/apiToken # replace PLACEHOLDER with the credential id
+              - name: LOG_LEVEL
+                value: debug
+`)
+
+	out, err := ResolveCredentials(content, map[string]string{
+		"OPENAI_API_KEY": "66f000000000000000000001",
+		"DATABASE_URL":   "66f000000000000000000002",
+	})
+	require.NoError(t, err)
+
+	got := string(out)
+
+	assert.Contains(t, got, "dr-credential:66f000000000000000000001/apiToken")
+	assert.Contains(t, got, "dr-credential:66f000000000000000000002/apiToken")
+	assert.NotContains(t, got, CredentialPlaceholder, "no entry keeps a placeholder, and none is told to replace one")
+	assert.Contains(t, got, "value: debug", "a variable that is not a secret is untouched")
+}
+
+// An entry no credential was stored for keeps its placeholder: it is the file
+// saying, visibly, that it is not finished.
+func TestResolveCredentials_LeavesUnstoredEntriesAlone(t *testing.T) {
+	content := []byte(`name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:PLACEHOLDER/apiToken
+              - name: DATABASE_URL
+                value: dr-credential:PLACEHOLDER/apiToken
+`)
+
+	out, err := ResolveCredentials(content, map[string]string{"OPENAI_API_KEY": "66f000000000000000000001"})
+	require.NoError(t, err)
+
+	got := string(out)
+
+	assert.Contains(t, got, "dr-credential:66f000000000000000000001/apiToken")
+	assert.Contains(t, got, "dr-credential:PLACEHOLDER/apiToken", "the one nothing was stored for stays unfinished")
+}
+
+// A hand-edited file can be anything, including unparseable. Failing loudly
+// beats writing a file the ids never reached.
+func TestResolveCredentials_RefusesWhatItCannotParse(t *testing.T) {
+	_, err := ResolveCredentials([]byte("name: [unclosed\n"), map[string]string{"A": "b"})
+	require.Error(t, err)
+}
