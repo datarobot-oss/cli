@@ -160,9 +160,9 @@ func Run(opts Options) (Result, error) {
 		return result, err
 	}
 
-	if opts.DryRun || plan.Empty() {
-		noteUnusedForce(plan, opts)
+	noteUnusedForce(plan, opts)
 
+	if opts.DryRun || plan.Empty() {
 		return result, nil
 	}
 
@@ -173,12 +173,25 @@ func Run(opts Options) (Result, error) {
 // because a run which stops without saying so reads as a rebuild that quietly
 // happened. A dry run is excluded: it changes nothing by definition, and the
 // flag not having been used is the least of what it did not do.
+//
+// There are two ways for the flag to be idle. A run that deploys nothing is
+// the loud one. The quiet one is a manifest naming a published image: the
+// deploy goes ahead and succeeds, so nothing invites a second look at the
+// image it is actually serving, and the flag asked for a rebuild of something
+// this project never builds.
 func noteUnusedForce(plan Plan, opts Options) {
-	if !opts.ForceBuild || opts.DryRun || !plan.Empty() {
+	if !opts.ForceBuild || opts.DryRun {
 		return
 	}
 
-	fmt.Fprintf(opts.Stderr, "  --force-build had no effect: nothing is being deployed.\n")
+	switch {
+	case plan.Empty():
+		fmt.Fprintf(opts.Stderr, "  --force-build had no effect: nothing is being deployed.\n")
+
+	case !plan.Code.Applies:
+		fmt.Fprintf(opts.Stderr,
+			"  --force-build had no effect: this manifest names an image the platform does not build.\n")
+	}
 }
 
 // load finds the manifest, running the setup wizard when there is none and a

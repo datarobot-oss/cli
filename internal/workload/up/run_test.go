@@ -933,6 +933,44 @@ func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {
 	assert.Contains(t, stderr, "--force-build had no effect")
 }
 
+// The quieter half of the same problem: a manifest naming a published image
+// deploys and succeeds, so a --force-build that was never going to build
+// anything leaves nothing to suggest the image is not what the flag implied.
+func TestRun_ForceBuildOnAPublishedImageSaysSo(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		build: func(string) (*workload.BuildTriggerResponse, error) {
+			t.Fatal("a published image is not built by the platform")
+
+			return nil, nil
+		},
+	})
+
+	result, stderr, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err, "the deploy still goes ahead; only the flag was idle")
+
+	assert.Equal(t, ActionCreated, result.Action)
+	assert.Contains(t, stderr, "--force-build had no effect")
+	assert.Contains(t, stderr, "does not build")
+}
+
+// The flag is not idle on a build track, so saying it was would be a lie in
+// the one case it actually did something.
+func TestRun_ForceBuildOnABuildTrackSaysNothing(t *testing.T) {
+	var tr track
+
+	install(t, linkedAndSynced(&tr))
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "build", "the flag did something here")
+	assert.NotContains(t, stderr, "--force-build had no effect")
+}
+
 // A file bound to an existing artifact has no build mode to read, and gating
 // the create on the image mode refused it with a message about the platform
 // building an image it was never asked to build.
