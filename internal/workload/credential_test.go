@@ -17,9 +17,11 @@ package workload
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -107,4 +109,33 @@ func TestCreateCredential_ConflictSurvivesAsAnHTTPError(t *testing.T) {
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "already exists")
+}
+
+// The debug log dumps outgoing request bodies, and this body is a secret by
+// definition. Redaction is keyed on field names, so the guarantee only holds
+// while the name this call sends is one of the names the redactor knows: a
+// release carrying the POST but not that pairing writes the user's token, in
+// the clear, into a log file in their home directory.
+func TestCreateCredential_TheFieldItSendsIsOneTheDebugLogRedacts(t *testing.T) {
+	var (
+		sent   []byte
+		readEr error
+	)
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent, readEr = io.ReadAll(r.Body)
+
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"credentialId":"c1","name":"my-app/OPENAI_API_KEY"}`)
+	}))
+
+	_, err := CreateCredential("my-app/OPENAI_API_KEY", "sk-live-abc123")
+	require.NoError(t, err)
+	require.NoError(t, readEr)
+	require.Contains(t, string(sent), "sk-live-abc123", "the platform still gets the real value")
+
+	redacted := config.RedactSecretFields(string(sent))
+
+	assert.NotContains(t, redacted, "sk-live-abc123", "and the debug log never does")
+	assert.Contains(t, redacted, "REDACTED")
 }

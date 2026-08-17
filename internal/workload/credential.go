@@ -37,10 +37,15 @@ const CredentialTypeAPIToken = "api_token"
 // manifest can reference it by id instead of carrying the value.
 //
 // This is the one call in the CLI that sends a secret. The value goes from
-// wherever the caller read it straight to the platform and is never written to
-// disk, which is the whole point: the reference that ends up in the committed
-// manifest names a credential, and the credential is the only place the secret
-// lives.
+// wherever the caller read it straight to the platform and never reaches the
+// manifest, which is the whole point: the reference that ends up committed
+// names a credential, and the credential is the only place the secret lives.
+//
+// Not reaching the manifest is this function's own guarantee. Not reaching
+// disk at all takes one more thing, because the debug log dumps outgoing
+// request bodies and this body is a secret by definition; that is what the
+// redaction in config.RedactedReqInfo is for, and why it belongs in the same
+// change as this call rather than a later one.
 //
 // A name already in use comes back as a 409 wrapped in *drapi.HTTPError.
 // Callers decide what that means, because reusing a credential of the same
