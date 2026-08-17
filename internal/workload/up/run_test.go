@@ -152,6 +152,8 @@ type fakes struct {
 	linked      func(string) bool
 	project     func(string) (wapi.Config, error)
 	link        func(string, wapi.InitOptions) error
+	save        func(string, wapi.Config) error
+	codeRef     func(string, string, string) error
 	sync        func(string) (*sync.Result, error)
 	build       func(string) (*workload.BuildTriggerResponse, error)
 	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
@@ -214,6 +216,8 @@ func install(t *testing.T, f fakes) {
 	swap(t, &projectLinkedFn, f.linked)
 	swap(t, &loadProjectFn, f.project)
 	swap(t, &initProjectFn, f.link)
+	swap(t, &saveProjectFn, f.save)
+	swap(t, &patchCodeRefFn, f.codeRef)
 	swap(t, &syncProjectFn, f.sync)
 	swap(t, &triggerBuildFn, f.build)
 	swap(t, &waitBuildFn, f.waitBuild)
@@ -621,6 +625,11 @@ type track struct {
 	artifactIn any
 	linkedTo   wapi.InitOptions
 	workloadIn any
+
+	// savedCfg is the project state after a roll re-pointed it, and carried
+	// is the (artifact, catalog, version) a spec-only roll inherited.
+	savedCfg wapi.Config
+	carried  []string
 }
 
 // wiredBuild is a build path where every step works, over the track that

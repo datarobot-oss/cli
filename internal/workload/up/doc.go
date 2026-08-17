@@ -56,6 +56,16 @@
 // code rather than in the committed manifest, because it is a property of the
 // clone and not of the project.
 //
+// A workload that already exists is rolled rather than created again: a new
+// version is minted, the platform swaps onto it, and the endpoint survives.
+// The version a file names by id is promoted as it stands, and one the
+// platform builds is filled first, by the same three acts as a first deploy.
+// The order there is what keeps it safe to run against something in use: the
+// project is pointed at the new version before the code is pushed, so an
+// upload can never rewrite what is currently serving. A run that dies between
+// minting a version and promoting it leaves a draft nothing points at, and
+// the next run continues with it rather than adding another to the pile.
+//
 // Non-scope: no terminal output and no cobra. Rendering a plan and running
 // the phases belong to the command; this package hands back values.
 package up

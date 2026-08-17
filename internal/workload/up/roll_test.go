@@ -17,11 +17,14 @@ package up
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/sync"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -511,23 +514,383 @@ func TestRun_StoppedWorkloadWithANewVersionSaysStartItFirst(t *testing.T) {
 	assert.Empty(t, tr.steps)
 }
 
-// A new version of a built project is born with no code and no image, so it
-// needs the sync and the build before anything is promoted onto it.
-func TestRun_RollingABuiltProjectIsNotWiredYet(t *testing.T) {
+// builtRoll is a roll of a project whose image the platform builds, with
+// every step wired to succeed. The live artifact is made a draft: the lock
+// ceremony has its own tests above, and leaving it locked would put a
+// confirmation in the middle of every assertion about the build.
+func builtRoll(tr *track) fakes {
+	f := wiredRoll(tr)
+
+	f.workloadD = func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil }
+	f.artifactD = func(string) (workload.Document, error) {
+		d := docOf(liveArtifactJSON)
+		d["status"] = workload.ArtifactStatusDraft
+
+		return d, nil
+	}
+
+	f.link = func(_ string, opts wapi.InitOptions) error {
+		tr.steps = append(tr.steps, "link")
+		tr.linkedTo = opts
+
+		return nil
+	}
+	f.save = func(_ string, cfg wapi.Config) error {
+		tr.steps = append(tr.steps, "relink")
+		tr.savedCfg = cfg
+
+		return nil
+	}
+	f.codeRef = func(artifactID, catalogID, versionID string) error {
+		tr.steps = append(tr.steps, "carry-code")
+		tr.carried = []string{artifactID, catalogID, versionID}
+
+		return nil
+	}
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{UploadedCount: 2, NewVersion: "ver-2"}, nil
+	}
+	f.build = func(string) (*workload.BuildTriggerResponse, error) {
+		tr.steps = append(tr.steps, "build")
+
+		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-2"}}, nil
+	}
+	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusCompleted}, nil
+	}
+
+	return f
+}
+
+// builtDrift is the built project's file asking for one thing the live spec
+// does not say, which is the smallest change that mints a version.
+func builtDrift() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+}
+
+// syncedProject is a project that has pushed code before, linked to the
+// artifact named. It is what every roll of a built project starts from,
+// because the version now serving got its code the same way.
+func syncedProject(artifactID string) func(string) (wapi.Config, error) {
+	catalog, version := "cat1", "ver1"
+
+	return func(string) (wapi.Config, error) {
+		return wapi.Config{
+			ArtifactID:          artifactID,
+			CatalogID:           &catalog,
+			LastSyncedVersionID: &version,
+		}, nil
+	}
+}
+
+// A new version of a built project is born with neither code nor an image, so
+// the roll has to fill it before anything is promoted onto it. The order is
+// the whole point: the project is pointed at the new version before the sync,
+// or the upload would rewrite the code of the version currently serving.
+func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 	var tr track
 
-	f := wiredRoll(&tr)
-	f.workloadD = func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil }
-	f.artifactD = func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil }
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
 
 	install(t, f)
 
-	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
-		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+	result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
 
-	_, stderr, err := runIn(t, drifted, Options{NonInteractive: true})
-	require.ErrorIs(t, err, ErrNotWired)
-	assert.Contains(t, err.Error(), "dockerfile")
-	assert.Empty(t, tr.steps, "a refusal must not have created a version first")
-	assert.Contains(t, stderr, "+ artifact", "the plan is still printed")
+	assert.Equal(t,
+		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle"},
+		tr.steps)
+	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the sync has to land in the new version, not the live one")
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// The project is linked to the version that is serving, which is the state a
+// finished roll leaves behind. Pushing into it would rewrite production's
+// code in place.
+func TestRun_RollNeverPushesIntoTheVersionThatIsServing(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact", "the live version is not a candidate to push into")
+	assert.NotEqual(t, "68a0000000000000000000a1", tr.savedCfg.ArtifactID)
+}
+
+// A run that died between creating a version and promoting it left a draft
+// with the code already in it. Making another would pile up an artifact per
+// attempt, and the one left behind is exactly what this run wants.
+func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	// The leftover was made from the file this run is reading, so it says
+	// what the file says. That is what makes it the version to roll onto.
+	f.artifactD = artifactDocs("art-abandoned", 9000)
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("an unpromoted draft is already the version to roll onto")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle"},
+		tr.steps)
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// An artifact's spec is fixed when it is created, so a draft left by an
+// attempt that read an older file describes that older file. Promoting it
+// would roll out a version the yaml no longer asks for and report the deploy
+// as done, leaving the same drift to be found again next run.
+func TestRun_RollDoesNotReuseADraftTheFileHasMovedPast(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	// The leftover still carries the port the file had when it was made; the
+	// file has since asked for another.
+	f.artifactD = artifactDocs("art-abandoned", 8500)
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a draft describing an older file is not the version to roll onto")
+	assert.NotContains(t, tr.steps, "replace:art-abandoned")
+}
+
+// Deleting a line is a change like any other, and the leftover was made
+// before it. Reuse driven only by what the file still mentions would find
+// everything matching, promote the draft, and leave the deleted variable
+// running; minting a fresh version drops it. The same file has to produce the
+// same running spec whether or not an earlier attempt left something behind.
+func TestRun_RollDoesNotReuseADraftCarryingWhatTheFileDeleted(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+
+	// The leftover agrees with the file about everything the file still says,
+	// and carries one variable the file no longer does.
+	f.artifactD = func(id string) (workload.Document, error) {
+		d := docOf(liveArtifactJSON)
+		d["status"] = workload.ArtifactStatusDraft
+
+		if id != "art-abandoned" {
+			return d, nil
+		}
+
+		container := primaryOf(d)
+		container["port"] = float64(9000)
+		container["environmentVars"] = []any{
+			map[string]any{"name": "FOO", "value": "1"},
+		}
+
+		group, _ := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+		group["containers"] = []any{container}
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a draft carrying a variable the file deleted is not the version to roll onto")
+	assert.NotContains(t, tr.steps, "replace:art-abandoned")
+}
+
+// artifactDocs answers the document read: the leftover draft at the port it
+// was created with, and the live artifact for everything else.
+//
+// The leftover is built to look like what createVersion makes, which is the
+// file's artifact block and nothing else. The live artifact carries a sidecar
+// the file has never heard of, and that is right for the live one: an
+// unmentioned sidecar is not drift. A leftover cannot have one, because the
+// only thing that could have made it is this file.
+func artifactDocs(abandonedID string, port int) func(string) (workload.Document, error) {
+	return func(id string) (workload.Document, error) {
+		d := docOf(liveArtifactJSON)
+		d["status"] = workload.ArtifactStatusDraft
+
+		if id != abandonedID {
+			return d, nil
+		}
+
+		container := primaryOf(d)
+		container["port"] = float64(port)
+
+		group, _ := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+		group["containers"] = []any{container}
+
+		return d, nil
+	}
+}
+
+// primaryOf reaches the first container of the first group.
+func primaryOf(d workload.Document) map[string]any {
+	groups, _ := d["spec"].(map[string]any)["containerGroups"].([]any)
+	container, _ := groups[0].(map[string]any)["containers"].([]any)[0].(map[string]any)
+
+	return container
+}
+
+// A locked draft can take neither code nor an image, which is what a roll
+// onto production leaves behind when it dies between the lock and the swap.
+// Reusing it would fail at the push with the platform's own 403.
+func TestRun_RollDoesNotReuseALockedLeftover(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact", "nothing more can be pushed into a locked draft")
+	assert.Contains(t, tr.steps, "replace:art-2")
+}
+
+// A spec-only roll moves a port or a probe and leaves the working tree alone,
+// so the sync mints no version and patches nothing. Without this the new
+// artifact would go to the builder with no code reference at all.
+func TestRun_SpecOnlyRollCarriesTheCodeOver(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{}, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-2", "cat1", "ver1"}, tr.carried,
+		"a new version of the same code has to point at that code")
+	assert.Equal(t,
+		[]string{"guard", "create-artifact", "relink", "sync", "carry-code", "build", "guard", "replace:art-2", "await-rollout", "settle"},
+		tr.steps)
+	assert.Equal(t, "bld-2", result.BuildID, "a version born without an image still needs one")
+}
+
+// Nothing to upload and nothing recorded to inherit means there would be
+// nothing to build, which is worth saying before a builder is asked to
+// produce an image from an empty artifact.
+func TestRun_SpecOnlyRollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) {
+		return wapi.Config{ArtifactID: "68a0000000000000000000a1"}, nil
+	}
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "art-2")
+	assert.Contains(t, err.Error(), "nothing to build")
+	assert.NotContains(t, tr.steps, "build")
+	assert.NotContains(t, tr.steps, "replace:art-2", "a version with no code must not be promoted")
+}
+
+// The version exists and only the local record of it failed to write. The
+// next run would create another and this one would be unreachable, so the
+// error has to carry the id.
+func TestRun_RollLinkFailureNamesTheStrandedVersion(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.save = func(string, wapi.Config) error { return errors.New("permission denied") }
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "art-2")
+	assert.Contains(t, err.Error(), "dr artifact code init art-2")
+	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed at a version nothing points to")
+}
+
+// A build that fails ends the roll with the old version still serving, and
+// the id of the build is the only way to the logs that say why.
+func TestRun_FailedBuildOnARollLeavesTheOldVersionServing(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	// WaitForBuild's own contract: a terminal failure comes back as the build
+	// and an error together.
+	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dr artifact build logs")
+	assert.Equal(t, "bld-2", result.BuildID, "a failed build is still the build to go and read")
+	assert.NotContains(t, tr.steps, "replace:art-2")
+	assert.Equal(t, "68a0000000000000000000a1", result.ArtifactID,
+		"the envelope names what is serving, which is still the old version")
 }

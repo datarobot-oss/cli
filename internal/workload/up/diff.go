@@ -226,3 +226,86 @@ func format(v any) string {
 		return fmt.Sprintf("%v", value)
 	}
 }
+
+// Extra reports every element of a name-keyed list that have carries and want
+// does not name, as paths.
+//
+// It is the question Subset deliberately does not ask. Measuring drift against
+// a running workload is one-directional on purpose: a field the file leaves
+// out is left alone rather than reverted. But "could this document have been
+// produced by this file?" is a different question, and there a name the file
+// never mentions is proof that it could not, because creating it fresh would
+// not have put that name there.
+//
+// Only names are compared, never the keys inside an element. The platform
+// fills in its own defaults and server-owned fields, so an element the file
+// does name always carries more than the file said and none of that is
+// evidence of anything. The name-keyed lists are different: containerGroups,
+// containers and environmentVars are the file's own, and the platform adds no
+// entries to them.
+func Extra(want, have map[string]any) []string {
+	var out []string
+
+	extra("", want, have, &out)
+
+	return out
+}
+
+// extra walks have alongside want. It iterates have's keys rather than want's,
+// because the case worth catching is a list the file no longer mentions at
+// all: deleting the last environment variable drops the whole block from the
+// file, and a walk driven by want would never look at it.
+func extra(path string, want map[string]any, have map[string]any, out *[]string) {
+	for _, key := range slices.Sorted(maps.Keys(have)) {
+		at := join(path, key)
+
+		if list, ok := have[key].([]any); ok && nameKeyed(list) {
+			extraInList(at, want[key], list, out)
+
+			continue
+		}
+
+		child, ok := have[key].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		wanted, ok := want[key].(map[string]any)
+		if !ok {
+			// The file says nothing about this object, so nothing inside it
+			// can be something the file removed.
+			continue
+		}
+
+		extra(at, wanted, child, out)
+	}
+}
+
+// extraInList compares one name-keyed list. A want side that is missing or is
+// not a list reads as empty, which is exactly what deleting the block means.
+func extraInList(path string, want any, have []any, out *[]string) {
+	named := map[string]map[string]any{}
+
+	if list, ok := want.([]any); ok {
+		named = byName(list)
+	}
+
+	for _, item := range have {
+		element, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		name, _ := element["name"].(string)
+		at := fmt.Sprintf("%s[%s]", path, name)
+
+		counterpart, found := named[name]
+		if !found {
+			*out = append(*out, at)
+
+			continue
+		}
+
+		extra(at, counterpart, element, out)
+	}
+}

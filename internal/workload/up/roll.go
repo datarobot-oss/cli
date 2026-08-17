@@ -49,24 +49,16 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 			result.Name, live.WorkloadID)
 	}
 
-	// A new version of a built project is born with neither code nor an
-	// image, so rolling onto it would promote something that cannot start.
-	// Giving it both is the next change, and it is more than a longer wait:
-	// the code has to reach the new version before the old one is touched.
-	// The test is the file's build mode rather than whether code changed,
-	// because a spec-only edit to a built project has the same problem.
-	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
-		return result, fmt.Errorf(
-			"%w: rolling a workload whose image the platform builds (%s mode). The plan above is correct, "+
-				"and a new version of a published image rolls today",
-			ErrNotWired, mode)
-	}
-
 	if err := guardReplacementFn(live.WorkloadID); err != nil {
 		return result, err
 	}
 
-	candidate, fresh, err := candidateArtifact(loaded, report)
+	made, err := candidateArtifact(loaded, live, plan.Code, opts, report)
+
+	// Recorded before the error check: a failed build is still a build, and
+	// the caller's envelope should be able to name the one to go and read.
+	result.BuildID = made.BuildID
+
 	if err != nil {
 		return result, err
 	}
@@ -83,36 +75,32 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 		return result, err
 	}
 
-	return replace(live.WorkloadID, candidate, lock, fresh, result, opts, report)
+	return replace(live.WorkloadID, made, lock, result, opts, report)
 }
 
-// candidateArtifact is the version to roll onto, and whether this run made
-// it. A file bound to an artifact by id is asking for something that already
-// exists, so there is nothing to create; minting one anyway would leave a
-// stray artifact behind on every deploy.
-func candidateArtifact(loaded Loaded, report *reporter) (string, bool, error) {
+// candidateArtifact is the version to roll onto.
+//
+// A file bound to an artifact by id is asking for one that already exists, so
+// there is nothing to make; minting one anyway would leave a stray behind on
+// every deploy. A file the platform builds from needs the working tree and an
+// image before it is worth promoting. A published image needs neither, and is
+// one call.
+func candidateArtifact(
+	loaded Loaded,
+	live Live,
+	code CodeChange,
+	opts Options,
+	report *reporter,
+) (version, error) {
 	if id := loaded.Compiled.ArtifactID; id != "" {
-		return id, false, nil
+		return version{ID: id}, nil
 	}
 
-	var created *workload.Artifact
-
-	err := report.run("Creating the new version", func() error {
-		payload, payloadErr := loaded.Compiled.ArtifactPayload()
-		if payloadErr != nil {
-			return payloadErr
-		}
-
-		artifact, createErr := createArtifactFn(payload)
-		created = artifact
-
-		return createErr
-	})
-	if err != nil {
-		return "", false, err
+	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
+		return buildVersion(loaded, live, code, opts, report)
 	}
 
-	return created.ID, true, nil
+	return createVersion(loaded, report)
 }
 
 // confirmLock asks whether to roll a locked version, and reports whether the
@@ -145,11 +133,12 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 // whole point: the platform wants the lock in place before the replacement is
 // POSTed, and by then everything that could still refuse the rollout has had
 // its say, so a lock taken here is one the run is committed to using.
-func matchLock(candidate string, fresh bool, report *reporter) (bool, error) {
-	// A candidate the file named may already be locked, and locking twice is
-	// not a no-op at the platform. One created here is always a draft.
-	if !fresh {
-		already, lockedErr := lockedAlready(candidate)
+func matchLock(made version, report *reporter) (bool, error) {
+	// A candidate the file named, or one left by an earlier attempt, may
+	// already be locked, and locking twice is not a no-op at the platform.
+	// One created by this run is always a draft.
+	if !made.Fresh {
+		already, lockedErr := lockedAlready(made.ID)
 		if lockedErr != nil {
 			return false, lockedErr
 		}
@@ -160,14 +149,14 @@ func matchLock(candidate string, fresh bool, report *reporter) (bool, error) {
 	}
 
 	err := report.run("Locking the new version", func() error {
-		_, lockErr := lockArtifactFn(candidate)
+		_, lockErr := lockArtifactFn(made.ID)
 
 		return lockErr
 	})
 	if err != nil {
 		return false, fmt.Errorf(
 			"artifact %s could not be locked, and a locked workload only accepts a locked version, "+
-				"so nothing was rolled: %w", candidate, err)
+				"so nothing was rolled: %w", made.ID, err)
 	}
 
 	return true, nil
@@ -215,8 +204,9 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 
 // replace starts the rollout and follows it to the end.
 func replace(
-	workloadID, artifactID string,
-	lock, fresh bool,
+	workloadID string,
+	made version,
+	lock bool,
 	result Result,
 	opts Options,
 	report *reporter,
@@ -229,7 +219,7 @@ func replace(
 	}
 
 	if lock {
-		locked, err := matchLock(artifactID, fresh, report)
+		locked, err := matchLock(made, report)
 		if err != nil {
 			return result, err
 		}
@@ -240,19 +230,19 @@ func replace(
 	var started *workload.Replacement
 
 	err := report.run("Rolling out the new version", func() error {
-		replacement, startErr := startReplacementFn(workloadID, artifactID)
+		replacement, startErr := startReplacementFn(workloadID, made.ID)
 		started = replacement
 
 		return startErr
 	})
 	if err != nil {
-		return result, fmt.Errorf("cannot roll workload %s onto artifact %s: %w", workloadID, artifactID, err)
+		return result, fmt.Errorf("cannot roll workload %s onto artifact %s: %w", workloadID, made.ID, err)
 	}
 
 	result.Action = ActionRolled
 
 	if opts.Detach {
-		report.say("  Rollout of %s onto artifact %s requested; not waiting.\n", workloadID, artifactID)
+		report.say("  Rollout of %s onto artifact %s requested; not waiting.\n", workloadID, made.ID)
 
 		return result, nil
 	}
