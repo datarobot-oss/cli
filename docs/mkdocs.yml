@@ -71,6 +71,8 @@ nav:
       - self: commands/self.md
       - plugins: commands/plugins.md
       - component: commands/component-managed-updates.md
+      - artifact: commands/artifact.md
+      - workload: commands/workload.md
   - Development:
       - development/README.md
       - Setup: development/setup.md

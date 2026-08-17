@@ -58,8 +58,8 @@ These flags are available for all commands:
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
 ### Command tree
@@ -134,7 +134,7 @@ dr
 │   │       └── delete Delete a specific version
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
-├── artifact           Artifact management (feature-gated)
+├── artifact           Artifact management
 │   ├── create         Create an artifact
 │   ├── get            Display details of an artifact
 │   ├── list           List artifacts
@@ -150,7 +150,9 @@ dr
 │       ├── sync       Push and pull code changes
 │       ├── versions   List catalog versions
 │       └── checkout   Download a version snapshot
-├── workload           Workload management (alias: wl, feature-gated)
+├── workload           Workload management (alias: wl)
+│   ├── config         Write the .datarobot.yaml that `up` deploys from
+│   ├── up             Deploy the project, applying what changed
 │   ├── create         Create (deploy) a workload
 │   ├── get            Display details of a workload
 │   ├── list           List workloads
@@ -371,12 +373,14 @@ For detailed documentation on each command, see:
   - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
-- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads.
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
   - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory.
 
-- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`).
+  - `config`&mdash;write the committed `.datarobot.yaml` that `up` deploys from, via a wizard or from flags.
+  - `up`&mdash;read that manifest, diff it and the working tree against what is running, and apply only what changed.
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.
   - `start` / `stop` / `status`&mdash;run-state control and status polling.
   - `endpoint` / `logs`&mdash;print the endpoint URL and stream container logs.

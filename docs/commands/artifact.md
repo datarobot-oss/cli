@@ -21,13 +21,11 @@ Each container in the spec is one of two kinds:
 - **Prebuilt**: set `imageUri` to an existing image. There is nothing to build.
 - **Built from source**: set `imageBuildConfig`, push your code with `dr artifact code sync`, and produce an image with `dr artifact build create`. The Dockerfile is either one you provide (`./Dockerfile`) or one the server generates from a base environment.
 
-The `code` subcommands keep a local directory in sync with an artifact's source. They store a `.datarobot/workload/` state directory at the project root, much like `.git/`: local work happens in the project root while `.datarobot/workload/` records the remote binding and last-synced state. Once a directory is linked with `dr artifact code init`, the `build` and `code` subcommands read the artifact id from `.datarobot/workload/config.json`, so you can leave it off. A project linked by an older CLI keeps its state in a root `.wapi/`; the next command that touches state relocates it and prints one line saying so.
+The `code` subcommands keep a local directory in sync with an artifact's source. They store a `.datarobot/workload/` state directory at the project root, much like `.git/`: local work happens in the project root while `.datarobot/workload/` records the remote binding and last-synced state. Once a directory is linked with `dr artifact code init`, the `build` and `code` subcommands read the artifact id from `.datarobot/workload/config.json`, so you can leave it off.
 
 A locked, fully built artifact is what you hand to `dr workload create` to deploy. See [`dr workload`](workload.md).
 
 > [!NOTE]
-> The `artifact` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr artifact` subcommand. See [Feature gates](../development/feature-gates.md) for details.
->
 > **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
@@ -224,4 +222,3 @@ dr artifact build logs <artifact-id> <build-id> --level debug
 - [`dr workload`](workload.md): deploy a locked artifact as a running workload.
 - [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
 - [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
-- [Feature gates](../development/feature-gates.md): turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.

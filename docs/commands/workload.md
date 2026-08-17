@@ -18,8 +18,6 @@ Startup is asynchronous. A workload moves through `submitted â†’ provisioning â†
 `start` and `stop` are asynchronous and idempotent too: stopping keeps the workload so it can be started again later, and the artifact it was created from is never removed along with it.
 
 > [!NOTE]
-> The `workload` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr workload` subcommand. See [Feature gates](../development/feature-gates.md) for details.
->
 > **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
@@ -42,6 +40,8 @@ dr workload logs <workload-id> --follow
 
 | Command                | Endpoint                                  | Purpose                                        |
 | ---------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `dr workload config`   | none, writes .datarobot.yaml              | Write the manifest `up` deploys from.          |
+| `dr workload up`       | several, orchestrates the deploy          | Deploy the project, applying what changed.     |
 | `dr workload create`   | `POST   /api/v2/workloads/`               | Deploy a workload from a spec.                 |
 | `dr workload get`      | `GET    /api/v2/workloads/{id}/`          | Show a single workload.                        |
 | `dr workload list`     | `GET    /api/v2/workloads/`               | List workloads, optionally filtered by status. |
@@ -53,6 +53,26 @@ dr workload logs <workload-id> --follow
 | `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/` | Show a workload's container logs.              |
 
 ## Subcommands
+
+### `config`
+
+Answer a handful of questions and write the committed `.datarobot.yaml` that `dr workload up` deploys from. The file is the platform's own workload-create spec plus the `workloadId` binding the CLI manages for you. Setup is a one-time act: with a manifest already present this command prints its path and exits, because editing twelve lines of YAML beats re-answering eight questions. Delete the file to start over.
+
+The wizard is interactive by default. Every answer also has a flag (`--name`, `--type`, `--build-mode`, `--image`, `--dockerfile`, `--execution-environment`, `--port`, `--health`, `--cpu`, `--memory`, `--replicas`, `--entrypoint`), so a scripted or non-interactive run can supply them up front. Run `dr workload config --help` for the full set.
+
+```bash
+dr workload config [--dir <path>] [--name <name>] [--dry-run]
+```
+
+### `up`
+
+Read the committed `.datarobot.yaml`, compare it and the working tree against what is running, and apply the difference. The plan is printed, then carried out; nothing to do prints "Already up to date" and exits 0. `--dry-run` prints the plan and stops, which is also the answer to "what would this deploy" in CI.
+
+Only fields the manifest mentions are managed. A setting the file never names survives every deploy, and deleting a line stops managing that field rather than reverting it.
+
+```bash
+dr workload up [--dir <path>] [--dry-run] [--detach] [--force-build] [--lock]
+```
 
 ### `create`
 
@@ -243,4 +263,3 @@ dr workload delete <workload-id>
 - [`dr artifact`](artifact.md): build and lock the artifact a workload runs.
 - [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
 - [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
-- [Feature gates](../development/feature-gates.md): turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.

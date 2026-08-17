@@ -117,7 +117,7 @@ Feature flag system:
 - `SetGate`: Marks a command with a feature gate annotation
 - `Enabled`: Checks if a feature is enabled via environment variables
 - `AnnotationKey`: The key used for feature gate annotations
-- Environment variable format: `DATAROBOT_CLI_FEATURE_<NAME>` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD=true`)
+- Environment variable format: `DATAROBOT_CLI_FEATURE_<NAME>` (e.g., `DATAROBOT_CLI_FEATURE_PIPELINE=true`)
 
 #### task/
 

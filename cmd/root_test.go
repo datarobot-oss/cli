@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
@@ -320,39 +321,30 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
 }
 
-func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
-	// Verify that workload command is not present by default (feature not enabled).
-	// The feature gating happens during init(), so this tests the actual state.
-	cmd := RootCmd
-
-	var found bool
-
-	for _, subCmd := range cmd.Commands() {
-		if subCmd.Name() == "workload" {
-			found = true
-			break
-		}
+// TestWorkloadAndArtifactCommandsAlwaysRegistered verifies that both command
+// trees reach RootCmd with no environment set up (no longer feature-gated).
+// Registration happens during init(), so this tests the actual state.
+func TestWorkloadAndArtifactCommandsAlwaysRegistered(t *testing.T) {
+	for _, name := range []string{"workload", "artifact"} {
+		assert.NotNilf(t, childByName(RootCmd.Command, name),
+			"%s command should always be registered (no longer feature-gated)", name)
 	}
-
-	assert.False(t, found, "workload command should not be present when feature gate is not enabled")
 }
 
-func TestArtifactCommandNotPresentByDefault(t *testing.T) {
-	// The artifact command shares the "workload" feature gate, so it is
-	// filtered out by cli.CommandAdder during init() when the gate is not
-	// enabled (the default).
-	cmd := RootCmd
-
-	var found bool
-
-	for _, subCmd := range cmd.Commands() {
-		if subCmd.Name() == "artifact" {
-			found = true
-			break
-		}
+// TestGatedCommandFilteredFromRootCmd is the counterpart: it pins that
+// cli.CommandAdder really does keep a disabled command out of the live tree.
+// Removing the workload gate took away the only test of that, and without one
+// a change that stopped the filtering would ship an unreleased command into
+// `dr --help` and shell completions with every test still green. Gates are
+// read during init(), so this reflects the environment the binary started in
+// rather than anything the test can set.
+func TestGatedCommandFilteredFromRootCmd(t *testing.T) {
+	if features.Enabled("pipeline") {
+		t.Skip("pipeline gate is enabled in this environment, so absence cannot be asserted")
 	}
 
-	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
+	assert.Nil(t, childByName(RootCmd.Command, "pipeline"),
+		"a command whose feature gate is off must not reach RootCmd")
 }
 
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-ca

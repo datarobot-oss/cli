@@ -26,7 +26,6 @@ import (
 	"github.com/datarobot/cli/cmd/workload/status"
 	"github.com/datarobot/cli/cmd/workload/stop"
 	"github.com/datarobot/cli/cmd/workload/up"
-	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
 
@@ -40,8 +39,6 @@ func Cmd() *cobra.Command {
 
 Manage and monitor workloads in your deployment infrastructure.`,
 	}
-
-	features.SetGate(cmd, "workload")
 
 	cmd.AddCommand(
 		// Setup, and the one subcommand here that never calls the API: it
