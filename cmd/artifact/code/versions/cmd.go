@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -114,8 +113,6 @@ func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, dep
 		return err
 	}
 
-	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(absDir))
-
 	cfg, err := loadProjectConfig(absDir)
 	if err != nil {
 		return err
@@ -145,7 +142,7 @@ func resolveProjectDir(dirFlag string) (string, error) {
 
 func loadProjectConfig(absDir string) (wapi.Config, error) {
 	if !wapi.Exists(absDir) {
-		return wapi.Config{}, errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")
+		return wapi.Config{}, wapi.NotLinkedError(absDir)
 	}
 
 	cfg, err := wapi.LoadConfig(absDir)

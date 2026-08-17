@@ -762,6 +762,42 @@ func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
 	assert.Equal(t, "art-existing", decodePayload(t, tr.workloadIn)["artifactId"])
 }
 
+// State at the old root location reads as unlinked. Without a guard that makes
+// this look like a first deploy: a second artifact gets minted and the one the
+// project has been pushing to is orphaned along with its builds and locked
+// versions, silently and on the server. Every other command degrades to a
+// visible error, so this one refuses too.
+func TestRun_LegacyStateRefusesRatherThanForkingTheArtifact(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("a project holding state at the old location must not get a second artifact")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundDockerfileManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"),
+		[]byte("FROM scratch\nEXPOSE 8080\n"), 0o600))
+
+	legacy := filepath.Join(dir, wapi.LegacyDirName)
+	require.NoError(t, os.Mkdir(legacy, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.json"),
+		[]byte(`{"artifactId":"art-legacy"}`), 0o600))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{Dir: dir, NonInteractive: true, Stderr: &stderr})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), wapi.LegacyDirName, "the error names the directory being ignored")
+	assert.Contains(t, err.Error(), "art-legacy", "and the id the user needs to link again")
+	assert.Empty(t, tr.steps, "nothing may reach the server")
+}
+
 // The platform allows one workload per draft artifact, so a stale link sends
 // the deploy at an artifact that is already spoken for. Its own message names
 // an id and nothing about where that id came from, which leaves the reader

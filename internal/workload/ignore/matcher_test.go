@@ -32,8 +32,8 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 	}{
 		{".datarobot/workload", true},
 		{".datarobot/workload/config.json", true},
-		{".wapi", true},             // legacy, still excluded pre-migration
-		{".wapi/config.json", true}, // legacy, still excluded pre-migration
+		{".wapi", true},             // written by older CLIs, never uploaded
+		{".wapi/config.json", true}, // written by older CLIs, never uploaded
 		{".git", true},
 		{".git/HEAD", true},
 		{".gitignore", true},

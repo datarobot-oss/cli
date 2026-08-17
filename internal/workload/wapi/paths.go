@@ -32,10 +32,6 @@ const (
 	// path a user sees does not carry an internal codename.
 	StateDirName = "workload"
 
-	// LegacyDirName is where sync state lived before it moved under
-	// RootDirName. EnsureMigrated relocates it.
-	LegacyDirName = ".wapi"
-
 	// RollbackDirName is the sync engine's per-run backup tree.
 	RollbackDirName = ".rollback"
 
@@ -61,45 +57,19 @@ const (
 )
 
 // Dir is the directory holding this project's machine-managed sync state:
-// <projectDir>/.datarobot/workload, falling back to a legacy <projectDir>/.wapi
-// that EnsureMigrated has not moved yet. The fallback is a stat rather than
-// cached state, so a migration that cannot complete degrades to reading the
-// old location instead of failing the command. It can go once the workload
-// feature gate is removed.
+// <projectDir>/.datarobot/workload. It names the location whether or not it
+// exists yet, so callers creating state and callers reading it agree on one
+// path; use Exists to ask whether the project is linked.
 func Dir(projectDir string) string {
-	current := filepath.Join(projectDir, RootDirName, StateDirName)
-	if fsutil.DirExists(current) {
-		return current
-	}
-
-	if legacy := legacyDir(projectDir); fsutil.DirExists(legacy) {
-		return legacy
-	}
-
-	return current
-}
-
-func legacyDir(projectDir string) string {
-	return filepath.Join(projectDir, LegacyDirName)
+	return filepath.Join(projectDir, RootDirName, StateDirName)
 }
 
 // RollbackDir is the sync engine's backup tree for a single run. Callers go
-// through this rather than joining the name themselves.
+// through this rather than joining the name themselves. A tree left behind by
+// a crashed sync is the only copy of the user's overwritten files, so recovery
+// reads the same path rather than reconstructing it.
 func RollbackDir(projectDir string) string {
 	return filepath.Join(Dir(projectDir), RollbackDirName)
-}
-
-// StaleRollbackDirs lists every place a rollback tree from a crashed sync
-// could be sitting, current location first. Recovery looks wider than
-// RollbackDir alone because a sync that crashed before the state directory
-// moved leaves its backups under the legacy path, where nothing will relocate
-// them if a current directory also exists. They are the only copy of the
-// user's overwritten files.
-func StaleRollbackDirs(projectDir string) []string {
-	current := filepath.Join(projectDir, RootDirName, StateDirName, RollbackDirName)
-	legacy := filepath.Join(legacyDir(projectDir), RollbackDirName)
-
-	return []string{current, legacy}
 }
 
 // ConfigPath is the project's config.json, exported so commands can name the
@@ -134,8 +104,8 @@ func wapiignorePath(projectDir string) string {
 	return filepath.Join(projectDir, wapiignoreFile)
 }
 
-// Exists reports whether the project is linked, at either the current or the
-// legacy location. False if the path is a file rather than a directory.
+// Exists reports whether the project is linked, meaning its state directory is
+// present. False if the path is a file rather than a directory.
 func Exists(projectDir string) bool {
 	return fsutil.DirExists(Dir(projectDir))
 }

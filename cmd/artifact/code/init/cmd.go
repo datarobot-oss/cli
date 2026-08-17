@@ -103,8 +103,6 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
-
 	if wapi.Exists(dir) {
 		return reportAlreadyLinked(dir)
 	}
@@ -122,6 +120,11 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	codeRef := workload.ExtractCodeRef(*art)
 	opts := buildInitOptions(artifactID, codeRef)
 
+	// Read before Initialize: linking succeeds alongside state at the old root
+	// location, and this is the only moment the user finds out that directory
+	// is now dead weight rather than the thing they just linked.
+	legacyNotice := wapi.LegacyStateNotice(dir)
+
 	if err := wapi.Initialize(dir, opts); err != nil {
 		if errors.Is(err, wapi.ErrAlreadyLinked) {
 			return reportAlreadyLinked(dir)
@@ -129,6 +132,8 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 		return err
 	}
+
+	format.StateNotice(cmd.ErrOrStderr(), legacyNotice)
 
 	return renderInitResult(outputFormat, newInitResult(*art, dir))
 }

@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
-	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -115,10 +114,8 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 		return err
 	}
 
-	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
-
 	if !wapi.Exists(dir) {
-		return errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")
+		return wapi.NotLinkedError(dir)
 	}
 
 	if clean {

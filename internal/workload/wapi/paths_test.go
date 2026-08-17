@@ -38,31 +38,8 @@ func TestExists_PresentDir(t *testing.T) {
 	assert.True(t, Exists(tmp))
 }
 
-// A project linked by an older CLI is still linked: Dir falls back to the
-// legacy location until EnsureMigrated moves it.
-func TestExists_PresentAtLegacyDir(t *testing.T) {
-	tmp := t.TempDir()
-
-	err := os.Mkdir(filepath.Join(tmp, LegacyDirName), 0o755)
-	require.NoError(t, err)
-
-	assert.True(t, Exists(tmp))
-	assert.Equal(t, filepath.Join(tmp, LegacyDirName), Dir(tmp))
-}
-
-// The current location wins when both exist, so a half-finished migration
-// cannot make commands read stale state.
-func TestDir_PrefersCurrentOverLegacy(t *testing.T) {
-	tmp := t.TempDir()
-
-	require.NoError(t, os.MkdirAll(filepath.Join(tmp, RootDirName, StateDirName), 0o755))
-	require.NoError(t, os.Mkdir(filepath.Join(tmp, LegacyDirName), 0o755))
-
-	assert.Equal(t, filepath.Join(tmp, RootDirName, StateDirName), Dir(tmp))
-}
-
-// With nothing on disk yet, Dir names where state will be created rather
-// than the legacy location.
+// With nothing on disk yet, Dir still names where state will be created, so a
+// caller about to link a project and one about to read it agree on the path.
 func TestDir_UnlinkedProjectNamesCurrentLocation(t *testing.T) {
 	tmp := t.TempDir()
 

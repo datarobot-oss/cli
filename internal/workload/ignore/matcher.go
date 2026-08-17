@@ -30,8 +30,11 @@ const wapiignoreFile = ".wapiignore"
 //
 // The state directory is listed at its full path, not as a bare ".datarobot":
 // entries match as prefixes, so a bare one would also exclude the CLI's own
-// tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
-// stays listed so an un-migrated project does not upload its state.
+// tool state under .datarobot/cli/, which syncs today. ".wapi" is where older
+// CLIs kept that state; nothing reads it any more, and it stays listed so a
+// leftover one is never uploaded as project source. That matters more than it
+// looks: such a directory can hold a .rollback tree containing the only copy
+// of files a crashed sync overwrote.
 //
 // The manifest is excluded because a deploy rewrites it: `up` writes the new
 // workload's id into it after the sync has run. Uploaded, it would differ from

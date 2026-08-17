@@ -20,8 +20,7 @@ import (
 )
 
 // ErrAlreadyLinked is returned by Initialize when the project directory
-// already has a state directory, at either the current or the legacy
-// location.
+// already has a state directory.
 var ErrAlreadyLinked = errors.New("Project already linked: state directory exists.")
 
 // ErrNotInitialized is returned by Load/Save/Append operations when the

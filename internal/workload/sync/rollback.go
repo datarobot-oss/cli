@@ -123,21 +123,8 @@ func (r *Rollback) Restore() error {
 
 // RestoreStaleIfPresent restores any existing rollback tree and removes it.
 // The bool indicates whether a restore happened so callers can warn the user.
-// It sweeps every candidate location (see wapi.StaleRollbackDirs) so backups
-// left by a sync that crashed before the state directory moved still apply.
 func RestoreStaleIfPresent(projectDir string) (bool, error) {
-	restored := false
-
-	for _, rollDir := range wapi.StaleRollbackDirs(projectDir) {
-		did, err := restoreStaleDir(rollDir, projectDir)
-		restored = restored || did
-
-		if err != nil {
-			return restored, err
-		}
-	}
-
-	return restored, nil
+	return restoreStaleDir(wapi.RollbackDir(projectDir), projectDir)
 }
 
 // restoreStaleDir applies one rollback tree and removes it. A missing tree is

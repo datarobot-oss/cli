@@ -15,6 +15,7 @@
 package initcmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -126,6 +127,42 @@ func TestRunE_ExistingCodeArtifact_EndToEnd(t *testing.T) {
 	assert.Equal(t, "init", entry["op"])
 	assert.Equal(t, "art-abc-123", entry["artifact"])
 	assert.Equal(t, "cat-xyz-789", entry["catalog"])
+}
+
+// Linking succeeds alongside state at the old root location, which leaves that
+// directory orphaned. It carries a .gitignore of "*", so git will not mention
+// it either: this notice is the only place a user hears that the thing they
+// were relying on is now dead weight.
+func TestRunE_NotesStateLeftAtTheOldLocation(t *testing.T) {
+	tmp := t.TempDir()
+
+	legacy := filepath.Join(tmp, wapi.LegacyDirName)
+	require.NoError(t, os.Mkdir(legacy, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.json"),
+		[]byte(`{"artifactId":"art-old-000000001"}`), 0o600))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", nil), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123"})
+
+	var stderr bytes.Buffer
+
+	cmd.SetErr(&stderr)
+
+	_ = captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	assert.Contains(t, stderr.String(), wapi.LegacyDirName,
+		"the orphaned directory has to be named")
+	assert.Contains(t, stderr.String(), "can be deleted")
+
+	// And the link itself points at the new artifact, not the old one.
+	cfg, err := wapi.LoadConfig(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, "art-abc-123", cfg.ArtifactID)
 }
 
 func TestRunE_EmptyArtifact_EndToEnd(t *testing.T) {

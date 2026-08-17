@@ -15,25 +15,15 @@
 package sync
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-// phase0Preflight migrates legacy state, does stale-rollback recovery, checks
-// the project is linked, and acquires the project lock. Migration runs first
-// so everything after it resolves one state directory; recovery runs before
-// the lock so a crashed-mid-sync process gets cleaned up by whoever runs next.
-//
-// The preview modes skip the migration: --dry-run and --diff should not move
-// anything on disk, and they read fine either way because the path helpers
-// fall back to the legacy location on their own.
+// phase0Preflight does stale-rollback recovery, checks the project is linked,
+// and acquires the project lock. Recovery runs before the lock so a
+// crashed-mid-sync process gets cleaned up by whoever runs next.
 func phase0Preflight(e *Engine) error {
-	if !e.opts.DryRun && !e.opts.ShowDiffs {
-		e.migrationNote = wapi.EnsureMigrated(e.projectDir)
-	}
-
 	restored, err := RestoreStaleIfPresent(e.projectDir)
 	if err != nil {
 		return fmt.Errorf("recover stale rollback: %w", err)
@@ -42,7 +32,7 @@ func phase0Preflight(e *Engine) error {
 	e.staleNote = restored
 
 	if !wapi.Exists(e.projectDir) {
-		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
+		return wapi.NotLinkedError(e.projectDir)
 	}
 
 	lock, err := AcquireSyncLock(e.projectDir)

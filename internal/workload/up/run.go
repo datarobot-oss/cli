@@ -139,6 +139,15 @@ func Run(opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("cannot resolve %s: %w", opts.Dir, err)
 	}
 
+	// State at the old root location reads as unlinked, which would make this
+	// look like a first deploy: a fresh artifact would be created and the one
+	// this project has been pushing to would be orphaned along with its builds
+	// and locked versions. Every other command degrades to a visible error, so
+	// refuse here rather than forking the project's history on the server.
+	if _, legacy := wapi.LegacyState(dir); legacy {
+		return Result{}, wapi.NotLinkedError(dir)
+	}
+
 	loaded, err := load(dir, opts)
 	if err != nil {
 		return Result{}, err

@@ -24,7 +24,7 @@ import (
 
 // StateNotice prints an incidental note about the state directory to w, dimmed
 // like the other housekeeping chatter. An empty notice prints nothing, so a
-// caller can pass wapi.EnsureMigrated's result straight through. Send it to
+// caller can pass wapi.LegacyStateNotice's result straight through. Send it to
 // stderr: it is never part of a command's data output.
 func StateNotice(w io.Writer, notice string) {
 	if notice == "" {

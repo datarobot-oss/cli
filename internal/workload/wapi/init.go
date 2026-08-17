@@ -46,10 +46,12 @@ type InitOptions struct {
 // projectDir is created (with any missing parents) if it does not already
 // exist, matching the convenience of `git init <newdir>`.
 //
-// Returns ErrAlreadyLinked if the project is already linked, at either the
-// current or the legacy location. On partial failure after mkdir, the
-// incomplete tree is left in place for the user to inspect or remove manually
-// rather than attempting rollback.
+// Returns ErrAlreadyLinked if the project already has a state directory. State
+// left at the old root location does not count as linked and does not block
+// linking, since re-linking is how a project recovers from it; callers who
+// want to mention that directory ask LegacyStateNotice. On partial failure
+// after mkdir, the incomplete tree is left in place for the user to inspect or
+// remove manually rather than attempting rollback.
 func Initialize(projectDir string, opts InitOptions) error {
 	if err := validateInitOptions(opts); err != nil {
 		return err
@@ -101,9 +103,9 @@ func Initialize(projectDir string, opts InitOptions) error {
 	})
 }
 
-// createStateDir makes the state directory for a fresh link. Dir resolves to
-// the legacy location when one is present, so an un-migrated project reports
-// ErrAlreadyLinked rather than acquiring a second state directory.
+// createStateDir makes the state directory for a fresh link. The mkdir is not
+// MkdirAll so that an existing directory surfaces as ErrAlreadyLinked instead
+// of silently adopting whatever is already there.
 func createStateDir(projectDir string) error {
 	stateDir := Dir(projectDir)
 
