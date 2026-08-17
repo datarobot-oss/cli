@@ -273,3 +273,33 @@ func TestRun_RollWithoutARuntimeChangeSendsNoRuntime(t *testing.T) {
 
 	assert.Nil(t, tr.rolledRuntime)
 }
+
+// --lock is about the artifact that ends up live, not about one this run
+// minted. A resize mints nothing, so the artifact already serving is the one
+// that ends up live, and it is what gets locked. A start does the same.
+func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	f := wiredRetune(&tr, &sent)
+	// The shared fixture is already locked, which is the other branch: an
+	// artifact cannot be locked twice.
+	f.artifactD = func(string) (workload.Document, error) { return unlockedArtifact(t), nil }
+	f.lock = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "lock:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"settings:68b0c1d2e3f4a5b6c7d8e9f0", "await-resize", "settle", "lock:68a0000000000000000000a1",
+	}, tr.steps, "the lock comes last, once the workload is serving again")
+	assert.True(t, result.Locked)
+}

@@ -92,6 +92,12 @@ type Options struct {
 	// Locking is one-way, so it happens last, only after the workload is
 	// actually serving: locking something that never came up would leave an
 	// undeletable artifact behind.
+	//
+	// It is about the end state, not about what this run happened to do. A
+	// deploy that mints no version still locks the one that is serving, which
+	// is what a start and a sizing change both do. The alternative would be a
+	// flag that sometimes locks and sometimes does not depending on which
+	// fields the file moved, and the run would have to be read to know which.
 	Lock bool
 
 	// PollInterval and PollTimeout tune the waits.
