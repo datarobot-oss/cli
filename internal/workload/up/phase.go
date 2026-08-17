@@ -73,7 +73,10 @@ func (r *reporter) work(label string, fn func() error) error {
 // done prints the completed phase. Durations are truncated to a tenth of a
 // second: a deploy is measured in minutes and the extra digits are noise.
 func (r *reporter) done(label string, elapsed time.Duration) {
-	fmt.Fprintf(r.out, "  ✓ %s (%s)\n", label, elapsed.Truncate(100*time.Millisecond))
+	fmt.Fprintf(r.out, "  %s %s %s\n",
+		tui.SuccessStyle.Render("✓"),
+		label,
+		tui.HintStyle.Render("("+elapsed.Truncate(100*time.Millisecond).String()+")"))
 }
 
 // say prints a line that is not a phase, such as a warning or a note.

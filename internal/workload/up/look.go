@@ -39,7 +39,14 @@ const (
 	keyStatus     = "status"
 	keyEndpoint   = "endpoint"
 	keyArtifactID = "artifactId"
+	keyType       = "type"
 )
+
+// keyArtifactType is what the plan calls a change of artifact kind. It is
+// spelled for a reader of the plan rather than as the API's own field name,
+// which is bare "type" on the artifact and would read as nothing in
+// particular on a line of its own.
+const keyArtifactType = "artifact.type"
 
 // Live is the workload as the platform currently has it: the two cleaned
 // documents that drift is measured against, plus the few scalars the command
@@ -63,6 +70,12 @@ type Live struct {
 
 	// ArtifactID is the artifact currently running, "" when there is none.
 	ArtifactID string
+
+	// ArtifactType is what kind of thing that artifact is: a service, an
+	// agent. It sits beside the spec rather than in it, because the platform
+	// reads the discriminator from the artifact and pops any type sent inside
+	// the spec, so the spec walk never sees it.
+	ArtifactType string
 
 	// Endpoint is the workload's stable URL. The platform assigns it at
 	// creation and it survives every rollout, so it is safe to print before
@@ -107,12 +120,13 @@ func Look(workloadID string) (Live, error) {
 	status := workloadDoc.String(keyStatus)
 
 	return Live{
-		Live:       manifest.NewLive(workloadID, workloadDoc, artifactDoc),
-		State:      stateFor(status),
-		Status:     status,
-		ArtifactID: artifactID,
-		Endpoint:   workloadDoc.String(keyEndpoint),
-		Locked:     isLocked(artifactDoc.String(keyStatus)),
+		Live:         manifest.NewLive(workloadID, workloadDoc, artifactDoc),
+		State:        stateFor(status),
+		Status:       status,
+		ArtifactID:   artifactID,
+		ArtifactType: artifactDoc.String(keyType),
+		Endpoint:     workloadDoc.String(keyEndpoint),
+		Locked:       isLocked(artifactDoc.String(keyStatus)),
 	}, nil
 }
 

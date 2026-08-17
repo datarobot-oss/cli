@@ -15,6 +15,9 @@
 package workload
 
 import (
+	"net/url"
+	"strconv"
+
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -32,6 +35,64 @@ type Credential struct {
 // field, which is the shape every secret imported from a .env takes: one name,
 // one value, and nothing about what the value is for.
 const CredentialTypeAPIToken = "api_token"
+
+// CredentialList is one page of the credentials route.
+type CredentialList struct {
+	Data []Credential `json:"data"`
+	Next string       `json:"next"`
+}
+
+// FindCredentialNamed returns the credential called name, or nil when the
+// organisation has none. Names are unique tenant-wide, so this is how a
+// caller turns a name it expected to create into the id that already holds it.
+//
+// limit bounds the whole scan, not the page: this is a courtesy lookup that
+// improves an error message, and following next links until a large tenant
+// runs out would turn every refusal into a long walk. Reaching the bound
+// answers nil, the same as a name that is genuinely not there, because to the
+// caller the two mean the same thing: no id to offer.
+func FindCredentialNamed(name string, limit int) (*Credential, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+
+	pageURL, err := drapi.EndpointURL("/credentials/", query)
+	if err != nil {
+		return nil, err
+	}
+
+	for scanned := 0; pageURL != "" && scanned < limit; {
+		var list CredentialList
+
+		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {
+			return nil, err
+		}
+
+		for i := range list.Data {
+			if list.Data[i].Name == name {
+				return &list.Data[i], nil
+			}
+		}
+
+		scanned += len(list.Data)
+
+		// A page that came back empty would otherwise leave scanned where it
+		// was and follow next for ever.
+		if list.Next == "" || len(list.Data) == 0 {
+			break
+		}
+
+		// Every paginator in this package checks this: drapi attaches the
+		// user's token to whatever URL it is given, so a next link naming
+		// another host would send it there.
+		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
+			return nil, err
+		}
+
+		pageURL = list.Next
+	}
+
+	return nil, nil
+}
 
 // CreateCredential stores a secret and returns the credential holding it, so a
 // manifest can reference it by id instead of carrying the value.

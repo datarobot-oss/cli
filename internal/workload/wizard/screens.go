@@ -373,7 +373,7 @@ func (f flow) sourceConflictNote() string {
 func (f flow) screenIntro() string {
 	switch f.at {
 	case screenName:
-		return "Identifies the workload in the platform and in `dr workload list`."
+		return ""
 	case screenKind:
 		return "Both run as containers and are built the same way. Agent additionally enables " +
 			"agent capabilities, the first of which is A2A discovery."
@@ -439,7 +439,7 @@ func (f flow) boundScreenNote() string {
 // wizard sounding like one voice rather than ten.
 var questions = map[screen]string{
 	screenBinding:    "Which workload should this repository deploy to?",
-	screenName:       "What should this workload be called?",
+	screenName:       "Name of your workload",
 	screenKind:       "What kind of workload is this?",
 	screenA2A:        "Publish this agent to the A2A registry?",
 	screenSource:     "How should the container image be produced?",

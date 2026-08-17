@@ -87,7 +87,8 @@ func TestState_TheOffStatusesReduceToStopped(t *testing.T) {
 }
 
 func TestState_String(t *testing.T) {
-	assert.Equal(t, "not created yet", StateUnbound.String())
+	assert.Equal(t, "not created yet", StateUnbound.String(),
+		"the envelope reports this; scripts match on it, so the header wording lives in render.go")
 	assert.Equal(t, "missing", StateMissing.String())
 	assert.Equal(t, "terminated", StateTerminated.String())
 	assert.Equal(t, "stopped", StateStopped.String())

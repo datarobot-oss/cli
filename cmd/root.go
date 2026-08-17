@@ -305,6 +305,11 @@ func init() {
 
 	RootCmd.SetUsageTemplate(CustomUsageTemplate)
 
+	// Set on the root, so every subcommand's failure reads as one. Only the
+	// prefix is styled: the message itself is often multi-line and is the part
+	// a user copies into a bug report.
+	RootCmd.SetErrPrefix(tui.ErrorStyle.Render("Error:"))
+
 	RootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		showAllCommands, _ := cmd.Flags().GetBool("all-commands")
 		showVersion, _ := cmd.Flags().GetBool("version")

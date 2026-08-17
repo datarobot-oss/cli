@@ -45,8 +45,7 @@ func stubLiveDocs(t *testing.T) {
 				"containers": [
 					{"name": "primary", "resourceAllocation": {"cpu": 4, "memory": "8GB"}},
 					{"name": "sidecar", "resourceAllocation": {"cpu": 0.5, "memory": "1GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "readinessProbe": {"path": "/alive", "port": 8000}},
 				{"name": "sidecar", "imageUri": "registry/side:v1"}]}]}}`))
@@ -173,8 +172,7 @@ func TestFlow_BackAndForthKeepsTheA2AAnswer(t *testing.T) {
 func TestFlow_BoundKindTheWizardCannotAuthorIsKept(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "nim-app", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "nim-artifact", "spec": {"type": "nim",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "nim-artifact", "type": "nim", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "nvcr.io/nim/llama:latest"}]}]}}`))
 
 	workloads := []workload.Workload{{ID: "68b0", Name: "nim-app", UpdatedAt: time.Now()}}
@@ -263,7 +261,7 @@ func TestFlow_FailedBaseImageListShowsNoStaleRows(t *testing.T) {
 func TestFlow_ConfirmWithNothingRenderedReportsTheRealError(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "odd", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "odd-artifact", "spec": {"type": "service", "containerGroups": []}}`))
+		documentFrom(t, `{"name": "odd-artifact", "type": "service", "spec": {"containerGroups": []}}`))
 
 	workloads := []workload.Workload{{ID: "68b0", Name: "odd", UpdatedAt: time.Now()}}
 	model := press(t, newFlow(dockerfileProject(t), workloads, Answers{}), "down", "enter")
@@ -326,7 +324,7 @@ func TestRun_SizingFlagsApplyToABoundWorkload(t *testing.T) {
 func TestAnswers_A2AFlagSemantics(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "agent-app", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "agent-artifact", "spec": {"type": "agent", "a2aEnabled": true,
+		documentFrom(t, `{"name": "agent-artifact", "type": "agent", "spec": {"a2aEnabled": true,
 			"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
@@ -355,8 +353,7 @@ func TestRun_LiveWorkloadTheReaderRejectsSaysSo(t *testing.T) {
 		documentFrom(t, `{"name": "binary-units", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "4Gi"}}]}]}}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
 	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0"}))
@@ -798,7 +795,7 @@ func TestRowTable_SlashStartsEmptyRatherThanFiltering(t *testing.T) {
 func TestFlow_DockerfileConflictOnlyOnTheSourceScreen(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "builds-a-dockerfile", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000,
 				"imageBuildConfig": {"dockerfile": {"source": "provided"}}}]}]}}`))
 
@@ -934,7 +931,7 @@ func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 func TestRun_BoundWorkloadKeepsItsOwnEnv(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "has-env", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1",
 				"environmentVars": [{"name": "LOG_LEVEL", "value": "warn"}]}]}]}}`))
 
@@ -957,7 +954,7 @@ func TestRun_BoundWorkloadKeepsItsOwnEnv(t *testing.T) {
 func TestRun_BoundWorkloadWithoutARuntimeBlock(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "no-runtime", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
 	result, err := Run(headless(t.TempDir(), Answers{
@@ -1186,8 +1183,7 @@ func TestFlow_BindKeepsTheFlagsGivenBeforeTheFetch(t *testing.T) {
 		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
 
 	model := newFlow(dockerfileProject(t), nil, Answers{
@@ -1245,8 +1241,7 @@ func TestFlow_AutoscaledBoundWorkloadPassesTheSettingsScreen(t *testing.T) {
 			"runtime": {"containerGroups": [{"name": "default",
 				"autoscaling": {"enabled": true, "minReplicaCount": 2, "maxReplicaCount": 9},
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
 
 	model := newFlow(dockerfileProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
@@ -1301,8 +1296,7 @@ func TestFlow_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
 		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3",
 				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"}]}]}]}}`))
 

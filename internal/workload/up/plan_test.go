@@ -364,3 +364,67 @@ func TestBuild_BadPayloadIsReported(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "compiled manifest")
 }
+
+// The type sits beside the spec, not in it: the platform reads the
+// discriminator off the artifact and pops any type sent within the spec, so
+// the spec walk is blind to it. Without a comparison of its own, turning a
+// service into an agent reads as already up to date.
+func TestBuild_ArtifactTypeChangeIsARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action(), "a different kind of artifact needs a new version")
+	assert.False(t, plan.Empty())
+}
+
+// The same file against a workload already running that kind plans nothing,
+// or every deploy of an agent would roll it onto itself.
+func TestBuild_MatchingArtifactTypeIsEmpty(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}
+
+// Saying nothing about the type is not the same as asking for a service. A
+// manifest written before the type moved out of the spec names none, and this
+// walk never reverts what the file leaves out.
+func TestBuild_NoTypeInTheFileIsNotDrift(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/tui"
 )
 
 // Import is what storing the secrets did, one entry per secret the run tried
@@ -91,9 +92,11 @@ func importSecrets(vars []manifest.EnvVar, detected Detected, workloadName strin
 			continue
 		}
 
-		cred, err := createCredentialFn(credentialName(workloadName, v.Name), value)
+		name := CredentialName(workloadName, v.Name)
+
+		cred, err := createCredentialFn(name, value)
 		if err != nil {
-			report.Failed = append(report.Failed, ImportFailure{Name: v.Name, Reason: importReason(err)})
+			report.Failed = append(report.Failed, ImportFailure{Name: v.Name, Reason: importReason(err, name)})
 
 			continue
 		}
@@ -118,11 +121,14 @@ func secretValues(detected Detected) map[string]string {
 	return values
 }
 
-// credentialName is what the credential is called in a store shared by the
+// CredentialName is what the credential is called in a store shared by the
 // whole tenant. The workload name is the prefix because a bare OPENAI_API_KEY
 // belongs to whoever created it first, and the second project to try would
 // collide with a credential it cannot see the value of.
-func credentialName(workloadName, envName string) string {
+//
+// Exported because the deploy needs it too: a manifest still carrying the
+// placeholder is one lookup away from the id that belongs there.
+func CredentialName(workloadName, envName string) string {
 	if workloadName == "" {
 		return envName
 	}
@@ -131,14 +137,17 @@ func credentialName(workloadName, envName string) string {
 }
 
 // importReason turns a failure into something worth reading. A name already
-// taken is the one case with an obvious next step, and it is common: running
-// setup twice on the same project reaches it every time.
-func importReason(err error) string {
+// taken is the common one: credential names are unique across the whole
+// organisation, so setting up a second project under the same workload name
+// reaches it every time. The value behind that name is not visible from here
+// and may not be the one in this .env, which is why it is not reused silently.
+func importReason(err error, name string) string {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusConflict {
-		return "a credential of that name already exists; " +
-			"reuse it by pasting its id, or rename it in the DataRobot UI"
+		return fmt.Sprintf(
+			"a credential called %q already exists in your organisation, and its value may not be this one. "+
+				"Reuse it by pasting its id, or deploy under a different workload name.", name)
 	}
 
 	return strings.TrimSpace(err.Error())
@@ -154,18 +163,36 @@ func reportImport(stderr io.Writer, report Import) {
 	}
 
 	if len(report.Stored) > 0 {
-		fmt.Fprintf(stderr, "Stored %d %s in the credential store: %s.\n",
+		fmt.Fprintf(stderr, "  %s Stored %d %s %s\n",
+			tui.SuccessStyle.Render("✓"),
 			len(report.Stored), Plural(len(report.Stored), "secret", "secrets"),
-			strings.Join(report.Stored, ", "))
+			tui.HintStyle.Render("("+storedNames(report.Stored)+")"))
 	}
 
 	for _, failure := range report.Failed {
-		fmt.Fprintf(stderr,
-			"Warning: %s was not stored, because %s.\n"+
-				"  Its entry in %s still says %s; a deploy will refuse it until that is a credential id.\n",
-			failure.Name, failure.Reason, manifest.FileName, manifest.CredentialPlaceholder)
+		fmt.Fprintf(stderr, "  %s %s\n    %s\n    %s\n",
+			tui.WarnStyle.Render("!"),
+			tui.WarnStyle.Render(failure.Name+" was not stored"),
+			failure.Reason,
+			tui.HintStyle.Render(fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
+				manifest.FileName, manifest.CredentialPlaceholder)))
 	}
 }
+
+// storedNames lists what was stored, trimmed to a line's worth. Past a
+// handful the names stop being a summary and start being a wall, and the file
+// is the better place to read them all.
+func storedNames(names []string) string {
+	if len(names) <= namesShown {
+		return strings.Join(names, ", ")
+	}
+
+	return fmt.Sprintf("%s, … and %d more, all in %s",
+		strings.Join(names[:namesShown], ", "), len(names)-namesShown, manifest.FileName)
+}
+
+// namesShown is how many secrets are named before the list is cut short.
+const namesShown = 5
 
 // pendingSecrets counts the entries still carrying a placeholder, which is
 // what the command reports as unfinished.

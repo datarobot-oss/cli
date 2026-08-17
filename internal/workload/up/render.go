@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/tui"
 )
 
 // Summary names what a plan is about. It comes from the live workload when
@@ -50,11 +53,13 @@ const envVarsSegment = ".environmentVars["
 func Render(w io.Writer, s Summary, plan Plan) error {
 	var b strings.Builder
 
-	b.WriteString(header(s, plan))
-	b.WriteString("\n")
+	if head := header(s, plan); head != "" {
+		b.WriteString(planTitleStyle.Render(head))
+		b.WriteString("\n")
+	}
 
 	if plan.Empty() {
-		b.WriteString("\nAlready up to date\n")
+		b.WriteString("\n" + tui.SuccessStyle.Render("✓ Already up to date") + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -63,7 +68,7 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 
 	b.WriteString("\n")
 
-	for _, line := range lines(plan) {
+	for _, line := range lines(s, plan) {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -73,15 +78,20 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	return err
 }
 
-// header names the workload and says what state it is in.
+// header names the workload being deployed onto and says what state it is in.
+//
+// There is nothing to head a plan with when no workload exists yet: naming a
+// state the reader is about to leave, above a line saying what is about to be
+// created, says the same thing twice and the second time is clearer. The
+// create line carries the name instead.
 func header(s Summary, plan Plan) string {
+	if plan.Creates || s.WorkloadID == "" {
+		return ""
+	}
+
 	name := s.Name
 	if name == "" {
 		name = "workload"
-	}
-
-	if plan.Creates || s.WorkloadID == "" {
-		return fmt.Sprintf("%s, %s", name, plan.State)
 	}
 
 	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), plan.State)
@@ -98,11 +108,11 @@ func shortID(id string) string {
 
 // lines is the body of the plan, one entry per class of change plus the
 // details each one carries.
-func lines(plan Plan) []string {
+func lines(s Summary, plan Plan) []string {
 	var out []string
 
 	if plan.Creates {
-		out = append(out, entry("+", "workload", "created on this run, with its first artifact"))
+		out = append(out, entry("+", "workload", createDetail(s)))
 	}
 
 	// A stopped workload is the one plan whose reason to act is the state
@@ -123,10 +133,21 @@ func lines(plan Plan) []string {
 	return out
 }
 
+// createDetail names the workload about to be created. The plan is printed
+// before anything happens, and --dry-run prints it instead of acting, so it
+// says what will happen rather than what has.
+func createDetail(s Summary) string {
+	if s.Name == "" {
+		return "will be created, with its first artifact"
+	}
+
+	return s.Name + " will be created, with its first artifact"
+}
+
 // codeDetail says how much of the tree is going up.
 func codeDetail(code CodeChange) string {
 	if code.FirstDeploy {
-		return "first sync of this project"
+		return "all project files, uploaded for the first time"
 	}
 
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))
@@ -168,8 +189,24 @@ func runtimeLines(plan Plan) []string {
 
 // entry formats one plan line: a marker, the class, and what happens to it.
 func entry(marker, class, detail string) string {
-	return fmt.Sprintf("  %s %-10s %s", marker, class, detail)
+	style := changeStyle
+	if marker == "+" {
+		style = addStyle
+	}
+
+	return fmt.Sprintf("  %s %s %s",
+		style.Render(marker),
+		style.Render(fmt.Sprintf("%-10s", class)),
+		tui.HintStyle.Render(detail))
 }
+
+// The plan block's palette: an addition reads as new, a change as something
+// being moved, and the detail after either is commentary on it.
+var (
+	planTitleStyle = lipgloss.NewStyle().Bold(true)
+	addStyle       = tui.SuccessStyle
+	changeStyle    = tui.WarnStyle
+)
 
 // details lists individual changes under their entry, capped, saying out loud
 // how many it left out.

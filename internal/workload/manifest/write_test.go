@@ -53,8 +53,8 @@ importance: low # low | moderate | high | critical
 
 artifact:
   name: my-app-artifact
+  type: service
   spec:
-    type: service
     containerGroups:
       - name: default
         containers:
@@ -300,8 +300,8 @@ somethingTheApiAddedLater: true
 artifact:
   # how the image is built
   name: my-app-artifact
+  type: service
   spec:
-    type: service
 `
 
 	path := writeManifest(t, t.TempDir(), original)
@@ -317,8 +317,8 @@ somethingTheApiAddedLater: true
 artifact:
   # how the image is built
   name: my-app-artifact
+  type: service
   spec:
-    type: service
 `, string(got))
 }
 
@@ -503,4 +503,23 @@ artifact:
 func TestResolveCredentials_RefusesWhatItCannotParse(t *testing.T) {
 	_, err := ResolveCredentials([]byte("name: [unclosed\n"), map[string]string{"A": "b"})
 	require.Error(t, err)
+}
+
+// The platform pops spec.type on the way in and re-derives the discriminator
+// from the artifact's own type, defaulting to service. A type written one
+// level down is therefore discarded without a word: an agent silently becomes
+// a service, and a2aEnabled is then rejected as an unknown field.
+func TestRender_TypeSitsOnTheArtifactNotInTheSpec(t *testing.T) {
+	draft := serviceDraft()
+	draft.Type = TypeAgent
+	draft.A2AEnabled = true
+
+	rendered, err := draft.Render()
+	require.NoError(t, err)
+
+	out := string(rendered)
+
+	assert.Contains(t, out, "  name: my-app-artifact\n  type: agent\n  spec:\n")
+	assert.NotContains(t, out, "    type: agent", "inside the spec the platform throws it away")
+	assert.Contains(t, out, "a2aEnabled: true", "which stays in the spec, where the agent variant reads it")
 }

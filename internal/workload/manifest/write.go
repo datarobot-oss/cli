@@ -359,7 +359,13 @@ func (d Draft) topLevelFields(build field) []field {
 // artifact renders the half that says what runs: the versioned, lockable
 // definition.
 func (d Draft) artifact(build field) *yaml.Node {
-	spec := []field{{key: keyType, value: scalar(d.Type)}}
+	// type sits on the artifact, not in the spec. The platform pops any
+	// spec.type it is sent and re-derives the discriminator from the
+	// artifact's own type, defaulting to service, so a type written one level
+	// down is discarded without a word: an agent silently becomes a service,
+	// and a2aEnabled is then rejected as an unknown field on the service
+	// variant.
+	spec := []field{}
 
 	if d.A2AEnabled {
 		spec = append(spec, field{
@@ -393,6 +399,7 @@ func (d Draft) artifact(build field) *yaml.Node {
 
 	return mapping(
 		field{key: keyName, value: scalar(ArtifactName(d.Name))},
+		field{key: keyType, value: scalar(d.Type)},
 		field{key: keySpec, value: mapping(spec...)},
 	)
 }

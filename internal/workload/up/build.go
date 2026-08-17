@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -63,7 +64,67 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 		return result, err
 	}
 
-	return create(loaded, payload, result, opts, report)
+	result, err = create(loaded, payload, result, opts, report)
+	if err != nil && !fresh {
+		// The artifact was not minted by this run, so a refusal to create a
+		// workload on it is most likely the platform's one-per-draft-artifact
+		// rule, and the link that chose it is the thing to explain.
+		err = reusedArtifactConflict(err, artifactID, loaded.ProjectDir)
+	}
+
+	return result, err
+}
+
+// reusedArtifactConflict explains a create refused because the artifact this
+// checkout is linked to is already spoken for.
+//
+// The link is invisible: it lives in a gitignored directory nobody looks at,
+// and it is what makes a second deploy update one artifact instead of piling
+// up new ones. When it goes stale, the platform's own message names an
+// artifact id and nothing about where that id came from, which leaves the
+// reader with a conflict and no idea what chose the thing that conflicted.
+func reusedArtifactConflict(createErr error, artifactID, projectDir string) error {
+	if !isConflict(createErr) {
+		return createErr
+	}
+
+	// Only rewrite once the claim is verified. A 409 on this path is just as
+	// likely to be a duplicate workload name, which create() has already
+	// explained accurately; replacing that with advice to delete the link
+	// directory would send the user to orphan an artifact for no reason.
+	owner := workloadOn(artifactID)
+	if owner == "" {
+		return createErr
+	}
+
+	return fmt.Errorf(
+		"this project is linked to artifact %s, which workload %s already has, and the platform allows "+
+			"only one workload per draft artifact.\n"+
+			"  The link lives in %s and is what makes repeated deploys update one artifact rather than "+
+			"making a new one each time.\n"+
+			"  To deploy to that workload, add 'workloadId: %s' to %s.\n"+
+			"  To deploy a separate workload from this directory, delete %s: the next run then creates "+
+			"an artifact of its own.\n"+
+			"  %w",
+		artifactID, owner, wapi.Dir(projectDir), owner, manifest.FileName, wapi.Dir(projectDir), createErr)
+}
+
+// workloadOn names the workload already using artifactID, "" when the lookup
+// cannot say. It turns the advice from "find out what owns this" into a line
+// the reader can paste.
+func workloadOn(artifactID string) string {
+	existing, err := listWorkloadsFn(conflictSearchLimit, nil)
+	if err != nil {
+		return ""
+	}
+
+	for i := range existing {
+		if existing[i].ArtifactID == artifactID {
+			return existing[i].ID
+		}
+	}
+
+	return ""
 }
 
 // ensureArtifact returns the artifact this project builds into, creating one

@@ -41,7 +41,7 @@ func Delete(url, info string, body any) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	if info != "" {
-		log.Infof("Deleting %s at: %s", info, url)
+		log.Debugf("Deleting %s at: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))

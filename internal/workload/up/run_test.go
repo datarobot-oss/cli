@@ -133,17 +133,18 @@ runtime:
 // reach the network by omission and a test only wires what it means to
 // exercise.
 type fakes struct {
-	wizard    func(wizard.Options) (wizard.Result, error)
-	create    func(any) (*workload.Workload, error)
-	wait      func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-	list      func(int, []string) ([]workload.Workload, error)
-	start     func(string) (*workload.WorkloadOperationResponse, error)
-	lock      func(string) (*workload.Artifact, error)
-	cred      func(string) (*workload.Credential, error)
-	writeID   func(string, string) error
-	code      func(Loaded, Live) (CodeChange, error)
-	workloadD func(string) (workload.Document, error)
-	artifactD func(string) (workload.Document, error)
+	wizard         func(wizard.Options) (wizard.Result, error)
+	create         func(any) (*workload.Workload, error)
+	wait           func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	list           func(int, []string) ([]workload.Workload, error)
+	start          func(string) (*workload.WorkloadOperationResponse, error)
+	lock           func(string) (*workload.Artifact, error)
+	cred           func(string) (*workload.Credential, error)
+	findCredential func(string, int) (*workload.Credential, error)
+	writeID        func(string, string) error
+	code           func(Loaded, Live) (CodeChange, error)
+	workloadD      func(string) (workload.Document, error)
+	artifactD      func(string) (workload.Document, error)
 
 	// The build track: create an artifact, link the project to it, push the
 	// code, turn it into an image.
@@ -187,6 +188,13 @@ func install(t *testing.T, f fakes) {
 
 		return nil, nil
 	})
+
+	// The placeholder message looks a credential up by name. Left unwired it
+	// would list credentials from whatever tenant the developer is logged
+	// into; answering "no such credential" is the quiet default every test
+	// that does not care about the lookup wants.
+	force(t, &findCredentialFn, func(string, int) (*workload.Credential, error) { return nil, nil })
+	swap(t, &findCredentialFn, f.findCredential)
 
 	swap(t, &runWizardFn, f.wizard)
 	swap(t, &createWorkloadFn, f.create)
@@ -754,6 +762,85 @@ func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
 	assert.Equal(t, "art-existing", decodePayload(t, tr.workloadIn)["artifactId"])
 }
 
+// The platform allows one workload per draft artifact, so a stale link sends
+// the deploy at an artifact that is already spoken for. Its own message names
+// an id and nothing about where that id came from, which leaves the reader
+// with a conflict and no idea what chose the thing that conflicted.
+func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	f.list = func(int, []string) ([]workload.Workload, error) {
+		return []workload.Workload{{ID: "wl-owner", Name: "someone-else", ArtifactID: "art-existing"}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-existing", "the artifact the link chose")
+	assert.Contains(t, err.Error(), ".datarobot", "where that choice is recorded")
+	assert.Contains(t, err.Error(), "wl-owner", "the workload that already has it")
+	assert.Contains(t, err.Error(), "workloadId: wl-owner", "a line the reader can paste")
+}
+
+// A 409 on a linked project is just as likely to be a duplicate workload
+// name, which create() has already explained accurately. Rewriting that as a
+// link problem would send the user to delete the link and orphan an artifact
+// for a reason that was never the cause.
+func TestRun_NameConflictOnALinkedProjectKeepsItsOwnMessage(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	// Nothing holds the artifact; the name is what collided.
+	f.list = func(int, []string) ([]workload.Workload, error) {
+		return []workload.Workload{{ID: "wl-1", Name: "my-app", ArtifactID: "art-somewhere-else"}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "workloadId: wl-1", "the name conflict's own advice")
+	assert.NotContains(t, err.Error(), "delete", "nothing here calls for deleting the link")
+}
+
+// The same conflict against an artifact this run just minted is not a stale
+// link, so it must not be explained as one.
+func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.create = func(any) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+	}
+	f.list = func(int, []string) ([]workload.Workload, error) { return nil, nil }
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "only one workload per draft artifact")
+}
+
 // A locked artifact can take neither code nor an image, so the deploy stops
 // before the sync rather than failing halfway through with the platform's
 // 403, which says nothing about what to do next.
@@ -1046,7 +1133,7 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
-	assert.Contains(t, stderr, "first sync of this project")
+	assert.Contains(t, stderr, "uploaded for the first time")
 }
 
 // stoppedWorkload is the live fixture, off. Everything else about it still

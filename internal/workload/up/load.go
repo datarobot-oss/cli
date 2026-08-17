@@ -76,6 +76,22 @@ func (l Loaded) Spec() (map[string]any, error) {
 	return spec, nil
 }
 
+// ArtifactType is the kind of artifact the file asks for, "" when it names
+// none. It sits beside the spec rather than inside it, because the platform
+// reads the discriminator from the artifact itself and pops any type sent
+// within the spec, so Spec above can never see it.
+func (l Loaded) ArtifactType() (string, error) {
+	payload, err := l.payload()
+	if err != nil {
+		return "", err
+	}
+
+	artifact, _ := payload["artifact"].(map[string]any)
+	artifactType, _ := artifact["type"].(string)
+
+	return artifactType, nil
+}
+
 // Runtime is the sizing half of the file, again in the live object's shape.
 func (l Loaded) Runtime() (map[string]any, error) {
 	payload, err := l.payload()

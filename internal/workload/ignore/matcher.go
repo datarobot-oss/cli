@@ -33,8 +33,15 @@ const wapiignoreFile = ".wapiignore"
 // tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
 // stays listed so an un-migrated project does not upload its state.
 //
+// The manifest is excluded because a deploy rewrites it: `up` writes the new
+// workload's id into it after the sync has run. Uploaded, it would differ from
+// what was synced the moment the deploy finished, so the next run would find a
+// changed file, rebuild, and roll a workload nobody had touched, for ever. It
+// describes how to deploy the code rather than being part of it, and the
+// container has no use for it.
+//
 // Entries must be lowercase: matchesSystemExclude folds the path it is given.
-var systemExcludes = []string{".datarobot/workload", ".wapi", ".git", ".gitignore"}
+var systemExcludes = []string{".datarobot/workload", ".wapi", ".git", ".gitignore", ".datarobot.yaml"}
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.

@@ -45,6 +45,7 @@ var (
 	waitBuildFn        = workload.WaitForBuild
 	listBuildsFn       = workload.ListArtifactBuilds
 	getCredentialFn    = workload.GetCredential
+	findCredentialFn   = workload.FindCredentialNamed
 	guardReplacementFn = workload.GuardNoActiveReplacement
 	startReplacementFn = workload.StartReplacement
 	waitReplacementFn  = workload.WaitForReplacement
@@ -254,7 +255,7 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		// A start is when the container resolves its references, so a
 		// credential deleted while the workload was off would otherwise fail
 		// minutes later as a container that will not come up.
-		if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+		if err := verifyCredentials(loaded.Compiled.CredentialRefs, result.Name); err != nil {
 			return result, err
 		}
 
@@ -283,7 +284,7 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 
 	// Last check before the first mutation, and the only one that needs the
 	// network: a credential id is the one thing the local ledger cannot judge.
-	if err := verifyCredentials(loaded.Compiled.CredentialRefs); err != nil {
+	if err := verifyCredentials(loaded.Compiled.CredentialRefs, result.Name); err != nil {
 		return result, err
 	}
 

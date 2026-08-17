@@ -330,7 +330,7 @@ func TestLive_ApplyKeepsUnknownBuildKeys(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "primary", "primary": true, "port": 8080, "imageBuildConfig": {
           "dockerfile": {"source": "provided", "buildArgs": {"NODE_ENV": "production"}, "target": "runtime"},
           "buildTimeoutSeconds": 3600,
@@ -358,7 +358,7 @@ func TestLive_UnknownBuildSourceIsPreserved(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "primary", "primary": true, "port": 8080,
          "imageBuildConfig": {"buildpack": {"builder": "paketo/builder:base"}}}]}]}
     }`), &artifactDoc))
@@ -385,7 +385,7 @@ func TestLive_ApplyDoesNotInventAReadinessProbe(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1"}]}]}
     }`), &artifactDoc))
 
@@ -437,7 +437,7 @@ func TestLive_ApplyLeavesAProbeOnItsOwnPort(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "primary", "primary": true, "port": 8080, "imageUri": "registry/a:v1",
          "livenessProbe": {"path": "/admin/live", "port": 9900}}]}]}
     }`), &artifactDoc))
@@ -463,7 +463,7 @@ func TestLive_ApplyFlagsTheContainerItEdits(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "only", "port": 8080, "imageUri": "registry/a:v1"}]}]}
     }`), &artifactDoc))
 
@@ -506,7 +506,7 @@ func TestLive_DefaultsReadThePrimaryNotTheFirstListed(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "sidecar-first-artifact",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"},
         {"name": "metrics-bridge", "imageUri": "example/bridge:v1"}]}]}
     }`), &artifactDoc))
@@ -546,7 +546,7 @@ func TestLive_DisabledAutoscalingKeepsTheReplicaAnswer(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{
       "name": "a",
-      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
         {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
     }`), &artifactDoc))
 
