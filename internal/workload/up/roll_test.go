@@ -690,8 +690,61 @@ func TestRun_RollDoesNotReuseADraftTheFileHasMovedPast(t *testing.T) {
 	assert.NotContains(t, tr.steps, "replace:art-abandoned")
 }
 
+// Deleting a line is a change like any other, and the leftover was made
+// before it. Reuse driven only by what the file still mentions would find
+// everything matching, promote the draft, and leave the deleted variable
+// running; minting a fresh version drops it. The same file has to produce the
+// same running spec whether or not an earlier attempt left something behind.
+func TestRun_RollDoesNotReuseADraftCarryingWhatTheFileDeleted(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+
+	// The leftover agrees with the file about everything the file still says,
+	// and carries one variable the file no longer does.
+	f.artifactD = func(id string) (workload.Document, error) {
+		d := docOf(liveArtifactJSON)
+		d["status"] = workload.ArtifactStatusDraft
+
+		if id != "art-abandoned" {
+			return d, nil
+		}
+
+		container := primaryOf(d)
+		container["port"] = float64(9000)
+		container["environmentVars"] = []any{
+			map[string]any{"name": "FOO", "value": "1"},
+		}
+
+		group, _ := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+		group["containers"] = []any{container}
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a draft carrying a variable the file deleted is not the version to roll onto")
+	assert.NotContains(t, tr.steps, "replace:art-abandoned")
+}
+
 // artifactDocs answers the document read: the leftover draft at the port it
 // was created with, and the live artifact for everything else.
+//
+// The leftover is built to look like what createVersion makes, which is the
+// file's artifact block and nothing else. The live artifact carries a sidecar
+// the file has never heard of, and that is right for the live one: an
+// unmentioned sidecar is not drift. A leftover cannot have one, because the
+// only thing that could have made it is this file.
 func artifactDocs(abandonedID string, port int) func(string) (workload.Document, error) {
 	return func(id string) (workload.Document, error) {
 		d := docOf(liveArtifactJSON)
@@ -701,12 +754,22 @@ func artifactDocs(abandonedID string, port int) func(string) (workload.Document,
 			return d, nil
 		}
 
-		groups, _ := d["spec"].(map[string]any)["containerGroups"].([]any)
-		container, _ := groups[0].(map[string]any)["containers"].([]any)[0].(map[string]any)
+		container := primaryOf(d)
 		container["port"] = float64(port)
+
+		group, _ := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+		group["containers"] = []any{container}
 
 		return d, nil
 	}
+}
+
+// primaryOf reaches the first container of the first group.
+func primaryOf(d workload.Document) map[string]any {
+	groups, _ := d["spec"].(map[string]any)["containerGroups"].([]any)
+	container, _ := groups[0].(map[string]any)["containers"].([]any)[0].(map[string]any)
+
+	return container
 }
 
 // A locked draft can take neither code nor an image, which is what a roll

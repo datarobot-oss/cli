@@ -189,7 +189,13 @@ func describes(loaded Loaded, artifactID string) bool {
 	// mint another.
 	delete(want, keyArtifactName)
 
-	return len(Subset(want, doc)) == 0
+	// Both directions, which is the difference between this and measuring
+	// drift. Subset catches a value the file changed or added; Extra catches
+	// one it removed. Without the second, deleting an environment variable
+	// leaves everything the file still mentions matching, the leftover is
+	// reused, and it is rolled out still carrying the variable that was
+	// deleted, which minting a fresh artifact would have dropped.
+	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0
 }
 
 // linkProject points the project at the new version, so the sync uploads into

@@ -342,3 +342,76 @@ func TestChange_String(t *testing.T) {
 	assert.Equal(t, "entrypoint: [1 item(s)] -> [2 item(s)]",
 		Change{Path: "entrypoint", Have: []any{"a"}, Want: []any{"a", "b"}}.String())
 }
+
+// Extra is the half Subset deliberately leaves out: what the live side
+// carries that the file no longer names.
+func TestExtra_FindsWhatTheFileNoLongerNames(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		have string
+		out  []string
+	}{
+		{
+			name: "an env var the file dropped",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[primary].environmentVars[FOO]"},
+		},
+		{
+			name: "the last env var, so the file has no block at all",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","port":8080,"environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[primary].environmentVars[FOO]"},
+		},
+		{
+			name: "a sidecar the file dropped",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary"},{"name":"metrics"}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[metrics]"},
+		},
+		{
+			name: "nothing removed, so nothing to report",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			out:  nil,
+		},
+		{
+			name: "server-owned fields are not removals",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"id":"art-1","status":"draft","spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","imageUri":"registry/built:sha","readinessProbe":{"path":"/health"}}]}]}}`,
+			out: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var want, have map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(tc.want), &want))
+			require.NoError(t, json.Unmarshal([]byte(tc.have), &have))
+
+			assert.Equal(t, tc.out, Extra(want, have))
+		})
+	}
+}
+
+// The two questions are not the same one asked twice: a file that adds
+// something is Subset's business and a file that removes something is Extra's,
+// and each is silent about the other.
+func TestExtra_AndSubsetAnswerDifferentQuestions(t *testing.T) {
+	var want, have map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":9000}]}]}}`), &want))
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"spec":{"containerGroups":[{"name":"default","containers":[
+		  {"name":"primary","port":8080,"environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`), &have))
+
+	assert.Len(t, Subset(want, have), 1, "the port the file moved")
+	assert.Len(t, Extra(want, have), 1, "the variable the file dropped")
+}
