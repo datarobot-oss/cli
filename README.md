@@ -523,7 +523,7 @@ Built with:
 ## Contributors
 
 <a href="https://github.com/datarobot-oss/cli/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=datarobot-oss/cli&max=100" alt="Contributors"/>
+  <img src="https://contrib.rocks/image?repo=datarobot-oss/cli&max=48" alt="Contributors"/>
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
