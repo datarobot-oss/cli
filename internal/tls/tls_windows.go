@@ -28,9 +28,18 @@ import (
 // certificate store and writes them as a PEM bundle to dest.
 func ExportWindowsCerts(dest string) error {
 	script := strings.Join([]string{
+		// Load the module providing the Cert: drive explicitly and fail loudly when it
+		// is unavailable. Relying on autoloading turned a broken PSModulePath into a
+		// silent empty result that reported itself as "no certificates found".
+		`Import-Module Microsoft.PowerShell.Security -ErrorAction Stop`,
+		`if (-not (Get-PSDrive -PSProvider Certificate -ErrorAction SilentlyContinue)) ` +
+			`{ throw 'Cert: drive unavailable - Microsoft.PowerShell.Security did not load' }`,
 		`$out = @()`,
 		`foreach ($store in 'Root','CA') {`,
 		`  foreach ($loc in 'LocalMachine','CurrentUser') {`,
+		// SilentlyContinue is kept here on purpose: an individual store may legitimately
+		// be empty or absent. The precondition above distinguishes that from the whole
+		// certificate provider being missing.
 		`    Get-ChildItem -Path "Cert:\$loc\$store" -ErrorAction SilentlyContinue | ForEach-Object {`,
 		`      $out += '-----BEGIN CERTIFICATE-----'`,
 		`      $out += [Convert]::ToBase64String($_.RawData, 'InsertLineBreaks')`,
@@ -41,17 +50,36 @@ func ExportWindowsCerts(dest string) error {
 		`$out -join [Environment]::NewLine`,
 	}, "; ")
 
-	out, err := exec.Command(
+	cmd := exec.Command(
 		"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script,
-	).Output()
+	)
+
+	// Pin PSModulePath instead of inheriting it; see withPSModulePath for why.
+	cmd.Env = withPSModulePath(
+		os.Environ(),
+		windowsPowerShellModulePath(os.Getenv("SystemRoot")),
+	)
+
+	out, err := cmd.Output()
 	if err != nil {
+		// cmd.Output captures the child's stderr into ExitError.Stderr. Surfacing it is
+		// the difference between "something went wrong" and a message naming the cause.
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
+				return fmt.Errorf("exporting Windows cert store: %w: %s", err, stderr)
+			}
+		}
+
 		return fmt.Errorf("exporting Windows cert store: %w", err)
 	}
 
 	pem := strings.TrimSpace(string(out))
 
 	if pem == "" {
-		return errors.New("no certificates found in Windows cert store")
+		return errors.New(
+			"no certificates found in Windows cert store: the Root and CA stores are " +
+				"empty for both LocalMachine and CurrentUser",
+		)
 	}
 
 	if err := os.WriteFile(dest, []byte(pem+"\n"), 0o600); err != nil {

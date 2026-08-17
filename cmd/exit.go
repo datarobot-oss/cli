@@ -15,9 +15,30 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"time"
+
+	"github.com/datarobot/cli/internal/cli"
 )
+
+// ReportError writes a user-facing "Error: ..." line for err to w, unless err is
+// cli.ErrSilent — the sentinel meaning a command already printed its own message.
+//
+// RootCmd sets SilenceErrors so cobra never prints errors itself, which makes this
+// the single place errors reach the user. Previously cobra was the only reporter,
+// and every command setting SilenceErrors: true silently swallowed failures raised
+// by the root PersistentPreRunE (config loading, TLS setup) that it never had a
+// chance to print — a bad --ca-cert path exited 1 with no output at all (CFX-6924).
+func ReportError(w io.Writer, err error) {
+	if err == nil || errors.Is(err, cli.ErrSilent) {
+		return
+	}
+
+	fmt.Fprintln(w, "Error:", err)
+}
 
 // Exit flushes any pending telemetry events then terminates the process with
 // code. Call this from main (instead of os.Exit) when ExecuteContext returns

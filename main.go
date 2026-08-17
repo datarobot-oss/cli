@@ -34,6 +34,11 @@ func main() {
 	defer log.Stop()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
+		// RootCmd sets SilenceErrors, so nothing has printed this yet. Report it here
+		// before exiting; ReportError skips cli.ErrSilent, which commands return once
+		// they have printed their own message.
+		cmd.ReportError(os.Stderr, err)
+
 		log.Stop()
 		cmd.Exit(1)
 	}

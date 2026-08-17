@@ -194,12 +194,13 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 // ExecuteContext executes the root command with the given context.
 // It adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
+// The error is returned unwrapped on purpose. main.go reports it verbatim through
+// cmd.ReportError, so an "execute root command: ..." wrapper would surface in
+// user-facing output and add nothing — this is the process boundary, and there is no
+// sibling call site an extra frame could disambiguate.
 func ExecuteContext(ctx context.Context) error {
-	if err := RootCmd.ExecuteContext(ctx); err != nil {
-		return fmt.Errorf("execute root command: %w", err)
-	}
-
-	return nil
+	//nolint:wrapcheck // top-level passthrough; wrapping would leak into user output
+	return RootCmd.ExecuteContext(ctx)
 }
 
 // bindUniversal binds name to viper and annotates the flag for forwarding to
@@ -223,6 +224,13 @@ func init() {
 
 	// Disable Cobra's default completion command since we have our own under 'self'
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
+
+	// Silence cobra's own error printing so main.go, via cmd.ReportError, is the single
+	// reporter. Cobra skips printing whenever the executed command sets
+	// SilenceErrors: true, which used to mean errors raised by the root
+	// PersistentPreRunE (config, TLS) vanished entirely for those commands. Centralizing
+	// it also removes the risk of the same error being printed twice. See CFX-6924.
+	RootCmd.SilenceErrors = true
 
 	// Set custom version template to match our unified format
 	RootCmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n\nTo update: dr self update\n")
