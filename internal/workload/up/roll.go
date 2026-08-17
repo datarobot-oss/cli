@@ -15,6 +15,7 @@
 package up
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -41,14 +42,6 @@ import (
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
 func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
-	if live.State == StateStopped {
-		return result, fmt.Errorf(
-			"workload %s is stopped and the file asks for more than starting it. "+
-				"Start it with 'dr workload start %s' and deploy again, so the new version rolls out onto "+
-				"something that is running",
-			result.Name, live.WorkloadID)
-	}
-
 	if err := guardReplacementFn(live.WorkloadID); err != nil {
 		return result, err
 	}
@@ -75,7 +68,15 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 		return result, err
 	}
 
-	return replace(live.WorkloadID, made, lock, result, opts, report)
+	// A file that moved the sizing as well as the version rides both in on the
+	// same swap: the platform takes runtime alongside the artifact, so there is
+	// no second call and no window where one half is live and the other is not.
+	runtime, err := rollRuntime(loaded, plan)
+	if err != nil {
+		return result, err
+	}
+
+	return replace(live.WorkloadID, made, lock, runtime, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -202,11 +203,13 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 			"Re-run with --yes to say so explicitly")
 }
 
-// replace starts the rollout and follows it to the end.
+// replace starts the rollout and follows it to the end. runtime is nil unless
+// the sizing changed too, in which case it travels with the swap.
 func replace(
 	workloadID string,
 	made version,
 	lock bool,
+	runtime json.RawMessage,
 	result Result,
 	opts Options,
 	report *reporter,
@@ -230,7 +233,7 @@ func replace(
 	var started *workload.Replacement
 
 	err := report.run("Rolling out the new version", func() error {
-		replacement, startErr := startReplacementFn(workloadID, made.ID)
+		replacement, startErr := startReplacementFn(workloadID, made.ID, runtime)
 		started = replacement
 
 		return startErr

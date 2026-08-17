@@ -157,6 +157,34 @@ func (c *Compiled) BindArtifact(artifactID string) (json.RawMessage, error) {
 	return raw, nil
 }
 
+// RuntimePayload is the runtime block on its own: how much the workload runs
+// with, and nothing about what it runs. It is what a settings update sends,
+// and what rides along with a replacement when one deploy has to change both
+// halves at once.
+//
+// A file with no runtime block has nothing to send. That is a caller error
+// rather than a user one, since the change being applied was computed from the
+// same block: with no block there is no drift, and with no drift nothing asks
+// for this.
+func (c *Compiled) RuntimePayload() (json.RawMessage, error) {
+	payload, err := c.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	runtime, ok := payload[keyRuntime]
+	if !ok {
+		return nil, fmt.Errorf("the manifest has no %s block to apply", keyRuntime)
+	}
+
+	raw, err := json.Marshal(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the %s block to JSON: %w", keyRuntime, err)
+	}
+
+	return raw, nil
+}
+
 // decode reads the compiled payload back into a tree. It is decoded per call
 // rather than cached because each caller edits its copy, and a shared one
 // would let one deploy's edit leak into another's payload.

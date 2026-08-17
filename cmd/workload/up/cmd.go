@@ -130,6 +130,11 @@ already serving keeps serving until the new one is ready. When that version is
 locked, meaning production, an interactive run asks for the workload name to
 be typed back. A run with no terminal, or --yes, rolls without asking.
 
+A change that moves only the sizing, such as a replica count or a resource
+allocation, is applied in place instead. Nothing is built and no version is
+made, because what the workload runs has not changed. A deploy that moves both
+sends the sizing with the rollout, so the new version comes up with it.
+
 Examples:
   dr workload up
   dr workload up --dry-run
@@ -171,7 +176,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
-		"Lock the artifact that ends up live, making it permanent. Locking is one-way.")
+		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
+			"version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
 		"Rebuild the image even when the working tree matches what was last synced.")
 
