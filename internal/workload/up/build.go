@@ -1,0 +1,314 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package up
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/sync"
+	"github.com/datarobot/cli/internal/workload/wapi"
+)
+
+// buildAndCreate is the first deploy of a project whose image the platform
+// builds. It is four acts where a published image is one: the artifact has to
+// exist before there is anywhere to put code, the code has to be there before
+// there is anything to build, and the image has to exist before a workload
+// can run it.
+//
+// Each act is separately resumable, which is the point of doing them in this
+// order rather than creating the workload first. A run that dies after the
+// sync leaves an artifact holding the code; the next one picks it up instead
+// of starting again. A workload created up front would instead sit there
+// pointing at an image that does not exist yet, visible in the UI and unable
+// to start, for as long as the build took.
+func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options, report *reporter) (Result, error) {
+	artifactID, fresh, err := ensureArtifact(loaded, report)
+	if err != nil {
+		return result, err
+	}
+
+	result.ArtifactID = artifactID
+
+	synced, err := syncCode(loaded.ProjectDir, report)
+	if err != nil {
+		return result, err
+	}
+
+	buildID, err := maybeBuild(artifactID, fresh, code, synced, opts, report)
+
+	// Recorded before the error check: a failed build is still a build, and
+	// the caller's envelope should be able to name the one to go and read.
+	result.BuildID = buildID
+
+	if err != nil {
+		return result, err
+	}
+
+	payload, err := loaded.Compiled.BindArtifact(artifactID)
+	if err != nil {
+		return result, err
+	}
+
+	return create(loaded, payload, result, opts, report)
+}
+
+// ensureArtifact returns the artifact this project builds into, creating one
+// and linking the directory to it the first time. fresh reports which of the
+// two happened, because an artifact that was just created has no image and
+// therefore always needs a build.
+//
+// The link lives in the project's own state directory rather than in the
+// manifest. The manifest describes what to deploy and is committed; which
+// artifact a particular checkout has been pushing to is local, and writing it
+// into a shared file would have two developers fighting over one draft.
+func ensureArtifact(loaded Loaded, report *reporter) (string, bool, error) {
+	if projectLinkedFn(loaded.ProjectDir) {
+		cfg, err := loadProjectFn(loaded.ProjectDir)
+		if err != nil {
+			return "", false, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
+		}
+
+		if err := usableArtifact(loaded.ProjectDir, cfg.ArtifactID); err != nil {
+			return "", false, err
+		}
+
+		return cfg.ArtifactID, false, nil
+	}
+
+	var created *workload.Artifact
+
+	err := report.run("Creating the artifact", func() error {
+		payload, payloadErr := loaded.Compiled.ArtifactPayload()
+		if payloadErr != nil {
+			return payloadErr
+		}
+
+		artifact, createErr := createArtifactFn(payload)
+		created = artifact
+
+		return createErr
+	})
+	if err != nil {
+		return "", false, err
+	}
+
+	// The artifact exists and nothing records that fact yet, so a failure
+	// here strands it: the next run would create a second one. Saying which
+	// id was lost is the difference between a re-run and a support ticket.
+	if err := initProjectFn(loaded.ProjectDir, wapi.InitOptions{ArtifactID: created.ID}); err != nil {
+		return "", false, fmt.Errorf(
+			"artifact %s was created but %s could not be linked to it, so the next deploy would create another. "+
+				"Run 'dr artifact code init %s' here, then deploy again: %w",
+			created.ID, loaded.ProjectDir, created.ID, err)
+	}
+
+	return created.ID, true, nil
+}
+
+// usableArtifact refuses a locked artifact before the sync finds out the hard
+// way. Locking is one-way and makes the artifact immutable, so neither the
+// code push nor the build that follows can land; the platform would refuse
+// the PATCH halfway through with a 403 that says nothing about what to do.
+func usableArtifact(projectDir, artifactID string) error {
+	artifact, err := getArtifactFn(artifactID)
+	if err != nil {
+		return fmt.Errorf("cannot read artifact %s, which this project is linked to: %w", artifactID, err)
+	}
+
+	if artifact.IsLocked() {
+		return fmt.Errorf(
+			"artifact %s is locked, so it can take neither new code nor a new image. "+
+				"Locking is permanent, so deploying a change means a new artifact: "+
+				"delete %s and run up again to make one",
+			artifactID, wapi.Dir(projectDir))
+	}
+
+	return nil
+}
+
+// syncCode uploads the working tree to the artifact's code store. The engine
+// does the whole of it: lock the project, diff against what was last synced,
+// upload, and patch the artifact's codeRef to the version it minted, which is
+// what points the next build at this code.
+func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
+	var result *sync.Result
+
+	err := report.run("Syncing code", func() error {
+		r, syncErr := syncProjectFn(projectDir)
+		result = r
+
+		return syncErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cannot sync the project's code: %w", err)
+	}
+
+	// A conflict is not a failure: the engine keeps the local file and parks
+	// a copy of the remote one beside it. It still has to be said out loud,
+	// because what was just uploaded is not what the user last saw.
+	if result != nil && result.ConflictCount > 0 {
+		report.say("  %d file(s) differed from the last sync; local copies kept as %v.\n",
+			result.ConflictCount, result.ConflictCopies)
+	}
+
+	return result, nil
+}
+
+// maybeBuild spends a build only when there is a reason to, and names the
+// build it ran so the caller can report it. An empty id means no build
+// happened, which is not the same as a build that produced nothing.
+//
+// A build is minutes, so skipping one that would produce the image already
+// sitting on the artifact is worth the two conditions it takes to be sure.
+// The reasons to build are: the artifact is new, so no image exists; the sync
+// moved something, so any image is now stale; or the user said to.
+//
+// Otherwise the tree matches what was synced and the only open question is
+// whether the previous run got as far as an image. That question is asked of
+// the platform rather than assumed, because the common way to arrive here is
+// a first deploy that failed after the sync.
+func maybeBuild(
+	artifactID string,
+	fresh bool,
+	code CodeChange,
+	synced *sync.Result,
+	opts Options,
+	report *reporter,
+) (string, error) {
+	if !fresh && !opts.ForceBuild && !changed(code, synced) {
+		built, err := hasImage(artifactID)
+		if err != nil {
+			return "", err
+		}
+
+		if built {
+			report.say("  Image is up to date; no rebuild needed.\n")
+
+			return "", nil
+		}
+	}
+
+	return buildImage(artifactID, opts, report)
+}
+
+// changed reports whether anything moved. The sync's own count is preferred
+// over the plan's: the plan was computed before the upload and is a
+// prediction, while the result is what happened.
+func changed(code CodeChange, synced *sync.Result) bool {
+	if synced == nil {
+		return code.Changed()
+	}
+
+	return synced.UploadedCount > 0 || synced.DeletedCount > 0
+}
+
+// hasImage reports whether the artifact has ever built successfully. Any
+// completed build answers it, without regard to which is newest: this is only
+// asked when the working tree matches what was last synced, so a build that
+// completed at all built the code about to be deployed.
+//
+// The exception is code pushed by `dr artifact code sync` between deploys,
+// which leaves a completed build of the previous version and a tree that
+// looks unchanged to `up`. That is what --force-build is for.
+func hasImage(artifactID string) (bool, error) {
+	builds, err := listBuildsFn(artifactID, buildHistoryLimit)
+	if err != nil {
+		return false, fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
+	}
+
+	for _, build := range builds {
+		if build.Status == workload.BuildStatusCompleted {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// buildHistoryLimit bounds the look back for a completed build. A handful of
+// attempts is all a deploy can have made; past that the answer is no.
+const buildHistoryLimit = 20
+
+// buildImage builds the artifact's image and waits for it. The wait is not
+// optional even under --detach: a workload created against an artifact with
+// no image would come up unable to start, and --detach promises not to wait
+// for the workload, not to deploy something that cannot run.
+func buildImage(artifactID string, opts Options, report *reporter) (string, error) {
+	var built *workload.Build
+
+	err := report.run("Building the image", func() error {
+		buildID, triggerErr := triggerBuild(artifactID)
+		if triggerErr != nil {
+			return triggerErr
+		}
+
+		// WaitForBuild hands the build back alongside its error when the
+		// build ends badly or the wait runs out, so the id is taken from it
+		// before the error is looked at: it is the only way to the logs.
+		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, nil)
+		built = b
+
+		return waitErr
+	})
+
+	if built == nil {
+		// The build was never triggered, or the very first poll failed.
+		return "", err
+	}
+
+	if workload.IsBuildErrorStatus(built.Status) {
+		// Said here rather than left to the wait's own wording, because this
+		// is the only place that knows which artifact the build belongs to.
+		return built.ID, fmt.Errorf("build %s finished as %s; see 'dr artifact build logs %s %s'",
+			built.ID, built.Status, artifactID, built.ID)
+	}
+
+	// A build still running when the wait expires keeps its id too: it is
+	// what the user needs to follow it to the end.
+	return built.ID, err
+}
+
+// triggerBuild starts one build and names it. The endpoint answers with a
+// list because an artifact can have several containers to build; the deploy
+// follows the first, since the CLI only ever describes one.
+func triggerBuild(artifactID string) (string, error) {
+	triggered, err := triggerBuildFn(artifactID)
+	if err != nil {
+		return "", err
+	}
+
+	if len(triggered.BuildIDs) == 0 {
+		return "", errors.New("the platform accepted the build but named no build to follow")
+	}
+
+	return triggered.BuildIDs[0], nil
+}
+
+// defaultSync runs the sync engine over the project. Yes is set because `up`
+// has already printed its plan and been confirmed, if confirmation was ever
+// going to happen; a second prompt from inside a phase would be a surprise,
+// and in CI it would be a hang.
+func defaultSync(projectDir string) (*sync.Result, error) {
+	engine, err := sync.New(projectDir, sync.Options{Yes: true})
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = engine.Close() }()
+
+	return engine.Run()
+}

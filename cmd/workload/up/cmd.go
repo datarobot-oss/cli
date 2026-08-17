@@ -60,12 +60,23 @@ type upResult struct {
 	Plan       up.PlanJSON `json:"plan"`
 }
 
+// buildID is the envelope's build reference: the id when a build ran, null
+// when none did. An empty string would read as a build that produced nothing.
+func buildID(id string) *string {
+	if id == "" {
+		return nil
+	}
+
+	return &id
+}
+
 type flags struct {
 	dir    string
 	yes    bool
 	dryRun bool
 	detach bool
 	lock   bool
+	force  bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -100,6 +111,12 @@ With no manifest, a terminal opens the same setup wizard 'dr workload config'
 runs and continues straight into the deploy. Without a terminal it is an
 error: this command never deploys by guessing.
 
+A manifest that names a published image deploys in one call. One that asks the
+platform to build creates an artifact, pushes the working tree to it and waits
+for an image first, so the first deploy of such a project takes as long as the
+build does. A build the deploy believes would produce the image already on the
+artifact is skipped; --force-build says otherwise.
+
 Examples:
   dr workload up
   dr workload up --dry-run
@@ -125,6 +142,7 @@ Examples:
 			"dry_run":       f.dryRun,
 			"detach":        f.detach,
 			"lock":          f.lock,
+			"force_build":   f.force,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -139,6 +157,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
 		"Lock the artifact that ends up live, making it permanent. Locking is one-way.")
+	cmd.Flags().BoolVar(&f.force, "force-build", false,
+		"Rebuild the image even when the working tree matches what was last synced.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -177,6 +197,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
+		ForceBuild:     f.force,
 		PollInterval:   poll.Interval,
 		PollTimeout:    poll.Timeout,
 		Stderr:         cmd.ErrOrStderr(),
@@ -237,10 +258,12 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 
 // reportable says whether a failed run left behind anything worth printing.
 // A failure after the workload exists still reports it: losing the id because
-// the wait timed out is how a deploy becomes unfindable. With no id at all an
-// envelope of empty strings would be noise.
+// the wait timed out is how a deploy becomes unfindable. A build that failed
+// before any workload existed is the same problem, since the build id is the
+// only way back to the logs that say why. With no id at all an envelope of
+// empty strings would be noise.
 func reportable(result up.Result) bool {
-	return result.WorkloadID != ""
+	return result.WorkloadID != "" || result.BuildID != ""
 }
 
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result) error {
@@ -251,7 +274,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Status:     result.Status,
 			Endpoint:   result.Endpoint,
 			ArtifactID: result.ArtifactID,
-			BuildID:    nil,
+			BuildID:    buildID(result.BuildID),
 			Action:     result.Action,
 			Locked:     result.Locked,
 			Plan:       result.Plan.JSON(),

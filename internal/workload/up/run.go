@@ -15,6 +15,7 @@
 package up
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -37,10 +38,19 @@ var (
 	waitWorkloadFn    = workload.WaitForWorkload
 	listWorkloadsFn   = workload.ListWorkloads
 	startWorkloadFn   = workload.StartWorkload
+	createArtifactFn  = workload.CreateArtifact
+	getArtifactFn     = workload.GetArtifact
 	lockArtifactFn    = workload.LockArtifact
+	triggerBuildFn    = workload.TriggerArtifactBuild
+	waitBuildFn       = workload.WaitForBuild
+	listBuildsFn      = workload.ListArtifactBuilds
 	getCredentialFn   = workload.GetCredential
 	writeWorkloadIDFn = manifest.WriteWorkloadID
 	codeChangeFn      = defaultCodeChange
+	projectLinkedFn   = wapi.Exists
+	loadProjectFn     = wapi.LoadConfig
+	initProjectFn     = wapi.Initialize
+	syncProjectFn     = defaultSync
 )
 
 // ErrNotWired reports a path the plan understands but the apply cannot take
@@ -63,6 +73,13 @@ type Options struct {
 
 	// Detach returns once the apply is requested, skipping the waits.
 	Detach bool
+
+	// ForceBuild rebuilds the image even when the working tree matches what
+	// was last synced. The deploy skips a build it believes would produce the
+	// image already on the artifact; this is the way to say it is wrong,
+	// which it can be when code reached the artifact through
+	// `dr artifact code sync` rather than through a deploy.
+	ForceBuild bool
 
 	// Lock makes the artifact that ends up live immutable and permanent.
 	// Locking is one-way, so it happens last, only after the workload is
@@ -93,6 +110,12 @@ type Result struct {
 	ArtifactID string
 	Action     string
 	Locked     bool
+
+	// BuildID names the image build this run ran, empty when it ran none:
+	// either the manifest points at a published image, or the one already on
+	// the artifact was still current. A build that failed still sets it, so
+	// the caller can say which logs to read.
+	BuildID string
 }
 
 // Run reads, plans, and applies as much of the plan as this release can.
@@ -137,11 +160,38 @@ func Run(opts Options) (Result, error) {
 		return result, err
 	}
 
+	noteUnusedForce(plan, opts)
+
 	if opts.DryRun || plan.Empty() {
 		return result, nil
 	}
 
 	return apply(loaded, live, plan, result, opts)
+}
+
+// noteUnusedForce reports a --force-build that is about to do nothing,
+// because a run which stops without saying so reads as a rebuild that quietly
+// happened. A dry run is excluded: it changes nothing by definition, and the
+// flag not having been used is the least of what it did not do.
+//
+// There are two ways for the flag to be idle. A run that deploys nothing is
+// the loud one. The quiet one is a manifest naming a published image: the
+// deploy goes ahead and succeeds, so nothing invites a second look at the
+// image it is actually serving, and the flag asked for a rebuild of something
+// this project never builds.
+func noteUnusedForce(plan Plan, opts Options) {
+	if !opts.ForceBuild || opts.DryRun {
+		return
+	}
+
+	switch {
+	case plan.Empty():
+		fmt.Fprintf(opts.Stderr, "  --force-build had no effect: nothing is being deployed.\n")
+
+	case !plan.Code.Applies:
+		fmt.Fprintf(opts.Stderr,
+			"  --force-build had no effect: this manifest names an image the platform does not build.\n")
+	}
 }
 
 // load finds the manifest, running the setup wizard when there is none and a
@@ -206,17 +256,16 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 			ErrNotWired, unwired(plan))
 	}
 
-	// Only an image the platform builds needs a version, a sync and a build
-	// before the create. A published imageUri and a file bound to an existing
-	// artifact id are the same single POST, so neither is refused here.
-	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
-		return result, fmt.Errorf(
-			"%w: creating a workload whose image the platform builds (%s mode). "+
-				"Publishing the image yourself and switching the manifest to an imageUri works today",
-			ErrNotWired, mode)
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	// A published image is one POST. Anything the platform builds has to be
+	// given somewhere to put the code and time to turn it into an image
+	// first, which is a different shape of deploy rather than a longer one.
+	if plan.Code.Applies {
+		return buildAndCreate(loaded, plan.Code, result, opts, report)
 	}
 
-	return create(loaded, result, opts)
+	return create(loaded, loaded.Compiled.Payload, result, opts, report)
 }
 
 // unwired names the change the plan asks for. Calling every live workload a
@@ -290,17 +339,25 @@ func startable(live Live, workloadName string) error {
 		workloadName)
 }
 
-// create makes the workload from the compiled manifest and waits for it to
-// serve. The binding is written back the moment the workload exists, before
-// anything else can fail, so a run that dies during the wait still leaves the
-// next one able to find what it made.
-func create(loaded Loaded, result Result, opts Options) (Result, error) {
-	report := newReporter(opts.Stderr, opts.Spinner)
-
+// create makes the workload and waits for it to serve. payload is the create
+// request: the compiled manifest as it stands for a published image, or the
+// same thing with the inline artifact swapped for the id of the one that was
+// just built.
+//
+// The binding is written back the moment the workload exists, before anything
+// else can fail, so a run that dies during the wait still leaves the next one
+// able to find what it made.
+func create(
+	loaded Loaded,
+	payload json.RawMessage,
+	result Result,
+	opts Options,
+	report *reporter,
+) (Result, error) {
 	var created *workload.Workload
 
 	err := report.run("Creating workload", func() error {
-		wl, createErr := createWorkloadFn(loaded.Compiled.Payload)
+		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
 			return nameTaken(createErr, result.Name, loaded.Path)
 		}

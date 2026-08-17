@@ -128,6 +128,25 @@ func TestCmd_BuildIDIsNullNotEmpty(t *testing.T) {
 	assert.Nil(t, value, "no build happened, which is not the same as a build that produced nothing")
 }
 
+// The other half of the same promise: a deploy that did build says which one,
+// so a pipeline can fetch the logs without going looking for it.
+func TestCmd_BuildIDIsCarriedWhenABuildRan(t *testing.T) {
+	result := deployed()
+	result.BuildID = "68c0000000000000000000b2"
+
+	stubRun(t, result, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68c0000000000000000000b2", body["buildId"])
+}
+
 // TestCmd_JSONImpliesNonInteractive stops a wizard being drawn on stderr
 // while stdout is being parsed.
 func TestCmd_JSONImpliesNonInteractive(t *testing.T) {
@@ -236,6 +255,26 @@ func TestCmd_FailureAfterTheWorkloadExistsStillEmitsTheEnvelope(t *testing.T) {
 
 	body, _ := envelope["up"].(map[string]any)
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", body["workloadId"])
+}
+
+// A build that fails never creates a workload, so gating the envelope on the
+// workload id alone would drop the one id the failure produced and leave a
+// pipeline with nothing to fetch the logs with.
+func TestCmd_FailedBuildStillEmitsTheEnvelope(t *testing.T) {
+	stubRun(t, up.Result{BuildID: "68c0000000000000000000b2", Action: "created"},
+		errors.New("build 68c0000000000000000000b2 finished as FAILED"))
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.Error(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope),
+		"a failed build is still a build someone has to go and read")
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68c0000000000000000000b2", body["buildId"])
+	assert.Empty(t, body["workloadId"])
 }
 
 // TestCmd_FailureBeforeAnythingExistsJustFails: there is no id to report, so

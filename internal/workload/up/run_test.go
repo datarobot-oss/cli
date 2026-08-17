@@ -16,7 +16,9 @@ package up
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,6 +29,8 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/sync"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,6 +144,18 @@ type fakes struct {
 	code      func(Loaded, Live) (CodeChange, error)
 	workloadD func(string) (workload.Document, error)
 	artifactD func(string) (workload.Document, error)
+
+	// The build track: create an artifact, link the project to it, push the
+	// code, turn it into an image.
+	newArtifact func(any) (*workload.Artifact, error)
+	getArtifact func(string) (*workload.Artifact, error)
+	linked      func(string) bool
+	project     func(string) (wapi.Config, error)
+	link        func(string, wapi.InitOptions) error
+	sync        func(string) (*sync.Result, error)
+	build       func(string) (*workload.BuildTriggerResponse, error)
+	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
+	builds      func(string, int) ([]workload.Build, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -172,6 +188,20 @@ func install(t *testing.T, f fakes) {
 	swap(t, &codeChangeFn, f.code)
 	swap(t, &getWorkloadDocFn, f.workloadD)
 	swap(t, &getArtifactDocFn, f.artifactD)
+
+	// A test that does not wire the build track must not be able to reach it
+	// by accident, and an unlinked project is the state a first deploy starts
+	// from.
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	swap(t, &createArtifactFn, f.newArtifact)
+	swap(t, &getArtifactFn, f.getArtifact)
+	swap(t, &projectLinkedFn, f.linked)
+	swap(t, &loadProjectFn, f.project)
+	swap(t, &initProjectFn, f.link)
+	swap(t, &syncProjectFn, f.sync)
+	swap(t, &triggerBuildFn, f.build)
+	swap(t, &waitBuildFn, f.waitBuild)
+	swap(t, &listBuildsFn, f.builds)
 }
 
 // swap installs fake over the seam at target, and does nothing when the test
@@ -560,25 +590,385 @@ func TestRun_MissingWorkloadNamesTheRebind(t *testing.T) {
 	assert.Contains(t, err.Error(), "remove workloadId")
 }
 
-// TestRun_BuildTracksPlanButDoNotApplyYet: the plan is correct and printed,
-// and the refusal says which half is missing rather than failing obscurely.
-func TestRun_BuildTracksPlanButDoNotApplyYet(t *testing.T) {
-	install(t, fakes{
+// track records what the build path did, in order, so a test can pin the
+// sequence as well as the outcome. The order is the whole design: an artifact
+// to hold the code, then the code, then an image, then a workload to run it.
+type track struct {
+	steps      []string
+	artifactIn any
+	linkedTo   wapi.InitOptions
+	workloadIn any
+}
+
+// wiredBuild is a build path where every step works, over the track that
+// records it. Individual tests override one seam to break one step.
+func wiredBuild(tr *track) fakes {
+	return fakes{
 		code: func(Loaded, Live) (CodeChange, error) {
 			return CodeChange{Applies: true, FirstDeploy: true}, nil
 		},
-		create: func(any) (*workload.Workload, error) {
-			t.Fatal("the build tracks are not wired")
+		newArtifact: func(payload any) (*workload.Artifact, error) {
+			tr.steps = append(tr.steps, "create-artifact")
+			tr.artifactIn = payload
+
+			return &workload.Artifact{ID: "art-1", Status: workload.ArtifactStatusDraft}, nil
+		},
+		link: func(dir string, opts wapi.InitOptions) error {
+			tr.steps = append(tr.steps, "link")
+			tr.linkedTo = opts
+
+			return nil
+		},
+		sync: func(string) (*sync.Result, error) {
+			tr.steps = append(tr.steps, "sync")
+
+			return &sync.Result{UploadedCount: 3, NewVersion: "ver-1"}, nil
+		},
+		build: func(string) (*workload.BuildTriggerResponse, error) {
+			tr.steps = append(tr.steps, "build")
+
+			return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-1"}}, nil
+		},
+		waitBuild: func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+			return &workload.Build{ID: id, Status: workload.BuildStatusCompleted}, nil
+		},
+		create: func(payload any) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, "create-workload")
+			tr.workloadIn = payload
+
+			return running("wl-1"), nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	}
+}
+
+// decodePayload reads back what was sent to a create endpoint.
+func decodePayload(t *testing.T, payload any) map[string]any {
+	t.Helper()
+
+	raw, ok := payload.(json.RawMessage)
+	require.True(t, ok, "the create clients are handed raw JSON")
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+
+	return decoded
+}
+
+// TestRun_FirstDeployBuildsThenCreates is the shape of a deploy the platform
+// builds: four acts in an order chosen so that a run which dies partway
+// leaves something the next run can pick up, rather than a workload pointing
+// at an image that does not exist.
+func TestRun_FirstDeployBuildsThenCreates(t *testing.T) {
+	var tr track
+
+	install(t, wiredBuild(&tr))
+
+	result, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"create-artifact", "link", "sync", "build", "create-workload"}, tr.steps)
+	assert.Equal(t, "art-1", tr.linkedTo.ArtifactID)
+	assert.Equal(t, "wl-1", result.WorkloadID)
+	assert.Equal(t, "bld-1", result.BuildID, "the caller's envelope has to be able to name the build")
+	assert.Contains(t, stderr, "Building the image")
+
+	// The artifact is created from the manifest's own artifact block, which
+	// is the create request already: nothing is translated on the way.
+	assert.Equal(t, "my-app-artifact", decodePayload(t, tr.artifactIn)["name"])
+
+	// The workload is then created against that artifact rather than with a
+	// second copy of the block, which would ask for a second, empty artifact.
+	sent := decodePayload(t, tr.workloadIn)
+	assert.Equal(t, "art-1", sent["artifactId"])
+	assert.NotContains(t, sent, "artifact")
+	assert.Contains(t, sent, "runtime", "the sizing half still travels with the create")
+}
+
+// A project that is already linked keeps its artifact. Creating a second one
+// would orphan the code that was pushed to the first.
+func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("the project is already linked; a second artifact would orphan the first")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "build", "create-workload"}, tr.steps)
+	assert.Equal(t, "art-existing", decodePayload(t, tr.workloadIn)["artifactId"])
+}
+
+// A locked artifact can take neither code nor an image, so the deploy stops
+// before the sync rather than failing halfway through with the platform's
+// 403, which says nothing about what to do next.
+func TestRun_LockedArtifactStopsBeforeThePush(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-locked"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "art-locked")
+	assert.Contains(t, err.Error(), "locked")
+	assert.Empty(t, tr.steps, "nothing may be pushed at an artifact that cannot accept it")
+}
+
+// The artifact exists and only the local record of it failed to write, which
+// is the one failure that strands something. The error has to carry the id,
+// or the next run creates a second artifact and the first is unreachable.
+func TestRun_LinkFailureNamesTheStrandedArtifact(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.link = func(string, wapi.InitOptions) error { return errors.New("permission denied") }
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "art-1")
+	assert.Contains(t, err.Error(), "dr artifact code init art-1")
+	assert.NotContains(t, tr.steps, "sync")
+}
+
+// A build that fails is the end of the deploy. Creating the workload anyway
+// would produce something that cannot start, and the message points at the
+// logs that say why rather than repeating that it failed.
+func TestRun_FailedBuildStopsAndNamesTheLogs(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	// WaitForBuild's own contract: on a terminal error status it returns the
+	// build and an error together. Stubbing a nil error here would test a
+	// wait that does not exist and hide the id being dropped.
+	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dr artifact build logs art-1 bld-1")
+	assert.NotContains(t, tr.steps, "create-workload")
+	assert.Equal(t, "bld-1", result.BuildID, "a failed build is still the build to go and read")
+}
+
+// A wait that runs out returns the build it was still watching, and that id
+// is the only way to follow the build to the end.
+func TestRun_TimedOutBuildKeepsItsID(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusInProgress},
+			fmt.Errorf("timeout waiting for build %s", id)
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout")
+	assert.NotContains(t, tr.steps, "create-workload")
+	assert.Equal(t, "bld-1", result.BuildID)
+}
+
+// The build is waited for even under --detach. --detach promises not to wait
+// for the workload to serve, not to hand back a workload that cannot start.
+func TestRun_DetachStillWaitsForTheImage(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		t.Fatal("--detach does not wait for the workload")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+	assert.Contains(t, tr.steps, "build")
+}
+
+// An artifact that has already built the code in the tree is not rebuilt.
+// This is the second run after a first deploy that failed at the workload,
+// and a rebuild there is minutes spent to produce the image already sitting
+// on the artifact.
+func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.builds = func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "create-workload"}, tr.steps)
+	assert.Contains(t, stderr, "Image is up to date")
+}
+
+// The same run where the previous attempt never got as far as an image. The
+// question is asked of the platform rather than assumed, because assuming
+// either way is wrong half the time.
+func TestRun_UnchangedTreeWithNoImageStillBuilds(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.builds = func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusFailed}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "build", "create-workload"}, tr.steps)
+}
+
+// --force-build is the answer to code that reached the artifact by some route
+// the deploy cannot see, which leaves a completed build of the wrong version
+// and a tree that looks unchanged.
+func TestRun_ForceBuildRebuildsAnUnchangedTree(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.builds = func(string, int) ([]workload.Build, error) {
+		t.Fatal("--force-build has already answered the question")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "build", "create-workload"}, tr.steps)
+}
+
+// linkedAndSynced is a project that has deployed before and whose working
+// tree has not moved since, which is the state where the build becomes a
+// question rather than a certainty.
+func linkedAndSynced(tr *track) fakes {
+	f := wiredBuild(tr)
+
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-1"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{NewVersion: "ver-1"}, nil
+	}
+
+	return f
+}
+
+// A conflict is not a failure, and it cannot be silent either: what was just
+// uploaded is not what the user last looked at.
+func TestRun_SyncConflictsAreReported(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{UploadedCount: 1, ConflictCount: 1, ConflictCopies: []string{"app.py.LOCAL.170"}}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "app.py.LOCAL.170")
+}
+
+// A flag that was asked for and did nothing has to say so, or it reads as a
+// rebuild that quietly happened.
+func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "--force-build had no effect")
+}
+
+// The quieter half of the same problem: a manifest naming a published image
+// deploys and succeeds, so a --force-build that was never going to build
+// anything leaves nothing to suggest the image is not what the flag implied.
+func TestRun_ForceBuildOnAPublishedImageSaysSo(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		build: func(string) (*workload.BuildTriggerResponse, error) {
+			t.Fatal("a published image is not built by the platform")
 
 			return nil, nil
 		},
 	})
 
-	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNotWired)
-	assert.Contains(t, err.Error(), "dockerfile")
-	assert.Contains(t, stderr, "+ workload", "the plan is still printed before the refusal")
+	result, stderr, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err, "the deploy still goes ahead; only the flag was idle")
+
+	assert.Equal(t, ActionCreated, result.Action)
+	assert.Contains(t, stderr, "--force-build had no effect")
+	assert.Contains(t, stderr, "does not build")
+}
+
+// The flag is not idle on a build track, so saying it was would be a lie in
+// the one case it actually did something.
+func TestRun_ForceBuildOnABuildTrackSaysNothing(t *testing.T) {
+	var tr track
+
+	install(t, linkedAndSynced(&tr))
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, ForceBuild: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "build", "the flag did something here")
+	assert.NotContains(t, stderr, "--force-build had no effect")
 }
 
 // A file bound to an existing artifact has no build mode to read, and gating
