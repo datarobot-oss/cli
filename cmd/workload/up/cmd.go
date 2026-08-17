@@ -47,6 +47,11 @@ const (
 // without a network.
 var runFn = up.Run
 
+// isStdinTerminalFn answers whether a person is there to be asked. A test
+// harness always pipes stdin, so the tests that are about what happens on a
+// terminal replace it.
+var isStdinTerminalFn = reader.IsStdinTerminal
+
 // upResult is the stable JSON shape emitted by --output-format json. BuildID
 // is a pointer so it is null rather than empty when no build happened, which
 // is the difference between "skipped" and "produced nothing".
@@ -197,9 +202,11 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 	json := format == outputformat.OutputFormatJSON
 
+	yes := f.yes || viperx.GetBool("yes")
+
 	// JSON output implies non-interactive: a wizard drawn on stderr while
 	// stdout is being parsed is a trap for whoever is parsing it.
-	nonInteractive := f.yes || viperx.GetBool("yes") || json || !reader.IsStdinTerminal()
+	nonInteractive := yes || json || !isStdinTerminalFn()
 
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
@@ -207,7 +214,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
-		Confirm:        typedConfirm(cmd),
+		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
 		PollInterval:   poll.Interval,
 		PollTimeout:    poll.Timeout,
@@ -265,6 +272,23 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 	}
 
 	return nil
+}
+
+// rollConfirm is how a locked production roll gets its answer, and nil when
+// there is nobody to ask or the answer is already in. --yes is that answer,
+// and a run with no terminal has nobody to give one.
+//
+// Deliberately not keyed on --output json. That flag says how to format
+// stdout; it is not consent, and folding it in here would mean
+// `dr workload up --output json` on a terminal rolls production without a
+// word. The question and its answer never touch stdout, so a run that asks
+// still emits exactly one document.
+func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool, error) {
+	if yes || !isStdinTerminalFn() {
+		return nil
+	}
+
+	return typedConfirm(cmd)
 }
 
 // typedConfirm asks a question that only the exact expected word answers.

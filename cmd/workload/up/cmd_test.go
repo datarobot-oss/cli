@@ -334,6 +334,8 @@ func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
 // The question reaches the deploy wired up, so a locked production roll can
 // actually be answered from a terminal.
 func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
+	onATerminal(t)
+
 	seen := stubRun(t, deployed(), nil)
 
 	_, _, err := runCmdWithInput(t, "my-app\n")
@@ -343,6 +345,58 @@ func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
 	agreed, err := seen.Confirm("anything? ", "my-app")
 	require.NoError(t, err)
 	assert.True(t, agreed)
+}
+
+// onATerminal makes the run look like one a person is watching. A test
+// harness always pipes stdin, so without this every test is the CI case.
+func onATerminal(t *testing.T) {
+	t.Helper()
+
+	prev := isStdinTerminalFn
+	isStdinTerminalFn = func() bool { return true }
+
+	t.Cleanup(func() { isStdinTerminalFn = prev })
+}
+
+// --yes is the answer, so there is nothing left to ask and the deploy is
+// handed no way to ask it.
+func TestCmd_YesHandsTheDeployNoQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--yes")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm, "--yes already said yes")
+}
+
+// --output-format json keeps the wizard off the terminal, but it says how to
+// format stdout rather than that production may be rolled without a word.
+// Somebody is still there, so the question still reaches the deploy.
+func TestCmd_JSONOutputStillHandsOverTheQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive, "no wizard may be drawn into the document")
+	assert.NotNil(t, seen.Confirm, "but there is still someone to ask about production")
+}
+
+// With no terminal there is nobody to ask, which is the CI case: the deploy
+// gets no question and rolls on the review the pipeline already had.
+func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm)
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {

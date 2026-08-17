@@ -199,6 +199,16 @@ func install(t *testing.T, f fakes) {
 	// by accident, and an unlinked project is the state a first deploy starts
 	// from.
 	force(t, &projectLinkedFn, func(string) bool { return false })
+
+	// Unlike the seams below it, this one is reached by the lock path as well
+	// as the build track, so leaving it unset would send a test that gets
+	// there to whatever tenant the developer is logged into.
+	force(t, &getArtifactFn, func(id string) (*workload.Artifact, error) {
+		t.Fatalf("the run read artifact %s, which this test did not wire", id)
+
+		return nil, nil
+	})
+
 	swap(t, &createArtifactFn, f.newArtifact)
 	swap(t, &getArtifactFn, f.getArtifact)
 	swap(t, &projectLinkedFn, f.linked)

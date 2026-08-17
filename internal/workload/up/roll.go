@@ -192,20 +192,25 @@ func lockedAlready(artifactID string) (bool, error) {
 // prompt is not the same as having been told to go ahead, and the difference
 // matters exactly once.
 func confirmRoll(workloadName string, opts Options) (bool, error) {
+	// Being able to ask settles it, ahead of any inference about whether
+	// anyone is there. NonInteractive is also true for --output json, which
+	// says how to format stdout rather than that production may be rolled
+	// without a word, and the caller passes no Confirm when the answer is
+	// already in.
+	if opts.Confirm != nil {
+		return opts.Confirm(fmt.Sprintf(
+			"Workload %s is running a locked version, which means production.\n"+
+				"The new version will be locked too, and locking cannot be undone.\n"+
+				"Type the workload name to roll it, anything else to stop: ", workloadName), workloadName)
+	}
+
 	if opts.NonInteractive {
 		return true, nil
 	}
 
-	if opts.Confirm == nil {
-		return false, errors.New(
-			"this rolls a locked, production version and there is no terminal to confirm on. " +
-				"Re-run with --yes to say so explicitly")
-	}
-
-	return opts.Confirm(fmt.Sprintf(
-		"Workload %s is running a locked version, which means production.\n"+
-			"The new version will be locked too, and locking cannot be undone.\n"+
-			"Type the workload name to roll it, anything else to stop: ", workloadName), workloadName)
+	return false, errors.New(
+		"this rolls a locked, production version and there is no terminal to confirm on. " +
+			"Re-run with --yes to say so explicitly")
 }
 
 // replace starts the rollout and follows it to the end.

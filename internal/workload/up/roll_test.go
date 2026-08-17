@@ -249,6 +249,70 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 	assert.True(t, result.Locked)
 }
 
+// A file naming an artifact by id is the one way to reach matchLock with a
+// candidate this run did not create, so it is the only path that asks the
+// platform whether the successor is locked already. Locking twice is not a
+// no-op there, which is what the question is for.
+func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
+	var tr track
+
+	f := lockedLive(wiredRoll(&tr))
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("the file named the version to roll onto")
+
+		return nil, nil
+	}
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "read:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+
+	install(t, f)
+
+	named := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundArtifactManifest
+
+	result, _, err := runIn(t, named, Options{
+		Confirm: func(string, string) (bool, error) { return true, nil },
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "guard", "read:68b0bbbb0000000000000002",
+		"replace:68b0bbbb0000000000000002", "await-rollout", "settle",
+	}, tr.steps, "an artifact already locked is read, not locked again")
+	assert.True(t, result.Locked)
+}
+
+// The other half: a named artifact that is still a draft has to be locked to
+// match the production version it is replacing, because the platform refuses
+// to put a draft where a locked one was.
+func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
+	var tr track
+
+	f := lockedLive(wiredRoll(&tr))
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "read:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+
+	install(t, f)
+
+	named := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundArtifactManifest
+
+	result, _, err := runIn(t, named, Options{
+		Confirm: func(string, string) (bool, error) { return true, nil },
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "guard", "read:68b0bbbb0000000000000002", "lock:68b0bbbb0000000000000002",
+		"replace:68b0bbbb0000000000000002", "await-rollout", "settle",
+	}, tr.steps)
+	assert.True(t, result.Locked)
+}
+
 // A plan with both halves is refused rather than half-applied. Rolling and
 // leaving the sizing behind would carry out part of the plan just printed and
 // report the whole of it as done, which is worse than not starting.
@@ -327,7 +391,7 @@ func TestRun_LockedProductionWithNoWayToAskRefuses(t *testing.T) {
 }
 
 // CI passes no flag: a pipeline that was already reviewed should not have to
-// say so twice.
+// say so twice. There is nobody to ask, so the command passes no Confirm.
 func TestRun_LockedProductionRollsInCIWithoutAsking(t *testing.T) {
 	var tr track
 
@@ -335,18 +399,38 @@ func TestRun_LockedProductionRollsInCIWithoutAsking(t *testing.T) {
 
 	install(t, f)
 
-	result, _, err := runIn(t, newImage(), Options{
-		NonInteractive: true,
-		Confirm: func(string, string) (bool, error) {
-			t.Fatal("nothing may prompt without a terminal")
-
-			return false, nil
-		},
-	})
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
 	assert.Contains(t, tr.steps, "lock:art-2")
 	assert.True(t, result.Locked)
+}
+
+// --output json makes the run non-interactive so no wizard is drawn into the
+// document, but it is a statement about stdout, not consent. Somebody is
+// still sitting there, so production still gets to be asked about; the
+// question and its answer never touch stdout.
+func TestRun_JSONOutputStillAsksBeforeRollingProduction(t *testing.T) {
+	var (
+		tr    track
+		asked string
+	)
+
+	install(t, lockedLive(wiredRoll(&tr)))
+
+	_, _, err := runIn(t, newImage(), Options{
+		NonInteractive: true,
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err, "the answer was no, so nothing may roll")
+
+	assert.Contains(t, asked, "production", "being unable to draw a wizard is not consent")
+	assert.NotContains(t, tr.steps, "lock:art-2")
+	assert.NotContains(t, tr.steps, "replace:art-2")
 }
 
 // --lock and a locked predecessor both lock, and locking twice is not a

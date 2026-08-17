@@ -87,7 +87,7 @@ func (m *Manifest) Compile() (*Compiled, error) {
 	}
 
 	workloadID := m.WorkloadID()
-	artifactID, _ := scalarString(mapValue(m.root, keyArtifactID))
+	artifactID := topLevelString(m.root, keyArtifactID)
 
 	delete(doc, keyWorkloadID)
 	expandCredentialShorthand(doc)
