@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
@@ -309,11 +310,16 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically (see EnsureAuthenticated for the
-// exceptions). Returns an error if authentication fails, suitable for use in
-// Cobra PreRunE hooks.
+// exceptions). Suitable for use in Cobra PreRunE hooks.
+//
+// On failure it returns cli.ErrSilent, not a descriptive error: EnsureAuthenticated
+// has already told the user what went wrong, and main.go prints anything else.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 	if !EnsureAuthenticated(cmd.Context()) {
-		return errors.New("authentication failed")
+		// Every path where EnsureAuthenticated reports false has already written a
+		// user-facing message, so signal that rather than returning a fresh error
+		// main.go would print a second time.
+		return cli.ErrSilent
 	}
 
 	return nil
