@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,4 +65,84 @@ func TestResolveInstallDirFollowsSymlink(t *testing.T) {
 	// not the directory containing the symlink itself.
 	assert.Equal(t, filepath.Dir(realExe), filepath.Dir(resolved))
 	assert.NotEqual(t, linkDir, filepath.Dir(resolved))
+}
+
+func TestNormalizeAndValidateVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr string // "" means no error expected
+	}{
+		{"bare v-prefixed", "v1.2.3", "v1.2.3", ""},
+		{"bare no prefix", "1.2.3", "v1.2.3", ""},
+		{"prerelease suffix", "v0.12.3-rc.1", "v0.12.3-rc.1", ""},
+		{"build suffix no v", "0.12.3+build.5", "v0.12.3+build.5", ""},
+		{"prerelease and build", "v1.2.3-rc.1+build.5", "v1.2.3-rc.1+build.5", ""},
+		{"missing patch", "1.2", "", `invalid version "1.2": expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)`},
+		{"non-numeric", "abc", "", `invalid version "abc": expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)`},
+		{"too many components", "v1.2.3.4", "", `invalid version "v1.2.3.4": expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)`},
+		{"empty", "", "", `invalid version "": expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeAndValidateVersion(tt.input)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestRefuseDowngrade(t *testing.T) {
+	originalVersion := version.Version
+
+	defer func() { version.Version = originalVersion }()
+
+	tests := []struct {
+		name      string
+		installed string
+		requested string
+		wantErr   string // "" means no error expected
+	}{
+		{
+			"older requested is refused", "v0.12.3", "v0.11.0",
+			"refusing to install older version (installed: v0.12.3, requested: v0.11.0)",
+		},
+		{"same version is allowed", "v0.12.3", "v0.12.3", ""},
+		{"newer version is allowed", "v0.12.3", "v0.13.0", ""},
+		{"dev bypasses the check entirely", "dev", "v0.0.1", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			version.Version = tt.installed
+
+			err := refuseDowngrade(tt.requested)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestBrewCaskVersionError(t *testing.T) {
+	err := brewCaskVersionError("v0.12.3")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Homebrew (dr-cli cask)")
+	assert.Contains(t, err.Error(), "cannot pin versions")
+	assert.Contains(t, err.Error(), "install.sh | sh -s -- v0.12.3")
 }

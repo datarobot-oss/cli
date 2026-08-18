@@ -221,9 +221,17 @@ This command will automatically:
 
 The update process supports:
 
-- **Homebrew (macOS)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
+- **Homebrew (macOS/Linux)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
 - **Windows**&mdash;runs the latest PowerShell installation script
 - **macOS/Linux**&mdash;runs the latest shell installation script
+
+To install a specific released version instead of the latest, pass `--version`:
+
+```bash
+dr self update --version v0.12.3
+```
+
+`--version` accepts `vX.Y.Z` or `X.Y.Z` and refuses to install a version older than the one currently running. It is not supported when `dr` was installed via the Homebrew cask; Homebrew always installs the latest release and cannot pin versions&mdash;uninstall the cask and use the manual install script instead.
 
 After updating, verify the new version:
 

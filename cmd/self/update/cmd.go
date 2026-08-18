@@ -19,9 +19,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
 	internalShell "github.com/datarobot/cli/internal/shell"
@@ -30,8 +32,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// versionPattern requires a strict MAJOR.MINOR.PATCH numeric triplet, with an
+// optional leading "v" and optional -prerelease / +build suffixes.
+var versionPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?(\+[0-9A-Za-z-.]+)?$`)
+
 func Cmd() *cobra.Command { //nolint:cyclop
-	var force bool
+	var (
+		force         bool
+		targetVersion string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "update",
@@ -42,12 +51,25 @@ with your default shell.
 `,
 
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if targetVersion != "" {
+				normalized, err := normalizeAndValidateVersion(targetVersion)
+				if err != nil {
+					return err
+				}
+
+				targetVersion = normalized
+
+				if err := refuseDowngrade(targetVersion); err != nil {
+					return err
+				}
+			}
+
 			requirement, err := tools.GetSelfRequirement()
 			if err != nil {
 				return fmt.Errorf("get self requirement: %w", err)
 			}
 
-			if tools.SufficientSelfVersion(requirement.MinimumVersion) && !force {
+			if tools.SufficientSelfVersion(requirement.MinimumVersion) && !force && targetVersion == "" {
 				if requirement.MinimumVersion != "" {
 					fmt.Fprintf(os.Stderr, "Required version: %s. ", requirement.MinimumVersion)
 				}
@@ -56,46 +78,6 @@ with your default shell.
 				fmt.Fprintln(os.Stderr, "Skipping update. To force update to latest version, add -f flag.")
 
 				return nil
-			}
-
-			// Account for when dr-cli cask has been installed - via `brew install datarobot-oss/taps/dr-cli`
-			if runtime.GOOS == "darwin" { //nolint:nestif
-				// Try to find brew and check if datarobot-oss is installed
-				brewPath, err := exec.LookPath("brew")
-				if err == nil {
-					brewCheckCmd := exec.Command(brewPath, "list", "--cask", "dr-cli")
-
-					// If we have dr-cli cask installed then attempt upgrade (err above indicates dr-cli wasn't found)
-					if err := brewCheckCmd.Run(); err == nil {
-						// Update brew first
-						brewUpdateCmd := exec.Command(brewPath, "update")
-						brewUpdateCmd.Stdout = os.Stdout
-						brewUpdateCmd.Stderr = os.Stderr
-
-						if err := brewUpdateCmd.Run(); err != nil {
-							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return fmt.Errorf("brew update: %w", err)
-						}
-
-						brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
-						brewReinstallCmd.Stdout = os.Stdout
-						brewReinstallCmd.Stderr = os.Stderr
-
-						if err := brewReinstallCmd.Run(); err != nil {
-							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return fmt.Errorf("brew reinstall: %w", err)
-						}
-
-						return nil
-					}
-				}
-			}
-
-			// Now, assuming we haven't upgraded via brew handle with OS specific command
-			shell, err := internalShell.DetectShell()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
-				return fmt.Errorf("detect shell: %w", err)
 			}
 
 			var (
@@ -108,6 +90,9 @@ with your default shell.
 			switch runtime.GOOS {
 			case "windows":
 				command = "irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex"
+				if targetVersion != "" {
+					command = fmt.Sprintf("$env:VERSION='%s'; %s", targetVersion, command)
+				}
 
 				var err error
 
@@ -121,7 +106,22 @@ with your default shell.
 				// which uses /C and cannot run `irm ... | iex`).
 				execCmd = exec.Command("powershell", "-NoProfile", "-Command", command)
 			case "darwin", "linux":
+				if handled, err := tryBrewUpdate(targetVersion); handled {
+					return err
+				}
+
+				// Now, assuming we haven't upgraded via brew handle with OS specific command
+				shell, err := internalShell.DetectShell()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
+					return fmt.Errorf("detect shell: %w", err)
+				}
+
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
+				if targetVersion != "" {
+					command += " -s -- " + targetVersion
+				}
+
 				execCmd = exec.Command(shell, "-c", command)
 			default:
 				return fmt.Errorf("could not determine OS: %s", runtime.GOOS)
@@ -158,8 +158,107 @@ with your default shell.
 	}
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force update to latest version")
+	cmd.Flags().StringVar(&targetVersion, "version", "", "Install a specific released version instead of latest (e.g. v0.12.3)")
 
 	return cmd
+}
+
+// normalizeAndValidateVersion validates s as a strict semantic version
+// (vMAJOR.MINOR.PATCH, optionally without the leading "v", optionally with a
+// -prerelease and/or +build suffix) and returns it normalized to "vX.Y.Z...".
+func normalizeAndValidateVersion(s string) (string, error) {
+	trimmed := strings.TrimSpace(s)
+	if !versionPattern.MatchString(trimmed) {
+		return "", fmt.Errorf("invalid version %q: expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)", s)
+	}
+
+	if strings.HasPrefix(trimmed, "v") {
+		return trimmed, nil
+	}
+
+	return "v" + trimmed, nil
+}
+
+// refuseDowngrade errors if requestedVersion is older than the currently
+// running dr version (version.Version). Skipped entirely for non-release
+// ("dev") builds.
+func refuseDowngrade(requestedVersion string) error {
+	if version.Version == "dev" {
+		return nil
+	}
+
+	installed, err := semver.NewVersion(version.Version)
+	if err != nil {
+		return nil
+	}
+
+	requested, err := semver.NewVersion(requestedVersion)
+	if err != nil {
+		return fmt.Errorf("invalid version %q: expected vMAJOR.MINOR.PATCH (e.g. v0.12.3)", requestedVersion)
+	}
+
+	if requested.LessThan(installed) {
+		return fmt.Errorf("refusing to install older version (installed: %s, requested: %s)", version.Version, requestedVersion)
+	}
+
+	return nil
+}
+
+// isBrewCaskInstalled reports whether the dr-cli Homebrew cask is installed,
+// given a resolved brew path.
+func isBrewCaskInstalled(brewPath string) bool {
+	return exec.Command(brewPath, "list", "--cask", "dr-cli").Run() == nil
+}
+
+// brewCaskVersionError is returned when --version is requested but dr was
+// installed via the Homebrew cask, which cannot pin specific versions.
+func brewCaskVersionError(targetVersion string) error {
+	return fmt.Errorf(
+		"dr was installed via Homebrew (dr-cli cask). Homebrew always installs the latest release and cannot pin versions.\n\n"+
+			"To install %s manually, uninstall the cask and run:\n\n"+
+			"  curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- %s\n",
+		targetVersion, targetVersion)
+}
+
+// tryBrewUpdate checks whether dr was installed via the Homebrew cask and,
+// if so, either hard-errors (targetVersion set — Homebrew can't pin
+// versions) or updates via brew directly. handled is true whenever the
+// brew-managed path was taken (regardless of success), signaling the caller
+// should return err immediately rather than falling through to the generic
+// install-script path.
+func tryBrewUpdate(targetVersion string) (handled bool, err error) {
+	brewPath, err := exec.LookPath("brew")
+	if err != nil {
+		return false, nil
+	}
+
+	if !isBrewCaskInstalled(brewPath) {
+		return false, nil
+	}
+
+	if targetVersion != "" {
+		return true, brewCaskVersionError(targetVersion)
+	}
+
+	brewUpdateCmd := exec.Command(brewPath, "update")
+	brewUpdateCmd.Stdout = os.Stdout
+	brewUpdateCmd.Stderr = os.Stderr
+
+	if err := brewUpdateCmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: ", err)
+		return true, fmt.Errorf("brew update: %w", err)
+	}
+
+	brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
+	brewReinstallCmd.Stdout = os.Stdout
+	brewReinstallCmd.Stderr = os.Stderr
+
+	if err := brewReinstallCmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: ", err)
+		return true, fmt.Errorf("brew reinstall: %w", err)
+	}
+
+	return true, nil
 }
 
 // resolveInstallDir returns the directory of the currently running executable,
