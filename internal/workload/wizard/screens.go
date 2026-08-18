@@ -63,7 +63,7 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	var workloads []workload.Workload
 
 	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
-		fetched, err := listWorkloadsFn(workloadPickLimit, nil)
+		fetched, err := listWorkloadsFn(workloadPickLimit, nil, "")
 		if err != nil {
 			return nil, manifest.Draft{}, err
 		}

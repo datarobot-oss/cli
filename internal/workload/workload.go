@@ -406,16 +406,25 @@ type WorkloadList struct {
 // page size is clamped and larger totals are satisfied via next-links.
 const maxWorkloadPageSize = 100
 
-func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
+// ListWorkloads fetches up to limit workloads, optionally filtered by status
+// and by the name of the Enclave they actually run on.
+func ListWorkloads(limit int, statuses []string, enclave string) ([]Workload, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
+
+	// Trim so a copied name with stray spaces matches, same as the pin side.
+	enclave = strings.TrimSpace(enclave)
 
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
 
 	for _, s := range statuses {
 		query.Add("status", s)
+	}
+
+	if enclave != "" {
+		query.Set("enclave", enclave)
 	}
 
 	pageURL, err := drapi.EndpointURL("/workloads/", query)

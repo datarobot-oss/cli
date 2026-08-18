@@ -136,7 +136,7 @@ type fakes struct {
 	wizard         func(wizard.Options) (wizard.Result, error)
 	create         func(any) (*workload.Workload, error)
 	wait           func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-	list           func(int, []string) ([]workload.Workload, error)
+	list           func(int, []string, string) ([]workload.Workload, error)
 	start          func(string) (*workload.WorkloadOperationResponse, error)
 	lock           func(string) (*workload.Artifact, error)
 	cred           func(string) (*workload.Credential, error)
@@ -470,7 +470,7 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) {
+		list: func(int, []string, string) ([]workload.Workload, error) {
 			return []workload.Workload{{ID: "wl-other", Name: "someone-else"}, *running("wl-existing")}, nil
 		},
 		writeID: func(string, string) error {
@@ -504,7 +504,7 @@ func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) { return nil, errors.New("list unavailable") },
+		list: func(int, []string, string) ([]workload.Workload, error) { return nil, errors.New("list unavailable") },
 	})
 
 	_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
@@ -778,7 +778,7 @@ func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
-	f.list = func(int, []string) ([]workload.Workload, error) {
+	f.list = func(int, []string, string) ([]workload.Workload, error) {
 		return []workload.Workload{{ID: "wl-owner", Name: "someone-else", ArtifactID: "art-existing"}}, nil
 	}
 
@@ -810,7 +810,7 @@ func TestRun_NameConflictOnALinkedProjectKeepsItsOwnMessage(t *testing.T) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
 	// Nothing holds the artifact; the name is what collided.
-	f.list = func(int, []string) ([]workload.Workload, error) {
+	f.list = func(int, []string, string) ([]workload.Workload, error) {
 		return []workload.Workload{{ID: "wl-1", Name: "my-app", ArtifactID: "art-somewhere-else"}}, nil
 	}
 
@@ -832,7 +832,7 @@ func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
-	f.list = func(int, []string) ([]workload.Workload, error) { return nil, nil }
+	f.list = func(int, []string, string) ([]workload.Workload, error) { return nil, nil }
 
 	install(t, f)
 

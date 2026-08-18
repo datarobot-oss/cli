@@ -15,6 +15,7 @@
 package list
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,7 @@ func Cmd() *cobra.Command {
 	var (
 		limit    int
 		statuses []string
+		enclave  string
 	)
 
 	cmd := &cobra.Command{
@@ -45,11 +47,17 @@ For each workload the listing shows:
 
 By default, output is a human-readable table. Use --output-format json for machine-parseable output.
 
+Use --enclave to only list workloads running on the named Enclave. The
+filter matches where each workload actually runs (its resolved placement),
+not the pin requested at create time; an unknown name simply matches
+nothing.
+
 Example:
   dr workload list
   dr workload list --limit 10
   dr workload list --status running
   dr workload list --status errored --status interrupted
+  dr workload list --enclave prod-east
   dr workload list --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -61,12 +69,18 @@ Example:
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
 
+			// A blank --enclave would silently drop the filter and list
+			// everything, the opposite of what the flag asked for.
+			if cmd.Flags().Changed("enclave") && strings.TrimSpace(enclave) == "" {
+				return errors.New("invalid --enclave: the Enclave name must be non-blank")
+			}
+
 			parsedStatuses, err := workload.ParseWorkloadStatuses(statuses)
 			if err != nil {
 				return err
 			}
 
-			workloads, err := workload.ListWorkloads(limit, parsedStatuses)
+			workloads, err := workload.ListWorkloads(limit, parsedStatuses, enclave)
 			if err != nil {
 				return err
 			}
@@ -80,6 +94,8 @@ Example:
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")
+	cmd.Flags().StringVar(&enclave, "enclave", "",
+		"Only list workloads running on the named Enclave")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
@@ -88,6 +104,7 @@ Example:
 			"limit":         limit,
 			"output_format": string(outputFormat),
 			"status":        strings.Join(statuses, ","),
+			"enclave":       enclave,
 		}
 	})
 
