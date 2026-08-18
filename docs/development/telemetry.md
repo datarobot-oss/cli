@@ -2,7 +2,7 @@
 
 The CLI collects usage analytics linked to your DataRobot user ID via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is an optional feature that can be turned off at any time (see [Configuring and disabling telemetry](#configuring-and-disabling-telemetry)). Telemetry is implemented in `internal/telemetry/`.
 
-All telemetry data sent over the network is stored in the USA. When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
+All telemetry data sent over the network is stored in US-based or EU-based servers. When the telemetry feature is disabled, events are only logged locally.
 
 ## Configuring and disabling telemetry
 
@@ -29,14 +29,31 @@ When telemetry is disabled, events are logged to the debug logger (visible with 
 
 Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
 
-| Host                                                       | Purpose                                                                                                       | Port |
-|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|------|
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                | 443  |
-| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
+1. `api2.amplitude.com:443` - Amplitude HTTP API (US zone) — event ingestion, default
+2. `api.eu.amplitude.com:443` - Amplitude HTTP API (EU zone) — event ingestion, iff `ServerZone` is set to EU
+3. *configured DataRobot endpoint* (e.g. `app.datarobot.com`) - `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attributionv
 
 The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
 
 No other hosts are contacted by the telemetry subsystem.
+
+## Server zone / data residency
+
+Amplitude operates separate ingestion endpoints for its US and EU data centers (`api2.amplitude.com` and `api.eu.amplitude.com` respectively). The CLI selects the endpoint at telemetry-client initialization via the SDK's `ServerZone` field, using this precedence:
+
+1. **Explicit override** — the `telemetry-server-zone` config key, settable via any of:
+    - Flag: `dr --telemetry-server-zone EU <command>`
+    - Environment variable: `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE=EU`
+    - Config file: `telemetry-server-zone: EU` in `drconfig.yaml`
+
+    When set to a valid value (`US` or `EU`, case-insensitive), this takes precedence over inference.
+2. **Inferred from `datarobot_instance`** — if no override is set, the zone is inferred from the configured DataRobot endpoint URL. A host that contains `.eu.` or ends with `.eu` is treated as EU; everything else defaults to US.
+3. **Invalid override** — a value other than `US`/`EU` logs a warning to `.dr-tui-debug.log` and falls back to the inferred zone.
+
+> [!NOTE]
+> `--telemetry-server-zone` is a [universal flag](flags.md), forwarded to plugin subprocesses as `DATAROBOT_CLI_TELEMETRY_SERVER_ZONE` so plugins that emit their own telemetry can honor the user's data-residency preference. Plugins that don't emit telemetry simply ignore it.
+
+Additionally, the `telemetry-server-zone` setting only accepts `US` or `EU` values. Users in regions without a dedicated Amplitude data center (e.g., APAC/Japan) should disable telemetry as noted above.
 
 ## Device ID
 

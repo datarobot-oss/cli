@@ -240,6 +240,8 @@ func init() {
 	RootCmd.PersistentFlags().Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	RootCmd.PersistentFlags().Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	RootCmd.PersistentFlags().Bool("disable-telemetry", false, "disable usage telemetry")
+	RootCmd.PersistentFlags().String("telemetry-server-zone", "",
+		"Amplitude ingest region for telemetry (US or EU; inferred from endpoint if unset)")
 
 	// Private CA / TLS flags
 	RootCmd.PersistentFlags().BoolP("skip-certificate-check", "k", false, "skip TLS certificate verification (insecure)")
@@ -252,6 +254,7 @@ func init() {
 	// To add a new universal flag, call bindUniversal here next to its registration above.
 	bindUniversal("debug")
 	bindUniversal("disable-telemetry")
+	bindUniversal("telemetry-server-zone")
 	bindUniversal("verbose")
 	bindUniversal("skip-certificate-check")
 	bindUniversal("ca-cert")

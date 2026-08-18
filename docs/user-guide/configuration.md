@@ -146,7 +146,7 @@ export DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false
 
 ### Telemetry
 
-The CLI collects usage analytics linked to your DataRobot user ID to help improve the tool. Telemetry is an optional feature that can be turned off at any time, and all telemetry data is stored in the USA. To disable telemetry:
+The CLI collects usage analytics linked to your DataRobot user ID to help improve the tool. Telemetry is an optional feature that can be turned off at any time. By default telemetry data is stored in the USA; selecting the EU server zone stores it in the EU (see [Server zone (data residency)](#server-zone-data-residency) below). To disable telemetry:
 
 ```bash
 # Per-invocation
@@ -161,6 +161,24 @@ disable-telemetry: true
 ```
 
 When telemetry is disabled, no data is sent over the network. See the [developer documentation](../development/telemetry.md) for details on what is collected and how the system works.
+
+#### Server zone (data residency)
+
+By default the CLI infers the Amplitude ingest region (US or EU) from your configured DataRobot endpoint. To override it explicitly:
+
+```bash
+# Per-invocation
+dr --telemetry-server-zone EU templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_TELEMETRY_SERVER_ZONE=EU
+
+# Permanently (config file)
+# Add to ~/.config/datarobot/drconfig.yaml:
+telemetry-server-zone: EU
+```
+
+Accepted values are `US` and `EU` (case-insensitive). An invalid value logs a warning to `.dr-tui-debug.log` and falls back to the inferred region. There is no APAC region — APAC users should disable telemetry instead. See [Server zone / data residency](../development/telemetry.md#server-zone--data-residency) for details.
 
 ### Advanced flags
 

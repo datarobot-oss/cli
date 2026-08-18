@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
@@ -413,6 +414,27 @@ func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 
 	assert.True(t, parsedDebug,
 		"--debug must be parsed by core when it appears after a core subcommand and its own flags")
+}
+
+// TestTelemetryServerZoneFlagRegistered verifies that --telemetry-server-zone
+// is registered as a persistent root flag and marked universal so it is
+// forwarded to plugin subprocesses as DATAROBOT_CLI_TELEMETRY_SERVER_ZONE.
+// This lets plugins that emit their own telemetry honor the user's
+// data-residency preference, and keeps behavior consistent with the
+// --disable-telemetry universal flag and the Codespace env-injection path
+// (CFX-6328). See the design decision recorded on CFX-6327. This guard fails
+// if the flag is removed or the universal annotation is dropped.
+func TestTelemetryServerZoneFlagRegistered(t *testing.T) {
+	flag := RootCmd.PersistentFlags().Lookup("telemetry-server-zone")
+	require.NotNil(t, flag, "--telemetry-server-zone should always be registered as a persistent root flag")
+
+	require.NotNil(t, flag.Annotations, "--telemetry-server-zone should carry universal-flag annotations")
+
+	suffix, isUniversal := flag.Annotations[config.UniversalAnnotationKey]
+	require.True(t, isUniversal,
+		"--telemetry-server-zone must be a universal flag (forwarded to plugin subprocesses)")
+	require.Equal(t, []string{"TELEMETRY_SERVER_ZONE"}, suffix,
+		"--telemetry-server-zone universal env-var suffix should be TELEMETRY_SERVER_ZONE")
 }
 
 // TestShowFirstRunAnimationSkipsWhenNonInteractive guards against tools like
