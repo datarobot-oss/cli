@@ -95,8 +95,10 @@ func depth(path string) int {
 }
 
 type Discovery struct {
-	RootTaskfileName string
-	TemplatePath     string
+	RootTaskfileName   string
+	TemplatePath       string
+	UseProjectTemplate bool
+	PreferRootTaskfile bool // if true, return any existing Taskfile.yaml/yml at root instead of generating
 }
 
 func NewTaskDiscovery(rootTaskfileName string) *Discovery {
@@ -107,16 +109,83 @@ func NewTaskDiscovery(rootTaskfileName string) *Discovery {
 
 func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discovery {
 	return &Discovery{
-		RootTaskfileName: rootTaskfileName,
-		TemplatePath:     templatePath,
+		RootTaskfileName:   rootTaskfileName,
+		TemplatePath:       templatePath,
+		UseProjectTemplate: true,
 	}
 }
 
+// NewDiscovery creates the appropriate Discovery for the given taskfile name.
+// If templatePath is non-empty it is resolved to an absolute path and used as
+// the custom template. If templatePath is empty, Discover will automatically
+// check for a ".Taskfile.template" file in the project root at runtime.
+func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
+	if templatePath == "" {
+		return NewComposeDiscovery(taskfileName, ""), nil
+	}
+
+	absPath, err := filepath.Abs(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving template path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("template file not found: %s", absPath)
+	}
+
+	return NewComposeDiscovery(taskfileName, absPath), nil
+}
+
+// IsTemplateDir reports whether dir is a DataRobot template directory
+// (i.e. it contains a ".datarobot" folder).
+func IsTemplateDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".datarobot"))
+
+	return err == nil
+}
+
+func (d *Discovery) existingRootTaskfile(root string) string {
+	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
+		path := filepath.Join(root, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
+}
+
+func (d *Discovery) generateTaskfile(root string, includes []componentInclude) (string, error) {
+	if d.UseProjectTemplate && d.TemplatePath == "" {
+		candidate := filepath.Join(root, ".Taskfile.template")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			d.TemplatePath = candidate
+		}
+	}
+
+	composeData, err := d.buildComposeData(root, includes)
+	if err != nil {
+		return "", fmt.Errorf("failed to build compose data: %w", err)
+	}
+
+	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
+
+	if err = d.genRootTaskfile(rootTaskfilePath, composeData); err != nil {
+		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
+	}
+
+	return rootTaskfilePath, nil
+}
+
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
-	// Check if .env file exists in the root directory
-	envPath := filepath.Join(root, ".datarobot")
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+	if !IsTemplateDir(root) {
 		return "", ErrNotInTemplate
+	}
+
+	if d.PreferRootTaskfile {
+		if path := d.existingRootTaskfile(root); path != "" {
+			return path, nil
+		}
 	}
 
 	includes, err := d.findComponents(root, maxDepth)
@@ -128,24 +197,11 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		return "", ErrNoTaskFilesFound
 	}
 
-	// Check if any discovered Taskfiles already have a dotenv directive
 	if err := d.checkForDotenvConflicts(root, includes); err != nil {
 		return "", err
 	}
 
-	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
-
-	composeData, err := d.buildComposeData(root, includes)
-	if err != nil {
-		return "", fmt.Errorf("failed to build compose data: %w", err)
-	}
-
-	err = d.genRootTaskfile(rootTaskfilePath, composeData)
-	if err != nil {
-		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
-	}
-
-	return rootTaskfilePath, nil
+	return d.generateTaskfile(root, includes)
 }
 
 // FormatDiscoveryError formats a discovery error into a user-friendly message string.

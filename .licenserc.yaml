@@ -40,6 +40,7 @@ header:
     - 'main.go'
 
   paths-ignore:
+    - 'cmd/task/run/testdata/**'
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
     - 'internal/workload/wapi/wapiignore.tmpl'
