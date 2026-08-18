@@ -34,8 +34,10 @@ const (
 // runtime.enclaveSelectionPolicy becomes "manual" and runtime.enclaves the
 // one-element list the server accepts today. It errors if the spec already
 // sets either field rather than silently rewriting it. Re-encodes the spec:
-// numbers survive via json.Number, key order does not.
-func ApplyEnclavePin(spec []byte, enclave string) ([]byte, error) {
+// numbers survive via json.Number, key order does not. Returns
+// json.RawMessage, not []byte, so handing the result to a marshalling
+// client sends JSON rather than a base64 string.
+func ApplyEnclavePin(spec []byte, enclave string) (json.RawMessage, error) {
 	name := strings.TrimSpace(enclave)
 	if name == "" {
 		return nil, errors.New("invalid --enclave: the Enclave name must be non-blank")

@@ -46,7 +46,7 @@ func TestApplyEnclavePin_PreservesExistingRuntimeFields(t *testing.T) {
 			"containerGroups": [{
 				"name": "default",
 				"replicaCount": 2,
-				"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": 4294967296}}]
+				"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": 9007199254740993}}]
 			}]
 		}
 	}`
@@ -63,9 +63,9 @@ func TestApplyEnclavePin_PreservesExistingRuntimeFields(t *testing.T) {
 	assert.Equal(t, EnclaveSelectionPolicyManual, runtime["enclaveSelectionPolicy"])
 	assert.NotNil(t, runtime["containerGroups"], "existing runtime content must survive the pin")
 
-	// The large memory integer must survive re-encoding verbatim rather than
-	// decaying into scientific notation via float64.
-	assert.Contains(t, string(pinned), "4294967296")
+	// 2^53+1 is not representable in a float64: without json.Number it
+	// re-encodes as 9007199254740992 and this fails.
+	assert.Contains(t, string(pinned), "9007199254740993")
 }
 
 func TestApplyEnclavePin_TrimsTheName(t *testing.T) {

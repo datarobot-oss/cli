@@ -55,8 +55,8 @@ named Enclave, which must be eligible and grant you deploy access. The
 flag refuses to override a spec that already sets either field, and using
 it means the spec is re-encoded rather than sent byte-for-byte. Without
 the flag (or with enclaveSelectionPolicy "availability"), DataRobot picks
-the placement. Where the workload actually runs is reported by the
-read-only placements field on the workload document.
+the placement. Confirm where the workload landed with
+'dr workload list --enclave <name>'.
 
 Three flows:
 

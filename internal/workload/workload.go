@@ -413,6 +413,9 @@ func ListWorkloads(limit int, statuses []string, enclave string) ([]Workload, er
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
+	// Trim so a copied name with stray spaces matches, same as the pin side.
+	enclave = strings.TrimSpace(enclave)
+
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
 

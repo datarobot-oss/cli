@@ -369,6 +369,23 @@ func TestListWorkloads_EnclaveFilter(t *testing.T) {
 	require.Len(t, workloads, 1)
 }
 
+func TestListWorkloads_TrimsEnclave(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "prod-east", r.URL.Query().Get("enclave"),
+			"stray whitespace from a copied name must not reach the query")
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDoc("wl-1", "a", "running")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListWorkloads(25, nil, "  prod-east  ")
+	require.NoError(t, err)
+}
+
 func TestListWorkloads_NoEnclaveParamWhenUnfiltered(t *testing.T) {
 	installSkipAuth(t)
 
