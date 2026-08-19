@@ -33,6 +33,12 @@ var ErrNoWindowsCerts = errors.New(
 		"Root and CA are empty for both LocalMachine and CurrentUser",
 )
 
+// ErrCertEncodeFailed reports that the stores did contain certificates but none
+// could be encoded. Distinguishing this from ErrNoWindowsCerts matters: telling a
+// user to import a CA when their store is already populated sends them down exactly
+// the wrong path, which is how the original bug wasted so much time.
+var ErrCertEncodeFailed = errors.New("could not encode any certificate from the Windows certificate store")
+
 // ExportWindowsCerts exports Root and CA certificates from the Windows
 // certificate store and writes them as a PEM bundle to dest.
 func ExportWindowsCerts(dest string) error {
@@ -43,19 +49,29 @@ func ExportWindowsCerts(dest string) error {
 		`Import-Module Microsoft.PowerShell.Security -ErrorAction Stop`,
 		`if (-not (Get-PSDrive -PSProvider Certificate -ErrorAction SilentlyContinue)) ` +
 			`{ throw 'Cert: drive unavailable - Microsoft.PowerShell.Security did not load' }`,
+		// A restricted language mode forbids the [Convert] call below. Without this
+		// check the enumeration would succeed, every encode would fail, and the empty
+		// result would masquerade as an empty certificate store.
+		`if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') ` +
+			`{ throw "PowerShell language mode is $($ExecutionContext.SessionState.LanguageMode), ` +
+			`which forbids certificate encoding; FullLanguage is required" }`,
 		`$out = @()`,
+		`$total = 0`,
 		`foreach ($store in 'Root','CA') {`,
 		`  foreach ($loc in 'LocalMachine','CurrentUser') {`,
 		// SilentlyContinue is kept here on purpose: an individual store may legitimately
 		// be empty or absent. The precondition above distinguishes that from the whole
 		// certificate provider being missing.
-		`    Get-ChildItem -Path "Cert:\$loc\$store" -ErrorAction SilentlyContinue | ForEach-Object {`,
+		`    $items = @(Get-ChildItem -Path "Cert:\$loc\$store" -ErrorAction SilentlyContinue)`,
+		`    $total += $items.Count`,
+		`    $items | ForEach-Object {`,
 		`      $out += '-----BEGIN CERTIFICATE-----'`,
 		`      $out += [Convert]::ToBase64String($_.RawData, 'InsertLineBreaks')`,
 		`      $out += '-----END CERTIFICATE-----'`,
 		`    }`,
 		`  }`,
 		`}`,
+		`"CERTCOUNT=$total"`,
 		`$out -join [Environment]::NewLine`,
 	}, "; ")
 
@@ -82,10 +98,18 @@ func ExportWindowsCerts(dest string) error {
 		return fmt.Errorf("exporting Windows cert store: %w", err)
 	}
 
-	pem := strings.TrimSpace(string(out))
+	pem, count, err := parseExportOutput(string(out))
+	if err != nil {
+		return err
+	}
+
+	// Only claim the store is empty when the script actually enumerated nothing.
+	if count == 0 {
+		return ErrNoWindowsCerts
+	}
 
 	if pem == "" {
-		return ErrNoWindowsCerts
+		return fmt.Errorf("%w: enumerated %d certificate(s) but encoded none", ErrCertEncodeFailed, count)
 	}
 
 	if err := os.WriteFile(dest, []byte(pem+"\n"), 0o600); err != nil {
