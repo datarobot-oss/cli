@@ -152,13 +152,9 @@ This wizard will help you:
 		}
 
 		showAllPrompts, _ := cmd.Flags().GetBool("all")
-		// Read --yes directly from flags rather than through viper to
-		// avoid the flag value leaking into viper.AllSettings() (and from
-		// there into drconfig.yaml on subsequent writes). The
-		// DATAROBOT_CLI_NON_INTERACTIVE environment variable still flows
-		// through viper via BindEnv below.
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-		yes := yesFlag || viperx.GetBool("yes")
+		// Merge --yes and DATAROBOT_CLI_NON_INTERACTIVE via the shared helper so the
+		// transient flag never leaks into viper.AllSettings().
+		yes := cli.IsNonInteractive(cmd)
 
 		// When --yes is set, run fully non-interactive setup without TUI
 		if yes {
@@ -230,15 +226,15 @@ This wizard will help you:
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
-	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts and use defaults (useful for automation).")
 	SetupCmd.Flags().StringP("output", "o", "", "Directory where the '.env' file should be written (defaults to repository root). This option skips the logic of finding the repository root.")
-	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
+	SetupCmd.MarkFlagsMutuallyExclusive(cli.YesFlagName, "all")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.
 	// The --yes flag itself is read directly from cmd.Flags() in RunE so
 	// that an explicit --yes does not leak into viper.AllSettings() and
 	// get persisted to drconfig.yaml on subsequent config writes.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.Track(SetupCmd)
 	telemetry.Track(UpdateCmd)

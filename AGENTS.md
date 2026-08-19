@@ -158,11 +158,11 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
   `BindPFlags`. Bind only specific persistent flags explicitly via
   `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
+- **Read transient flags directly from cobra**: e.g. `cmd.Flags().GetBool(cli.YesFlagName)`.
   Do not bind them with `viperx.BindPFlag`.
 - **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with
+  `cli.IsNonInteractive(cmd)` rather than inlining the flag/env OR yourself.
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 

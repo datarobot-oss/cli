@@ -22,6 +22,7 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -72,16 +73,15 @@ Example:
 	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
-	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; use defaults.")
+	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; use defaults.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() in runInit so an explicit
 	// --yes does not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-		yes := yesFlag || viperx.GetBool("yes")
+		yes := cli.IsNonInteractive(cmd)
 
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
@@ -94,8 +94,7 @@ Example:
 }
 
 func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.OutputFormat) error {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	yes := yesFlag || viperx.GetBool("yes")
+	yes := cli.IsNonInteractive(cmd)
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
 	dir, err := dirprompt.ResolveDir(dirFlag, yes, dirprompt.AskWithDefault)

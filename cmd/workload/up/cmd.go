@@ -28,6 +28,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -154,11 +155,13 @@ Examples:
 	outputformat.AddFlag(cmd, &outputFormat)
 	addFlags(cmd, &f, &poll)
 
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		nonInteractive := cli.IsNonInteractive(cmd)
+
 		return map[string]any{
-			"yes":           f.yes || viperx.GetBool("yes"),
+			"yes":           nonInteractive,
 			"dry_run":       f.dryRun,
 			"detach":        f.detach,
 			"lock":          f.lock,
@@ -172,7 +175,7 @@ Examples:
 
 func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false,
+	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Do not prompt. With no manifest this is an error rather than a wizard, "+
 			"and rolling a locked production version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
@@ -210,7 +213,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 	json := format == outputformat.OutputFormatJSON
 
-	yes := f.yes || viperx.GetBool("yes")
+	yes := cli.IsNonInteractive(cmd)
 
 	// JSON output implies non-interactive: a wizard drawn on stderr while
 	// stdout is being parsed is a trap for whoever is parsing it.
