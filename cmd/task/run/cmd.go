@@ -34,7 +34,7 @@ type taskRunOptions struct {
 	taskOpts task.RunOpts
 }
 
-const taskRunFromRootEnv = "DATAROBOT_CLI_TASK_RUN_FROM_ROOT"
+const taskRunFromRootEnv = task.RunFromRootEnv
 
 // splitTaskArgs separates task names from additional arguments.
 // Supports: dr run task1 task2 -- -flag1 -flag2
@@ -71,32 +71,6 @@ func splitTaskArgs(args []string) (taskNames []string, taskArgs []string) {
 	return taskNames, taskArgs
 }
 
-func taskfileForRun(dir string) (string, bool, error) {
-	if os.Getenv(taskRunFromRootEnv) != "" {
-		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
-
-		rootTaskfile, err := discovery.Discover(dir, 2)
-
-		return rootTaskfile, false, err
-	}
-
-	discovery, err := task.NewDiscovery("Taskfile.gen.yaml", "")
-	if err != nil {
-		return "", false, err
-	}
-
-	discovery.PreferRootTaskfile = true
-
-	rootTaskfile, err := discovery.Discover(dir, 2)
-	if err != nil {
-		return "", false, err
-	}
-
-	usingRootTaskfile := filepath.Base(rootTaskfile) != "Taskfile.gen.yaml"
-
-	return rootTaskfile, usingRootTaskfile, nil
-}
-
 func Cmd() *cobra.Command {
 	var opts taskRunOptions
 
@@ -128,9 +102,16 @@ Examples:
 			binaryName := "task"
 			taskNames, taskArgs := splitTaskArgs(args)
 
-			rootTaskfile, usingRootTaskfile, err := taskfileForRun(opts.Dir)
+			rootTaskfile, usingRootTaskfile, err := task.ResolveTaskfile(opts.Dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+				return cli.ErrSilent
+			}
+
+			runStackEnv, err := task.GuardRunStack(rootTaskfile, taskNames)
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, "❌ "+err.Error())
 
 				return cli.ErrSilent
 			}
@@ -163,6 +144,8 @@ Examples:
 			}
 
 			opts.taskOpts.TaskArgs = taskArgs
+			opts.taskOpts.Env = append(opts.taskOpts.Env, runStackEnv)
+
 			if usingRootTaskfile {
 				opts.taskOpts.Env = append(opts.taskOpts.Env, taskRunFromRootEnv+"=1")
 			}
@@ -236,10 +219,7 @@ func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective
 	if _, err := os.Stat(standardTaskfile); err == nil {
 		taskfilePath = standardTaskfile
 	} else {
-		// Try template discovery with Taskfile.gen.yaml
-		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
-
-		discoveredTaskfile, err := discovery.Discover(opts.Dir, 2)
+		discoveredTaskfile, _, err := task.ResolveTaskfile(opts.Dir)
 		if err != nil {
 			// No Taskfile found - return no completions
 			return nil, cobra.ShellCompDirectiveNoFileComp
