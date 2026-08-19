@@ -124,6 +124,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 				} else {
 					props.CommandKind = "core"
 				}
+
+				// Stamp the shared telemetry payload with the interaction mode once per invocation.
+				telemetry.StampInteractionMode(props, cmd)
 			}
 			// Log the detected shell only when debug is active. Reuse Shell from
 			// telemetry props (already collected above) when available to avoid

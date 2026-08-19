@@ -65,6 +65,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 		Shell:             "zsh",
 		DataRobotInstance: "https://app.datarobot.com",
 		CommandKind:       "core",
+		NonInteractive:    true,
 		OrganizationID:    ptrString("parakeet"),
 		TenantID:          ptrString("parakeet-jones"),
 	}
@@ -75,6 +76,7 @@ func TestCommonPropertiesAsMap(t *testing.T) {
 	assert.Equal(t, "zsh", m["shell"])
 	assert.Equal(t, "https://app.datarobot.com", m["datarobot_instance"])
 	assert.Equal(t, "core", m["command_kind"])
+	assert.Equal(t, true, m["non_interactive"])
 	assert.Equal(t, "parakeet", m["organization_id"])
 	assert.Equal(t, "parakeet-jones", m["tenant_id"])
 	// Verify CWD is not included
@@ -285,6 +287,11 @@ func TestCommonPropertiesAsMap_DefaultCommandKindIsEmpty(t *testing.T) {
 	// collected properties default to an empty string.
 	assert.Empty(t, m["command_kind"])
 	assert.Contains(t, m, "command_kind")
+
+	// NonInteractive defaults to false until root stamps the actual interaction mode.
+	nonInteractive, ok := m["non_interactive"].(bool)
+	require.True(t, ok, "non_interactive property must always be present")
+	assert.False(t, nonInteractive)
 }
 
 func TestCollectCommonProperties_GeneratesSessionID(t *testing.T) {
