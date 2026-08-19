@@ -1,4 +1,5 @@
 # Wolfi-based, minimal, nonroot equivalent of distroless/static. Digest captured 2026-07-22.
+# Do not pin chainguard/static via sha; these eventually disappear
 FROM cgr.dev/chainguard/static:latest
 
 ARG TARGETPLATFORM
