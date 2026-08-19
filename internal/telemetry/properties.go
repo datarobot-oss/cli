@@ -52,6 +52,7 @@ type CommonProperties struct {
 	Shell             string  // Name of the user's shell (e.g. "zsh", "bash", "powershell")
 	DataRobotInstance string  // Base URL of configured DataRobot instance
 	CommandKind       string  // "core" or "plugin", set by the root command after dispatch
+	NonInteractive    bool    // True when the invocation runs in non-interactive mode (env var, --yes flag, or automation)
 	OrganizationID    *string // DataRobot org ID from GET /api/v2/account/info/, cached to disk; nil on network failure or auth issues
 	TenantID          *string // DataRobot tenant ID from GET /api/v2/account/info/, cached to disk; nil if unavailable (legit absent for legacy/system accounts)
 	TemplateName      *string // Name of the DataRobot template used to create this project; nil when not inside a template project
@@ -134,6 +135,8 @@ func (p *CommonProperties) AsMap() map[string]any {
 		"shell":              p.Shell,
 		"datarobot_instance": p.DataRobotInstance,
 		"command_kind":       p.CommandKind,
+		// non_interactive tells analytics when commands ran without human input.
+		"non_interactive": p.NonInteractive,
 	}
 
 	if p.OrganizationID != nil {
