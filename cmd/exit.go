@@ -24,14 +24,15 @@ import (
 // an error, so that Amplitude events are delivered even though
 // PersistentPostRunE is bypassed on the error path.
 //
-// telemetryClient is set in PersistentPreRunE (root.go); it will be nil only
-// if the process exits before any command runs (e.g. flag parse failure), in
-// which case there are no queued events to flush anyway.
+// The telemetry client is retrieved from productionFactory (set in
+// PersistentPreRunE) at flush time. It will be nil only if the process exits
+// before any command runs (e.g. a flag-parse failure), in which case there
+// are no queued events to flush.
 func Exit(code int) {
-	if telemetryClient != nil {
-		telemetryClient.Flush(3 * time.Second)
+	if c := productionFactory.TelemetryClient(); c != nil {
+		c.Flush(3 * time.Second)
 	}
 
-	// This is the only place in the codebase that should call os.Exit
+	// This is the only place in the codebase that should call os.Exit.
 	os.Exit(code) //nolint:forbidigo
 }
