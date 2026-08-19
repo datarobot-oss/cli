@@ -15,6 +15,7 @@
 package enclave
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -144,12 +145,12 @@ func ResolveRecipient(user, userID, group, org string) (Recipient, error) {
 	}
 
 	if count == 0 {
-		return Recipient{}, fmt.Errorf(
+		return Recipient{}, errors.New(
 			"a recipient is required: pass exactly one of --user, --user-id, --group, or --org")
 	}
 
 	if count > 1 {
-		return Recipient{}, fmt.Errorf(
+		return Recipient{}, errors.New(
 			"only one recipient may be given: pass exactly one of --user, --user-id, --group, or --org")
 	}
 

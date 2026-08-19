@@ -336,17 +336,17 @@ func kubectlLiterals(data map[string]string) string {
 
 	sort.Strings(keys)
 
-	out := ""
+	var out strings.Builder
 
 	for i, k := range keys {
 		if i > 0 {
-			out += " "
+			out.WriteString(" ")
 		}
 
-		out += fmt.Sprintf("--from-literal=%s=%s", k, data[k])
+		fmt.Fprintf(&out, "--from-literal=%s=%s", k, data[k])
 	}
 
-	return out
+	return out.String()
 }
 
 // RenderCollectionPermissions prints whether the subject may create enclaves, and
