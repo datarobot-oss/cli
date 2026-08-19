@@ -89,7 +89,7 @@ with your default shell.
 
 			switch runtime.GOOS {
 			case "windows":
-				command = "irm https://raw.githubusercontent.com/datarobot-oss/cli/main/install.ps1 | iex"
+				command = "irm https://cli.datarobot.com/winstall | iex"
 				if targetVersion != "" {
 					command = fmt.Sprintf("$env:VERSION='%s'; %s", targetVersion, command)
 				}
@@ -117,7 +117,7 @@ with your default shell.
 					return fmt.Errorf("detect shell: %w", err)
 				}
 
-				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
+				command = "curl -fsSL https://cli.datarobot.com/install | sh"
 				if targetVersion != "" {
 					command += " -s -- " + targetVersion
 				}
@@ -215,8 +215,9 @@ func isBrewCaskInstalled(brewPath string) bool {
 func brewCaskVersionError(targetVersion string) error {
 	return fmt.Errorf(
 		"dr was installed via Homebrew (dr-cli cask). Homebrew always installs the latest release and cannot pin versions.\n\n"+
-			"To install %s manually, uninstall the cask and run:\n\n"+
-			"  curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh -s -- %s\n",
+			"To install %s manually, uninstall the cask and install with the installation script:\n\n"+
+			"  brew uninstall --cask dr-cli\n"+
+			"  curl -fsSL https://cli.datarobot.com/install | sh -s -- %s\n",
 		targetVersion, targetVersion)
 }
 

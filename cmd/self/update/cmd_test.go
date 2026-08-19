@@ -144,5 +144,6 @@ func TestBrewCaskVersionError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Homebrew (dr-cli cask)")
 	assert.Contains(t, err.Error(), "cannot pin versions")
-	assert.Contains(t, err.Error(), "install.sh | sh -s -- v0.12.3")
+	assert.Contains(t, err.Error(), "brew uninstall --cask dr-cli")
+	assert.Contains(t, err.Error(), "cli.datarobot.com/install | sh -s -- v0.12.3")
 }
