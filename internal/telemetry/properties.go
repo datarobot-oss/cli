@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/state"
@@ -85,7 +86,10 @@ func CollectCommonProperties() *CommonProperties {
 		OSVersion:     detectOSVersion(),
 		Language:      detectLanguage(),
 		GoVersion:     runtime.Version(),
-		Shell:         DetectShell(),
+		// Seed the interaction mode with the environment variable so automation workflows
+		// are marked even if the command itself lacks a --yes flag.
+		NonInteractive: reader.IsNonInteractive(),
+		Shell:          DetectShell(),
 	}
 
 	// Get DataRobot instance info from config

@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
@@ -71,14 +72,14 @@ Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 	cmd.Flags().StringVar(&filePath, "file", "", "Install from a local .tar.xz archive instead of the registry")
 	cmd.Flags().StringVar(&pluginURL, "url", "", "Install from an HTTP/HTTPS URL instead of the registry")
-	cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
+	cmd.Flags().BoolVarP(&yesFlag, cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version", "file", "url")
 	cmd.MarkFlagsMutuallyExclusive("file", "registry-url")
 	cmd.MarkFlagsMutuallyExclusive("url", "registry-url")
 
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		ver, _ := c.Flags().GetString("version")
@@ -272,7 +273,7 @@ func (h *headingWriter) Write(p []byte) (int, error) {
 // missing plugin dependencies. Consent is granted automatically when -y/--yes
 // is set; otherwise the user is prompted interactively.
 func confirmPluginDepsInstall() bool {
-	if yesFlag || viperx.GetBool("yes") {
+	if yesFlag || cli.IsNonInteractive(nil) {
 		return true
 	}
 

@@ -17,6 +17,7 @@ package telemetry
 import (
 	"testing"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ import (
 
 func TestStampInteractionMode_NonInteractiveEnv(t *testing.T) {
 	t.Setenv(reader.NonInteractiveEnv, "1")
+	t.Cleanup(viperx.Reset)
 
 	props := &CommonProperties{}
 
@@ -37,7 +39,9 @@ func TestStampInteractionMode_NonInteractiveEnv(t *testing.T) {
 
 func TestStampInteractionMode_YesFlag(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().BoolP("yes", "y", false, "skip prompts")
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "skip prompts")
+	t.Setenv(reader.NonInteractiveEnv, "")
+	t.Cleanup(viperx.Reset)
 
 	require.NoError(t, cmd.ParseFlags([]string{"--yes"}))
 
@@ -50,14 +54,14 @@ func TestStampInteractionMode_YesFlag(t *testing.T) {
 }
 
 func TestStampInteractionMode_ForceInteractiveOverrides(t *testing.T) {
-	defer viperx.Reset()
+	t.Cleanup(viperx.Reset)
 
 	// Simulate both automation signals; force-interactive should still win.
 	t.Setenv(reader.NonInteractiveEnv, "true")
 	viperx.Set("force-interactive", true)
 
 	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().Bool("yes", false, "skip prompts")
+	cmd.Flags().Bool(cli.YesFlagName, false, "skip prompts")
 	require.NoError(t, cmd.ParseFlags([]string{"--yes"}))
 
 	props := &CommonProperties{NonInteractive: true}
