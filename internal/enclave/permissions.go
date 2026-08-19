@@ -15,6 +15,7 @@
 package enclave
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -85,12 +86,12 @@ func ResolveRecipientByID(userID, group, org string) (Recipient, error) {
 	}
 
 	if count == 0 {
-		return Recipient{}, fmt.Errorf(
+		return Recipient{}, errors.New(
 			"a recipient is required: pass exactly one of --user-id, --group, or --org")
 	}
 
 	if count > 1 {
-		return Recipient{}, fmt.Errorf(
+		return Recipient{}, errors.New(
 			"only one recipient may be given: pass exactly one of --user-id, --group, or --org")
 	}
 
@@ -115,7 +116,7 @@ func RecipientTypeByIDOf(userID, group, org string) (string, bool) {
 // ENCLAVE_RBAC_ENABLED server-side; when disabled the endpoint is a 204 no-op.
 func updateCreateAccess(operation string, r Recipient) error {
 	if r.ID == "" {
-		return fmt.Errorf(
+		return errors.New(
 			"the enclave create permission is granted by id: use --user-id, --group, or --org")
 	}
 
