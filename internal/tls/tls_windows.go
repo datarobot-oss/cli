@@ -24,6 +24,15 @@ import (
 	"strings"
 )
 
+// ErrNoWindowsCerts reports that enumerating the certificate stores succeeded but
+// found nothing. It is a sentinel so callers can offer guidance: an empty store is a
+// machine-configuration problem the user can act on, unlike a failure to reach the
+// store at all, which the script reports separately.
+var ErrNoWindowsCerts = errors.New(
+	"no certificates found in the Windows certificate store: " +
+		"Root and CA are empty for both LocalMachine and CurrentUser",
+)
+
 // ExportWindowsCerts exports Root and CA certificates from the Windows
 // certificate store and writes them as a PEM bundle to dest.
 func ExportWindowsCerts(dest string) error {
@@ -76,10 +85,7 @@ func ExportWindowsCerts(dest string) error {
 	pem := strings.TrimSpace(string(out))
 
 	if pem == "" {
-		return errors.New(
-			"no certificates found in Windows cert store: the Root and CA stores are " +
-				"empty for both LocalMachine and CurrentUser",
-		)
+		return ErrNoWindowsCerts
 	}
 
 	if err := os.WriteFile(dest, []byte(pem+"\n"), 0o600); err != nil {
