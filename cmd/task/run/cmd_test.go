@@ -15,11 +15,15 @@
 package run
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/stretchr/testify/require"
@@ -31,12 +35,52 @@ const (
 	generatedTaskfileYML = "Taskfile.gen.yaml"
 )
 
+// helperDirEnv makes the test binary behave as `dr task run --dir <value>` so a
+// task can re-invoke the command in a real child process.
+const helperDirEnv = "DR_TEST_RUN_HELPER_DIR"
+
+// helperBinEnv is the path the fake task binary re-invokes as `dr`.
+const helperBinEnv = "DR_TEST_HELPER_BIN"
+
+// recurseTaskEnv is the task name the fake task binary re-invokes `dr` with,
+// emulating a generated task whose only command is `dr task run <itself>`.
+const recurseTaskEnv = "DR_TEST_RECURSE_TASK"
+
+// fakeTaskMaxDepth bounds the fake task binary's own recursion so a regression
+// fails the assertions instead of fork bombing the machine.
+const fakeTaskMaxDepth = "5"
+
+type fakeTaskBehaviour int
+
+const (
+	terminatingTaskBinary fakeTaskBehaviour = iota
+	recursingTaskBinary
+)
+
+func TestMain(m *testing.M) {
+	dir := os.Getenv(helperDirEnv)
+	if dir == "" {
+		os.Exit(m.Run())
+	}
+
+	cmd := Cmd()
+	cmd.SetArgs(append([]string{"--dir", dir}, os.Args[1:]...))
+
+	if err := cmd.Execute(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+
+		os.Exit(1)
+	}
+
+	os.Exit(0)
+}
+
 func TestCmdPrefersRecipeRootTaskfileWhenPresent(t *testing.T) {
 	recipeDir := t.TempDir()
 	writeRecipeFixture(t, recipeDir, true)
 
 	logFile := filepath.Join(t.TempDir(), "task.log")
-	writeFakeTaskBinary(t, logFile)
+	writeFakeTaskBinary(t, logFile, terminatingTaskBinary)
 
 	cmd := Cmd()
 	cmd.SetArgs([]string{"--dir", recipeDir, "start"})
@@ -57,7 +101,7 @@ func TestCmdUsesEmbeddedGeneratedTaskfileWhenCalledFromRootTaskfile(t *testing.T
 	t.Setenv(taskRunFromRootEnv, "1")
 
 	logFile := filepath.Join(t.TempDir(), "task.log")
-	writeFakeTaskBinary(t, logFile)
+	writeFakeTaskBinary(t, logFile, terminatingTaskBinary)
 
 	cmd := Cmd()
 	cmd.SetArgs([]string{"--dir", recipeDir, "start"})
@@ -79,7 +123,7 @@ func TestCmdUsesRecipeTemplateWhenRootTaskfileIsMissing(t *testing.T) {
 	writeRecipeFixture(t, recipeDir, false)
 
 	logFile := filepath.Join(t.TempDir(), "task.log")
-	writeFakeTaskBinary(t, logFile)
+	writeFakeTaskBinary(t, logFile, terminatingTaskBinary)
 
 	cmd := Cmd()
 	cmd.SetArgs([]string{"--dir", recipeDir, "dev"})
@@ -107,6 +151,42 @@ func TestCmdReturnsErrNotInTemplateWhenDatarobotMissing(t *testing.T) {
 
 	// Command prints the message to stderr and returns ErrSilent (already printed)
 	require.ErrorIs(t, err, cli.ErrSilent)
+}
+
+// TestCmdStopsGeneratedTaskThatInvokesItself covers the recipe template's
+// `lint: [dr task run lint]` against a project with no committed root Taskfile.
+// Nothing sets DATAROBOT_CLI_TASK_RUN_FROM_ROOT on that path, so every
+// generation regenerated the same Taskfile.gen.yaml and forked again forever.
+func TestCmdStopsGeneratedTaskThatInvokesItself(t *testing.T) {
+	recipeDir := t.TempDir()
+	writeRecipeFixture(t, recipeDir, false)
+
+	logFile := filepath.Join(t.TempDir(), "task.log")
+	writeFakeTaskBinary(t, logFile, recursingTaskBinary)
+
+	self, err := os.Executable()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// The command must run out of process: it propagates the task exit code via
+	// os.Exit, which would take the test binary down with it.
+	cmd := exec.CommandContext(ctx, self, "lint")
+	cmd.Env = append(os.Environ(),
+		helperDirEnv+"="+recipeDir,
+		helperBinEnv+"="+self,
+		recurseTaskEnv+"=lint",
+	)
+
+	out, err := cmd.CombinedOutput()
+
+	require.NotErrorIs(t, ctx.Err(), context.DeadlineExceeded, "`dr run lint` never terminated:\n%s", out)
+	require.Error(t, err, "expected a non-zero exit:\n%s", out)
+	require.Contains(t, string(out), "task recursion detected", "output:\n%s", out)
+
+	// The re-entry is refused before it spawns anything, so `task` runs once.
+	require.Equal(t, 1, strings.Count(readTaskLog(t, logFile), "\n"), "task invocations:\n%s", readTaskLog(t, logFile))
 }
 
 func writeRecipeFixture(t *testing.T, recipeDir string, includeRootTaskfile bool) {
@@ -170,7 +250,7 @@ func writeComponentTaskfile(t *testing.T, componentDir string, filename string) 
 	require.NoError(t, os.WriteFile(filepath.Join(componentDir, filename), []byte(contents), 0o644))
 }
 
-func writeFakeTaskBinary(t *testing.T, logFile string) {
+func writeFakeTaskBinary(t *testing.T, logFile string, behaviour fakeTaskBehaviour) {
 	t.Helper()
 
 	binDir := t.TempDir()
@@ -178,15 +258,15 @@ func writeFakeTaskBinary(t *testing.T, logFile string) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	if runtime.GOOS == "windows" {
-		writeFakeWindowsTaskBinary(t, binDir)
+		writeFakeWindowsTaskBinary(t, binDir, behaviour)
 
 		return
 	}
 
-	writeFakeUnixTaskBinary(t, binDir)
+	writeFakeUnixTaskBinary(t, binDir, behaviour)
 }
 
-func writeFakeUnixTaskBinary(t *testing.T, binDir string) {
+func writeFakeUnixTaskBinary(t *testing.T, binDir string, behaviour fakeTaskBehaviour) {
 	t.Helper()
 
 	script := `#!/bin/sh
@@ -200,10 +280,22 @@ fi
 printf '%s|%s|%s\n' "$PWD" "$DATAROBOT_CLI_TASK_RUN_FROM_ROOT" "$*" >> "$TASK_LOG"
 `
 
+	if behaviour == recursingTaskBinary {
+		script += `
+DR_TEST_DEPTH=$((${DR_TEST_DEPTH:-0} + 1))
+if [ "$DR_TEST_DEPTH" -gt ` + fakeTaskMaxDepth + ` ]; then
+  echo "fake task: runaway recursion" >&2
+  exit 9
+fi
+export DR_TEST_DEPTH
+exec "$` + helperBinEnv + `" "$` + recurseTaskEnv + `"
+`
+	}
+
 	require.NoError(t, os.WriteFile(filepath.Join(binDir, "task"), []byte(script), 0o755))
 }
 
-func writeFakeWindowsTaskBinary(t *testing.T, binDir string) {
+func writeFakeWindowsTaskBinary(t *testing.T, binDir string, behaviour fakeTaskBehaviour) {
 	t.Helper()
 
 	script := `@echo off
@@ -212,8 +304,21 @@ if "%1"=="--list" (
   exit /b 0
 )
 echo %CD%^|%DATAROBOT_CLI_TASK_RUN_FROM_ROOT%^|%*>>"%TASK_LOG%"
-exit /b 0
 `
+
+	if behaviour == recursingTaskBinary {
+		script += `if "%DR_TEST_DEPTH%"=="" set DR_TEST_DEPTH=0
+set /a DR_TEST_DEPTH=%DR_TEST_DEPTH%+1
+if %DR_TEST_DEPTH% GTR ` + fakeTaskMaxDepth + ` (
+  echo fake task: runaway recursion 1>&2
+  exit /b 9
+)
+"%` + helperBinEnv + `%" "%` + recurseTaskEnv + `%"
+exit /b %ERRORLEVEL%
+`
+	} else {
+		script += "exit /b 0\n"
+	}
 
 	require.NoError(t, os.WriteFile(filepath.Join(binDir, "task.bat"), []byte(script), 0o755))
 }

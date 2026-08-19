@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -136,14 +137,6 @@ func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
 	return NewComposeDiscovery(taskfileName, absPath), nil
 }
 
-// IsTemplateDir reports whether dir is a DataRobot template directory
-// (i.e. it contains a ".datarobot" folder).
-func IsTemplateDir(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, ".datarobot"))
-
-	return err == nil
-}
-
 func (d *Discovery) existingRootTaskfile(root string) string {
 	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
 		path := filepath.Join(root, name)
@@ -178,7 +171,7 @@ func (d *Discovery) generateTaskfile(root string, includes []componentInclude) (
 }
 
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
-	if !IsTemplateDir(root) {
+	if !repo.IsTemplateDir(root) {
 		return "", ErrNotInTemplate
 	}
 

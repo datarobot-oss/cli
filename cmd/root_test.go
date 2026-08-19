@@ -16,8 +16,11 @@ package cmd
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
@@ -235,6 +238,21 @@ func TestUnknownArgGuard(t *testing.T) {
 	}
 }
 
+// requireGateDisabled skips the calling test when the named feature gate is
+// enabled in the ambient environment. Gate filtering happens in init(), long
+// before a test can unset the variable, so the only sound option is to skip.
+func requireGateDisabled(t *testing.T, name string) {
+	t.Helper()
+
+	if !features.Enabled(name) {
+		return
+	}
+
+	t.Skipf("feature gate %q is enabled in the environment (%sFEATURE_%s); "+
+		"gating is applied at init() so this default-state test cannot run",
+		name, config.EnvPrefix, strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
+}
+
 func TestSetUnknownArgGuards_AppliesGuardToPureParent(t *testing.T) {
 	child := &cobra.Command{
 		Use:  "child",
@@ -321,6 +339,8 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 }
 
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
+	requireGateDisabled(t, "workload")
+
 	// Verify that workload command is not present by default (feature not enabled).
 	// The feature gating happens during init(), so this tests the actual state.
 	cmd := RootCmd
@@ -338,6 +358,8 @@ func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
 }
 
 func TestArtifactCommandNotPresentByDefault(t *testing.T) {
+	requireGateDisabled(t, "workload")
+
 	// The artifact command shares the "workload" feature gate, so it is
 	// filtered out by cli.CommandAdder during init() when the gate is not
 	// enabled (the default).
