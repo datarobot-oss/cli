@@ -16,8 +16,12 @@ package up
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -55,8 +59,15 @@ type version struct {
 //
 // Every step here is recoverable except by leaving a draft artifact behind,
 // which is why the next run looks for one before making another.
-func buildVersion(loaded Loaded, live Live, code CodeChange, opts Options, report *reporter) (version, error) {
-	made, err := versionArtifact(loaded, live, report)
+func buildVersion(
+	loaded Loaded,
+	live Live,
+	code CodeChange,
+	repositoryID string,
+	opts Options,
+	report *reporter,
+) (version, error) {
+	made, err := versionArtifact(loaded, live, repositoryID, report)
 	if err != nil {
 		return made, err
 	}
@@ -86,18 +97,21 @@ func buildVersion(loaded Loaded, live Live, code CodeChange, opts Options, repor
 
 // versionArtifact returns the artifact to fill and build, reusing the one an
 // earlier attempt left behind rather than adding to a pile of drafts.
-func versionArtifact(loaded Loaded, live Live, report *reporter) (version, error) {
+func versionArtifact(loaded Loaded, live Live, repositoryID string, report *reporter) (version, error) {
 	if id, ok := abandoned(loaded, live); ok {
 		report.say("  Continuing with artifact %s from an earlier attempt.\n", id)
 
 		return version{ID: id}, nil
 	}
 
-	return createVersion(loaded, report)
+	return createVersion(loaded, repositoryID, report)
 }
 
-// createVersion mints an artifact from the file's artifact block.
-func createVersion(loaded Loaded, report *reporter) (version, error) {
+// createVersion mints an artifact from the file's artifact block, into
+// repositoryID when the run has a lineage for it to join. An empty
+// repositoryID leaves the platform to open one, which is what the first deploy
+// of anything wants.
+func createVersion(loaded Loaded, repositoryID string, report *reporter) (version, error) {
 	var created *workload.Artifact
 
 	err := report.run("Creating the new version", func() error {
@@ -106,7 +120,7 @@ func createVersion(loaded Loaded, report *reporter) (version, error) {
 			return payloadErr
 		}
 
-		artifact, createErr := createArtifactFn(payload)
+		artifact, createErr := createInRepository(payload, repositoryID)
 		created = artifact
 
 		return createErr
@@ -116,6 +130,91 @@ func createVersion(loaded Loaded, report *reporter) (version, error) {
 	}
 
 	return version{ID: created.ID, Fresh: true}, nil
+}
+
+// createInRepository mints the artifact inside repositoryID, and falls back to
+// letting the platform open one when it will not take that repository.
+//
+// The fallback is what keeps this from turning deploys that worked into
+// failures. The id is read off the live artifact rather than typed by anyone,
+// so a refusal names something the user cannot correct: a repository deleted
+// from the UI and one belonging to whoever created the workload and never
+// shared both answer 404, and neither is a reason to leave a workload on the
+// version it was. Landing in a repository of its own is precisely the
+// behaviour this change exists to stop being the default, which is what makes
+// it the right thing to fall back to.
+//
+// The retry covers both answers the repository can produce, and only when one
+// was actually asked for. A repository that is gone or was never shared comes
+// back 404; one whose type disagrees with the artifact comes back 422, which
+// sameRepository tries to predict but cannot promise, since the prediction
+// reads the live artifact's type rather than the repository's own. Retrying
+// both is what keeps a wrong guess from failing a deploy instead of costing a
+// round trip.
+//
+// Dropping the id cannot make a refused artifact acceptable, so a 422 the
+// repository had nothing to do with fails again, identically, and that second
+// answer is the one reported. The cost of covering the case is one wasted
+// request on a deploy that was going to fail anyway. Reading the message to
+// tell the two apart would be exact until the day the API rewords it.
+func createInRepository(payload json.RawMessage, repositoryID string) (*workload.Artifact, error) {
+	if repositoryID == "" {
+		return createArtifactFn(payload)
+	}
+
+	joined, err := withRepository(payload, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+
+	artifact, err := createArtifactFn(joined)
+	if err == nil || !repositoryRefused(err) {
+		return artifact, err
+	}
+
+	log.Debug("artifact repository refused; creating the version in a new one",
+		"artifact_repository_id", repositoryID, "err", err)
+
+	return createArtifactFn(payload)
+}
+
+// repositoryRefused reports whether err is an answer a repository can cause.
+func repositoryRefused(err error) bool {
+	var httpErr *drapi.HTTPError
+
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	return httpErr.StatusCode == http.StatusNotFound ||
+		httpErr.StatusCode == http.StatusUnprocessableEntity
+}
+
+// withRepository is the artifact block with the repository it should join
+// added to it.
+//
+// The id goes on the payload and never on the compiled manifest, and that
+// placement is load-bearing twice. The plan measures the file against the live
+// spec, so a server-owned id on the file's side of that comparison would read
+// as drift on every run, for ever. And a leftover draft is reused only when the
+// file still describes it, a check that compares this same block against the
+// artifact: an id in the block would fail every draft minted before this
+// change and quietly mint a replacement each time.
+func withRepository(payload json.RawMessage, repositoryID string) (json.RawMessage, error) {
+	var block map[string]any
+
+	if err := json.Unmarshal(payload, &block); err != nil {
+		return nil, fmt.Errorf("cannot read the artifact block: %w", err)
+	}
+
+	block[keyArtifactRepositoryID] = repositoryID
+
+	raw, err := json.Marshal(block)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the artifact block to JSON: %w", err)
+	}
+
+	return raw, nil
 }
 
 // abandoned reports an artifact a previous roll made and never promoted, and
@@ -136,6 +235,16 @@ func createVersion(loaded Loaded, report *reporter) (version, error) {
 // again next run. A draft that no longer matches is left where it is and a
 // new one minted, which is what happens anyway when there is nothing to
 // reuse.
+//
+// The repository is checked for the same reason as the spec, and the one the
+// running version is in decides. An artifact cannot be moved between
+// repositories once it exists, so promoting a draft from elsewhere does not
+// merge two lineages: it abandons the workload's own and adopts the draft's,
+// from that run onwards and with nothing said. The drafts this can happen with
+// are the ones a release before this one left behind and the ones
+// `dr artifact create` makes, both of which sit in a repository of their own.
+// Minting a fresh version costs the stray draft that reuse exists to avoid;
+// reusing costs the lineage, permanently.
 func abandoned(loaded Loaded, live Live) (string, bool) {
 	if !projectLinkedFn(loaded.ProjectDir) {
 		return "", false
@@ -151,11 +260,26 @@ func abandoned(loaded Loaded, live Live) (string, bool) {
 		return "", false
 	}
 
+	if !joinable(artifact, live) {
+		return "", false
+	}
+
 	if !describes(loaded, cfg.ArtifactID) {
 		return "", false
 	}
 
 	return cfg.ArtifactID, true
+}
+
+// joinable reports whether promoting this draft would leave the workload in
+// the repository it is already in. A workload in none has nothing to lose,
+// which is every workload created before repositories were sent at all.
+func joinable(draft *workload.Artifact, live Live) bool {
+	if live.ArtifactRepositoryID == "" {
+		return true
+	}
+
+	return draft.ArtifactRepositoryID == live.ArtifactRepositoryID
 }
 
 // describes reports whether the draft still says what the file's artifact

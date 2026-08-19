@@ -43,7 +43,7 @@ const execEnvPickLimit = 200
 // about (the runtime sizing) and the binding, which would otherwise be lost
 // and turn a bind into a create.
 func (a Answers) partialDraft(detected Detected) manifest.Draft {
-	kind := orDefault(a.Type, manifest.TypeService)
+	kind := manifest.ArtifactTypeOrDefault(a.Type)
 
 	draft := manifest.Draft{
 		WorkloadID: a.WorkloadID,

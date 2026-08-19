@@ -107,11 +107,13 @@ spec:
 
 ### `get`
 
-Show a single artifact: its name, status, code reference, and timestamps.
+Show a single artifact: its name, status, repository and version, code reference, and timestamps.
 
 ```bash
 dr artifact get <artifact-id> [--output-format text|json]
 ```
+
+The repository is the lineage the artifact belongs to. Successive versions of one workload share it, which is what tells them apart from unrelated artifacts that happen to carry the same name. The version numbers the artifact within that repository and is assigned only on locking, so a draft shows none.
 
 ### `list`
 

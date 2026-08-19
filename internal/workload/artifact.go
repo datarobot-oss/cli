@@ -47,9 +47,21 @@ func ParseArtifactStatus(s string) (string, error) {
 }
 
 type Artifact struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// ArtifactRepositoryID is the lineage this artifact belongs to. Successive
+	// versions of one thing share it, which is the only way to tell them from
+	// unrelated artifacts that happen to carry the same name.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+
+	// Version numbers this artifact within its repository. A pointer because
+	// the platform sends null for a draft and assigns a number only on
+	// locking, and an unnumbered draft is a different thing from a version 0
+	// that no repository ever issues.
+	Version *int `json:"version"`
+
 	Spec      Spec      `json:"spec"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -129,9 +141,18 @@ type DatarobotCodeRef struct {
 }
 
 type ArtifactOutput struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// ArtifactRepositoryID and Version place the artifact in its lineage.
+	// Neither is omitempty: the text and JSON forms of a command have to carry
+	// the same fields, and a key that comes and goes with the artifact's status
+	// is one a script cannot rely on. A draft's version is null rather than 0,
+	// which says unnumbered instead of naming a version no repository issues.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+	Version              *int   `json:"version"`
+
 	CatalogID string `json:"catalogId"`
 	VersionID string `json:"versionId"`
 	CreatedAt string `json:"createdAt"`
@@ -140,11 +161,13 @@ type ArtifactOutput struct {
 
 func NewArtifactOutput(a Artifact) ArtifactOutput {
 	out := ArtifactOutput{
-		ID:        a.ID,
-		Name:      a.Name,
-		Status:    a.Status,
-		CreatedAt: a.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: a.UpdatedAt.Format(time.RFC3339),
+		ID:                   a.ID,
+		Name:                 a.Name,
+		Status:               a.Status,
+		ArtifactRepositoryID: a.ArtifactRepositoryID,
+		Version:              a.Version,
+		CreatedAt:            a.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            a.UpdatedAt.Format(time.RFC3339),
 	}
 
 	if codeRef := ExtractCodeRef(a); codeRef != nil {

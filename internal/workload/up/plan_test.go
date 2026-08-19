@@ -408,6 +408,29 @@ func TestBuild_MatchingArtifactTypeIsEmpty(t *testing.T) {
 	assert.True(t, plan.Empty())
 }
 
+// A spelling difference is not a change. Nothing in the file can resolve one,
+// because the platform normalises the value and hands the same thing back, so
+// a case-sensitive comparison here is drift that never clears: every run mints
+// a version and rolls a workload nobody touched, for ever. The ledger does not
+// enforce an enum on the type, so a hand-written "Service" reaches this.
+func TestBuild_ArtifactTypeSpellingIsNotAChange(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "Service", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty(), "a workload nobody changed is already up to date")
+}
+
 // Saying nothing about the type is not the same as asking for a service. A
 // manifest written before the type moved out of the spec names none, and this
 // walk never reverts what the file leaves out.
