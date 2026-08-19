@@ -26,6 +26,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/fsutil"
@@ -97,20 +98,18 @@ Example:
 		},
 	}
 
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt.")
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
 	cmd.Flags().String("dir", "", "Project directory whose manifest holds the binding, searched upward from here.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() so an explicit --yes does
 	// not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-
 		return map[string]any{
 			"workload_id": telemetry.FirstArg(args),
-			"yes":         yesFlag || viperx.GetBool("yes"),
+			"yes":         cli.IsNonInteractive(cmd),
 		}
 	})
 
@@ -122,8 +121,7 @@ Example:
 // interactively. A declined prompt is (false, nil) so the command exits 0
 // as a no-op.
 func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	if yesFlag || viperx.GetBool("yes") {
+	if cli.IsNonInteractive(cmd) {
 		return true, nil
 	}
 

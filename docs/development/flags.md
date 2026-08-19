@@ -350,14 +350,15 @@ Outside `internal/config/...`, all viper interaction goes through the
 Quick rules for new flags:
 
 - **Transient flags** (per-invocation): read directly via
-  `cmd.Flags().GetBool(...)`. Do not bind to viper.
+  `cmd.Flags().GetBool(...)` (for example `cli.YesFlagName`). Do not bind to viper.
 - **Env-var override needed?** Register only the env var with
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources in your
-  handler:
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with the shared
+  helper:
 
   ```go
-  yesFlag, _ := cmd.Flags().GetBool("yes")
-  yes := yesFlag || viperx.GetBool("yes")
+  _ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
+
+  nonInteractive := cli.IsNonInteractive(cmd)
   ```
 
 - **Sticky CLI preferences** (rare): bind via `viperx.BindPFlag` *and*
