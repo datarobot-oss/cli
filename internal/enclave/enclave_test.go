@@ -16,7 +16,6 @@ package enclave
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,17 +30,22 @@ import (
 
 // installSkipAuth configures viper so drapi.AuthorizeRequest does not attempt
 // to verify a token over the network.
+//
+// The key has to be config.SkipAuthKey ("skip-auth"), not "skip_auth": the
+// underscore spelling does not resolve to the --skip-auth flag, so viper
+// answers false, resolveToken falls through to config.GetAPIKey, and every
+// request is preceded by a GET /version/ probe against the test server.
 func installSkipAuth(t *testing.T) {
 	t.Helper()
 
-	prevSkip := viperx.GetBool("skip_auth")
+	prevSkip := viperx.GetBool(config.SkipAuthKey)
 	prevTok := viperx.GetString(config.DataRobotAPIKey)
 
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
 	t.Cleanup(func() {
-		viperx.Set("skip_auth", prevSkip)
+		viperx.Set(config.SkipAuthKey, prevSkip)
 		viperx.Set(config.DataRobotAPIKey, prevTok)
 	})
 }
@@ -101,7 +105,7 @@ func TestRegisterEnclave(t *testing.T) {
 		assert.Equal(t, "/covalent/api/v2/outposts", r.URL.Path)
 
 		raw, _ := io.ReadAll(r.Body)
-		require.NoError(t, json.Unmarshal(raw, &gotBody))
+		assert.NoError(t, json.Unmarshal(raw, &gotBody))
 
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
@@ -148,7 +152,7 @@ func TestRegisterEnclaveConflict(t *testing.T) {
 
 	var httpErr *drapi.HTTPError
 
-	require.True(t, errors.As(err, &httpErr))
+	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
@@ -287,6 +291,6 @@ func TestDeleteEnclaveNotFound(t *testing.T) {
 
 	var httpErr *drapi.HTTPError
 
-	require.True(t, errors.As(err, &httpErr))
+	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
 }

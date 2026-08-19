@@ -110,7 +110,7 @@ func TestGrantAccessSendsPatch(t *testing.T) {
 		gotPath = r.URL.Path
 
 		raw, _ := io.ReadAll(r.Body)
-		require.NoError(t, json.Unmarshal(raw, &gotBody))
+		assert.NoError(t, json.Unmarshal(raw, &gotBody))
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -134,7 +134,7 @@ func TestGrantAccessByUsernameOmitsID(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		require.NoError(t, json.Unmarshal(raw, &gotBody))
+		assert.NoError(t, json.Unmarshal(raw, &gotBody))
 
 		// Assert the raw body carries username and no id key for a username grant.
 		assert.Contains(t, string(raw), `"username":"alice@corp.io"`)
@@ -163,7 +163,7 @@ func TestRevokeAccessSendsNoRole(t *testing.T) {
 		assert.Equal(t, http.MethodPatch, r.Method)
 
 		raw, _ := io.ReadAll(r.Body)
-		require.NoError(t, json.Unmarshal(raw, &gotBody))
+		assert.NoError(t, json.Unmarshal(raw, &gotBody))
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
