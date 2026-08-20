@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// flags.go defines shared flag-name constants used across command definitions.
+// Centralising flag names here prevents magic strings from drifting out of sync
+// between the registration site, viperx bindings, and shared helpers like
+// IsNonInteractive.
 package cli
 
 // YesFlagName is the canonical name used for non-interactive confirmation flags.

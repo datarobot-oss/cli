@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// runtime.go provides helpers that commands call during execution to query the
+// ambient runtime context — specifically whether the current invocation is
+// running in a non-interactive (automated) mode.
+//
+// IsNonInteractive is the single authoritative check for prompt-skipping. Any
+// new automation signal (a future --no-prompt flag, a CI env var, etc.) should
+// be added here rather than inlined in individual commands.
 package cli
 
 import (
