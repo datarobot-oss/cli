@@ -84,7 +84,15 @@ func ValidImportance(value string) bool {
 const (
 	DefaultImportance = "low"
 	DefaultPort       = 8080
-	DefaultHealthPath = "/health"
+	// DefaultHealthPath is the root rather than /health because the probe has
+	// to pass on an application nobody wrote it for. Almost every HTTP service
+	// answers something at /, where /health is an endpoint the app has to have
+	// implemented; pointing a probe at one that does not exist is the most
+	// common first-deploy failure, and it presents as a deploy that never
+	// becomes ready rather than as a misconfigured probe. An app with a real
+	// health endpoint says so on the settings screen, and one that wants no
+	// probe at all clears the field.
+	DefaultHealthPath = "/"
 	DefaultReplicas   = 1
 	DefaultCPU        = 0.5
 	DefaultMemory     = "512MB"

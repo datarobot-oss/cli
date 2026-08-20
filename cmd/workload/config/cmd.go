@@ -164,7 +164,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.answers.Image, "image", "", "Published image URI. Required with --build-mode image.")
 
 	cmd.Flags().IntVar(&f.answers.Port, "port", 0, "Container port (default: the Dockerfile's EXPOSE, else 8080).")
-	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /health).")
+	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /). Use --no-readiness-probe to write none.")
 	// A flag of its own rather than an empty --health. Declining a probe is a
 	// different act from not mentioning one, and a flag that says so is both
 	// greppable in a CI script and impossible to type by accident.

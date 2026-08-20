@@ -45,9 +45,9 @@ const defaultEditor = "vi"
 
 // healthPlaceholder says what an empty health path means rather than showing
 // the default, which is what every other placeholder on that screen does.
-// Ghosting "/health" there would advertise the opposite of what accepting the
-// empty field does, and the field is only ever empty when a probe has been
-// declined or the bound workload runs without one.
+// Ghosting the default path there would advertise the opposite of what
+// accepting the empty field does, and the field is only ever empty when a probe
+// has been declined or the bound workload runs without one.
 const healthPlaceholder = "none: no readiness probe"
 
 // namePlaceholder shows the shape of a workload name without proposing one.
@@ -631,15 +631,22 @@ func (f flow) onAdvancedRow() bool {
 	return f.at == screenSettings && f.focus == advancedStop
 }
 
-// advancedKeyLabel is what enter does while the row is focused, which is not
-// what it does anywhere else on the screen.
-func (f flow) advancedKeyLabel() string {
-	if f.advancedOpen {
-		return "hide advanced options"
-	}
+// advancedKey opens and closes the advanced row from anywhere on the settings
+// screen, so the fields behind it are reachable without first discovering that
+// tab lands on a row.
+//
+// A chord rather than a letter, because every stop on this screen but the row
+// itself is a text input and a bare key is text there. ctrl+a would have been
+// the mnemonic; the input already binds it to line-start, along with b, d, e,
+// f, h, k, n, p, u, v and w, and taking a standard editing key away from a
+// field to save one keystroke elsewhere is a poor trade.
+const advancedKey = "ctrl+o"
 
-	return "show advanced options"
-}
+// advancedLabel is what both keys that toggle the row are called in the
+// legend. One word in either state, because the row's own arrow already says
+// which way it will go and a label that changes width wraps the legend onto a
+// second line at eighty columns, pushing [esc] back off the end of the first.
+const advancedLabel = "advanced"
 
 // settingsNote explains whatever the cursor is on. The port's note carries its
 // provenance too, since that is the one value detection can vouch for.
@@ -925,6 +932,7 @@ var screenKeys = map[screen][]keyBinding{
 	},
 	screenSettings: {
 		{Key: "tab", Does: "next field"},
+		{Key: advancedKey, Does: "advanced"},
 		{Key: "enter", Does: "continue"},
 		{Key: "esc", Does: "back"},
 	},
@@ -971,12 +979,12 @@ func (f flow) keys() string {
 		bindings = append([]keyBinding{{Key: "↑/↓", Does: "scroll"}}, bindings...)
 	}
 
-	// On the advanced row enter belongs to the row, not to the screen, so the
-	// legend has to say what it will actually do. Only that one entry changes:
+	// On the row itself enter belongs to the row rather than to the screen, so
+	// it is labelled for what it does there. Only that entry changes:
 	// rebuilding the list here would quietly drop any key the screen gains
 	// later, in the one state where the legend matters most.
 	if f.onAdvancedRow() {
-		bindings = withKey(bindings, "enter", f.advancedKeyLabel())
+		bindings = withKey(bindings, "enter", advancedLabel)
 	}
 
 	// With a filter in place, esc undoes that first. Saying "back" would be a

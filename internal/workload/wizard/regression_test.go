@@ -602,6 +602,32 @@ func TestFlow_ImportanceIsBehindAdvancedAndValidated(t *testing.T) {
 	assert.Contains(t, string(accepted.content), "importance: high")
 }
 
+// The row is reachable directly, and the legend says so: tabbing onto a row
+// and pressing enter is not something anyone guesses from a screen that shows
+// one field.
+func TestFlow_AdvancedKeyOpensTheRowFromAnyField(t *testing.T) {
+	model := atSettings(t)
+
+	assert.Contains(t, model.View(), "["+advancedKey+"]", "the legend advertises the key")
+	require.Equal(t, fieldPort, model.focus)
+
+	model = press(t, model, advancedKey)
+	assert.True(t, model.advancedOpen)
+	assert.Equal(t, firstAdvancedField, model.focus, "opening lands on the first revealed field")
+	assert.Contains(t, model.View(), "Health path")
+
+	// And from inside a revealed field it closes, putting the cursor somewhere
+	// that still exists.
+	model = press(t, model, "tab", advancedKey)
+	assert.False(t, model.advancedOpen)
+	assert.Equal(t, fieldPort, model.focus)
+	assert.NotContains(t, model.View(), "Health path")
+
+	// The screen is still submitted from there.
+	model = press(t, model, "enter")
+	assert.Equal(t, screenConfirm, model.at)
+}
+
 // The screen is made of text inputs, so a letter is text. Nothing on it can
 // be a bare-key command: [a] would land in the port rather than opening the
 // row it names.
@@ -636,7 +662,7 @@ func TestFlow_HiddenFieldsKeepTheirValues(t *testing.T) {
 	assert.Contains(t, view, "1 replica")
 	assert.Contains(t, view, "0.5 cpu")
 	assert.Contains(t, view, "importance low")
-	assert.Contains(t, view, "Readiness: /health on port 3000")
+	assert.Contains(t, view, "Readiness: "+manifest.DefaultHealthPath+" on port 3000")
 }
 
 // Clearing the health path is how the screen declines the probe, and what
@@ -676,11 +702,13 @@ func TestFlow_HealthPathStillHasToBeAPath(t *testing.T) {
 func TestFlow_RefusedHiddenFieldOpensTheAdvancedRow(t *testing.T) {
 	model := openAdvanced(t, atSettings(t))
 
-	// Close the row again, leaving a bad value behind it.
+	// Close the row again, leaving a bad value behind it. Closing puts the
+	// cursor back on the port, so enter from there submits the screen.
 	model = press(t, withField(model, fieldMemory, "4Gi"), "shift+tab", "enter")
 	require.False(t, model.advancedOpen)
+	require.Equal(t, fieldPort, model.focus)
 
-	model = press(t, model, "tab", "enter") // back to the port, then submit
+	model = press(t, model, "enter")
 
 	require.Equal(t, screenSettings, model.at)
 	require.Error(t, model.failed)
@@ -723,7 +751,9 @@ func TestFlow_HealthPathPlaceholderSaysNoProbe(t *testing.T) {
 func openAdvanced(t *testing.T, model flow) flow {
 	t.Helper()
 
-	model = press(t, model, "tab", "enter", "tab")
+	// Opening puts the cursor on the first revealed field, so no tab is needed
+	// to reach it.
+	model = press(t, model, "tab", "enter")
 
 	require.True(t, model.advancedOpen)
 	require.Equal(t, firstAdvancedField, model.focus)
@@ -785,9 +815,13 @@ func TestFlow_SettingsNotesFollowTheCursor(t *testing.T) {
 	require.True(t, model.advancedOpen)
 	require.Equal(t, screenSettings, model.at, "the row's enter opens it rather than submitting the screen")
 
+	// Opening lands on the first revealed field, so its note is already up.
 	wanted := []string{"Readiness probe path", "protons", "Fractional values", "Binary units", "Scheduling priority"}
 	for i, want := range wanted {
-		model = press(t, model, "tab")
+		if i > 0 {
+			model = press(t, model, "tab")
+		}
+
 		assert.Containsf(t, model.View(), want, "note for %s", settingsLabels[firstAdvancedField+i])
 	}
 }

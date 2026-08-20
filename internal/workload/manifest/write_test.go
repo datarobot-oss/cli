@@ -65,7 +65,7 @@ artifact:
               dockerfile:
                 source: provided
             readinessProbe:
-              path: /health
+              path: /
               port: 8080
 
 runtime:
