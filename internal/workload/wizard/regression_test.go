@@ -1358,6 +1358,43 @@ func mustFetchLive(t *testing.T, id string) manifest.Live {
 	return live
 }
 
+// stubUnreadableProbeLive points the binding path at a workload whose probe
+// declares no path: a shape this release preserves rather than rewrites.
+func stubUnreadableProbeLive(t *testing.T) {
+	t.Helper()
+
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/tcp:v1",
+				 "readinessProbe": {"tcpSocket": {"port": 9100}, "periodSeconds": 10}}]}]}}`))
+}
+
+// A path typed for a probe the merge will not rewrite is refused while the
+// answer can still be taken back, rather than accepted and dropped on the way
+// to the file.
+func TestFlow_UnreadableProbeRefusesATypedPath(t *testing.T) {
+	stubUnreadableProbeLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	require.Empty(t, model.inputs[fieldHealthPath].Value())
+	// Asserted on a phrase short enough to survive the note's wrapping.
+	assert.Contains(t, model.View(), "readiness probe with no path")
+
+	model = press(t, withField(model, fieldHealthPath, "/ready"), "enter")
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "would not reach the file")
+
+	// Leaving it alone is still the way through, and the probe survives.
+	accepted := press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, accepted.at)
+	require.NoError(t, accepted.failed)
+	assert.Contains(t, string(accepted.content), "tcpSocket")
+}
+
 // stubProbelessLive points the binding path at a workload running without a
 // readiness probe, which the platform allows and which the wizard must not
 // quietly fix.
