@@ -399,6 +399,162 @@ func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
 	assert.Nil(t, seen.Confirm)
 }
 
+// draftHeadline is the one phrase every draft warning has to carry. Asserting
+// on a whole sentence would break the moment the wording is tuned, and this is
+// the part that cannot change without the warning ceasing to be one.
+const draftHeadline = "This workload is running a draft artifact."
+
+// A deploy onto a draft is on a clock nothing in the output used to mention:
+// the artifact is reclaimed and the workload stops once idle, so an endpoint
+// shared in the afternoon can be dead by morning.
+func TestCmd_DraftDeploySaysItIsTemporary(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, "stopped after 8 hours")
+	assert.Contains(t, stderr, "dr workload up --lock")
+
+	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout,
+		"the warning is prose and belongs on stderr, so the endpoint stays pipeable")
+}
+
+// The deadline is stated, and stated as a running time rather than an idle
+// one. The platform's sweep selects on how long the workload has been running
+// and never on whether it served anything, so "idle" or "inactive" here would
+// be a comfortable lie to the one person who most needs the truth: someone
+// about to share an endpoint they intend to keep using.
+func TestCmd_DraftWarningStatesTheDeadline(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "8 hours", "the figure is the platform's own published contract")
+	assert.Contains(t, stderr, "whether or not they are in use", "the clock does not care about traffic")
+
+	for _, wrong := range []string{"idle", "inactiv", "reclaim"} {
+		assert.NotContains(t, stderr, wrong,
+			"nothing deletes the artifact, and the timeout is not an inactivity one")
+	}
+}
+
+// The trade the ticket asked for. Someone who wants to stop a workload goes
+// looking for the command; someone whose workload stops by itself does not
+// know there is anything to look for.
+func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "the other two lines stay")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A locked artifact is permanent, so there is nothing to warn about and the
+// stop line keeps its slot.
+func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
+	result := deployed()
+	result.Locked = true
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.NotContains(t, stderr, draftHeadline)
+	assert.NotContains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A --lock run is the remedy, so telling it about drafts would be telling it
+// what it just did.
+func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t, "--lock")
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, draftHeadline)
+}
+
+// Someone previewing a first deploy is exactly who the warning is for, and a
+// first deploy has no workload id yet, so the dry run cannot be gated on one.
+func TestCmd_DryRunWarnsAboutADraftItWouldDeploy(t *testing.T) {
+	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
+
+	stdout, stderr, err := runCmd(t, "--dry-run")
+	require.NoError(t, err)
+
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "nothing was changed")
+	assert.Contains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, "dr workload up --lock",
+		"a dry run never reaches the Next list, so the warning has to carry the remedy itself")
+}
+
+func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
+	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
+
+	_, stderr, err := runCmd(t, "--dry-run", "--lock")
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, draftHeadline)
+}
+
+// The purity rule, held against the one thing added since it was written: the
+// warning is prose, and prose never reaches a machine-readable stream.
+func TestCmd_JSONOutputCarriesNoDraftProse(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "stdout must stay one JSON document")
+	assert.NotContains(t, stdout, draftHeadline)
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, false, body["locked"], "the envelope already says this in a form a machine can read")
+}
+
+// Nothing was deployed, so there is no endpoint with a clock on it and the
+// warning would be about nothing. Same guard the Next list already uses.
+func TestCmd_NoWorkloadSaysNothingAboutDrafts(t *testing.T) {
+	stubRun(t, up.Result{BuildID: "68c0000000000000000000b2"}, errors.New("build failed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.NotContains(t, stderr, draftHeadline)
+}
+
+// A failed deploy has one thing worth reading and it is the error. Telling
+// someone their broken deploy is also temporary buries it.
+func TestCmd_FailedDeployDoesNotWarnAboutDrafts(t *testing.T) {
+	stubRun(t, deployed(), errors.New("timed out waiting"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.NotContains(t, stderr, draftHeadline)
+}
+
+// A run that changed nothing still leaves a draft serving on the same clock.
+// "Already up to date" is not the same as "this will still be here tomorrow".
+func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionUnchanged
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, draftHeadline)
+}
+
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	cmd := Cmd()
 
