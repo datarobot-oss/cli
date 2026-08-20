@@ -202,9 +202,17 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 // and return cli.ErrSilent (or the returned error directly).
 func FormatDiscoveryError(err error) error {
 	if errors.Is(err, ErrNotInTemplate) {
-		return fmt.Errorf("%s\n%s",
+		requirement := fmt.Sprintf(
+			"This command requires a '%s' folder, or a '%s' folder holding something other than '%s'.",
+			repo.DataRobotTemplateDetectAnswersPath,
+			repo.DataRobotTemplateDetectCliPath,
+			repo.TemplateDetectStateFileName,
+		)
+
+		return fmt.Errorf("%s\n%s\n%s",
 			tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."),
-			tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
+			tui.BaseTextStyle.Render(requirement),
+			tui.BaseTextStyle.Render("Run 'dr template setup' to create one, or switch to an existing template directory."))
 	}
 
 	if errors.Is(err, ErrTaskfileHasDotenv) {
