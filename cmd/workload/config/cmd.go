@@ -168,9 +168,12 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	// A flag of its own rather than an empty --health. Declining a probe is a
 	// different act from not mentioning one, and a flag that says so is both
 	// greppable in a CI script and impossible to type by accident.
+	// Deliberately about the file rather than about the running workload: `up`
+	// leaves out what the file leaves out, so a probe already deployed goes
+	// only when the artifact is rebuilt for some other reason.
 	cmd.Flags().BoolVar(&f.answers.NoProbe, "no-readiness-probe", false,
 		"Write no readiness probe, so traffic is not gated on a health check. Exclusive with --health. "+
-			"With --workload-id this removes the probe the workload runs with today.")
+			"With --workload-id it drops the probe from the manifest; a deployed probe goes on the next artifact build.")
 
 	cmd.Flags().IntVar(&f.answers.Replicas, "replicas", 0, "Replica count (default 1).")
 	cmd.Flags().Float64Var(&f.answers.CPU, "cpu", 0, "CPU per replica (default 0.5).")

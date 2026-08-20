@@ -838,12 +838,9 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 		return nil, err
 	}
 
-	// An empty path is the answer "no readiness probe", which the file records
-	// by carrying no probe block at all. A path that is set still has to be one.
 	path := f.field(fieldHealthPath)
-	if path != "" && !strings.HasPrefix(path, "/") {
-		return nil, f.reveal(fieldHealthPath,
-			errors.New("the health path must start with /, or leave it empty to run without a probe"))
+	if err := f.acceptHealthPath(path); err != nil {
+		return nil, f.reveal(fieldHealthPath, err)
 	}
 
 	replicas, err := f.acceptReplicas()
@@ -880,6 +877,29 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 	f.draft.Runtime = manifest.Runtime{Replicas: replicas, CPU: cpu, Memory: memory}
 
 	return nil, nil
+}
+
+// acceptHealthPath holds the probe field to what the file can express. An
+// empty path is the answer "no readiness probe", which the file records by
+// carrying no probe block at all; a path that is set still has to be one.
+//
+// The third case is a bound workload whose probe declares no path. That shape
+// is preserved rather than rewritten, so a path typed here would be accepted
+// and then quietly dropped by the merge. It is refused while the answer can
+// still be taken back, and the note beside the field says why.
+func (f flow) acceptHealthPath(path string) error {
+	if path != "" && !strings.HasPrefix(path, "/") {
+		return errors.New("the health path must start with /, or leave it empty to run without a probe")
+	}
+
+	if present, readable := f.liveReadinessProbe(); present && !readable && path != "" {
+		return fmt.Errorf(
+			"%s runs a readiness probe with no path, which is kept as it is rather than rewritten, "+
+				"so a path here would not reach the file; clear the field to leave it alone",
+			f.live.Name)
+	}
+
+	return nil
 }
 
 // reveal puts the cursor on the field a validation error is about, opening the

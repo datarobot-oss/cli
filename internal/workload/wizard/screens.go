@@ -688,8 +688,9 @@ func (f flow) liveProbeNote() string {
 		return ""
 
 	case present:
-		return liveStyle.Render(f.live.Name) + " runs a readiness probe this release cannot edit, so it is " +
-			"kept exactly as it is and this field does not apply to it."
+		return liveStyle.Render(f.live.Name) + " runs a readiness probe with no path, so this field does not " +
+			"apply to it. Its shape is kept as it is; only its port follows the container's, the way the " +
+			"startup and liveness probes do."
 
 	default:
 		return liveStyle.Render(f.live.Name) + " runs without a readiness probe. Leaving this empty keeps it that way; " +
@@ -874,7 +875,7 @@ func (f flow) readinessLine() string {
 	// A probe shape this release does not model is carried over untouched, so
 	// the answers do not describe it and neither should this line.
 	if present, readable := f.liveReadinessProbe(); present && !readable {
-		return "Readiness: kept as " + f.live.Name + " has it; this release does not edit that probe's shape."
+		return "Readiness: " + f.live.Name + "'s own probe, kept as it is apart from the port it watches."
 	}
 
 	if !f.draft.WantsReadinessProbe() {

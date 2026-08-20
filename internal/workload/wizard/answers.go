@@ -192,6 +192,37 @@ func (a Answers) checkSizing() error {
 	return nil
 }
 
+// checkProbeEditable refuses a probe answer the CLI cannot carry out, which is
+// only possible once the workload has been read.
+//
+// A readiness probe that declares no path is not the HTTP probe these flags
+// describe, and binding preserves it rather than rewriting a shape this release
+// does not model. Preserving is right when nobody said anything about the
+// probe. When a flag did say something, staying silent would mean the run
+// reports success having ignored the one thing it was asked to change, and
+// without a screen there is nothing else to notice it.
+func (a Answers) checkProbeEditable(live manifest.Live) error {
+	if !a.NoProbe && a.HealthPath == "" {
+		return nil
+	}
+
+	present, readable := live.ReadinessProbe()
+	if !present || readable {
+		return nil
+	}
+
+	flag := "--health " + a.HealthPath
+	if a.NoProbe {
+		flag = "--no-readiness-probe"
+	}
+
+	return fmt.Errorf(
+		"%s runs a readiness probe with no path, which this CLI keeps as it is rather than rewriting a shape it "+
+			"does not model, so %s cannot be applied to it. Drop the flag to bind without touching the probe, "+
+			"or change the probe where it was defined",
+		live.Name, flag)
+}
+
 // checkImportance holds the flag to the enum. The reader passes an
 // unrecognized level through and lets the platform decide, but a level nobody
 // meant to type is worth refusing here rather than after a round trip.

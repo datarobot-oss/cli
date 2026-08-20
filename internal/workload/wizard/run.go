@@ -257,6 +257,10 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 		return nil, manifest.Draft{}, err
 	}
 
+	if err := o.Answers.checkProbeEditable(live); err != nil {
+		return nil, manifest.Draft{}, err
+	}
+
 	draft, err := o.Answers.applyTo(live.Defaults(), detected)
 	if err != nil {
 		return nil, manifest.Draft{}, err
