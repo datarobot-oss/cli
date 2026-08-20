@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// root_factory.go defines RootFactory — the injectable constructor for the root
+// cobra command. Call NewRootFactory (with optional With* overrides) to obtain
+// a fully-wired *cli.CommandAdder whose dependencies can be swapped for test
+// doubles. Production code relies on the singleton built in root.go's init().
+//
+// Extending the factory:
+//   - To add a new command: register it in addSubcommands.
+//   - To add a new injectable behaviour: define a *Func type, add a field to
+//     Dependencies, add a With* option, wire it in the appropriate method, and
+//     set a production default in DefaultDependencies.
+//   - See docs/development/root-factory.md for worked examples.
 package cmd
 
 import (
