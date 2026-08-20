@@ -59,7 +59,7 @@ with your default shell.
 
 				targetVersion = normalized
 
-				if err := refuseDowngrade(targetVersion); err != nil {
+				if err := refuseDowngrade(targetVersion, force); err != nil {
 					return err
 				}
 			}
@@ -181,9 +181,10 @@ func normalizeAndValidateVersion(s string) (string, error) {
 
 // refuseDowngrade errors if requestedVersion is older than the currently
 // running dr version (version.Version). Skipped entirely for non-release
-// ("dev") builds.
-func refuseDowngrade(requestedVersion string) error {
-	if version.Version == "dev" {
+// ("dev") builds, or when force is set (an explicit --force overrides the
+// refusal, allowing an intentional downgrade).
+func refuseDowngrade(requestedVersion string, force bool) error {
+	if version.Version == "dev" || force {
 		return nil
 	}
 

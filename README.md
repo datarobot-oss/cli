@@ -231,7 +231,7 @@ To install a specific released version instead of the latest, pass `--version`:
 dr self update --version v0.12.3
 ```
 
-`--version` accepts `vX.Y.Z` or `X.Y.Z` and refuses to install a version older than the one currently running. It is not supported when `dr` was installed via the Homebrew cask; Homebrew always installs the latest release and cannot pin versions&mdash;uninstall the cask and use the manual install script instead.
+`--version` accepts `vX.Y.Z` or `X.Y.Z` and refuses to install a version older than the one currently running, unless `--force`/`-f` is also passed. It is not supported when `dr` was installed via the Homebrew cask; Homebrew always installs the latest release and cannot pin versions&mdash;uninstall the cask and use the manual install script instead.
 
 After updating, verify the new version:
 

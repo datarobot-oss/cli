@@ -110,22 +110,25 @@ func TestRefuseDowngrade(t *testing.T) {
 		name      string
 		installed string
 		requested string
+		force     bool
 		wantErr   string // "" means no error expected
 	}{
 		{
-			"older requested is refused", "v0.12.3", "v0.11.0",
+			"older requested is refused", "v0.12.3", "v0.11.0", false,
 			"refusing to install older version (installed: v0.12.3, requested: v0.11.0)",
 		},
-		{"same version is allowed", "v0.12.3", "v0.12.3", ""},
-		{"newer version is allowed", "v0.12.3", "v0.13.0", ""},
-		{"dev bypasses the check entirely", "dev", "v0.0.1", ""},
+		{"same version is allowed", "v0.12.3", "v0.12.3", false, ""},
+		{"newer version is allowed", "v0.12.3", "v0.13.0", false, ""},
+		{"dev bypasses the check entirely", "dev", "v0.0.1", false, ""},
+		{"force allows downgrade", "v0.12.3", "v0.11.0", true, ""},
+		{"force with dev still allowed", "dev", "v0.0.1", true, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			version.Version = tt.installed
 
-			err := refuseDowngrade(tt.requested)
+			err := refuseDowngrade(tt.requested, tt.force)
 			if tt.wantErr == "" {
 				assert.NoError(t, err)
 
