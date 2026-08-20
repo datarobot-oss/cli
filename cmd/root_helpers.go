@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// root_helpers.go contains standalone helpers used by RootFactory that would
+// cause import cycles if they lived inside root_factory.go:
+//
+//   - showFirstRunAnimation: displays the one-time DataRobot logo animation on
+//     a user's first CLI invocation. Injected into the factory as AnimationFunc
+//     so tests can replace it with a no-op.
+//   - setUnknownArgGuards: walks the command tree after registration and installs
+//     an Args validator + RunE on every pure-parent command so unrecognised
+//     positional arguments produce a clear error instead of silently showing help.
 package cmd
 
 import (
