@@ -26,9 +26,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -813,4 +815,48 @@ func TestVerifyEnvCredentials(t *testing.T) {
 		assert.Equal(t, server.URL+"/api/v2", creds.Endpoint)
 		assert.Equal(t, "valid-token", creds.Token)
 	})
+}
+
+// TestEnsureAuthenticatedE_ReturnsErrSilent locks in the reporting contract:
+// EnsureAuthenticated writes a user-facing message on every failure path, so the
+// PreRunE wrapper must return cli.ErrSilent rather than a fresh error. Returning a
+// plain error would make main.go print a second line for something the user was
+// already told about (CFX-6924).
+func TestEnsureAuthenticatedE_ReturnsErrSilent(t *testing.T) {
+	server, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	// A complete but invalid env pair fails without falling back or starting a
+	// login flow, and reports the reason itself.
+	t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "expired-token")
+
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		t.Error("login flow must not start when explicit env credentials fail")
+
+		return "", errors.New("unexpected login flow")
+	}
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := EnsureAuthenticatedE(cmd, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrSilent,
+		"authentication failures are already reported, so the error must be silent")
+}
+
+// TestEnsureAuthenticatedE_NilOnSuccess is the companion case: a valid stored
+// profile must produce no error at all.
+func TestEnsureAuthenticatedE_NilOnSuccess(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	assert.NoError(t, EnsureAuthenticatedE(cmd, nil))
 }
