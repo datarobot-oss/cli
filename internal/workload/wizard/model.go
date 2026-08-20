@@ -289,6 +289,10 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	f.failed = nil
 
+	if f.at == screenSettings && msg.String() == advancedKey {
+		return f, f.toggleAdvanced()
+	}
+
 	switch msg.String() {
 	case "esc":
 		return f.back()
@@ -297,9 +301,7 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// still submitted with enter from any of its fields, which is where the
 		// cursor starts.
 		if f.onAdvancedRow() {
-			f.advancedOpen = !f.advancedOpen
-
-			return f, nil
+			return f, f.toggleAdvanced()
 		}
 
 		return f.advance()
@@ -1144,6 +1146,22 @@ func (f *flow) moveFocus(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	f.focus = stops[(at+step+len(stops))%len(stops)]
+
+	return f.applyFocus()
+}
+
+// toggleAdvanced shows or hides the fields behind the row and puts the cursor
+// somewhere that still exists afterwards: on the first revealed field when it
+// opens, since reaching them is the point, and back on the port when it closes,
+// since the field the cursor was in has just gone.
+func (f *flow) toggleAdvanced() tea.Cmd {
+	f.advancedOpen = !f.advancedOpen
+
+	if f.advancedOpen {
+		f.focus = firstAdvancedField
+	} else {
+		f.focus = fieldPort
+	}
 
 	return f.applyFocus()
 }

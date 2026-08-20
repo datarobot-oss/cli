@@ -69,6 +69,8 @@ func keyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case advancedKey:
+		return tea.KeyMsg{Type: tea.KeyCtrlO}
 	case "backspace":
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	default:
