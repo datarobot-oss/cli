@@ -12,6 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// interaction.go bridges the cli package's runtime detection into the telemetry
+// layer. StampInteractionMode is called once per invocation from the factory's
+// PersistentPreRunE so that every Amplitude event carries a consistent
+// non_interactive property without per-command duplication.
+//
+// The actual detection logic lives in cli.IsNonInteractive — this file is
+// intentionally thin so that the telemetry package has no direct dependency on
+// flag-parsing or environment-variable details.
 package telemetry
 
 import (
