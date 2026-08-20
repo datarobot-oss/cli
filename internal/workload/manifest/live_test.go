@@ -379,17 +379,13 @@ func TestLive_UnknownBuildSourceIsPreserved(t *testing.T) {
 }
 
 // A workload deliberately running without a readiness probe must not acquire
-// the wizard's default one, which its container would never pass.
+// the wizard's default one, which its container would never pass. The rule
+// lives in Defaults, which reads the absence as an empty path, so nothing
+// downstream has to tell a default apart from an answer.
 func TestLive_ApplyDoesNotInventAReadinessProbe(t *testing.T) {
-	var artifactDoc map[string]any
+	live := probelessLive(t)
 
-	require.NoError(t, json.Unmarshal([]byte(`{
-      "name": "a",
-      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
-        {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1"}]}]}
-    }`), &artifactDoc))
-
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.Empty(t, live.Defaults().HealthPath, "no probe has to arrive as no path")
 
 	applied, err := live.Apply(live.Defaults())
 	require.NoError(t, err)
@@ -398,16 +394,136 @@ func TestLive_ApplyDoesNotInventAReadinessProbe(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotContains(t, string(rendered), "readinessProbe")
+}
 
-	// One that does have a probe keeps it pointing where the answers say.
+// Asking for one is the other half of that: a path only reaches Apply because
+// a screen or a flag put it there, and the confirm screen shows the diff before
+// anything is written.
+func TestLive_ApplyAddsTheProbeThatWasAskedFor(t *testing.T) {
+	live := probelessLive(t)
+
 	draft := live.Defaults()
 	draft.HealthPath = "/ready"
 
-	applied, err = live.Apply(draft)
+	applied, err := live.Apply(draft)
 	require.NoError(t, err)
-	rendered, err = applied.Render()
+
+	rendered, err := applied.Render()
 	require.NoError(t, err)
-	assert.NotContains(t, string(rendered), "/ready", "no probe means nothing to point")
+
+	// Asserted as the block rather than as two loose lines: the container
+	// carries a port of its own, so "port: 9000" alone passes whether or not
+	// the probe ever got one.
+	assert.Contains(t, string(rendered), "readinessProbe:\n              path: /ready\n              port: 9000")
+}
+
+// And clearing the path takes the block away rather than leaving one pointed
+// at nothing, which is neither a probe nor an absence of one.
+func TestLive_ApplyRemovesADeclinedProbe(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1",
+         "readinessProbe": {"path": "/health", "port": 9000, "periodSeconds": 10}}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	require.Equal(t, "/health", draft.HealthPath)
+
+	draft.HealthPath = ""
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "readinessProbe")
+	assert.NotContains(t, string(rendered), "periodSeconds", "the whole block goes, not only the path")
+}
+
+// A probe this release cannot read a path out of is not the same thing as no
+// probe, and Apply must not confuse the two: reading it as "declined" would
+// delete a running workload's own configuration because the reader did not
+// recognize its shape.
+func TestLive_ApplyKeepsAProbeItCannotRead(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1",
+         "readinessProbe": {"tcpSocket": {"port": 9000}, "periodSeconds": 10, "failureThreshold": 30}}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	present, readable := live.ReadinessProbe()
+	assert.True(t, present, "the block is there")
+	assert.False(t, readable, "but not as a path this release understands")
+
+	// The wizard's own answers, unchanged: nobody declined anything.
+	require.Empty(t, live.Defaults().HealthPath)
+
+	applied, err := live.Apply(live.Defaults())
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "tcpSocket")
+	assert.Contains(t, string(rendered), "failureThreshold: 30")
+	assert.NotContains(t, string(rendered), "path:", "nothing was added to a probe we do not model")
+}
+
+// And when the container's port moves, that probe follows it the way the
+// startup and liveness probes do, rather than being left watching a port
+// nothing listens on.
+func TestLive_ApplyMovesAnUnreadableProbeWithThePort(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1",
+         "readinessProbe": {"tcpSocket": {"port": 9000}, "port": 9000}}]}]}
+    }`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	draft.Port = 9100
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// The probe's own port follows the container. What sits inside a block this
+	// release does not model is left exactly as it was, which is why the nested
+	// tcpSocket port is still 9000.
+	assert.Contains(t, string(rendered), "readinessProbe:\n              port: 9100")
+	assert.Contains(t, string(rendered), "tcpSocket:\n                port: 9000")
+}
+
+// probelessLive is a workload running without a readiness probe.
+func probelessLive(t *testing.T) Live {
+	t.Helper()
+
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1"}]}]}
+    }`), &artifactDoc))
+
+	return NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
 }
 
 // A workload can carry probes the wizard has no question for. Changing the

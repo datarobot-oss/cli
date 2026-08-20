@@ -574,15 +574,14 @@ func TestFlow_EnvTableOverridesAreIndependentAndPersist(t *testing.T) {
 	assert.Equal(t, EnvSecret, returned.envTable.rows[0].Kind)
 }
 
-// Importance is written to every manifest, so it is worth one field rather
-// than a hand edit. The enum is not verified against a running platform, so
-// the prompt checks it while the reader passes anything through.
-func TestFlow_ImportanceIsAskedAndValidated(t *testing.T) {
-	model := newFlow(dockerfileProject(t), nil, Answers{})
-	model = press(t, pastName(t, model), "enter", "enter")
-	require.Equal(t, screenSettings, model.at)
+// Importance has a working default and most users have no basis to answer it,
+// so it sits behind the advanced row rather than on the screen. The enum is
+// not verified against a running platform, so the prompt checks it while the
+// reader passes anything through.
+func TestFlow_ImportanceIsBehindAdvancedAndValidated(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
 
-	last := len(settingsLabels) - 1
+	last := settingsFieldCount - 1
 	assert.Equal(t, manifest.DefaultImportance, model.inputs[last].Placeholder)
 
 	// The note for the field explains it, once the cursor is on it.
@@ -601,6 +600,135 @@ func TestFlow_ImportanceIsAskedAndValidated(t *testing.T) {
 	require.NoError(t, accepted.failed)
 	assert.Equal(t, "high", accepted.draft.Importance)
 	assert.Contains(t, string(accepted.content), "importance: high")
+}
+
+// The screen is made of text inputs, so a letter is text. Nothing on it can
+// be a bare-key command: [a] would land in the port rather than opening the
+// row it names.
+func TestFlow_LettersAreTypedRatherThanTakenAsCommands(t *testing.T) {
+	model := press(t, atSettings(t), "a")
+
+	assert.False(t, model.advancedOpen, "no bare key opens the row")
+	assert.Equal(t, "3000a", model.inputs[fieldPort].Value(), "the keystroke belongs to the focused field")
+}
+
+// A run that never opens the advanced row writes exactly what the wizard has
+// always written: moving five fields out of sight moved no values.
+func TestFlow_HiddenFieldsKeepTheirValues(t *testing.T) {
+	detected := dockerfileProject(t)
+
+	model := press(t, pastName(t, newFlow(detected, nil, Answers{})), "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+	require.False(t, model.advancedOpen)
+
+	expected := defaultDraft(detected)
+	expected.Name = "test-app"
+
+	want, err := expected.Render()
+	require.NoError(t, err)
+
+	assert.Equal(t, string(want), string(model.content))
+
+	// And the confirm screen states each of them, so nothing is written that
+	// was never on screen.
+	view := model.View()
+	assert.Contains(t, view, "1 replica")
+	assert.Contains(t, view, "0.5 cpu")
+	assert.Contains(t, view, "importance low")
+	assert.Contains(t, view, "Readiness: /health on port 3000")
+}
+
+// Clearing the health path is how the screen declines the probe, and what
+// comes out carries no probe block and still validates.
+func TestFlow_ClearedHealthPathWritesNoProbe(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+	require.Equal(t, firstAdvancedField, model.focus)
+
+	model = press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	assert.Contains(t, model.View(), "no probe")
+
+	parsed, err := manifest.Parse(model.content, model.detected.Dir)
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(), "a workload without a probe is a valid workload")
+}
+
+// A path that is set still has to be one, so the rule the empty field relaxes
+// is not the rule the field enforces.
+func TestFlow_HealthPathStillHasToBeAPath(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldHealthPath, "health"), "enter")
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "must start with /")
+}
+
+// A field that fails validation while it is out of sight has to come into
+// sight. An error naming a field nobody can see is a screen with no way
+// forward, and the value being refused often came from a flag or from the
+// bound workload rather than from anything typed here.
+func TestFlow_RefusedHiddenFieldOpensTheAdvancedRow(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	// Close the row again, leaving a bad value behind it.
+	model = press(t, withField(model, fieldMemory, "4Gi"), "shift+tab", "enter")
+	require.False(t, model.advancedOpen)
+
+	model = press(t, model, "tab", "enter") // back to the port, then submit
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "1000-based unit")
+
+	assert.True(t, model.advancedOpen, "the row opens on the field that was refused")
+	assert.Equal(t, fieldMemory, model.focus, "and the cursor is on it")
+	assert.Contains(t, model.View(), "Memory", "so the error names something on screen")
+}
+
+// Clearing importance takes the documented default rather than being refused,
+// which is what the headless path does with the same input. It is the field
+// next to the health path, where clearing is meaningful, so two adjacent
+// fields disagreeing about the same gesture would be its own trap.
+func TestFlow_ClearedImportanceTakesTheDefault(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldImportance, ""), "enter")
+
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+	assert.Equal(t, manifest.DefaultImportance, model.draft.Importance)
+}
+
+// The placeholder has to say what an empty field means, because here it means
+// the opposite of what a placeholder means everywhere else on the screen.
+func TestFlow_HealthPathPlaceholderSaysNoProbe(t *testing.T) {
+	model := newFlow(dockerfileProject(t), nil, Answers{NoProbe: true})
+	model = press(t, pastName(t, model), "enter", "enter")
+	require.Equal(t, screenSettings, model.at)
+
+	assert.Empty(t, model.inputs[fieldHealthPath].Value())
+	assert.Equal(t, healthPlaceholder, model.inputs[fieldHealthPath].Placeholder)
+	assert.NotContains(t, healthPlaceholder, manifest.DefaultHealthPath)
+}
+
+// openAdvanced reveals the fields behind the advanced row and leaves the
+// cursor on the first of them, which is where a test that wants one of those
+// fields has to start.
+func openAdvanced(t *testing.T, model flow) flow {
+	t.Helper()
+
+	model = press(t, model, "tab", "enter", "tab")
+
+	require.True(t, model.advancedOpen)
+	require.Equal(t, firstAdvancedField, model.focus)
+
+	return model
 }
 
 // The confirm screen names the file it is about to write, because --dir means
@@ -640,21 +768,39 @@ func withField(model flow, i int, value string) flow {
 }
 
 // Each field explains itself when the cursor reaches it, so the screen stays
-// readable on a narrow terminal instead of running a hint off the edge.
+// readable on a narrow terminal instead of running a hint off the edge. The
+// walk starts at the port, passes the advanced row, and reaches the rest only
+// once that row is open.
 func TestFlow_SettingsNotesFollowTheCursor(t *testing.T) {
-	model := newFlow(dockerfileProject(t), nil, Answers{})
-	model = press(t, pastName(t, model), "enter", "enter")
-	require.Equal(t, screenSettings, model.at)
+	model := atSettings(t)
 
 	// The port note carries its provenance, which no other field has.
 	assert.Contains(t, model.View(), "1024 or above")
 	assert.Contains(t, model.View(), "EXPOSE 3000")
 
+	model = press(t, model, "tab")
+	assert.Contains(t, model.View(), "working default", "the row says what it holds")
+
+	model = press(t, model, "enter")
+	require.True(t, model.advancedOpen)
+	require.Equal(t, screenSettings, model.at, "the row's enter opens it rather than submitting the screen")
+
 	wanted := []string{"Readiness probe path", "protons", "Fractional values", "Binary units", "Scheduling priority"}
 	for i, want := range wanted {
 		model = press(t, model, "tab")
-		assert.Containsf(t, model.View(), want, "note for %s", settingsLabels[i+1])
+		assert.Containsf(t, model.View(), want, "note for %s", settingsLabels[firstAdvancedField+i])
 	}
+}
+
+// atSettings walks a fresh Dockerfile project to the settings screen, which
+// several tests need before they can say anything about it.
+func atSettings(t *testing.T) flow {
+	t.Helper()
+
+	model := press(t, pastName(t, newFlow(dockerfileProject(t), nil, Answers{})), "enter", "enter")
+	require.Equal(t, screenSettings, model.at)
+
+	return model
 }
 
 // Walking back to the base-image screen shows the list again. Arrival work
@@ -1210,6 +1356,93 @@ func mustFetchLive(t *testing.T, id string) manifest.Live {
 	require.NoError(t, err)
 
 	return live
+}
+
+// stubProbelessLive points the binding path at a workload running without a
+// readiness probe, which the platform allows and which the wizard must not
+// quietly fix.
+func stubProbelessLive(t *testing.T) {
+	t.Helper()
+
+	stubLive(t, documentFrom(t, `{"name": "no-probe-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 2, "memory": "4GB"}}]}]}}`),
+		documentFrom(t, `{"name": "no-probe-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/np:v1"}]}]}}`))
+}
+
+// boundAtSettings binds to whatever the live stubs describe and walks to the
+// settings screen, which for an image-built workload is three screens in.
+func boundAtSettings(t *testing.T) flow {
+	t.Helper()
+
+	model := newFlow(dockerfileProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter", "enter", "enter") // kind, source, keep the live image
+	require.Equal(t, screenSettings, model.at)
+
+	return model
+}
+
+// Bound to a workload that runs without a probe, the field arrives empty and
+// the screen says why. It used to arrive showing /health, accept anything
+// typed over it, and discard it: the workload's own configuration was neither
+// shown nor changeable.
+func TestFlow_BoundWorkloadWithoutAProbeSaysSo(t *testing.T) {
+	stubProbelessLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+
+	assert.Empty(t, model.inputs[fieldHealthPath].Value())
+	assert.Contains(t, model.View(), "runs without a readiness probe")
+
+	model = press(t, model, "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	assert.Empty(t, model.diff, "leaving it alone changes nothing about the workload")
+}
+
+// Typing a path on that screen is an answer, so it adds the probe. The rule
+// the wizard keeps is that it never adds one nobody asked for, not that it
+// cannot add one at all.
+func TestFlow_BoundWorkloadTakesAProbeWhenAsked(t *testing.T) {
+	stubProbelessLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	model = press(t, withField(model, fieldHealthPath, "/ready"), "enter")
+
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.Contains(t, string(model.content), "path: /ready")
+	assert.Contains(t, model.diff, "readinessProbe", "adding one is a change to something running, so it is shown")
+}
+
+// And clearing the path of a workload that has one takes the block away
+// rather than leaving it pointed at nothing.
+func TestFlow_BoundWorkloadDropsAClearedProbe(t *testing.T) {
+	stubLiveDocs(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	require.Equal(t, "/alive", model.inputs[fieldHealthPath].Value())
+
+	model = press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	// Named rather than checked for a "-": every unified diff carries one in
+	// its own header, so that would pass for any change at all.
+	assert.Contains(t, model.diff, "-            readinessProbe:",
+		"removing it is a change to something running")
+	assert.Contains(t, model.diff, "-              path: /alive")
 }
 
 // --skip-env is an answer. Interactively it has to skip the screen, not show

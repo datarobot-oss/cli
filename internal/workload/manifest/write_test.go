@@ -78,6 +78,22 @@ runtime:
 `, string(out))
 }
 
+// A readiness probe is optional to the platform, and one aimed at an endpoint
+// the container does not serve never passes. No path means no block: the
+// alternative is a probe with an empty path, which is neither.
+func TestRender_NoHealthPathWritesNoProbe(t *testing.T) {
+	draft := serviceDraft()
+	draft.HealthPath = ""
+
+	out, err := draft.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(out), keyReadinessProbe)
+	// The container's own port is unaffected: it is what traffic arrives on,
+	// not something the probe brought with it.
+	assert.Contains(t, string(out), "port: 8080")
+}
+
 // An unbound draft writes no workloadId at all, so the first up knows the
 // workload has to be created rather than found.
 func TestRender_UnboundOmitsWorkloadID(t *testing.T) {

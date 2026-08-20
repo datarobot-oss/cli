@@ -333,9 +333,19 @@ func (a Answers) applyKind(draft *manifest.Draft) {
 	}
 }
 
+// applyReadiness layers the port and the probe. Declining the probe is an
+// answer like any other, and on a bound workload it removes the block the
+// workload runs with, which the confirm screen shows as a diff before anything
+// is written.
 func (a Answers) applyReadiness(draft *manifest.Draft) {
 	if a.Port != 0 {
 		draft.Port = a.Port
+	}
+
+	if a.NoProbe {
+		draft.HealthPath = ""
+
+		return
 	}
 
 	if a.HealthPath != "" {
@@ -354,6 +364,10 @@ func (a Answers) applyEnv(draft *manifest.Draft, detected Detected) {
 // Anything left at zero keeps what the workload is already running with,
 // rather than resetting it to the documented default.
 func (a Answers) applySizing(draft *manifest.Draft) {
+	if a.Importance != "" {
+		draft.Importance = a.importance()
+	}
+
 	if a.Replicas != 0 {
 		draft.Runtime.Replicas = a.Replicas
 	}

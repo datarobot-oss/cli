@@ -125,7 +125,11 @@ type Draft struct {
 	A2AEnabled bool
 	Build      Build
 	// Port is the primary container's port, and the readiness probe's.
-	Port       int
+	Port int
+	// HealthPath is the readiness probe's path, and empty means the workload
+	// runs without a probe: the platform does not require one, and a probe
+	// aimed at an endpoint the container does not serve never passes. Read it
+	// through WantsReadinessProbe rather than comparing it here and there.
 	HealthPath string
 	Runtime    Runtime
 	// EnvVars are the variables a local .env defines, already classified by
@@ -134,6 +138,13 @@ type Draft struct {
 	// CredentialPlaceholder, because no credential exists for it yet. An
 	// empty slice writes nothing.
 	EnvVars []EnvVar
+}
+
+// WantsReadinessProbe reports whether the answers ask for a probe at all. It
+// is the one place the empty-path convention is spelled out, so the write, the
+// live merge and the screens cannot drift about what an empty path means.
+func (d Draft) WantsReadinessProbe() bool {
+	return strings.TrimSpace(d.HealthPath) != ""
 }
 
 // EnvVar is one .env variable as the manifest will carry it. Deciding which
@@ -394,17 +405,18 @@ func (d Draft) artifact(build field) *yaml.Node {
 		})
 	}
 
-	probe := mapping(
-		field{key: keyPath, value: scalar(d.HealthPath)},
-		field{key: keyPort, value: number(d.Port)},
-	)
-
 	container := []field{
 		{key: keyName, value: scalar(PrimaryContainerName)},
 		{key: keyPrimary, value: boolean(true)},
 		{key: keyPort, value: number(d.Port), comment: "must be 1024 or above"},
 		build,
-		{key: keyReadinessProbe, value: probe},
+	}
+
+	if d.WantsReadinessProbe() {
+		container = append(container, field{key: keyReadinessProbe, value: mapping(
+			field{key: keyPath, value: scalar(d.HealthPath)},
+			field{key: keyPort, value: number(d.Port)},
+		)})
 	}
 
 	if vars := d.environmentVars(); vars != nil {

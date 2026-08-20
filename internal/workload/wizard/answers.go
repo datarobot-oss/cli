@@ -48,9 +48,18 @@ type Answers struct {
 	Entrypoint string
 	Port       int
 	HealthPath string
-	Replicas   int
-	CPU        float64
-	Memory     string
+	// NoProbe writes no readinessProbe block at all. Declining is a separate
+	// field rather than an empty HealthPath because this struct is the wizard's
+	// own vocabulary and is filled in from more than one place: "" here means
+	// "nobody said", and a caller that never touches cobra has no other way to
+	// say "no probe" out loud.
+	NoProbe  bool
+	Replicas int
+	CPU      float64
+	Memory   string
+	// Importance is the scheduling priority, one of
+	// manifest.ImportanceLevels.
+	Importance string
 	// SkipEnv leaves the project's .env out of the manifest entirely. By
 	// default the variables are carried across, because a deploy that
 	// silently drops the app's configuration is the worse default.
@@ -67,7 +76,9 @@ var ErrCancelled = errors.New("cancelled")
 // incomplete are the headless path's business: interactively they are just
 // questions that have not been answered yet.
 func (a Answers) check() error {
-	for _, check := range []func() error{a.checkBinding, a.checkKind, a.checkImageSource, a.checkReadiness, a.checkSizing} {
+	for _, check := range []func() error{
+		a.checkBinding, a.checkKind, a.checkImageSource, a.checkReadiness, a.checkSizing, a.checkImportance,
+	} {
 		if err := check(); err != nil {
 			return err
 		}
@@ -118,6 +129,12 @@ func (a Answers) checkImageSource() error {
 }
 
 func (a Answers) checkReadiness() error {
+	if a.NoProbe && a.HealthPath != "" {
+		return fmt.Errorf("--no-readiness-probe and --health %q are exclusive: "+
+			"pass --health alone to probe that path, or --no-readiness-probe alone to run without a probe",
+			a.HealthPath)
+	}
+
 	if a.HealthPath != "" && !strings.HasPrefix(a.HealthPath, "/") {
 		return fmt.Errorf("--health %q must start with /", a.HealthPath)
 	}
@@ -175,6 +192,34 @@ func (a Answers) checkSizing() error {
 	return nil
 }
 
+// checkImportance holds the flag to the enum. The reader passes an
+// unrecognized level through and lets the platform decide, but a level nobody
+// meant to type is worth refusing here rather than after a round trip.
+func (a Answers) checkImportance() error {
+	if a.Importance != "" && !manifest.ValidImportance(a.importance()) {
+		return fmt.Errorf("--importance %q is not supported: use one of %s",
+			a.Importance, strings.Join(manifest.ImportanceLevels, ", "))
+	}
+
+	return nil
+}
+
+// importance is the level to write, lowercased because the casing is the
+// user's business and the file's is settled.
+func (a Answers) importance() string {
+	return strings.ToLower(strings.TrimSpace(a.Importance))
+}
+
+// healthPath is the path to probe: the flag, the documented default, or
+// nothing at all when the probe was declined.
+func (a Answers) healthPath() string {
+	if a.NoProbe {
+		return ""
+	}
+
+	return orDefault(a.HealthPath, manifest.DefaultHealthPath)
+}
+
 // The range a primary container's port may fall in. The floor is the
 // manifest ledger's; below it an unprivileged container cannot bind, so the
 // workload never becomes ready.
@@ -199,11 +244,11 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 	draft := manifest.Draft{
 		WorkloadID: a.WorkloadID,
 		Name:       name,
-		Importance: manifest.DefaultImportance,
+		Importance: orDefault(a.importance(), manifest.DefaultImportance),
 		Type:       manifest.ArtifactTypeOrDefault(a.Type),
 		A2AEnabled: a.A2AEnabled,
 		Port:       a.Port,
-		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),
+		HealthPath: a.healthPath(),
 		Runtime:    a.runtime(),
 		EnvVars:    a.envVars(detected),
 	}
