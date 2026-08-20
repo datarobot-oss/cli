@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/artifact"
+	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -142,6 +143,40 @@ func TestTelemetryWiring_AllArtifactCommandsTracked(t *testing.T) {
 		t.Run("dr "+path, func(t *testing.T) {
 			cmd := findCommandByPath(artifactRoot, path)
 			require.NotNilf(t, cmd, "command %q not found in artifact subtree", path)
+
+			assert.Containsf(t, cmd.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
+		})
+	}
+}
+
+// expectedEnclaveTrackedCommands enumerates leaf commands under `dr enclave`
+// that must be wired to fire a telemetry event. Like the workload subtree,
+// `dr enclave` is hidden from the live RootCmd by cli.CommandAdder when
+// DATAROBOT_CLI_FEATURE_ENCLAVE is unset (the default in CI), so this test
+// walks a freshly-built subtree produced by enclave.Cmd().
+var expectedEnclaveTrackedCommands = []string{
+	"enclave register",
+	"enclave get",
+	"enclave list",
+	"enclave deactivate",
+	"enclave reactivate",
+	"enclave delete",
+	"enclave access grant",
+	"enclave access revoke",
+}
+
+// TestTelemetryWiring_AllEnclaveCommandsTracked walks the enclave subtree
+// (built via enclave.Cmd() to bypass the feature-gate filter in
+// cli.CommandAdder) and asserts each entry has the "telemetry" annotation set
+// by telemetry.Track / TrackWith.
+func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
+	enclaveRoot := enclave.Cmd()
+
+	for _, path := range expectedEnclaveTrackedCommands {
+		t.Run("dr "+path, func(t *testing.T) {
+			cmd := findCommandByPath(enclaveRoot, path)
+			require.NotNilf(t, cmd, "command %q not found in enclave subtree", path)
 
 			assert.Containsf(t, cmd.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
