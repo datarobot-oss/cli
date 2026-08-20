@@ -83,7 +83,7 @@ func IsTemplateDir(dir string) bool {
 	// Older versions were incorrectly creating state.yaml file outside of template directories
 	// return true if any file other than state.yaml exists in .datarobot/cli
 	cliConfigDirPresent := slices.ContainsFunc(entries, func(entry os.DirEntry) bool {
-		return entry.Name() != "state.yaml"
+		return entry.Name() != TemplateDetectStateFileName
 	})
 
 	if cliConfigDirPresent {
