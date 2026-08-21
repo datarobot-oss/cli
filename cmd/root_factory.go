@@ -211,8 +211,14 @@ var finalizerGen atomic.Int64
 
 // RootFactory assembles the root cobra command from a set of injectable
 // Dependencies. Each call to Build() produces a fresh, fully-wired
-// *cli.CommandAdder, so multiple builds (e.g. in parallel tests) are
-// independent of each other and of any package-level state.
+// *cli.CommandAdder whose flags, sub-commands, and hooks are independent of
+// every other tree's.
+//
+// Independence is scoped to the cobra tree itself: some wiring still goes
+// through process-global state (global viper bindings, cobra.OnFinalize,
+// http.DefaultTransport, the log package). See docs/development/
+// root-factory.md ("What stays shared") for the full list and the resulting
+// "one live tree at a time" rule.
 //
 // Use NewRootFactory(opts...) to construct one, or rely on the
 // package-level RootCmd variable for the production singleton.
@@ -285,8 +291,14 @@ func (f *RootFactory) TelemetryClient() *telemetry.Client {
 
 // Build constructs and returns a fully-wired *cli.CommandAdder. The returned
 // command includes all registered sub-commands, persistent flags, help
-// overrides, plugin discovery, and unknown-arg guards. Each call is
-// self-contained: it does not mutate any package-level state.
+// overrides, plugin discovery, and unknown-arg guards.
+//
+// The returned tree is self-contained — fresh flags, sub-commands, and a
+// per-build output format — but Build is not free of shared-state effects:
+// the default ViperBinder re-points the global viper bindings at the new
+// tree, and the default PluginRegistrar reads global viper config and
+// executes any dr-* binaries found on PATH. Use NewIsolatedRootFactory to
+// build a tree with none of those side effects.
 func (f *RootFactory) Build() *cli.CommandAdder {
 	// outputFormat is captured per-build (not package-level) so parallel
 	// builds in tests cannot race on a shared variable.
