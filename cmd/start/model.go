@@ -37,6 +37,10 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
+// rerunReminder is shown after a prerequisite failure ends the run without
+// installing the tools, so the user knows to rerun once they've fixed them.
+const rerunReminder = "Rerun dr start after installing or configuring the missing prerequisites."
+
 // step represents a single step in the quickstart process.
 type step struct {
 	// description is a brief summary of the step
@@ -59,6 +63,7 @@ type Model struct {
 	waitingToExecute     bool                 // Whether to wait for user input before proceeding
 	waitingToInstall     bool                 // Whether to wait for user confirmation before installing deps
 	depsToInstall        []tools.Prerequisite // Deps to install when user confirms
+	depsFailed           bool                 // Whether the run ended on an uninstalled prerequisite failure
 	needTemplateSetup    bool                 // Whether we need to run template setup after quitting
 	repoRoot             string
 	telemetry            telemetryCapture
@@ -367,6 +372,7 @@ func (m Model) handleDepsInstallComplete(msg depsInstallCompleteMsg) (tea.Model,
 	if msg.err != nil {
 		m.telemetry.installError = msg.err.Error()
 		m.err = msg.err
+		m.depsFailed = true
 
 		return m, tea.Quit
 	}
@@ -427,6 +433,7 @@ func (m Model) handleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		log.Debug("start: user cancelled deps install")
 
 		m.err = errors.New("Installation cancelled. Run 'dr dependencies install' to install missing dependencies.")
+		m.depsFailed = true
 
 		return m, tea.Quit
 	}
@@ -483,6 +490,10 @@ func (m Model) View() string { //nolint: cyclop
 	// Display error or status message
 	if m.err != nil {
 		fmt.Fprintf(&sb, "%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error())
+
+		if m.depsFailed {
+			fmt.Fprintf(&sb, "\n%s\n", tui.InfoStyle.Render(rerunReminder))
+		}
 
 		return sb.String()
 	}
