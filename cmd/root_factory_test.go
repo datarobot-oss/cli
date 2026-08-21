@@ -62,15 +62,10 @@ func (c *countingClient) Config() amplitude.Config { return amplitude.Config{} }
 func executeStubOnce(t *testing.T, client *countingClient) {
 	t.Helper()
 
-	root := NewRootFactory(
-		WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
-		WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-		WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
+	root := NewIsolatedRootFactory(
 		WithTelemetryClient(func(_ *telemetry.CommonProperties) *telemetry.Client {
 			return telemetry.NewTestClient(client, nil)
 		}),
-		WithAnimation(func() {}),
-		WithPluginRegistrar(func(_ *cobra.Command) {}),
 	).Build()
 
 	stub := &cobra.Command{
