@@ -176,15 +176,27 @@ func (f *BrowserFlow) Close() error {
 	return f.closeErr
 }
 
-// handleCallback receives the redirect from the DataRobot web app, which carries
-// the API key as the "key" query parameter.
+// handleCallback receives the API key from the web app's redirect ("key" query param).
+// Sec-Fetch-Dest present and not "document" refuses; absent accepts (port handover sends none).
 func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
+	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "document" {
+		log.Debugf("Refusing auth callback with Sec-Fetch-Dest %q", dest)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
 	apiKey := r.URL.Query().Get("key")
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The keyless interrupt sentinel is read by a Go client that ignores the body.
+	if apiKey == "" {
+		w.WriteHeader(http.StatusNoContent)
+	} else {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	if err := assets.Write(w, "templates/success.html"); err != nil {
-		log.Debugf("Failed to render auth success page: %v", err)
+		if err := assets.Write(w, "templates/success.html"); err != nil {
+			log.Debugf("Failed to render auth success page: %v", err)
+		}
 	}
 
 	// Non-blocking: the channel holds one key and Wait may already have returned.
