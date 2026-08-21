@@ -127,6 +127,39 @@ func TestAtomicWriteFile_OverwritesExisting(t *testing.T) {
 	assert.Equal(t, "new", string(got))
 }
 
+// When path is a symlink, the write must land in the real file and leave the
+// link intact. Symlink creation on Windows requires elevated privileges, so
+// this test lives in the !windows file.
+func TestAtomicWriteFile_WriteThroughSymlink(t *testing.T) {
+	realDir := t.TempDir()
+	linkDir := t.TempDir()
+
+	realFile := filepath.Join(realDir, "manifest.yaml")
+	linkPath := filepath.Join(linkDir, ".datarobot.yaml")
+
+	// Create the real file and a symlink pointing at it.
+	require.NoError(t, os.WriteFile(realFile, []byte("original"), 0o644))
+	require.NoError(t, os.Symlink(realFile, linkPath))
+
+	// Write through the symlink.
+	require.NoError(t, AtomicWriteFile(linkPath, []byte("updated")))
+
+	// The symlink must still exist (not be replaced by a regular file).
+	fi, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), fi.Mode()&os.ModeSymlink, "link path should still be a symlink, got mode %v", fi.Mode())
+
+	// The real file must contain the new content.
+	got, err := os.ReadFile(realFile)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(got))
+
+	// The link must still resolve to the real file.
+	target, err := os.Readlink(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, realFile, target)
+}
+
 // TestAtomicWriteFile_CleansTmpWhenRenameFails exercises the post-CreateTemp
 // failure path: we pre-seed the target path as a directory so os.Rename
 // fails, and then assert the temp file was cleaned up by the defer.

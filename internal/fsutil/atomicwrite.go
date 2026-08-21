@@ -78,12 +78,14 @@ func targetMode(path, probePath string) (os.FileMode, error) {
 	return info.Mode().Perm(), nil
 }
 
-// AtomicWriteFile writes data to a sibling temp file in the same directory as
-// path, fsyncs it, then renames it over path. os.Rename is atomic on POSIX
-// and handled as replace-on-existing by Go on Windows. The parent directory
-// is fsynced after rename so the new dentry survives a crash. The temp file
-// is removed on any failure before rename so no .tmp.* leftovers remain.
+// AtomicWriteFile writes data to a sibling temp file, fsyncs it, then renames
+// it over path. When path is a symlink the write goes to the resolved target
+// so the link is preserved; new or dangling paths are written as-is.
 func AtomicWriteFile(path string, data []byte) (err error) {
+	if resolved, rerr := filepath.EvalSymlinks(path); rerr == nil {
+		path = resolved
+	}
+
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
