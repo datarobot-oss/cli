@@ -62,9 +62,10 @@ import (
 // ---------------------------------------------------------------------------
 
 // ConfigInitializerFunc initializes viperx and reads the config file. It
-// receives the cobra command being executed so flag values are accessible.
-// Replace this in tests to skip disk I/O and prevent env-var bleed.
-type ConfigInitializerFunc func(cmd *cobra.Command, configFilePath string) error
+// receives the cobra command being executed so flag values (e.g. --config)
+// are accessible. Replace this in tests to skip disk I/O and prevent
+// env-var bleed.
+type ConfigInitializerFunc func(cmd *cobra.Command) error
 
 // TLSSetupFunc configures http.DefaultTransport based on TLS-related flags
 // and the persisted ca-cert config value. Replace in tests to be a no-op.
@@ -189,10 +190,6 @@ func WithPluginRegistrar(fn PluginRegistrarFunc) Option {
 type RootFactory struct {
 	// deps holds the injectable collaborators for this factory.
 	deps Dependencies
-
-	// configFilePath is the per-build config file override, populated from
-	// the --config flag or DATAROBOT_CLI_CONFIG env var during Build().
-	configFilePath string
 
 	// telemetryClient holds the active client for the current process-level
 	// build. It is also stored in the cobra context, but we keep a reference
@@ -336,7 +333,7 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 	cmd.SilenceUsage = true
 
 	// Read drconfig.yaml and bind env vars into viper.
-	if err := f.deps.ConfigInitializer(cmd, f.configFilePath); err != nil {
+	if err := f.deps.ConfigInitializer(cmd); err != nil {
 		return err
 	}
 
@@ -538,7 +535,7 @@ func (f *RootFactory) configureHelp(adder *cli.CommandAdder) {
 // defaultConfigInitializer is the production ConfigInitializerFunc. It sets up
 // viper's env-var prefix, binds standard overrides, and reads drconfig.yaml from
 // disk. Tests can replace this with a no-op to skip disk I/O and isolate env state.
-func defaultConfigInitializer(cmd *cobra.Command, configFilePath string) error {
+func defaultConfigInitializer(cmd *cobra.Command) error {
 	// Map any environment variables prefixed with DATAROBOT_CLI_ to config keys.
 	viperx.SetEnvPrefix("DATAROBOT_CLI")
 	viperx.AutomaticEnv()
@@ -554,12 +551,14 @@ func defaultConfigInitializer(cmd *cobra.Command, configFilePath string) error {
 	viperx.SetDefault(config.APIConsumerTrackingEnabled, true)
 	_ = viperx.BindEnv(config.APIConsumerTrackingEnabled, "DATAROBOT_API_CONSUMER_TRACKING_ENABLED")
 
-	// Resolve the config file path: flag > env var > default.
-	resolved := configFilePath
+	// Resolve the config file path: --config flag > DATAROBOT_CLI_CONFIG env
+	// var > default location. The flag value is read from cobra directly
+	// (rather than via the viper binding) so resolution keeps working even
+	// when a test stubs out the viper binding.
+	resolved, _ := cmd.Flags().GetString("config")
+
 	if resolved == "" {
-		if envPath := viperx.GetString("config"); envPath != "" {
-			resolved = envPath
-		}
+		resolved = viperx.GetString("config")
 	}
 
 	if err := config.ReadConfigFile(resolved); err != nil {
