@@ -83,7 +83,16 @@ func targetMode(path, probePath string) (os.FileMode, error) {
 // and handled as replace-on-existing by Go on Windows. The parent directory
 // is fsynced after rename so the new dentry survives a crash. The temp file
 // is removed on any failure before rename so no .tmp.* leftovers remain.
+//
+// When path is a symlink, the write goes to the real file the link resolves
+// to so the link itself is preserved. filepath.EvalSymlinks follows the full
+// chain; if path does not yet exist (new file) or is a dangling link the call
+// returns an error and we fall through using path unchanged.
 func AtomicWriteFile(path string, data []byte) (err error) {
+	if resolved, rerr := filepath.EvalSymlinks(path); rerr == nil {
+		path = resolved
+	}
+
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
