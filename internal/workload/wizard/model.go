@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,13 @@ type flow struct {
 	envTable envTable
 	picker   rowTable
 	inputs   []textinput.Model
-	focus    int
+	// focus is the settings screen's cursor: a field index, or advancedStop
+	// when the row that opens the rest of the screen is what is focused.
+	focus int
+	// advancedOpen is whether that row is open. It survives leaving the screen
+	// and coming back, so back-navigation returns to the screen the user left
+	// rather than folding their own fields away again.
+	advancedOpen bool
 
 	// loading is the message shown while a screen waits on the network.
 	loading string
@@ -282,10 +289,21 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	f.failed = nil
 
+	if f.at == screenSettings && msg.String() == advancedKey {
+		return f, f.toggleAdvanced()
+	}
+
 	switch msg.String() {
 	case "esc":
 		return f.back()
 	case "enter":
+		// On the advanced row enter is the row's own action. The screen is
+		// still submitted with enter from any of its fields, which is where the
+		// cursor starts.
+		if f.onAdvancedRow() {
+			return f, f.toggleAdvanced()
+		}
+
 		return f.advance()
 	}
 
@@ -333,17 +351,7 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return f, nil
 
 	case screenName, screenEntrypoint, screenImage, screenSettings:
-		if key, ok := msg.(tea.KeyMsg); ok && f.at == screenSettings && isFocusKey(key) {
-			f.moveFocus(key)
-
-			return f, nil
-		}
-
-		var cmd tea.Cmd
-
-		f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
-
-		return f, cmd
+		return f.delegateToInput(msg)
 
 	case screenConfirm:
 		var cmd tea.Cmd
@@ -354,6 +362,35 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return f, nil
+}
+
+// delegateToInput routes a message on the text-entry screens: to the focus
+// ring when the key moves between fields, and to the focused field otherwise.
+func (f flow) delegateToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, isKey := msg.(tea.KeyMsg)
+
+	if isKey && f.at == screenSettings && isFocusKey(key) {
+		return f, f.moveFocus(key)
+	}
+
+	// The advanced row is not a field, so a keystroke on it has nowhere to be
+	// typed. Without this it would go into whichever input the index happened
+	// to reach, or panic on the one it does not have. Only keystrokes are
+	// swallowed: everything else routed here belongs to a component that is
+	// still on screen, and dropping it would end whatever it is driving.
+	if isKey && f.onAdvancedRow() {
+		return f, nil
+	}
+
+	if f.focus < 0 {
+		return f, nil
+	}
+
+	var cmd tea.Cmd
+
+	f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
+
+	return f, cmd
 }
 
 // updateSelection routes a key to whichever selection component the current
@@ -667,10 +704,13 @@ func (f *flow) acceptBinding() (tea.Cmd, error) {
 	if item.id == createNewID {
 		// Start over rather than carrying the previous pick's name, kind and
 		// image forward: "create a new workload" after looking at an existing
-		// one must not prefill a copy of it.
+		// one must not prefill a copy of it. Starting over means from this
+		// run's own flags, not from nothing: a flag the user passed is an
+		// answer they gave, and looking at a workload and declining it is not
+		// a reason to withdraw it.
 		if f.live != nil {
 			f.live = nil
-			f.draft = defaultDraft(f.detected)
+			f.draft = f.answers.partialDraft(f.detected)
 		}
 
 		f.draft.WorkloadID = ""
@@ -787,6 +827,9 @@ func (f flow) autoscaled() bool {
 
 // acceptSettings validates every field before recording any of them, so a
 // screen that is refused leaves the answers exactly as the user left them.
+// Fields behind the advanced row are validated too, since a bad --cpu has to
+// fail here rather than at write time, and a refusal there opens the row: an
+// error naming a field nobody can see is a screen with no way forward.
 func (f *flow) acceptSettings() (tea.Cmd, error) {
 	port, err := strconv.Atoi(f.field(fieldPort))
 	if err != nil {
@@ -798,32 +841,36 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 	}
 
 	path := f.field(fieldHealthPath)
-	if !strings.HasPrefix(path, "/") {
-		return nil, errors.New("the health path must start with /")
+	if err := f.acceptHealthPath(path); err != nil {
+		return nil, f.reveal(fieldHealthPath, err)
 	}
 
 	replicas, err := f.acceptReplicas()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldReplicas, err)
 	}
 
 	cpu, err := f.acceptCPU()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldCPU, err)
 	}
 
 	memory := f.field(fieldMemory)
 	if !manifest.ValidMemory(memory) {
-		return nil, fmt.Errorf("memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
-			strings.Join(manifest.MemoryUnits(), ", "))
+		return nil, f.reveal(fieldMemory, fmt.Errorf(
+			"memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
+			strings.Join(manifest.MemoryUnits(), ", ")))
 	}
 
 	memory = manifest.NormalizeMemory(memory)
 
-	importance := strings.ToLower(f.field(fieldImportance))
+	// An empty field takes the documented default, the same as the headless
+	// path, rather than being the one field on this screen where clearing is
+	// fatal.
+	importance := orDefault(strings.ToLower(f.field(fieldImportance)), manifest.DefaultImportance)
 	if !manifest.ValidImportance(importance) {
-		return nil, fmt.Errorf("importance must be one of %s",
-			strings.Join(manifest.ImportanceLevels, ", "))
+		return nil, f.reveal(fieldImportance, fmt.Errorf("importance must be one of %s",
+			strings.Join(manifest.ImportanceLevels, ", ")))
 	}
 
 	f.draft.Port = port
@@ -832,6 +879,43 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 	f.draft.Runtime = manifest.Runtime{Replicas: replicas, CPU: cpu, Memory: memory}
 
 	return nil, nil
+}
+
+// acceptHealthPath holds the probe field to what the file can express. An
+// empty path is the answer "no readiness probe", which the file records by
+// carrying no probe block at all; a path that is set still has to be one.
+//
+// The third case is a bound workload whose probe declares no path. That shape
+// is preserved rather than rewritten, so a path typed here would be accepted
+// and then quietly dropped by the merge. It is refused while the answer can
+// still be taken back, and the note beside the field says why.
+func (f flow) acceptHealthPath(path string) error {
+	if path != "" && !strings.HasPrefix(path, "/") {
+		return errors.New("the health path must start with /, or leave it empty to run without a probe")
+	}
+
+	if present, readable := f.liveReadinessProbe(); present && !readable && path != "" {
+		return fmt.Errorf(
+			"%s runs a readiness probe with no path, which is kept as it is rather than rewritten, "+
+				"so a path here would not reach the file; clear the field to leave it alone",
+			f.live.Name)
+	}
+
+	return nil
+}
+
+// reveal puts the cursor on the field a validation error is about, opening the
+// advanced row when that is where the field lives. The error is returned
+// unchanged so the caller reads as one statement.
+func (f *flow) reveal(field int, err error) error {
+	if field >= firstAdvancedField {
+		f.advancedOpen = true
+	}
+
+	f.focus = field
+	f.applyFocus()
+
+	return err
 }
 
 // field is the trimmed contents of one input on the current screen.
@@ -1040,14 +1124,82 @@ func isFocusKey(msg tea.KeyMsg) bool {
 	return false
 }
 
-func (f *flow) moveFocus(msg tea.KeyMsg) {
-	f.inputs[f.focus].Blur()
+// moveFocus walks the settings screen's stops: the port, the advanced row, and
+// the fields that row reveals while it is open. Only the settings screen has
+// more than one thing to move between, which is why this is not reached from
+// the other input screens.
+func (f *flow) moveFocus(msg tea.KeyMsg) tea.Cmd {
+	stops := f.settingsStops()
 
-	if msg.String() == "shift+tab" || msg.String() == "up" {
-		f.focus = (f.focus - 1 + len(f.inputs)) % len(f.inputs)
-	} else {
-		f.focus = (f.focus + 1) % len(f.inputs)
+	// Not found and the first stop are different things, and slices.Index
+	// spells both -1 and the sentinel this ring uses the same way. A focus that
+	// is not a stop is a broken invariant rather than a reason to move, so it
+	// restarts the walk deliberately instead of being clamped into one.
+	at := slices.Index(stops, f.focus)
+	if at < 0 {
+		at = 0
 	}
 
-	f.inputs[f.focus].Focus()
+	step := 1
+	if msg.String() == "shift+tab" || msg.String() == "up" {
+		step = -1
+	}
+
+	f.focus = stops[(at+step+len(stops))%len(stops)]
+
+	return f.applyFocus()
+}
+
+// toggleAdvanced shows or hides the fields behind the row and puts the cursor
+// somewhere that still exists afterwards: on the first revealed field when it
+// opens, since reaching them is the point, and back on the port when it closes,
+// since the field the cursor was in has just gone.
+func (f *flow) toggleAdvanced() tea.Cmd {
+	f.advancedOpen = !f.advancedOpen
+
+	if f.advancedOpen {
+		f.focus = firstAdvancedField
+	} else {
+		f.focus = fieldPort
+	}
+
+	return f.applyFocus()
+}
+
+// settingsStops is the order the cursor visits, built from the one field order
+// so a field added to it needs no second edit here.
+func (f flow) settingsStops() []int {
+	stops := []int{fieldPort, advancedStop}
+
+	if !f.advancedOpen {
+		return stops
+	}
+
+	for field := firstAdvancedField; field < settingsFieldCount; field++ {
+		stops = append(stops, field)
+	}
+
+	return stops
+}
+
+// applyFocus puts the cursor in the focused field, and in none of them when
+// the advanced row is what is focused.
+//
+// The command it returns starts the cursor blinking in the newly focused
+// field, and has to reach the caller: dropped, the field keeps a static block
+// where the caret should be, which reads as a field that cannot be typed into.
+func (f *flow) applyFocus() tea.Cmd {
+	var cmd tea.Cmd
+
+	for i := range f.inputs {
+		if i == f.focus {
+			cmd = f.inputs[i].Focus()
+
+			continue
+		}
+
+		f.inputs[i].Blur()
+	}
+
+	return cmd
 }

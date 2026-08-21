@@ -143,8 +143,6 @@ func TestCmd_DockerfileFlagIsPinned(t *testing.T) {
 }
 
 func TestCmd_RejectsBadFlagCombinations(t *testing.T) {
-	dir := project(t)
-
 	tests := map[string][]string{
 		"id and name":       {"--workload-id", "68b0", "--name", "my-app"},
 		"unsupported type":  {"--name", "my-app", "--type", "nim"},
@@ -152,15 +150,41 @@ func TestCmd_RejectsBadFlagCombinations(t *testing.T) {
 		"relative health":   {"--name", "my-app", "--health", "health"},
 		"privileged port":   {"--name", "my-app", "--port", "80"},
 		"image mode no uri": {"--name", "my-app", "--build-mode", "image"},
+		"probe and no probe": {
+			"--name", "my-app", "--no-readiness-probe", "--health", "/ready",
+		},
+		"unsupported importance": {"--name", "my-app", "--importance", "urgent"},
 	}
 
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {
+			// A directory each: sharing one means a case that stops erroring
+			// writes a manifest the remaining cases then find already there,
+			// and they all fail without naming the one that regressed.
+			dir := project(t)
+
 			_, _, err := runCmd(t, append([]string{"--dir", dir, "--yes"}, args...)...)
 			require.Error(t, err)
 			assert.NoFileExists(t, manifest.Path(dir))
 		})
 	}
+}
+
+// The two fields the settings screen hides have to stay reachable without a
+// terminal, which for the probe means a flag of its own: an empty --health
+// cannot be told apart from an absent one.
+func TestCmd_HiddenFieldsAreReachableByFlag(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app",
+		"--no-readiness-probe", "--importance", "high")
+	require.NoError(t, err)
+
+	written, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(written), "readinessProbe")
+	assert.Contains(t, string(written), "importance: high")
 }
 
 func TestCmd_RejectsPositionalArgs(t *testing.T) {
