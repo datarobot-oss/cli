@@ -121,17 +121,26 @@ dr self update
 
 This command automatically detects your installation method and uses the appropriate update mechanism:
 
-- **Homebrew (macOS)**&mdash;uses `brew update && upgrade dr-cli` if installed via Homebrew
+- **Homebrew (macOS/Linux)**&mdash;uses `brew update && upgrade dr-cli` if installed via Homebrew
 - **Windows**&mdash;runs the PowerShell installation script
 - **macOS/Linux**&mdash;runs the shell installation script
 
 The update process will download and install the latest version while preserving your configuration and credentials.
+
+**Options:**
+
+- `--version <version>`&mdash;install a specific released version instead of the latest. Accepts `vX.Y.Z` or `X.Y.Z`, optionally with a `-prerelease` and/or `+build` suffix. Refuses to install a version older than the one currently running unless `--force`/`-f` is also set. Not available when `dr` was installed via the Homebrew cask&mdash;Homebrew always installs the latest release and cannot pin versions, so the command exits with an error showing the manual install command to run instead.
+- `--force`/`-f`&mdash;force the update even if the installed version already satisfies requirements, and (combined with `--version`) allow installing an older version than the one currently running.
 
 **Examples:**
 
 ```bash
 # Update to latest version
 dr self update
+
+# Install a specific version
+dr self update --version v0.12.3
+dr self update --version 0.12.3
 ```
 
 > [!NOTE]
