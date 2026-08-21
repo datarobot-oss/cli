@@ -30,6 +30,7 @@ classDiagram
         +TelemetryClient func
         +Animation func
         +PluginRegistrar func
+        +ViperBinder func
     }
 
     class CommandAdder {
