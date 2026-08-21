@@ -67,24 +67,49 @@ func PrimeCache(plugins []DiscoveredPlugin, conflicts []PluginConflict) {
 	})
 }
 
-// LogConflicts logs a WARN for each conflict, in the same format previously
-// emitted directly by discovery internals. Callers choose which conflicts to
-// pass in — e.g. all of them for a full listing, or only those returned by
-// ConflictsForName when only one specific plugin was requested.
+// LogConflicts reports each conflict at a level chosen by its Reason: WARN
+// for a name conflict (the pre-existing, unchanged behavior), or INFO for a
+// CLI version incompatibility, which is a routine/expected skip rather than
+// an operational warning. Callers choose which conflicts to pass in — e.g.
+// all of them for a full listing, or only those returned by ConflictsForName
+// when only one specific plugin was requested.
 func LogConflicts(conflicts []PluginConflict) {
 	for _, c := range conflicts {
-		log.Warn("Plugin name already registered, skipping", "name", c.Name, "path", c.Path)
+		switch c.Reason {
+		case SkipReasonVersionIncompatible:
+			log.Info("Plugin skipped: CLI version incompatible", "name", c.Name, "path", c.Path, "detail", c.Detail)
+		case SkipReasonNameConflict:
+			log.Warn("Plugin name already registered, skipping", "name", c.Name, "path", c.Path)
+		}
 	}
 }
 
 // ConflictsForName filters conflicts down to those matching a single plugin
 // name, so callers that only care about one plugin (e.g. `dr plugin version
-// <name>`) don't surface warnings about unrelated plugins.
+// <name>`) don't surface warnings about unrelated plugins. The filter is
+// reason-agnostic: it returns matches regardless of whether they are name
+// conflicts or version-incompatibility skips.
 func ConflictsForName(conflicts []PluginConflict, name string) []PluginConflict {
 	var matched []PluginConflict
 
 	for _, c := range conflicts {
 		if c.Name == name {
+			matched = append(matched, c)
+		}
+	}
+
+	return matched
+}
+
+// ConflictsForReason filters conflicts down to those matching a single skip
+// reason, so callers can separate name conflicts from version-incompatibility
+// skips (e.g. routine command registration warns only about name conflicts
+// and stays silent about version skips).
+func ConflictsForReason(conflicts []PluginConflict, reason PluginSkipReason) []PluginConflict {
+	var matched []PluginConflict
+
+	for _, c := range conflicts {
+		if c.Reason == reason {
 			matched = append(matched, c)
 		}
 	}
@@ -305,6 +330,15 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 		return nil, &PluginConflict{Name: manifest.Name, Path: pluginDir}, nil
 	}
 
+	// Evaluate the CLI version compatibility check before doing any more work
+	// for this manifest, and — critically — before the seen[...] reservation
+	// below: an incompatible plugin must never claim the name slot a
+	// compatible, identically-named plugin from a lower-priority location
+	// would otherwise take.
+	if conflict := cliVersionSkip(&manifest, pluginDir); conflict != nil {
+		return nil, conflict, nil
+	}
+
 	executable, err := resolvePlatformExecutable(pluginDir, &manifest)
 	if err != nil {
 		return nil, nil, err
@@ -440,6 +474,15 @@ func getManifestsParallel(ctx context.Context, executables []string, seen map[st
 
 		if seen[r.manifest.Name] {
 			conflicts = append(conflicts, PluginConflict{Name: r.manifest.Name, Path: r.path})
+
+			continue
+		}
+
+		// As in loadManagedPlugin, this check must run before the seen[...]
+		// reservation below, so an incompatible plugin never blocks a
+		// compatible, identically-named plugin from claiming the name.
+		if conflict := cliVersionSkip(r.manifest, r.path); conflict != nil {
+			conflicts = append(conflicts, *conflict)
 
 			continue
 		}
