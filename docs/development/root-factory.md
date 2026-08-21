@@ -4,11 +4,15 @@
 
 The `RootFactory` (`cmd/root_factory.go`) assembles the root cobra command from
 injectable dependencies. Each call to `Build()` returns a fresh, fully-wired
-`*cli.CommandAdder` with no shared mutable state — this is the key property that
-prevents cross-test env-var leakage and lets tests run in isolation.
+`*cli.CommandAdder` whose flags, sub-commands, and hooks are independent of
+every other tree's — the key property that prevents cross-test leakage and
+lets tests run in isolation. Some wiring still goes through process-global
+state; see [What stays shared](#what-stays-shared) for the list and the
+resulting rules.
 
 Production code (via `main`) uses the singleton built in `init()`. Tests use
-`NewRootFactory(...)` directly with stubbed dependencies.
+`NewRootFactory(...)` directly with stubbed dependencies, or
+`NewIsolatedRootFactory()` for an all-no-op preset.
 
 ## Diagrams
 
@@ -245,6 +249,36 @@ root := cmd.NewIsolatedRootFactory().Build()
 > viper's internal cache may retain values until the next `AutomaticEnv()` sweep
 > — which happens in the *next* test's `Execute()`. A fresh factory tree sidesteps
 > this entirely.
+
+---
+
+## What stays shared
+
+`Build()` gives each test its own cobra tree, but some wiring still goes
+through process-global state. Knowing exactly what remains shared tells you
+which test topologies are safe.
+
+| Shared global | Touched when | Effect |
+| --- | --- | --- |
+| viper flag bindings | every `Build()` (default `ViperBinder`) | bindings re-point at the newest tree; only the last-built tree's flags resolve via `viperx.Get*` |
+| viper config contents | `Execute()` via `ReadInConfig`, read at `Build()` by plugin discovery | parsed file contents persist in the global instance until the next read or `viperx.Reset()` |
+| `cobra.EnableCaseInsensitive` | every `Build()` | idempotent global write |
+| `cobra.OnFinalize` list | every Execute | append-only and replayed on every Execute; the factory's generation guard neutralizes stale replays |
+| `http.DefaultTransport` | Execute (TLS setup) | last-executed tree's TLS config wins |
+| `log` package logger | Execute (`log.Start` / `log.Stop`) | single global logger |
+| `config.SetAPIConsumerTrace` | Execute | last-executed tree's trace string wins |
+
+The practical rules:
+
+- **Serial build-then-execute is safe**, especially via
+  `NewIsolatedRootFactory()`, which skips the viper binding and plugin
+  discovery entirely.
+- **Mixing `RootCmd` with factory trees is not**: the newest `Build()`
+  hijacks the global viper bindings from any previously built tree, so only
+  one tree's bound flags resolve at a time ("one live tree at a time").
+- **`t.Parallel` across trees is not safe** with default dependencies —
+  parallel trees race on every global listed above. True parallel isolation
+  requires an injected viper instance, tracked as a backlog follow-up.
 
 ---
 
