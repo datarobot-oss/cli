@@ -84,48 +84,6 @@ sequenceDiagram
     Note over F: cobra.OnFinalize flushes telemetry
 ```
 
-### How #803 extends the factory
-
-`StampInteractionMode` and `IsNonInteractive` slot into the existing pre-run
-hook. The factory is the only callsite — commands just read the result.
-
-```mermaid
-flowchart TD
-    subgraph 802 ["#802 — RootFactory"]
-        PR[persistentPreRun]
-        TP[deps.TelemetryProps]
-        SK[stamp CommandKind]
-        PR --> TP --> SK
-    end
-
-    subgraph 803 ["#803 — non-interactive telemetry"]
-        SI["telemetry.StampInteractionMode(props, cmd)"]
-        NI["cli.IsNonInteractive(cmd)"]
-        YF["cli.YesFlagName const"]
-        SI --> NI
-        NI --> YF
-        NI --> ENV["DATAROBOT_CLI_NON_INTERACTIVE"]
-        NI --> VI["viperx: force-interactive"]
-    end
-
-    SK --> SI
-    SI --> AMP["props.NonInteractive → every Amplitude event"]
-
-    subgraph cmds ["Commands (#803 migration)"]
-        C1["artifact del/checkout/codesync/init"]
-        C2["deps install, dotenv, plugin install"]
-        C3["start, workload config/del/up"]
-    end
-
-    NI --> cmds
-```
-
-The key design point: **the factory is the single callsite for all pre-run
-wiring**. `#802` defines the hook; `#803` inserts `StampInteractionMode` into it
-and exports `IsNonInteractive` so commands never re-implement detection logic
-themselves. Any future automation signal only needs to be wired in
-`IsNonInteractive` — nothing else changes.
-
 ## Adding a new command
 
 ### 1. Register it
