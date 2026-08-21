@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/datarobot/cli/cmd/artifact"
@@ -179,6 +180,13 @@ func WithPluginRegistrar(fn PluginRegistrarFunc) Option {
 // ---------------------------------------------------------------------------
 // RootFactory
 // ---------------------------------------------------------------------------
+
+// finalizerGen is a process-global Execute counter shared by ALL factories.
+// It must be package-level (not per-factory) because cobra's finalizer list
+// is process-global: finalizers registered by one factory's tree are replayed
+// when another factory's tree executes, so the guard can only work if every
+// factory compares against the same counter. See persistentPreRun.
+var finalizerGen atomic.Int64
 
 // RootFactory assembles the root cobra command from a set of injectable
 // Dependencies. Each call to Build() produces a fresh, fully-wired
@@ -381,7 +389,21 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 	// Store telemetry client in context for use by sub-commands.
 	cmd.SetContext(context.WithValue(cmd.Context(), telemetry.ClientContextKey{}, client))
 
+	// cobra.OnFinalize appends to a process-global, append-only list that is
+	// replayed in full after EVERY Execute in the process — of any tree,
+	// built by any factory. Without a guard, execute N would re-track the
+	// events of executes 1..N-1 on their old (captured) clients — harmless
+	// in production (one Execute per process) but a source of phantom
+	// duplicate events in tests. The process-global generation counter
+	// ensures only the finalizer registered by the most recent Execute acts;
+	// stale finalizers from earlier executes no-op.
+	gen := finalizerGen.Add(1)
+
 	cobra.OnFinalize(func() {
+		if gen != finalizerGen.Load() {
+			return
+		}
+
 		if event, ok := telemetry.EventFor(cmd, args); ok {
 			client.Track(event)
 		}
