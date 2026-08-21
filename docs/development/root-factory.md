@@ -18,7 +18,6 @@ Production code (via `main`) uses the singleton built in `init()`. Tests use
 classDiagram
     class RootFactory {
         +deps Dependencies
-        +configFilePath string
         +telemetryClient *Client
         +Build() *CommandAdder
         +TelemetryClient() *Client
@@ -171,7 +170,7 @@ now you get a clean isolated tree:
 ```go
 func TestMyFeatureCmd(t *testing.T) {
     root := cmd.NewRootFactory(
-        cmd.WithConfigInitializer(func(_ *cobra.Command, _ string) error { return nil }),
+        cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
         cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
         cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
         cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
@@ -224,7 +223,7 @@ func TestSomethingThatSetsEnvVars(t *testing.T) {
     // With the factory: the no-op ConfigInitializer never calls
     // viperx.AutomaticEnv(), so viper never sees the env var at all.
     root := cmd.NewRootFactory(
-        cmd.WithConfigInitializer(func(_ *cobra.Command, _ string) error {
+        cmd.WithConfigInitializer(func(_ *cobra.Command) error {
             // Optionally seed specific viper keys your command needs,
             // without calling AutomaticEnv() or ReadConfigFile().
             viperx.Set("api-token", "test-token")
@@ -247,7 +246,7 @@ for device/user IDs, and `WithPluginRegistrar` to skip filesystem discovery:
 ```go
 // Minimal no-op factory — safe for any unit test.
 root := cmd.NewRootFactory(
-    cmd.WithConfigInitializer(func(_ *cobra.Command, _ string) error { return nil }),
+    cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
     cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
     cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
     cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
@@ -404,7 +403,7 @@ factory tree — or skip when the gate state doesn't match what the test expects
 func TestMyFeatureHiddenByDefault(t *testing.T) {
     // Build a fresh tree with no feature gate enabled.
     root := cmd.NewRootFactory(
-        cmd.WithConfigInitializer(func(_ *cobra.Command, _ string) error { return nil }),
+        cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
         cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
         cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
         cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
