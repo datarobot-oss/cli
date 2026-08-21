@@ -319,6 +319,7 @@ func TestHandleInstallConfirmKey_CancelKeys(t *testing.T) {
 		resultModel := result.(Model)
 		require.Error(t, resultModel.err, "key %q should set an error", key.String())
 		assert.Contains(t, resultModel.err.Error(), "Installation cancelled", "key %q error message", key.String())
+		assert.True(t, resultModel.depsFailed, "key %q should mark deps failure", key.String())
 	}
 }
 
@@ -379,6 +380,7 @@ func TestHandleDepsInstallComplete_Error(t *testing.T) {
 
 	resultModel := result.(Model)
 	assert.Equal(t, installErr, resultModel.err)
+	assert.True(t, resultModel.depsFailed, "install failure should mark deps failure")
 }
 
 func TestHandleDepsInstallComplete_CapturesErrorTelemetry(t *testing.T) {
@@ -418,4 +420,27 @@ func TestView_WaitingToExecute_ShowsConfirmFooter(t *testing.T) {
 
 	assert.Contains(t, view, "confirm")
 	assert.NotContains(t, view, "install")
+}
+
+func TestView_DepsFailed_ShowsRerunReminder(t *testing.T) {
+	m := Model{
+		steps:      []step{{description: "Checking prerequisites...", fn: startQuickstart}},
+		err:        errors.New("Installation cancelled. Run 'dr dependencies install' to install missing dependencies."),
+		depsFailed: true,
+	}
+
+	view := m.View()
+
+	assert.Contains(t, view, rerunReminder)
+}
+
+func TestView_NonDepsError_OmitsRerunReminder(t *testing.T) {
+	m := Model{
+		steps: []step{{description: "Checking prerequisites...", fn: startQuickstart}},
+		err:   errors.New("something else broke"),
+	}
+
+	view := m.View()
+
+	assert.NotContains(t, view, rerunReminder)
 }
