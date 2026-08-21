@@ -169,12 +169,14 @@ func TestRun_RepositoryRefusedRollsIntoANewOneInstead(t *testing.T) {
 
 	install(t, f)
 
-	result, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{liveRepositoryID, ""}, sent, "the retry drops the repository and keeps everything else")
 	assert.Equal(t, ActionRolled, result.Action, "a refused repository still leaves a deploy to finish")
 	assert.Equal(t, "art-2", result.ArtifactID)
+	assert.Contains(t, stderr, "starts one of its own",
+		"the lineage forks here, and a run that said nothing would leave nobody to explain the second Registry row")
 }
 
 // One retry, not a loop. A 404 with nothing to drop is the artifact itself
@@ -378,4 +380,127 @@ func TestRun_RepositoryOnTheLiveArtifactIsNotDrift(t *testing.T) {
 
 	assert.Equal(t, ActionUnchanged, result.Action)
 	assert.Contains(t, stderr, "Already up to date")
+}
+
+// pinned is a file with a repository id hand-written into the artifact block.
+// The key is the platform's own and nothing documents it as an input, but the
+// compiler passes through what it does not recognize, so it reaches the create
+// unless something takes it off.
+func pinned(content, repositoryID string) string {
+	return strings.Replace(content, "  name: my-app-artifact\n",
+		"  name: my-app-artifact\n  artifactRepositoryId: "+repositoryID+"\n", 1)
+}
+
+// The repository a version joins is the workload's own or none, and a line in
+// the file does not get a say. Honouring one would join a lineage on the
+// strength of a stale checkout, and would defeat the one case that has to
+// start fresh: a file that changed the artifact's kind.
+func TestRun_RepositoryWrittenIntoTheFileIsNotSent(t *testing.T) {
+	var tr track
+
+	install(t, wiredRoll(&tr))
+
+	_, _, err := runIn(t, pinned(newImage(), "68c0000000000000000000ee"), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Empty(t, sentRepository(t, tr.artifactIn),
+		"the base fixture's live artifact has no repository, and the file's is not one")
+}
+
+// The fallback is a create carrying no repository at all, rather than one
+// carrying whatever the file said. A retry that asked for a second repository
+// would be answered the same way as the first and the deploy would fail on a
+// field the run itself put there.
+func TestRun_RepositoryFallbackDropsTheFilesRepositoryToo(t *testing.T) {
+	var tr track
+
+	f := inRepository(wiredRoll(&tr))
+
+	var sent []string
+
+	f.newArtifact = func(payload any) (*workload.Artifact, error) {
+		sent = append(sent, sentRepository(t, payload))
+
+		if len(sent) == 1 {
+			return nil, notFound()
+		}
+
+		return &workload.Artifact{ID: "art-2", Status: workload.ArtifactStatusDraft}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, pinned(newImage(), "68c0000000000000000000ee"), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{liveRepositoryID, ""}, sent)
+}
+
+// agentBuiltDrift is the built project's file with the artifact relabelled,
+// which is the change that leaves the running version's lineage behind.
+func agentBuiltDrift() string {
+	return strings.Replace(builtDrift(), "  name: gpt-oss-20b-vllm-artifact\n",
+		"  name: gpt-oss-20b-vllm-artifact\n  type: agent\n", 1)
+}
+
+// builtRollLeavingTheLineage is that roll with the draft an earlier attempt
+// left behind sitting in the repository the platform opened for it, which is
+// where an artifact of the new kind can only be.
+func builtRollLeavingTheLineage(tr *track) fakes {
+	const agentRepositoryID = "68c0000000000000000000f2"
+
+	f := builtRoll(tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{
+			ID:                   id,
+			Status:               workload.ArtifactStatusDraft,
+			ArtifactRepositoryID: agentRepositoryID,
+		}, nil
+	}
+
+	docs := artifactDocs("art-abandoned", 9000)
+	f.artifactD = func(id string) (workload.Document, error) {
+		d, err := docs(id)
+		if err != nil {
+			return nil, err
+		}
+
+		if id == "art-abandoned" {
+			d[keyType], d[keyArtifactRepositoryID] = "agent", agentRepositoryID
+
+			return d, nil
+		}
+
+		d[keyType], d[keyArtifactRepositoryID] = "service", liveRepositoryID
+
+		return d, nil
+	}
+
+	return f
+}
+
+// A roll that changed the artifact's kind is starting a lineage of its own, so
+// the draft its own last attempt minted is still the version to fill. Measured
+// against the live artifact's repository it would be refused instead, and a
+// build that fails after the create would leave a draft and a Registry row per
+// attempt: the pile reuse exists to prevent.
+func TestRun_LeftoverDraftIsReusedWhenTheRollStartsItsOwnRepository(t *testing.T) {
+	var tr track
+
+	f := builtRollLeavingTheLineage(&tr)
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Error("the draft the last attempt left behind is the version to roll onto")
+
+		return nil, errors.New("nothing should be created")
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, agentBuiltDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "earlier attempt")
+	assert.NotContains(t, tr.steps, "create-artifact")
 }
