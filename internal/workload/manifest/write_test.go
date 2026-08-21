@@ -523,3 +523,19 @@ func TestRender_TypeSitsOnTheArtifactNotInTheSpec(t *testing.T) {
 	assert.NotContains(t, out, "    type: agent", "inside the spec the platform throws it away")
 	assert.Contains(t, out, "a2aEnabled: true", "which stays in the spec, where the agent variant reads it")
 }
+
+// The type is compared, not just defaulted, and folding is the whole point:
+// the platform's own documents disagree about the casing of their enums, so an
+// exact comparison turns a spelling into drift nothing can satisfy.
+func TestSameArtifactType(t *testing.T) {
+	assert.True(t, SameArtifactType("service", "service"))
+	assert.True(t, SameArtifactType("Service", "service"), "casing is not a change")
+	assert.True(t, SameArtifactType("AGENT", "agent"))
+	assert.False(t, SameArtifactType("agent", "service"), "a different kind still is")
+}
+
+func TestArtifactTypeOrDefault(t *testing.T) {
+	assert.Equal(t, TypeService, ArtifactTypeOrDefault(""),
+		"the platform creates a block that names no type as a service")
+	assert.Equal(t, TypeAgent, ArtifactTypeOrDefault(TypeAgent))
+}

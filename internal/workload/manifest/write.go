@@ -37,6 +37,25 @@ const (
 	TypeAgent   = "agent"
 )
 
+// ArtifactTypeOrDefault applies the platform's default for an artifact block
+// that names no type: it is created as a service. Every reader that has to
+// predict what kind of thing the platform is about to make has to say so the
+// same way, or two of them answer differently about one file.
+func ArtifactTypeOrDefault(artifactType string) string {
+	return orDefaultString(artifactType, TypeService)
+}
+
+// SameArtifactType reports whether two artifact types name the same kind.
+//
+// Folded because the platform's own documents disagree about the casing of
+// their enums. Comparing them exactly is what turns a hand-written "Service"
+// into drift that can never be satisfied: nothing about the file changes it,
+// so every run mints a version and rolls it, for ever, against a workload
+// nobody touched.
+func SameArtifactType(a, b string) bool {
+	return strings.EqualFold(a, b)
+}
+
 // Build modes, named the way the user chooses them rather than the way the
 // spec spells them: BuildModeDockerfile writes source: provided.
 const (

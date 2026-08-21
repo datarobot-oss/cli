@@ -14,6 +14,8 @@
 
 package up
 
+import "github.com/datarobot/cli/internal/workload/manifest"
+
 // Actions are what a run will do, and what the JSON envelope reports. A run
 // does exactly one of them, so when several could apply the most significant
 // wins: creating beats rolling, rolling beats retuning, retuning beats
@@ -161,7 +163,12 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	// Only when the file names one. Saying nothing about the type is not the
 	// same as asking for a service, and this walk never reverts what the file
 	// leaves out.
-	if kind != "" && kind != live.ArtifactType {
+	//
+	// The comparison folds case, which is not cosmetic: nothing in the file can
+	// resolve a difference the platform does not consider one, so a spelling
+	// the ledger accepts and the platform normalises would be drift that every
+	// run mints a version for and never clears.
+	if kind != "" && !manifest.SameArtifactType(kind, live.ArtifactType) {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactType,
 			Have: live.ArtifactType,

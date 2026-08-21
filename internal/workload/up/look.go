@@ -40,6 +40,12 @@ const (
 	keyEndpoint   = "endpoint"
 	keyArtifactID = "artifactId"
 	keyType       = "type"
+
+	// keyArtifactRepositoryID is the repository an artifact belongs to. The
+	// platform assigns it, so it is read here and never written to the file;
+	// a create that sends it back is what makes successive versions land in
+	// one repository instead of each opening its own.
+	keyArtifactRepositoryID = "artifactRepositoryId"
 )
 
 // keyArtifactType is what the plan calls a change of artifact kind. It is
@@ -76,6 +82,12 @@ type Live struct {
 	// reads the discriminator from the artifact and pops any type sent inside
 	// the spec, so the spec walk never sees it.
 	ArtifactType string
+
+	// ArtifactRepositoryID is the lineage the running version belongs to, ""
+	// when there is no artifact to read it from. A roll hands it to the
+	// version it mints, which is what makes the two successive versions of one
+	// thing rather than two unrelated artifacts sharing a name.
+	ArtifactRepositoryID string
 
 	// Endpoint is the workload's stable URL. The platform assigns it at
 	// creation and it survives every rollout, so it is safe to print before
@@ -120,13 +132,14 @@ func Look(workloadID string) (Live, error) {
 	status := workloadDoc.String(keyStatus)
 
 	return Live{
-		Live:         manifest.NewLive(workloadID, workloadDoc, artifactDoc),
-		State:        stateFor(status),
-		Status:       status,
-		ArtifactID:   artifactID,
-		ArtifactType: artifactDoc.String(keyType),
-		Endpoint:     workloadDoc.String(keyEndpoint),
-		Locked:       isLocked(artifactDoc.String(keyStatus)),
+		Live:                 manifest.NewLive(workloadID, workloadDoc, artifactDoc),
+		State:                stateFor(status),
+		Status:               status,
+		ArtifactID:           artifactID,
+		ArtifactType:         artifactDoc.String(keyType),
+		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
+		Endpoint:             workloadDoc.String(keyEndpoint),
+		Locked:               isLocked(artifactDoc.String(keyStatus)),
 	}, nil
 }
 

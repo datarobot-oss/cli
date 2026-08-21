@@ -86,6 +86,10 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 // every deploy. A file the platform builds from needs the working tree and an
 // image before it is worth promoting. A published image needs neither, and is
 // one call.
+//
+// Whatever is minted joins the repository the running version belongs to, so a
+// workload deployed ten times reads as ten versions of one thing rather than
+// ten artifacts that happen to share a name.
 func candidateArtifact(
 	loaded Loaded,
 	live Live,
@@ -97,11 +101,57 @@ func candidateArtifact(
 		return version{ID: id}, nil
 	}
 
+	repository := sameRepository(loaded, live)
+
 	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
-		return buildVersion(loaded, live, code, opts, report)
+		return buildVersion(loaded, live, code, repository, opts, report)
 	}
 
-	return createVersion(loaded, report)
+	return createVersion(loaded, repository, report)
+}
+
+// sameRepository is the repository the new version joins, "" when it should
+// start one of its own.
+//
+// The one case that has to start fresh is a file that changed the artifact's
+// kind. A repository carries a type, taken from the artifact that opened it,
+// and the platform refuses an artifact whose own type disagrees. A service
+// that became an agent is a new lineage rather than the next version of the
+// old one, so asking for the old repository would earn a 422 saying exactly
+// that. Cheaper and clearer to notice it here, where both types are already in
+// hand.
+func sameRepository(loaded Loaded, live Live) string {
+	if live.ArtifactRepositoryID == "" || !sameArtifactType(loaded, live) {
+		return ""
+	}
+
+	return live.ArtifactRepositoryID
+}
+
+// sameArtifactType reports whether the file still asks for the kind of thing
+// the workload is running.
+//
+// Both sides are defaulted, which is deliberately not what the plan does with
+// the same two values. The plan treats an unstated type as the file having no
+// opinion, because it never reverts what the file leaves out. The question
+// here is a different one: what kind of thing is the artifact about to be
+// created. The platform answers service for a block that names none, so that
+// is what the repository will be compared against, whatever the file meant by
+// saying nothing. The comparison itself is shared with the plan's, so the two
+// cannot come to disagree about what a type change is.
+//
+// A file that cannot be read answers no, which starts a new repository. That
+// costs a row in the Registry; joining the wrong one costs a round trip.
+func sameArtifactType(loaded Loaded, live Live) bool {
+	wanted, err := loaded.ArtifactType()
+	if err != nil {
+		return false
+	}
+
+	return manifest.SameArtifactType(
+		manifest.ArtifactTypeOrDefault(wanted),
+		manifest.ArtifactTypeOrDefault(live.ArtifactType),
+	)
 }
 
 // confirmLock asks whether to roll a locked version, and reports whether the

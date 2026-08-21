@@ -200,7 +200,7 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 		WorkloadID: a.WorkloadID,
 		Name:       name,
 		Importance: manifest.DefaultImportance,
-		Type:       orDefault(a.Type, manifest.TypeService),
+		Type:       manifest.ArtifactTypeOrDefault(a.Type),
 		A2AEnabled: a.A2AEnabled,
 		Port:       a.Port,
 		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),

@@ -84,7 +84,7 @@ func (l Live) Defaults() Draft {
 		WorkloadID: l.WorkloadID,
 		Name:       l.Name,
 		Importance: orDefaultString(l.Importance, DefaultImportance),
-		Type:       orDefaultString(l.Type(), TypeService),
+		Type:       ArtifactTypeOrDefault(l.Type()),
 		A2AEnabled: boolAt(l.Spec, keyA2AEnabled),
 		Port:       DefaultPort,
 		HealthPath: DefaultHealthPath,
