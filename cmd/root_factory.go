@@ -88,6 +88,15 @@ type AnimationFunc func()
 // Replace in tests with a no-op.
 type PluginRegistrarFunc func(cmd *cobra.Command)
 
+// ViperBinderFunc binds the root persistent flags to the global viper
+// instance and annotates the universal flags for forwarding to plugin
+// subprocesses. The default implementation re-points the global viper
+// bindings at the newest tree on every Build; replace with a no-op in tests
+// that must not mutate global viper state (with the caveat that viper-backed
+// reads such as debug/verbose or ca-cert then won't resolve this tree's
+// flag values).
+type ViperBinderFunc func(adder *cli.CommandAdder)
+
 // Dependencies bundles every injectable collaborator for the root command.
 // The zero-value is not useful; use DefaultDependencies() or NewRootFactory()
 // to get a properly populated instance.
@@ -109,6 +118,9 @@ type Dependencies struct {
 
 	// PluginRegistrar discovers and wires plugin subcommands.
 	PluginRegistrar PluginRegistrarFunc
+
+	// ViperBinder binds persistent flags to the global viper instance.
+	ViperBinder ViperBinderFunc
 }
 
 // DefaultDependencies returns the production-ready set of dependencies
@@ -121,6 +133,7 @@ func DefaultDependencies() Dependencies {
 		TelemetryClient:   telemetry.NewClient,
 		Animation:         showFirstRunAnimation,
 		PluginRegistrar:   plugin.RegisterPluginCommands,
+		ViperBinder:       bindViperFlags,
 	}
 }
 
@@ -174,6 +187,14 @@ func WithAnimation(fn AnimationFunc) Option {
 func WithPluginRegistrar(fn PluginRegistrarFunc) Option {
 	return func(f *RootFactory) {
 		f.deps.PluginRegistrar = fn
+	}
+}
+
+// WithViperBinder overrides the viper flag-binding step. Pass a no-op in
+// tests that must leave the global viper instance untouched.
+func WithViperBinder(fn ViperBinderFunc) Option {
+	return func(f *RootFactory) {
+		f.deps.ViperBinder = fn
 	}
 }
 
@@ -242,7 +263,7 @@ func (f *RootFactory) Build() *cli.CommandAdder {
 	adder := &cli.CommandAdder{Command: cmd}
 
 	f.registerFlags(adder, &outputFormat)
-	f.bindViperFlags(adder)
+	f.deps.ViperBinder(adder)
 	f.addGroups(adder)
 	f.addSubcommands(adder)
 	f.deps.PluginRegistrar(adder.Command)
@@ -457,9 +478,14 @@ func (f *RootFactory) registerFlags(adder *cli.CommandAdder, outputFormat *outpu
 	outputformat.AddPersistentFlag(adder.Command, outputFormat)
 }
 
-// bindViperFlags wires persistent flags to viper and annotates the universal
-// ones for forwarding to plugin subprocesses as DATAROBOT_CLI_* env vars.
-func (f *RootFactory) bindViperFlags(adder *cli.CommandAdder) {
+// bindViperFlags is the production ViperBinderFunc. It wires persistent
+// flags to the global viper instance and annotates the universal ones for
+// forwarding to plugin subprocesses as DATAROBOT_CLI_* env vars.
+//
+// Note: viper is process-global, so this re-points the shared bindings at
+// the newest tree on every Build — only the last-built tree's flags resolve
+// through viperx.Get*.
+func bindViperFlags(adder *cli.CommandAdder) {
 	// bindUniversal binds name to viper AND annotates it for plugin forwarding.
 	bindUniversalOn := func(name string) {
 		flag := adder.PersistentFlags().Lookup(name)
