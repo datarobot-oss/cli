@@ -119,7 +119,7 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 			"only one workload per draft artifact.\n"+
 			"  The link lives in %s and is what makes repeated deploys update one artifact rather than "+
 			"making a new one each time.\n"+
-			"  To deploy to that workload, add 'workloadId: %s' to %s.\n"+
+			"  To deploy to that workload, set 'workloadId: %s' in %s, replacing any already there.\n"+
 			"  To deploy a separate workload from this directory, delete %s: the next run then creates "+
 			"an artifact of its own.\n"+
 			"  %w",
@@ -153,6 +153,20 @@ func workloadOn(artifactID string) string {
 // manifest. The manifest describes what to deploy and is committed; which
 // artifact a particular checkout has been pushing to is local, and writing it
 // into a shared file would have two developers fighting over one draft.
+//
+// A linked artifact is reused only while it can still take this deploy and
+// still says what the file says. Two things end that, and they have one
+// answer. Locking is one-way, so a locked link can take neither new code nor a
+// new image. A spec that has diverged is the other: the link records which
+// artifact this checkout pushes to, not what that artifact contains, and an
+// artifact's spec is fixed when it is created, so reusing a diverged one
+// deploys the frozen answer and reports success. The reconcile path guards
+// that already, in describes(); this path reaches the same artifact by another
+// route and needs the same guard, or editing a port in the file and
+// redeploying changes nothing and says nothing.
+//
+// Either way the answer is the one the roll path already gives: mint a new
+// version, in the lineage the old one belongs to, and move the link onto it.
 func ensureArtifact(loaded Loaded, report *reporter) (version, error) {
 	if !projectLinkedFn(loaded.ProjectDir) {
 		return freshArtifact(loaded, "", labelFirstArtifact, report)
@@ -163,26 +177,51 @@ func ensureArtifact(loaded Loaded, report *reporter) (version, error) {
 		return version{}, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
 	}
 
-	linked, err := getArtifactFn(cfg.ArtifactID)
+	// One read answers every question asked of the linked artifact below:
+	// whether it is locked, which lineage a replacement would join, and whether
+	// its spec still says what the file says. Reading it once per question had
+	// every deploy of a linked project pay several sequential round trips to a
+	// single resource on the way to one decision.
+	linked, err := getArtifactDocFn(cfg.ArtifactID)
 	if err != nil {
-		return version{}, fmt.Errorf("cannot read artifact %s, which this project is linked to: %w", cfg.ArtifactID, err)
+		return version{}, fmt.Errorf(
+			"cannot read artifact %s, which this project is linked to: %w", cfg.ArtifactID, err)
 	}
 
-	if linked == nil || !linked.IsLocked() {
+	// Nothing came back and nothing failed, which says neither that the
+	// artifact can take this deploy nor that it cannot. Reusing it on that
+	// basis rolls out whatever it happens to contain; replacing it discards the
+	// lineage over a fault nobody established. Stopping is the only answer that
+	// does not act on an unread state.
+	if linked == nil {
+		return version{}, fmt.Errorf(
+			"the platform returned nothing for artifact %s, which this project is linked to, so there is no "+
+				"way to tell whether it can still take this deploy", cfg.ArtifactID)
+	}
+
+	if workload.IsLockedStatus(linked.String(keyStatus)) {
+		// Phrased as what the run needs rather than what it did, because the
+		// create below can still fail and a line already claiming the version
+		// exists would be the last thing printed before the error saying it
+		// does not.
+		//
+		// The alternative was telling the reader to delete the state
+		// directory, which works but throws away the catalog and the
+		// last-synced version with it, so the following sync re-uploads a tree
+		// the platform already holds.
+		report.say("  Artifact %s is locked, so this deploy needs a new version.\n", cfg.ArtifactID)
+
+		return freshArtifact(loaded, redraftRepository(loaded, linked), labelNewVersion, report)
+	}
+
+	// Cannot tell reads as yes. Replacing on a comparison that never completed
+	// would discard the artifact this project pushes to over a fault that was
+	// never established, and the read that could have failed already has.
+	if matches, err := specMatches(loaded, linked); err != nil || matches {
 		return version{ID: cfg.ArtifactID}, nil
 	}
 
-	// Locking is one-way, so a locked link can take neither new code nor a new
-	// image and there is nothing to wait for. The answer is the same one the
-	// roll path already gives: this project's next version is a new artifact,
-	// in the lineage the locked one belongs to, and the link moves to it. The
-	// alternative was telling the reader to delete the state directory, which
-	// works but throws away the catalog and the last-synced version with it,
-	// so the following sync re-uploads a tree the platform already holds.
-	// Phrased as what the run needs rather than what it did, because the create
-	// below can still fail and a line already claiming the version exists would
-	// be the last thing printed before the error saying it does not.
-	report.say("  Artifact %s is locked, so this deploy needs a new version.\n", cfg.ArtifactID)
+	report.say("  Artifact %s no longer matches %s; making a new one.\n", cfg.ArtifactID, manifest.FileName)
 
 	return freshArtifact(loaded, redraftRepository(loaded, linked), labelNewVersion, report)
 }
@@ -197,7 +236,10 @@ func ensureArtifact(loaded Loaded, report *reporter) (version, error) {
 // platform answers 422 for one that disagrees. createInRepository would recover
 // from that by retrying without the id, so the cost of not asking is a wasted
 // round trip and a line blaming the repository for something the file did.
-func redraftRepository(loaded Loaded, linked *workload.Artifact) string {
+//
+// The type and the repository are read off the document the caller already
+// has, rather than a typed artifact fetched again for two fields.
+func redraftRepository(loaded Loaded, linked workload.Document) string {
 	wanted, err := loaded.ArtifactType()
 	if err != nil {
 		return ""
@@ -205,12 +247,12 @@ func redraftRepository(loaded Loaded, linked *workload.Artifact) string {
 
 	if !manifest.SameArtifactType(
 		manifest.ArtifactTypeOrDefault(wanted),
-		manifest.ArtifactTypeOrDefault(linked.Type),
+		manifest.ArtifactTypeOrDefault(linked.String(keyType)),
 	) {
 		return ""
 	}
 
-	return linked.ArtifactRepositoryID
+	return linked.String(keyArtifactRepositoryID)
 }
 
 // freshArtifact mints the artifact and points the project at it. The two are

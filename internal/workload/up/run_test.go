@@ -87,6 +87,38 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
 
+// linkedArtifactDoc is the artifact unboundDockerfileManifest describes, in the
+// shape the comparison expects to find it. A test that leaves this out is not
+// testing reuse: the failed read folds into "reuse it" and the comparison never
+// runs, so the assertion passes for the wrong reason.
+//
+// The kind sits inside the spec because that is where the manifest above puts
+// it, and the two sides have to agree for a match. A real platform hoists it to
+// the document root, so a manifest spelling it here and an artifact returning it
+// there never match and the project mints an artifact per deploy. That is not
+// this change's to fix; the fixture mirrors the manifest so these tests measure
+// what they say they measure.
+func linkedArtifactDoc(id string) (workload.Document, error) {
+	return workload.Document{
+		"id":     id,
+		"status": workload.ArtifactStatusDraft,
+		"spec": map[string]any{
+			"type": "service",
+			"containerGroups": []any{map[string]any{
+				"name": "default",
+				"containers": []any{map[string]any{
+					"name":    "primary",
+					"primary": true,
+					"port":    float64(8080),
+					"imageBuildConfig": map[string]any{
+						"dockerfile": map[string]any{"source": "provided"},
+					},
+				}},
+			}},
+		},
+	}, nil
+}
+
 // boundArtifactManifest names an artifact the platform already holds instead
 // of describing one. There is no container to read a build mode from, so the
 // mode is empty, and the create is the same single POST as a published image.
@@ -636,7 +668,6 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 		status string
 		want   string
 	}{
-		{workload.WorkloadStatusTerminated, "remove workloadId"},
 		{workload.WorkloadStatusErrored, "dr workload logs"},
 		{workload.WorkloadStatusProvisioning, "still settling"},
 	}
@@ -664,10 +695,103 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 	}
 }
 
-func TestRun_MissingWorkloadNamesTheRebind(t *testing.T) {
+// TestRun_MissingWorkloadIsRecreated is the reported bug: a workload deleted
+// out from under the manifest used to leave the user with a binding only a
+// hand edit could clear. It is drift, so the deploy recreates and rebinds.
+func TestRun_MissingWorkloadIsRecreated(t *testing.T) {
+	var writtenID string
+
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(_, id string) error {
+			writtenID = id
+
+			return nil
+		},
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "wl-new", result.WorkloadID)
+	assert.Equal(t, ActionCreated, result.Action)
+	assert.Equal(t, "wl-new", writtenID, "the stale binding is replaced, not left for the user")
+}
+
+// TestRun_MissingWorkloadNamesTheDeadBinding: recreating is right when the
+// workload was deleted and wrong when the run is pointed at an instance that
+// never had it. `up` cannot tell those apart from a 404, and it applies
+// without confirming, so naming the id it could not find is the only warning
+// the wrong-instance case gets.
+func TestRun_MissingWorkloadNamesTheDeadBinding(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "no longer exists")
+	assert.Contains(t, stderr, "68b0c1d2", "the dead id is what tells a deletion from a wrong endpoint")
+}
+
+// TestRun_FailedRecreateReportsNoWorkloadID: a create that fails leaves
+// nothing behind, and the id the file was bound to answers to nothing either.
+// Reporting it in the envelope would hand a caller an id whose only use is a
+// 404.
+func TestRun_FailedRecreateReportsNoWorkloadID(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) {
+			return nil, errors.New("platform said no")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Empty(t, result.WorkloadID, "the dead binding is not this run's workload")
+}
+
+// TestRun_TerminatedWorkloadIsRefused: terminated looks like missing from the
+// file's side and is not. The workload still exists, still holds its name and
+// still owns its artifact, so a create would collide with it, and every line a
+// create plan prints about it would be false. The message names the one thing
+// that clears the way.
+func TestRun_TerminatedWorkloadIsRefused(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return workload.Document{
+				"id": "68b0c1d2e3f4a5b6c7d8e9f0", "name": "my-app",
+				"status": workload.WorkloadStatusTerminated,
+			}, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("a terminated workload still owns its name; creating over it collides")
+
+			return nil, nil
 		},
 	})
 
@@ -675,8 +799,32 @@ func TestRun_MissingWorkloadNamesTheRebind(t *testing.T) {
 
 	_, _, err := runIn(t, bound, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--workload-id")
-	assert.Contains(t, err.Error(), "remove workloadId")
+
+	assert.Contains(t, err.Error(), "terminated")
+	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0",
+		"the remedy has to be one that works, and deleting it also clears the binding")
+}
+
+// A refusal must not have announced a create, because nothing is being
+// created and the name it would print is the dead workload's.
+func TestRun_TerminatedWorkloadDoesNotAnnounceACreate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return workload.Document{
+				"id": "68b0c1d2e3f4a5b6c7d8e9f0", "name": "old-name",
+				"status": workload.WorkloadStatusTerminated,
+			}, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "will be created")
+	assert.NotContains(t, stderr, "no longer exists", "it does still exist")
 }
 
 // track records what the build path did, in order, so a test can pin the
@@ -797,6 +945,7 @@ func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.newArtifact = func(any) (*workload.Artifact, error) {
 		t.Fatal("the project is already linked; a second artifact would orphan the first")
 
@@ -825,6 +974,7 @@ func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
@@ -856,6 +1006,7 @@ func TestRun_NameConflictOnALinkedProjectKeepsItsOwnMessage(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
@@ -900,6 +1051,16 @@ func lockedLink(f fakes, tr *track) fakes {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{
 			ID: id, Status: workload.ArtifactStatusLocked, ArtifactRepositoryID: "repo-1",
+		}, nil
+	}
+	// The same artifact as the server sends it. One read answers the lock, the
+	// lineage and the spec, so the document is what the deploy actually reads.
+	f.artifactD = func(id string) (workload.Document, error) {
+		return workload.Document{
+			"id":                   id,
+			"status":               workload.ArtifactStatusLocked,
+			"artifactRepositoryId": "repo-1",
+			"type":                 "service",
 		}, nil
 	}
 	f.save = relinkStep(tr)
@@ -1173,6 +1334,7 @@ func linkedAndSynced(tr *track) fakes {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.sync = func(string) (*sync.Result, error) {
 		tr.steps = append(tr.steps, "sync")
 
@@ -1803,4 +1965,214 @@ func TestDefaultCodeChange_SaysNothingForTheCurrentIgnoreFileName(t *testing.T) 
 
 	assert.True(t, code.FirstDeploy)
 	assert.Empty(t, code.IgnoreNotice)
+}
+
+// TestRun_LinkedArtifactThatNoLongerMatchesIsReplaced is the recovery flow the
+// missing-binding recreate advertises. The link records which artifact this
+// checkout pushes to, not what that artifact holds, and an artifact's spec is
+// fixed at creation. Reusing one whose spec has since diverged deploys the
+// frozen answer and reports success, so the edit the user just made never
+// leaves the machine.
+func TestRun_LinkedArtifactThatNoLongerMatchesIsReplaced(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-stale"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.save = func(_ string, cfg wapi.Config) error {
+		tr.linkedTo = wapi.InitOptions{ArtifactID: cfg.ArtifactID}
+
+		return nil
+	}
+	// The live artifact says port 9999; the manifest says 8080.
+	f.artifactD = func(string) (workload.Document, error) {
+		return workload.Document{"spec": map[string]any{
+			"type": "service",
+			"containerGroups": []any{map[string]any{
+				"name": "default",
+				"containers": []any{map[string]any{
+					"name": "primary", "primary": true, "port": 9999,
+				}},
+			}},
+		}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a linked artifact that no longer says what the file says has to be replaced, not reused")
+	assert.NotEqual(t, "art-stale", decodePayload(t, tr.workloadIn)["artifactId"])
+	assert.Equal(t, decodePayload(t, tr.workloadIn)["artifactId"], tr.linkedTo.ArtifactID,
+		"the project has to end up pointing at the artifact it just deployed")
+}
+
+// divergedLink is a project whose linked artifact still takes code but no
+// longer says what the file says: it holds port 9999 where the manifest asks
+// for 8080. The repository is the lineage the replacement has to join, exactly
+// as it is for a locked one.
+func divergedLink(f fakes, tr *track) fakes {
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-stale")
+	f.artifactD = func(id string) (workload.Document, error) {
+		return workload.Document{
+			"id":                   id,
+			"status":               workload.ArtifactStatusDraft,
+			"artifactRepositoryId": "repo-1",
+			"type":                 "service",
+			"spec": map[string]any{
+				"containerGroups": []any{map[string]any{
+					"name": "default",
+					"containers": []any{map[string]any{
+						"name": "primary", "primary": true, "port": 9999,
+					}},
+				}},
+			},
+		}, nil
+	}
+	f.save = relinkStep(tr)
+
+	return f
+}
+
+// A spec that has diverged and a lock that cannot be undone are two reasons for
+// the same act, so the replacement they produce has to be the same one. Locking
+// got the lineage right and this route reached the create by a different path,
+// which is where the two could quietly come apart: a replacement that opens a
+// repository of its own leaves the Registry with a second entry under the same
+// name, and the workload's versions stop reading as versions of one thing.
+func TestRun_ReplacementForADivergedSpecJoinsTheSameLineage(t *testing.T) {
+	var tr track
+
+	install(t, divergedLink(wiredBuild(&tr), &tr))
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1")
+
+	assert.Equal(t, "art-1", tr.savedCfg.ArtifactID, "the link moves to what the run just made")
+	require.NotNil(t, tr.savedCfg.CatalogID, "the code store has to survive the replacement")
+	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID)
+}
+
+// The other half of that equivalence. The tree was already synced into the
+// artifact the file has since diverged from, so the sync onto its replacement
+// can find nothing to upload and the new version would go to the builder with
+// no code reference at all. The code the old one was running is carried across
+// instead, which is what makes this a new version of the same code rather than
+// a build of nothing.
+func TestRun_ReplacementForADivergedSpecInheritsTheSyncedCode(t *testing.T) {
+	var tr track
+
+	f := divergedLink(wiredBuild(&tr), &tr)
+	f.sync = emptySync(&tr)
+	f.codeRef = carryCodeStep(&tr)
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-1", "cat1", "ver1"}, tr.carried)
+	assert.Contains(t, tr.steps, "carry-code")
+}
+
+// A read that fails is not a difference. Minting on it would orphan the
+// artifact this project pushes to because of a timeout, so the run stops and
+// names the artifact it could not read instead of guessing either way.
+//
+// The lock check and the spec comparison are one read, so there is one failure
+// to answer rather than two, and reusing an artifact whose state was never
+// established is no better than replacing it: the sync that follows fetches the
+// same artifact and would fail a step later with a worse message.
+func TestRun_UnreadableLinkedArtifactStopsRatherThanGuessing(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.artifactD = func(string) (workload.Document, error) { return nil, errors.New("gateway timeout") }
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("a timeout is not a reason to start a new artifact lineage")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-existing", "the artifact the link names")
+	assert.Contains(t, err.Error(), "linked to")
+	assert.Contains(t, err.Error(), "gateway timeout", "the platform's own reason has to survive")
+	assert.Nil(t, tr.workloadIn, "nothing is deployed on a state that was never established")
+}
+
+// StateMissing is the one state this change converted from a refusal into a
+// mutating create, so --dry-run over it is the combination that most needs
+// holding: a dry run that creates would be the worst possible regression here.
+func TestRun_DryRunOnAMissingBindingMutatesNothing(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("--dry-run must not create a workload")
+
+			return nil, nil
+		},
+		writeID: func(string, string) error {
+			t.Fatal("--dry-run must not rebind the manifest")
+
+			return nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "no longer exists")
+	assert.Equal(t, ActionCreated, result.Action, "the plan still says what it would do")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.Plan.PriorWorkloadID)
+}
+
+// A create that reports no id cannot be linked to. SaveConfig does not
+// validate the way Initialize does, so relinking to an empty id wrote a
+// config.json every later command rejected as corrupt: the run failed anyway,
+// but two steps later and having damaged the project on the way.
+func TestRun_ArtifactCreatedWithoutAnIDIsRefusedBeforeLinking(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-stale"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.artifactD = func(string) (workload.Document, error) {
+		return workload.Document{"spec": map[string]any{"type": "service"}}, nil
+	}
+	f.newArtifact = func(any) (*workload.Artifact, error) { return &workload.Artifact{ID: ""}, nil }
+	f.save = func(string, wapi.Config) error {
+		t.Fatal("nothing may be written when there is no id to write")
+
+		return nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reported no id")
 }

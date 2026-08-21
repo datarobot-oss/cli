@@ -29,9 +29,11 @@ import (
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -245,8 +247,18 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 }
 
 // resolveDir defaults --dir to where the shell is standing.
+//
+// A flag that names something other than a directory is refused here rather
+// than left to the manifest search, which knows the path but not that a flag
+// supplied it: the same typo told `dr workload delete` which flag to blame, and
+// the two commands are printed at each other often enough that answering it
+// differently is its own small confusion.
 func resolveDir(dir string) (string, error) {
 	if dir != "" {
+		if !fsutil.DirExists(dir) {
+			return "", fmt.Errorf("--dir %s: %w", dir, manifest.ErrNotADirectory)
+		}
+
 		return dir, nil
 	}
 

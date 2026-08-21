@@ -98,6 +98,23 @@ func TestRender_FirstDeploy(t *testing.T) {
 	assert.Contains(t, out, "~ code       all project files, uploaded for the first time")
 }
 
+// A create that replaces a dead binding is not a first deploy and must not
+// read as one. The plan is announced and then applied without a confirm, so
+// this line is the entire warning a run pointed at the wrong instance gets.
+func TestRender_RecreateNamesTheDeadBinding(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:           StateMissing,
+		Creates:         true,
+		PriorWorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		Code:            CodeChange{Applies: true, FirstDeploy: true},
+	})
+
+	assert.Contains(t, out, "+ workload   my-app will be created: .datarobot.yaml is bound to 68b0c1d2, "+
+		"which no longer exists")
+	assert.NotContains(t, out, "with its first artifact",
+		"this is a replacement for something that existed, not a first deploy")
+}
+
 // TestRender_PublishedImageNeverMentionsCode: a manifest naming an image has
 // no code to sync, and a "0 files changed" line would invite the reader to
 // expect a rebuild that is never going to happen.
@@ -353,4 +370,98 @@ func TestPlanJSON_NoLockFactsWhenNothingIsMinted(t *testing.T) {
 
 	assert.False(t, start.Locked)
 	assert.False(t, start.Code.LinkLocked)
+}
+
+// A project that already pushes to an artifact is not getting its first one.
+// This is the flow a delete leaves behind: the binding is cleared and the
+// artifact link is deliberately left exactly where it was.
+func TestRender_CreateOnALinkedProjectDoesNotClaimAFirstArtifact(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:          StateUnbound,
+		Creates:        true,
+		LinkedArtifact: true,
+		Code:           CodeChange{Applies: true, FirstDeploy: true},
+	})
+
+	assert.Contains(t, out, "on the artifact this project is linked to")
+	assert.NotContains(t, out, "with its first artifact")
+}
+
+// The two facts are independent, and the flow a UI-side delete leaves behind
+// produces both: the binding is stale and the artifact link is untouched. A
+// line reporting only the dead binding drops the one thing that says which
+// artifact the new workload comes up on.
+func TestRender_RecreateOnALinkedProjectSaysBoth(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:           StateMissing,
+		Creates:         true,
+		PriorWorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		LinkedArtifact:  true,
+		Code:            CodeChange{Applies: true, FirstDeploy: true},
+	})
+
+	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "it comes up on the artifact this project is linked to")
+}
+
+// A published image consults no link, so a recreate says only what it knows.
+func TestRender_RecreateOnAPublishedImageMentionsNoLink(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:           StateMissing,
+		Creates:         true,
+		PriorWorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		LinkedArtifact:  true,
+		Code:            CodeChange{Applies: false},
+	})
+
+	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.NotContains(t, out, "linked to")
+}
+
+// A locked link is not reused: the run mints a replacement and moves the
+// project onto it, which the lock line says in full. Claiming the create comes
+// up on the linked artifact two lines above that is a plan contradicting
+// itself, and the reader has no way to tell which half is true.
+func TestRender_LockedLinkIsNotDescribedAsReused(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:          StateUnbound,
+		Creates:        true,
+		LinkedArtifact: true,
+		Code:           CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
+	})
+
+	assert.NotContains(t, out, "on the artifact this project is linked to")
+	assert.NotContains(t, out, "with its first artifact",
+		"a project that already pushes to an artifact is not getting its first")
+	assert.Contains(t, out, "pushes to that instead", "the lock line is what explains this create")
+}
+
+// The same rule on the recreate line, which carries the dead binding first and
+// the artifact fact second.
+func TestRender_RecreateOnALockedLinkClaimsNoReuse(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:           StateMissing,
+		Creates:         true,
+		PriorWorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		LinkedArtifact:  true,
+		Code:            CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
+	})
+
+	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.NotContains(t, out, "it comes up on the artifact this project is linked to")
+}
+
+// A manifest naming a published image posts its artifact inline and never
+// consults the link, so a linked project really is getting a new artifact.
+// Claiming otherwise would describe a reuse that does not happen.
+func TestRender_LinkedProjectOnAPublishedImageStillGetsANewArtifact(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:          StateUnbound,
+		Creates:        true,
+		LinkedArtifact: true,
+		Code:           CodeChange{Applies: false},
+	})
+
+	assert.Contains(t, out, "with its first artifact")
+	assert.NotContains(t, out, "linked to")
 }

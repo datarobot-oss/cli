@@ -69,10 +69,25 @@ type Plan struct {
 	// cannot actually be deployed onto.
 	State State
 
-	// Creates is a workload that does not exist yet, in which case Artifact
-	// and Runtime are empty: everything in the file is new, and listing it
+	// Creates is a workload the apply has to make rather than reconcile,
+	// because nothing is bound or what was bound is gone. Artifact and Runtime
+	// are empty in that case: everything in the file is new, and listing it
 	// field by field would be noise rather than a plan.
 	Creates bool
+
+	// PriorWorkloadID is the binding this create replaces, set only when the
+	// file named a workload the platform no longer has. A first deploy leaves
+	// it empty. The plan prints it, because a run that creates something where
+	// the file expected to find it is the one case where the user may be
+	// pointed at the wrong instance rather than at a deleted workload.
+	PriorWorkloadID string
+
+	// LinkedArtifact means this project already pushes to an artifact. Whether
+	// a create actually reuses it depends on the build mode: only a build
+	// consults the link, while a manifest naming a published image posts its
+	// artifact inline. Set by the caller rather than computed here, because
+	// this package deliberately never touches the filesystem.
+	LinkedArtifact bool
 
 	Code     CodeChange
 	Artifact []Change
@@ -97,6 +112,53 @@ func (p Plan) Empty() bool {
 		len(p.Artifact) == 0 &&
 		len(p.Runtime) == 0 &&
 		p.State != StateStopped
+}
+
+// creates reports the states whose apply is a create rather than a reconcile.
+//
+// Unbound is the first deploy. Missing is the same answer for a different
+// reason: the file names a workload the platform does not have, and `up` is a
+// reconciler, so a target that no longer exists is drift like any other and
+// the file is what says what should be there. Refusing instead leaves the
+// binding for the user to clear by hand, which is a dead end on exactly the
+// recovery path where it is least welcome.
+//
+// Terminated is deliberately not among them, though it reads like it should
+// be. A terminated workload still exists: the platform returns it, and it goes
+// on holding its name and its artifact. Creating over it collides with the
+// name it still owns, and every line the plan would print about it would be
+// false, starting with the claim that it no longer exists.
+//
+// The risk this trades against is a 404 that means "not here" rather than
+// "deleted": a manifest deployed against the wrong instance, organisation or
+// token resolves to nothing and would be recreated somewhere unintended. That
+// is why the plan names the id it could not find, and why Terraform, which
+// treats a vanished resource the same way, is safe doing it while confirming
+// at apply. `up` announces rather than confirms, so the announcement is what
+// has to carry it.
+func creates(state State) bool {
+	switch state {
+	case StateUnbound, StateMissing:
+		return true
+
+	case StateTerminated, StateStopped, StateSettling, StateRunning, StateErrored:
+		return false
+
+	default:
+		return false
+	}
+}
+
+// priorBinding is the id a create is about to replace. A first deploy has
+// none, and only a binding that resolved to nothing has one worth printing:
+// the plan says which id went missing so a run pointed at the wrong instance
+// reads differently from one recovering a deleted workload.
+func priorBinding(live Live) string {
+	if live.State == StateMissing {
+		return live.WorkloadID
+	}
+
+	return ""
 }
 
 // RollsArtifact reports whether a new artifact version has to be minted and
@@ -140,10 +202,11 @@ func (p Plan) Action() string {
 // and hands over the count.
 func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	plan := Plan{
-		State:   live.State,
-		Creates: live.State == StateUnbound,
-		Code:    code,
-		Locked:  live.Locked,
+		State:           live.State,
+		Creates:         creates(live.State),
+		PriorWorkloadID: priorBinding(live),
+		Code:            code,
+		Locked:          live.Locked,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an

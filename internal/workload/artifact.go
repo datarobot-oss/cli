@@ -186,7 +186,14 @@ func NewArtifactOutput(a Artifact) ArtifactOutput {
 }
 
 func (a *Artifact) IsLocked() bool {
-	return strings.EqualFold(a.Status, ArtifactStatusLocked)
+	return IsLockedStatus(a.Status)
+}
+
+// IsLockedStatus is the same question asked of a status read off a raw
+// document, for a caller that already has the artifact as the server sent it
+// and should not fetch it again to get a typed struct to ask.
+func IsLockedStatus(status string) bool {
+	return strings.EqualFold(status, ArtifactStatusLocked)
 }
 
 // primaryContainer is the single definition of which container the CLI reads
