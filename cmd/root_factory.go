@@ -212,9 +212,11 @@ func NewRootFactory(opts ...Option) *RootFactory {
 	return f
 }
 
-// TelemetryClient returns the telemetry client that was wired during the
-// most recent Build() call. cmd.Exit uses this to flush events on error
-// paths where only the signal context, not a cobra context, is available.
+// TelemetryClient returns the telemetry client from the factory's most
+// recent command execution. The client is created in persistentPreRun at
+// Execute time, not during Build — a built-but-never-executed tree leaves
+// this nil. cmd.Exit uses it to flush events on error paths where only the
+// signal context, not a cobra context, is available.
 func (f *RootFactory) TelemetryClient() *telemetry.Client {
 	return f.telemetryClient
 }
