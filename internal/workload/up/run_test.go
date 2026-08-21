@@ -1114,6 +1114,9 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+		},
 	})
 
 	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
@@ -1122,6 +1125,49 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 	assert.NotNil(t, payload)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 	assert.Equal(t, ActionCreated, result.Action)
+	assert.False(t, result.Locked, "the artifact the file names is a draft")
+}
+
+// A create bound to an artifact that is already locked is a promotion: the
+// version is permanent before this run touches anything. Locked comes off the
+// artifact the workload is running, and a create has no workload, so without
+// asking the file's artifact directly the result would call a permanent deploy
+// a draft and the caller would advise locking what cannot be locked twice.
+func TestRun_CreatesFromALockedArtifactReportsItLocked(t *testing.T) {
+	install(t, fakes{
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.True(t, result.Locked)
+}
+
+// The read is not optional. The id came out of the committed file, so an
+// artifact that cannot be read is one the create was going to fail on anyway,
+// and failing here costs a plan rather than a half-made workload.
+func TestRun_CreateBoundToAnUnreadableArtifactFails(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("nothing may be created once the artifact could not be read")
+
+			return nil, nil
+		},
+		getArtifact: func(string) (*workload.Artifact, error) {
+			return nil, errors.New("boom")
+		},
+	})
+
+	_, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already locked")
 }
 
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
