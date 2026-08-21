@@ -430,6 +430,13 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 		} else {
 			props.CommandKind = "core"
 		}
+
+		// Stamp the merged non-interactive signal (env var, --yes flag,
+		// --force-interactive override) so every event reports whether the
+		// invocation ran without human interaction. CollectCommonProperties
+		// only seeds the env-var signal, so this call is what lets --yes
+		// invocations show up as non_interactive in analytics.
+		telemetry.StampInteractionMode(props, cmd)
 	}
 
 	// Log the detected shell only when debug is active. Reuse Shell from
