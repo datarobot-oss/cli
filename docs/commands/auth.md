@@ -519,10 +519,13 @@ Properties of this flow:
 - The callback listener is bound to localhost only
 
 > [!IMPORTANT]
-> The API key arrives as a URL query parameter and is stored in plaintext. There is no
-> `state` parameter, so any local process able to reach `localhost:51164` while a login
-> is in flight could deliver a key. Treat `drconfig.yaml` as a secret and prefer
-> `DATAROBOT_API_TOKEN` in shared or automated environments.
+> The API key arrives as a URL query parameter and is stored in plaintext. The callback
+> refuses browser requests that a page can forge (an `<img>` or background `fetch` carries
+> a `Sec-Fetch-Dest` other than `document`), so a web page you have open cannot plant a
+> key while a login is in flight. It still has no `state` parameter, so a local process
+> that can forge request headers, or a page that forces a full-page navigation, can deliver
+> one. Treat `drconfig.yaml` as a secret and prefer `DATAROBOT_API_TOKEN` in shared or
+> automated environments.
 
 ## Configuration file
 
