@@ -382,65 +382,13 @@ production gets `defaultAuditLogger` for free.
 
 ## Feature-gating a command
 
-Feature gates hide commands behind an environment variable until they are ready
-for release. The factory's `addSubcommands` uses `cli.CommandAdder.AddCommand`,
-which automatically drops any command whose gate is not enabled.
+For gating mechanics — `features.SetGate`, env-var naming, and gating nested
+subcommands — see [feature-gates.md](feature-gates.md).
 
-### Gate a top-level command
-
-```go
-// cmd/myfeature/cmd.go
-func Cmd() *cobra.Command {
-    c := &cobra.Command{
-        Use:   "myfeature",
-        Short: "Coming soon",
-    }
-
-    // Gate this command behind DATAROBOT_CLI_FEATURE_MYFEATURE=true.
-    features.SetGate(c, "myfeature")
-
-    return c
-}
-```
-
-Register it normally in `addSubcommands` — `CommandAdder` handles the filtering:
-
-```go
-adder.AddCommand(
-    myfeature.Cmd(),  // silently dropped unless the gate is enabled
-)
-```
-
-### Gate a nested subcommand
-
-`CommandAdder.AddCommand` only filters at the level it's called from. To gate a
-subcommand inside an existing parent, wrap the parent with `CommandAdder`:
-
-```go
-func Cmd() *cobra.Command {
-    parent := &cobra.Command{Use: "parent"}
-    adder := &cli.CommandAdder{Command: parent}
-
-    adder.AddCommand(gatedChild.Cmd())  // dropped when gate is off
-
-    return parent
-}
-```
-
-### Enable a gate locally
-
-```sh
-DATAROBOT_CLI_FEATURE_MYFEATURE=true dr myfeature
-```
-
-The env var name is derived from the gate name: uppercased, hyphens replaced
-with underscores, prefixed with `DATAROBOT_CLI_FEATURE_`.
-
-### Test gated and ungated behaviour
-
-Because gate evaluation happens in `init()` (when the production `RootCmd` is
-built), tests that check for command presence or absence should use the fresh
-factory tree — or skip when the gate state doesn't match what the test expects:
+The factory-specific fact: gates are evaluated by `cli.CommandAdder.AddCommand`
+at **Build time**, so a built tree's gate state is frozen. The production
+singleton's gate state is fixed at `init()`; a test that needs a different
+gate state must set the env var first and then build a fresh tree:
 
 ```go
 func TestMyFeatureHiddenByDefault(t *testing.T) {
