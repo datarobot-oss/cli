@@ -200,10 +200,22 @@ assemble the tree.
 ## Overriding a dependency in a test
 
 The most common reason to override a dependency is preventing viperx state from
-leaking between tests. When two tests both call `Execute()` on the same shared
-`RootCmd` singleton, the first test's `t.Setenv(...)` can still be visible to
-the second test via viper's global state — even after the env var is restored —
-because `AutomaticEnv` re-reads the environment on the next access.
+leaking between tests. Viper resolves a key in this precedence order:
+
+    viperx.Set()  >  changed pflag  >  env var (live)  >  config file  >  defaults
+
+Env vars are read live — `os.LookupEnv` on every `Get` — so `t.Setenv` cleanup
+is visible immediately, and env vars are *not* the leak vector. The sticky
+layers are the other three:
+
+- **`viperx.Set(...)` overrides** persist until `viperx.Reset()` and, being
+  highest-precedence, shadow live env reads for every later test in the
+  process.
+- **Config-file contents** parsed by `ReadInConfig` persist in the global
+  instance until the next read or `viperx.Reset()`.
+- **Changed-flag state on the shared `RootCmd` singleton**: once a test
+  executes it with a flag (e.g. `--debug`), the pflag binding serves that
+  value with priority over env and config for the rest of the process.
 
 The fix is to give each test its own command tree built with a no-op
 `ConfigInitializer` that never touches viper:
@@ -212,15 +224,21 @@ The fix is to give each test its own command tree built with a no-op
 func TestSomethingThatSetsEnvVars(t *testing.T) {
     t.Setenv("DATAROBOT_CLI_API_TOKEN", "test-token")
 
-    // Without the factory: this env var could bleed into the next test
-    // via viper's shared global state.
+    // Without the factory: Set overrides and config-file contents from
+    // earlier tests persist in the global viper instance and shadow this
+    // test's env vars.
     //
     // With the factory: the no-op ConfigInitializer never calls
-    // viperx.AutomaticEnv(), so viper never sees the env var at all.
+    // viperx.AutomaticEnv() or ReadConfigFile(), so this tree resolves
+    // only what the test seeds explicitly.
     root := cmd.NewIsolatedRootFactory(
         cmd.WithConfigInitializer(func(_ *cobra.Command) error {
-            // Optionally seed specific viper keys your command needs,
-            // without calling AutomaticEnv() or ReadConfigFile().
+            // Seed the viper keys your command needs without calling
+            // AutomaticEnv() or ReadConfigFile(). Note: viperx.Set writes
+            // a highest-precedence override that persists until
+            // viperx.Reset() (which itself wipes flag bindings, so it is
+            // only safe when the next use is a fresh Build). Prefer
+            // seeding keys only in isolated-tree tests like this one.
             viperx.Set("api-token", "test-token")
             return nil
         }),
@@ -242,13 +260,14 @@ hand-assembling stubs:
 root := cmd.NewIsolatedRootFactory().Build()
 ```
 
-> **Why not just use the global `RootCmd`?** The global singleton is built once
-> in `init()` with the production `ConfigInitializer`. Every `Execute()` call on
-> it runs `viperx.AutomaticEnv()` and `ReadConfigFile()` against the live
-> environment. Env vars set with `t.Setenv()` are restored after the test, but
-> viper's internal cache may retain values until the next `AutomaticEnv()` sweep
-> — which happens in the *next* test's `Execute()`. A fresh factory tree sidesteps
-> this entirely.
+> **Why not just use the global `RootCmd`?** The singleton is built once in
+> `init()` with the production dependencies, and every `Execute()` on it runs
+> `ReadInConfig` against the live environment and marks its bound flags
+> Changed. Both effects stick: config contents stay in the global viper
+> instance until the next read, and a changed flag keeps outranking env vars
+> for the rest of the process. (There is no env-var caching involved — viper
+> reads `os.LookupEnv` live on every `Get`.) A fresh factory tree sidesteps
+> both, and `NewIsolatedRootFactory()` skips the config read entirely.
 
 ---
 
