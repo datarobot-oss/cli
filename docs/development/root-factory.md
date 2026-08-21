@@ -170,13 +170,7 @@ now you get a clean isolated tree:
 
 ```go
 func TestMyFeatureCmd(t *testing.T) {
-    root := cmd.NewRootFactory(
-        cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
-        cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-        cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
-        cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
-        cmd.WithAnimation(func() {}),
-    ).Build()
+    root := cmd.NewIsolatedRootFactory().Build()
 
     var buf bytes.Buffer
     root.SetOut(&buf)
@@ -187,14 +181,10 @@ func TestMyFeatureCmd(t *testing.T) {
 }
 ```
 
-Once `newIsolatedRootCmd()` is available (from the test-isolation follow-up PR),
-this reduces to:
-
-```go
-root := newIsolatedRootCmd()
-root.SetArgs([]string{"myfeature"})
-require.NoError(t, root.Execute())
-```
+`NewIsolatedRootFactory` pre-applies no-op overrides for every dependency, so
+the test touches no disk, no environment, no global viper state, and no plugin
+binaries. Pass your own options after the defaults to override specific
+dependencies per test.
 
 **The short version:** commands are written identically to before — they return a
 `*cobra.Command` from a `Cmd()` constructor, get registered in one place, and
@@ -223,17 +213,13 @@ func TestSomethingThatSetsEnvVars(t *testing.T) {
     //
     // With the factory: the no-op ConfigInitializer never calls
     // viperx.AutomaticEnv(), so viper never sees the env var at all.
-    root := cmd.NewRootFactory(
+    root := cmd.NewIsolatedRootFactory(
         cmd.WithConfigInitializer(func(_ *cobra.Command) error {
             // Optionally seed specific viper keys your command needs,
             // without calling AutomaticEnv() or ReadConfigFile().
             viperx.Set("api-token", "test-token")
             return nil
         }),
-        cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-        cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
-        cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
-        cmd.WithAnimation(func() {}),
     ).Build()
 
     root.SetArgs([]string{"mycommand"})
@@ -241,18 +227,15 @@ func TestSomethingThatSetsEnvVars(t *testing.T) {
 }
 ```
 
-Similarly, override `WithTelemetryProps` to avoid hitting the network or disk
-for device/user IDs, and `WithPluginRegistrar` to skip filesystem discovery:
+`NewIsolatedRootFactory` already no-ops every dependency, including the ones
+with surprising side effects: the default `TelemetryProps` hits the network or
+disk for device/user IDs, and the default `PluginRegistrar` executes every
+`dr-*` binary found on PATH to fetch its manifest. Prefer the preset over
+hand-assembling stubs:
 
 ```go
 // Minimal no-op factory — safe for any unit test.
-root := cmd.NewRootFactory(
-    cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
-    cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-    cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
-    cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
-    cmd.WithAnimation(func() {}),
-).Build()
+root := cmd.NewIsolatedRootFactory().Build()
 ```
 
 > **Why not just use the global `RootCmd`?** The global singleton is built once
@@ -336,6 +319,12 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 That's it. Tests override it with `WithAuditLogger(func(...) error { return nil })`;
 production gets `defaultAuditLogger` for free.
 
+> **Planned next field:** an `IOStreams` dependency (stdin/stdout/stderr
+> abstraction, à la GitHub CLI's `cmdutil.Factory`). The injection rails are in
+> place, but it only pays off once command constructors consume injected
+> streams instead of writing to `os.Stdout` directly — a cross-cutting
+> migration tracked as a follow-up to this stack.
+
 ---
 
 ## Feature-gating a command
@@ -403,13 +392,7 @@ factory tree — or skip when the gate state doesn't match what the test expects
 ```go
 func TestMyFeatureHiddenByDefault(t *testing.T) {
     // Build a fresh tree with no feature gate enabled.
-    root := cmd.NewRootFactory(
-        cmd.WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
-        cmd.WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-        cmd.WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
-        cmd.WithPluginRegistrar(func(_ *cobra.Command) {}),
-        cmd.WithAnimation(func() {}),
-    ).Build()
+    root := cmd.NewIsolatedRootFactory().Build()
 
     for _, sub := range root.Commands() {
         assert.NotEqual(t, "myfeature", sub.Name(),
@@ -420,7 +403,7 @@ func TestMyFeatureHiddenByDefault(t *testing.T) {
 func TestMyFeatureVisibleWhenGateEnabled(t *testing.T) {
     t.Setenv("DATAROBOT_CLI_FEATURE_MYFEATURE", "true")
 
-    root := cmd.NewRootFactory( /* same no-op deps */ ).Build()
+    root := cmd.NewIsolatedRootFactory().Build()
 
     var found bool
     for _, sub := range root.Commands() {

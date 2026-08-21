@@ -241,6 +241,39 @@ func NewRootFactory(opts ...Option) *RootFactory {
 	return f
 }
 
+// NewIsolatedRootFactory returns a factory whose dependencies are all
+// side-effect-free: no config-file reads, no env binding, no TLS setup, no
+// first-run animation, no telemetry transmission, no viper flag binding,
+// and no plugin discovery (which would otherwise execute every dr-* binary
+// found on PATH). This is the safe starting point for unit tests.
+//
+// Caller options are applied after the no-op defaults, so individual
+// dependencies can still be overridden per test:
+//
+//	root := NewIsolatedRootFactory(
+//		WithConfigInitializer(func(_ *cobra.Command) error {
+//			viperx.Set("api-token", "test-token")
+//			return nil
+//		}),
+//	).Build()
+func NewIsolatedRootFactory(opts ...Option) *RootFactory {
+	defaults := make([]Option, 0, 7+len(opts))
+
+	defaults = append(defaults,
+		WithConfigInitializer(func(_ *cobra.Command) error { return nil }),
+		WithTLSSetup(func(_ *cobra.Command) error { return nil }),
+		WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
+		WithTelemetryClient(func(_ *telemetry.CommonProperties) *telemetry.Client {
+			return telemetry.NewTestClient(nil, nil)
+		}),
+		WithAnimation(func() {}),
+		WithPluginRegistrar(func(_ *cobra.Command) {}),
+		WithViperBinder(func(_ *cli.CommandAdder) {}),
+	)
+
+	return NewRootFactory(append(defaults, opts...)...)
+}
+
 // TelemetryClient returns the telemetry client from the factory's most
 // recent command execution. The client is created in persistentPreRun at
 // Execute time, not during Build — a built-but-never-executed tree leaves
