@@ -174,6 +174,10 @@ func Run(opts Options) (Result, error) {
 		Locked:     live.Locked,
 	}
 
+	if err := bindLocked(loaded, plan, &result); err != nil {
+		return result, err
+	}
+
 	if err := Render(opts.Stderr, Summary{Name: result.Name, WorkloadID: result.WorkloadID}, plan); err != nil {
 		return result, err
 	}
@@ -200,6 +204,46 @@ func noteIgnoreFile(code CodeChange, opts Options) {
 	}
 
 	fmt.Fprintf(opts.Stderr, "  %s\n", tui.HintStyle.Render(code.IgnoreNotice))
+}
+
+// bindLocked settles Locked for the one shape live state cannot answer: a
+// manifest bound by artifact id, deploying to a workload that does not exist
+// yet. Locked is otherwise read off the artifact the workload is running, and
+// a create has no workload to read it from, so the result would say draft
+// about an artifact that may well be permanent.
+//
+// That is not a cosmetic slip. Deploying a locked, versioned artifact onto a
+// fresh workload is how a promotion works, and getting it wrong there tells
+// someone their permanent deploy is temporary and then advises 'up --lock',
+// which the platform answers with a 403 because the artifact is already
+// locked. The reader is left with a warning they cannot act on.
+//
+// Only creates ask. A roll onto a live workload cannot hit this, because the
+// platform refuses to swap a draft for a locked version and the run fails on
+// its own terms long before anything is printed.
+//
+// A failure to read is returned rather than shrugged off. The id came from
+// the file, so an artifact that cannot be read is one the deploy was going to
+// fail on anyway, and saying so here costs a create instead of a plan that
+// was never true.
+func bindLocked(loaded Loaded, plan Plan, result *Result) error {
+	if !plan.Creates || result.Locked {
+		return nil
+	}
+
+	bound := loaded.Compiled.ArtifactID
+	if bound == "" {
+		return nil
+	}
+
+	locked, err := lockedAlready(bound)
+	if err != nil {
+		return err
+	}
+
+	result.Locked = locked
+
+	return nil
 }
 
 // noteUnusedForce reports a --force-build that is about to do nothing,

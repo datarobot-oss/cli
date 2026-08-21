@@ -399,14 +399,24 @@ func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
 	assert.Nil(t, seen.Confirm)
 }
 
-// draftHeadline is the one phrase every draft warning has to carry. Asserting
-// on a whole sentence would break the moment the wording is tuned, and this is
-// the part that cannot change without the warning ceasing to be one.
-const draftHeadline = "This workload is running a draft artifact."
+// The warning leads with one of these, and which one is not cosmetic. A dry
+// run has changed nothing and may be previewing a workload that does not exist
+// yet, so the present tense would contradict the "nothing was changed" line
+// printed directly above it.
+const (
+	draftHeadline     = "This workload is running a draft artifact."
+	draftHeadlinePlan = "This workload would run a draft artifact."
+)
+
+// draftWarned reports whether either tense reached the stream, for the tests
+// that assert silence and have no reason to care which one was suppressed.
+func draftWarned(stderr string) bool {
+	return strings.Contains(stderr, draftHeadline) || strings.Contains(stderr, draftHeadlinePlan)
+}
 
 // A deploy onto a draft is on a clock nothing in the output used to mention:
-// the artifact is reclaimed and the workload stops once idle, so an endpoint
-// shared in the afternoon can be dead by morning.
+// the workload is stopped eight hours after it starts running, whatever it is
+// serving, so an endpoint shared in the afternoon can be dead by morning.
 func TestCmd_DraftDeploySaysItIsTemporary(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
@@ -467,7 +477,7 @@ func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
 
-	assert.NotContains(t, stderr, draftHeadline)
+	assert.False(t, draftWarned(stderr))
 	assert.NotContains(t, stderr, "dr workload up --lock")
 	assert.Contains(t, stderr, "dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0")
 }
@@ -479,7 +489,7 @@ func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
 
 	_, stderr, err := runCmd(t, "--lock")
 	require.NoError(t, err)
-	assert.NotContains(t, stderr, draftHeadline)
+	assert.False(t, draftWarned(stderr))
 }
 
 // Someone previewing a first deploy is exactly who the warning is for, and a
@@ -492,7 +502,9 @@ func TestCmd_DryRunWarnsAboutADraftItWouldDeploy(t *testing.T) {
 
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "nothing was changed")
-	assert.Contains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, draftHeadlinePlan,
+		"a preview has deployed nothing, so it may not claim the workload is already running one")
+	assert.NotContains(t, stderr, draftHeadline)
 	assert.Contains(t, stderr, "dr workload up --lock",
 		"a dry run never reaches the Next list, so the warning has to carry the remedy itself")
 }
@@ -502,7 +514,7 @@ func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
 
 	_, stderr, err := runCmd(t, "--dry-run", "--lock")
 	require.NoError(t, err)
-	assert.NotContains(t, stderr, draftHeadline)
+	assert.False(t, draftWarned(stderr))
 }
 
 // The purity rule, held against the one thing added since it was written: the
@@ -516,7 +528,7 @@ func TestCmd_JSONOutputCarriesNoDraftProse(t *testing.T) {
 	var envelope map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "stdout must stay one JSON document")
-	assert.NotContains(t, stdout, draftHeadline)
+	assert.False(t, draftWarned(stdout))
 
 	body, _ := envelope["up"].(map[string]any)
 	assert.Equal(t, false, body["locked"], "the envelope already says this in a form a machine can read")
@@ -529,7 +541,7 @@ func TestCmd_NoWorkloadSaysNothingAboutDrafts(t *testing.T) {
 
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
-	assert.NotContains(t, stderr, draftHeadline)
+	assert.False(t, draftWarned(stderr))
 }
 
 // A failed deploy has one thing worth reading and it is the error. Telling
@@ -539,7 +551,7 @@ func TestCmd_FailedDeployDoesNotWarnAboutDrafts(t *testing.T) {
 
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
-	assert.NotContains(t, stderr, draftHeadline)
+	assert.False(t, draftWarned(stderr))
 }
 
 // A run that changed nothing still leaves a draft serving on the same clock.

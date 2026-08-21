@@ -337,14 +337,13 @@ func reportable(result up.Result) bool {
 }
 
 // draftIsServing reports whether this run left, or would leave, a draft
-// artifact serving. A draft is mutable and unversioned, the platform reclaims
-// it, and the workload stops on its own once it has been idle, none of which
-// the deploy output ever said.
+// artifact serving. A workload on a draft is stopped eight hours after it
+// starts running, whatever it is serving, and the deploy output never said so.
 //
-// Result.Locked is the whole signal and costs no extra call. It starts as the
-// status of the artifact the workload is already running and is only ever
-// flipped true by an actual lock, so its negation covers every path a deploy
-// can take: create, roll, retune, start, and a run that changed nothing.
+// Result.Locked is the whole signal. It starts as the status of the artifact
+// the workload is already running and is only ever flipped true by an actual
+// lock, so its negation covers every path a deploy can take: create, roll,
+// retune, start, and a run that changed nothing.
 //
 // The three refusals, in order:
 //
@@ -359,13 +358,11 @@ func reportable(result up.Result) bool {
 // to check and previewing a first deploy is exactly who this is for; and a
 // real run qualifies once it has a workload, the same guard nextSteps uses.
 //
-// One shape slips through: a manifest bound by artifactId to an artifact that
-// is already locked, creating a workload from it. Nothing reads that
-// artifact's status before the deploy, so the run reports a draft and this
-// warns wrongly. Rolling that shape is refused by the platform, which will
-// not swap a draft for a locked version, so only the create case can reach
-// it. Reading the status to be sure would mean a fetch in the planner for a
-// rare shape, which is not worth what it buys.
+// The one shape live state cannot answer, a manifest bound by artifact id
+// creating a workload that does not exist yet, is settled before the result
+// gets here: see bindLocked in internal/workload/up. Without it a promotion
+// of a locked artifact onto a fresh workload would be called temporary and
+// then advised to lock what is already locked.
 func draftIsServing(f flags, result up.Result, failed bool) bool {
 	if failed || f.lock || result.Locked {
 		return false
@@ -393,7 +390,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 
 	if f.dryRun {
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
-		draftWarning(cmd.ErrOrStderr(), draft)
+		draftWarning(cmd.ErrOrStderr(), draft, true)
 
 		return nil
 	}
@@ -415,7 +412,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
-	draftWarning(cmd.ErrOrStderr(), draft)
+	draftWarning(cmd.ErrOrStderr(), draft, false)
 	nextSteps(cmd.ErrOrStderr(), result, draft)
 
 	return nil
@@ -439,13 +436,20 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 // The command is named inline rather than left to nextSteps, because a dry run
 // returns before nextSteps ever gets to speak and would otherwise state a
 // problem with no remedy attached.
-func draftWarning(w io.Writer, draft bool) {
+func draftWarning(w io.Writer, draft, planned bool) {
 	if !draft {
 		return
 	}
 
-	fmt.Fprintf(w, "\n  %s %s\n",
-		tui.WarnStyle.Render("⚠"), tui.WarnStyle.Render("This workload is running a draft artifact."))
+	// A dry run has changed nothing and may be previewing a workload that does
+	// not exist, so the present tense would contradict the "nothing was
+	// changed" line printed immediately above it.
+	headline := "This workload is running a draft artifact."
+	if planned {
+		headline = "This workload would run a draft artifact."
+	}
+
+	fmt.Fprintf(w, "\n  %s %s\n", tui.WarnStyle.Render("⚠"), tui.WarnStyle.Render(headline))
 
 	// One sentence per line, and rendered a line at a time. Wrapping prose to a
 	// fixed width breaks it mid-clause at whatever column the source happened to
