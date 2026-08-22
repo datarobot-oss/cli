@@ -41,7 +41,8 @@ type BasicPluginManifest struct {
 type PluginManifest struct {
 	BasicPluginManifest
 	Scripts       *PluginScripts `json:"scripts,omitempty"`       // Platform-specific script paths
-	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
+	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required (inclusive)
+	MaxCLIVersion string         `json:"maxCLIVersion,omitempty"` // Maximum CLI version supported (inclusive)
 }
 
 // RegistryVersion represents a specific version in the plugin registry.
@@ -80,18 +81,42 @@ type DiscoveredPlugin struct {
 	Executable string // Full path to executable
 }
 
+// PluginSkipReason classifies why a plugin was excluded from discovery
+// results and reported via the PluginConflict channel instead of loading.
+type PluginSkipReason int
+
+const (
+	// SkipReasonNameConflict is the zero value: a plugin with the same
+	// manifest name was already registered from a higher-priority location.
+	// This is the pre-existing (and only) skip reason before CLI version
+	// constraints were introduced, so every existing PluginConflict literal
+	// that omits Reason keeps its original meaning.
+	SkipReasonNameConflict PluginSkipReason = iota
+
+	// SkipReasonVersionIncompatible means the plugin declared a
+	// minCLIVersion/maxCLIVersion bound that the running CLI version
+	// violates, or declared a malformed bound.
+	SkipReasonVersionIncompatible
+)
+
 // PluginConflict records a plugin executable that was skipped during
-// discovery because a plugin with the same manifest name was already
+// discovery, either because a plugin with the same manifest name was already
 // registered from a higher-priority location (managed dirs > local plugin
-// dir > PATH; first match within a tier wins).
+// dir > PATH; first match within a tier wins), or because it declared a CLI
+// version bound (Reason == SkipReasonVersionIncompatible) that the running
+// CLI does not satisfy. Detail carries reason-specific, human-readable
+// context (e.g. the violated bound and the running CLI version); it is
+// empty for name conflicts.
 //
 // Discovery returns conflicts as data instead of logging them directly, so
 // each caller can decide which ones are relevant: `dr plugin list` and
 // command registration warn about all of them, while `dr plugin version
 // <name>` only surfaces conflicts for the plugin actually being asked about.
 type PluginConflict struct {
-	Name string // manifest name that was already registered
-	Path string // executable (or managed plugin dir) that was skipped
+	Name   string           // manifest name that was already registered
+	Path   string           // executable (or managed plugin dir) that was skipped
+	Reason PluginSkipReason // why the plugin was skipped (zero value: name conflict)
+	Detail string           // reason-specific detail (empty for name conflicts)
 }
 
 // DiscoveredPluginsRegistry holds discovered plugins with lazy initialization.
