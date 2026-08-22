@@ -51,9 +51,11 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 
 	plugins, conflicts := internalPlugin.DiscoverPluginsWithContext(ctx)
 
-	// Registering commands considers every discovered plugin, so every
-	// conflict is relevant here (it affects which binary wins a command name).
-	internalPlugin.LogConflicts(conflicts)
+	// Registering commands warns about name conflicts (they affect which
+	// binary wins a command name on every invocation) but stays silent about
+	// CLI version incompatibility skips here; those surface only through
+	// `dr plugin list` / `dr plugin version <name>`.
+	reportDiscoveryConflicts(conflicts)
 
 	// Seed the shared discovery cache so a later plugin.GetPlugins() call
 	// (e.g. from `dr plugin list` or `dr plugin version`) reuses this result
@@ -83,6 +85,21 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 		}
 
 		rootCmd.AddCommand(createPluginCommand(p))
+	}
+}
+
+// reportDiscoveryConflicts logs name conflicts at Warn (unchanged, pre-existing
+// behavior) and stays silent about CLI version-incompatibility skips on this
+// routine, per-invocation discovery path — Info-level output there would run
+// on every `dr` command, which the spec forbids ("Silent on routine command
+// discovery"). Version-incompatibility skips are only surfaced by `dr plugin
+// list` and `dr plugin version <name>`, which call internalPlugin.LogConflicts
+// directly on the full (unfiltered) conflict set.
+func reportDiscoveryConflicts(conflicts []internalPlugin.PluginConflict) {
+	internalPlugin.LogConflicts(internalPlugin.ConflictsForReason(conflicts, internalPlugin.SkipReasonNameConflict))
+
+	if versionSkips := internalPlugin.ConflictsForReason(conflicts, internalPlugin.SkipReasonVersionIncompatible); len(versionSkips) > 0 {
+		log.Debug("Plugin(s) skipped: CLI version incompatible", "count", len(versionSkips))
 	}
 }
 
