@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // liveWorkloadJSON and liveArtifactJSON are shaped like the server's own
@@ -995,4 +996,180 @@ func TestLive_DoesNotMutateInputDocs(t *testing.T) {
 
 	assert.Equal(t, workloadBefore, workloadDoc)
 	assert.Equal(t, artifactBefore, artifactDoc)
+}
+
+// renderedRoot parses rendered bytes and returns the document's root mapping node.
+func renderedRoot(t *testing.T, rendered []byte) *yaml.Node {
+	t.Helper()
+
+	var doc yaml.Node
+
+	require.NoError(t, yaml.Unmarshal(rendered, &doc))
+	require.Len(t, doc.Content, 1)
+	require.Equal(t, yaml.MappingNode, doc.Content[0].Kind)
+
+	return doc.Content[0]
+}
+
+// mappingKeys returns the scalar keys of a mapping node in order.
+func mappingKeys(node *yaml.Node) []string {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	keys := make([]string, 0, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keys = append(keys, node.Content[i].Value)
+	}
+
+	return keys
+}
+
+// walkMappingNodes calls f for every mapping node under node, including node itself.
+func walkMappingNodes(node *yaml.Node, f func(*yaml.Node)) {
+	if node == nil {
+		return
+	}
+
+	if node.Kind == yaml.MappingNode {
+		f(node)
+	}
+
+	for _, child := range node.Content {
+		walkMappingNodes(child, f)
+	}
+}
+
+// In the rendered YAML, every container mapping lists name as its first key.
+func TestLive_RenderLeadsWithNameInContainers(t *testing.T) {
+	live := liveFixture(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+	spec := mapValue(mapValue(root, keyArtifact), keySpec)
+
+	for _, group := range seqItems(mapValue(spec, keyContainerGroups)) {
+		for _, container := range seqItems(mapValue(group, keyContainers)) {
+			keys := mappingKeys(container)
+			require.NotEmpty(t, keys)
+			assert.Equal(t, keyName, keys[0], "container %q should lead with name", keys[0])
+		}
+	}
+}
+
+// In the rendered YAML, every container group mapping lists name as its first key.
+func TestLive_RenderLeadsWithNameInContainerGroups(t *testing.T) {
+	live := liveFixture(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+
+	checkGroups := func(node *yaml.Node) {
+		for _, group := range seqItems(node) {
+			keys := mappingKeys(group)
+			require.NotEmpty(t, keys)
+			assert.Equal(t, keyName, keys[0], "container group should lead with name")
+		}
+	}
+
+	spec := mapValue(mapValue(root, keyArtifact), keySpec)
+	checkGroups(mapValue(spec, keyContainerGroups))
+
+	runtime := mapValue(root, keyRuntime)
+	checkGroups(mapValue(runtime, keyContainerGroups))
+}
+
+// The rendered manifest's top-level mapping lists keys in the agreed order.
+func TestLive_RenderTopLevelKeyOrder(t *testing.T) {
+	live := liveFixture(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+	keys := mappingKeys(root)
+
+	assert.Equal(t, []string{keyWorkloadID, keyName, keyImportance, keyArtifact, keyRuntime}, keys)
+}
+
+// After Apply mutates the spec, the rendered output still leads every container
+// and container group mapping with name.
+func TestLive_ApplyRenderLeadsWithName(t *testing.T) {
+	live := liveFixture(t)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+	spec := mapValue(mapValue(root, keyArtifact), keySpec)
+
+	for _, group := range seqItems(mapValue(spec, keyContainerGroups)) {
+		keys := mappingKeys(group)
+		require.NotEmpty(t, keys)
+		assert.Equal(t, keyName, keys[0], "container group should lead with name after Apply")
+
+		for _, container := range seqItems(mapValue(group, keyContainers)) {
+			keys := mappingKeys(container)
+			require.NotEmpty(t, keys)
+			assert.Equal(t, keyName, keys[0], "container should lead with name after Apply")
+		}
+	}
+}
+
+// Reordering moves name to the front but does not drop or duplicate any keys.
+func TestLive_RenderReorderPreservesKeys(t *testing.T) {
+	live := liveFixture(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+
+	walkMappingNodes(root, func(node *yaml.Node) {
+		keys := mappingKeys(node)
+		seen := make(map[string]bool, len(keys))
+
+		for _, key := range keys {
+			assert.False(t, seen[key], "key %q is duplicated", key)
+			seen[key] = true
+		}
+
+		// The top-level manifest order is deliberately fixed by Render; all
+		// nested mappings with a name key should lead with it.
+		if node != root && seen[keyName] {
+			assert.Equal(t, keyName, keys[0], "name should lead when present")
+		}
+	})
+
+	// Focused check: a known container keeps its full key set, only reordering.
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "primary", "primary": true, "port": 8080, "imageUri": "nginx:latest"}
+		]}]}
+	}`), &artifactDoc))
+
+	focused := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	focusedRendered, err := focused.Render()
+	require.NoError(t, err)
+
+	focusedRoot := renderedRoot(t, focusedRendered)
+	spec := mapValue(mapValue(focusedRoot, keyArtifact), keySpec)
+	group := seqItems(mapValue(spec, keyContainerGroups))[0]
+	container := seqItems(mapValue(group, keyContainers))[0]
+
+	keys := mappingKeys(container)
+	assert.Equal(t, []string{keyName, keyImageURI, keyPort, keyPrimary}, keys)
 }

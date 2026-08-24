@@ -729,6 +729,8 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
+	reorderKeys(spec)
+
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
 	if l.ArtifactType != "" {
 		artifact = append(artifact, field{key: keyType, value: scalar(l.ArtifactType)})
@@ -752,6 +754,8 @@ func (l Live) Render() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	reorderKeys(runtime)
 
 	if runtime != nil {
 		fields = append(fields, field{key: keyRuntime, value: runtime})
@@ -811,6 +815,35 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	}
 
 	return node, nil
+}
+
+// reorderKeys walks the YAML node tree and moves any "name" key to the front of
+// its mapping's Content, preserving every other key in its original order. It is
+// applied to the nested spec and runtime blocks; the top-level manifest order is
+// already controlled by Render's explicit field list.
+func reorderKeys(node *yaml.Node) {
+	if node == nil {
+		return
+	}
+
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == keyName {
+				nameKey := node.Content[i]
+				nameValue := node.Content[i+1]
+
+				copy(node.Content[2:i+2], node.Content[0:i])
+				node.Content[0] = nameKey
+				node.Content[1] = nameValue
+
+				break
+			}
+		}
+	}
+
+	for _, child := range node.Content {
+		reorderKeys(child)
+	}
 }
 
 // stripServerManaged removes the server's bookkeeping from a copy of the
