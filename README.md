@@ -40,6 +40,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - 📦 **Template management**&mdash;clone and configure application templates interactively.
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
+- 🛠️ **Workload management**&mdash;bind to live C2W workloads and deploy from manifests (`dr workload config`), gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
 - 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 
