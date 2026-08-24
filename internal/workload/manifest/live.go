@@ -568,10 +568,16 @@ func applyReadiness(container map[string]any, draft Draft) {
 	}
 
 	// Probes the wizard has no question for are preserved as they stand. One
-	// that was watching the container's port still has to follow it: a startup
-	// probe left behind on the old port is how a changed port becomes a deploy
-	// that never reports ready. A probe aimed somewhere else was aimed there
-	// deliberately and keeps its own port.
+	// whose own port was watching the container's still has to follow it: a
+	// startup probe left behind on the old port is how a changed port becomes a
+	// deploy that never reports ready. A probe aimed somewhere else was aimed
+	// there deliberately and keeps its own port.
+	//
+	// Nested ports follow too. A tcpSocket or gRPC probe keeps its port one
+	// level down, and leaving that on a port the container no longer listens on
+	// is the same never-reports-ready deploy this loop exists to prevent. Only
+	// a port that matched the container's old one moves, so a probe deliberately
+	// aimed elsewhere is still left alone whatever shape it is written in.
 	following := []string{keyStartupProbe, keyLivenessProbe}
 	if !rewritten {
 		// A readiness probe this release could not read was left alone above,
@@ -581,10 +587,31 @@ func applyReadiness(container map[string]any, draft Draft) {
 	}
 
 	for _, key := range following {
-		probe := mapAt(container, key)
+		followPort(mapAt(container, key), previous, draft.Port)
+	}
+}
 
-		if port, ok := intAt(probe, keyPort); ok && port == previous {
-			probe[keyPort] = draft.Port
+// followPort moves a probe from one port to another, at the probe's own level
+// and one level down, which is where the shapes this release does not model
+// keep theirs. It descends no further: past that, a "port" is as likely to
+// belong to something the probe merely mentions as to the thing it dials.
+func followPort(probe map[string]any, from, to int) {
+	if probe == nil {
+		return
+	}
+
+	if port, ok := intAt(probe, keyPort); ok && port == from {
+		probe[keyPort] = to
+	}
+
+	for _, value := range probe {
+		nested, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if port, ok := intAt(nested, keyPort); ok && port == from {
+			nested[keyPort] = to
 		}
 	}
 }
@@ -611,7 +638,7 @@ func applyProbe(container map[string]any, draft Draft) bool {
 		delete(container, keyReadinessProbe)
 
 	case probe != nil:
-		probe[keyPath] = draft.HealthPath
+		probe[keyPath] = draft.healthPath()
 		probe[keyPort] = draft.Port
 
 	default:
@@ -619,7 +646,7 @@ func applyProbe(container map[string]any, draft Draft) bool {
 		// knows about are written; the timings are the platform's defaults,
 		// which is what a probe added here has always meant.
 		container[keyReadinessProbe] = map[string]any{
-			keyPath: draft.HealthPath,
+			keyPath: draft.healthPath(),
 			keyPort: draft.Port,
 		}
 	}

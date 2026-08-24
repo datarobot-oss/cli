@@ -88,6 +88,10 @@ type flow struct {
 	// and coming back, so back-navigation returns to the screen the user left
 	// rather than folding their own fields away again.
 	advancedOpen bool
+	// focusCmd parks the cursor-blink command from a focus change that happened
+	// somewhere with no tea.Cmd to return, so the caller that does have one can
+	// hand it on.
+	focusCmd tea.Cmd
 
 	// loading is the message shown while a screen waits on the network.
 	loading string
@@ -290,7 +294,12 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	f.failed = nil
 
 	if f.at == screenSettings && msg.String() == advancedKey {
-		return f, f.toggleAdvanced()
+		// Assigned before returning, not called inside the return list: the
+		// call mutates f through a pointer receiver, and Go does not specify
+		// whether the f being returned is copied before or after it runs.
+		cmd := f.toggleAdvanced()
+
+		return f, cmd
 	}
 
 	switch msg.String() {
@@ -301,7 +310,9 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// still submitted with enter from any of its fields, which is where the
 		// cursor starts.
 		if f.onAdvancedRow() {
-			return f, f.toggleAdvanced()
+			cmd := f.toggleAdvanced()
+
+			return f, cmd
 		}
 
 		return f.advance()
@@ -370,7 +381,9 @@ func (f flow) delegateToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, isKey := msg.(tea.KeyMsg)
 
 	if isKey && f.at == screenSettings && isFocusKey(key) {
-		return f, f.moveFocus(key)
+		cmd := f.moveFocus(key)
+
+		return f, cmd
 	}
 
 	// The advanced row is not a field, so a keystroke on it has nowhere to be
@@ -430,7 +443,10 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 	if err != nil {
 		f.failed = err
 
-		return f, nil
+		// A refusal still moves the cursor to the field it is about, and the
+		// blink that goes with it has to be scheduled or the caret sits frozen
+		// in a field the user is being asked to edit.
+		return f, f.takeFocusCmd()
 	}
 
 	if cmd != nil {
@@ -833,11 +849,11 @@ func (f flow) autoscaled() bool {
 func (f *flow) acceptSettings() (tea.Cmd, error) {
 	port, err := strconv.Atoi(f.field(fieldPort))
 	if err != nil {
-		return nil, errors.New("the port must be a number")
+		return nil, f.reveal(fieldPort, errors.New("the port must be a number"))
 	}
 
 	if err := checkPort(port, "port"); err != nil {
-		return nil, err
+		return nil, f.reveal(fieldPort, err)
 	}
 
 	path := f.field(fieldHealthPath)
@@ -913,7 +929,7 @@ func (f *flow) reveal(field int, err error) error {
 	}
 
 	f.focus = field
-	f.applyFocus()
+	f.focusCmd = f.applyFocus()
 
 	return err
 }
@@ -925,35 +941,48 @@ func (f flow) field(i int) string {
 
 // onEnter starts whatever the screen needs before it can be answered.
 func (f *flow) onEnter(at screen) tea.Cmd {
+	// Whatever entering the screen did to the cursor rides along with the work
+	// the screen starts, since both reach bubbletea through this one return.
+	focus := f.takeFocusCmd()
+
 	switch at {
 	case screenExecEnv:
 		if len(f.execEnvs) > 0 {
 			// Already fetched, and enter() has rebuilt the table from it.
-			return nil
+			return focus
 		}
 
 		f.loading = "Loading base images…"
 
-		return func() tea.Msg {
+		return tea.Batch(focus, func() tea.Msg {
 			environments, err := listExecEnvsFn(execEnvPickLimit)
 
 			return execEnvsLoadedMsg{environments: environments, err: err}
-		}
+		})
 
 	case screenConfirm:
 		if err := f.render(); err != nil {
 			f.failed = err
 		}
 
-		return nil
+		return focus
 
 	case screenBinding, screenName, screenKind, screenA2A, screenSource,
 		screenEntrypoint, screenImage, screenSettings, screenEnv:
 		// Everything these screens show is already in hand.
-		return nil
+		return focus
 	}
 
-	return nil
+	return focus
+}
+
+// takeFocusCmd hands over the parked cursor-blink command and clears it, so it
+// is scheduled once rather than on every later return.
+func (f *flow) takeFocusCmd() tea.Cmd {
+	cmd := f.focusCmd
+	f.focusCmd = nil
+
+	return cmd
 }
 
 // render produces the file the confirm screen shows, and for a bound workload
@@ -1025,6 +1054,17 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	live := msg.live
+
+	// The same refusal the headless bind makes, for the same reason: a probe
+	// flag this workload cannot honour is an instruction the run would carry
+	// out nowhere, and the screen it would go unnoticed on is one the user has
+	// to open a drawer to reach. Same flags, same answer, terminal or not.
+	if err := f.answers.checkProbeEditable(live); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
 	f.live = &live
 	// The live spec is the new set of defaults, not the new set of answers:
 	// --replicas and --memory were given before the fetch and still stand.
@@ -1042,7 +1082,7 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	f.at = screenKind
 	f.enter(f.at)
 
-	return f, nil
+	return f, f.takeFocusCmd()
 }
 
 func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
@@ -1166,8 +1206,10 @@ func (f *flow) toggleAdvanced() tea.Cmd {
 	return f.applyFocus()
 }
 
-// settingsStops is the order the cursor visits, built from the one field order
-// so a field added to it needs no second edit here.
+// settingsStops is the order the cursor visits. The advanced half is built
+// from the field order, so a field added behind the row needs no second edit
+// here; the visible half is the port and the row, and making a second field
+// always-visible does mean editing this literal.
 func (f flow) settingsStops() []int {
 	stops := []int{fieldPort, advancedStop}
 

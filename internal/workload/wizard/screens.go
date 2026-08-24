@@ -63,11 +63,13 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// No screen can settle these, so they are not questions the wizard gets to
 	// ask. Started anyway, the error would sit behind the loading view while
 	// the fetch ran, and arriving at the first screen would clear it and drop
-	// the flag without saying so: contradictory flags have to be refused before
-	// the terminal is taken over.
-	for _, check := range []func() error{
-		opts.Answers.checkBinding, opts.Answers.checkReadiness, opts.Answers.checkImportance,
-	} {
+	// the flag without saying so.
+	//
+	// Only those two. A bad --port, a path missing its slash and an importance
+	// outside the enum are all values a screen shows and the user can correct,
+	// and refusing them here would turn a recoverable typo into a run that
+	// never starts.
+	for _, check := range []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive} {
 		if err := check(); err != nil {
 			return nil, manifest.Draft{}, err
 		}
@@ -249,7 +251,9 @@ func (f *flow) enterInputs(at screen) {
 		// newInput focuses everything it builds, so exactly one is left
 		// focused here. Through applyFocus rather than a hardcoded index, so
 		// arrival and movement agree on where the cursor is by construction.
-		f.applyFocus()
+		// The blink command is parked for onEnter to hand on: arriving at a
+		// screen has no tea.Cmd of its own to return it through.
+		f.focusCmd = f.applyFocus()
 
 	case screenBinding, screenExecEnv, screenKind, screenA2A, screenSource, screenEnv, screenConfirm:
 		// No text entry.
@@ -797,7 +801,7 @@ func (f *flow) buildPreview() {
 
 	// A short manifest keeps its own height: padding it out to a fixed window
 	// would put the key legend below the fold for no reason.
-	f.preview = viewport.New(contentWidth(f.width), min(previewHeight(f.height), lines))
+	f.preview = viewport.New(contentWidth(f.width), min(f.previewHeight(), lines))
 	f.preview.SetContent(text)
 }
 
@@ -815,19 +819,23 @@ func (f flow) scrollablePreview() bool {
 const (
 	defaultPreviewHeight = 20
 	minPreviewHeight     = 6
-	// Grown twice over: the confirm note now carries a readiness line as well
-	// as the runtime one, and the runtime line wraps on an 80-column terminal
-	// once importance is on it. Under-reserving here does not shrink the
-	// preview, it pushes the key legend off the bottom of the screen.
-	previewChrome = 15
+	// What the screen spends on everything that is not the note: the question,
+	// the key legend and the blank lines between the blocks. The note is
+	// measured rather than budgeted for, because its height moves with the
+	// terminal's width and with how much there is to say.
+	previewChrome = 9
 )
 
-func previewHeight(terminalHeight int) int {
-	if terminalHeight <= 0 {
+// previewHeight is what the terminal has left for the file itself. Measuring
+// the note beats reserving a constant for it: a fixed budget large enough for
+// a wrapped four-line note steals a line from every screen that has three, and
+// one tuned to three pushes the key legend off the bottom on a narrow terminal.
+func (f flow) previewHeight() int {
+	if f.height <= 0 {
 		return defaultPreviewHeight
 	}
 
-	return max(terminalHeight-previewChrome, minPreviewHeight)
+	return max(f.height-previewChrome-lipgloss.Height(f.note(f.confirmNote())), minPreviewHeight)
 }
 
 // confirmNote is what the user is agreeing to, beyond the file itself: where
@@ -837,12 +845,14 @@ func (f flow) confirmNote() string {
 		return ""
 	}
 
-	return strings.Join([]string{
-		"Writing to " + ShortPath(manifest.Path(f.detected.Dir)),
+	// joinNotes rather than strings.Join: readinessLine says nothing about a
+	// hand-edited file, and an empty entry would leave a blank line mid-note.
+	return joinNotes(
+		"Writing to "+ShortPath(manifest.Path(f.detected.Dir)),
 		f.runtimeLine(),
 		f.readinessLine(),
 		f.nextStep(),
-	}, "\n")
+	)
 }
 
 // runtimeLine summarises the sizing and scheduling the file will carry. A
@@ -951,8 +961,9 @@ var defaultKeys = []keyBinding{
 
 // withKey re-labels one key in a screen's legend, copying first because
 // screenKeys is a package-level map and the slices in it are shared by every
-// render. A key the screen does not have is added rather than dropped, so a
-// caller cannot silently say nothing.
+// render. A key the screen does not list is left alone: every caller relabels a
+// binding the screen already has, and appending one instead would put a key in
+// the legend that nothing on that screen answers.
 func withKey(bindings []keyBinding, key, does string) []keyBinding {
 	out := slices.Clone(bindings)
 
@@ -960,11 +971,19 @@ func withKey(bindings []keyBinding, key, does string) []keyBinding {
 		if out[i].Key == key {
 			out[i].Does = does
 
-			return out
+			break
 		}
 	}
 
-	return append(out, keyBinding{Key: key, Does: does})
+	return out
+}
+
+// withoutKey drops a binding, for the states where a key the screen normally
+// offers is not the way to do the thing any more.
+func withoutKey(bindings []keyBinding, key string) []keyBinding {
+	return slices.DeleteFunc(slices.Clone(bindings), func(b keyBinding) bool {
+		return b.Key == key
+	})
 }
 
 func (f flow) keys() string {
@@ -979,12 +998,13 @@ func (f flow) keys() string {
 		bindings = append([]keyBinding{{Key: "↑/↓", Does: "scroll"}}, bindings...)
 	}
 
-	// On the row itself enter belongs to the row rather than to the screen, so
-	// it is labelled for what it does there. Only that entry changes:
-	// rebuilding the list here would quietly drop any key the screen gains
-	// later, in the one state where the legend matters most.
+	// On the row itself enter is the row's own action, so it is labelled for
+	// that and the chord drops out: two entries reading "advanced" say the
+	// screen has two ways to do one thing, in the one place that is not worth
+	// the width. Derived from the table rather than rewritten, so a key the
+	// screen gains later still appears here.
 	if f.onAdvancedRow() {
-		bindings = withKey(bindings, "enter", advancedLabel)
+		bindings = withoutKey(withKey(bindings, "enter", advancedLabel), advancedKey)
 	}
 
 	// With a filter in place, esc undoes that first. Saying "back" would be a

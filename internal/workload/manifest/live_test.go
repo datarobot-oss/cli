@@ -504,11 +504,11 @@ func TestLive_ApplyMovesAnUnreadableProbeWithThePort(t *testing.T) {
 	rendered, err := applied.Render()
 	require.NoError(t, err)
 
-	// The probe's own port follows the container. What sits inside a block this
-	// release does not model is left exactly as it was, which is why the nested
-	// tcpSocket port is still 9000.
+	// Both ports follow: the probe's own, and the one the tcpSocket shape keeps
+	// a level down. A probe still dialling 9000 would never report ready.
 	assert.Contains(t, string(rendered), "readinessProbe:\n              port: 9100")
-	assert.Contains(t, string(rendered), "tcpSocket:\n                port: 9000")
+	assert.Contains(t, string(rendered), "tcpSocket:\n                port: 9100")
+	assert.NotContains(t, string(rendered), "port: 9000")
 }
 
 // probelessLive is a workload running without a readiness probe.

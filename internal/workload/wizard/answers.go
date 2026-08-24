@@ -128,11 +128,24 @@ func (a Answers) checkImageSource() error {
 	}
 }
 
-func (a Answers) checkReadiness() error {
+// checkProbeExclusive is the one readiness rule no screen can settle, so it is
+// the only one the interactive path refuses up front. The settings screen has a
+// single health field and cannot represent "both were passed"; a path that
+// simply lacks its leading slash, or an importance outside the enum, is a value
+// the screen can show and the user can correct.
+func (a Answers) checkProbeExclusive() error {
 	if a.NoProbe && a.HealthPath != "" {
 		return fmt.Errorf("--no-readiness-probe and --health %q are exclusive: "+
 			"pass --health alone to probe that path, or --no-readiness-probe alone to run without a probe",
 			a.HealthPath)
+	}
+
+	return nil
+}
+
+func (a Answers) checkReadiness() error {
+	if err := a.checkProbeExclusive(); err != nil {
+		return err
 	}
 
 	if a.HealthPath != "" && !strings.HasPrefix(a.HealthPath, "/") {

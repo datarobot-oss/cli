@@ -745,6 +745,70 @@ func TestFlow_HealthPathPlaceholderSaysNoProbe(t *testing.T) {
 	assert.NotContains(t, healthPlaceholder, manifest.DefaultHealthPath)
 }
 
+// On the row, enter is the way to open it and the chord would be a second
+// entry saying the same word. The legend has room for one of them.
+func TestFlow_AdvancedRowLegendSaysOneThingOnce(t *testing.T) {
+	onRow := press(t, atSettings(t), "tab")
+	require.Equal(t, advancedStop, onRow.focus)
+
+	view := onRow.View()
+	assert.Contains(t, view, "[enter] "+advancedLabel)
+	assert.NotContains(t, view, "["+advancedKey+"]", "the chord duplicates enter here")
+}
+
+// Moving the cursor to a refused field has to schedule that field's cursor
+// blink too, or the caret sits frozen in a field the user is being asked to fix.
+func TestFlow_RefusedFieldSchedulesItsCursor(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldMemory, "4Gi"), "shift+tab", "enter")
+	require.False(t, model.advancedOpen)
+
+	updated, cmd := model.Update(keyMsg("enter"))
+
+	next, ok := updated.(flow)
+	require.True(t, ok)
+	require.Error(t, next.failed)
+
+	assert.True(t, next.advancedOpen)
+	assert.NotNil(t, cmd, "the cursor moved, so its blink has to be scheduled")
+}
+
+// A port that is refused takes the cursor back to the port, wherever it was.
+func TestFlow_PortFailureMovesTheCursorToThePort(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldPort, "80"), "enter")
+
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "too low")
+	assert.Equal(t, fieldPort, model.focus)
+}
+
+// A probe flag the bound workload cannot honour is refused on the terminal
+// path too. Applying it nowhere and saying nothing is what the headless path
+// already refuses to do.
+func TestFlow_BoundUneditableProbeRefusesTheFlag(t *testing.T) {
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "artifactId": "68a1"}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/tcp:v1",
+			 "readinessProbe": {"tcpSocket": {"port": 9000}, "periodSeconds": 10}}]}]}}`))
+
+	model := newFlow(dockerfileProject(t), nil, Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		NoProbe:    true,
+	})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+
+	next, ok := updated.(flow)
+	require.True(t, ok)
+
+	require.Error(t, next.fatal)
+	assert.Contains(t, next.fatal.Error(), "--no-readiness-probe")
+	assert.Contains(t, next.fatal.Error(), "does not model")
+}
+
 // openAdvanced reveals the fields behind the advanced row and leaves the
 // cursor on the first of them, which is where a test that wants one of those
 // fields has to start.

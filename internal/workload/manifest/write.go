@@ -152,7 +152,14 @@ type Draft struct {
 // is the one place the empty-path convention is spelled out, so the write, the
 // live merge and the screens cannot drift about what an empty path means.
 func (d Draft) WantsReadinessProbe() bool {
-	return strings.TrimSpace(d.HealthPath) != ""
+	return d.healthPath() != ""
+}
+
+// healthPath is the path as it should be written, which is the trimmed one:
+// WantsReadinessProbe already ignores surrounding space, so writing the raw
+// field would let " /ready " through as a path no router matches.
+func (d Draft) healthPath() string {
+	return strings.TrimSpace(d.HealthPath)
 }
 
 // EnvVar is one .env variable as the manifest will carry it. Deciding which
@@ -422,7 +429,7 @@ func (d Draft) artifact(build field) *yaml.Node {
 
 	if d.WantsReadinessProbe() {
 		container = append(container, field{key: keyReadinessProbe, value: mapping(
-			field{key: keyPath, value: scalar(d.HealthPath)},
+			field{key: keyPath, value: scalar(d.healthPath())},
 			field{key: keyPort, value: number(d.Port)},
 		)})
 	}
