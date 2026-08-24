@@ -792,3 +792,207 @@ func TestLive_ApplyRuntime(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, parsed.Validate())
 }
+
+// stripNullKeys removes nil-valued keys recursively without discarding falsy
+// but present values and without mutating the input document.
+func TestStripNullKeys(t *testing.T) {
+	tests := map[string]struct {
+		input    map[string]any
+		expected map[string]any
+	}{
+		"nil map": {
+			input:    nil,
+			expected: nil,
+		},
+		"empty map": {
+			input:    map[string]any{},
+			expected: map[string]any{},
+		},
+		"nil value removed": {
+			input:    map[string]any{"keep": "x", "drop": nil},
+			expected: map[string]any{"keep": "x"},
+		},
+		"falsy values kept": {
+			input: map[string]any{
+				"false":      false,
+				"zero":       0,
+				"empty":      "",
+				"emptySlice": []any{},
+			},
+			expected: map[string]any{
+				"false":      false,
+				"zero":       0,
+				"empty":      "",
+				"emptySlice": []any{},
+			},
+		},
+		"nested map nil removed": {
+			input: map[string]any{
+				"nested": map[string]any{
+					"keep": "x",
+					"drop": nil,
+				},
+			},
+			expected: map[string]any{
+				"nested": map[string]any{
+					"keep": "x",
+				},
+			},
+		},
+		"slice map nil removed": {
+			input: map[string]any{
+				"items": []any{
+					map[string]any{"keep": "x", "drop": nil},
+					map[string]any{"keep": "y"},
+				},
+			},
+			expected: map[string]any{
+				"items": []any{
+					map[string]any{"keep": "x"},
+					map[string]any{"keep": "y"},
+				},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			original := deepCopyMap(tc.input)
+			got := stripNullKeys(tc.input)
+
+			assert.Equal(t, tc.expected, got)
+			assert.Equal(t, original, tc.input, "stripNullKeys must not mutate input")
+		})
+	}
+}
+
+// reporterWorkloadDoc returns a workload GET response shaped like the reporter's:
+// a runtime container group with null autoscaling and a resolved bundle.
+func reporterWorkloadDoc(t *testing.T) map[string]any {
+	t.Helper()
+
+	const doc = `{
+		"id": "68b0c1d2e3f4a5b6c7d8e9f0",
+		"name": "reporter-workload",
+		"importance": "low",
+		"artifactId": "68a0000000000000000000a1",
+		"runtime": {
+			"containerGroups": [
+				{
+					"name": "default",
+					"replicaCount": 3,
+					"autoscaling": null,
+					"resolvedBundle": {"catalogId": "cat1", "catalogVersionId": "ver1"},
+					"containers": [
+						{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}
+					]
+				}
+			]
+		}
+	}`
+
+	var out map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(doc), &out))
+
+	return out
+}
+
+// reporterArtifactDoc returns an artifact GET response shaped like the reporter's:
+// a container carrying a server build block, imageOutdated flag, imageUri and
+// an imageBuildConfig with a codeRef.
+func reporterArtifactDoc(t *testing.T) map[string]any {
+	t.Helper()
+
+	const doc = `{
+		"id": "68a0000000000000000000a1",
+		"name": "reporter-artifact",
+		"type": "service",
+		"spec": {
+			"containerGroups": [
+				{
+					"name": "default",
+					"containers": [
+						{
+							"name": "app",
+							"primary": true,
+							"port": 8080,
+							"imageUri": "registry.internal/built-by-server:abc",
+							"imageOutdated": true,
+							"build": {
+								"artifactImageBuildId": "build-123",
+								"status": "completed",
+								"createdAt": "2026-07-02T10:00:00Z"
+							},
+							"imageBuildConfig": {
+								"dockerfile": {"source": "provided"},
+								"codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}}
+							}
+						}
+					]
+				}
+			]
+		}
+	}`
+
+	var out map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(doc), &out))
+
+	return out
+}
+
+// A reporter-shaped server response carries null autoscaling, a resolved bundle,
+// build outputs and computed flags. The rendered file must strip all of them
+// and still round-trip through parse, validate and compile.
+func TestLive_RenderRoundTripReporterShaped(t *testing.T) {
+	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
+	workloadDoc := reporterWorkloadDoc(t)
+	artifactDoc := reporterArtifactDoc(t)
+
+	live := NewLive(workloadID, workloadDoc, artifactDoc)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	for _, unwanted := range []string{
+		"autoscaling: null",
+		"artifactImageBuildId",
+		"imageOutdated",
+		"resolvedBundle",
+		"build:",
+	} {
+		assert.NotContains(t, string(rendered), unwanted, "rendered manifest must not contain %s", unwanted)
+	}
+
+	assert.Contains(t, string(rendered), "imageBuildConfig")
+	assert.Contains(t, string(rendered), "source: provided")
+	assert.Contains(t, string(rendered), "workloadId: "+workloadID)
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+
+	compiled, err := parsed.Compile()
+	require.NoError(t, err)
+	assert.Equal(t, workloadID, compiled.WorkloadID)
+}
+
+// NewLive must not mutate the caller's documents, even though it strips server
+// outputs and null-valued keys from its own copies.
+func TestLive_DoesNotMutateInputDocs(t *testing.T) {
+	workloadDoc := reporterWorkloadDoc(t)
+	artifactDoc := reporterArtifactDoc(t)
+
+	workloadBefore := deepCopyMap(workloadDoc)
+	artifactBefore := deepCopyMap(artifactDoc)
+
+	_ = NewLive("68b0", workloadDoc, artifactDoc)
+
+	assert.Equal(t, workloadBefore, workloadDoc)
+	assert.Equal(t, artifactBefore, artifactDoc)
+}

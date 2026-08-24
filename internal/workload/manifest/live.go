@@ -26,7 +26,9 @@ import (
 // server's own bookkeeping: it assigns them, and a file that repeats them
 // back is either ignored or rejected. Stripping them recursively is safe
 // because the create spec has no legitimate key by these names anywhere.
-var serverManagedKeys = []string{"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId"}
+var serverManagedKeys = []string{
+	"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId", "resolvedBundle",
+}
 
 // Live is a running workload, downloaded so a manifest can be written that
 // says everything the workload already says. Setup uses it when the user
@@ -60,8 +62,8 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
 		ArtifactType: stringAt(artifactDoc, keyType),
-		Spec:         stripServerManaged(mapAt(artifactDoc, keySpec)),
-		Runtime:      stripServerManaged(mapAt(workloadDoc, keyRuntime)),
+		Spec:         stripNullKeys(stripServerManaged(mapAt(artifactDoc, keySpec))),
+		Runtime:      stripNullKeys(stripServerManaged(mapAt(workloadDoc, keyRuntime))),
 	}
 
 	stripBuildOutputs(live.Spec)
@@ -841,19 +843,68 @@ func stripKeys(value any) {
 // was asked to do. A container that says how to build itself also carries the
 // image that came out and the code the last sync uploaded; both are re-earned
 // by the next deploy, and writing them into the file would pin a workload to
-// yesterday's image.
+// yesterday's image. It also strips the server-assigned build block and the
+// computed imageOutdated flag.
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
 			buildConfig := mapAt(container, keyImageBuildConfig)
-			if buildConfig == nil {
-				continue
+			if buildConfig != nil {
+				delete(container, keyImageURI)
+				delete(buildConfig, "codeRef")
 			}
 
-			delete(container, keyImageURI)
-			delete(buildConfig, "codeRef")
+			delete(container, "build")
+			delete(container, "imageOutdated")
 		}
 	}
+}
+
+// stripNullKeys returns a copy of the document with every nil-valued key
+// removed recursively. Falsy-but-present values (false, 0, empty strings,
+// empty slices) are kept. The input document is not modified.
+func stripNullKeys(document map[string]any) map[string]any {
+	if document == nil {
+		return nil
+	}
+
+	copied := make(map[string]any, len(document))
+	for key, value := range document {
+		if value == nil {
+			continue
+		}
+
+		switch typed := value.(type) {
+		case map[string]any:
+			copied[key] = stripNullKeys(typed)
+		case []any:
+			copied[key] = stripNullSlice(typed)
+		default:
+			copied[key] = value
+		}
+	}
+
+	return copied
+}
+
+func stripNullSlice(items []any) []any {
+	if items == nil {
+		return nil
+	}
+
+	copied := make([]any, len(items))
+	for i, value := range items {
+		switch typed := value.(type) {
+		case map[string]any:
+			copied[i] = stripNullKeys(typed)
+		case []any:
+			copied[i] = stripNullSlice(typed)
+		default:
+			copied[i] = value
+		}
+	}
+
+	return copied
 }
 
 func deepCopyMap(document map[string]any) map[string]any {
