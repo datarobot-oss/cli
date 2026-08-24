@@ -891,26 +891,104 @@ func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
 	assert.NotContains(t, err.Error(), "only one workload per draft artifact")
 }
 
-// A locked artifact can take neither code nor an image, so the deploy stops
-// before the sync rather than failing halfway through with the platform's
-// 403, which says nothing about what to do next.
-func TestRun_LockedArtifactStopsBeforeThePush(t *testing.T) {
+// lockedLink is a project pointed at an artifact that has since been locked,
+// which is what a deploy that locked its own artifact leaves behind. The
+// repository is the lineage the replacement has to join.
+func lockedLink(f fakes, tr *track) fakes {
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-locked")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{
+			ID: id, Status: workload.ArtifactStatusLocked, ArtifactRepositoryID: "repo-1",
+		}, nil
+	}
+	f.save = relinkStep(tr)
+
+	return f
+}
+
+// A locked artifact can take neither code nor an image, and locking cannot be
+// undone, so the deploy makes the version the lock made necessary rather than
+// refusing. The link moves with it, which is what keeps the catalog and the
+// last-synced version: telling the reader to delete the state directory works
+// too, and costs a full re-upload of a tree the platform already holds.
+func TestRun_LockedLinkIsRedrafted(t *testing.T) {
+	var tr track
+
+	install(t, lockedLink(wiredBuild(&tr), &tr))
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"create-artifact", "relink", "sync", "build", "create-workload"}, tr.steps)
+	assert.Equal(t, "art-1", tr.savedCfg.ArtifactID, "the project has to push at the version that can take code")
+	require.NotNil(t, tr.savedCfg.CatalogID, "the code store has to survive the redraft")
+	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID,
+		"the code store survives the redraft, or the next sync re-uploads the whole tree")
+
+	// The replacement joins the lineage it replaces. Without the repository the
+	// Registry grows a second entry under the same name on every lock, and the
+	// workload's versions stop reading as versions of one thing.
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1")
+
+	// The whole point is which artifact the rest of the run targets. Step names
+	// alone would stay identical if the build and the create kept using the
+	// locked id, which is the one outcome this must never produce.
+	workloadIn, ok := tr.workloadIn.(json.RawMessage)
+	require.True(t, ok)
+	assert.Contains(t, string(workloadIn), "art-1")
+	assert.NotContains(t, string(workloadIn), "art-locked")
+}
+
+// The tree was already synced into the artifact that got locked, so the sync
+// onto its replacement can have nothing to upload, and the new version would
+// go to the builder with no code reference at all. The code the locked one
+// was running is carried across instead.
+func TestRun_RedraftedArtifactInheritsTheSyncedCode(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.sync = emptySync(&tr)
+	f.codeRef = carryCodeStep(&tr)
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-1", "cat1", "ver1"}, tr.carried)
+	assert.Contains(t, tr.steps, "carry-code")
+}
+
+// A first deploy whose sync uploaded nothing has no code anywhere: not on the
+// artifact, and not in a previous version to carry over. Building it would ask
+// the platform to make an image out of nothing and fail minutes later saying
+// so in its own words, so the run stops here and says which directory it
+// looked in.
+func TestRun_FirstDeployWithNothingToUploadStopsBeforeTheBuild(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.linked = func(string) bool { return true }
-	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-locked"}, nil }
-	f.getArtifact = func(id string) (*workload.Artifact, error) {
-		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	f.sync = emptySync(&tr)
+
+	// What the link this run just wrote holds: an artifact and nothing else,
+	// because no sync has ever produced a version to record.
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-1"}, nil }
+	f.codeRef = func(string, string, string) error {
+		t.Fatal("a first deploy has no earlier version whose code it could carry over")
+
+		return nil
 	}
 
 	install(t, f)
 
 	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "art-locked")
-	assert.Contains(t, err.Error(), "locked")
-	assert.Empty(t, tr.steps, "nothing may be pushed at an artifact that cannot accept it")
+	assert.Contains(t, err.Error(), "nothing to build")
+	assert.NotContains(t, tr.steps, "build", "an artifact with no code must not reach the builder")
 }
 
 // The artifact exists and only the local record of it failed to write, which

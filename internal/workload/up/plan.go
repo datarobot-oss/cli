@@ -50,6 +50,12 @@ type CodeChange struct {
 	// only part of a run that a --dry-run does, so carrying it here is what
 	// lets the preview mention it at all.
 	IgnoreNotice string
+
+	// LinkLocked reports that the artifact this project pushes into can no
+	// longer take code. The deploy answers by minting one that can and moving
+	// the link onto it, which the plan says out loud because nothing in the
+	// file asked for it.
+	LinkLocked bool
 }
 
 // Changed reports whether the code needs syncing and rebuilding.
@@ -71,6 +77,13 @@ type Plan struct {
 	Code     CodeChange
 	Artifact []Change
 	Runtime  []Change
+
+	// Locked reports that the version now serving is immutable. Its successor
+	// has to be locked too before the platform will take it, so a deploy onto
+	// locked production locks something whether or not --lock was passed, and
+	// that cannot be undone. The plan is where it belongs: --dry-run is how a
+	// locked deploy is reviewed before it happens.
+	Locked bool
 }
 
 // Empty reports that the live state already matches the file. `up` prints
@@ -121,6 +134,7 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 		State:   live.State,
 		Creates: live.State == StateUnbound,
 		Code:    code,
+		Locked:  live.Locked,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an

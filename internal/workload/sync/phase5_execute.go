@@ -28,6 +28,17 @@ import (
 // deletes, uploads. Any error after the rollback dir is created triggers
 // a Restore to pre-sync state.
 func phase5Execute(e *Engine) error {
+	// Above the empty-plan return, because this is a statement about the
+	// artifact rather than about the plan: phase 6 writes local state and a
+	// history entry for an empty plan too, and recording a sync against
+	// something immutable is the same lie as performing one. Phase 1 lets a
+	// preview plan against a locked artifact and Run returns before this phase
+	// in both preview modes, but nothing stops a caller holding the engine from
+	// planning and then executing anyway.
+	if e.artifact != nil && e.artifact.IsLocked() {
+		return fmt.Errorf("artifact %s is locked (immutable); refusing to execute a plan against it", e.artifact.ID)
+	}
+
 	if e.plan == nil || e.plan.IsEmpty() {
 		return nil
 	}

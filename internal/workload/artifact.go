@@ -51,6 +51,13 @@ type Artifact struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 
+	// Type is what kind of thing this is: a service, an agent. It sits beside
+	// the spec rather than in it, because the platform reads the discriminator
+	// from the artifact and pops any type sent inside the spec. An artifact
+	// repository takes its own type from whichever artifact opened it, so this
+	// is what says whether a later version can still join that lineage.
+	Type string `json:"type"`
+
 	// ArtifactRepositoryID is the lineage this artifact belongs to. Successive
 	// versions of one thing share it, which is the only way to tell them from
 	// unrelated artifacts that happen to carry the same name.

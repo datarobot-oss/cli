@@ -41,6 +41,7 @@ type fakeEngine struct {
 	stale         bool
 	migrationNote string
 	ignoreNotice  string
+	lockedNote    string
 	fetcher       display.ContentFetcher
 	closeErr      error
 
@@ -67,6 +68,8 @@ func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
 func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 
 func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
+
+func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
@@ -187,6 +190,27 @@ func TestRunE_DryRun_NonEmpty_NoExecute(t *testing.T) {
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
+	assert.False(t, fe.executed)
+}
+
+// The engine lets a preview plan against a locked artifact, because the
+// deploy needs the count. What the preview must never do is read as a sync
+// that is going to work, so whatever the engine says about the lock has to
+// reach the reader.
+func TestRunE_LockedNoticeReachesStderr(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "is locked")
 	assert.False(t, fe.executed)
 }
 

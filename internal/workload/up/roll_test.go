@@ -520,18 +520,8 @@ func builtRoll(tr *track) fakes {
 
 		return nil
 	}
-	f.save = func(_ string, cfg wapi.Config) error {
-		tr.steps = append(tr.steps, "relink")
-		tr.savedCfg = cfg
-
-		return nil
-	}
-	f.codeRef = func(artifactID, catalogID, versionID string) error {
-		tr.steps = append(tr.steps, "carry-code")
-		tr.carried = []string{artifactID, catalogID, versionID}
-
-		return nil
-	}
+	f.save = relinkStep(tr)
+	f.codeRef = carryCodeStep(tr)
 	f.sync = func(string) (*sync.Result, error) {
 		tr.steps = append(tr.steps, "sync")
 
@@ -554,6 +544,38 @@ func builtRoll(tr *track) fakes {
 func builtDrift() string {
 	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
 		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+}
+
+// emptySync is a sync that found nothing to do, which is the precondition of
+// every test about carrying code onto a version that has none of its own.
+func emptySync(tr *track) func(string) (*sync.Result, error) {
+	return func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{}, nil
+	}
+}
+
+// relinkStep records a project re-pointed at a new version, and carryCodeStep
+// the patch that gives that version the code the old one was running. Both
+// fixtures are shared with the create path's tests, so the step names the
+// suite pins stay in one place.
+func relinkStep(tr *track) func(string, wapi.Config) error {
+	return func(_ string, cfg wapi.Config) error {
+		tr.steps = append(tr.steps, "relink")
+		tr.savedCfg = cfg
+
+		return nil
+	}
+}
+
+func carryCodeStep(tr *track) func(string, string, string) error {
+	return func(artifactID, catalogID, versionID string) error {
+		tr.steps = append(tr.steps, "carry-code")
+		tr.carried = []string{artifactID, catalogID, versionID}
+
+		return nil
+	}
 }
 
 // syncedProject is a project that has pushed code before, linked to the
@@ -594,6 +616,34 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A built project whose live version is locked, and whose link therefore
+// points at something immutable. Nothing here is new machinery. The roll
+// already mints a version, moves the link and locks to match, so what is being
+// asserted is that the run reaches any of it, which a preflight refusal
+// computing the file count used to prevent.
+func TestRun_RollsABuiltProjectOffALockedVersion(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil }
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "create-artifact", "relink", "sync", "build",
+		"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle",
+	}, tr.steps)
+	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the link has to leave the locked version behind")
+	assert.True(t, result.Locked, "a locked version is replaced by a locked one")
+	assert.Contains(t, stderr, "the running version is locked, so a new one is created and locked to match",
+		"a --yes run locks something without being asked to, and the plan has to say so")
 }
 
 // The project is linked to the version that is serving, which is the state a
@@ -788,11 +838,7 @@ func TestRun_SpecOnlyRollCarriesTheCodeOver(t *testing.T) {
 	f := builtRoll(&tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("68a0000000000000000000a1")
-	f.sync = func(string) (*sync.Result, error) {
-		tr.steps = append(tr.steps, "sync")
-
-		return &sync.Result{}, nil
-	}
+	f.sync = emptySync(&tr)
 
 	install(t, f)
 
@@ -818,11 +864,7 @@ func TestRun_SpecOnlyRollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
 	f.project = func(string) (wapi.Config, error) {
 		return wapi.Config{ArtifactID: "68a0000000000000000000a1"}, nil
 	}
-	f.sync = func(string) (*sync.Result, error) {
-		tr.steps = append(tr.steps, "sync")
-
-		return &sync.Result{}, nil
-	}
+	f.sync = emptySync(&tr)
 
 	install(t, f)
 
@@ -850,7 +892,9 @@ func TestRun_RollLinkFailureNamesTheStrandedVersion(t *testing.T) {
 	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "art-2")
-	assert.Contains(t, err.Error(), "dr artifact code init art-2")
+	assert.Contains(t, err.Error(), "artifactId",
+		"the directory is already linked, so 'dr artifact code init' would refuse: name the file to edit")
+	assert.Contains(t, err.Error(), "config.json")
 	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed at a version nothing points to")
 }
 

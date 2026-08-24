@@ -37,15 +37,32 @@ import (
 // pointing at an image that does not exist yet, visible in the UI and unable
 // to start, for as long as the build took.
 func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options, report *reporter) (Result, error) {
-	artifactID, fresh, err := ensureArtifact(loaded, report)
+	made, err := ensureArtifact(loaded, report)
+
+	// Recorded before the error check, the same way roll records the build it
+	// ran: an artifact created and then stranded by a link that would not write
+	// is the one failure the envelope has to be able to name.
+	result.ArtifactID = made.ID
+
 	if err != nil {
 		return result, err
 	}
 
-	result.ArtifactID = artifactID
+	artifactID, fresh := made.ID, made.Fresh
 
 	synced, err := syncCode(loaded.ProjectDir, report)
 	if err != nil {
+		return result, err
+	}
+
+	// Asked unconditionally, exactly as the roll path asks it. A sync that
+	// minted a version answers immediately; the cases that reach further are a
+	// version standing in for a locked one, whose tree was already synced and
+	// so may upload nothing, and a run resuming after an earlier one relinked
+	// and died. Neither is distinguishable from the ordinary case by then: the
+	// link has already moved, so the only record of what happened is the
+	// catalog version in the project's own state, which is what this reads.
+	if err := inheritCode(loaded.ProjectDir, artifactID, synced, report); err != nil {
 		return result, err
 	}
 
@@ -128,77 +145,84 @@ func workloadOn(artifactID string) string {
 }
 
 // ensureArtifact returns the artifact this project builds into, creating one
-// and linking the directory to it the first time. fresh reports which of the
-// two happened, because an artifact that was just created has no image and
+// and linking the directory to it the first time. Fresh reports that this run
+// made it, because an artifact that was just created has no image and
 // therefore always needs a build.
 //
 // The link lives in the project's own state directory rather than in the
 // manifest. The manifest describes what to deploy and is committed; which
 // artifact a particular checkout has been pushing to is local, and writing it
 // into a shared file would have two developers fighting over one draft.
-func ensureArtifact(loaded Loaded, report *reporter) (string, bool, error) {
-	if projectLinkedFn(loaded.ProjectDir) {
-		cfg, err := loadProjectFn(loaded.ProjectDir)
-		if err != nil {
-			return "", false, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
-		}
-
-		if err := usableArtifact(loaded.ProjectDir, cfg.ArtifactID); err != nil {
-			return "", false, err
-		}
-
-		return cfg.ArtifactID, false, nil
+func ensureArtifact(loaded Loaded, report *reporter) (version, error) {
+	if !projectLinkedFn(loaded.ProjectDir) {
+		return freshArtifact(loaded, "", labelFirstArtifact, report)
 	}
 
-	var created *workload.Artifact
-
-	err := report.run("Creating the artifact", func() error {
-		payload, payloadErr := loaded.Compiled.ArtifactPayload()
-		if payloadErr != nil {
-			return payloadErr
-		}
-
-		artifact, createErr := createArtifactFn(payload)
-		created = artifact
-
-		return createErr
-	})
+	cfg, err := loadProjectFn(loaded.ProjectDir)
 	if err != nil {
-		return "", false, err
+		return version{}, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
 	}
 
-	// The artifact exists and nothing records that fact yet, so a failure
-	// here strands it: the next run would create a second one. Saying which
-	// id was lost is the difference between a re-run and a support ticket.
-	if err := initProjectFn(loaded.ProjectDir, wapi.InitOptions{ArtifactID: created.ID}); err != nil {
-		return "", false, fmt.Errorf(
-			"artifact %s was created but %s could not be linked to it, so the next deploy would create another. "+
-				"Run 'dr artifact code init %s' here, then deploy again: %w",
-			created.ID, loaded.ProjectDir, created.ID, err)
+	linked, err := getArtifactFn(cfg.ArtifactID)
+	if err != nil {
+		return version{}, fmt.Errorf("cannot read artifact %s, which this project is linked to: %w", cfg.ArtifactID, err)
 	}
 
-	return created.ID, true, nil
+	if linked == nil || !linked.IsLocked() {
+		return version{ID: cfg.ArtifactID}, nil
+	}
+
+	// Locking is one-way, so a locked link can take neither new code nor a new
+	// image and there is nothing to wait for. The answer is the same one the
+	// roll path already gives: this project's next version is a new artifact,
+	// in the lineage the locked one belongs to, and the link moves to it. The
+	// alternative was telling the reader to delete the state directory, which
+	// works but throws away the catalog and the last-synced version with it,
+	// so the following sync re-uploads a tree the platform already holds.
+	// Phrased as what the run needs rather than what it did, because the create
+	// below can still fail and a line already claiming the version exists would
+	// be the last thing printed before the error saying it does not.
+	report.say("  Artifact %s is locked, so this deploy needs a new version.\n", cfg.ArtifactID)
+
+	return freshArtifact(loaded, redraftRepository(loaded, linked), labelNewVersion, report)
 }
 
-// usableArtifact refuses a locked artifact before the sync finds out the hard
-// way. Locking is one-way and makes the artifact immutable, so neither the
-// code push nor the build that follows can land; the platform would refuse
-// the PATCH halfway through with a 403 that says nothing about what to do.
-func usableArtifact(projectDir, artifactID string) error {
-	artifact, err := getArtifactFn(artifactID)
+// redraftRepository is the lineage the replacement joins, "" when it has to
+// start one of its own. It is the same question sameRepository answers for a
+// roll, asked of the linked artifact rather than the live one because on this
+// path there is no live workload to read a type off.
+//
+// A file that changed the artifact's kind is the case that has to start fresh:
+// a repository carries the type of the artifact that opened it, and the
+// platform answers 422 for one that disagrees. createInRepository would recover
+// from that by retrying without the id, so the cost of not asking is a wasted
+// round trip and a line blaming the repository for something the file did.
+func redraftRepository(loaded Loaded, linked *workload.Artifact) string {
+	wanted, err := loaded.ArtifactType()
 	if err != nil {
-		return fmt.Errorf("cannot read artifact %s, which this project is linked to: %w", artifactID, err)
+		return ""
 	}
 
-	if artifact.IsLocked() {
-		return fmt.Errorf(
-			"artifact %s is locked, so it can take neither new code nor a new image. "+
-				"Locking is permanent, so deploying a change means a new artifact: "+
-				"delete %s and run up again to make one",
-			artifactID, wapi.Dir(projectDir))
+	if !manifest.SameArtifactType(
+		manifest.ArtifactTypeOrDefault(wanted),
+		manifest.ArtifactTypeOrDefault(linked.Type),
+	) {
+		return ""
 	}
 
-	return nil
+	return linked.ArtifactRepositoryID
+}
+
+// freshArtifact mints the artifact and points the project at it. The two are
+// one act: an artifact nothing records is one the next run cannot find, so it
+// would create a second and leave the first unreachable.
+func freshArtifact(loaded Loaded, repositoryID, label string, report *reporter) (version, error) {
+	made, err := createVersion(loaded, repositoryID, label, report)
+	if err != nil {
+		return made, err
+	}
+
+	return made, linkProject(loaded.ProjectDir, made, report)
 }
 
 // syncCode uploads the working tree to the artifact's code store. The engine

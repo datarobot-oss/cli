@@ -262,3 +262,54 @@ func TestPlanJSON_RedactsToo(t *testing.T) {
 	assert.NotContains(t, string(encoded), secret)
 	assert.Contains(t, string(encoded), "OPENAI_API_KEY")
 }
+
+// A locked artifact is only replaced by a run that mints a version. Saying so
+// above a plan that changes the sizing in place, or one that only starts a
+// stopped workload, describes a deploy that is not about to happen: both leave
+// the locked artifact exactly where it is.
+func TestRender_LockIsNotAnnouncedWhenNothingIsMinted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		plan Plan
+	}{
+		{"sizing alone", Plan{
+			State:   StateRunning,
+			Locked:  true,
+			Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		}},
+		{"a start", Plan{State: StateStopped, Locked: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.NotContains(t, render(t, appSummary, tc.plan), "lock")
+		})
+	}
+}
+
+// The other half: a run that does mint one has to say that the successor is
+// locked too, because nothing in the file asked for that and it cannot be
+// undone. A --yes run is never prompted, so the plan is the only warning.
+func TestRender_LockIsAnnouncedWhenAVersionIsMinted(t *testing.T) {
+	out := render(t, appSummary, Plan{
+		State:  StateRunning,
+		Locked: true,
+		Code:   CodeChange{Applies: true, Files: 1},
+	})
+
+	assert.Contains(t, out, "~ lock")
+	assert.Contains(t, out, "locked to match")
+	assert.Contains(t, out, "permanent")
+}
+
+// A project whose link points at a locked artifact is redrafted onto a new one
+// and the link moves, which the preview has to say: it is invisible, and a
+// re-run does not undo it.
+func TestRender_RedraftOfALockedLinkIsAnnounced(t *testing.T) {
+	out := render(t, Summary{Name: "my-app"}, Plan{
+		State:   StateUnbound,
+		Creates: true,
+		Code:    CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
+	})
+
+	assert.Contains(t, out, "~ lock")
+	assert.Contains(t, out, "pushes to that instead")
+}
