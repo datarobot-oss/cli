@@ -17,6 +17,7 @@ package sync
 import (
 	"fmt"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
@@ -27,7 +28,18 @@ import (
 func phase2Manifests(e *Engine) error {
 	matcher, err := ignore.New(e.projectDir)
 	if err != nil {
-		return fmt.Errorf("load .wapiignore: %w", err)
+		// No filename here: the matcher reads two candidates and the wrapped
+		// error already names the one that failed.
+		return fmt.Errorf("load ignore patterns: %w", err)
+	}
+
+	e.ignoreNotice = matcher.Notice()
+
+	// Logged rather than returned: a second ignore file means patterns the user
+	// wrote are inert, which they need to hear even if a later phase fails
+	// before anything gets a chance to render a returned notice.
+	if shadow := matcher.ShadowWarning(); shadow != "" {
+		log.Warn(shadow)
 	}
 
 	warnIfLockfileIgnored(e, matcher)

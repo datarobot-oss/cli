@@ -53,7 +53,7 @@ type LockfileRunner func(dir string) error
 // changes downstream. This phase never fails the sync: when uv is
 // missing or resolution fails it logs a WARN with the fix and lets the
 // sync proceed (lockfileHint doubles as the once-only guard so phase 2's
-// .wapiignore check doesn't stack a second warning).
+// ignore-file check doesn't stack a second warning).
 func phaseLockfile(e *Engine) error {
 	if !fileExistsIn(e.projectDir, pyprojectFile) {
 		return nil
@@ -139,11 +139,14 @@ func runUvLock(dir string) error {
 	return nil
 }
 
-// warnIfLockfileIgnored surfaces a warning when .wapiignore excludes
+// warnIfLockfileIgnored surfaces a warning when the ignore file excludes
 // uv.lock: that silently defeats both a user-committed lock and the
 // lockfile phase's generated one — the image build requires it, so warn
 // rather than upload a context that is doomed to fail. Called from
 // phase2 (the first point where the ignore matcher exists).
+//
+// The message names the matcher's own source file. A project still on the
+// legacy name would otherwise be sent to edit a file it does not have.
 func warnIfLockfileIgnored(e *Engine, matcher *ignore.Matcher) {
 	if e.lockfileHint != "" {
 		return
@@ -157,8 +160,15 @@ func warnIfLockfileIgnored(e *Engine, matcher *ignore.Matcher) {
 		return
 	}
 
-	e.lockfileHint = "uv.lock is excluded by .wapiignore, so it will not be uploaded. " +
-		"The image build requires it — remove the pattern from .wapiignore and re-sync."
+	name := matcher.Source()
+	if name == "" {
+		// A matcher built from in-memory patterns has no file behind it.
+		// Naming nothing would send the user to edit thin air.
+		name = ignore.FileName
+	}
+
+	e.lockfileHint = fmt.Sprintf("uv.lock is excluded by %s, so it will not be uploaded. "+
+		"The image build requires it, so remove the pattern from %s and re-sync.", name, name)
 
 	log.Warn(e.lockfileHint)
 }

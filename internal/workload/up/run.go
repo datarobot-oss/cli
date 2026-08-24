@@ -29,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
+	"github.com/datarobot/cli/tui"
 )
 
 // Test seams. The deploy is mostly network, and the tests are not.
@@ -154,6 +155,8 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	noteIgnoreFile(code, opts)
+
 	plan, err := Build(loaded, live, code)
 	if err != nil {
 		return Result{}, err
@@ -181,6 +184,22 @@ func Run(opts Options) (Result, error) {
 	}
 
 	return apply(loaded, live, plan, result, opts)
+}
+
+// noteIgnoreFile passes on the sync engine's note about a deprecated ignore
+// filename. Sizing the working tree is the whole of what a --dry-run does and
+// it is where the engine reads the file, so this is the only point on that
+// path where there is anything to say.
+//
+// Only the housekeeping note comes through here. The ignore-file problems that
+// cost the user something are logged by the phase that finds them, so they
+// survive a run that fails before reaching this line.
+func noteIgnoreFile(code CodeChange, opts Options) {
+	if code.IgnoreNotice == "" {
+		return
+	}
+
+	fmt.Fprintf(opts.Stderr, "  %s\n", tui.HintStyle.Render(code.IgnoreNotice))
 }
 
 // noteUnusedForce reports a --force-build that is about to do nothing,
@@ -625,5 +644,9 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 		return CodeChange{}, fmt.Errorf("cannot compare the working tree with the last deploy: %w", err)
 	}
 
-	return CodeChange{Applies: true, Files: len(plan.Uploads) + len(plan.Deletes)}, nil
+	return CodeChange{
+		Applies:      true,
+		Files:        len(plan.Uploads) + len(plan.Deletes),
+		IgnoreNotice: engine.IgnoreFileNotice(),
+	}, nil
 }

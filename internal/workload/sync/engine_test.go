@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -207,7 +208,7 @@ func TestEngine_Plan_FirstSyncEmptyArtifact(t *testing.T) {
 		uploadPaths = append(uploadPaths, fa.Path)
 	}
 
-	assert.ElementsMatch(t, []string{".wapiignore", "agent.py", "utils/helper.py"}, uploadPaths)
+	assert.ElementsMatch(t, []string{".drignore", "agent.py", "utils/helper.py"}, uploadPaths)
 	assert.Empty(t, plan.Downloads)
 	assert.Empty(t, plan.Deletes)
 	assert.Empty(t, plan.Conflicts)
@@ -230,7 +231,7 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 
 	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: map[string]wapi.FileMeta{}}
 
-	for _, rel := range []string{"agent.py", ".wapiignore"} {
+	for _, rel := range []string{"agent.py", ".drignore"} {
 		hash, size, err := hashLocal(t, dir, rel)
 		require.NoError(t, err)
 
@@ -330,7 +331,7 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 	require.NotNil(t, result)
 
 	assert.Equal(t, "ver-1", result.NewVersion)
-	assert.Equal(t, 3, result.UploadedCount, "expect agent.py + utils/helper.py + .wapiignore")
+	assert.Equal(t, 3, result.UploadedCount, "expect agent.py + utils/helper.py + .drignore")
 
 	assert.Len(t, fake.uploadedFiles, 3)
 	assert.Equal(t, []byte("print('hi')\n"), fake.uploadedFiles["agent.py"])
@@ -352,6 +353,76 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 	assert.NotEmpty(t, patchedArtifactID, "PatchArtifactCodeRef must be called after upload")
 	assert.Equal(t, "cid-new", patchedCatalogID)
 	assert.Equal(t, "ver-1", patchedVersionID)
+}
+
+// The engine is where the deprecation note is picked up, so this is the level
+// that decides whether a command has anything to print. Each case asserts the
+// patterns actually took effect as well as what was said: "nothing to report"
+// is also what a project with no ignore file at all looks like, so on its own
+// it would pass even if the file were never read.
+func TestEngine_Plan_IgnoreFileNotice(t *testing.T) {
+	t.Run("legacy name is used and reported", func(t *testing.T) {
+		dir := legacyProject(t, map[string]string{
+			ignore.LegacyFileName: "*.tmp\n",
+			"scratch.tmp":         "x",
+		})
+
+		e := lockfileEngine(t, dir, noLockfileRunner)
+
+		plan, err := e.Plan()
+		require.NoError(t, err)
+
+		assert.NotContains(t, uploadPathsOf(plan), "scratch.tmp", "legacy patterns must still filter")
+		assert.Contains(t, e.IgnoreFileNotice(), ignore.LegacyFileName)
+	})
+
+	t.Run("current name is used and not reported", func(t *testing.T) {
+		// initProject links the project, which writes the current name.
+		dir := initProject(t, map[string]string{
+			ignore.FileName: "*.tmp\n",
+			"scratch.tmp":   "x",
+		})
+
+		e := lockfileEngine(t, dir, noLockfileRunner)
+
+		plan, err := e.Plan()
+		require.NoError(t, err)
+
+		assert.NotContains(t, uploadPathsOf(plan), "scratch.tmp", "current patterns must filter")
+		assert.Empty(t, e.IgnoreFileNotice(), "the current name is not worth a word")
+	})
+}
+
+// An unreadable ignore file in effect fails the sync rather than falling
+// through to the other name. The wrap is what this asserts; the fallback
+// behaviour itself is pinned in the ignore package, where it lives.
+func TestEngine_Plan_UnreadableIgnoreFileFailsTheSync(t *testing.T) {
+	dir := initProject(t, nil)
+
+	// A directory under the current name is unreadable as a file on every
+	// platform, unlike a chmod that root and Windows both ignore.
+	require.NoError(t, os.Remove(filepath.Join(dir, ignore.FileName)))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ignore.FileName), 0o755))
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	_, err := e.Plan()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load ignore patterns")
+	assert.Contains(t, err.Error(), ignore.FileName)
+}
+
+// legacyProject is a project as it stood before the rename: linked, with the
+// old ignore filename and no new one. initProject writes the current-name
+// template as part of linking, so the removal is what makes it legacy, and it
+// lives here rather than at each call site so that coupling is stated once.
+func legacyProject(t *testing.T, files map[string]string) string {
+	t.Helper()
+
+	dir := initProject(t, files)
+	require.NoError(t, os.Remove(filepath.Join(dir, ignore.FileName)))
+
+	return dir
 }
 
 type trackingFilesClient struct {

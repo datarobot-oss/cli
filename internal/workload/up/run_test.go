@@ -1045,6 +1045,28 @@ func TestRun_SyncConflictsAreReported(t *testing.T) {
 	assert.Contains(t, stderr, "app.py.LOCAL.170")
 }
 
+// Sizing the working tree is the whole of what a --dry-run does, and it is
+// where the engine reads the ignore file, so a preview that stayed silent
+// would be a preview of a different run than the one that follows.
+func TestRun_DryRunReportsTheIgnoreFileNotice(t *testing.T) {
+	const notice = "Using .wapiignore for sync ignore patterns."
+
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.code = func(Loaded, Live) (CodeChange, error) {
+		return CodeChange{Applies: true, FirstDeploy: true, IgnoreNotice: notice}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, tr.steps, "sync", "a dry run must not sync")
+	assert.Equal(t, 1, strings.Count(stderr, notice))
+}
+
 // A flag that was asked for and did nothing has to say so, or it reads as a
 // rebuild that quietly happened.
 func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {

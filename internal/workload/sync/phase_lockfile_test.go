@@ -25,7 +25,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
+
+// noLockfileRunner is for tests whose project has no pyproject.toml, where the
+// lockfile phase returns before the runner would be called. Naming it says
+// "this test is not about uv" at the call site.
+func noLockfileRunner(string) error { return nil }
 
 // lockfileEngine builds an engine over dir with an injected LockfileRunner
 // and an empty draft artifact (first-sync shape).
@@ -75,7 +81,7 @@ func TestEngine_Plan_GeneratesLockfileWhenMissing(t *testing.T) {
 	// The generated lock exists before the walk, so it flows through the
 	// normal diff/upload pipeline like any user file.
 	assert.ElementsMatch(t,
-		[]string{".wapiignore", "pyproject.toml", "app.py", "uv.lock"},
+		[]string{".drignore", "pyproject.toml", "app.py", "uv.lock"},
 		uploadPathsOf(plan))
 	assert.True(t, e.lockfileGenerated)
 	assert.Empty(t, e.lockfileHint)
@@ -174,11 +180,11 @@ func TestEngine_Plan_RunnerSucceedsButLockfileAbsentHints(t *testing.T) {
 	assert.Contains(t, e.lockfileHint, "workspace")
 }
 
-func TestEngine_Plan_WarnsWhenWapiignoreExcludesLockfile(t *testing.T) {
+func TestEngine_Plan_WarnsWhenIgnoreFileExcludesLockfile(t *testing.T) {
 	dir := initProject(t, map[string]string{
 		"pyproject.toml": "[project]\nname = \"x\"\n",
 		"uv.lock":        "version = 1\n",
-		".wapiignore":    "uv.lock\n",
+		ignore.FileName:  "uv.lock\n",
 	})
 
 	runnerCalled := false
@@ -193,5 +199,30 @@ func TestEngine_Plan_WarnsWhenWapiignoreExcludesLockfile(t *testing.T) {
 
 	assert.False(t, runnerCalled, "lock exists; generation must not run")
 	assert.NotContains(t, uploadPathsOf(plan), "uv.lock", "ignored lock must not upload")
-	assert.Contains(t, e.lockfileHint, "excluded by .wapiignore")
+	assert.Contains(t, e.lockfileHint, "excluded by "+ignore.FileName)
+}
+
+// The hint tells the user to go edit a pattern, so it has to name the file
+// they actually have. A project on the legacy name would otherwise be sent to
+// a .drignore that does not exist.
+func TestEngine_Plan_LockfileHintNamesTheLegacyIgnoreFile(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"pyproject.toml":      "[project]\nname = \"x\"\n",
+		"uv.lock":             "version = 1\n",
+		ignore.LegacyFileName: "uv.lock\n",
+	})
+
+	// initProject links the project, which drops the current-name template.
+	// Remove it so the legacy file is the only one, as it would be in a
+	// project set up before the rename.
+	require.NoError(t, os.Remove(filepath.Join(dir, ignore.FileName)))
+
+	e := lockfileEngine(t, dir, func(string) error { return nil })
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+
+	assert.NotContains(t, uploadPathsOf(plan), "uv.lock")
+	assert.Contains(t, e.lockfileHint, "excluded by "+ignore.LegacyFileName)
+	assert.NotContains(t, e.lockfileHint, ignore.FileName)
 }

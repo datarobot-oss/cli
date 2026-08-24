@@ -42,6 +42,12 @@ type CodeChange struct {
 	// FirstDeploy marks a project with nothing to compare against yet, so
 	// every file is new rather than changed.
 	FirstDeploy bool
+
+	// IgnoreNotice is the sync engine's note about a deprecated ignore
+	// filename, empty when there is nothing to say. Sizing the tree is the
+	// only part of a run that a --dry-run does, so carrying it here is what
+	// lets the preview mention it at all.
+	IgnoreNotice string
 }
 
 // Changed reports whether the code needs syncing and rebuilding.
