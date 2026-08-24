@@ -84,7 +84,15 @@ func ValidImportance(value string) bool {
 const (
 	DefaultImportance = "low"
 	DefaultPort       = 8080
-	DefaultHealthPath = "/health"
+	// DefaultHealthPath is the root rather than /health because the probe has
+	// to pass on an application nobody wrote it for. Almost every HTTP service
+	// answers something at /, where /health is an endpoint the app has to have
+	// implemented; pointing a probe at one that does not exist is the most
+	// common first-deploy failure, and it presents as a deploy that never
+	// becomes ready rather than as a misconfigured probe. An app with a real
+	// health endpoint says so on the settings screen, and one that wants no
+	// probe at all clears the field.
+	DefaultHealthPath = "/"
 	DefaultReplicas   = 1
 	DefaultCPU        = 0.5
 	DefaultMemory     = "512MB"
@@ -125,7 +133,11 @@ type Draft struct {
 	A2AEnabled bool
 	Build      Build
 	// Port is the primary container's port, and the readiness probe's.
-	Port       int
+	Port int
+	// HealthPath is the readiness probe's path, and empty means the workload
+	// runs without a probe: the platform does not require one, and a probe
+	// aimed at an endpoint the container does not serve never passes. Read it
+	// through WantsReadinessProbe rather than comparing it here and there.
 	HealthPath string
 	Runtime    Runtime
 	// EnvVars are the variables a local .env defines, already classified by
@@ -134,6 +146,20 @@ type Draft struct {
 	// CredentialPlaceholder, because no credential exists for it yet. An
 	// empty slice writes nothing.
 	EnvVars []EnvVar
+}
+
+// WantsReadinessProbe reports whether the answers ask for a probe at all. It
+// is the one place the empty-path convention is spelled out, so the write, the
+// live merge and the screens cannot drift about what an empty path means.
+func (d Draft) WantsReadinessProbe() bool {
+	return d.healthPath() != ""
+}
+
+// healthPath is the path as it should be written, which is the trimmed one:
+// WantsReadinessProbe already ignores surrounding space, so writing the raw
+// field would let " /ready " through as a path no router matches.
+func (d Draft) healthPath() string {
+	return strings.TrimSpace(d.HealthPath)
 }
 
 // EnvVar is one .env variable as the manifest will carry it. Deciding which
@@ -394,17 +420,18 @@ func (d Draft) artifact(build field) *yaml.Node {
 		})
 	}
 
-	probe := mapping(
-		field{key: keyPath, value: scalar(d.HealthPath)},
-		field{key: keyPort, value: number(d.Port)},
-	)
-
 	container := []field{
 		{key: keyName, value: scalar(PrimaryContainerName)},
 		{key: keyPrimary, value: boolean(true)},
 		{key: keyPort, value: number(d.Port), comment: "must be 1024 or above"},
 		build,
-		{key: keyReadinessProbe, value: probe},
+	}
+
+	if d.WantsReadinessProbe() {
+		container = append(container, field{key: keyReadinessProbe, value: mapping(
+			field{key: keyPath, value: scalar(d.healthPath())},
+			field{key: keyPort, value: number(d.Port)},
+		)})
 	}
 
 	if vars := d.environmentVars(); vars != nil {

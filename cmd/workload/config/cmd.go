@@ -164,11 +164,28 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.answers.Image, "image", "", "Published image URI. Required with --build-mode image.")
 
 	cmd.Flags().IntVar(&f.answers.Port, "port", 0, "Container port (default: the Dockerfile's EXPOSE, else 8080).")
-	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /health).")
+	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /). Use --no-readiness-probe to write none.")
+	// A flag of its own rather than an empty --health. Declining a probe is a
+	// different act from not mentioning one, and a flag that says so is both
+	// greppable in a CI script and impossible to type by accident.
+	// Deliberately about the file rather than about the running workload: `up`
+	// leaves out what the file leaves out, so a probe already deployed goes
+	// only when the artifact is rebuilt for some other reason.
+	cmd.Flags().BoolVar(&f.answers.NoProbe, "no-readiness-probe", false,
+		"Write no readiness probe, so traffic is not gated on a health check. Exclusive with --health. "+
+			"With --workload-id it drops the probe from the manifest; a deployed probe goes on the next artifact build.")
 
 	cmd.Flags().IntVar(&f.answers.Replicas, "replicas", 0, "Replica count (default 1).")
 	cmd.Flags().Float64Var(&f.answers.CPU, "cpu", 0, "CPU per replica (default 0.5).")
 	cmd.Flags().StringVar(&f.answers.Memory, "memory", "", "Memory per replica (default 512MB).")
+	// Applied when the workload is created. `up` compares the artifact spec and
+	// the runtime block, and importance is neither, so changing it for a
+	// workload that already exists is an edit the file records and the next
+	// deploy does not carry.
+	cmd.Flags().StringVar(&f.answers.Importance, "importance", "",
+		"Scheduling priority when capacity is constrained: "+
+			strings.Join(manifest.ImportanceLevels, ", ")+
+			" (default "+manifest.DefaultImportance+", or the bound workload's own level). Applied on create.")
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {

@@ -87,7 +87,6 @@ func (l Live) Defaults() Draft {
 		Type:       ArtifactTypeOrDefault(l.Type()),
 		A2AEnabled: boolAt(l.Spec, keyA2AEnabled),
 		Port:       DefaultPort,
-		HealthPath: DefaultHealthPath,
 		Build:      Build{Mode: BuildModeDockerfile},
 		Runtime:    l.runtimeDefaults(),
 	}
@@ -101,6 +100,11 @@ func (l Live) Defaults() Draft {
 		draft.Port = port
 	}
 
+	// The health path is left empty when the container has no readiness probe,
+	// rather than falling back to DefaultHealthPath like everything else here.
+	// A workload running without a probe has to arrive saying so: the screen
+	// shows the absence, and Apply can then read a path as the answer someone
+	// gave rather than as a default it must be careful not to attach.
 	if path := stringAt(mapAt(container, keyReadinessProbe), keyPath); path != "" {
 		draft.HealthPath = path
 	}
@@ -108,6 +112,28 @@ func (l Live) Defaults() Draft {
 	draft.Build = liveBuild(container)
 
 	return draft
+}
+
+// ReadinessProbe reports what the running workload does about readiness:
+// whether the primary container declares a probe at all, and whether this
+// release can read a path out of it.
+//
+// The two are separate questions, and Defaults answers neither on its own: it
+// reports a probe with no readable path the same way it reports no probe, as an
+// empty HealthPath. Only the screens care about the difference, and they care a
+// lot, because an empty field means "no probe" to everything downstream.
+func (l Live) ReadinessProbe() (present, readable bool) {
+	container := l.primaryContainer()
+	if container == nil {
+		return false, false
+	}
+
+	probe := mapAt(container, keyReadinessProbe)
+	if probe == nil {
+		return false, false
+	}
+
+	return true, stringAt(probe, keyPath) != ""
 }
 
 // BuildMode reports how the primary container's image comes to be, in the
@@ -516,11 +542,15 @@ func (l Live) primaryContainerName() string {
 	return stringAt(container, keyName)
 }
 
-// applyReadiness writes the port and, where the workload already has a
-// readiness probe, keeps it pointing at the same place. It does not add one:
-// a workload deliberately running without a probe should not acquire the
-// wizard's default /health, which a container that does not serve it would
-// never pass.
+// applyReadiness writes the port and points the readiness probe wherever the
+// answers say, which includes having no probe at all.
+//
+// The draft's path is empty unless something asked for one: Defaults leaves it
+// empty for a container running without a probe, so a workload deliberately
+// running without one cannot acquire the wizard's default /health, which a
+// container that does not serve it would never pass. What reaches here
+// non-empty was typed on a screen or passed as a flag, and adding the probe is
+// then the answer rather than an invention.
 func applyReadiness(container map[string]any, draft Draft) {
 	previous, hadPort := intAt(container, keyPort)
 
@@ -531,27 +561,97 @@ func applyReadiness(container map[string]any, draft Draft) {
 	// nothing would otherwise produce a file rejecting its own port.
 	container[keyPrimary] = true
 
-	if probe := mapAt(container, keyReadinessProbe); probe != nil {
-		probe[keyPath] = draft.HealthPath
-		probe[keyPort] = draft.Port
-	}
+	rewritten := applyProbe(container, draft)
 
 	if !hadPort || previous == draft.Port {
 		return
 	}
 
-	// The other probes are blocks the wizard has no question for, and they are
-	// preserved as they stand. One that was watching the container's port still
-	// has to follow it: a startup probe left behind on the old port is how a
-	// changed port becomes a deploy that never reports ready. A probe aimed
-	// somewhere else was aimed there deliberately and keeps its own port.
-	for _, key := range []string{keyStartupProbe, keyLivenessProbe} {
-		probe := mapAt(container, key)
+	// Probes the wizard has no question for are preserved as they stand. One
+	// whose own port was watching the container's still has to follow it: a
+	// startup probe left behind on the old port is how a changed port becomes a
+	// deploy that never reports ready. A probe aimed somewhere else was aimed
+	// there deliberately and keeps its own port.
+	//
+	// Nested ports follow too. A tcpSocket or gRPC probe keeps its port one
+	// level down, and leaving that on a port the container no longer listens on
+	// is the same never-reports-ready deploy this loop exists to prevent. Only
+	// a port that matched the container's old one moves, so a probe deliberately
+	// aimed elsewhere is still left alone whatever shape it is written in.
+	following := []string{keyStartupProbe, keyLivenessProbe}
+	if !rewritten {
+		// A readiness probe this release could not read was left alone above,
+		// so it follows the same rule as the other two rather than keeping a
+		// port the container no longer listens on.
+		following = append(following, keyReadinessProbe)
+	}
 
-		if port, ok := intAt(probe, keyPort); ok && port == previous {
-			probe[keyPort] = draft.Port
+	for _, key := range following {
+		followPort(mapAt(container, key), previous, draft.Port)
+	}
+}
+
+// followPort moves a probe from one port to another, at the probe's own level
+// and one level down, which is where the shapes this release does not model
+// keep theirs. It descends no further: past that, a "port" is as likely to
+// belong to something the probe merely mentions as to the thing it dials.
+func followPort(probe map[string]any, from, to int) {
+	if probe == nil {
+		return
+	}
+
+	if port, ok := intAt(probe, keyPort); ok && port == from {
+		probe[keyPort] = to
+	}
+
+	for _, value := range probe {
+		nested, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if port, ok := intAt(nested, keyPort); ok && port == from {
+			nested[keyPort] = to
 		}
 	}
+}
+
+// applyProbe settles the readiness probe and reports whether it rewrote or
+// removed one, so the caller knows whether the block still needs the port
+// treatment every other probe gets.
+//
+// A block whose path this release cannot read is left exactly as it stands. An
+// empty draft path means "no probe", but only for a probe the user could see:
+// Defaults reports a TCP, gRPC or otherwise unmodelled probe as an empty path
+// too, and deleting on that would throw away a running workload's own
+// configuration because the reader did not recognize its shape.
+func applyProbe(container map[string]any, draft Draft) bool {
+	probe := mapAt(container, keyReadinessProbe)
+
+	switch {
+	case probe != nil && stringAt(probe, keyPath) == "":
+		return false
+
+	case !draft.WantsReadinessProbe():
+		// Declined. The block goes rather than being left pointing at an empty
+		// path, which is neither a probe nor an absence of one.
+		delete(container, keyReadinessProbe)
+
+	case probe != nil:
+		probe[keyPath] = draft.healthPath()
+		probe[keyPort] = draft.Port
+
+	default:
+		// Asked for on a workload that has none. Only the two fields the wizard
+		// knows about are written; the timings are the platform's defaults,
+		// which is what a probe added here has always meant.
+		container[keyReadinessProbe] = map[string]any{
+			keyPath: draft.healthPath(),
+			keyPort: draft.Port,
+		}
+	}
+
+	return true
 }
 
 // applyBuild sets the image source, editing the live build block in place

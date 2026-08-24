@@ -48,11 +48,11 @@ func (a Answers) partialDraft(detected Detected) manifest.Draft {
 	draft := manifest.Draft{
 		WorkloadID: a.WorkloadID,
 		Name:       orDefault(a.Name, detected.Name),
-		Importance: manifest.DefaultImportance,
+		Importance: orDefault(a.importance(), manifest.DefaultImportance),
 		Type:       kind,
 		A2AEnabled: a.A2AEnabled && kind == manifest.TypeAgent,
 		Port:       a.Port,
-		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),
+		HealthPath: a.healthPath(),
 		Runtime:    a.runtime(),
 		EnvVars:    a.envVars(detected),
 	}
