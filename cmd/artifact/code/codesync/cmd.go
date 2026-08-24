@@ -47,6 +47,7 @@ type engineRunner interface {
 	Close() error
 	StaleRollbackRestored() bool
 	StateMigrationNotice() string
+	IgnoreFileNotice() string
 	Fetcher() display.ContentFetcher
 }
 
@@ -187,7 +188,10 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return err
 	}
 
+	// Stderr for all of them: they are never part of a command's data output,
+	// and stdout has to stay parseable under --output-format json.
 	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
+	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))

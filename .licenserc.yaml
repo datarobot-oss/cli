@@ -43,6 +43,6 @@ header:
     - 'cmd/task/run/testdata/**'
     - 'internal/task/Taskfile.tmpl.yaml'
     - 'internal/copier/readme/*.md'
-    - 'internal/workload/wapi/wapiignore.tmpl'
+    - 'internal/workload/wapi/drignore.tmpl'
 
   comment: on-failure

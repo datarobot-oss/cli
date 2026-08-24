@@ -110,6 +110,7 @@ type Engine struct {
 	startedAt      time.Time
 	staleNote      bool
 	migrationNote  string
+	ignoreNotice   string
 
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool
@@ -228,6 +229,16 @@ func (e *Engine) StaleRollbackRestored() bool { return e.staleNote }
 // lives, empty when the location did not change. The preview modes never
 // migrate, so it is always empty for --dry-run and --diff.
 func (e *Engine) StateMigrationNotice() string { return e.migrationNote }
+
+// IgnoreFileNotice reports that the project's ignore patterns came from the
+// deprecated filename, empty when they came from the current one or from
+// nowhere. Set in Phase 2, so it is only meaningful after Plan.
+//
+// This one is returned rather than logged because it is housekeeping: the
+// patterns still apply, and a caller emitting JSON needs it off stdout. The
+// ignore-file problems that cost the user something go through log.Warn with
+// the rest of the phase warnings, so they survive a later phase failing.
+func (e *Engine) IgnoreFileNotice() string { return e.ignoreNotice }
 
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {
