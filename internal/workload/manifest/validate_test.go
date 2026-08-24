@@ -322,6 +322,219 @@ func TestValidate_DisabledAutoscalingAllowsReplicaCount(t *testing.T) {
 `)))
 }
 
+// The server echoes autoscaling: null when no policy is configured, so the
+// ledger must treat it as absent rather than as an active scaling policy.
+func TestValidate_ReplicaCountWithNullAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling: null
+`)))
+}
+
+// An empty autoscaling mapping is the same as a null one: there is no policy.
+func TestValidate_ReplicaCountWithEmptyAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling: {}
+`)))
+}
+
+// A non-empty autoscaling body without an enabled key is treated as enabled by
+// the server, so replicaCount still conflicts.
+func TestValidate_ReplicaCountWithAutoscalingNoEnabled(t *testing.T) {
+	err := validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling:
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 16, Path: "runtime.containerGroups[0].replicaCount", Msg: "cannot be set alongside autoscaling"},
+	})
+}
+
+// The node-based checkScaling and the map-based autoscalingActive must agree on
+// every autoscaling shape, or a live workload will render a file the ledger
+// rejects (or drop a replica answer that should be kept).
+func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
+	cases := []struct {
+		name        string
+		autoscaling string
+		active      bool
+	}{
+		{
+			name:        "null",
+			autoscaling: `      autoscaling: null`,
+			active:      false,
+		},
+		{
+			name:        "empty mapping",
+			autoscaling: `      autoscaling: {}`,
+			active:      false,
+		},
+		{
+			name: "enabled false",
+			autoscaling: `      autoscaling:
+        enabled: false`,
+			active: false,
+		},
+		{
+			name: "enabled true",
+			autoscaling: `      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 4`,
+			active: true,
+		},
+		{
+			name: "missing enabled with body",
+			autoscaling: `      autoscaling:
+        minReplicaCount: 1
+        maxReplicaCount: 4`,
+			active: true,
+		},
+		{
+			name:   "absent",
+			active: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "      replicaCount: 3"
+			if tc.autoscaling != "" {
+				body += "\n" + tc.autoscaling
+			}
+
+			var validateErr error
+
+			if err := validateString(t, "", runtimeWithGroupBody(body+"\n")); err != nil {
+				validateErr = err
+			}
+
+			group := map[string]any{}
+
+			switch tc.name {
+			case "null":
+				group[keyAutoscaling] = nil
+			case "empty mapping":
+				group[keyAutoscaling] = map[string]any{}
+			case "enabled false":
+				group[keyAutoscaling] = map[string]any{keyEnabled: false}
+			case "enabled true":
+				group[keyAutoscaling] = map[string]any{
+					keyEnabled:        true,
+					"minReplicaCount": 1,
+					"maxReplicaCount": 4,
+				}
+			case "missing enabled with body":
+				group[keyAutoscaling] = map[string]any{
+					"minReplicaCount": 1,
+					"maxReplicaCount": 4,
+				}
+			}
+
+			assert.Equal(t, tc.active, autoscalingActive(group), "autoscalingActive agrees with expected")
+			assert.Equal(t, tc.active, validateErr != nil, "checkScaling agrees with expected; err=%v", validateErr)
+		})
+	}
+}
+
+// A null imageBuildConfig is the same as a missing one: the container names an
+// image and does not also say how to build one.
+func TestValidate_ImageBuildConfigNullWithImageUri(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            imageBuildConfig: null
+`)))
+}
+
+// A null imageBuildConfig with no imageUri is "neither set", not "dockerfile
+// required".
+func TestValidate_ImageBuildConfigNullWithoutImageUri(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 9, Path: "artifact.spec.containerGroups[0].containers[0]", Msg: "must set either imageUri or imageBuildConfig"},
+	})
+}
+
+// A null artifact block is treated as absent, so binding to an existing
+// artifact by id is allowed.
+func TestValidate_ArtifactNullWithArtifactId(t *testing.T) {
+	require.NoError(t, validateString(t, "", `name: my-app
+artifact: null
+artifactId: 68b0bbbb0000000000000002
+`))
+}
+
+// A null artifact and no artifactId is the same as neither set.
+func TestValidate_ArtifactNullAndNoArtifactId(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+	})
+}
+
+// Two null values are still "neither set".
+func TestValidate_ArtifactNullAndArtifactIdNull(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: null
+artifactId: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+	})
+}
+
+// An inline artifact with a null spec reports the same error as a missing spec.
+func TestValidate_ArtifactWithNullSpec(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 4, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
+// A build config with a null dockerfile reports the same error as a missing
+// dockerfile.
+func TestValidate_BuildConfigWithNullDockerfile(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig:
+              dockerfile: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 13, Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg: "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// A null artifactId is treated as absent, so an inline artifact is allowed.
+func TestValidate_InlineArtifactWithNullArtifactId(t *testing.T) {
+	require.NoError(t, validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+artifactId: null
+`))
+}
+
 func TestValidate_RuntimeNamesMustMatchTheArtifact(t *testing.T) {
 	err := validateString(t, "", `name: my-app
 artifact:

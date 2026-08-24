@@ -471,7 +471,7 @@ func (l *Live) runtimeGroup() map[string]any {
 // autoscaling: the file it would produce is one the ledger accepts.
 func autoscalingActive(group map[string]any) bool {
 	autoscaling := mapAt(group, keyAutoscaling)
-	if autoscaling == nil {
+	if len(autoscaling) == 0 {
 		return false
 	}
 

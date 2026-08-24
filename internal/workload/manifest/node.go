@@ -29,6 +29,23 @@ const (
 	boolTag = "!!bool"
 )
 
+// isNullish reports whether a node is meaningfully absent for validator
+// checks. mapValue returns a non-nil scalar node for a present key whose value
+// is null, so callers that test `!= nil` to mean "this block is set" get a
+// false positive unless they also call this helper.
+func isNullish(node *yaml.Node) bool {
+	node = resolveAlias(node)
+	if node == nil {
+		return true
+	}
+
+	if node.Kind == yaml.ScalarNode && node.Tag == nullTag {
+		return true
+	}
+
+	return node.Kind == yaml.MappingNode && len(node.Content) == 0
+}
+
 // resolveAlias follows an alias to the node it anchors, so the helpers below
 // see through YAML anchors/aliases the same way they see a literal value.
 // yaml.v3 aliases point directly at the anchored node, never at another

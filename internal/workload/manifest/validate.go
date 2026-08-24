@@ -212,7 +212,7 @@ func (v *validator) checkArtifactBinding(root *yaml.Node) {
 	inline := mapValue(root, keyArtifact)
 	byID, _ := scalarString(mapValue(root, keyArtifactID))
 
-	if (inline != nil) == (byID != "") {
+	if (!isNullish(inline)) == (byID != "") {
 		v.add(nil, root, "",
 			"exactly one of %s (inline definition) or %s (existing artifact) is required",
 			keyArtifact, keyArtifactID)
@@ -232,13 +232,13 @@ type groupShape struct {
 // existing artifact by id returns no shape, and the runtime name checks are
 // skipped: the names live server-side where the CLI cannot see them.
 func (v *validator) checkArtifact(artifact *yaml.Node) []groupShape {
-	if artifact == nil {
+	if isNullish(artifact) {
 		return nil
 	}
 
 	spec := mapValue(artifact, keySpec)
-	if spec == nil {
-		v.add(nil, artifact, joinPath(keyArtifact, keySpec), "is required for an inline artifact")
+	if isNullish(spec) {
+		v.add(spec, artifact, joinPath(keyArtifact, keySpec), "is required for an inline artifact")
 
 		return nil
 	}
@@ -319,15 +319,16 @@ func (v *validator) checkImageSource(container *yaml.Node, path string) {
 	imageURI, hasImage := scalarString(mapValue(container, keyImageURI))
 	hasImage = hasImage && imageURI != ""
 	buildConfig := mapValue(container, keyImageBuildConfig)
+	hasBuildConfig := !isNullish(buildConfig)
 
 	switch {
-	case hasImage && buildConfig != nil:
+	case hasImage && hasBuildConfig:
 		v.add(buildConfig, container, path,
 			"sets both %s and %s; a container names an image or says how to build one, never both",
 			keyImageURI, keyImageBuildConfig)
-	case !hasImage && buildConfig == nil:
+	case !hasImage && !hasBuildConfig:
 		v.add(nil, container, path, "must set either %s or %s", keyImageURI, keyImageBuildConfig)
-	case buildConfig != nil:
+	case hasBuildConfig:
 		v.checkBuildConfig(buildConfig, joinPath(path, keyImageBuildConfig))
 	}
 }
@@ -338,8 +339,8 @@ func (v *validator) checkImageSource(container *yaml.Node, path string) {
 // reinterpret later.
 func (v *validator) checkBuildConfig(buildConfig *yaml.Node, path string) {
 	dockerfile := mapValue(buildConfig, keyDockerfile)
-	if dockerfile == nil {
-		v.add(buildConfig, buildConfig, joinPath(path, keyDockerfile),
+	if isNullish(dockerfile) {
+		v.add(nil, buildConfig, joinPath(path, keyDockerfile),
 			"is required: %s must say how the image is built", keyImageBuildConfig)
 
 		return
@@ -464,12 +465,13 @@ func (v *validator) checkRuntimeContainers(group *yaml.Node, path string, shape 
 // checkScaling holds replicaCount against autoscaling. A group may say how
 // many replicas to run or how to scale them, not both. Autoscaling switched
 // off is not scaling, so an explicit enabled:false leaves replicaCount alone,
-// matching what the create endpoint accepts.
+// matching what the create endpoint accepts. A null or empty autoscaling block
+// is also not a policy, matching the server's own echo.
 func (v *validator) checkScaling(group *yaml.Node, path string) {
 	replicas := mapValue(group, keyReplicaCount)
 	autoscaling := mapValue(group, keyAutoscaling)
 
-	if replicas == nil || autoscaling == nil {
+	if replicas == nil || isNullish(autoscaling) {
 		return
 	}
 
