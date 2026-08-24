@@ -174,17 +174,52 @@ func Run(opts Options) (Result, error) {
 		Locked:     live.Locked,
 	}
 
+	if err := bindLocked(loaded, plan, &result); err != nil {
+		return result, err
+	}
+
 	if err := Render(opts.Stderr, Summary{Name: result.Name, WorkloadID: result.WorkloadID}, plan); err != nil {
 		return result, err
 	}
 
 	noteUnusedForce(plan, opts)
 
-	if opts.DryRun || plan.Empty() {
+	if opts.DryRun {
 		return result, nil
 	}
 
+	if plan.Empty() {
+		return lockOnly(live, result, opts)
+	}
+
 	return apply(loaded, live, plan, result, opts)
+}
+
+// lockOnly is the whole of a --lock run that found nothing else to do.
+//
+// --lock is about the end state rather than about what this run happened to
+// change: the flag says the artifact that ends up live should be permanent,
+// and an empty plan means the one already serving is that artifact. Returning
+// early on Empty, as this used to, printed "Already up to date" and exited 0
+// having locked nothing, which is the wrong answer twice over. It contradicts
+// the flag's own help, and it breaks the sequence the draft warning tells
+// people to follow: deploy, read the warning, run 'up --lock'. By then there
+// is nothing left to change, so the remedy silently did nothing at all.
+//
+// The live state is checked first because an empty plan is not the same as a
+// healthy workload. Only a stopped one is excluded by Empty itself; an errored
+// workload with no drift still lands here, and locking cannot be undone, so
+// this refuses rather than making something permanent out of something broken.
+func lockOnly(live Live, result Result, opts Options) (Result, error) {
+	if !opts.Lock || result.Locked {
+		return result, nil
+	}
+
+	if err := deployable(live, result.Name); err != nil {
+		return result, err
+	}
+
+	return lock(result, newReporter(opts.Stderr, opts.Spinner))
 }
 
 // noteIgnoreFile passes on the note about a deprecated ignore filename.
@@ -200,6 +235,46 @@ func noteIgnoreFile(code CodeChange, opts Options) {
 	}
 
 	fmt.Fprintf(opts.Stderr, "  %s\n", tui.HintStyle.Render(code.IgnoreNotice))
+}
+
+// bindLocked settles Locked for the one shape live state cannot answer: a
+// manifest bound by artifact id, deploying to a workload that does not exist
+// yet. Locked is otherwise read off the artifact the workload is running, and
+// a create has no workload to read it from, so the result would say draft
+// about an artifact that may well be permanent.
+//
+// That is not a cosmetic slip. Deploying a locked, versioned artifact onto a
+// fresh workload is how a promotion works, and getting it wrong there tells
+// someone their permanent deploy is temporary and then advises 'up --lock',
+// which the platform answers with a 403 because the artifact is already
+// locked. The reader is left with a warning they cannot act on.
+//
+// Only creates ask. A roll onto a live workload cannot hit this, because the
+// platform refuses to swap a draft for a locked version and the run fails on
+// its own terms long before anything is printed.
+//
+// A failure to read is returned rather than shrugged off. The id came from
+// the file, so an artifact that cannot be read is one the deploy was going to
+// fail on anyway, and saying so here costs a create instead of a plan that
+// was never true.
+func bindLocked(loaded Loaded, plan Plan, result *Result) error {
+	if !plan.Creates || result.Locked {
+		return nil
+	}
+
+	bound := loaded.Compiled.ArtifactID
+	if bound == "" {
+		return nil
+	}
+
+	locked, err := lockedAlready(bound)
+	if err != nil {
+		return err
+	}
+
+	result.Locked = locked
+
+	return nil
 }
 
 // noteUnusedForce reports a --force-build that is about to do nothing,

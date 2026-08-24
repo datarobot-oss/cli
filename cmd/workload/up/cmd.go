@@ -336,6 +336,41 @@ func reportable(result up.Result) bool {
 	return result.WorkloadID != "" || result.BuildID != ""
 }
 
+// draftIsServing reports whether this run left, or would leave, a draft
+// artifact serving. A workload on a draft is stopped eight hours after it
+// starts running, whatever it is serving, and the deploy output never said so.
+//
+// Result.Locked is the whole signal. It starts as the status of the artifact
+// the workload is already running and is only ever flipped true by an actual
+// lock, so its negation covers every path a deploy can take: create, roll,
+// retune, start, and a run that changed nothing.
+//
+// The three refusals, in order:
+//
+//   - A failed run says nothing. The error is what the reader needs, and
+//     "your broken deploy is also temporary" buries it.
+//   - --lock says nothing, because the run is the remedy. This also covers a
+//     --lock whose lock failed, where the returned error names the artifact
+//     and explains the state better than a generic warning would.
+//   - A locked artifact is permanent, which is the whole point of locking.
+//
+// Then a dry run always qualifies, because a first deploy has no workload id
+// to check and previewing a first deploy is exactly who this is for; and a
+// real run qualifies once it has a workload, the same guard nextSteps uses.
+//
+// The one shape live state cannot answer, a manifest bound by artifact id
+// creating a workload that does not exist yet, is settled before the result
+// gets here: see bindLocked in internal/workload/up. Without it a promotion
+// of a locked artifact onto a fresh workload would be called temporary and
+// then advised to lock what is already locked.
+func draftIsServing(f flags, result up.Result, failed bool) bool {
+	if failed || f.lock || result.Locked {
+		return false
+	}
+
+	return f.dryRun || result.WorkloadID != ""
+}
+
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
@@ -351,8 +386,11 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		})
 	}
 
+	draft := draftIsServing(f, result, failed)
+
 	if f.dryRun {
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
+		draftWarning(cmd.ErrOrStderr(), draft, true)
 
 		return nil
 	}
@@ -374,24 +412,84 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
-	nextSteps(cmd.ErrOrStderr(), result)
+	draftWarning(cmd.ErrOrStderr(), draft, false)
+	nextSteps(cmd.ErrOrStderr(), result, draft)
 
 	return nil
+}
+
+// draftWarning says that the endpoint just printed has a clock on it, and what
+// to run to stop that being true.
+//
+// The eight hours is the platform's own published figure, carried in the
+// OpenAPI description of an artifact's status, and behind it a hardcoded
+// constant rather than anything a cluster or a user can vary. Printing it is
+// therefore safe in a way that guessing at a policy would not have been.
+//
+// The clause about use is not padding. The sweep selects on how long the
+// workload has been running, never on whether it has served anything, so
+// calling this an inactivity timeout would mislead exactly the person who
+// shares an endpoint and keeps using it. Nothing deletes the draft artifact
+// itself; only the running workload is stopped, which is why this warns about
+// the workload rather than the artifact.
+//
+// The command is named inline rather than left to nextSteps, because a dry run
+// returns before nextSteps ever gets to speak and would otherwise state a
+// problem with no remedy attached.
+func draftWarning(w io.Writer, draft, planned bool) {
+	if !draft {
+		return
+	}
+
+	// A dry run has changed nothing and may be previewing a workload that does
+	// not exist, so the present tense would contradict the "nothing was
+	// changed" line printed immediately above it.
+	headline := "This workload is running a draft artifact."
+	if planned {
+		headline = "This workload would run a draft artifact."
+	}
+
+	fmt.Fprintf(w, "\n  %s %s\n", tui.WarnStyle.Render("⚠"), tui.WarnStyle.Render(headline))
+
+	// One sentence per line, and rendered a line at a time. Wrapping prose to a
+	// fixed width breaks it mid-clause at whatever column the source happened to
+	// end on, and lipgloss pads a multi-line string out to its widest line,
+	// leaving trailing spaces on every other one.
+	for _, line := range []string{
+		"Draft workloads are stopped after 8 hours, whether or not they are in use.",
+		"Run 'dr workload up --lock' to version the artifact and make it permanent.",
+	} {
+		fmt.Fprintf(w, "    %s\n", tui.HintStyle.Render(line))
+	}
 }
 
 // nextSteps lists what to run against the workload this deploy just touched,
 // on stderr so the endpoint on stdout stays pipeable. Nothing is printed for a
 // run that produced no workload: a list of commands that need an id is no help
 // to someone who has not got one.
-func nextSteps(w io.Writer, result up.Result) {
+//
+// A draft deploy trades the stop line for --lock, and puts it first so it sits
+// directly under the warning that explains why it is there. Someone who wants
+// to switch a workload off goes looking for the command; someone whose
+// workload switches itself off does not know there is anything to look for,
+// and this list is the one place they will read either way.
+func nextSteps(w io.Writer, result up.Result, draft bool) {
 	if result.WorkloadID == "" {
 		return
 	}
 
 	steps := [][2]string{
-		{"dr workload logs " + result.WorkloadID, "what the container is saying"},
-		{"dr workload status " + result.WorkloadID, "whether it is healthy"},
-		{"dr workload stop " + result.WorkloadID, "switch it off, keeping the version"},
+		{"dr workload logs " + result.WorkloadID, "View the container logs"},
+		{"dr workload status " + result.WorkloadID, "Check the workload status"},
+	}
+
+	if draft {
+		steps = append([][2]string{
+			{"dr workload up --lock", "Lock the artifact to make it permanent"},
+		}, steps...)
+	} else {
+		steps = append(steps,
+			[2]string{"dr workload stop " + result.WorkloadID, "Stop the workload, retaining its version"})
 	}
 
 	// No build-logs line. It needs an artifact id as well as a build id, and

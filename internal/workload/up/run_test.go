@@ -386,6 +386,55 @@ func TestRun_AlreadyUpToDate(t *testing.T) {
 	assert.Contains(t, stderr, "Already up to date")
 }
 
+// --lock is about the end state, not about what this run changed, so a run
+// that finds nothing to do still has to make the serving artifact permanent.
+// Returning early on an empty plan printed "Already up to date" and exited 0
+// having locked nothing, which silently broke the sequence the draft warning
+// asks for: deploy, read the warning, run 'up --lock'. By then the plan is
+// always empty.
+func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
+	locked := ""
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock: func(id string) (*workload.Artifact, error) {
+			locked = id
+
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, locked, "the artifact that is serving is the one --lock is about")
+	assert.Equal(t, result.ArtifactID, locked)
+	assert.True(t, result.Locked)
+}
+
+// The same run without the flag stays as cheap as it was. Locking is one-way,
+// so an empty plan must never take it on its own initiative.
+func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock: func(string) (*workload.Artifact, error) {
+			t.Fatal("nothing asked for a lock")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.False(t, result.Locked)
+}
+
 // boundLiveManifest says exactly what the live fixture already says, so the
 // plan comes out empty.
 const boundLiveManifest = `name: gpt-oss-20b-vllm
@@ -1137,6 +1186,9 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+		},
 	})
 
 	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
@@ -1145,6 +1197,49 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 	assert.NotNil(t, payload)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 	assert.Equal(t, ActionCreated, result.Action)
+	assert.False(t, result.Locked, "the artifact the file names is a draft")
+}
+
+// A create bound to an artifact that is already locked is a promotion: the
+// version is permanent before this run touches anything. Locked comes off the
+// artifact the workload is running, and a create has no workload, so without
+// asking the file's artifact directly the result would call a permanent deploy
+// a draft and the caller would advise locking what cannot be locked twice.
+func TestRun_CreatesFromALockedArtifactReportsItLocked(t *testing.T) {
+	install(t, fakes{
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.True(t, result.Locked)
+}
+
+// The read is not optional. The id came out of the committed file, so an
+// artifact that cannot be read is one the create was going to fail on anyway,
+// and failing here costs a plan rather than a half-made workload.
+func TestRun_CreateBoundToAnUnreadableArtifactFails(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("nothing may be created once the artifact could not be read")
+
+			return nil, nil
+		},
+		getArtifact: func(string) (*workload.Artifact, error) {
+			return nil, errors.New("boom")
+		},
+	})
+
+	_, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already locked")
 }
 
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
@@ -1157,6 +1252,18 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "uploaded for the first time")
+}
+
+// draftArtifact is the live fixture before anyone locked it. The shared one is
+// locked, which is right for the roll tests and wrong for anything asking what
+// --lock does, since a locked artifact is exactly the case that short-circuits.
+func draftArtifact(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
 }
 
 // stoppedWorkload is the live fixture, off. Everything else about it still
