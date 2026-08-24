@@ -983,6 +983,77 @@ func TestLive_RenderRoundTripReporterShaped(t *testing.T) {
 	assert.Equal(t, workloadID, compiled.WorkloadID)
 }
 
+// reporterShapedLive returns a Live built from the reporter-shaped fixtures so
+// each standalone render-stripping test can be self-contained.
+func reporterShapedLive(t *testing.T) Live {
+	t.Helper()
+
+	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
+
+	return NewLive(workloadID, reporterWorkloadDoc(t), reporterArtifactDoc(t))
+}
+
+// Null autoscaling is echoed by the server as a placeholder but must not be
+// written into the committed manifest, where it would confuse the validator.
+func TestLive_RenderStripsNullAutoscaling(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "autoscaling: null")
+}
+
+// The server build block is a read-only output and must be stripped before the
+// manifest is written, so the next deploy does not repeat a stale build id.
+func TestLive_RenderStripsBuildBlock(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "build:")
+	assert.NotContains(t, string(rendered), "artifactImageBuildId")
+}
+
+// imageOutdated is a computed server flag, not a field the user controls, so it
+// must not appear in the rendered manifest.
+func TestLive_RenderStripsImageOutdated(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "imageOutdated")
+}
+
+// resolvedBundle is a scheduling-time server output and must not be written
+// into the runtime block that the user commits.
+func TestLive_RenderStripsResolvedBundle(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "resolvedBundle")
+}
+
 // NewLive must not mutate the caller's documents, even though it strips server
 // outputs and null-valued keys from its own copies.
 func TestLive_DoesNotMutateInputDocs(t *testing.T) {
