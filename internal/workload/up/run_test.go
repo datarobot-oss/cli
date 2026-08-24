@@ -386,6 +386,55 @@ func TestRun_AlreadyUpToDate(t *testing.T) {
 	assert.Contains(t, stderr, "Already up to date")
 }
 
+// --lock is about the end state, not about what this run changed, so a run
+// that finds nothing to do still has to make the serving artifact permanent.
+// Returning early on an empty plan printed "Already up to date" and exited 0
+// having locked nothing, which silently broke the sequence the draft warning
+// asks for: deploy, read the warning, run 'up --lock'. By then the plan is
+// always empty.
+func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
+	locked := ""
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock: func(id string) (*workload.Artifact, error) {
+			locked = id
+
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, locked, "the artifact that is serving is the one --lock is about")
+	assert.Equal(t, result.ArtifactID, locked)
+	assert.True(t, result.Locked)
+}
+
+// The same run without the flag stays as cheap as it was. Locking is one-way,
+// so an empty plan must never take it on its own initiative.
+func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock: func(string) (*workload.Artifact, error) {
+			t.Fatal("nothing asked for a lock")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.False(t, result.Locked)
+}
+
 // boundLiveManifest says exactly what the live fixture already says, so the
 // plan comes out empty.
 const boundLiveManifest = `name: gpt-oss-20b-vllm
@@ -1203,6 +1252,18 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "uploaded for the first time")
+}
+
+// draftArtifact is the live fixture before anyone locked it. The shared one is
+// locked, which is right for the roll tests and wrong for anything asking what
+// --lock does, since a locked artifact is exactly the case that short-circuits.
+func draftArtifact(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
 }
 
 // stoppedWorkload is the live fixture, off. Everything else about it still

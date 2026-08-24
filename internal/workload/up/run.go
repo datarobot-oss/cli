@@ -184,11 +184,42 @@ func Run(opts Options) (Result, error) {
 
 	noteUnusedForce(plan, opts)
 
-	if opts.DryRun || plan.Empty() {
+	if opts.DryRun {
 		return result, nil
 	}
 
+	if plan.Empty() {
+		return lockOnly(live, result, opts)
+	}
+
 	return apply(loaded, live, plan, result, opts)
+}
+
+// lockOnly is the whole of a --lock run that found nothing else to do.
+//
+// --lock is about the end state rather than about what this run happened to
+// change: the flag says the artifact that ends up live should be permanent,
+// and an empty plan means the one already serving is that artifact. Returning
+// early on Empty, as this used to, printed "Already up to date" and exited 0
+// having locked nothing, which is the wrong answer twice over. It contradicts
+// the flag's own help, and it breaks the sequence the draft warning tells
+// people to follow: deploy, read the warning, run 'up --lock'. By then there
+// is nothing left to change, so the remedy silently did nothing at all.
+//
+// The live state is checked first because an empty plan is not the same as a
+// healthy workload. Only a stopped one is excluded by Empty itself; an errored
+// workload with no drift still lands here, and locking cannot be undone, so
+// this refuses rather than making something permanent out of something broken.
+func lockOnly(live Live, result Result, opts Options) (Result, error) {
+	if !opts.Lock || result.Locked {
+		return result, nil
+	}
+
+	if err := deployable(live, result.Name); err != nil {
+		return result, err
+	}
+
+	return lock(result, newReporter(opts.Stderr, opts.Spinner))
 }
 
 // noteIgnoreFile passes on the note about a deprecated ignore filename.
