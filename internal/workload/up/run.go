@@ -25,6 +25,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -186,10 +187,9 @@ func Run(opts Options) (Result, error) {
 	return apply(loaded, live, plan, result, opts)
 }
 
-// noteIgnoreFile passes on the sync engine's note about a deprecated ignore
-// filename. Sizing the working tree is the whole of what a --dry-run does and
-// it is where the engine reads the file, so this is the only point on that
-// path where there is anything to say.
+// noteIgnoreFile passes on the note about a deprecated ignore filename.
+// Sizing the working tree is the whole of what a --dry-run does, so this is
+// the only point on that path where there is anything to say.
 //
 // Only the housekeeping note comes through here. The ignore-file problems that
 // cost the user something are logged by the phase that finds them, so they
@@ -620,9 +620,15 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 		return CodeChange{}, nil
 	}
 
+	// Read the ignore file here rather than off the engine below. The first
+	// deploy of an unlinked project never builds one, and that is exactly the
+	// run where someone who has just cloned a project carrying the old name
+	// needs to hear it is going away.
+	notice := ignoreFileNotice(loaded.ProjectDir)
+
 	if !wapi.Exists(loaded.ProjectDir) {
 		// Nothing has ever been synced from here, so everything is new.
-		return CodeChange{Applies: true, FirstDeploy: true}, nil
+		return CodeChange{Applies: true, FirstDeploy: true, IgnoreNotice: notice}, nil
 	}
 
 	engine, err := sync.New(loaded.ProjectDir, sync.Options{DryRun: true, Yes: true})
@@ -647,6 +653,21 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 	return CodeChange{
 		Applies:      true,
 		Files:        len(plan.Uploads) + len(plan.Deletes),
-		IgnoreNotice: engine.IgnoreFileNotice(),
+		IgnoreNotice: notice,
 	}, nil
+}
+
+// ignoreFileNotice is the deprecation line for this project, empty when there
+// is nothing to say.
+//
+// A read failure is not this function's problem: it is only deciding whether
+// a sentence gets printed, and the sync that follows opens the same file and
+// fails with a proper message if it cannot be read.
+func ignoreFileNotice(projectDir string) string {
+	m, err := ignore.New(projectDir)
+	if err != nil {
+		return ""
+	}
+
+	return m.Notice()
 }

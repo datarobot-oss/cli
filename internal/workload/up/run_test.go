@@ -29,6 +29,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
@@ -1548,4 +1549,45 @@ func TestRun_ResolvedCredentialDeploys(t *testing.T) {
 	result, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true})
 	require.NoError(t, err)
 	assert.Equal(t, "wl-1", result.WorkloadID)
+}
+
+// The first deploy of a project that was cloned rather than linked here is the
+// run most likely to be someone's first sight of the old filename, and it is
+// also the one run that builds no sizing engine: defaultCodeChange returns
+// before that on an unlinked project. Reading the ignore file directly is what
+// keeps the notice from waiting for the second deploy.
+func TestDefaultCodeChange_ReportsLegacyIgnoreFileOnAnUnlinkedProject(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundDockerfileManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.LegacyFileName), []byte("*.tmp\n"), 0o644))
+
+	loaded, err := load(dir, Options{NonInteractive: true})
+	require.NoError(t, err)
+	require.False(t, wapi.Exists(dir), "the point of this case is that nothing is linked yet")
+
+	code, err := defaultCodeChange(loaded, Live{})
+	require.NoError(t, err)
+
+	assert.True(t, code.FirstDeploy)
+	assert.Contains(t, code.IgnoreNotice, ignore.LegacyFileName)
+	assert.Contains(t, code.IgnoreNotice, ignore.FileName, "and what to rename it to")
+}
+
+// The same project on the current name has nothing to report, which is what
+// separates "the file was read" from "the notice is hardcoded on this path".
+func TestDefaultCodeChange_SaysNothingForTheCurrentIgnoreFileName(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundDockerfileManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.FileName), []byte("*.tmp\n"), 0o644))
+
+	loaded, err := load(dir, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	code, err := defaultCodeChange(loaded, Live{})
+	require.NoError(t, err)
+
+	assert.True(t, code.FirstDeploy)
+	assert.Empty(t, code.IgnoreNotice)
 }

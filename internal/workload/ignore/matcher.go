@@ -167,6 +167,12 @@ func (m *Matcher) Source() string { return m.source }
 // empty in every other case. The file keeps working either way, so this is the
 // only signal a user gets that the old name is on its way out.
 //
+// It carries the coordination caveat because the ignore file is part of the
+// synced set: renaming it deletes the old name from the remote, and a
+// collaborator on a CLI from before this change reads only that name. The
+// person who runs the rename is the one who needs to know, and they are
+// reading this rather than the docs.
+//
 // Printing it is the caller's job, which keeps this package doing no I/O
 // beyond finding the ignore file. Same for ShadowWarning. The two are never
 // both set: the legacy name is only ever in effect when it is the only one.
@@ -175,7 +181,9 @@ func (m *Matcher) Notice() string {
 		return ""
 	}
 
-	return fmt.Sprintf("Using %s for sync ignore patterns. That name is deprecated: rename the file to %s.",
+	return fmt.Sprintf(
+		"Using %s for sync ignore patterns. That name is deprecated: rename the file to %s. "+
+			"It syncs with your code, so agree the rename with anyone else deploying this project.",
 		LegacyFileName, FileName)
 }
 
