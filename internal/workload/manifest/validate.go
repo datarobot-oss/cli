@@ -426,7 +426,7 @@ func (v *validator) checkPort(container *yaml.Node, path string, primary bool) {
 // checkRuntime validates the sizing half of the file against the shape of the
 // artifact half.
 func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
-	if runtime == nil {
+	if isNullish(runtime) {
 		return
 	}
 

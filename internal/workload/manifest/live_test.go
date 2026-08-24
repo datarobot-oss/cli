@@ -794,9 +794,10 @@ func TestLive_ApplyRuntime(t *testing.T) {
 	require.NoError(t, parsed.Validate())
 }
 
-// stripNullKeys removes nil-valued keys recursively without discarding falsy
-// but present values and without mutating the input document.
-func TestStripNullKeys(t *testing.T) {
+// stripServerManaged deep-copies the document and strips both server-managed
+// keys and nil-valued keys in a single recursive walk, without discarding
+// falsy but present values and without mutating the input document.
+func TestStripServerManaged_StripsNullKeys(t *testing.T) {
 	tests := map[string]struct {
 		input    map[string]any
 		expected map[string]any
@@ -854,15 +855,28 @@ func TestStripNullKeys(t *testing.T) {
 				},
 			},
 		},
+		// Server-managed keys are also stripped alongside nils, confirming the
+		// two passes share the single recursive walk.
+		"server-managed keys stripped": {
+			input: map[string]any{
+				"id":     "68b0",
+				"keep":   "x",
+				"status": "running",
+				"drop":   nil,
+			},
+			expected: map[string]any{
+				"keep": "x",
+			},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			original := deepCopyMap(tc.input)
-			got := stripNullKeys(tc.input)
+			got := stripServerManaged(tc.input)
 
 			assert.Equal(t, tc.expected, got)
-			assert.Equal(t, original, tc.input, "stripNullKeys must not mutate input")
+			assert.Equal(t, original, tc.input, "stripServerManaged must not mutate input")
 		})
 	}
 }

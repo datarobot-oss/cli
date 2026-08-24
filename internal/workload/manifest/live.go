@@ -62,8 +62,11 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
 		ArtifactType: stringAt(artifactDoc, keyType),
-		Spec:         stripNullKeys(stripServerManaged(mapAt(artifactDoc, keySpec))),
-		Runtime:      stripNullKeys(stripServerManaged(mapAt(workloadDoc, keyRuntime))),
+		// stripServerManaged deep-copies once and strips both server-managed
+		// keys and nil-valued keys in a single recursive walk, so no second
+		// copy is allocated here.
+		Spec:    stripServerManaged(mapAt(artifactDoc, keySpec)),
+		Runtime: stripServerManaged(mapAt(workloadDoc, keyRuntime)),
 	}
 
 	stripBuildOutputs(live.Spec)
@@ -862,7 +865,18 @@ func stripKeys(value any) {
 			delete(typed, key)
 		}
 
-		for _, child := range typed {
+		// Nil-valued keys are dropped in the same walk: the server echoes
+		// them as placeholders (e.g. autoscaling: null), and writing one
+		// into the committed manifest would confuse the validator. Empty
+		// maps are preserved; isNullish is the validator's counterpart that
+		// treats an empty mapping as absent rather than as a policy.
+		for key, child := range typed {
+			if child == nil {
+				delete(typed, key)
+
+				continue
+			}
+
 			stripKeys(child)
 		}
 	case []any:
@@ -893,53 +907,8 @@ func stripBuildOutputs(spec map[string]any) {
 	}
 }
 
-// stripNullKeys returns a copy of the document with every nil-valued key
-// removed recursively. Falsy-but-present values (false, 0, empty strings,
-// empty slices) are kept. The input document is not modified.
-func stripNullKeys(document map[string]any) map[string]any {
-	if document == nil {
-		return nil
-	}
-
-	copied := make(map[string]any, len(document))
-	for key, value := range document {
-		if value == nil {
-			continue
-		}
-
-		switch typed := value.(type) {
-		case map[string]any:
-			copied[key] = stripNullKeys(typed)
-		case []any:
-			copied[key] = stripNullSlice(typed)
-		default:
-			copied[key] = value
-		}
-	}
-
-	return copied
-}
-
-func stripNullSlice(items []any) []any {
-	if items == nil {
-		return nil
-	}
-
-	copied := make([]any, len(items))
-	for i, value := range items {
-		switch typed := value.(type) {
-		case map[string]any:
-			copied[i] = stripNullKeys(typed)
-		case []any:
-			copied[i] = stripNullSlice(typed)
-		default:
-			copied[i] = value
-		}
-	}
-
-	return copied
-}
-
+// deepCopyMap returns a deep copy of document so the caller's input is not
+// mutated by the strip passes that run against it.
 func deepCopyMap(document map[string]any) map[string]any {
 	if document == nil {
 		return nil
