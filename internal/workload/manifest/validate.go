@@ -476,7 +476,7 @@ func (v *validator) checkScaling(group *yaml.Node, path string) {
 	}
 
 	enabled := mapValue(autoscaling, keyEnabled)
-	if enabled != nil && !isTrue(enabled) {
+	if !isNullish(enabled) && !isTrue(enabled) {
 		return
 	}
 

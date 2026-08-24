@@ -351,6 +351,24 @@ func TestValidate_ReplicaCountWithAutoscalingNoEnabled(t *testing.T) {
 	})
 }
 
+// A present autoscaling body with an explicit enabled: null is not the same as
+// a null or empty block: the platform treats a null enabled as its own
+// default, which is on. The ledger has to agree, or it would accept a file
+// that autoscalingActive then says is autoscaling — and Apply silently drops
+// the replica answer. This is the same silent-drop the PR exists to prevent.
+func TestValidate_ReplicaCountWithAutoscalingEnabledNull(t *testing.T) {
+	err := validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling:
+        enabled: null
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 16, Path: "runtime.containerGroups[0].replicaCount", Msg: "cannot be set alongside autoscaling"},
+	})
+}
+
 // The node-based checkScaling and the map-based autoscalingActive must agree on
 // every autoscaling shape, or a live workload will render a file the ledger
 // rejects (or drop a replica answer that should be kept).
@@ -392,6 +410,14 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 			active: true,
 		},
 		{
+			name: "enabled null with body",
+			autoscaling: `      autoscaling:
+        enabled: null
+        minReplicaCount: 1
+        maxReplicaCount: 4`,
+			active: true,
+		},
+		{
 			name:   "absent",
 			active: false,
 		},
@@ -427,6 +453,12 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 				}
 			case "missing enabled with body":
 				group[keyAutoscaling] = map[string]any{
+					"minReplicaCount": 1,
+					"maxReplicaCount": 4,
+				}
+			case "enabled null with body":
+				group[keyAutoscaling] = map[string]any{
+					keyEnabled:        nil,
 					"minReplicaCount": 1,
 					"maxReplicaCount": 4,
 				}
