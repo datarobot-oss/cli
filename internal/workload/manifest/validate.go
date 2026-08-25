@@ -466,12 +466,18 @@ func (v *validator) checkRuntimeContainers(group *yaml.Node, path string, shape 
 // many replicas to run or how to scale them, not both. Autoscaling switched
 // off is not scaling, so an explicit enabled:false leaves replicaCount alone,
 // matching what the create endpoint accepts. A null or empty autoscaling block
-// is also not a policy, matching the server's own echo.
+// is also not a policy, matching the server's own echo, and a null
+// replicaCount is no count at all: neither side of the pair trips on the
+// other's placeholder.
+//
+// replicaCount itself is never type-checked: "replicaCount: three" passes
+// the ledger and fails only at the create endpoint. Noted rather than fixed;
+// add the scalarInt rule if the server's error for it proves confusing.
 func (v *validator) checkScaling(group *yaml.Node, path string) {
 	replicas := mapValue(group, keyReplicaCount)
 	autoscaling := mapValue(group, keyAutoscaling)
 
-	if replicas == nil || isNullish(autoscaling) {
+	if isNullish(replicas) || isNullish(autoscaling) {
 		return
 	}
 

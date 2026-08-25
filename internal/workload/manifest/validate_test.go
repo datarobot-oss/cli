@@ -337,6 +337,18 @@ func TestValidate_ReplicaCountWithEmptyAutoscaling(t *testing.T) {
 `)))
 }
 
+// A null replicaCount is no count at all, so it cannot conflict with an
+// active autoscaling policy. The server echoes the same placeholder shape
+// for replicas that it does for autoscaling.
+func TestValidate_NullReplicaCountAllowsAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: null
+      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`)))
+}
+
 // A non-empty autoscaling body without an enabled key is treated as enabled by
 // the server, so replicaCount still conflicts.
 func TestValidate_ReplicaCountWithAutoscalingNoEnabled(t *testing.T) {

@@ -28,6 +28,7 @@ import (
 // because the create spec has no legitimate key by these names anywhere.
 var serverManagedKeys = []string{
 	"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId", "resolvedBundle",
+	"imageOutdated",
 }
 
 // Live is a running workload, downloaded so a manifest can be written that
@@ -732,7 +733,7 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
-	reorderKeys(spec)
+	hoistNameKeys(spec)
 
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
 	if l.ArtifactType != "" {
@@ -758,7 +759,7 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
-	reorderKeys(runtime)
+	hoistNameKeys(runtime)
 
 	if runtime != nil {
 		fields = append(fields, field{key: keyRuntime, value: runtime})
@@ -820,11 +821,11 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	return node, nil
 }
 
-// reorderKeys walks the YAML node tree and moves any "name" key to the front of
+// hoistNameKeys walks the YAML node tree and moves any "name" key to the front of
 // its mapping's Content, preserving every other key in its original order. It is
 // applied to the nested spec and runtime blocks; the top-level manifest order is
 // already controlled by Render's explicit field list.
-func reorderKeys(node *yaml.Node) {
+func hoistNameKeys(node *yaml.Node) {
 	if node == nil {
 		return
 	}
@@ -845,7 +846,7 @@ func reorderKeys(node *yaml.Node) {
 	}
 
 	for _, child := range node.Content {
-		reorderKeys(child)
+		hoistNameKeys(child)
 	}
 }
 
@@ -890,8 +891,11 @@ func stripKeys(value any) {
 // was asked to do. A container that says how to build itself also carries the
 // image that came out and the code the last sync uploaded; both are re-earned
 // by the next deploy, and writing them into the file would pin a workload to
-// yesterday's image. It also strips the server-assigned build block and the
-// computed imageOutdated flag.
+// yesterday's image. It also strips the server-assigned build block, scoped
+// to containers on purpose: the bare word "build" is generic enough that
+// adding it to serverManagedKeys could eat a legitimate user key at some
+// other level of the spec. The computed imageOutdated flag is unambiguous,
+// so it lives in that list instead.
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
@@ -902,7 +906,6 @@ func stripBuildOutputs(spec map[string]any) {
 			}
 
 			delete(container, "build")
-			delete(container, "imageOutdated")
 		}
 	}
 }
