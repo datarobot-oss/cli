@@ -81,7 +81,7 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, 
 	stripBuildOutputs(live.Spec)
 
 	if len(live.Spec) == 0 {
-		return live, fmt.Errorf("workload %s has no artifact spec to bind; edit %s by hand instead",
+		return live, fmt.Errorf("workload %s has no artifact spec; edit %s by hand instead",
 			workloadID, FileName)
 	}
 
@@ -961,13 +961,19 @@ func stripKeys(value any) {
 // container: imageUri is deleted as a server-built pin and codeRef as
 // server-managed. An imageBuildConfig that is empty, or becomes empty after
 // deleting codeRef, is NOT a build container — the user-declared imageUri is
-// kept and the emptied imageBuildConfig key is removed entirely. This is an
-// invariant guard mirroring the server's own rule at containers.py:415
-// ("either imageUri or imageBuildConfig must be provided"): the rendered
-// container must always carry exactly one valid image source, never an empty
-// imageBuildConfig: "{}" alongside a missing imageUri. Today the server-side
-// non-nullability of dockerfile makes the empty case unreachable from real
-// payloads, but the guard fails safe if that ever changes.
+// kept and the emptied imageBuildConfig key is removed entirely. This mirrors
+// the server's own rule at containers.py:415 ("either imageUri or
+// imageBuildConfig must be provided"): the rendered container must never
+// carry an empty imageBuildConfig: "{}" alongside a missing imageUri.
+//
+// The guard does not claim the rendered container always carries exactly one
+// valid image source. Today the server only accepts provided/generated
+// dockerfile sources (containers.py:84-95 discriminated union), so an
+// imageBuildConfig without a dockerfile key is a hypothetical future or
+// foreign shape. Such a shape is preserved verbatim under the pass-through
+// contract (doc.go: unknown blocks "survive the round trip"), and Validate's
+// dockerfile-required check flags it on the next run — the CLI does not bless
+// an unknown build source by rewriting or stripping it.
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {

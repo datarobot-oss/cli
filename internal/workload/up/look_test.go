@@ -307,7 +307,7 @@ func TestLook_SpeclessArtifactFailsLoudly(t *testing.T) {
 		_, err := Look("wl-specless")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "wl-specless", "error must name the workload id")
-		assert.Contains(t, err.Error(), "no artifact spec to bind")
+		assert.Contains(t, err.Error(), "no artifact spec")
 	})
 
 	t.Run("spec null", func(t *testing.T) {

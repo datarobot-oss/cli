@@ -373,6 +373,16 @@ func TestLive_ApplyKeepsUnknownBuildKeys(t *testing.T) {
 
 // A build source this release does not know is kept as it stands rather than
 // forced into the nearest mode the Build struct can express.
+//
+// Validate is intentionally NOT exercised on this hypothetical shape. Today
+// the server only accepts provided/generated dockerfile sources
+// (containers.py:84-95 discriminated union), so a buildpack-only
+// imageBuildConfig cannot arrive from a real payload. Under the pass-through
+// contract the unknown source is preserved for the server to judge, not
+// blessed by the CLI — and Validate's dockerfile-required check would reject
+// it (the container carries an imageBuildConfig with no dockerfile key). The
+// test asserts the pass-through behavior (preservation) only, not that the
+// rendered file validates.
 func TestLive_UnknownBuildSourceIsPreserved(t *testing.T) {
 	var artifactDoc map[string]any
 
@@ -1496,37 +1506,69 @@ func TestLive_NativelyEmptyBuildBlockRoundTrips(t *testing.T) {
 // BuildModeUnchanged. An emptied build block has no content to preserve, and
 // BuildModeUnchanged causes applyBuild to no-op — leaving the broken container
 // in place. BuildModeImage lets applyBuild keep/restore imageUri.
+//
+// The "natively empty" case calls liveBuild directly. The "emptied through
+// strip pipeline" case drives the real strip pipeline via NewLive: a server
+// doc with imageBuildConfig {dockerfile: null, codeRef: {...}} + imageUri →
+// stripKeys purges dockerfile:null → stripBuildOutputs deletes codeRef and,
+// because the config is now empty, drops the imageBuildConfig key and keeps
+// imageUri → the container classifies as BuildModeImage. (VAL-R3-006).
 func TestLive_EmptyBuildConfigClassifiedAsImage(t *testing.T) {
-	tests := map[string]struct {
-		container map[string]any
-	}{
-		"natively empty": {
-			container: map[string]any{
-				"name":             "app",
-				"imageUri":         "registry.example.com/app:v1",
-				"imageBuildConfig": map[string]any{},
-			},
-		},
-		"emptied after codeRef removal": {
-			container: map[string]any{
-				"name":     "app",
-				"imageUri": "registry.example.com/app:v1",
-				// Simulate post-strip state: codeRef already deleted,
-				// dockerfile:null already purged → empty map.
-				"imageBuildConfig": map[string]any{},
-			},
-		},
-	}
+	t.Run("natively empty", func(t *testing.T) {
+		container := map[string]any{
+			"name":             "app",
+			"imageUri":         "registry.example.com/app:v1",
+			"imageBuildConfig": map[string]any{},
+		}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			build := liveBuild(tc.container)
+		build := liveBuild(container)
 
-			assert.Equal(t, BuildModeImage, build.Mode,
-				"empty imageBuildConfig must classify as BuildModeImage, not BuildModeUnchanged")
-			assert.Equal(t, "registry.example.com/app:v1", build.ImageURI)
-		})
-	}
+		assert.Equal(t, BuildModeImage, build.Mode,
+			"empty imageBuildConfig must classify as BuildModeImage, not BuildModeUnchanged")
+		assert.Equal(t, "registry.example.com/app:v1", build.ImageURI)
+	})
+
+	t.Run("emptied through strip pipeline", func(t *testing.T) {
+		var artifactDoc map[string]any
+
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"name": "a",
+			"type": "service",
+			"spec": {"containerGroups": [{"name": "default", "containers": [
+				{
+					"name": "app",
+					"primary": true,
+					"port": 8080,
+					"imageUri": "registry.example.com/app:v1",
+					"imageBuildConfig": {
+						"dockerfile": null,
+						"codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}}
+					}
+				}
+			]}]}
+		}`), &artifactDoc))
+
+		live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+		require.NoError(t, err)
+
+		// After NewLive: stripKeys purged dockerfile:null, stripBuildOutputs
+		// deleted codeRef, and because the config is now empty, dropped the
+		// imageBuildConfig key entirely and kept imageUri.
+		container := primaryContainerOf(live.Spec)
+		require.NotNil(t, container)
+
+		assert.NotContains(t, container, keyImageBuildConfig,
+			"the emptied imageBuildConfig key must be dropped")
+		assert.Equal(t, "registry.example.com/app:v1", stringAt(container, keyImageURI),
+			"the user-declared imageUri must be kept")
+
+		// The container classifies as BuildModeImage, not BuildModeUnchanged.
+		build := liveBuild(container)
+
+		assert.Equal(t, BuildModeImage, build.Mode,
+			"emptied imageBuildConfig must classify as BuildModeImage, not BuildModeUnchanged")
+		assert.Equal(t, "registry.example.com/app:v1", build.ImageURI)
+	})
 }
 
 // A real build container — imageBuildConfig with a dockerfile present plus a
@@ -1724,6 +1766,13 @@ func TestNewLive_SpeclessArtifactDocFailsWithWorkloadID(t *testing.T) {
 	assert.Contains(t, err.Error(), workloadID,
 		"the error must name the workload id so the user knows what to edit")
 	assert.Contains(t, err.Error(), "no artifact spec")
+	// The message is path-neutral: it surfaces verbatim through both the
+	// wizard bind flow and `dr workload up` (look.go), so it must not say
+	// "to bind" — the up path is not binding anything. (VAL-R3-005)
+	assert.Contains(t, err.Error(), "edit",
+		"the error must tell the user to edit the file by hand")
+	assert.NotContains(t, err.Error(), "bind",
+		"the message must be path-neutral, not bind-specific")
 }
 
 // An artifact doc whose spec is present but strips to nothing — every key is
