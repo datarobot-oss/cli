@@ -78,13 +78,50 @@ func targetMode(path, probePath string) (os.FileMode, error) {
 	return info.Mode().Perm(), nil
 }
 
-// AtomicWriteFile writes data to a sibling temp file, fsyncs it, then renames
-// it over path. When path is a symlink the write goes to the resolved target
-// so the link is preserved; new or dangling paths are written as-is.
-func AtomicWriteFile(path string, data []byte) (err error) {
-	if resolved, rerr := filepath.EvalSymlinks(path); rerr == nil {
-		path = resolved
+// resolveWriteTarget resolves a symlinked path to its target so the write
+// goes through the link instead of replacing it. When resolution fails (a new
+// or dangling path) the caller's path is returned unchanged and the write
+// behaves as it always has. viaSymlink reports whether the caller's path
+// itself was a symlink, so a failure can be reported against the name the
+// caller knows rather than a resolved target they may never have seen.
+func resolveWriteTarget(path string) (resolved string, viaSymlink bool) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, false
 	}
+
+	// Lstat distinguishes a symlinked final component (worth naming in
+	// errors) from symlinked intermediate directories such as /tmp on macOS,
+	// which EvalSymlinks also resolves but which need no annotation.
+	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		viaSymlink = true
+	}
+
+	return resolved, viaSymlink
+}
+
+// AtomicWriteFile writes data to a sibling temp file in the same directory as
+// path, fsyncs it, then renames it over path. os.Rename is atomic on POSIX
+// and handled as replace-on-existing by Go on Windows. The parent directory
+// is fsynced after rename so the new dentry survives a crash. The temp file
+// is removed on any failure before rename so no .tmp.* leftovers remain.
+//
+// When path is a symlink, the write goes to the real file the link resolves
+// to so the link itself is preserved. filepath.EvalSymlinks follows the full
+// chain; if path does not yet exist (new file) or is a dangling link the call
+// returns an error and we fall through using path unchanged. A failure is
+// reported against the path the caller passed, with the resolved target
+// carried in the wrapped error.
+func AtomicWriteFile(path string, data []byte) (err error) {
+	callerPath := path
+
+	path, viaSymlink := resolveWriteTarget(path)
+
+	defer func() {
+		if err != nil && viaSymlink {
+			err = fmt.Errorf("write through symlink %s: %w", callerPath, err)
+		}
+	}()
 
 	dir := filepath.Dir(path)
 

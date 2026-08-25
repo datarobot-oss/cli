@@ -160,6 +160,86 @@ func TestAtomicWriteFile_WriteThroughSymlink(t *testing.T) {
 	assert.Equal(t, realFile, target)
 }
 
+// A symlink whose target is spelled relative to the link's own directory (the
+// shape dotfiles tools like GNU stow produce) must resolve against that
+// directory, and the link's relative spelling must survive the write.
+func TestAtomicWriteFile_WriteThroughRelativeSymlink(t *testing.T) {
+	dir := t.TempDir()
+
+	realFile := filepath.Join(dir, "manifest.yaml")
+	linkPath := filepath.Join(dir, ".datarobot.yaml")
+
+	// The link target is the bare filename: relative to the link's directory.
+	require.NoError(t, os.WriteFile(realFile, []byte("original"), 0o644))
+	require.NoError(t, os.Symlink("manifest.yaml", linkPath))
+
+	require.NoError(t, AtomicWriteFile(linkPath, []byte("updated")))
+
+	// The real file must contain the new content.
+	got, err := os.ReadFile(realFile)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(got))
+
+	// The link must survive with its relative spelling intact.
+	target, err := os.Readlink(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, "manifest.yaml", target)
+}
+
+// A dangling symlink (target missing) cannot be resolved, so the write falls
+// back to replacing the link itself with a regular file: the "dangling paths
+// are written as-is" half of the AtomicWriteFile contract. Pinning it matters
+// because resolving the parent chain and creating the missing target instead
+// would be a defensible alternative that silently changes what a write does
+// to a broken link.
+func TestAtomicWriteFile_DanglingSymlinkIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+
+	linkPath := filepath.Join(dir, ".datarobot.yaml")
+	missingTarget := filepath.Join(dir, "gone.yaml")
+
+	require.NoError(t, os.Symlink(missingTarget, linkPath))
+
+	require.NoError(t, AtomicWriteFile(linkPath, []byte("payload")))
+
+	// The link is gone, replaced by a regular file holding the payload.
+	fi, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSymlink, "dangling link should have been replaced, got mode %v", fi.Mode())
+
+	got, err := os.ReadFile(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, "payload", string(got))
+
+	// The missing target must not have been created as a side effect.
+	assert.NoFileExists(t, missingTarget)
+}
+
+// A failure after resolution is reported against the path the caller passed:
+// the resolved target means nothing to someone who handed over a symlink.
+// Pointing the link at a directory makes the rename over it fail without any
+// permission-bit setup.
+func TestAtomicWriteFile_ErrorNamesTheSymlinkPath(t *testing.T) {
+	realDir := t.TempDir()
+	linkDir := t.TempDir()
+
+	linkPath := filepath.Join(linkDir, ".datarobot.yaml")
+	require.NoError(t, os.Symlink(realDir, linkPath))
+
+	writeErr := AtomicWriteFile(linkPath, []byte("payload"))
+	require.Error(t, writeErr)
+
+	// The caller's path leads the message.
+	assert.Contains(t, writeErr.Error(), linkPath)
+
+	// The resolved target stays in the chain for debugging. EvalSymlinks
+	// resolves the whole chain, including symlinked intermediates such as
+	// /tmp on macOS, so compare against the resolved form of realDir.
+	resolvedDir, err := filepath.EvalSymlinks(realDir)
+	require.NoError(t, err)
+	assert.Contains(t, writeErr.Error(), resolvedDir)
+}
+
 // TestAtomicWriteFile_CleansTmpWhenRenameFails exercises the post-CreateTemp
 // failure path: we pre-seed the target path as a directory so os.Rename
 // fails, and then assert the temp file was cleaned up by the defer.
