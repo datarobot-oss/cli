@@ -214,14 +214,37 @@ func TestRun_ReplacementInFlightStopsBeforeAnythingIsMade(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.guard = func(string) error { return errors.New("workload wl-1 already has a replacement in progress") }
+	f.guard = func(workloadID string) error {
+		return fmt.Errorf("workload %s: %w (status switching)", workloadID, workload.ErrReplacementInFlight)
+	}
 
 	install(t, f)
 
 	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already has a replacement in progress")
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+	assert.NotContains(t, err.Error(), "cannot tell whether",
+		"a refusal travels in its own words; only a failure to find out gets the operation named for it")
 	assert.Empty(t, tr.steps, "nothing may be created while a rollout is running")
+}
+
+// The other half of the roll guard's contract: a route that could not answer
+// says nothing about the deploy it stopped, so the operation is named for it.
+func TestRun_RollNamesWhatItStoppedWhenTheGuardCannotAnswer(t *testing.T) {
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.guard = func(string) error { return errors.New("HTTP error: 500 Internal Server Error") }
+
+	install(t, f)
+
+	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		"cannot tell whether workload 68b0c1d2e3f4a5b6c7d8e9f0 already has a rollout in progress, "+
+			"so nothing was built or rolled out")
+	assert.Contains(t, err.Error(), "500 Internal Server Error")
+	assert.Empty(t, tr.steps, "a guard that could not answer is not permission to proceed")
 }
 
 // Decision 1: rolling production is allowed, and typing the name is the whole
@@ -338,7 +361,7 @@ func TestRun_LockIsNotTakenWhenTheFinalGuardRefuses(t *testing.T) {
 			return nil
 		}
 
-		return errors.New("workload wl-1 already has a replacement in progress")
+		return fmt.Errorf("workload wl-1: %w (status switching)", workload.ErrReplacementInFlight)
 	}
 
 	install(t, f)
@@ -347,7 +370,8 @@ func TestRun_LockIsNotTakenWhenTheFinalGuardRefuses(t *testing.T) {
 		Confirm: func(string, string) (bool, error) { return true, nil },
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already has a replacement in progress")
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+	assert.NotContains(t, err.Error(), "cannot tell whether")
 	assert.NotContains(t, tr.steps, "lock:art-2",
 		"a refused rollout must not leave an artifact locked for a swap that never happened")
 }
@@ -696,6 +720,130 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// The same reuse against the shape the platform actually answers with. The
+// file states the artifact type inside the spec, which the platform accepts;
+// it hoists the discriminator and returns it beside the spec, so the two
+// blocks disagree about where the type lives. Unreconciled, that read as a
+// field the draft was missing, no leftover ever described the file, and every
+// attempt minted another one: the same drift the plan had, on the path whose
+// whole job is to stop the pile.
+//
+// The package's other fixtures answer with the type inside the spec, which is
+// not what staging returns, which is why nothing else here catches it.
+func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("the leftover says what the file says, wherever each of them keeps the type")
+
+		return nil, nil
+	}
+
+	// The platform's own shape: type beside the spec, never inside it.
+	docs := artifactDocs("art-abandoned", 9000)
+	f.artifactD = func(id string) (workload.Document, error) {
+		d, err := docs(id)
+		if err != nil {
+			return nil, err
+		}
+
+		spec, _ := d["spec"].(map[string]any)
+		delete(spec, "type")
+
+		d["type"] = "service"
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle"},
+		tr.steps)
+	assert.Equal(t, ActionRolled, result.Action)
+}
+
+// Normalising where the type lives is not enough on its own: the walk that
+// follows compares by exact equality, so a file spelling it "Service" against
+// a live "service", or a document carrying no type at all, each read as a
+// difference no deploy can settle. The leftover is refused, another draft is
+// minted, and the next attempt refuses that one too.
+func TestRun_LeftoverDraftIsReusedAcrossTypeSpellingAndSilence(t *testing.T) {
+	for name, live := range map[string]func(workload.Document){
+		"different spelling": func(d workload.Document) { d["type"] = "Service" },
+		"no type at all":     func(d workload.Document) { delete(d, "type") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var tr track
+
+			f := builtRoll(&tr)
+			f.linked = func(string) bool { return true }
+			f.project = syncedProject("art-abandoned")
+			f.getArtifact = func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+			}
+			f.newArtifact = func(any) (*workload.Artifact, error) {
+				t.Fatal("the leftover says what the file says; a spelling is not a different kind")
+
+				return nil, nil
+			}
+
+			docs := artifactDocs("art-abandoned", 9000)
+			f.artifactD = func(id string) (workload.Document, error) {
+				d, err := docs(id)
+				if err != nil {
+					return nil, err
+				}
+
+				spec, _ := d["spec"].(map[string]any)
+				delete(spec, "type")
+				live(d)
+
+				return d, nil
+			}
+
+			install(t, f)
+
+			result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+			require.NoError(t, err)
+			assert.Equal(t, ActionRolled, result.Action)
+		})
+	}
+}
+
+// A rollout that starts and then ends failed never promotes, so the previous
+// version keeps serving. Reporting "rolled" would name an outcome the workload
+// did not reach, on the one field a caller reads to find out what happened.
+func TestRun_FailedRolloutDoesNotReportThatItRolled(t *testing.T) {
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusFailed
+
+		return started, errors.New("rollout failed")
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still running the version it was")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"the version serving did not change, so the run did not roll")
 }
 
 // An artifact's spec is fixed when it is created, so a draft left by an

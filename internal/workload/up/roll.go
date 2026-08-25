@@ -42,7 +42,7 @@ import (
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
 func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
-	if err := guardReplacementFn(live.WorkloadID); err != nil {
+	if err := guardRollout(live.WorkloadID, "nothing was built or rolled out"); err != nil {
 		return result, err
 	}
 
@@ -71,12 +71,12 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 	// A file that moved the sizing as well as the version rides both in on the
 	// same swap: the platform takes runtime alongside the artifact, so there is
 	// no second call and no window where one half is live and the other is not.
-	runtime, err := rollRuntime(loaded, plan)
+	sizing, err := rollRuntime(loaded, plan)
 	if err != nil {
 		return result, err
 	}
 
-	return replace(live.WorkloadID, made, lock, runtime, result, opts, report)
+	return replace(live.WorkloadID, made, lock, sizing, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -253,13 +253,13 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 			"Re-run with --yes to say so explicitly")
 }
 
-// replace starts the rollout and follows it to the end. runtime is nil unless
-// the sizing changed too, in which case it travels with the swap.
+// replace starts the rollout and follows it to the end. sizing is nil unless
+// the runtime block changed too, in which case it travels with the swap.
 func replace(
 	workloadID string,
 	made version,
 	lock bool,
-	runtime json.RawMessage,
+	sizing json.RawMessage,
 	result Result,
 	opts Options,
 	report *reporter,
@@ -267,7 +267,8 @@ func replace(
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardReplacementFn(workloadID); err != nil {
+	if err := guardRollout(workloadID,
+		"the version serving keeps serving and the one just minted is left unpromoted"); err != nil {
 		return result, err
 	}
 
@@ -283,7 +284,7 @@ func replace(
 	var started *workload.Replacement
 
 	err := report.run("Rolling out the new version", func() error {
-		replacement, startErr := startReplacementFn(workloadID, made.ID, runtime)
+		replacement, startErr := startReplacementFn(workloadID, made.ID, sizing)
 		started = replacement
 
 		return startErr
@@ -292,17 +293,25 @@ func replace(
 		return result, fmt.Errorf("cannot roll workload %s onto artifact %s: %w", workloadID, made.ID, err)
 	}
 
-	result.Action = ActionRolled
-
 	if opts.Detach {
+		// Nobody is waiting, so the request is the whole of what this run did.
+		result.Action = ActionRolled
+
 		report.say("  Rollout of %s onto artifact %s requested; not waiting.\n", workloadID, made.ID)
 
 		return result, nil
 	}
 
+	// Recorded after the wait rather than after the POST. A rollout that ends
+	// failed never promotes and leaves the previous version serving, so a run
+	// that reported "rolled" would be naming an outcome the workload did not
+	// reach. What was attempted is still legible: the plan says what was
+	// wanted and the artifact and build ids say what was made.
 	if err := awaitRollout(workloadID, started, opts, report); err != nil {
 		return result, err
 	}
+
+	result.Action = ActionRolled
 
 	return settle(workloadID, result, opts, report)
 }

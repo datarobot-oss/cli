@@ -365,6 +365,112 @@ func TestBuild_BadPayloadIsReported(t *testing.T) {
 	assert.Contains(t, err.Error(), "compiled manifest")
 }
 
+// A file may write the type inside the spec, which the platform accepts and
+// the ledger does not forbid. The live artifact still comes back without one,
+// so comparing the two blocks reported the type missing on every run: a
+// re-deploy of an untouched project minted a version and rolled, then found it
+// missing again, with no state anywhere that could end the loop. Reproduced
+// against staging before it was fixed.
+func TestBuild_TypeInsideTheSpecIsNotPerpetualDrift(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {"type": "service"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact), "the file and the workload agree about the type")
+	assert.True(t, plan.Empty(), "a re-deploy of an untouched project has nothing to do")
+}
+
+// The other half of that fix: reading the type from inside the spec must not
+// mean ignoring it. A file that turns a service into an agent there is asking
+// for a new lineage exactly as it would beside the spec.
+func TestBuild_TypeChangeInsideTheSpecIsStillARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {"type": "agent"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action())
+}
+
+// Beside the spec wins when a file says both, because that is where the
+// platform keeps the answer.
+func TestBuild_TypeBesideTheSpecWinsOverTypeWithinIt(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {"type": "service"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact), "the type beside the spec is the one that counts")
+}
+
+// The line the reader sees has to be the comparison that was made. Reporting
+// the raw empty string rendered "artifact.type:  -> agent", a change with
+// nothing on the left, about a side this code had just decided means service.
+func TestBuild_TypeChangeAgainstAnUnstatedLiveTypeReadsAsService(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = ""
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	require.Len(t, plan.Artifact, 1)
+	assert.Equal(t, "service", plan.Artifact[0].Have, "the silence was read as a service, so that is what it says")
+	assert.Equal(t, "artifact.type: service -> agent", plan.Artifact[0].String())
+}
+
+// An artifact that states no type is a service, because that is what the
+// platform defaults it to. Reading the silence as a difference would be drift
+// a file saying "service" could never settle.
+func TestBuild_LiveArtifactWithNoStatedTypeIsAService(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "service", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = ""
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact))
+}
+
 // The type sits beside the spec, not in it: the platform reads the
 // discriminator off the artifact and pops any type sent within the spec, so
 // the spec walk is blind to it. Without a comparison of its own, turning a

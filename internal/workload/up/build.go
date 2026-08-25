@@ -316,7 +316,7 @@ func hasImage(artifactID string) (bool, error) {
 	}
 
 	for _, build := range builds {
-		if build.Status == workload.BuildStatusCompleted {
+		if workload.IsBuildCompleted(build.Status) {
 			return true, nil
 		}
 	}

@@ -141,23 +141,31 @@ type BuildSummary struct {
 // will not progress further (COMPLETED, FAILED, CANCELLED). Unknown statuses
 // are treated as non-terminal so polling keeps going rather than declaring
 // success on a status the server added without telling us.
+//
+// The comparison folds case, as the replacement and artifact classifiers do.
+// These constants are upper case where the workload's are lower, which is the
+// platform disagreeing with itself about the casing of its own status enums;
+// read exactly, a build answering "completed" would be polled until the
+// timeout and then fail a deploy whose image was already built.
 func IsTerminalBuildStatus(s string) bool {
-	switch s {
-	case BuildStatusCompleted, BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
+	return IsBuildErrorStatus(s) || IsBuildCompleted(s)
+}
 
-	return false
+// IsBuildCompleted reports whether s is the one terminal status that produced
+// an image.
+//
+// It exists so the question is asked the same way everywhere. Folding the
+// terminal check while a consumer went on comparing exactly was worse than not
+// folding at all: the wait would accept a lowercase "completed" and the code
+// reading the result would call the same build unfinished, so a deploy would
+// succeed its wait and then have no image to ship.
+func IsBuildCompleted(s string) bool {
+	return strings.EqualFold(s, BuildStatusCompleted)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
 func IsBuildErrorStatus(s string) bool {
-	switch s {
-	case BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
-
-	return false
+	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
 }
 
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and
@@ -350,7 +358,7 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		DurationSeconds: buildDurationSeconds(*build),
 	}
 
-	if build.Status != BuildStatusCompleted {
+	if !IsBuildCompleted(build.Status) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {

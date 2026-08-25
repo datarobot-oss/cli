@@ -14,7 +14,11 @@
 
 package up
 
-import "github.com/datarobot/cli/internal/workload"
+import (
+	"strings"
+
+	"github.com/datarobot/cli/internal/workload"
+)
 
 // State is the live workload reduced to the cases that change what `up` does
 // next. The platform has eleven statuses; only these distinctions matter to a
@@ -80,6 +84,13 @@ func (s State) String() string {
 
 // stateFor maps a platform status onto the branch `up` takes.
 //
+// The comparison folds case, as the build, artifact and replacement
+// classifiers do, because the platform does not agree with itself about the
+// casing of its status enums: its build statuses are upper case where these
+// are lower. Read exactly, a workload answering "RUNNING" would fall to the
+// default below and be reported as still settling, and every deploy onto it
+// would be refused as unsettled.
+//
 // Two of these are judgement calls rather than transcription. "unknown" is
 // treated as settling rather than as an error, because it is what the server
 // reports before it has decided anything and erroring on it would fail
@@ -87,19 +98,19 @@ func (s State) String() string {
 // rather than with errored, because it is a workload the platform took down
 // and will let you start again, not one that broke.
 func stateFor(status string) State {
-	switch status {
-	case workload.WorkloadStatusRunning:
+	switch {
+	case strings.EqualFold(status, workload.WorkloadStatusRunning):
 		return StateRunning
 
-	case workload.WorkloadStatusStopped,
-		workload.WorkloadStatusSuspended,
-		workload.WorkloadStatusInterrupted:
+	case strings.EqualFold(status, workload.WorkloadStatusStopped),
+		strings.EqualFold(status, workload.WorkloadStatusSuspended),
+		strings.EqualFold(status, workload.WorkloadStatusInterrupted):
 		return StateStopped
 
-	case workload.WorkloadStatusTerminated:
+	case strings.EqualFold(status, workload.WorkloadStatusTerminated):
 		return StateTerminated
 
-	case workload.WorkloadStatusErrored:
+	case strings.EqualFold(status, workload.WorkloadStatusErrored):
 		return StateErrored
 
 	default:
