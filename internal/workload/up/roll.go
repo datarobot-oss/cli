@@ -107,7 +107,7 @@ func candidateArtifact(
 		return buildVersion(loaded, live, code, repository, opts, report)
 	}
 
-	return createVersion(loaded, repository, report)
+	return createVersion(loaded, repository, labelNewVersion, report)
 }
 
 // sameRepository is the repository the new version joins, "" when it should

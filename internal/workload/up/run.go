@@ -687,6 +687,12 @@ func lock(result Result, report *reporter) (Result, error) {
 // The engine acquires the project lock between planning and executing, so
 // this closes it immediately: nothing here is going to sync, and holding the
 // lock across a build would block the very command that comes next.
+//
+// DryRun is what makes this safe to ask of a locked artifact. The engine
+// refuses to sync into one, and rightly, but this is a measurement rather than
+// a sync: the count it produces is what tells the deploy to mint a new version
+// and roll onto it. A refusal here would refuse that deploy, which is the only
+// way past a lock.
 func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 	mode := loaded.Manifest.BuildMode()
 	if mode != manifest.BuildModeDockerfile && mode != manifest.BuildModeGenerated {
@@ -729,6 +735,10 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 		Applies:      true,
 		Files:        len(plan.Uploads) + len(plan.Deletes),
 		IgnoreNotice: notice,
+		// The engine says so rather than this asking a second time: it fetched
+		// the artifact to build the plan, and a locked one is the reason it
+		// left a notice at all.
+		LinkLocked: engine.LockedNotice() != "",
 	}, nil
 }
 
