@@ -1258,3 +1258,170 @@ func TestLive_RenderReorderPreservesKeys(t *testing.T) {
 	keys := mappingKeys(container)
 	assert.Equal(t, []string{keyName, keyImageURI, keyPort, keyPrimary}, keys)
 }
+
+// An artifact doc whose container carries imageUri alongside an
+// imageBuildConfig with only server-managed keys (codeRef + dockerfile:null)
+// is the exact review repro for RAPTOR-19533. stripKeys purges dockerfile:null
+// first; stripBuildOutputs then deletes codeRef, which empties the map. The
+// fix keeps the user-declared imageUri and drops the emptied imageBuildConfig
+// key entirely, so the rendered file has a single valid image source and
+// round-trips through Parse + Validate.
+func TestLive_EmptyBuildBlockRoundTripsAfterStripping(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{
+				"name": "app",
+				"primary": true,
+				"port": 8080,
+				"imageUri": "registry.example.com/app:v1",
+				"imageBuildConfig": {
+					"codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}},
+					"dockerfile": null
+				}
+			}
+		]}]}
+	}`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// The rendered container keeps the user-declared imageUri and has no
+	// imageBuildConfig key at all — not an empty mapping that Validate would
+	// reject alongside imageUri.
+	assert.Contains(t, string(rendered), "imageUri: registry.example.com/app:v1")
+	assert.NotContains(t, string(rendered), "imageBuildConfig")
+	assert.NotContains(t, string(rendered), "codeRef")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(), "rendered manifest must satisfy its own validator")
+}
+
+// A server doc that arrives with imageBuildConfig: {} outright (already empty,
+// no dockerfile to purge) gets the same clean handling: imageUri is kept and
+// the empty imageBuildConfig mapping is dropped entirely.
+func TestLive_NativelyEmptyBuildBlockRoundTrips(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{
+				"name": "app",
+				"primary": true,
+				"port": 8080,
+				"imageUri": "registry.example.com/app:v1",
+				"imageBuildConfig": {}
+			}
+		]}]}
+	}`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "imageUri: registry.example.com/app:v1")
+	assert.NotContains(t, string(rendered), "imageBuildConfig")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
+// liveBuild must classify an empty imageBuildConfig as BuildModeImage, not
+// BuildModeUnchanged. An emptied build block has no content to preserve, and
+// BuildModeUnchanged causes applyBuild to no-op — leaving the broken container
+// in place. BuildModeImage lets applyBuild keep/restore imageUri.
+func TestLive_EmptyBuildConfigClassifiedAsImage(t *testing.T) {
+	tests := map[string]struct {
+		container map[string]any
+	}{
+		"natively empty": {
+			container: map[string]any{
+				"name":             "app",
+				"imageUri":         "registry.example.com/app:v1",
+				"imageBuildConfig": map[string]any{},
+			},
+		},
+		"emptied after codeRef removal": {
+			container: map[string]any{
+				"name":     "app",
+				"imageUri": "registry.example.com/app:v1",
+				// Simulate post-strip state: codeRef already deleted,
+				// dockerfile:null already purged → empty map.
+				"imageBuildConfig": map[string]any{},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			build := liveBuild(tc.container)
+
+			assert.Equal(t, BuildModeImage, build.Mode,
+				"empty imageBuildConfig must classify as BuildModeImage, not BuildModeUnchanged")
+			assert.Equal(t, "registry.example.com/app:v1", build.ImageURI)
+		})
+	}
+}
+
+// A real build container — imageBuildConfig with a dockerfile present plus a
+// codeRef — still gets imageUri and codeRef stripped, and the rendered file
+// keeps the build config with its dockerfile. This is the regression guard
+// ensuring the empty-block fix does not weaken the real-build stripping path.
+func TestLive_RealBuildContainerStillStripsImageUriAndCodeRef(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{
+				"name": "app",
+				"primary": true,
+				"port": 8080,
+				"imageUri": "registry.internal/built-by-server:abc",
+				"imageBuildConfig": {
+					"dockerfile": {"source": "provided"},
+					"codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}}
+				}
+			}
+		]}]}
+	}`), &artifactDoc))
+
+	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+
+	draft := live.Defaults()
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// A real build container: imageUri is stripped (server-built pin), codeRef
+	// is stripped (server-managed), but the dockerfile block survives.
+	assert.NotContains(t, string(rendered), "built-by-server")
+	assert.NotContains(t, string(rendered), "codeRef")
+	assert.Contains(t, string(rendered), "imageBuildConfig")
+	assert.Contains(t, string(rendered), "source: provided")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}

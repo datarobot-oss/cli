@@ -254,7 +254,7 @@ func liveBuild(container map[string]any) Build {
 		}
 	}
 
-	if buildConfig != nil {
+	if len(buildConfig) > 0 {
 		return Build{Mode: BuildModeUnchanged}
 	}
 
@@ -896,13 +896,31 @@ func stripKeys(value any) {
 // adding it to serverManagedKeys could eat a legitimate user key at some
 // other level of the spec. The computed imageOutdated flag is unambiguous,
 // so it lives in that list instead.
+//
+// An imageBuildConfig with real content (e.g. a dockerfile block) is a build
+// container: imageUri is deleted as a server-built pin and codeRef as
+// server-managed. An imageBuildConfig that is empty, or becomes empty after
+// deleting codeRef, is NOT a build container — the user-declared imageUri is
+// kept and the emptied imageBuildConfig key is removed entirely so it never
+// renders as "{}" alongside a missing imageUri, which Validate would reject
+// with "must set either imageUri or imageBuildConfig".
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
 			buildConfig := mapAt(container, keyImageBuildConfig)
 			if buildConfig != nil {
-				delete(container, keyImageURI)
 				delete(buildConfig, "codeRef")
+
+				// If the build config still has real content after stripping
+				// codeRef, this is a genuine build container: drop the
+				// server-built imageUri pin. If it emptied, the container is
+				// really an image container — drop the emptied
+				// imageBuildConfig key and keep imageUri.
+				if len(buildConfig) == 0 {
+					delete(container, keyImageBuildConfig)
+				} else {
+					delete(container, keyImageURI)
+				}
 			}
 
 			delete(container, "build")
