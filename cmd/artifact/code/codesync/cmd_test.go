@@ -41,6 +41,7 @@ type fakeEngine struct {
 	stale         bool
 	migrationNote string
 	ignoreNotice  string
+	lockedNote    string
 	fetcher       display.ContentFetcher
 	closeErr      error
 
@@ -67,6 +68,8 @@ func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
 func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 
 func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
+
+func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
@@ -190,6 +193,27 @@ func TestRunE_DryRun_NonEmpty_NoExecute(t *testing.T) {
 	assert.False(t, fe.executed)
 }
 
+// The engine lets a preview plan against a locked artifact, because the
+// deploy needs the count. What the preview must never do is read as a sync
+// that is going to work, so whatever the engine says about the lock has to
+// reach the reader.
+func TestRunE_LockedNoticeReachesStderr(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "is locked")
+	assert.False(t, fe.executed)
+}
+
 // TestRunE_PlanError_Propagates: errors from Plan surface verbatim.
 func TestRunE_PlanError_Propagates(t *testing.T) {
 	dir := t.TempDir()
@@ -288,6 +312,41 @@ func TestRunE_JSONOutput(t *testing.T) {
 	out := stdout.String()
 	assert.Contains(t, out, `"a.py"`)
 	assert.Contains(t, out, `"v2"`)
+}
+
+// Exit is 0 and the upload list reads as a sync that will work, so this flag
+// is the only thing in the document that says the plan can never be applied.
+// The stderr notice does not reach a script.
+func TestRunE_JSONOutput_LockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": true`)
+	assert.False(t, fe.executed)
+}
+
+// The ordinary case says so too, rather than leaving a reader to infer it from
+// a key that is not there.
+func TestRunE_JSONOutput_UnlockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": false`)
 }
 
 // TestRunE_JSONOutput_ConflictWithoutYes: with conflicts present and

@@ -264,10 +264,13 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 	assert.False(t, calledAllFiles, "AllFiles must not be called when not drifted")
 }
 
-func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
-	dir := initProject(t, nil)
+// lockedEngine is an engine bound to dir whose artifact is immutable. The
+// casing is the platform's own inconsistency, and reading it as a draft is the
+// failure the fixture exists to catch.
+func lockedEngine(t *testing.T, dir string, opts Options) *Engine {
+	t.Helper()
 
-	e, err := newWithDeps(dir, Options{}, Deps{
+	e, err := newWithDeps(dir, opts, Deps{
 		Files: &fakeFilesClient{},
 		Artifacts: &fakeArtifactStore{
 			GetFn: func(id string) (*workload.Artifact, error) {
@@ -280,7 +283,60 @@ func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 
 	t.Cleanup(func() { _ = e.Close() })
 
-	_, err = e.Plan()
+	return e
+}
+
+func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
+	dir := initProject(t, nil)
+
+	e := lockedEngine(t, dir, Options{})
+
+	_, err := e.Plan()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "locked")
+}
+
+// A preview writes nothing, so the one reason to refuse a locked artifact
+// does not apply to it. `dr workload up` asks for exactly this plan before it
+// decides what to do with the code, and on a locked version what it decides is
+// to mint a new one: refusing the count refuses the deploy that gets past the
+// lock.
+func TestEngine_Plan_LockedArtifactAllowedForPreviews(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts Options
+	}{
+		{"dry run", Options{DryRun: true}},
+		{"diff", Options{ShowDiffs: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initProject(t, map[string]string{"app.py": "print('hi')\n"})
+
+			e := lockedEngine(t, dir, tc.opts)
+
+			plan, err := e.Plan()
+			require.NoError(t, err)
+			require.NotNil(t, plan)
+
+			assert.Contains(t, e.LockedNotice(), "locked",
+				"a preview that printed a plan without saying so reads as a sync that is going to work")
+		})
+	}
+}
+
+// The exemption above is for the plan only. Nothing stops a caller planning
+// and then executing anyway, and an upload reaching something immutable is
+// the one outcome it must never produce.
+func TestEngine_Execute_RefusesALockedArtifact(t *testing.T) {
+	dir := initProject(t, map[string]string{"app.py": "print('hi')\n"})
+
+	e := lockedEngine(t, dir, Options{DryRun: true})
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+	require.False(t, plan.IsEmpty(), "the fixture has to give phase 5 something to refuse")
+
+	_, err = e.Execute(plan)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "locked")
 }

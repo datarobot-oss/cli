@@ -48,6 +48,7 @@ type engineRunner interface {
 	StaleRollbackRestored() bool
 	StateMigrationNotice() string
 	IgnoreFileNotice() string
+	LockedNotice() string
 	Fetcher() display.ContentFetcher
 }
 
@@ -192,6 +193,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	// and stdout has to stay parseable under --output-format json.
 	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
+	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
@@ -281,7 +283,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan); err != nil {
+	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != ""); err != nil {
 		return err
 	}
 

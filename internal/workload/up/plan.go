@@ -50,6 +50,12 @@ type CodeChange struct {
 	// only part of a run that a --dry-run does, so carrying it here is what
 	// lets the preview mention it at all.
 	IgnoreNotice string
+
+	// LinkLocked reports that the artifact this project pushes into can no
+	// longer take code. The deploy answers by minting one that can and moving
+	// the link onto it, which the plan says out loud because nothing in the
+	// file asked for it.
+	LinkLocked bool
 }
 
 // Changed reports whether the code needs syncing and rebuilding.
@@ -71,6 +77,13 @@ type Plan struct {
 	Code     CodeChange
 	Artifact []Change
 	Runtime  []Change
+
+	// Locked reports that the version now serving is immutable. Its successor
+	// has to be locked too before the platform will take it, so a deploy onto
+	// locked production locks something whether or not --lock was passed, and
+	// that cannot be undone. The plan is where it belongs: --dry-run is how a
+	// locked deploy is reviewed before it happens.
+	Locked bool
 }
 
 // Empty reports that the live state already matches the file. `up` prints
@@ -92,6 +105,15 @@ func (p Plan) Empty() bool {
 // also has to replace.
 func (p Plan) RollsArtifact() bool {
 	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
+}
+
+// MintsVersion reports whether this run will produce a new artifact. Only a
+// run that does can lock one, so it is what decides whether the plan says
+// anything about locking: a change that moves the sizing alone is applied in
+// place, and a stopped workload is simply started, both leaving the locked
+// artifact exactly as it is.
+func (p Plan) MintsVersion() bool {
+	return p.Creates || p.RollsArtifact()
 }
 
 // Action names the outcome, for the summary line and the JSON envelope.
@@ -121,6 +143,7 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 		State:   live.State,
 		Creates: live.State == StateUnbound,
 		Code:    code,
+		Locked:  live.Locked,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an
@@ -174,10 +197,22 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	// resolve a difference the platform does not consider one, so a spelling
 	// the ledger accepts and the platform normalises would be drift that every
 	// run mints a version for and never clears.
-	if kind != "" && !manifest.SameArtifactType(kind, live.ArtifactType) {
+	// The live side is defaulted and the file's side is not, which is the same
+	// asymmetry the roll's repository check makes for the same reason. An
+	// unstated type in the file is the file having no opinion. An unstated type
+	// on the artifact is not: the platform defaults it to a service, so reading
+	// it as a difference would mint a version on every run of a file that
+	// correctly says service, and nothing the file can say would ever settle it.
+	//
+	// Have carries the defaulted value rather than the raw one, so the line the
+	// reader sees is the comparison that was actually made. Printing the empty
+	// string would render "artifact.type:  -> agent", a change with nothing on
+	// the left, about a side this code has just decided means service.
+	if running := manifest.ArtifactTypeOrDefault(live.ArtifactType); kind != "" &&
+		!manifest.SameArtifactType(kind, running) {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactType,
-			Have: live.ArtifactType,
+			Have: running,
 			Want: kind,
 		})
 	}

@@ -378,3 +378,23 @@ func primaryContainer(t *testing.T, spec map[string]any) map[string]any {
 
 	return container
 }
+
+// The file's side reads the artifact type from either placement, so the live
+// side has to as well. A reader that only looked beside the spec would report
+// an agent as having no type, default it to a service, and drift against a
+// file correctly calling it an agent on every run.
+func TestLook_ArtifactTypeIsReadFromEitherPlacement(t *testing.T) {
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{"type": "agent"}),
+		"beside the spec is where the platform keeps it")
+
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{
+		"spec": map[string]any{"type": "agent"},
+	}), "a document that did not hoist it still answers")
+
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{
+		"type": "agent",
+		"spec": map[string]any{"type": "service"},
+	}), "beside the spec wins")
+
+	assert.Empty(t, liveArtifactType(workload.Document{"spec": map[string]any{}}))
+}

@@ -111,6 +111,7 @@ type Engine struct {
 	staleNote      bool
 	migrationNote  string
 	ignoreNotice   string
+	lockedNote     string
 
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool
@@ -202,7 +203,7 @@ func (e *Engine) Run() (*Result, error) {
 		return nil, err
 	}
 
-	if e.opts.DryRun || e.opts.ShowDiffs || plan.IsEmpty() {
+	if e.previewOnly() || plan.IsEmpty() {
 		if relErr := e.releaseLock(); relErr != nil {
 			return nil, fmt.Errorf("release lock: %w", relErr)
 		}
@@ -239,6 +240,25 @@ func (e *Engine) StateMigrationNotice() string { return e.migrationNote }
 // ignore-file problems that cost the user something go through log.Warn with
 // the rest of the phase warnings, so they survive a later phase failing.
 func (e *Engine) IgnoreFileNotice() string { return e.ignoreNotice }
+
+// LockedNotice is Phase 1's one-line account of a plan computed against an
+// artifact that can no longer take code, empty in the ordinary case. Only a
+// preview can reach it, and a preview that printed a plan without saying so
+// would read as a sync that is going to work.
+func (e *Engine) LockedNotice() string { return e.lockedNote }
+
+// previewOnly reports that this run stops after Plan and sends nothing to the
+// platform, which is what makes the artifact's own mutability beside the point
+// in phase 1. It is not a promise that the working tree is untouched: phase 0
+// restores a stale rollback and the lockfile phase can still generate a
+// uv.lock, both of which a preview needs in order to plan the tree it would
+// actually upload.
+//
+// One owner for the question, because phase 1's locked-artifact exemption is
+// only safe while the set of modes that skip Execute is the same set that gets
+// exempted. Two spellings of it could drift into a preview that plans against
+// something immutable and then executes.
+func (e *Engine) previewOnly() bool { return e.opts.DryRun || e.opts.ShowDiffs }
 
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {

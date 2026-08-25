@@ -39,6 +39,7 @@ const (
 	keyStatus     = "status"
 	keyEndpoint   = "endpoint"
 	keyArtifactID = "artifactId"
+	keySpec       = "spec"
 	keyType       = "type"
 
 	// keyArtifactRepositoryID is the repository an artifact belongs to. The
@@ -100,6 +101,27 @@ type Live struct {
 	Locked bool
 }
 
+// liveArtifactType reads the discriminator off the artifact document, falling
+// back to the spec.
+//
+// The platform hoists a type sent inside the spec and answers with it beside
+// the spec, which is what the fallback is for: the file's side is read from
+// both placements, and a live side that read only one would leave the two
+// halves of the same comparison enforcing different invariants. If a route
+// ever answered without hoisting, an agent would read as having no type, be
+// defaulted to a service, and drift against a file correctly calling it an
+// agent on every run.
+func liveArtifactType(artifactDoc workload.Document) string {
+	if beside := artifactDoc.String(keyType); beside != "" {
+		return beside
+	}
+
+	spec, _ := artifactDoc[keySpec].(map[string]any)
+	within, _ := spec[keyType].(string)
+
+	return within
+}
+
 // Look fetches the live workload and the artifact it runs.
 //
 // An empty workloadID is not an error: it is a manifest that has never been
@@ -152,7 +174,7 @@ func Look(workloadID string) (Live, error) {
 		State:                stateFor(status),
 		Status:               status,
 		ArtifactID:           artifactID,
-		ArtifactType:         artifactDoc.String(keyType),
+		ArtifactType:         liveArtifactType(artifactDoc),
 		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
 		Endpoint:             workloadDoc.String(keyEndpoint),
 		Locked:               isLocked(artifactDoc.String(keyStatus)),

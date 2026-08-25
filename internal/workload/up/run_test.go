@@ -415,6 +415,33 @@ func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
 	assert.True(t, result.Locked)
 }
 
+// The lock a `--lock` run takes on an empty plan lands on whatever Look read as
+// serving, and a rollout in flight is about to move the workload off exactly
+// that artifact. Locking cannot be undone, so a lost race would leave the
+// outgoing version permanent and the rollout unable to complete. deployable
+// cannot catch it: the workload reports itself running for the whole of a swap.
+func TestRun_LockWithNothingToDoWaitsForARolloutInFlight(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		guard: func(workloadID string) error {
+			return fmt.Errorf("workload %s: %w (status switching)",
+				workloadID, workload.ErrReplacementInFlight)
+		},
+		lock: func(string) (*workload.Artifact, error) {
+			t.Fatal("locking is one-way, so it may not land on a version being rolled off")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+}
+
 // The same run without the flag stays as cheap as it was. Locking is one-way,
 // so an empty plan must never take it on its own initiative.
 func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
@@ -425,6 +452,16 @@ func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
 			t.Fatal("nothing asked for a lock")
 
 			return nil, nil
+		},
+		// Recorded rather than left to install's silent no-op. The guard is
+		// justified by not spending a round trip on the quiet path, and this is
+		// the quietest path there is: an empty plan that is not locking has
+		// nothing to guard, so a guard appearing here would be pure cost and
+		// the default fake would hide it.
+		guard: func(string) error {
+			t.Fatal("a run that changes nothing has no rollout to guard against")
+
+			return nil
 		},
 	})
 
@@ -891,26 +928,104 @@ func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
 	assert.NotContains(t, err.Error(), "only one workload per draft artifact")
 }
 
-// A locked artifact can take neither code nor an image, so the deploy stops
-// before the sync rather than failing halfway through with the platform's
-// 403, which says nothing about what to do next.
-func TestRun_LockedArtifactStopsBeforeThePush(t *testing.T) {
+// lockedLink is a project pointed at an artifact that has since been locked,
+// which is what a deploy that locked its own artifact leaves behind. The
+// repository is the lineage the replacement has to join.
+func lockedLink(f fakes, tr *track) fakes {
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-locked")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{
+			ID: id, Status: workload.ArtifactStatusLocked, ArtifactRepositoryID: "repo-1",
+		}, nil
+	}
+	f.save = relinkStep(tr)
+
+	return f
+}
+
+// A locked artifact can take neither code nor an image, and locking cannot be
+// undone, so the deploy makes the version the lock made necessary rather than
+// refusing. The link moves with it, which is what keeps the catalog and the
+// last-synced version: telling the reader to delete the state directory works
+// too, and costs a full re-upload of a tree the platform already holds.
+func TestRun_LockedLinkIsRedrafted(t *testing.T) {
+	var tr track
+
+	install(t, lockedLink(wiredBuild(&tr), &tr))
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"create-artifact", "relink", "sync", "build", "create-workload"}, tr.steps)
+	assert.Equal(t, "art-1", tr.savedCfg.ArtifactID, "the project has to push at the version that can take code")
+	require.NotNil(t, tr.savedCfg.CatalogID, "the code store has to survive the redraft")
+	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID,
+		"the code store survives the redraft, or the next sync re-uploads the whole tree")
+
+	// The replacement joins the lineage it replaces. Without the repository the
+	// Registry grows a second entry under the same name on every lock, and the
+	// workload's versions stop reading as versions of one thing.
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1")
+
+	// The whole point is which artifact the rest of the run targets. Step names
+	// alone would stay identical if the build and the create kept using the
+	// locked id, which is the one outcome this must never produce.
+	workloadIn, ok := tr.workloadIn.(json.RawMessage)
+	require.True(t, ok)
+	assert.Contains(t, string(workloadIn), "art-1")
+	assert.NotContains(t, string(workloadIn), "art-locked")
+}
+
+// The tree was already synced into the artifact that got locked, so the sync
+// onto its replacement can have nothing to upload, and the new version would
+// go to the builder with no code reference at all. The code the locked one
+// was running is carried across instead.
+func TestRun_RedraftedArtifactInheritsTheSyncedCode(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.sync = emptySync(&tr)
+	f.codeRef = carryCodeStep(&tr)
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-1", "cat1", "ver1"}, tr.carried)
+	assert.Contains(t, tr.steps, "carry-code")
+}
+
+// A first deploy whose sync uploaded nothing has no code anywhere: not on the
+// artifact, and not in a previous version to carry over. Building it would ask
+// the platform to make an image out of nothing and fail minutes later saying
+// so in its own words, so the run stops here and says which directory it
+// looked in.
+func TestRun_FirstDeployWithNothingToUploadStopsBeforeTheBuild(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.linked = func(string) bool { return true }
-	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-locked"}, nil }
-	f.getArtifact = func(id string) (*workload.Artifact, error) {
-		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	f.sync = emptySync(&tr)
+
+	// What the link this run just wrote holds: an artifact and nothing else,
+	// because no sync has ever produced a version to record.
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-1"}, nil }
+	f.codeRef = func(string, string, string) error {
+		t.Fatal("a first deploy has no earlier version whose code it could carry over")
+
+		return nil
 	}
 
 	install(t, f)
 
 	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "art-locked")
-	assert.Contains(t, err.Error(), "locked")
-	assert.Empty(t, tr.steps, "nothing may be pushed at an artifact that cannot accept it")
+	assert.Contains(t, err.Error(), "nothing to build")
+	assert.NotContains(t, tr.steps, "build", "an artifact with no code must not reach the builder")
 }
 
 // The artifact exists and only the local record of it failed to write, which
@@ -929,6 +1044,34 @@ func TestRun_LinkFailureNamesTheStrandedArtifact(t *testing.T) {
 	assert.Contains(t, err.Error(), "art-1")
 	assert.Contains(t, err.Error(), "dr artifact code init art-1")
 	assert.NotContains(t, tr.steps, "sync")
+}
+
+// The other half of the same accident, on a directory that is already linked,
+// which is what every roll and every redraft is. The advice has to differ:
+// 'dr artifact code init' refuses a directory holding state, so naming it here
+// would send the reader in a circle, and deleting the state to force it would
+// throw away the catalog the redraft exists to keep. The artifact id still has
+// to reach the envelope, or a run that stranded one reports none.
+func TestRun_RelinkFailureNamesTheFileToEditInstead(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.save = func(string, wapi.Config) error { return errors.New("permission denied") }
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-1", "the stranded artifact has to be named")
+	assert.Contains(t, err.Error(), "artifactId")
+	assert.Contains(t, err.Error(), "config.json")
+	assert.NotContains(t, err.Error(), "dr artifact code init",
+		"that command refuses a directory that already has state")
+
+	assert.Equal(t, "art-1", result.ArtifactID,
+		"a run that created an artifact and then stranded it still has to report which")
+	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed once the link is unknown")
 }
 
 // A build that fails is the end of the deploy. Creating the workload anyway
@@ -1004,6 +1147,27 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 	f := linkedAndSynced(&tr)
 	f.builds = func(string, int) ([]workload.Build, error) {
 		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "create-workload"}, tr.steps)
+	assert.Contains(t, stderr, "Image is up to date")
+}
+
+// The same skip, from a build the platform reported in lower case. hasImage
+// asks the question BuildSummaryFor asks, so it folds the way that does: left
+// exact, a completed build reads as no image at all and every deploy spends
+// minutes rebuilding one that is already sitting on the artifact.
+func TestRun_UnchangedTreeWithALowercaseCompletedBuildSkipsTheBuild(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.builds = func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-0", Status: "completed"}}, nil
 	}
 
 	install(t, f)
@@ -1237,9 +1401,11 @@ func TestRun_CreateBoundToAnUnreadableArtifactFails(t *testing.T) {
 		},
 	})
 
-	_, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already locked")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"this fails before apply is reached, so the envelope must not report the create the plan wanted")
 }
 
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {

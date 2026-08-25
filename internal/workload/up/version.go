@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -104,20 +105,28 @@ func versionArtifact(loaded Loaded, live Live, repositoryID string, report *repo
 		return version{ID: id}, nil
 	}
 
-	return createVersion(loaded, repositoryID, report)
+	return createVersion(loaded, repositoryID, labelNewVersion, report)
 }
+
+// The two things a create can be. A project's first artifact is not a new
+// version of anything, and saying so in a fresh directory reads as though the
+// run found something it did not.
+const (
+	labelFirstArtifact = "Creating the artifact"
+	labelNewVersion    = "Creating the new version"
+)
 
 // createVersion mints an artifact from the file's artifact block, into
 // repositoryID when the run has a lineage for it to join. An empty
 // repositoryID leaves the platform to open one, which is what the first deploy
 // of anything wants.
-func createVersion(loaded Loaded, repositoryID string, report *reporter) (version, error) {
+func createVersion(loaded Loaded, repositoryID, label string, report *reporter) (version, error) {
 	var (
 		created  *workload.Artifact
 		fellBack bool
 	)
 
-	err := report.run("Creating the new version", func() error {
+	err := report.run(label, func() error {
 		payload, payloadErr := loaded.Compiled.ArtifactPayload()
 		if payloadErr != nil {
 			return payloadErr
@@ -372,6 +381,17 @@ func describes(loaded Loaded, artifactID string) bool {
 	// too.
 	delete(want, keyArtifactRepositoryID)
 
+	// The type is settled before the walk and taken out of both sides, because
+	// the walk cannot answer it correctly. It compares by exact equality, so a
+	// file saying "Service" against a live "service", or a document that
+	// carries no type at all, would each read as a difference no deploy can
+	// settle: the leftover is refused, another draft is minted, and the next
+	// attempt refuses that one too. It is the same question the plan asks, so
+	// it is asked the same way, folded and with only the live side defaulted.
+	if !sameArtifactTypeIn(want, doc) {
+		return false
+	}
+
 	// Both directions, which is the difference between this and measuring
 	// drift. Subset catches a value the file changed or added; Extra catches
 	// one it removed. Without the second, deleting an environment variable
@@ -379,6 +399,32 @@ func describes(loaded Loaded, artifactID string) bool {
 	// reused, and it is rolled out still carrying the variable that was
 	// deleted, which minting a fresh artifact would have dropped.
 	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0
+}
+
+// sameArtifactTypeIn reports whether two artifact blocks name the same kind,
+// and takes the type out of both so the caller's walk never sees it.
+//
+// Placement is normalised first, since a file may write the type inside the
+// spec while the platform answers with it beside one. Then the comparison is
+// the plan's: folded, because the platform does not agree with itself about
+// the casing of its enums, and with only the live side defaulted, because an
+// artifact that states no type is a service while a file that states none has
+// no opinion and is owed no difference.
+func sameArtifactTypeIn(want, have map[string]any) bool {
+	hoistArtifactType(want)
+	hoistArtifactType(have)
+
+	wanted, _ := want[keyType].(string)
+	running, _ := have[keyType].(string)
+
+	delete(want, keyType)
+	delete(have, keyType)
+
+	if wanted == "" {
+		return true
+	}
+
+	return manifest.SameArtifactType(wanted, manifest.ArtifactTypeOrDefault(running))
 }
 
 // linkProject points the project at the new version, so the sync uploads into
@@ -401,6 +447,10 @@ func linkProject(projectDir string, made version, report *reporter) error {
 		return nil
 	}
 
+	// From here the directory is already linked, which rules out the advice
+	// below: 'dr artifact code init' refuses a directory that has state, so
+	// naming it would send the reader to a command that cannot run.
+
 	cfg, err := loadProjectFn(projectDir)
 	if err != nil {
 		return fmt.Errorf("cannot read which artifact %s is linked to: %w", projectDir, err)
@@ -409,7 +459,7 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	cfg.ArtifactID = made.ID
 
 	if err := saveProjectFn(projectDir, cfg); err != nil {
-		return linkFailure(made.ID, projectDir, err)
+		return relinkFailure(made.ID, projectDir, err)
 	}
 
 	report.say("  Project now pushes to artifact %s.\n", made.ID)
@@ -417,14 +467,29 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	return nil
 }
 
-// linkFailure says which artifact was stranded. The artifact exists and
-// nothing records that fact, so the next run would make another; naming the
-// id is the difference between a re-run and a support ticket.
+// linkFailure says which artifact was stranded, for a directory that had no
+// link to begin with. The artifact exists and nothing records that fact, so the
+// next run would make another; naming the id is the difference between a re-run
+// and a support ticket.
 func linkFailure(artifactID, projectDir string, err error) error {
 	return fmt.Errorf(
 		"artifact %s was created but %s could not be pointed at it, so the next deploy would create another. "+
 			"Run 'dr artifact code init %s' here, then deploy again: %w",
 		artifactID, projectDir, artifactID, err)
+}
+
+// relinkFailure is the same accident on a directory that is already linked,
+// which is every roll and every redraft of a locked artifact. It cannot name
+// 'dr artifact code init', because that command refuses a directory holding
+// state and would send the reader in a circle; and deleting the state to force
+// it would throw away the catalog and the last-synced version, which is the
+// cost the relink exists to avoid. What is left is the file itself, so the
+// error names it and the one field to change.
+func relinkFailure(artifactID, projectDir string, err error) error {
+	return fmt.Errorf(
+		"artifact %s was created but %s could not be pointed at it, so the next deploy would create another. "+
+			"Fix whatever stopped the write, then set \"artifactId\" to %s in %s by hand and deploy again: %w",
+		artifactID, projectDir, artifactID, wapi.ConfigPath(projectDir), err)
 }
 
 // inheritCode gives the new version the code the old one was running, when
@@ -437,7 +502,13 @@ func linkFailure(artifactID, projectDir string, err error) error {
 // start. Pointing it at the version last synced is what makes "a new version
 // of the same code" true.
 func inheritCode(projectDir, artifactID string, synced *sync.Result, report *reporter) error {
-	if synced != nil && synced.NewVersion != "" {
+	// A sync that moved anything has already pointed the artifact at what it
+	// produced, so only one that found nothing to do leaves a version with no
+	// code of its own. Minting a version is the usual proof of that, but not
+	// the only one: a sync whose whole plan was remote deletes can move the
+	// code store without the engine reporting a new version, and inheriting
+	// then would pin the artifact at the state before those deletes.
+	if synced != nil && (synced.NewVersion != "" || synced.UploadedCount > 0 || synced.DeletedCount > 0) {
 		return nil
 	}
 
