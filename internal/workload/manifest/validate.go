@@ -56,6 +56,13 @@ const (
 	sourceGenerated = "generated"
 )
 
+// environmentVars source discriminators that carry no value field. The string
+// variant (source absent or "string") requires a non-null value; the
+// credential and api-key variants resolve their value server-side. The
+// dr-credential discriminator is shared with compile.go's credentialSource;
+// api-key is validate-only because the compiler does not expand it.
+const sourceAPIKey = "api-key"
+
 // dockerfileName is the only Dockerfile a provided build may name. Setup
 // writes no path at all, so this is a fixed expectation of the project root
 // rather than a default that can be pointed elsewhere.
@@ -301,6 +308,7 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 
 		v.checkImageSource(container, containerPath)
 		v.checkPort(container, containerPath, primary)
+		v.checkEnvironmentVars(container, containerPath)
 	}
 
 	// Two primaries in one group is unambiguously wrong: only one container
@@ -340,7 +348,11 @@ func (v *validator) checkImageSource(container *yaml.Node, path string) {
 func (v *validator) checkBuildConfig(buildConfig *yaml.Node, path string) {
 	dockerfile := mapValue(buildConfig, keyDockerfile)
 	if isNullish(dockerfile) {
-		v.add(nil, buildConfig, joinPath(path, keyDockerfile),
+		// Pass the dockerfile node (not nil) so the error anchors to the
+		// dockerfile key's own line when it is present-but-null. When the key
+		// is absent entirely, mapValue returns nil and the anchor falls back
+		// to buildConfig — the nearest node that does exist.
+		v.add(dockerfile, buildConfig, joinPath(path, keyDockerfile),
 			"is required: %s must say how the image is built", keyImageBuildConfig)
 
 		return
@@ -420,6 +432,40 @@ func (v *validator) checkPort(container *yaml.Node, path string, primary bool) {
 	if port < minPrimaryPort {
 		v.add(node, container, portPath,
 			"is %d; the primary container runs unprivileged and must listen on %d or above", port, minPrimaryPort)
+	}
+}
+
+// checkEnvironmentVars holds the value-or-source rule for each entry in a
+// container's environmentVars sequence. The server schema requires a non-null
+// value for the string variant (source absent or "string"); the credential
+// and api-key variants carry no value. An explicitly empty value ("") passes —
+// that is the server's spelling of an intentionally-empty variable. A value-less
+// string entry today fails only as a 422 at deploy time; this check surfaces
+// it at validate time with a line anchor.
+func (v *validator) checkEnvironmentVars(container *yaml.Node, path string) {
+	vars := mapValue(container, keyEnvironmentVars)
+	if isNullish(vars) {
+		return
+	}
+
+	for i, entry := range seqItems(vars) {
+		entryPath := fmt.Sprintf("%s.%s[%d]", path, keyEnvironmentVars, i)
+
+		// Credential and api-key sources resolve their value server-side, so
+		// they are exempt from the value requirement.
+		source, _ := scalarString(mapValue(entry, keySource))
+		if source == credentialSource || source == sourceAPIKey {
+			continue
+		}
+
+		value := mapValue(entry, keyValue)
+		if isNullish(value) {
+			v.add(value, entry, joinPath(entryPath, keyValue),
+				"is required: set a value or use a %s/%s source",
+				credentialSource, sourceAPIKey)
+
+			continue
+		}
 	}
 }
 

@@ -584,6 +584,88 @@ func TestValidate_BuildConfigWithNullDockerfile(t *testing.T) {
 	})
 }
 
+// When dockerfile is present but null and is not the first key in the
+// imageBuildConfig mapping, the "is required" error must anchor to the
+// dockerfile key's own line, not the mapping's first-key line. The companion
+// test above (where dockerfile is the only key) cannot tell the two apart;
+// this one separates them by inserting a context key first.
+func TestValidate_BuildConfigDockerfileAnchorsAtDockerfileLine(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig:
+              context: ./build
+              dockerfile: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg: "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// An environmentVars entry with a null value is rejected at validate time
+// rather than surfacing as a 422 at deploy time. The error anchors to the
+// value key's own line.
+func TestValidate_EnvironmentVarsNullValueRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 15, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with neither a value nor a credential/api-key
+// source is rejected. The error anchors to the entry (the nearest node).
+func TestValidate_EnvironmentVarsNoValueNoSourceRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with an explicitly empty value passes: the server
+// treats value: "" as an intentionally-empty string variable.
+func TestValidate_EnvironmentVarsEmptyValuePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: ""
+`)))
+}
+
+// A credential-source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsCredentialSourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: TOKEN
+                source: dr-credential
+                drCredentialId: 68f0cccc0000000000000003
+                key: apiToken
+`)))
+}
+
+// An api-key source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsApiKeySourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - source: api-key
+`)))
+}
+
 // A null artifactId is treated as absent, so an inline artifact is allowed.
 func TestValidate_InlineArtifactWithNullArtifactId(t *testing.T) {
 	require.NoError(t, validateString(t, "", `name: my-app
