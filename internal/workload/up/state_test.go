@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStateFor(t *testing.T) {
@@ -118,4 +119,24 @@ func TestStateFor_FoldsCase(t *testing.T) {
 	} {
 		assert.Equal(t, c.want, stateFor(c.status), "status %q", c.status)
 	}
+}
+
+// startable reads the same status stateFor just folded, so an upper-case
+// suspended must still be refused. Left exact it would be treated as startable
+// and polled until the timeout for a transition the platform never makes.
+func TestStartable_FoldsSuspended(t *testing.T) {
+	err := startable(Live{Status: "SUSPENDED"}, "my-app")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "suspended")
+
+	require.NoError(t, startable(Live{Status: "STOPPED"}, "my-app"),
+		"stopped and interrupted can still be started")
+}
+
+// The status a detached start reports is mapped the same way.
+func TestStartingStatus_FoldsTheStatesItMaps(t *testing.T) {
+	assert.Equal(t, workload.WorkloadStatusSubmitted, startingStatus("STOPPED"))
+	assert.Equal(t, workload.WorkloadStatusSubmitted, startingStatus("Interrupted"))
+	assert.Equal(t, "something-new", startingStatus("something-new"),
+		"an unrecognised status is still passed through rather than overwritten")
 }

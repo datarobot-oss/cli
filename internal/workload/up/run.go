@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -487,7 +488,7 @@ func deployable(live Live, workloadName string) error {
 // the timeout for a transition that is never coming. Interrupted can be
 // started.
 func startable(live Live, workloadName string) error {
-	if live.Status != workload.WorkloadStatusSuspended {
+	if !strings.EqualFold(live.Status, workload.WorkloadStatusSuspended) {
 		return nil
 	}
 
@@ -595,12 +596,14 @@ func start(live Live, result Result, opts Options) (Result, error) {
 }
 
 // startingStatus is what to report for a start nobody waited for. An
-// unrecognised status is passed through rather than overwritten.
+// unrecognised status is passed through rather than overwritten, and the
+// recognised ones are matched the way every other status comparison here
+// matches, which is without regard to case.
 func startingStatus(was string) string {
-	switch was {
-	case workload.WorkloadStatusStopped,
-		workload.WorkloadStatusSuspended,
-		workload.WorkloadStatusInterrupted:
+	switch {
+	case strings.EqualFold(was, workload.WorkloadStatusStopped),
+		strings.EqualFold(was, workload.WorkloadStatusSuspended),
+		strings.EqualFold(was, workload.WorkloadStatusInterrupted):
 		return workload.WorkloadStatusSubmitted
 
 	default:

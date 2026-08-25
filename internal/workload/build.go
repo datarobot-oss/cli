@@ -148,7 +148,19 @@ type BuildSummary struct {
 // read exactly, a build answering "completed" would be polled until the
 // timeout and then fail a deploy whose image was already built.
 func IsTerminalBuildStatus(s string) bool {
-	return IsBuildErrorStatus(s) || strings.EqualFold(s, BuildStatusCompleted)
+	return IsBuildErrorStatus(s) || IsBuildCompleted(s)
+}
+
+// IsBuildCompleted reports whether s is the one terminal status that produced
+// an image.
+//
+// It exists so the question is asked the same way everywhere. Folding the
+// terminal check while a consumer went on comparing exactly was worse than not
+// folding at all: the wait would accept a lowercase "completed" and the code
+// reading the result would call the same build unfinished, so a deploy would
+// succeed its wait and then have no image to ship.
+func IsBuildCompleted(s string) bool {
+	return strings.EqualFold(s, BuildStatusCompleted)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
@@ -346,7 +358,7 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		DurationSeconds: buildDurationSeconds(*build),
 	}
 
-	if build.Status != BuildStatusCompleted {
+	if !IsBuildCompleted(build.Status) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {

@@ -104,25 +104,17 @@ func knownWorkloadStatuses() []string {
 // reason to bail. A workload that never leaves them surfaces via the timeout
 // rather than a spurious "settled" error on the first, still-stale poll.
 func IsTerminalWorkloadStatus(s string) bool {
-	switch s {
-	case WorkloadStatusRunning,
-		WorkloadStatusErrored,
-		WorkloadStatusTerminated:
-		return true
-	}
-
-	return false
+	return IsWorkloadErrorStatus(s) || strings.EqualFold(s, WorkloadStatusRunning)
 }
 
 // IsWorkloadErrorStatus reports whether s is a terminal failure a caller should
 // surface as an error rather than a settled state.
+//
+// Folded, like every other status comparison in this package: the platform
+// does not agree with itself about the casing of its enums, and a terminal
+// status read as non-terminal is a poll loop that runs to its timeout.
 func IsWorkloadErrorStatus(s string) bool {
-	switch s {
-	case WorkloadStatusErrored, WorkloadStatusTerminated:
-		return true
-	}
-
-	return false
+	return strings.EqualFold(s, WorkloadStatusErrored) || strings.EqualFold(s, WorkloadStatusTerminated)
 }
 
 // Workload is the projection of the server's workload document the CLI

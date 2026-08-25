@@ -1148,6 +1148,27 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 	assert.Contains(t, stderr, "Image is up to date")
 }
 
+// The same skip, from a build the platform reported in lower case. hasImage
+// asks the question BuildSummaryFor asks, so it folds the way that does: left
+// exact, a completed build reads as no image at all and every deploy spends
+// minutes rebuilding one that is already sitting on the artifact.
+func TestRun_UnchangedTreeWithALowercaseCompletedBuildSkipsTheBuild(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.builds = func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-0", Status: "completed"}}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "create-workload"}, tr.steps)
+	assert.Contains(t, stderr, "Image is up to date")
+}
+
 // The same run where the previous attempt never got as far as an image. The
 // question is asked of the platform rather than assumed, because assuming
 // either way is wrong half the time.

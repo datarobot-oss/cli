@@ -52,6 +52,7 @@ func TestBuildStatusClassifiersFoldCase(t *testing.T) {
 	} {
 		assert.Equal(t, c.terminal, IsTerminalBuildStatus(c.status), "terminal %q", c.status)
 		assert.Equal(t, c.failed, IsBuildErrorStatus(c.status), "failed %q", c.status)
+		assert.Equal(t, c.terminal && !c.failed, IsBuildCompleted(c.status), "completed %q", c.status)
 	}
 }
 
@@ -532,6 +533,45 @@ func TestBuildSummaryFor_SuccessSkipsLogs(t *testing.T) {
 	assert.Equal(t, "ecr/img:tag", summary.ImageURI)
 	assert.Empty(t, summary.LogTail)
 	assert.False(t, logsHit, "logs endpoint must not be hit on success")
+}
+
+// The consumers have to fold with the classifier. Folding the terminal check
+// while this went on comparing exactly was worse than not folding at all: the
+// wait accepts a lowercase "completed", then the code reading the result calls
+// the same build unfinished, so the deploy succeeds its wait and has no image
+// to show for it, and the next run rebuilds for nothing.
+func TestBuildSummaryFor_ReadsTheImageOffALowercaseCompleted(t *testing.T) {
+	installSkipAuth(t)
+
+	var logsHit bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/logs") {
+			logsHit = true
+
+			return
+		}
+
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:tag"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	summary, err := BuildSummaryFor(&Build{
+		ID:         "b-1",
+		ArtifactID: "art-1",
+		Status:     "completed",
+	}, DefaultBuildLogTail)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ecr/img:tag", summary.ImageURI, "the image is what a completed build is read for")
+	assert.False(t, logsHit, "a completed build has no failure logs to fetch")
 }
 
 func TestBuildSummaryFor_FailureFetchesLogs(t *testing.T) {
