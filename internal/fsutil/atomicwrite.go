@@ -78,12 +78,75 @@ func targetMode(path, probePath string) (os.FileMode, error) {
 	return info.Mode().Perm(), nil
 }
 
+// resolveWriteTarget resolves a symlinked path to its target so the write
+// goes through the link instead of replacing it. Lstat is the primary fact:
+// only when the caller's final path component is itself a symlink does
+// EvalSymlinks run, so plain files never pay for intermediate-directory
+// canonicalization (and the symlink check doubles as the gate that used to
+// need a separate Lstat carve-out).
+//
+// viaSymlink reports whether the caller's path itself was a symlink, so a
+// failure can be reported against the name the caller knows rather than a
+// resolved target they may never have seen.
+//
+// Resolution is fail-fast: a live symlink whose resolution fails for a reason
+// other than a missing target (a circular link, a permission error) returns
+// the error here rather than letting the write proceed to a later os.Stat that
+// might succeed against a different view of the path. The error names the
+// caller's path directly, so it bypasses the "write through symlink" defer
+// wrapper registered in AtomicWriteFile (which only fires when viaSymlink is
+// set and err is non-nil with no resolve error already attached). A dangling
+// link (target missing) is the one carve-out: it returns (path, true, nil) so
+// the write replaces the broken link as-is, pinned by DanglingSymlinkIsReplaced.
+func resolveWriteTarget(path string) (resolved string, viaSymlink bool, err error) {
+	fi, lerr := os.Lstat(path)
+	if lerr != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return path, false, nil
+	}
+
+	resolved, rerr := filepath.EvalSymlinks(path)
+	if rerr != nil {
+		if errors.Is(rerr, os.ErrNotExist) {
+			return path, true, nil // dangling link: replace as-is
+		}
+
+		return "", true, fmt.Errorf("resolve symlink %s: %w", path, rerr)
+	}
+
+	return resolved, true, nil
+}
+
 // AtomicWriteFile writes data to a sibling temp file in the same directory as
 // path, fsyncs it, then renames it over path. os.Rename is atomic on POSIX
 // and handled as replace-on-existing by Go on Windows. The parent directory
 // is fsynced after rename so the new dentry survives a crash. The temp file
 // is removed on any failure before rename so no .tmp.* leftovers remain.
+//
+// When path is a symlink, the write goes to the real file the link resolves
+// to so the link itself is preserved. resolveWriteTarget follows the full
+// chain via EvalSymlinks; a plain file never calls EvalSymlinks, a dangling
+// link is replaced as-is, and a live symlink whose resolution fails for any
+// other reason (a circular link, a permission error) fails fast before the
+// write begins. A failure after resolution is reported against the path the
+// caller passed, with the resolved target carried in the wrapped error.
 func AtomicWriteFile(path string, data []byte) (err error) {
+	callerPath := path
+
+	path, viaSymlink, err := resolveWriteTarget(path)
+	if err != nil {
+		// Already names the caller's path; do not double-wrap.
+		return err
+	}
+
+	// Deferred so every error exit below — including a CreateTemp failure
+	// that names the resolved target — is annotated with the path the caller
+	// passed.
+	defer func() {
+		if err != nil && viaSymlink {
+			err = fmt.Errorf("write through symlink %s: %w", callerPath, err)
+		}
+	}()
+
 	dir := filepath.Dir(path)
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
