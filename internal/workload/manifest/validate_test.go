@@ -337,6 +337,18 @@ func TestValidate_ReplicaCountWithEmptyAutoscaling(t *testing.T) {
 `)))
 }
 
+// A null replicaCount is no count at all, so it cannot conflict with an
+// active autoscaling policy. The server echoes the same placeholder shape
+// for replicas that it does for autoscaling.
+func TestValidate_NullReplicaCountAllowsAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: null
+      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`)))
+}
+
 // A non-empty autoscaling body without an enabled key is treated as enabled by
 // the server, so replicaCount still conflicts.
 func TestValidate_ReplicaCountWithAutoscalingNoEnabled(t *testing.T) {
@@ -376,23 +388,30 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 	cases := []struct {
 		name        string
 		autoscaling string
-		active      bool
+		// groupAutoscaling is the map[string]any shape autoscalingActive sees,
+		// parallel to the YAML shape checkScaling sees. Keeping it in the case
+		// struct avoids a switch that would trip the cyclop limit.
+		groupAutoscaling any
+		active           bool
 	}{
 		{
-			name:        "null",
-			autoscaling: `      autoscaling: null`,
-			active:      false,
+			name:             "null",
+			autoscaling:      `      autoscaling: null`,
+			groupAutoscaling: nil,
+			active:           false,
 		},
 		{
-			name:        "empty mapping",
-			autoscaling: `      autoscaling: {}`,
-			active:      false,
+			name:             "empty mapping",
+			autoscaling:      `      autoscaling: {}`,
+			groupAutoscaling: map[string]any{},
+			active:           false,
 		},
 		{
 			name: "enabled false",
 			autoscaling: `      autoscaling:
         enabled: false`,
-			active: false,
+			groupAutoscaling: map[string]any{keyEnabled: false},
+			active:           false,
 		},
 		{
 			name: "enabled true",
@@ -400,6 +419,11 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
         enabled: true
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				keyEnabled:        true,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
 		{
@@ -407,6 +431,10 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 			autoscaling: `      autoscaling:
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
 		{
@@ -415,11 +443,38 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
         enabled: null
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				keyEnabled:        nil,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
+		// enabled: null with no other keys is the shape that inverts after
+		// stripKeys purges the nil — collapsing to {} (OFF). The validator
+		// (checkScaling) and the live reader (autoscalingActive) both read
+		// the pre-strip raw node as ON, and the strip path normalizes it to
+		// enabled: true so the post-strip shape is also ON.
 		{
-			name:   "absent",
-			active: false,
+			name: "enabled null only",
+			autoscaling: `      autoscaling:
+        enabled: null`,
+			groupAutoscaling: map[string]any{keyEnabled: nil},
+			active:           true,
+		},
+		// The post-strip normalized shape: enabled: true with no other keys.
+		// Both readers agree this is ON.
+		{
+			name: "enabled true only",
+			autoscaling: `      autoscaling:
+        enabled: true`,
+			groupAutoscaling: map[string]any{keyEnabled: true},
+			active:           true,
+		},
+		{
+			name:             "absent",
+			groupAutoscaling: nil, // absent: the key is never set on the group
+			active:           false,
 		},
 	}
 
@@ -438,30 +493,10 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 
 			group := map[string]any{}
 
-			switch tc.name {
-			case "null":
-				group[keyAutoscaling] = nil
-			case "empty mapping":
-				group[keyAutoscaling] = map[string]any{}
-			case "enabled false":
-				group[keyAutoscaling] = map[string]any{keyEnabled: false}
-			case "enabled true":
-				group[keyAutoscaling] = map[string]any{
-					keyEnabled:        true,
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
-			case "missing enabled with body":
-				group[keyAutoscaling] = map[string]any{
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
-			case "enabled null with body":
-				group[keyAutoscaling] = map[string]any{
-					keyEnabled:        nil,
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
+			// "absent" leaves the autoscaling key unset; every other case
+			// sets it from the struct field.
+			if tc.name != "absent" {
+				group[keyAutoscaling] = tc.groupAutoscaling
 			}
 
 			assert.Equal(t, tc.active, autoscalingActive(group), "autoscalingActive agrees with expected")
@@ -547,6 +582,88 @@ func TestValidate_BuildConfigWithNullDockerfile(t *testing.T) {
 			Msg: "is required: imageBuildConfig must say how the image is built",
 		},
 	})
+}
+
+// When dockerfile is present but null and is not the first key in the
+// imageBuildConfig mapping, the "is required" error must anchor to the
+// dockerfile key's own line, not the mapping's first-key line. The companion
+// test above (where dockerfile is the only key) cannot tell the two apart;
+// this one separates them by inserting a context key first.
+func TestValidate_BuildConfigDockerfileAnchorsAtDockerfileLine(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig:
+              context: ./build
+              dockerfile: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg: "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// An environmentVars entry with a null value is rejected at validate time
+// rather than surfacing as a 422 at deploy time. The error anchors to the
+// value key's own line.
+func TestValidate_EnvironmentVarsNullValueRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 15, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with neither a value nor a credential/api-key
+// source is rejected. The error anchors to the entry (the nearest node).
+func TestValidate_EnvironmentVarsNoValueNoSourceRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with an explicitly empty value passes: the server
+// treats value: "" as an intentionally-empty string variable.
+func TestValidate_EnvironmentVarsEmptyValuePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: ""
+`)))
+}
+
+// A credential-source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsCredentialSourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: TOKEN
+                source: dr-credential
+                drCredentialId: 68f0cccc0000000000000003
+                key: apiToken
+`)))
+}
+
+// An api-key source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsApiKeySourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - source: api-key
+`)))
 }
 
 // A null artifactId is treated as absent, so an inline artifact is allowed.

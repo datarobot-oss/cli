@@ -28,6 +28,7 @@ import (
 // because the create spec has no legitimate key by these names anywhere.
 var serverManagedKeys = []string{
 	"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId", "resolvedBundle",
+	"imageOutdated",
 }
 
 // Live is a running workload, downloaded so a manifest can be written that
@@ -55,7 +56,15 @@ type Live struct {
 // NewLive assembles the live view from the two documents the server returns,
 // stripping what only the server may set. workloadDoc is the workload,
 // artifactDoc the artifact it currently runs.
-func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
+//
+// It fails loudly when the artifact doc carries no usable spec — absent, or
+// stripped to nothing by the server-managed-key purge — so a partial or
+// permission-filtered artifact GET can never produce a manifest that Validate
+// would reject with "artifact.spec: is required for an inline artifact". The
+// error names the workload id, mirroring Apply's own "no primary container"
+// contract, because the right answer is to edit the file by hand rather than
+// let the CLI write something it would then refuse to read.
+func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, error) {
 	live := Live{
 		WorkloadID:   workloadID,
 		Name:         stringAt(workloadDoc, keyName),
@@ -71,7 +80,12 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 
 	stripBuildOutputs(live.Spec)
 
-	return live
+	if len(live.Spec) == 0 {
+		return live, fmt.Errorf("workload %s has no artifact spec to bind; edit %s by hand instead",
+			workloadID, FileName)
+	}
+
+	return live, nil
 }
 
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the
@@ -253,7 +267,7 @@ func liveBuild(container map[string]any) Build {
 		}
 	}
 
-	if buildConfig != nil {
+	if len(buildConfig) > 0 {
 		return Build{Mode: BuildModeUnchanged}
 	}
 
@@ -732,7 +746,7 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
-	reorderKeys(spec)
+	hoistNameKeys(spec)
 
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
 	if l.ArtifactType != "" {
@@ -758,7 +772,7 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
-	reorderKeys(runtime)
+	hoistNameKeys(runtime)
 
 	if runtime != nil {
 		fields = append(fields, field{key: keyRuntime, value: runtime})
@@ -820,32 +834,77 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	return node, nil
 }
 
-// reorderKeys walks the YAML node tree and moves any "name" key to the front of
-// its mapping's Content, preserving every other key in its original order. It is
-// applied to the nested spec and runtime blocks; the top-level manifest order is
-// already controlled by Render's explicit field list.
-func reorderKeys(node *yaml.Node) {
+// hoistNameKeys scopes name-promotion to identifier mappings: the
+// sequence-item mappings found under containerGroups and containers keys.
+// Arbitrary nested mappings that happen to carry a key literally called
+// "name" (e.g. labels: {team: x, name: not-an-id, zone: b}) are left in
+// their original key order, honouring the package's pass-through contract
+// (doc.go: unknown blocks "survive the round trip"; the spec and runtime
+// blocks are "passed through as the platform gave them"). Reordering every
+// mapping with a name key produced unexplained diff noise on every bind.
+//
+// The walk descends into every value so containerGroups/containers at any
+// depth are found (containers nest inside groups, and a future spec may nest
+// groups inside something else), but it only reorders the mappings that are
+// sequence items under those two keys. The top-level manifest order is
+// already controlled by Render's explicit field list and is never reached
+// here.
+func hoistNameKeys(node *yaml.Node) {
 	if node == nil {
 		return
 	}
 
-	if node.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == keyName {
-				nameKey := node.Content[i]
-				nameValue := node.Content[i+1]
-
-				copy(node.Content[2:i+2], node.Content[0:i])
-				node.Content[0] = nameKey
-				node.Content[1] = nameValue
-
-				break
-			}
-		}
+	// Only mapping nodes can carry containerGroups/containers keys; sequence
+	// and scalar nodes have nothing to hoist and nothing to descend through.
+	if node.Kind != yaml.MappingNode {
+		return
 	}
 
-	for _, child := range node.Content {
-		reorderKeys(child)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+
+		// Identifier keys: hoist name inside each sequence-item mapping and
+		// recurse into those items so containers nested inside groups (and
+		// groups nested inside anything else) are reached. The sequence node
+		// itself is handled item-by-item here rather than via the generic
+		// descent, so its items are the only mappings touched.
+		if (key.Value == keyContainerGroups || key.Value == keyContainers) && value != nil {
+			if value.Kind == yaml.SequenceNode {
+				for _, item := range value.Content {
+					hoistNameInMapping(item)
+					hoistNameKeys(item)
+				}
+			}
+
+			continue
+		}
+
+		// Non-matching subtrees are walked via their values so
+		// containerGroups/containers appearing at any depth are still found,
+		// while opaque mappings they contain keep their key order.
+		hoistNameKeys(value)
+	}
+}
+
+// hoistNameInMapping moves a "name" key to the front of a mapping node's
+// Content, preserving every other key in its original order. It is a no-op
+// for non-mapping nodes or mappings without a name key.
+func hoistNameInMapping(node *yaml.Node) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == keyName {
+			nameKey := node.Content[i]
+			nameValue := node.Content[i+1]
+
+			copy(node.Content[2:i+2], node.Content[0:i])
+			node.Content[0] = nameKey
+			node.Content[1] = nameValue
+
+			return
+		}
 	}
 }
 
@@ -864,6 +923,14 @@ func stripKeys(value any) {
 		for _, key := range serverManagedKeys {
 			delete(typed, key)
 		}
+
+		// Normalize enabled: null inside a present autoscaling block before
+		// the nil-purge would collapse it to {}. The platform's default for a
+		// configured autoscaling block is ON, so enabled: null carries that
+		// meaning; rewriting it to true keeps the rendered file free of nulls
+		// (invariant 3) and semantically honest — both autoscalingActive and
+		// checkScaling read the post-strip shape as ON.
+		normalizeAutoscalingEnabled(typed)
 
 		// Nil-valued keys are dropped in the same walk: the server echoes
 		// them as placeholders (e.g. autoscaling: null), and writing one
@@ -886,23 +953,72 @@ func stripKeys(value any) {
 	}
 }
 
+// normalizeAutoscalingEnabled rewrites enabled: null inside a present
+// autoscaling block to enabled: true before the nil-purge would collapse it.
+// The platform's default for a configured autoscaling block is ON, so an
+// explicit enabled: null carries that meaning. Without this normalization the
+// purge strips enabled: null, leaving {} — which both autoscalingActive and
+// checkScaling read as OFF (absent), inverting the group's semantics.
+//
+// Only a present-with-nil enabled is rewritten. A present bool (true or false)
+// or an absent enabled key already carries the right meaning and is left
+// untouched. The two-value map-access idiom distinguishes "enabled present
+// with nil value" from "enabled absent entirely" — the single-value
+// `autoscaling[keyEnabled] == nil` cannot (Go map zero-value ambiguity), and
+// would rewrite a genuinely empty autoscaling: {} to {enabled: true},
+// inverting a should-be-OFF group to ON. A block like {enabled: null,
+// minReplicaCount: 2} already reads as ON after the purge (enabled absent →
+// default on); normalizing it to enabled: true makes the default explicit and
+// keeps the rendered file free of nulls.
+func normalizeAutoscalingEnabled(doc map[string]any) {
+	autoscaling, ok := doc[keyAutoscaling].(map[string]any)
+	if !ok {
+		return
+	}
+
+	val, present := autoscaling[keyEnabled]
+	if present && val == nil {
+		autoscaling[keyEnabled] = true
+	}
+}
+
 // stripBuildOutputs removes what a build produced rather than what a build
 // was asked to do. A container that says how to build itself also carries the
 // image that came out and the code the last sync uploaded; both are re-earned
 // by the next deploy, and writing them into the file would pin a workload to
-// yesterday's image. It also strips the server-assigned build block and the
-// computed imageOutdated flag.
+// yesterday's image. It also strips the server-assigned build block, scoped
+// to containers on purpose: the bare word "build" is generic enough that
+// adding it to serverManagedKeys could eat a legitimate user key at some
+// other level of the spec. The computed imageOutdated flag is unambiguous,
+// so it lives in that list instead.
+//
+// An imageBuildConfig with real content (e.g. a dockerfile block) is a build
+// container: imageUri is deleted as a server-built pin and codeRef as
+// server-managed. An imageBuildConfig that is empty, or becomes empty after
+// deleting codeRef, is NOT a build container — the user-declared imageUri is
+// kept and the emptied imageBuildConfig key is removed entirely so it never
+// renders as "{}" alongside a missing imageUri, which Validate would reject
+// with "must set either imageUri or imageBuildConfig".
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
 			buildConfig := mapAt(container, keyImageBuildConfig)
 			if buildConfig != nil {
-				delete(container, keyImageURI)
 				delete(buildConfig, "codeRef")
+
+				// If the build config still has real content after stripping
+				// codeRef, this is a genuine build container: drop the
+				// server-built imageUri pin. If it emptied, the container is
+				// really an image container — drop the emptied
+				// imageBuildConfig key and keep imageUri.
+				if len(buildConfig) == 0 {
+					delete(container, keyImageBuildConfig)
+				} else {
+					delete(container, keyImageURI)
+				}
 			}
 
 			delete(container, "build")
-			delete(container, "imageOutdated")
 		}
 	}
 }

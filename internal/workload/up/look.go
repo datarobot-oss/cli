@@ -131,8 +131,19 @@ func Look(workloadID string) (Live, error) {
 
 	status := workloadDoc.String(keyStatus)
 
+	live, err := manifest.NewLive(workloadID, workloadDoc, artifactDoc)
+	// A missing artifact (nil doc) is a valid state for the up path: a
+	// workload in the moments around creation has no artifact to read, and
+	// the spec comparing as absent is the right answer for something not
+	// yet built. Only propagate the error when the artifact doc was
+	// actually present but carried no usable spec — that is the
+	// permission-filtered partial GET the bind-time guard exists for.
+	if err != nil && artifactDoc != nil {
+		return Live{}, err
+	}
+
 	return Live{
-		Live:                 manifest.NewLive(workloadID, workloadDoc, artifactDoc),
+		Live:                 live,
 		State:                stateFor(status),
 		Status:               status,
 		ArtifactID:           artifactID,
