@@ -294,7 +294,7 @@ func TestLive_LiteralEnvVarsSkipsCredentialReferences(t *testing.T) {
          "environmentVars": [
            {"name": "LOG_LEVEL", "value": "debug"},
            {"name": "SHORTHAND", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
-           {"name": "OBJECT", "source": "credential",
+           {"name": "OBJECT", "source": "dr-credential",
             "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"},
            {"name": "REGION", "value": "eu-west-1"}
          ]}

@@ -372,7 +372,7 @@ func TestRun_BoundWorkloadDoesNotGuessAtLiveValues(t *testing.T) {
 // clear, in either spelling, so neither is a finding.
 func TestRun_BoundWorkloadIgnoresCredentialReferences(t *testing.T) {
 	boundWithLiveEnv(t, `[{"name": "SHORTHAND_KEY", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
-		{"name": "OBJECT_KEY", "source": "credential",
+		{"name": "OBJECT_KEY", "source": "dr-credential",
 		 "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}]`)
 
 	assert.NotContains(t, boundRun(t), "looks like a secret")
