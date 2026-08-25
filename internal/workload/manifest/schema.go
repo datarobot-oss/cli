@@ -80,22 +80,22 @@ var fieldRules = []fieldRule{
 	// spec has no legitimate key by these names anywhere, so recursive
 	// deletion is safe. See the strip scoping decision in the fieldRule doc
 	// comment above.
-	{name: "id", serverManaged: true},
-	{name: "createdAt", serverManaged: true},
-	{name: "updatedAt", serverManaged: true},
-	{name: "status", serverManaged: true},
-	{name: "endpoint", serverManaged: true},
+	{name: keyID, serverManaged: true},
+	{name: keyCreatedAt, serverManaged: true},
+	{name: keyUpdatedAt, serverManaged: true},
+	{name: keyStatus, serverManaged: true},
+	{name: keyEndpoint, serverManaged: true},
 	{name: keyArtifactID, serverManaged: true},
 	{name: keyWorkloadID, serverManaged: true, topLevelOrder: 1},
-	{name: "resolvedBundle", nullable: true, serverManaged: true},
-	{name: "imageOutdated", serverManaged: true},
+	{name: keyResolvedBundle, nullable: true, serverManaged: true},
+	{name: keyImageOutdated, serverManaged: true},
 
 	// Build outputs — stripped from containers by stripBuildOutputs. These
 	// are scoped to containers (or inside imageBuildConfig) because the bare
 	// word "build" is generic enough that adding it to serverManagedKeys
 	// could eat a legitimate user key at some other level of the spec.
-	{name: "build", nullable: true, buildOutput: true},
-	{name: "codeRef", nullable: true, buildOutput: true, buildConfigScoped: true},
+	{name: keyBuild, nullable: true, buildOutput: true},
+	{name: keyCodeRef, nullable: true, buildOutput: true, buildConfigScoped: true},
 
 	// Identifier keys — name is hoisted in sequence-item mappings under
 	// these keys by hoistNameKeys. Only these two keys carry identifier
