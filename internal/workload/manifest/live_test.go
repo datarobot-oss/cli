@@ -1766,3 +1766,73 @@ func TestNewLive_EmptySpecFailsWithWorkloadID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), workloadID)
 }
+
+// The environmentVars path has three discriminator variants — string (source
+// absent or "string" with a value), dr-credential (drCredentialId + key, no
+// value), and api-key (source only, no value). Existing env-var tests feed
+// hand-written YAML straight to the validator; the round trip is what proves
+// the writer (Render) and the validator agree on all three shapes. The
+// rejection direction — a string-variant entry with null or absent value — is
+// already covered by TestValidate_EnvironmentVarsNullValueRejected and
+// TestValidate_EnvironmentVarsNoValueNoSourceRejected in validate_test.go;
+// the NEW coverage here is the round trip of the three valid variants.
+func TestLive_RenderRoundTripsEnvironmentVarsAllVariants(t *testing.T) {
+	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
+
+	// A service artifact whose single container carries one entry of each
+	// discriminator variant, shaped exactly like a server GET response.
+	artifactDoc := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "envvars-artifact",
+      "spec": {"type": "service", "containerGroups": [{"name": "default", "containers": [
+        {"name": "primary", "primary": true, "port": 8080,
+         "imageUri": "nginx:latest",
+         "environmentVars": [
+           {"name": "LOG_LEVEL", "value": "debug"},
+           {"name": "API_TOKEN", "source": "dr-credential",
+            "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"},
+           {"name": "CLOUD_KEY", "source": "api-key"}
+         ]}
+      ]}]}
+    }`), &artifactDoc))
+
+	workloadDoc := map[string]any{"name": "envvars-workload"}
+
+	live, err := NewLive(workloadID, workloadDoc, artifactDoc)
+	require.NoError(t, err)
+
+	draft := live.Defaults()
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// Every variant must survive the render in its correct spelling. The
+	// dr-credential discriminator is the only valid credential variant
+	// (library/api-reference.md) — the fixture must not regress to "credential".
+	for _, kept := range []string{
+		"LOG_LEVEL", "debug",
+		"API_TOKEN", "dr-credential", "68f0cccc0000000000000003", "apiToken",
+		"CLOUD_KEY", "api-key",
+	} {
+		assert.Contains(t, string(rendered), kept, "render must keep %s intact", kept)
+	}
+
+	// The rendered manifest must parse and validate — the writer and the
+	// validator agree on all three variant shapes.
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+
+	require.NoError(t, parsed.Validate())
+
+	// Compile confirms the credential reference is syntactically valid and
+	// the workload id is extractable from the rendered file.
+	compiled, err := parsed.Compile()
+	require.NoError(t, err)
+
+	assert.Equal(t, workloadID, compiled.WorkloadID)
+	require.Len(t, compiled.CredentialRefs, 1)
+	assert.Equal(t, "68f0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)
+}
