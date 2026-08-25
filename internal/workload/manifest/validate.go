@@ -215,11 +215,17 @@ func (v *validator) checkName(root *yaml.Node) {
 
 // checkArtifactBinding holds the create endpoint's either-or: an inline
 // artifact to build, or the id of one that already exists.
+//
+// Uses isNull (not isNullish) for the inline-artifact presence test: the
+// server never echoes artifact: {} (it sends artifact: null on unset), and
+// Pydantic 422s on artifact: {} with a confusing missing-fields error. An
+// empty mapping must still count as "set" so that artifact: {} alongside
+// artifactId is caught locally with the clean exactly-one-of message.
 func (v *validator) checkArtifactBinding(root *yaml.Node) {
 	inline := mapValue(root, keyArtifact)
 	byID, _ := scalarString(mapValue(root, keyArtifactID))
 
-	if (!isNullish(inline)) == (byID != "") {
+	if (!isNull(inline)) == (byID != "") {
 		v.add(nil, root, "",
 			"exactly one of %s (inline definition) or %s (existing artifact) is required",
 			keyArtifact, keyArtifactID)
@@ -238,8 +244,14 @@ type groupShape struct {
 // shape the runtime block is checked against. A manifest that binds an
 // existing artifact by id returns no shape, and the runtime name checks are
 // skipped: the names live server-side where the CLI cannot see them.
+//
+// Uses isNull (not isNullish) so that artifact: {} (an empty mapping, no
+// artifactId) enters the check and reports "spec is required for an inline
+// artifact" rather than falling through to the binding error. The server
+// never echoes artifact: {} and Pydantic 422s on it, so the empty-mapping arm
+// of isNullish would only mask a genuinely-broken file.
 func (v *validator) checkArtifact(artifact *yaml.Node) []groupShape {
-	if isNullish(artifact) {
+	if isNull(artifact) {
 		return nil
 	}
 
@@ -323,11 +335,20 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 
 // checkImageSource holds the exactly-one rule: a container names an image or
 // says how to build one, never both and never neither.
+//
+// Uses isNull (not isNullish) for hasBuildConfig: the server silently
+// discards imageUri on artifact CREATE when imageBuildConfig parses non-None
+// (workload-api artifact.py:201-214, _strip_client_image_uris_on_build_
+// containers), and Pydantic default-constructs imageBuildConfig: {} into a
+// real ImageBuildConfig (containers.py:83-95). An empty mapping must still
+// count as "set" so that imageUri + imageBuildConfig: {} is caught locally
+// with the clean never-both message rather than silently dropping the
+// user's declared imageUri.
 func (v *validator) checkImageSource(container *yaml.Node, path string) {
 	imageURI, hasImage := scalarString(mapValue(container, keyImageURI))
 	hasImage = hasImage && imageURI != ""
 	buildConfig := mapValue(container, keyImageBuildConfig)
-	hasBuildConfig := !isNullish(buildConfig)
+	hasBuildConfig := !isNull(buildConfig)
 
 	switch {
 	case hasImage && hasBuildConfig:

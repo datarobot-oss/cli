@@ -79,3 +79,65 @@ func TestIsNullish(t *testing.T) {
 		})
 	}
 }
+
+// TestIsNull covers the narrow null predicate: true ONLY for a nil node or a
+// scalar with the !!null tag. An empty mapping is NOT null — that is the key
+// difference from isNullish, and it is what lets the exclusivity checks
+// (checkArtifactBinding, checkImageSource, checkArtifact) reject artifact: {}
+// and imageBuildConfig: {} alongside their counterparts.
+func TestIsNull(t *testing.T) {
+	tests := map[string]struct {
+		node     *yaml.Node
+		expected bool
+	}{
+		"nil node": {
+			node:     nil,
+			expected: true,
+		},
+		"scalar null tag": {
+			node:     &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: ""},
+			expected: true,
+		},
+		"empty mapping is NOT null": {
+			node:     &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{}},
+			expected: false,
+		},
+		"scalar string": {
+			node:     &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hello"},
+			expected: false,
+		},
+		"scalar int": {
+			node:     &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "42"},
+			expected: false,
+		},
+		"non-empty mapping": {
+			node: &yaml.Node{
+				Kind: yaml.MappingNode,
+				Content: []*yaml.Node{
+					{Kind: yaml.ScalarNode, Tag: "!!str", Value: "key"},
+					{Kind: yaml.ScalarNode, Tag: "!!str", Value: "value"},
+				},
+			},
+			expected: false,
+		},
+		"empty sequence": {
+			node:     &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{}},
+			expected: false,
+		},
+		"non-empty sequence": {
+			node: &yaml.Node{
+				Kind: yaml.SequenceNode,
+				Content: []*yaml.Node{
+					{Kind: yaml.ScalarNode, Tag: "!!str", Value: "item"},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, test.expected, isNull(test.node))
+		})
+	}
+}

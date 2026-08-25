@@ -658,6 +658,74 @@ artifactId: null
 `))
 }
 
+// VAL-R3-001: an EMPTY inline artifact block (artifact: {}) alongside an
+// artifactId is REJECTED with the exactly-one-of error. The server never
+// echoes artifact: {} (it sends artifact: null on unset), and Pydantic 422s
+// on artifact: {} with a confusing missing-fields error — the CLI must catch
+// it locally. The narrow isNull predicate (not isNullish) keeps the empty
+// mapping from being treated as absent here. Both the exactly-one-of error
+// (both sides set) and the spec-required error (empty artifact has no spec)
+// are reported, giving the user the full picture of what to fix.
+func TestValidate_EmptyArtifactBlockWithArtifactIdRejected(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: {}
+artifactId: 68b0bbbb0000000000000002
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+		{Line: 2, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
+// VAL-R3-002: a container with both imageUri and an EMPTY imageBuildConfig
+// (imageBuildConfig: {}) is REJECTED with the never-both error. The server
+// silently discards imageUri on artifact CREATE when imageBuildConfig parses
+// non-None (workload-api artifact.py:201-214), and Pydantic default-constructs
+// imageBuildConfig: {} into a real ImageBuildConfig — so the CLI must catch
+// this locally. The narrow isNull predicate keeps the empty mapping from
+// being treated as absent here.
+func TestValidate_ImageUriWithEmptyBuildConfigRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            imageBuildConfig: {}
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 13, Path: "artifact.spec.containerGroups[0].containers[0]", Msg: "never both"},
+	})
+}
+
+// VAL-R3-004: an empty imageBuildConfig: {} with NO imageUri reports the
+// missing dockerfile key (the same error as a missing dockerfile), not a
+// generic binding error. The empty-mapping arm must not short-circuit
+// checkBuildConfig into the wrong message.
+func TestValidate_EmptyBuildConfigAloneReportsDockerfileRequired(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig: {}
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 12,
+			Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg:  "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// VAL-R3-004: an empty artifact: {} with NO artifactId reports the missing
+// spec (the same error as a missing spec), not a generic binding/exclusivity
+// error. The empty-mapping arm must not short-circuit checkArtifact into the
+// wrong message.
+func TestValidate_EmptyArtifactBlockAloneReportsSpecRequired(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: {}
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 2, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
 func TestValidate_RuntimeNamesMustMatchTheArtifact(t *testing.T) {
 	err := validateString(t, "", `name: my-app
 artifact:
