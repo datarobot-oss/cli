@@ -42,7 +42,7 @@ import (
 // That makes this a replacement-starter, with StartReplacement's contract and
 // not a plain field update: called while a replacement is already in flight it
 // queues a second swap rather than rejecting, so callers guard with
-// GuardNoActiveReplacement first. Nothing in the live state substitutes for
+// RefuseActiveReplacement first. Nothing in the live state substitutes for
 // asking, because the workload goes on reporting itself running for the whole
 // of a swap.
 func UpdateWorkloadSettings(workloadID string, runtime json.RawMessage) (*Replacement, error) {

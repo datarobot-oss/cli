@@ -267,7 +267,8 @@ func replace(
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardRollout(workloadID, "the version serving keeps serving"); err != nil {
+	if err := guardRollout(workloadID,
+		"the version serving keeps serving and the one just minted is left unpromoted"); err != nil {
 		return result, err
 	}
 
@@ -292,17 +293,25 @@ func replace(
 		return result, fmt.Errorf("cannot roll workload %s onto artifact %s: %w", workloadID, made.ID, err)
 	}
 
-	result.Action = ActionRolled
-
 	if opts.Detach {
+		// Nobody is waiting, so the request is the whole of what this run did.
+		result.Action = ActionRolled
+
 		report.say("  Rollout of %s onto artifact %s requested; not waiting.\n", workloadID, made.ID)
 
 		return result, nil
 	}
 
+	// Recorded after the wait rather than after the POST. A rollout that ends
+	// failed never promotes and leaves the previous version serving, so a run
+	// that reported "rolled" would be naming an outcome the workload did not
+	// reach. What was attempted is still legible: the plan says what was
+	// wanted and the artifact and build ids say what was made.
 	if err := awaitRollout(workloadID, started, opts, report); err != nil {
 		return result, err
 	}
+
+	result.Action = ActionRolled
 
 	return settle(workloadID, result, opts, report)
 }

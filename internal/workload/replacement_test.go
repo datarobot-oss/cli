@@ -30,7 +30,7 @@ import (
 const (
 	// notActiveBody is what the platform answers when nothing is in flight.
 	// The same 404 also means "no such workload", which is the ambiguity
-	// GuardNoActiveReplacement and CancelReplacement have to resolve.
+	// RefuseActiveReplacement and CancelReplacement have to resolve.
 	notActiveBody = `{"detail":"There is no active replacement for this workload."}`
 
 	replacementPath = "/api/v2/workloads/wl-1/replacement/"
@@ -311,32 +311,28 @@ func TestCancelReplacement_OtherErrorPropagates(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
-func TestGuardNoActiveReplacement_PassesWhenNoneActive(t *testing.T) {
+func TestRefuseActiveReplacement_PassesWhenNoneActive(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		notFound(w)
 	})
 
-	assert.NoError(t, GuardNoActiveReplacement("wl-1"))
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
 }
 
-// TestGuardNoActiveReplacement_MissingWorkloadFailsFast is the whole reason
-// the guard pays for a second request. Without it the mistyped id sails
-// through the up-front check, and the command goes on to create and possibly
-// lock an artifact, which cannot be undone, before finding out the target was
-// never real.
-func TestGuardNoActiveReplacement_MissingWorkloadFailsFast(t *testing.T) {
+// An empty answer is read as "nothing in flight" rather than disambiguated,
+// which is only correct because every caller has established the workload
+// exists before asking. `up` settles it in Look, and refuses the states where
+// it is gone before the plan is built.
+func TestRefuseActiveReplacement_ReadsAnEmptyAnswerAsNothingInFlight(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		notFound(w)
 	}))
 
-	err := GuardNoActiveReplacement("wl-1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not exist")
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
 }
 
-// TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive: a
-// replacement in flight is proof enough that the workload is there.
-func TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive(t *testing.T) {
+// A refusal names the candidate and the status, and costs one request.
+func TestRefuseActiveReplacement_NamesTheCandidateAndTheStatus(t *testing.T) {
 	var workloadFetches int32
 
 	mux := http.NewServeMux()
@@ -350,20 +346,20 @@ func TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive(t *testi
 
 	serveAPI(t, mux)
 
-	err := GuardNoActiveReplacement("wl-1")
+	err := RefuseActiveReplacement("wl-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "art-9")
 	assert.Contains(t, err.Error(), "switching")
 	assert.Zero(t, atomic.LoadInt32(&workloadFetches))
 }
 
-// TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock covers the gap
+// TestRefuseActiveReplacement_SettledReplacementDoesNotBlock covers the gap
 // between a rollout ending and the platform collecting its record.
 // WaitForReplacement returns the instant it sees a terminal status, so that
 // record is usually still readable when the next command looks. Treating it
 // as in-flight would refuse a retry, and would say so with a message naming
 // the status as "completed" while calling it in progress.
-func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
+func TestRefuseActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
 	for _, status := range []string{
 		ReplacementStatusCompleted,
 		ReplacementStatusFailed,
@@ -374,21 +370,21 @@ func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
 				fmt.Fprintf(w, `{"candidateArtifactId":"art-2","status":"%s"}`, status)
 			})
 
-			assert.NoError(t, GuardNoActiveReplacement("wl-1"))
+			assert.NoError(t, RefuseActiveReplacement("wl-1"))
 		})
 	}
 }
 
-// TestGuardNoActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn covers
+// TestRefuseActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn covers
 // the settings-initiated replacement. A resize rolls the workload onto the
 // artifact it is already running, so the platform returns no candidate, and a
 // message that named one unconditionally printed an empty field mid-sentence.
-func TestGuardNoActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn(t *testing.T) {
+func TestRefuseActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"id":"rep-9","workloadId":"wl-1","status":"pending"}`)
 	})
 
-	err := GuardNoActiveReplacement("wl-1")
+	err := RefuseActiveReplacement("wl-1")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrReplacementInFlight,
 		"a refusal is a state to wait out, not a failure to find out, and callers branch on the difference")
@@ -396,12 +392,12 @@ func TestGuardNoActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn(t *tes
 	assert.NotContains(t, err.Error(), "to artifact", "there is no candidate artifact to name")
 }
 
-func TestGuardNoActiveReplacement_PropagatesLookupFailure(t *testing.T) {
+func TestRefuseActiveReplacement_PropagatesLookupFailure(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	err := GuardNoActiveReplacement("wl-1")
+	err := RefuseActiveReplacement("wl-1")
 	require.Error(t, err)
 
 	var httpErr *drapi.HTTPError
@@ -435,9 +431,7 @@ func TestRefuseActiveReplacement_AsksOnceForAKnownWorkload(t *testing.T) {
 		"the caller established the workload exists before asking")
 }
 
-// The refusal itself is the same one, so neither entry point can drift into
-// wording the other does not have.
-func TestRefuseActiveReplacement_RefusesTheSameWayTheGuardDoes(t *testing.T) {
+func TestRefuseActiveReplacement_RefusesWithTheSentinel(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-9","status":"switching"}`)
 	})

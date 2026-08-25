@@ -75,12 +75,15 @@ type Replacement struct {
 // IsTerminalReplacementStatus reports whether s is a status the replacement
 // will not progress from.
 //
-// The comparison is case-insensitive, for the reason the artifact's lock
-// check is: the platform's own docs disagree with themselves about the casing
-// of status enums. It is not a cosmetic difference here. Reading a settled
-// "COMPLETED" as still in progress makes GuardNoActiveReplacement refuse every
-// deploy for as long as the record lingers, with a message that calls a
-// finished replacement one in progress.
+// The comparison is case-insensitive. To be plain about why: this route has
+// only ever been seen answering in lower case, so the fold is hardening rather
+// than a fix for something observed. What justifies it is that the platform is
+// not consistent across resources, its build statuses being upper case where
+// these and the workload's are lower, and that the artifact's lock check
+// already folds for the same reason. The cost of being wrong is one-sided:
+// reading a settled "COMPLETED" as still in progress would refuse every deploy
+// for as long as the record lingers, with a message calling a finished
+// replacement one in progress.
 func IsTerminalReplacementStatus(s string) bool {
 	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
@@ -106,7 +109,7 @@ func replacementURL(workloadID string) (string, error) {
 // answers the same way for a workload that does not exist, and the body
 // saying which never reaches this layer, because drapi.Get discards it. A
 // caller that has not already established the workload exists should use
-// GuardNoActiveReplacement, which pays for one extra request to tell the two
+// RefuseActiveReplacement, which asks the same question with the ambiguity
 // apart, rather than reading (nil, nil) as proof of anything.
 func GetActiveReplacement(workloadID string) (*Replacement, error) {
 	url, err := replacementURL(workloadID)
@@ -133,7 +136,7 @@ func GetActiveReplacement(workloadID string) (*Replacement, error) {
 //
 // It is not idempotent: called while a replacement is already in flight it
 // queues a second swap rather than rejecting, so callers guard with
-// GuardNoActiveReplacement first.
+// RefuseActiveReplacement first.
 //
 // Both artifacts must share draft or locked status; the platform rejects a
 // mismatch, which is why a locked workload has to have its successor locked
@@ -206,52 +209,28 @@ func CancelReplacement(workloadID string) error {
 	return nil
 }
 
-// GuardNoActiveReplacement refuses to proceed when workloadID already has a
-// replacement in flight, because POSTing another queues a second swap instead
+// RefuseActiveReplacement refuses to proceed when workloadID already has a
+// replacement in flight, because starting another queues a second swap instead
 // of erroring.
 //
 // How many times to call it follows from what sits between the check and the
 // call it protects. A roll mints and may lock an artifact in between, so it
-// runs the guard twice: once up front, so a doomed command fails before it
-// makes anything, and once immediately before StartReplacement, which is the
-// guard that actually holds, since the live state can change in between. A
-// caller with nothing in between runs it once, because there the up-front
-// check and the last moment before the call are the same moment.
+// runs this twice: once up front, so a doomed command fails before it makes
+// anything, and once immediately before the swap, which is the check that
+// actually holds, since the live state can change in between. A caller with
+// nothing in between runs it once, because there the two are the same moment.
 //
 // A refusal wraps ErrReplacementInFlight; everything else it returns is a
 // failure to find out. Callers that want to say which operation was stopped
 // should wrap the second kind and leave the first alone, since the refusal
 // already names the workload and the remedy.
 //
-// Being the up-front check is why it does not simply trust an empty answer.
-// The replacement route returns the same 404 for "nothing in flight" and for
-// "no such workload", so an unchecked guard would wave through exactly the
-// mistyped id it exists to catch, and the command would go on to create and
-// possibly lock an artifact before discovering the target was never real.
-// One extra request on the quiet path buys that, and the quiet path is about
-// to spend minutes rolling a workload.
-func GuardNoActiveReplacement(workloadID string) error {
-	active, err := GetActiveReplacement(workloadID)
-	if err != nil {
-		return err
-	}
-
-	if active == nil {
-		return confirmWorkloadExists(workloadID)
-	}
-
-	return refuseActive(workloadID, active)
-}
-
-// RefuseActiveReplacement is the same refusal without the existence probe, for
-// a caller that has already established the workload is there.
-//
-// That is the whole difference, and it is worth the second entry point because
-// the probe is not free: it is a second GET of a document such a caller has
-// already read, spent on the quiet path, where nothing is in flight. Reading a
-// 404 as "nothing to guard against" is only safe once something else has ruled
-// out "no such workload", so a caller that has not done that wants the guard
-// above instead.
+// It reads an empty answer as "nothing in flight", which is only safe because
+// every caller has already established the workload exists. The replacement
+// route answers the same 404 for "nothing in flight" and for "no such
+// workload", so a caller that has not settled that first would wave through
+// exactly the mistyped id it means to catch. `up` settles it in Look, before
+// the plan is even built.
 func RefuseActiveReplacement(workloadID string) error {
 	active, err := GetActiveReplacement(workloadID)
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -380,15 +381,16 @@ func describes(loaded Loaded, artifactID string) bool {
 	// too.
 	delete(want, keyArtifactRepositoryID)
 
-	// Both sides are normalised so the type is compared once, beside the spec.
-	// The file may write it in either place; the platform hoists it and answers
-	// beside the spec. Comparing the blocks as they arrive made the type read
-	// as a field one side was missing, so no leftover ever described the file
-	// and every attempt minted another one: the pile reuse exists to prevent.
-	// Normalising both rather than assuming a shape means neither a file nor a
-	// route that puts it in the other place can reopen that.
-	hoistArtifactType(want)
-	hoistArtifactType(doc)
+	// The type is settled before the walk and taken out of both sides, because
+	// the walk cannot answer it correctly. It compares by exact equality, so a
+	// file saying "Service" against a live "service", or a document that
+	// carries no type at all, would each read as a difference no deploy can
+	// settle: the leftover is refused, another draft is minted, and the next
+	// attempt refuses that one too. It is the same question the plan asks, so
+	// it is asked the same way, folded and with only the live side defaulted.
+	if !sameArtifactTypeIn(want, doc) {
+		return false
+	}
 
 	// Both directions, which is the difference between this and measuring
 	// drift. Subset catches a value the file changed or added; Extra catches
@@ -397,6 +399,32 @@ func describes(loaded Loaded, artifactID string) bool {
 	// reused, and it is rolled out still carrying the variable that was
 	// deleted, which minting a fresh artifact would have dropped.
 	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0
+}
+
+// sameArtifactTypeIn reports whether two artifact blocks name the same kind,
+// and takes the type out of both so the caller's walk never sees it.
+//
+// Placement is normalised first, since a file may write the type inside the
+// spec while the platform answers with it beside one. Then the comparison is
+// the plan's: folded, because the platform does not agree with itself about
+// the casing of its enums, and with only the live side defaulted, because an
+// artifact that states no type is a service while a file that states none has
+// no opinion and is owed no difference.
+func sameArtifactTypeIn(want, have map[string]any) bool {
+	hoistArtifactType(want)
+	hoistArtifactType(have)
+
+	wanted, _ := want[keyType].(string)
+	running, _ := have[keyType].(string)
+
+	delete(want, keyType)
+	delete(have, keyType)
+
+	if wanted == "" {
+		return true
+	}
+
+	return manifest.SameArtifactType(wanted, manifest.ArtifactTypeOrDefault(running))
 }
 
 // linkProject points the project at the new version, so the sync uploads into

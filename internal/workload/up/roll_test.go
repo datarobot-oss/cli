@@ -774,6 +774,78 @@ func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
 	assert.Equal(t, ActionRolled, result.Action)
 }
 
+// Normalising where the type lives is not enough on its own: the walk that
+// follows compares by exact equality, so a file spelling it "Service" against
+// a live "service", or a document carrying no type at all, each read as a
+// difference no deploy can settle. The leftover is refused, another draft is
+// minted, and the next attempt refuses that one too.
+func TestRun_LeftoverDraftIsReusedAcrossTypeSpellingAndSilence(t *testing.T) {
+	for name, live := range map[string]func(workload.Document){
+		"different spelling": func(d workload.Document) { d["type"] = "Service" },
+		"no type at all":     func(d workload.Document) { delete(d, "type") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var tr track
+
+			f := builtRoll(&tr)
+			f.linked = func(string) bool { return true }
+			f.project = syncedProject("art-abandoned")
+			f.getArtifact = func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+			}
+			f.newArtifact = func(any) (*workload.Artifact, error) {
+				t.Fatal("the leftover says what the file says; a spelling is not a different kind")
+
+				return nil, nil
+			}
+
+			docs := artifactDocs("art-abandoned", 9000)
+			f.artifactD = func(id string) (workload.Document, error) {
+				d, err := docs(id)
+				if err != nil {
+					return nil, err
+				}
+
+				spec, _ := d["spec"].(map[string]any)
+				delete(spec, "type")
+				live(d)
+
+				return d, nil
+			}
+
+			install(t, f)
+
+			result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+			require.NoError(t, err)
+			assert.Equal(t, ActionRolled, result.Action)
+		})
+	}
+}
+
+// A rollout that starts and then ends failed never promotes, so the previous
+// version keeps serving. Reporting "rolled" would name an outcome the workload
+// did not reach, on the one field a caller reads to find out what happened.
+func TestRun_FailedRolloutDoesNotReportThatItRolled(t *testing.T) {
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusFailed
+
+		return started, errors.New("rollout failed")
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still running the version it was")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"the version serving did not change, so the run did not roll")
+}
+
 // An artifact's spec is fixed when it is created, so a draft left by an
 // attempt that read an older file describes that older file. Promoting it
 // would roll out a version the yaml no longer asks for and report the deploy

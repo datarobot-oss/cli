@@ -453,6 +453,16 @@ func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
 
 			return nil, nil
 		},
+		// Recorded rather than left to install's silent no-op. The guard is
+		// justified by not spending a round trip on the quiet path, and this is
+		// the quietest path there is: an empty plan that is not locking has
+		// nothing to guard, so a guard appearing here would be pure cost and
+		// the default fake would hide it.
+		guard: func(string) error {
+			t.Fatal("a run that changes nothing has no rollout to guard against")
+
+			return nil
+		},
 	})
 
 	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
