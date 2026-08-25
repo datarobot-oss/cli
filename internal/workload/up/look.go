@@ -135,9 +135,14 @@ func Look(workloadID string) (Live, error) {
 	// A missing artifact (nil doc) is a valid state for the up path: a
 	// workload in the moments around creation has no artifact to read, and
 	// the spec comparing as absent is the right answer for something not
-	// yet built. Only propagate the error when the artifact doc was
-	// actually present but carried no usable spec — that is the
-	// permission-filtered partial GET the bind-time guard exists for.
+	// yet built.
+	//
+	// Propagating the error when the artifact doc IS present but carries no
+	// usable spec is a DELIBERATE hard failure: a spec-less artifact means
+	// the manifest cannot be reconstructed, and failing loudly mirrors
+	// Apply's own "edit by hand" contract — the right answer is to stop and
+	// let the user edit the file, not to write something Validate would
+	// then refuse to read.
 	if err != nil && artifactDoc != nil {
 		return Live{}, err
 	}
