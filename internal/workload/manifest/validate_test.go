@@ -437,33 +437,7 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 			},
 			active: true,
 		},
-		{
-			name: "enabled null with body",
-			autoscaling: `      autoscaling:
-        enabled: null
-        minReplicaCount: 1
-        maxReplicaCount: 4`,
-			groupAutoscaling: map[string]any{
-				keyEnabled:        nil,
-				"minReplicaCount": 1,
-				"maxReplicaCount": 4,
-			},
-			active: true,
-		},
-		// enabled: null with no other keys is the shape that inverts after
-		// stripKeys purges the nil — collapsing to {} (OFF). The validator
-		// (checkScaling) and the live reader (autoscalingActive) both read
-		// the pre-strip raw node as ON, and the strip path normalizes it to
-		// enabled: true so the post-strip shape is also ON.
-		{
-			name: "enabled null only",
-			autoscaling: `      autoscaling:
-        enabled: null`,
-			groupAutoscaling: map[string]any{keyEnabled: nil},
-			active:           true,
-		},
-		// The post-strip normalized shape: enabled: true with no other keys.
-		// Both readers agree this is ON.
+		// enabled: true with no other keys. Both readers agree this is ON.
 		{
 			name: "enabled true only",
 			autoscaling: `      autoscaling:

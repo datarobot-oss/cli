@@ -898,28 +898,8 @@ func TestStripServerManaged_StripsNullKeys(t *testing.T) {
 				"keep": "x",
 			},
 		},
-		// enabled: null inside a present autoscaling block is the platform's
-		// default-on; stripKeys normalizes it to enabled: true before the
-		// nil-purge would collapse {enabled: null} to {} (which both readers
-		// treat as OFF). This is the fix for the semantic inversion.
-		"autoscaling enabled null normalized to true": {
-			input: map[string]any{
-				"autoscaling": map[string]any{"enabled": nil},
-			},
-			expected: map[string]any{
-				"autoscaling": map[string]any{"enabled": true},
-			},
-		},
-		"autoscaling enabled null with body normalized": {
-			input: map[string]any{
-				"autoscaling": map[string]any{"enabled": nil, "minReplicaCount": 2},
-			},
-			expected: map[string]any{
-				"autoscaling": map[string]any{"enabled": true, "minReplicaCount": 2},
-			},
-		},
-		// A non-null enabled value is left untouched: false stays false, true
-		// stays true. Normalization only fires on the nil placeholder.
+		// A non-null enabled value is left untouched: false stays false,
+		// true stays true. The nil-purge only drops keys whose value is nil.
 		"autoscaling enabled false untouched": {
 			input: map[string]any{
 				"autoscaling": map[string]any{"enabled": false},
@@ -928,11 +908,9 @@ func TestStripServerManaged_StripsNullKeys(t *testing.T) {
 				"autoscaling": map[string]any{"enabled": false},
 			},
 		},
-		// A genuinely empty autoscaling: {} map (enabled key absent entirely,
-		// not present-with-nil) must survive stripKeys unchanged. The previous
-		// guard used `autoscaling[keyEnabled] == nil`, which cannot distinguish
-		// absent from present-with-nil — rewriting an empty map to
-		// {enabled: true} and inverting a should-be-OFF group to ON.
+		// A genuinely empty autoscaling: {} map (enabled key absent entirely)
+		// must survive stripKeys unchanged — the nil-purge only drops
+		// nil-valued keys, and an empty map has none.
 		"autoscaling empty map untouched": {
 			input: map[string]any{
 				"autoscaling": map[string]any{},
@@ -1597,160 +1575,135 @@ func TestLive_RealBuildContainerStillStripsImageUriAndCodeRef(t *testing.T) {
 	require.NoError(t, parsed.Validate())
 }
 
-// A runtime group whose server shape was autoscaling: {enabled: null} — the
-// platform's default-on — must survive NewLive's stripping without semantic
-// inversion. The strip path normalizes enabled: null to enabled: true so
-// autoscalingActive reads the group as ON, the wizard suppresses the replica
-// question, the rendered file carries no replicaCount, and the round trip
-// through Parse and Validate passes.
-func TestLive_EnabledNullAutoscalingSurvivesStripping(t *testing.T) {
-	var workloadDoc, artifactDoc map[string]any
-
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"name": "default-autoscaling",
-		"runtime": {"containerGroups": [{"name": "default",
-			"autoscaling": {"enabled": null},
-			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
-		]}
-	}`), &workloadDoc))
-
-	require.NoError(t, json.Unmarshal([]byte(`{
+// TestLive_AutoscalingEnabledValuesSurviveStripping pins the boundary that
+// normalizeAutoscalingEnabled's removal must not cross: real autoscaling
+// enabled values (true and false) survive NewLive/Apply/Render unchanged, and
+// a null autoscaling block is still purged by the nil-purge in stripKeys.
+//
+// autoscaling.enabled is non-nullable on the server (bool = Field(default=True),
+// protons/runtime.py:217), so enabled: null can never arrive from the server.
+// This test pins the shapes that CAN arrive and must keep round-tripping
+// cleanly both before and after the dead-defense removal.
+func TestLive_AutoscalingEnabledValuesSurviveStripping(t *testing.T) {
+	artifactJSON := `{
 		"name": "a",
-		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
-			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
-		]}}
-	`), &artifactDoc))
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}
+		]}]}
+	}`
 
-	live, err := NewLive("68b0", workloadDoc, artifactDoc)
-	require.NoError(t, err)
+	t.Run("enabled true round-trips as ON", func(t *testing.T) {
+		var workloadDoc, artifactDoc map[string]any
 
-	// After stripping, the group reads as autoscaling ON.
-	assert.True(t, live.Autoscaled(),
-		"enabled: null is the platform's default-on; stripping must not invert it to OFF")
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"name": "auto-on",
+			"runtime": {"containerGroups": [{"name": "default",
+				"autoscaling": {"enabled": true, "minReplicaCount": 1, "maxReplicaCount": 4},
+				"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]
+			}]}
+		}`), &workloadDoc))
 
-	// The wizard suppresses the replica question for an autoscaled group.
-	draft := live.Defaults()
-	assert.Equal(t, 0, draft.Runtime.Replicas,
-		"no replica count prompted for an autoscaled group")
+		require.NoError(t, json.Unmarshal([]byte(artifactJSON), &artifactDoc))
 
-	applied, err := live.Apply(draft)
-	require.NoError(t, err)
+		live, err := NewLive("68b0", workloadDoc, artifactDoc)
+		require.NoError(t, err)
 
-	rendered, err := applied.Render()
-	require.NoError(t, err)
+		assert.True(t, live.Autoscaled(), "enabled: true is autoscaling ON")
 
-	// The rendered runtime carries no replicaCount for the autoscaled group.
-	assert.NotContains(t, string(rendered), "replicaCount",
-		"an autoscaled group must not carry a replica count")
-	// The normalized enabled: true is present and no null survives.
-	assert.Contains(t, string(rendered), "enabled: true")
-	assert.NotContains(t, string(rendered), "enabled: null")
+		draft := live.Defaults()
 
-	parsed, err := Parse(rendered, "")
-	require.NoError(t, err)
-	require.NoError(t, parsed.Validate(),
-		"render→parse→validate round trip must pass for the enabled-null shape")
-}
+		assert.Equal(t, 0, draft.Runtime.Replicas, "no replica count for an autoscaled group")
 
-// A runtime group whose server shape was autoscaling: {enabled: null,
-// minReplicaCount: 2} already reads as ON after the purge (enabled absent →
-// default on), but normalization to enabled: true makes it explicit. This is
-// the regression guard for the with-body variant.
-func TestLive_EnabledNullAutoscalingWithBodyStillOn(t *testing.T) {
-	var workloadDoc, artifactDoc map[string]any
+		applied, err := live.Apply(draft)
+		require.NoError(t, err)
 
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"name": "default-autoscaling-body",
-		"runtime": {"containerGroups": [{"name": "default",
-			"autoscaling": {"enabled": null, "minReplicaCount": 2, "maxReplicaCount": 9},
-			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
-		]}
-	}`), &workloadDoc))
+		rendered, err := applied.Render()
+		require.NoError(t, err)
 
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"name": "a",
-		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
-			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
-		]}}
-	`), &artifactDoc))
+		assert.Contains(t, string(rendered), "enabled: true")
+		assert.Contains(t, string(rendered), "maxReplicaCount: 4")
+		assert.NotContains(t, string(rendered), "replicaCount",
+			"an autoscaled group must not carry a replica count")
 
-	live, err := NewLive("68b0", workloadDoc, artifactDoc)
-	require.NoError(t, err)
+		parsed, err := Parse(rendered, "")
+		require.NoError(t, err)
+		require.NoError(t, parsed.Validate())
+	})
 
-	assert.True(t, live.Autoscaled(),
-		"enabled: null with a body is still the platform's default-on")
+	t.Run("enabled false round-trips as OFF", func(t *testing.T) {
+		var workloadDoc, artifactDoc map[string]any
 
-	draft := live.Defaults()
-	assert.Equal(t, 0, draft.Runtime.Replicas,
-		"no replica count prompted for an autoscaled group")
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"name": "auto-off",
+			"runtime": {"containerGroups": [{"name": "default",
+				"replicaCount": 3,
+				"autoscaling": {"enabled": false, "minReplicaCount": 1, "maxReplicaCount": 4},
+				"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]
+			}]}
+		}`), &workloadDoc))
 
-	applied, err := live.Apply(draft)
-	require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(artifactJSON), &artifactDoc))
 
-	rendered, err := applied.Render()
-	require.NoError(t, err)
+		live, err := NewLive("68b0", workloadDoc, artifactDoc)
+		require.NoError(t, err)
 
-	assert.NotContains(t, string(rendered), "replicaCount")
-	assert.Contains(t, string(rendered), "enabled: true")
-	assert.NotContains(t, string(rendered), "enabled: null")
+		assert.False(t, live.Autoscaled(), "enabled: false is autoscaling OFF")
 
-	parsed, err := Parse(rendered, "")
-	require.NoError(t, err)
-	require.NoError(t, parsed.Validate())
-}
+		draft := live.Defaults()
 
-// A server-sourced runtime group with a genuinely empty autoscaling: {} map
-// (the enabled key absent entirely, not present-with-nil) must survive
-// NewLive/stripKeys unchanged — no enabled key materialized. The previous
-// normalizeAutoscalingEnabled guard used `autoscaling[keyEnabled] == nil`,
-// which in Go cannot distinguish "enabled present with nil value" from
-// "enabled absent entirely" (map zero-value ambiguity). That rewrote a
-// genuinely empty autoscaling: {} to {enabled: true} before the nil-purge ran,
-// inverting a should-be-OFF group to ON — contradicting the function's own
-// doc comment and autoscalingActive's len==0 OFF guard. The fix uses the
-// two-value map-access idiom so only a present-with-nil enabled is normalized.
-func TestLive_EmptyAutoscalingMapNotInvertedToOn(t *testing.T) {
-	var workloadDoc, artifactDoc map[string]any
+		assert.Equal(t, 3, draft.Runtime.Replicas, "the group's own count is reported")
 
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"name": "empty-autoscaling",
-		"runtime": {"containerGroups": [{"name": "default",
-			"autoscaling": {},
-			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
-		]}
-	}`), &workloadDoc))
+		applied, err := live.Apply(draft)
+		require.NoError(t, err)
 
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"name": "a",
-		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
-			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
-		]}}
-	`), &artifactDoc))
+		rendered, err := applied.Render()
+		require.NoError(t, err)
 
-	live, err := NewLive("68b0", workloadDoc, artifactDoc)
-	require.NoError(t, err)
+		assert.Contains(t, string(rendered), "enabled: false")
+		assert.Contains(t, string(rendered), "replicaCount: 3")
 
-	// A genuinely empty autoscaling map reads as OFF, matching
-	// autoscalingActive's len==0 guard.
-	assert.False(t, live.Autoscaled(),
-		"an empty autoscaling: {} map is OFF, not the platform's default-on")
+		parsed, err := Parse(rendered, "")
+		require.NoError(t, err)
+		require.NoError(t, parsed.Validate())
+	})
 
-	draft := live.Defaults()
+	t.Run("null autoscaling block is purged", func(t *testing.T) {
+		var workloadDoc, artifactDoc map[string]any
 
-	applied, err := live.Apply(draft)
-	require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"name": "no-auto",
+			"runtime": {"containerGroups": [{"name": "default",
+				"replicaCount": 3,
+				"autoscaling": null,
+				"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]
+			}]}
+		}`), &workloadDoc))
 
-	rendered, err := applied.Render()
-	require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(artifactJSON), &artifactDoc))
 
-	// No enabled key was materialized by normalization.
-	assert.NotContains(t, string(rendered), "enabled: true",
-		"an empty autoscaling: {} must not gain an enabled: true key")
+		live, err := NewLive("68b0", workloadDoc, artifactDoc)
+		require.NoError(t, err)
 
-	parsed, err := Parse(rendered, "")
-	require.NoError(t, err)
-	require.NoError(t, parsed.Validate(),
-		"render→parse→validate round trip must pass for the empty-autoscaling shape")
+		assert.False(t, live.Autoscaled(), "a null autoscaling block is absent, not ON")
+
+		draft := live.Defaults()
+
+		assert.Equal(t, 3, draft.Runtime.Replicas, "the group's own count is reported")
+
+		applied, err := live.Apply(draft)
+		require.NoError(t, err)
+
+		rendered, err := applied.Render()
+		require.NoError(t, err)
+
+		assert.NotContains(t, string(rendered), "autoscaling",
+			"a null autoscaling block is purged entirely by the nil-purge")
+
+		parsed, err := Parse(rendered, "")
+		require.NoError(t, err)
+		require.NoError(t, parsed.Validate())
+	})
 }
 
 // An artifact document carrying no usable spec is the review repro for

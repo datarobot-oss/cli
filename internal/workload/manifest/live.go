@@ -924,19 +924,12 @@ func stripKeys(value any) {
 			delete(typed, key)
 		}
 
-		// Normalize enabled: null inside a present autoscaling block before
-		// the nil-purge would collapse it to {}. The platform's default for a
-		// configured autoscaling block is ON, so enabled: null carries that
-		// meaning; rewriting it to true keeps the rendered file free of nulls
-		// (invariant 3) and semantically honest — both autoscalingActive and
-		// checkScaling read the post-strip shape as ON.
-		normalizeAutoscalingEnabled(typed)
-
 		// Nil-valued keys are dropped in the same walk: the server echoes
 		// them as placeholders (e.g. autoscaling: null), and writing one
 		// into the committed manifest would confuse the validator. Empty
 		// maps are preserved; isNullish is the validator's counterpart that
-		// treats an empty mapping as absent rather than as a policy.
+		// treats an empty mapping as absent rather than as a policy. The
+		// nullable set is documented in library/api-reference.md.
 		for key, child := range typed {
 			if child == nil {
 				delete(typed, key)
@@ -950,35 +943,6 @@ func stripKeys(value any) {
 		for _, item := range typed {
 			stripKeys(item)
 		}
-	}
-}
-
-// normalizeAutoscalingEnabled rewrites enabled: null inside a present
-// autoscaling block to enabled: true before the nil-purge would collapse it.
-// The platform's default for a configured autoscaling block is ON, so an
-// explicit enabled: null carries that meaning. Without this normalization the
-// purge strips enabled: null, leaving {} — which both autoscalingActive and
-// checkScaling read as OFF (absent), inverting the group's semantics.
-//
-// Only a present-with-nil enabled is rewritten. A present bool (true or false)
-// or an absent enabled key already carries the right meaning and is left
-// untouched. The two-value map-access idiom distinguishes "enabled present
-// with nil value" from "enabled absent entirely" — the single-value
-// `autoscaling[keyEnabled] == nil` cannot (Go map zero-value ambiguity), and
-// would rewrite a genuinely empty autoscaling: {} to {enabled: true},
-// inverting a should-be-OFF group to ON. A block like {enabled: null,
-// minReplicaCount: 2} already reads as ON after the purge (enabled absent →
-// default on); normalizing it to enabled: true makes the default explicit and
-// keeps the rendered file free of nulls.
-func normalizeAutoscalingEnabled(doc map[string]any) {
-	autoscaling, ok := doc[keyAutoscaling].(map[string]any)
-	if !ok {
-		return
-	}
-
-	val, present := autoscaling[keyEnabled]
-	if present && val == nil {
-		autoscaling[keyEnabled] = true
 	}
 }
 
