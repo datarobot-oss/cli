@@ -48,7 +48,7 @@ var (
 	listBuildsFn       = workload.ListArtifactBuilds
 	getCredentialFn    = workload.GetCredential
 	findCredentialFn   = workload.FindCredentialNamed
-	guardReplacementFn = workload.GuardNoActiveReplacement
+	guardReplacementFn = workload.RefuseActiveReplacement
 	startReplacementFn = workload.StartReplacement
 	waitReplacementFn  = workload.WaitForReplacement
 	updateSettingsFn   = workload.UpdateWorkloadSettings
@@ -170,8 +170,13 @@ func Run(opts Options) (Result, error) {
 		Status:     plan.State.String(),
 		Endpoint:   live.Endpoint,
 		ArtifactID: live.ArtifactID,
-		Action:     plan.Action(),
-		Locked:     live.Locked,
+		// Action records what this run did, not what the plan wanted, so it
+		// starts at "nothing" and each path below sets its own once it has
+		// acted. Seeding it from the plan reported a mutation for every run
+		// that failed before attempting one, including the two returns just
+		// below this. What was wanted stays readable under plan.action.
+		Action: ActionUnchanged,
+		Locked: live.Locked,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -185,6 +190,10 @@ func Run(opts Options) (Result, error) {
 	noteUnusedForce(plan, opts)
 
 	if opts.DryRun {
+		// The one run whose action is the plan's: it stops here, so printing
+		// the plan is the whole of what it did.
+		result.Action = plan.Action()
+
 		return result, nil
 	}
 
@@ -219,7 +228,42 @@ func lockOnly(live Live, result Result, opts Options) (Result, error) {
 		return result, err
 	}
 
+	// A rollout in flight is about to move the workload off the artifact this
+	// would make permanent, and locking cannot be undone. deployable does not
+	// cover it: the workload reports itself running for the whole of a swap,
+	// so the only way to know is to ask.
+	if err := guardRollout(live.WorkloadID, "the artifact was left as it is"); err != nil {
+		return result, err
+	}
+
 	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+}
+
+// guardRollout refuses to act while a swap is already under way, and gives a
+// failure to find out the operation it stopped.
+//
+// It asks the narrow question rather than the guarded one. The full guard
+// spends a second GET disambiguating the replacement route's 404 between
+// "nothing in flight" and "no such workload"; every caller here reaches this
+// through Look, which already read the workload, and deployable, which already
+// refused the states where it is gone. So the ambiguity is settled before the
+// question is asked, and paying for it again would put a redundant round trip
+// on the quiet path of every deploy.
+//
+// Only the second kind of error is wrapped. The refusal already names the
+// workload, what is in flight and the remedy, so prefixing it would put
+// "cannot tell whether" in front of a sentence that plainly knows. A
+// replacement route that answered 500, or timed out, says nothing at all
+// about the run it just stopped, and the reader is looking at a deploy rather
+// than at a route.
+func guardRollout(workloadID, consequence string) error {
+	err := guardReplacementFn(workloadID)
+	if err == nil || errors.Is(err, workload.ErrReplacementInFlight) {
+		return err
+	}
+
+	return fmt.Errorf("cannot tell whether workload %s already has a rollout in progress, so %s: %w",
+		workloadID, consequence, err)
 }
 
 // noteIgnoreFile passes on the note about a deprecated ignore filename.

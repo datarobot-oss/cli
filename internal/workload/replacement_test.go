@@ -73,6 +73,15 @@ func TestIsTerminalReplacementStatus(t *testing.T) {
 		{"candidate-warming", false},
 		{"switching", false},
 		{"", false},
+
+		// The platform's own docs disagree with themselves about the casing of
+		// status enums. Read case-sensitively, a settled "COMPLETED" counts as
+		// still in progress, which makes the rollout guard refuse every deploy
+		// for as long as the record lingers.
+		{"COMPLETED", true},
+		{"Failed", true},
+		{"ERRORED", true},
+		{"SWITCHING", false},
 	}
 
 	for _, c := range cases {
@@ -90,6 +99,9 @@ func TestIsFailedReplacementStatus(t *testing.T) {
 		{ReplacementStatusCompleted, false},
 		{"submitted", false},
 		{"", false},
+		{"FAILED", true},
+		{"Errored", true},
+		{"COMPLETED", false},
 	}
 
 	for _, c := range cases {
@@ -367,6 +379,23 @@ func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
 	}
 }
 
+// TestGuardNoActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn covers
+// the settings-initiated replacement. A resize rolls the workload onto the
+// artifact it is already running, so the platform returns no candidate, and a
+// message that named one unconditionally printed an empty field mid-sentence.
+func TestGuardNoActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"id":"rep-9","workloadId":"wl-1","status":"pending"}`)
+	})
+
+	err := GuardNoActiveReplacement("wl-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReplacementInFlight,
+		"a refusal is a state to wait out, not a failure to find out, and callers branch on the difference")
+	assert.Contains(t, err.Error(), "workload wl-1: a replacement is already in progress (status pending)")
+	assert.NotContains(t, err.Error(), "to artifact", "there is no candidate artifact to name")
+}
+
 func TestGuardNoActiveReplacement_PropagatesLookupFailure(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -379,6 +408,45 @@ func TestGuardNoActiveReplacement_PropagatesLookupFailure(t *testing.T) {
 
 	require.ErrorAs(t, err, &httpErr, "a transport failure must not be reported as an in-flight replacement")
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
+	assert.NotErrorIs(t, err, ErrReplacementInFlight,
+		"callers wrap a failure to find out and pass a refusal through, so the two must not carry the same mark")
+}
+
+// TestRefuseActiveReplacement_AsksOnceForAKnownWorkload is the difference
+// between the two entry points: a caller that has already read the workload
+// does not pay for the 404 disambiguation, which is a second GET of a document
+// it is holding.
+func TestRefuseActiveReplacement_AsksOnceForAKnownWorkload(t *testing.T) {
+	var workloadFetches int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
+		notFound(w)
+	})
+	mux.HandleFunc(workloadPath, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&workloadFetches, 1)
+		fmt.Fprint(w, `{"id":"wl-1"}`)
+	})
+
+	serveAPI(t, mux)
+
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
+	assert.Zero(t, atomic.LoadInt32(&workloadFetches),
+		"the caller established the workload exists before asking")
+}
+
+// The refusal itself is the same one, so neither entry point can drift into
+// wording the other does not have.
+func TestRefuseActiveReplacement_RefusesTheSameWayTheGuardDoes(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"candidateArtifactId":"art-9","status":"switching"}`)
+	})
+
+	err := RefuseActiveReplacement("wl-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReplacementInFlight)
+	assert.Contains(t, err.Error(), "art-9")
+	assert.Contains(t, err.Error(), "switching")
 }
 
 func TestWaitForReplacement_TerminalCompletedReturnsNoError(t *testing.T) {

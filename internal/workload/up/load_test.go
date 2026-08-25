@@ -163,7 +163,12 @@ func TestLoaded_SpecAndRuntimeComeFromTheCompiledPayload(t *testing.T) {
 
 	spec, err := loaded.Spec()
 	require.NoError(t, err)
-	assert.Equal(t, "service", spec["type"])
+	assert.NotContains(t, spec, "type",
+		"the live spec never carries a type, so comparing one reports drift no deploy can settle")
+
+	kind, err := loaded.ArtifactType()
+	require.NoError(t, err)
+	assert.Equal(t, "service", kind, "the file said it inside the spec, which is where it has to be read from")
 
 	groups, _ := spec["containerGroups"].([]any)
 	require.Len(t, groups, 1)

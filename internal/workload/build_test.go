@@ -30,6 +30,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The build statuses are upper case where the workload's are lower, which is
+// the platform disagreeing with itself. Read exactly, a build answering
+// "completed" is polled to the timeout and then fails a deploy whose image is
+// already built.
+func TestBuildStatusClassifiersFoldCase(t *testing.T) {
+	for _, c := range []struct {
+		status   string
+		terminal bool
+		failed   bool
+	}{
+		{BuildStatusCompleted, true, false},
+		{BuildStatusFailed, true, true},
+		{BuildStatusCancelled, true, true},
+		{"completed", true, false},
+		{"Failed", true, true},
+		{"cancelled", true, true},
+		{BuildStatusInProgress, false, false},
+		{"in_progress", false, false},
+		{"", false, false},
+	} {
+		assert.Equal(t, c.terminal, IsTerminalBuildStatus(c.status), "terminal %q", c.status)
+		assert.Equal(t, c.failed, IsBuildErrorStatus(c.status), "failed %q", c.status)
+	}
+}
+
 func TestIsTerminalBuildStatus(t *testing.T) {
 	cases := []struct {
 		status string

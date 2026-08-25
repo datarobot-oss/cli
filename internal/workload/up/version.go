@@ -380,6 +380,16 @@ func describes(loaded Loaded, artifactID string) bool {
 	// too.
 	delete(want, keyArtifactRepositoryID)
 
+	// Both sides are normalised so the type is compared once, beside the spec.
+	// The file may write it in either place; the platform hoists it and answers
+	// beside the spec. Comparing the blocks as they arrive made the type read
+	// as a field one side was missing, so no leftover ever described the file
+	// and every attempt minted another one: the pile reuse exists to prevent.
+	// Normalising both rather than assuming a shape means neither a file nor a
+	// route that puts it in the other place can reopen that.
+	hoistArtifactType(want)
+	hoistArtifactType(doc)
+
 	// Both directions, which is the difference between this and measuring
 	// drift. Subset catches a value the file changed or added; Extra catches
 	// one it removed. Without the second, deleting an environment variable

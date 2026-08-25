@@ -97,3 +97,25 @@ func TestState_String(t *testing.T) {
 	assert.Equal(t, "errored", StateErrored.String())
 	assert.Equal(t, "unknown", State(99).String())
 }
+
+// The platform does not agree with itself about the casing of its status
+// enums. Read exactly, a workload answering "RUNNING" falls to the default and
+// is reported as still settling, so every deploy onto a healthy workload is
+// refused as unsettled.
+func TestStateFor_FoldsCase(t *testing.T) {
+	for _, c := range []struct {
+		status string
+		want   State
+	}{
+		{"RUNNING", StateRunning},
+		{"Running", StateRunning},
+		{"STOPPED", StateStopped},
+		{"Suspended", StateStopped},
+		{"INTERRUPTED", StateStopped},
+		{"TERMINATED", StateTerminated},
+		{"Errored", StateErrored},
+		{"LAUNCHING", StateSettling},
+	} {
+		assert.Equal(t, c.want, stateFor(c.status), "status %q", c.status)
+	}
+}

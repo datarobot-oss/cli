@@ -39,16 +39,37 @@ import (
 // the same block the plan was computed from, the platform takes it as a unit,
 // and sending a subset would leave the reader guessing which half of the file
 // is now live.
+//
+// Being a rollout is also why it is guarded. The replacement route is
+// documented to queue a second swap rather than refuse one; that the settings
+// route does the same is an inference from it answering with a replacement,
+// not something confirmed against a live instance. Guarding is the safer of
+// the two guesses: if the route turns out to refuse on its own, the cost is a
+// request and a message less specific than the platform's, while not guarding
+// costs a swap nobody asked for. Worth settling on the same staging run that
+// answers whether the settings PATCH merges or replaces.
+//
+// One guard rather than a roll's two, because nothing is minted in between, so
+// the check and the call are the same moment. It goes after the payload is
+// built, since that is local and free.
+//
+// The window it cannot close: the settings route answers 202, so a resize
+// started and not waited for may not be readable on the replacement route yet
+// when the next run looks. Two detached resizes back to back can still queue.
 func retune(loaded Loaded, result Result, opts Options, report *reporter) (Result, error) {
-	runtime, err := loaded.Compiled.RuntimePayload()
+	sizing, err := loaded.Compiled.RuntimePayload()
 	if err != nil {
+		return result, err
+	}
+
+	if err := guardRollout(result.WorkloadID, "its runtime settings were left alone"); err != nil {
 		return result, err
 	}
 
 	var started *workload.Replacement
 
 	err = report.run("Updating the runtime settings", func() error {
-		replacement, updateErr := updateSettingsFn(result.WorkloadID, runtime)
+		replacement, updateErr := updateSettingsFn(result.WorkloadID, sizing)
 		started = replacement
 
 		return updateErr

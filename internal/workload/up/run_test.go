@@ -415,6 +415,33 @@ func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
 	assert.True(t, result.Locked)
 }
 
+// The lock a `--lock` run takes on an empty plan lands on whatever Look read as
+// serving, and a rollout in flight is about to move the workload off exactly
+// that artifact. Locking cannot be undone, so a lost race would leave the
+// outgoing version permanent and the rollout unable to complete. deployable
+// cannot catch it: the workload reports itself running for the whole of a swap.
+func TestRun_LockWithNothingToDoWaitsForARolloutInFlight(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		guard: func(workloadID string) error {
+			return fmt.Errorf("workload %s: %w (status switching)",
+				workloadID, workload.ErrReplacementInFlight)
+		},
+		lock: func(string) (*workload.Artifact, error) {
+			t.Fatal("locking is one-way, so it may not land on a version being rolled off")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+}
+
 // The same run without the flag stays as cheap as it was. Locking is one-way,
 // so an empty plan must never take it on its own initiative.
 func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
@@ -1343,9 +1370,11 @@ func TestRun_CreateBoundToAnUnreadableArtifactFails(t *testing.T) {
 		},
 	})
 
-	_, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already locked")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"this fails before apply is reached, so the envelope must not report the create the plan wanted")
 }
 
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {

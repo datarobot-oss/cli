@@ -141,23 +141,19 @@ type BuildSummary struct {
 // will not progress further (COMPLETED, FAILED, CANCELLED). Unknown statuses
 // are treated as non-terminal so polling keeps going rather than declaring
 // success on a status the server added without telling us.
+//
+// The comparison folds case, as the replacement and artifact classifiers do.
+// These constants are upper case where the workload's are lower, which is the
+// platform disagreeing with itself about the casing of its own status enums;
+// read exactly, a build answering "completed" would be polled until the
+// timeout and then fail a deploy whose image was already built.
 func IsTerminalBuildStatus(s string) bool {
-	switch s {
-	case BuildStatusCompleted, BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
-
-	return false
+	return IsBuildErrorStatus(s) || strings.EqualFold(s, BuildStatusCompleted)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
 func IsBuildErrorStatus(s string) bool {
-	switch s {
-	case BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
-
-	return false
+	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
 }
 
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and

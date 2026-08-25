@@ -197,10 +197,22 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	// resolve a difference the platform does not consider one, so a spelling
 	// the ledger accepts and the platform normalises would be drift that every
 	// run mints a version for and never clears.
-	if kind != "" && !manifest.SameArtifactType(kind, live.ArtifactType) {
+	// The live side is defaulted and the file's side is not, which is the same
+	// asymmetry the roll's repository check makes for the same reason. An
+	// unstated type in the file is the file having no opinion. An unstated type
+	// on the artifact is not: the platform defaults it to a service, so reading
+	// it as a difference would mint a version on every run of a file that
+	// correctly says service, and nothing the file can say would ever settle it.
+	//
+	// Have carries the defaulted value rather than the raw one, so the line the
+	// reader sees is the comparison that was actually made. Printing the empty
+	// string would render "artifact.type:  -> agent", a change with nothing on
+	// the left, about a side this code has just decided means service.
+	if running := manifest.ArtifactTypeOrDefault(live.ArtifactType); kind != "" &&
+		!manifest.SameArtifactType(kind, running) {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactType,
-			Have: live.ArtifactType,
+			Have: running,
 			Want: kind,
 		})
 	}

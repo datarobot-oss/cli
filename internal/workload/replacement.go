@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -73,20 +74,22 @@ type Replacement struct {
 
 // IsTerminalReplacementStatus reports whether s is a status the replacement
 // will not progress from.
+//
+// The comparison is case-insensitive, for the reason the artifact's lock
+// check is: the platform's own docs disagree with themselves about the casing
+// of status enums. It is not a cosmetic difference here. Reading a settled
+// "COMPLETED" as still in progress makes GuardNoActiveReplacement refuse every
+// deploy for as long as the record lingers, with a message that calls a
+// finished replacement one in progress.
 func IsTerminalReplacementStatus(s string) bool {
-	switch s {
-	case ReplacementStatusCompleted, ReplacementStatusFailed, ReplacementStatusErrored:
-		return true
-	}
-
-	return false
+	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
 
 // IsFailedReplacementStatus reports whether s is a terminal failure. On
 // failure the workload reverts to the artifact it was running before the
 // replacement started, so a failed rollout never promotes.
 func IsFailedReplacementStatus(s string) bool {
-	return s == ReplacementStatusFailed || s == ReplacementStatusErrored
+	return strings.EqualFold(s, ReplacementStatusFailed) || strings.EqualFold(s, ReplacementStatusErrored)
 }
 
 // replacementURL builds the single route all three verbs share.
@@ -205,10 +208,20 @@ func CancelReplacement(workloadID string) error {
 
 // GuardNoActiveReplacement refuses to proceed when workloadID already has a
 // replacement in flight, because POSTing another queues a second swap instead
-// of erroring. Callers should run it twice: once up front, so a doomed
-// command fails before it mutates anything, and once immediately before
-// StartReplacement, which is the guard that actually holds, since the live
-// state can change in between.
+// of erroring.
+//
+// How many times to call it follows from what sits between the check and the
+// call it protects. A roll mints and may lock an artifact in between, so it
+// runs the guard twice: once up front, so a doomed command fails before it
+// makes anything, and once immediately before StartReplacement, which is the
+// guard that actually holds, since the live state can change in between. A
+// caller with nothing in between runs it once, because there the up-front
+// check and the last moment before the call are the same moment.
+//
+// A refusal wraps ErrReplacementInFlight; everything else it returns is a
+// failure to find out. Callers that want to say which operation was stopped
+// should wrap the second kind and leave the first alone, since the refusal
+// already names the workload and the remedy.
 //
 // Being the up-front check is why it does not simply trust an empty answer.
 // The replacement route returns the same 404 for "nothing in flight" and for
@@ -227,6 +240,33 @@ func GuardNoActiveReplacement(workloadID string) error {
 		return confirmWorkloadExists(workloadID)
 	}
 
+	return refuseActive(workloadID, active)
+}
+
+// RefuseActiveReplacement is the same refusal without the existence probe, for
+// a caller that has already established the workload is there.
+//
+// That is the whole difference, and it is worth the second entry point because
+// the probe is not free: it is a second GET of a document such a caller has
+// already read, spent on the quiet path, where nothing is in flight. Reading a
+// 404 as "nothing to guard against" is only safe once something else has ruled
+// out "no such workload", so a caller that has not done that wants the guard
+// above instead.
+func RefuseActiveReplacement(workloadID string) error {
+	active, err := GetActiveReplacement(workloadID)
+	if err != nil {
+		return err
+	}
+
+	if active == nil {
+		return nil
+	}
+
+	return refuseActive(workloadID, active)
+}
+
+// refuseActive is the verdict both entry points share once a record is in hand.
+func refuseActive(workloadID string, active *Replacement) error {
 	// A settled replacement stays readable for a while after it ends, and
 	// WaitForReplacement returns the moment it sees a terminal status, so the
 	// record is usually still there when the next command looks. Refusing on
@@ -238,9 +278,45 @@ func GuardNoActiveReplacement(workloadID string) error {
 	}
 
 	return fmt.Errorf(
-		"workload %s already has a replacement in progress (to artifact %s, status %s); wait for it to settle before starting another",
-		workloadID, active.ArtifactID, active.Status,
+		"workload %s: %w%s; wait for it to settle before starting another",
+		workloadID, ErrReplacementInFlight, describeActive(active),
 	)
+}
+
+// ErrReplacementInFlight marks the refusal, so a caller can tell a rollout it
+// should wait out from a failure to find out whether there is one. The two
+// want different words: the first is a state, the second is a read that did
+// not happen, and a caller that wrapped both would put "cannot tell whether"
+// in front of a sentence that already knows.
+//
+// It reads as a whole sentence rather than as a fragment of the message above,
+// because a sentinel is the one error a caller may hand on by itself.
+var ErrReplacementInFlight = errors.New("a replacement is already in progress")
+
+// describeActive names what is in flight, carrying only the fields the
+// platform actually filled in.
+//
+// The artifact is one of them because a settings change rolls the workload
+// onto the artifact it is already running, and the platform returns no
+// candidate for it. Naming one unconditionally printed an empty field
+// mid-sentence, or the id of the version the plan had just reported as live,
+// which reads as a rollout onto itself.
+func describeActive(active *Replacement) string {
+	parts := make([]string, 0, 2)
+
+	if active.ArtifactID != "" {
+		parts = append(parts, "to artifact "+active.ArtifactID)
+	}
+
+	if active.Status != "" {
+		parts = append(parts, "status "+active.Status)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 // confirmWorkloadExists turns the replacement route's ambiguous 404 into a

@@ -38,6 +38,13 @@ import (
 // only starts the work, and the caller has to follow the replacement to know
 // whether the new sizing was promoted. The workload's own status is no help,
 // since it stays running throughout.
+//
+// That makes this a replacement-starter, with StartReplacement's contract and
+// not a plain field update: called while a replacement is already in flight it
+// queues a second swap rather than rejecting, so callers guard with
+// GuardNoActiveReplacement first. Nothing in the live state substitutes for
+// asking, because the workload goes on reporting itself running for the whole
+// of a swap.
 func UpdateWorkloadSettings(workloadID string, runtime json.RawMessage) (*Replacement, error) {
 	if len(runtime) == 0 {
 		return nil, errors.New("no runtime settings to update")
