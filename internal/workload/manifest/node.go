@@ -41,11 +41,18 @@ func isNullish(node *yaml.Node) bool {
 	// into a single "not set" meaning because that is how the workload
 	// endpoints behave today.
 	//
-	// GET responses echo null-valued keys as placeholders (autoscaling: null
-	// when no policy is configured, enabled: null inside one that is), and the
-	// create endpoint reads an empty block the same as a missing one. The CLI
-	// also never writes nulls back: stripKeys purges them so a committed
-	// manifest stays canonical even when the wire format is not.
+	// The autoscaling BLOCK is nullable (AutoscalingProperties | None,
+	// protons/runtime.py:502), so GET responses echo "autoscaling: null" when
+	// no policy is configured — but its fields are NOT: enabled is a non-
+	// nullable bool (default True, protons/runtime.py:217), so
+	// "autoscaling: {enabled: null}" can never arrive. The real nullable set
+	// (verified against the Pydantic models in workload-api/schemas/) is:
+	// autoscaling block, codeRef, imageBuildConfig, imageUri, entrypoint,
+	// port, primary, livenessProbe/readinessProbe/startupProbe, routes,
+	// gpuType, build, and the api-key env var name. The create endpoint reads
+	// an empty block the same as a missing one, and the CLI never writes
+	// nulls back: stripKeys purges them so a committed manifest stays
+	// canonical even when the wire format is not.
 	//
 	// If the API ever gives these shapes distinct meanings — the classic case
 	// being null-as-delete in a PATCH — this helper, its validator call sites,

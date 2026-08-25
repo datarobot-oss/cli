@@ -843,9 +843,10 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 // blocks are "passed through as the platform gave them"). Reordering every
 // mapping with a name key produced unexplained diff noise on every bind.
 //
-// The walk descends into every value so containerGroups/containers at any
-// depth are found (containers nest inside groups, and a future spec may nest
-// groups inside something else), but it only reorders the mappings that are
+// The walk is scoped to mapping nodes: it returns early on anything else
+// (scalars and sequences carry no containerGroups/containers keys). Within a
+// mapping it recurses into each value, so containerGroups/containers nested
+// inside other mappings are found, but it only reorders the mappings that are
 // sequence items under those two keys. The top-level manifest order is
 // already controlled by Render's explicit field list and is never reached
 // here.
@@ -960,9 +961,13 @@ func stripKeys(value any) {
 // container: imageUri is deleted as a server-built pin and codeRef as
 // server-managed. An imageBuildConfig that is empty, or becomes empty after
 // deleting codeRef, is NOT a build container — the user-declared imageUri is
-// kept and the emptied imageBuildConfig key is removed entirely so it never
-// renders as "{}" alongside a missing imageUri, which Validate would reject
-// with "must set either imageUri or imageBuildConfig".
+// kept and the emptied imageBuildConfig key is removed entirely. This is an
+// invariant guard mirroring the server's own rule at containers.py:415
+// ("either imageUri or imageBuildConfig must be provided"): the rendered
+// container must always carry exactly one valid image source, never an empty
+// imageBuildConfig: "{}" alongside a missing imageUri. Today the server-side
+// non-nullability of dockerfile makes the empty case unreachable from real
+// payloads, but the guard fails safe if that ever changes.
 func stripBuildOutputs(spec map[string]any) {
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {

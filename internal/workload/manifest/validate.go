@@ -436,12 +436,15 @@ func (v *validator) checkPort(container *yaml.Node, path string, primary bool) {
 }
 
 // checkEnvironmentVars holds the value-or-source rule for each entry in a
-// container's environmentVars sequence. The server schema requires a non-null
-// value for the string variant (source absent or "string"); the credential
-// and api-key variants carry no value. An explicitly empty value ("") passes —
-// that is the server's spelling of an intentionally-empty variable. A value-less
-// string entry today fails only as a 422 at deploy time; this check surfaces
-// it at validate time with a line anchor.
+// container's environmentVars sequence. This is a Surface B guard: the
+// validator's input is a hand-editable file, so a user can write value: null
+// or omit value entirely regardless of what the server schema allows on the
+// wire. The rule requires a non-null value for the string variant (source
+// absent or "string"); the credential and api-key variants carry no value and
+// are exempt. An explicitly empty value ("") passes — that is the valid
+// spelling of an intentionally-empty variable. Surfacing a value-less string
+// entry at validate time (with a line anchor) beats discovering it as a 422
+// at deploy time.
 func (v *validator) checkEnvironmentVars(container *yaml.Node, path string) {
 	vars := mapValue(container, keyEnvironmentVars)
 	if isNullish(vars) {
@@ -463,8 +466,6 @@ func (v *validator) checkEnvironmentVars(container *yaml.Node, path string) {
 			v.add(value, entry, joinPath(entryPath, keyValue),
 				"is required: set a value or use a %s/%s source",
 				credentialSource, sourceAPIKey)
-
-			continue
 		}
 	}
 }
