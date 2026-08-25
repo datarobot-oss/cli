@@ -868,6 +868,36 @@ func TestStripServerManaged_StripsNullKeys(t *testing.T) {
 				"keep": "x",
 			},
 		},
+		// enabled: null inside a present autoscaling block is the platform's
+		// default-on; stripKeys normalizes it to enabled: true before the
+		// nil-purge would collapse {enabled: null} to {} (which both readers
+		// treat as OFF). This is the fix for the semantic inversion.
+		"autoscaling enabled null normalized to true": {
+			input: map[string]any{
+				"autoscaling": map[string]any{"enabled": nil},
+			},
+			expected: map[string]any{
+				"autoscaling": map[string]any{"enabled": true},
+			},
+		},
+		"autoscaling enabled null with body normalized": {
+			input: map[string]any{
+				"autoscaling": map[string]any{"enabled": nil, "minReplicaCount": 2},
+			},
+			expected: map[string]any{
+				"autoscaling": map[string]any{"enabled": true, "minReplicaCount": 2},
+			},
+		},
+		// A non-null enabled value is left untouched: false stays false, true
+		// stays true. Normalization only fires on the nil placeholder.
+		"autoscaling enabled false untouched": {
+			input: map[string]any{
+				"autoscaling": map[string]any{"enabled": false},
+			},
+			expected: map[string]any{
+				"autoscaling": map[string]any{"enabled": false},
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -1420,6 +1450,106 @@ func TestLive_RealBuildContainerStillStripsImageUriAndCodeRef(t *testing.T) {
 	assert.NotContains(t, string(rendered), "codeRef")
 	assert.Contains(t, string(rendered), "imageBuildConfig")
 	assert.Contains(t, string(rendered), "source: provided")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
+// A runtime group whose server shape was autoscaling: {enabled: null} — the
+// platform's default-on — must survive NewLive's stripping without semantic
+// inversion. The strip path normalizes enabled: null to enabled: true so
+// autoscalingActive reads the group as ON, the wizard suppresses the replica
+// question, the rendered file carries no replicaCount, and the round trip
+// through Parse and Validate passes.
+func TestLive_EnabledNullAutoscalingSurvivesStripping(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "default-autoscaling",
+		"runtime": {"containerGroups": [{"name": "default",
+			"autoscaling": {"enabled": null},
+			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
+		]}
+	}`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
+		]}}
+	`), &artifactDoc))
+
+	live := NewLive("68b0", workloadDoc, artifactDoc)
+
+	// After stripping, the group reads as autoscaling ON.
+	assert.True(t, live.Autoscaled(),
+		"enabled: null is the platform's default-on; stripping must not invert it to OFF")
+
+	// The wizard suppresses the replica question for an autoscaled group.
+	draft := live.Defaults()
+	assert.Equal(t, 0, draft.Runtime.Replicas,
+		"no replica count prompted for an autoscaled group")
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// The rendered runtime carries no replicaCount for the autoscaled group.
+	assert.NotContains(t, string(rendered), "replicaCount",
+		"an autoscaled group must not carry a replica count")
+	// The normalized enabled: true is present and no null survives.
+	assert.Contains(t, string(rendered), "enabled: true")
+	assert.NotContains(t, string(rendered), "enabled: null")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(),
+		"render→parse→validate round trip must pass for the enabled-null shape")
+}
+
+// A runtime group whose server shape was autoscaling: {enabled: null,
+// minReplicaCount: 2} already reads as ON after the purge (enabled absent →
+// default on), but normalization to enabled: true makes it explicit. This is
+// the regression guard for the with-body variant.
+func TestLive_EnabledNullAutoscalingWithBodyStillOn(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "default-autoscaling-body",
+		"runtime": {"containerGroups": [{"name": "default",
+			"autoscaling": {"enabled": null, "minReplicaCount": 2, "maxReplicaCount": 9},
+			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
+		]}
+	}`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
+		]}}
+	`), &artifactDoc))
+
+	live := NewLive("68b0", workloadDoc, artifactDoc)
+
+	assert.True(t, live.Autoscaled(),
+		"enabled: null with a body is still the platform's default-on")
+
+	draft := live.Defaults()
+	assert.Equal(t, 0, draft.Runtime.Replicas,
+		"no replica count prompted for an autoscaled group")
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "replicaCount")
+	assert.Contains(t, string(rendered), "enabled: true")
+	assert.NotContains(t, string(rendered), "enabled: null")
 
 	parsed, err := Parse(rendered, "")
 	require.NoError(t, err)

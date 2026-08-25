@@ -388,23 +388,30 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 	cases := []struct {
 		name        string
 		autoscaling string
-		active      bool
+		// groupAutoscaling is the map[string]any shape autoscalingActive sees,
+		// parallel to the YAML shape checkScaling sees. Keeping it in the case
+		// struct avoids a switch that would trip the cyclop limit.
+		groupAutoscaling any
+		active           bool
 	}{
 		{
-			name:        "null",
-			autoscaling: `      autoscaling: null`,
-			active:      false,
+			name:             "null",
+			autoscaling:      `      autoscaling: null`,
+			groupAutoscaling: nil,
+			active:           false,
 		},
 		{
-			name:        "empty mapping",
-			autoscaling: `      autoscaling: {}`,
-			active:      false,
+			name:             "empty mapping",
+			autoscaling:      `      autoscaling: {}`,
+			groupAutoscaling: map[string]any{},
+			active:           false,
 		},
 		{
 			name: "enabled false",
 			autoscaling: `      autoscaling:
         enabled: false`,
-			active: false,
+			groupAutoscaling: map[string]any{keyEnabled: false},
+			active:           false,
 		},
 		{
 			name: "enabled true",
@@ -412,6 +419,11 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
         enabled: true
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				keyEnabled:        true,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
 		{
@@ -419,6 +431,10 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 			autoscaling: `      autoscaling:
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
 		{
@@ -427,11 +443,38 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
         enabled: null
         minReplicaCount: 1
         maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				keyEnabled:        nil,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
 			active: true,
 		},
+		// enabled: null with no other keys is the shape that inverts after
+		// stripKeys purges the nil — collapsing to {} (OFF). The validator
+		// (checkScaling) and the live reader (autoscalingActive) both read
+		// the pre-strip raw node as ON, and the strip path normalizes it to
+		// enabled: true so the post-strip shape is also ON.
 		{
-			name:   "absent",
-			active: false,
+			name: "enabled null only",
+			autoscaling: `      autoscaling:
+        enabled: null`,
+			groupAutoscaling: map[string]any{keyEnabled: nil},
+			active:           true,
+		},
+		// The post-strip normalized shape: enabled: true with no other keys.
+		// Both readers agree this is ON.
+		{
+			name: "enabled true only",
+			autoscaling: `      autoscaling:
+        enabled: true`,
+			groupAutoscaling: map[string]any{keyEnabled: true},
+			active:           true,
+		},
+		{
+			name:             "absent",
+			groupAutoscaling: nil, // absent: the key is never set on the group
+			active:           false,
 		},
 	}
 
@@ -450,30 +493,10 @@ func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
 
 			group := map[string]any{}
 
-			switch tc.name {
-			case "null":
-				group[keyAutoscaling] = nil
-			case "empty mapping":
-				group[keyAutoscaling] = map[string]any{}
-			case "enabled false":
-				group[keyAutoscaling] = map[string]any{keyEnabled: false}
-			case "enabled true":
-				group[keyAutoscaling] = map[string]any{
-					keyEnabled:        true,
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
-			case "missing enabled with body":
-				group[keyAutoscaling] = map[string]any{
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
-			case "enabled null with body":
-				group[keyAutoscaling] = map[string]any{
-					keyEnabled:        nil,
-					"minReplicaCount": 1,
-					"maxReplicaCount": 4,
-				}
+			// "absent" leaves the autoscaling key unset; every other case
+			// sets it from the struct field.
+			if tc.name != "absent" {
+				group[keyAutoscaling] = tc.groupAutoscaling
 			}
 
 			assert.Equal(t, tc.active, autoscalingActive(group), "autoscalingActive agrees with expected")
