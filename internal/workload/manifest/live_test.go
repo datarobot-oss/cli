@@ -1190,6 +1190,47 @@ func walkMappingNodes(node *yaml.Node, f func(*yaml.Node)) {
 	}
 }
 
+// assertNameLeadsInIdentifierMappings walks the node tree and asserts that
+// every mapping which is a sequence item under a containerGroups or
+// containers key leads with name — and only those mappings. Opaque mappings
+// carrying a name key elsewhere (e.g. labels, environmentVars entries) keep
+// their own order, so they are deliberately not asserted against. parentKey
+// is the key under which node was found ("" for the root), carried across
+// sequence nodes so each item remembers the key its sequence sat under.
+func assertNameLeadsInIdentifierMappings(t *testing.T, node *yaml.Node, parentKey string) {
+	t.Helper()
+
+	if node == nil {
+		return
+	}
+
+	// Only mappings can be identifier mappings, and only sequences carry the
+	// items under a containerGroups/containers key; everything else is a leaf.
+	if node.Kind == yaml.MappingNode {
+		if parentKey == keyContainerGroups || parentKey == keyContainers {
+			keys := mappingKeys(node)
+
+			require.NotEmpty(t, keys)
+			assert.Equal(t, keyName, keys[0],
+				"identifier mapping under %s should lead with name", parentKey)
+		}
+
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			assertNameLeadsInIdentifierMappings(t, node.Content[i+1], node.Content[i].Value)
+		}
+
+		return
+	}
+
+	if node.Kind == yaml.SequenceNode {
+		// Carry parentKey across the sequence so each item remembers the key
+		// its sequence sat under (containerGroups or containers).
+		for _, item := range node.Content {
+			assertNameLeadsInIdentifierMappings(t, item, parentKey)
+		}
+	}
+}
+
 // In the rendered YAML, every container mapping lists name as its first key.
 func TestLive_RenderLeadsWithNameInContainers(t *testing.T) {
 	live := liveFixture(t)
@@ -1291,13 +1332,14 @@ func TestLive_RenderReorderPreservesKeys(t *testing.T) {
 			assert.False(t, seen[key], "key %q is duplicated", key)
 			seen[key] = true
 		}
-
-		// The top-level manifest order is deliberately fixed by Render; all
-		// nested mappings with a name key should lead with it.
-		if node != root && seen[keyName] {
-			assert.Equal(t, keyName, keys[0], "name should lead when present")
-		}
 	})
+
+	// Scoped name-leading: only the sequence-item mappings found under
+	// containerGroups/containers keys should lead with name. Opaque mappings
+	// that happen to carry a name key (labels, environmentVars entries) keep
+	// their own order, so the universal "name leads wherever present"
+	// assertion the unscoped hoist relied on no longer holds.
+	assertNameLeadsInIdentifierMappings(t, root, "")
 
 	// Focused check: a known container keeps its full key set, only reordering.
 	var artifactDoc map[string]any
@@ -1323,6 +1365,53 @@ func TestLive_RenderReorderPreservesKeys(t *testing.T) {
 
 	keys := mappingKeys(container)
 	assert.Equal(t, []string{keyName, keyImageURI, keyPort, keyPrimary}, keys)
+}
+
+// Opaque mappings carrying a name key (e.g. labels) are not identifier
+// mappings, so name-hoisting must leave their key order alone. The
+// pass-through contract (doc.go: unknown blocks "survive the round trip";
+// live.go: blocks are "passed through as the platform gave them") forbids
+// reordering blocks the wizard has no vocabulary for, and the unscoped
+// hoist reordered every nested mapping that happened to contain a key
+// literally called name — producing unexplained diff noise on every bind.
+func TestLive_RenderPreservesNameInOpaqueMappings(t *testing.T) {
+	var artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service",
+		"spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "primary", "primary": true, "port": 8080, "imageUri": "nginx:latest",
+			 "labels": {"zone": "b", "team": "x", "app": "c", "name": "not-an-id"}}
+		]}]}
+	}`), &artifactDoc))
+
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	root := renderedRoot(t, rendered)
+	spec := mapValue(mapValue(root, keyArtifact), keySpec)
+	group := seqItems(mapValue(spec, keyContainerGroups))[0]
+	container := seqItems(mapValue(group, keyContainers))[0]
+
+	// The container is an identifier mapping, so name still leads.
+	containerKeys := mappingKeys(container)
+
+	assert.Equal(t, keyName, containerKeys[0], "container should lead with name")
+
+	// The labels block is opaque: name stays in its sorted position rather
+	// than being hoisted to the front. The yaml encoder sorts map[string]any
+	// keys alphabetically, so without hoisting name lands at its sorted
+	// spot (app, name, team, zone) — hoisting is the only thing that would
+	// move it to the front.
+	labels := mapValue(container, "labels")
+	labelsKeys := mappingKeys(labels)
+
+	assert.Equal(t, []string{"app", "name", "team", "zone"}, labelsKeys,
+		"opaque labels mapping keeps name in place, not hoisted")
 }
 
 // An artifact doc whose container carries imageUri alongside an

@@ -834,32 +834,77 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	return node, nil
 }
 
-// hoistNameKeys walks the YAML node tree and moves any "name" key to the front of
-// its mapping's Content, preserving every other key in its original order. It is
-// applied to the nested spec and runtime blocks; the top-level manifest order is
-// already controlled by Render's explicit field list.
+// hoistNameKeys scopes name-promotion to identifier mappings: the
+// sequence-item mappings found under containerGroups and containers keys.
+// Arbitrary nested mappings that happen to carry a key literally called
+// "name" (e.g. labels: {team: x, name: not-an-id, zone: b}) are left in
+// their original key order, honouring the package's pass-through contract
+// (doc.go: unknown blocks "survive the round trip"; the spec and runtime
+// blocks are "passed through as the platform gave them"). Reordering every
+// mapping with a name key produced unexplained diff noise on every bind.
+//
+// The walk descends into every value so containerGroups/containers at any
+// depth are found (containers nest inside groups, and a future spec may nest
+// groups inside something else), but it only reorders the mappings that are
+// sequence items under those two keys. The top-level manifest order is
+// already controlled by Render's explicit field list and is never reached
+// here.
 func hoistNameKeys(node *yaml.Node) {
 	if node == nil {
 		return
 	}
 
-	if node.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == keyName {
-				nameKey := node.Content[i]
-				nameValue := node.Content[i+1]
-
-				copy(node.Content[2:i+2], node.Content[0:i])
-				node.Content[0] = nameKey
-				node.Content[1] = nameValue
-
-				break
-			}
-		}
+	// Only mapping nodes can carry containerGroups/containers keys; sequence
+	// and scalar nodes have nothing to hoist and nothing to descend through.
+	if node.Kind != yaml.MappingNode {
+		return
 	}
 
-	for _, child := range node.Content {
-		hoistNameKeys(child)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+
+		// Identifier keys: hoist name inside each sequence-item mapping and
+		// recurse into those items so containers nested inside groups (and
+		// groups nested inside anything else) are reached. The sequence node
+		// itself is handled item-by-item here rather than via the generic
+		// descent, so its items are the only mappings touched.
+		if (key.Value == keyContainerGroups || key.Value == keyContainers) && value != nil {
+			if value.Kind == yaml.SequenceNode {
+				for _, item := range value.Content {
+					hoistNameInMapping(item)
+					hoistNameKeys(item)
+				}
+			}
+
+			continue
+		}
+
+		// Non-matching subtrees are walked via their values so
+		// containerGroups/containers appearing at any depth are still found,
+		// while opaque mappings they contain keep their key order.
+		hoistNameKeys(value)
+	}
+}
+
+// hoistNameInMapping moves a "name" key to the front of a mapping node's
+// Content, preserving every other key in its original order. It is a no-op
+// for non-mapping nodes or mappings without a name key.
+func hoistNameInMapping(node *yaml.Node) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == keyName {
+			nameKey := node.Content[i]
+			nameValue := node.Content[i+1]
+
+			copy(node.Content[2:i+2], node.Content[0:i])
+			node.Content[0] = nameKey
+			node.Content[1] = nameValue
+
+			return
+		}
 	}
 }
 
