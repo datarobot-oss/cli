@@ -182,24 +182,43 @@ func (m *Manifest) BuildMode() string {
 	return ""
 }
 
-// primaryContainerNode finds the container traffic reaches in a parsed spec,
-// falling back to the first container the way the live-document walk does.
-func primaryContainerNode(spec *yaml.Node) *yaml.Node {
-	var first *yaml.Node
-
-	for _, group := range seqItems(mapValue(spec, keyContainerGroups)) {
-		for _, container := range seqItems(mapValue(group, keyContainers)) {
-			if first == nil {
+// findPrimary walks container groups looking for the primary container,
+// falling back to the first container the way both the node and map walks do.
+// The traversal is parameterised by the container representation so the logic
+// lives once: *yaml.Node for parsed manifests, map[string]any for live server
+// documents. found is false when no containers exist at all; first is the
+// zero value (nil) in that case, matching what the individual walks returned.
+func findPrimary[C any](
+	groups []C,
+	containersOf func(C) []C,
+	isPrimary func(C) bool,
+) (first C, found bool) {
+	for _, group := range groups {
+		for _, container := range containersOf(group) {
+			if !found {
 				first = container
+				found = true
 			}
 
-			if isTrue(mapValue(container, keyPrimary)) {
-				return container
+			if isPrimary(container) {
+				return container, true
 			}
 		}
 	}
 
-	return first
+	return first, found
+}
+
+// primaryContainerNode finds the container traffic reaches in a parsed spec,
+// falling back to the first container the way the live-document walk does.
+func primaryContainerNode(spec *yaml.Node) *yaml.Node {
+	container, _ := findPrimary(
+		seqItems(mapValue(spec, keyContainerGroups)),
+		func(group *yaml.Node) []*yaml.Node { return seqItems(mapValue(group, keyContainers)) },
+		func(container *yaml.Node) bool { return isTrue(mapValue(container, keyPrimary)) },
+	)
+
+	return container
 }
 
 // runtimeDefaults reads the sizing the workload is actually running with, so
@@ -802,21 +821,13 @@ func (l Live) primaryContainer() map[string]any {
 }
 
 func primaryContainerOf(spec map[string]any) map[string]any {
-	var first map[string]any
+	container, _ := findPrimary(
+		slicesAt(spec, keyContainerGroups),
+		func(group map[string]any) []map[string]any { return slicesAt(group, keyContainers) },
+		func(container map[string]any) bool { return boolAt(container, keyPrimary) },
+	)
 
-	for _, group := range slicesAt(spec, keyContainerGroups) {
-		for _, container := range slicesAt(group, keyContainers) {
-			if first == nil {
-				first = container
-			}
-
-			if boolAt(container, keyPrimary) {
-				return container
-			}
-		}
-	}
-
-	return first
+	return container
 }
 
 // documentNode encodes a server document as a YAML node, nil for an empty

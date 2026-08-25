@@ -204,13 +204,28 @@ func (v *validator) add(node, anchor *yaml.Node, path, format string, args ...an
 	v.errs = append(v.errs, FieldError{Path: path, Line: line, Msg: fmt.Sprintf(format, args...)})
 }
 
+// requiredString looks up key in node's mapping, asserts the value is a
+// non-empty string scalar, and records a finding when it is not. It returns
+// the string and ok; ok is false when the key is missing, null, or empty.
+// The finding is anchored to the looked-up node's own line, falling back to
+// node (the parent) when the key is absent — the same anchor pattern the
+// individual checks used before this helper captured it.
+func (v *validator) requiredString(node *yaml.Node, key, path, format string, args ...any) (string, bool) {
+	valueNode := mapValue(node, key)
+
+	value, ok := scalarString(valueNode)
+	if !ok || value == "" {
+		v.add(valueNode, node, path, format, args...)
+
+		return "", false
+	}
+
+	return value, true
+}
+
 // checkName holds the one field the create endpoint always needs.
 func (v *validator) checkName(root *yaml.Node) {
-	node := mapValue(root, keyName)
-
-	if name, ok := scalarString(node); !ok || name == "" {
-		v.add(node, root, keyName, "is required and must be a non-empty string")
-	}
+	v.requiredString(root, keyName, keyName, "is required and must be a non-empty string")
 }
 
 // checkArtifactBinding holds the create endpoint's either-or: an inline
@@ -284,11 +299,8 @@ func (v *validator) checkArtifact(artifact *yaml.Node) []groupShape {
 func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape {
 	shape := groupShape{}
 
-	name, ok := scalarString(mapValue(group, keyName))
-	if !ok || name == "" {
-		v.add(mapValue(group, keyName), group, joinPath(path, keyName),
-			"is required: runtime sizing is joined to the artifact by group name")
-	}
+	name, _ := v.requiredString(group, keyName, joinPath(path, keyName),
+		"is required: runtime sizing is joined to the artifact by group name")
 
 	shape.name = name
 
@@ -306,10 +318,7 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 	for i, container := range containers {
 		containerPath := fmt.Sprintf("%s.%s[%d]", path, keyContainers, i)
 
-		containerName, ok := scalarString(mapValue(container, keyName))
-		if !ok || containerName == "" {
-			v.add(mapValue(container, keyName), container, joinPath(containerPath, keyName), "is required")
-		}
+		containerName, _ := v.requiredString(container, keyName, joinPath(containerPath, keyName), "is required")
 
 		shape.containers = append(shape.containers, containerName)
 
@@ -413,12 +422,8 @@ func (v *validator) checkProvidedBuild(dockerfile *yaml.Node, path string) {
 // so the same file builds the same image after the environment moves on.
 func (v *validator) checkGeneratedBuild(dockerfile *yaml.Node, path string) {
 	for _, key := range []string{keyExecEnvID, keyExecEnvVersionID} {
-		node := mapValue(dockerfile, key)
-
-		if value, ok := scalarString(node); !ok || value == "" {
-			v.add(node, dockerfile, joinPath(path, key),
-				"is required when source is %q", sourceGenerated)
-		}
+		v.requiredString(dockerfile, key, joinPath(path, key),
+			"is required when source is %q", sourceGenerated)
 	}
 
 	entrypoint := mapValue(dockerfile, keyEntrypoint)
