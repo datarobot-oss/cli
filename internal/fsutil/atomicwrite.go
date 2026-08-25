@@ -84,17 +84,25 @@ func targetMode(path, probePath string) (os.FileMode, error) {
 // behaves as it always has. viaSymlink reports whether the caller's path
 // itself was a symlink, so a failure can be reported against the name the
 // caller knows rather than a resolved target they may never have seen.
+//
+// viaSymlink is set before the EvalSymlinks error check so that a live symlink
+// whose resolution fails for a reason other than a missing target (a circular
+// link, a permission error) is still annotated: the write will fail downstream
+// when targetMode's os.Stat hits the same error, but the error message carries
+// the "write through symlink" context the caller needs.
 func resolveWriteTarget(path string) (resolved string, viaSymlink bool) {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path, false
-	}
-
 	// Lstat distinguishes a symlinked final component (worth naming in
 	// errors) from symlinked intermediate directories such as /tmp on macOS,
 	// which EvalSymlinks also resolves but which need no annotation.
+	// Checked before EvalSymlinks so viaSymlink is correct even on the
+	// resolution-failure path.
 	if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
 		viaSymlink = true
+	}
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, viaSymlink
 	}
 
 	return resolved, viaSymlink

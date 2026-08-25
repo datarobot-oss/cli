@@ -186,6 +186,66 @@ func TestAtomicWriteFile_WriteThroughRelativeSymlink(t *testing.T) {
 	assert.Equal(t, "manifest.yaml", target)
 }
 
+// A chain of symlinks (link → link → real file) must resolve through every
+// hop so the write lands in the real file and every link in the chain
+// survives. EvalSymlinks follows the full chain; this test pins that behavior
+// so a future refactor that short-circuits after the first hop is caught.
+func TestAtomicWriteFile_WriteThroughSymlinkChain(t *testing.T) {
+	dir := t.TempDir()
+
+	realFile := filepath.Join(dir, "manifest.yaml")
+	link1 := filepath.Join(dir, "link1.yaml")
+	link2 := filepath.Join(dir, "link2.yaml")
+
+	require.NoError(t, os.WriteFile(realFile, []byte("original"), 0o644))
+	require.NoError(t, os.Symlink(realFile, link1))
+	require.NoError(t, os.Symlink(link1, link2))
+
+	require.NoError(t, AtomicWriteFile(link2, []byte("updated")))
+
+	// The real file must contain the new content.
+	got, err := os.ReadFile(realFile)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", string(got))
+
+	// Both links must survive as symlinks.
+	for _, link := range []string{link1, link2} {
+		fi, err := os.Lstat(link)
+		require.NoError(t, err)
+		assert.NotEqual(t, os.FileMode(0), fi.Mode()&os.ModeSymlink,
+			"%s should still be a symlink, got mode %v", link, fi.Mode())
+	}
+}
+
+// A self-referential (circular) symlink cannot be resolved, and the write
+// must fail safely: the symlink is not replaced by a regular file, and the
+// error names the caller's path with "write through symlink" context so a
+// caller who passed a symlink knows where to look.
+//
+// The write never reaches renameIntoPlace because targetMode's os.Stat hits
+// the same ELOOP error first. The test pins that safety net and the error
+// annotation that resolveWriteTarget's viaSymlink flag provides.
+func TestAtomicWriteFile_CircularSymlinkFailsSafely(t *testing.T) {
+	dir := t.TempDir()
+
+	linkPath := filepath.Join(dir, "circular.yaml")
+	require.NoError(t, os.Symlink(linkPath, linkPath))
+
+	writeErr := AtomicWriteFile(linkPath, []byte("payload"))
+	require.Error(t, writeErr)
+
+	// The symlink must survive — the write must not have replaced it.
+	fi, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), fi.Mode()&os.ModeSymlink,
+		"circular link should not have been replaced, got mode %v", fi.Mode())
+
+	// The error should carry "write through symlink" context naming the
+	// caller's path, not just a bare stat error against the resolved target.
+	assert.Contains(t, writeErr.Error(), "write through symlink")
+	assert.Contains(t, writeErr.Error(), linkPath)
+}
+
 // A dangling symlink (target missing) cannot be resolved, so the write falls
 // back to replacing the link itself with a regular file: the "dangling paths
 // are written as-is" half of the AtomicWriteFile contract. Pinning it matters
