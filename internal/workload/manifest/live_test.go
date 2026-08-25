@@ -928,6 +928,19 @@ func TestStripServerManaged_StripsNullKeys(t *testing.T) {
 				"autoscaling": map[string]any{"enabled": false},
 			},
 		},
+		// A genuinely empty autoscaling: {} map (enabled key absent entirely,
+		// not present-with-nil) must survive stripKeys unchanged. The previous
+		// guard used `autoscaling[keyEnabled] == nil`, which cannot distinguish
+		// absent from present-with-nil — rewriting an empty map to
+		// {enabled: true} and inverting a should-be-OFF group to ON.
+		"autoscaling empty map untouched": {
+			input: map[string]any{
+				"autoscaling": map[string]any{},
+			},
+			expected: map[string]any{
+				"autoscaling": map[string]any{},
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -1684,6 +1697,60 @@ func TestLive_EnabledNullAutoscalingWithBodyStillOn(t *testing.T) {
 	parsed, err := Parse(rendered, "")
 	require.NoError(t, err)
 	require.NoError(t, parsed.Validate())
+}
+
+// A server-sourced runtime group with a genuinely empty autoscaling: {} map
+// (the enabled key absent entirely, not present-with-nil) must survive
+// NewLive/stripKeys unchanged — no enabled key materialized. The previous
+// normalizeAutoscalingEnabled guard used `autoscaling[keyEnabled] == nil`,
+// which in Go cannot distinguish "enabled present with nil value" from
+// "enabled absent entirely" (map zero-value ambiguity). That rewrote a
+// genuinely empty autoscaling: {} to {enabled: true} before the nil-purge ran,
+// inverting a should-be-OFF group to ON — contradicting the function's own
+// doc comment and autoscalingActive's len==0 OFF guard. The fix uses the
+// two-value map-access idiom so only a present-with-nil enabled is normalized.
+func TestLive_EmptyAutoscalingMapNotInvertedToOn(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "empty-autoscaling",
+		"runtime": {"containerGroups": [{"name": "default",
+			"autoscaling": {},
+			"containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}
+		]}
+	}`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "a",
+		"type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "app", "primary": true, "port": 8080, "imageUri": "nginx:latest"}]}
+		]}}
+	`), &artifactDoc))
+
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
+
+	// A genuinely empty autoscaling map reads as OFF, matching
+	// autoscalingActive's len==0 guard.
+	assert.False(t, live.Autoscaled(),
+		"an empty autoscaling: {} map is OFF, not the platform's default-on")
+
+	draft := live.Defaults()
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	// No enabled key was materialized by normalization.
+	assert.NotContains(t, string(rendered), "enabled: true",
+		"an empty autoscaling: {} must not gain an enabled: true key")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(),
+		"render→parse→validate round trip must pass for the empty-autoscaling shape")
 }
 
 // An artifact document carrying no usable spec is the review repro for

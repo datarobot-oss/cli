@@ -960,18 +960,24 @@ func stripKeys(value any) {
 // purge strips enabled: null, leaving {} — which both autoscalingActive and
 // checkScaling read as OFF (absent), inverting the group's semantics.
 //
-// Only the nil placeholder is rewritten. A present bool (true or false) or an
-// absent enabled key already carries the right meaning and is left untouched.
-// A block like {enabled: null, minReplicaCount: 2} already reads as ON after
-// the purge (enabled absent → default on); normalizing it to enabled: true
-// makes the default explicit and keeps the rendered file free of nulls.
+// Only a present-with-nil enabled is rewritten. A present bool (true or false)
+// or an absent enabled key already carries the right meaning and is left
+// untouched. The two-value map-access idiom distinguishes "enabled present
+// with nil value" from "enabled absent entirely" — the single-value
+// `autoscaling[keyEnabled] == nil` cannot (Go map zero-value ambiguity), and
+// would rewrite a genuinely empty autoscaling: {} to {enabled: true},
+// inverting a should-be-OFF group to ON. A block like {enabled: null,
+// minReplicaCount: 2} already reads as ON after the purge (enabled absent →
+// default on); normalizing it to enabled: true makes the default explicit and
+// keeps the rendered file free of nulls.
 func normalizeAutoscalingEnabled(doc map[string]any) {
 	autoscaling, ok := doc[keyAutoscaling].(map[string]any)
 	if !ok {
 		return
 	}
 
-	if autoscaling[keyEnabled] == nil {
+	val, present := autoscaling[keyEnabled]
+	if present && val == nil {
 		autoscaling[keyEnabled] = true
 	}
 }
