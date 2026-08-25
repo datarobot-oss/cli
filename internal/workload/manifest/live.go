@@ -56,7 +56,15 @@ type Live struct {
 // NewLive assembles the live view from the two documents the server returns,
 // stripping what only the server may set. workloadDoc is the workload,
 // artifactDoc the artifact it currently runs.
-func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
+//
+// It fails loudly when the artifact doc carries no usable spec — absent, or
+// stripped to nothing by the server-managed-key purge — so a partial or
+// permission-filtered artifact GET can never produce a manifest that Validate
+// would reject with "artifact.spec: is required for an inline artifact". The
+// error names the workload id, mirroring Apply's own "no primary container"
+// contract, because the right answer is to edit the file by hand rather than
+// let the CLI write something it would then refuse to read.
+func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, error) {
 	live := Live{
 		WorkloadID:   workloadID,
 		Name:         stringAt(workloadDoc, keyName),
@@ -72,7 +80,12 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
 
 	stripBuildOutputs(live.Spec)
 
-	return live
+	if len(live.Spec) == 0 {
+		return live, fmt.Errorf("workload %s has no artifact spec to bind; edit %s by hand instead",
+			workloadID, FileName)
+	}
+
+	return live, nil
 }
 
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the

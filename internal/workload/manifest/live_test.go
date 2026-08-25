@@ -98,7 +98,10 @@ func liveFixture(t *testing.T) Live {
 	require.NoError(t, json.Unmarshal([]byte(liveWorkloadJSON), &workloadDoc))
 	require.NoError(t, json.Unmarshal([]byte(liveArtifactJSON), &artifactDoc))
 
-	return NewLive("68b0c1d2e3f4a5b6c7d8e9f0", workloadDoc, artifactDoc)
+	live, err := NewLive("68b0c1d2e3f4a5b6c7d8e9f0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
+
+	return live
 }
 
 func TestNewLive_StripsWhatOnlyTheServerSets(t *testing.T) {
@@ -262,9 +265,16 @@ func TestLive_RenderRoundTripsThroughValidate(t *testing.T) {
 // A spec with no container to update is a workload the wizard cannot honestly
 // edit, so it says so instead of writing something plausible.
 func TestLive_ApplyWithoutAPrimaryContainer(t *testing.T) {
-	live := NewLive("68b0", map[string]any{"name": "empty"}, map[string]any{"name": "empty-artifact"})
+	// The spec carries containerGroups but no containers, so NewLive accepts
+	// it (the spec is non-empty) while Apply finds no primary container to
+	// update.
+	live, err := NewLive("68b0", map[string]any{"name": "empty"}, map[string]any{
+		"name": "empty-artifact",
+		"spec": map[string]any{"containerGroups": []any{}},
+	})
+	require.NoError(t, err)
 
-	_, err := live.Apply(live.Defaults())
+	_, err = live.Apply(live.Defaults())
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "no primary container")
@@ -291,7 +301,8 @@ func TestLive_LiteralEnvVarsSkipsCredentialReferences(t *testing.T) {
       ]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	assert.Equal(t, []EnvVar{
 		{Name: "LOG_LEVEL", Value: "debug"},
@@ -302,7 +313,13 @@ func TestLive_LiteralEnvVarsSkipsCredentialReferences(t *testing.T) {
 // A spec with no container has nothing declared, which is not the same as
 // having something this cannot read.
 func TestLive_LiteralEnvVarsWithoutAContainer(t *testing.T) {
-	live := NewLive("68b0", map[string]any{"name": "empty"}, map[string]any{"name": "empty-artifact"})
+	// The spec carries containerGroups but no containers, so NewLive accepts
+	// it while LiteralEnvVars finds no primary container to read from.
+	live, err := NewLive("68b0", map[string]any{"name": "empty"}, map[string]any{
+		"name": "empty-artifact",
+		"spec": map[string]any{"containerGroups": []any{}},
+	})
+	require.NoError(t, err)
 
 	assert.Empty(t, live.LiteralEnvVars())
 }
@@ -318,7 +335,8 @@ func TestLive_PrimaryFallsBackToTheFirstContainer(t *testing.T) {
       ]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	assert.Equal(t, 8080, live.Defaults().Port)
 }
@@ -339,7 +357,8 @@ func TestLive_ApplyKeepsUnknownBuildKeys(t *testing.T) {
         }}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	applied, err := live.Apply(live.Defaults())
 	require.NoError(t, err)
@@ -364,7 +383,8 @@ func TestLive_UnknownBuildSourceIsPreserved(t *testing.T) {
          "imageBuildConfig": {"buildpack": {"builder": "paketo/builder:base"}}}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	assert.Equal(t, BuildModeUnchanged, live.Defaults().Build.Mode)
 
@@ -430,7 +450,8 @@ func TestLive_ApplyRemovesADeclinedProbe(t *testing.T) {
          "readinessProbe": {"path": "/health", "port": 9000, "periodSeconds": 10}}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	require.Equal(t, "/health", draft.HealthPath)
@@ -461,7 +482,8 @@ func TestLive_ApplyKeepsAProbeItCannotRead(t *testing.T) {
          "readinessProbe": {"tcpSocket": {"port": 9000}, "periodSeconds": 10, "failureThreshold": 30}}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	present, readable := live.ReadinessProbe()
 	assert.True(t, present, "the block is there")
@@ -494,7 +516,8 @@ func TestLive_ApplyMovesAnUnreadableProbeWithThePort(t *testing.T) {
          "readinessProbe": {"tcpSocket": {"port": 9000}, "port": 9000}}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	draft.Port = 9100
@@ -524,7 +547,10 @@ func probelessLive(t *testing.T) Live {
         {"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/a:v1"}]}]}
     }`), &artifactDoc))
 
-	return NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
+
+	return live
 }
 
 // A workload can carry probes the wizard has no question for. Changing the
@@ -559,7 +585,8 @@ func TestLive_ApplyLeavesAProbeOnItsOwnPort(t *testing.T) {
          "livenessProbe": {"path": "/admin/live", "port": 9900}}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	draft.Port = 9000
@@ -584,7 +611,8 @@ func TestLive_ApplyFlagsTheContainerItEdits(t *testing.T) {
         {"name": "only", "port": 8080, "imageUri": "registry/a:v1"}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	applied, err := live.Apply(live.Defaults())
 	require.NoError(t, err)
@@ -628,7 +656,8 @@ func TestLive_DefaultsReadThePrimaryNotTheFirstListed(t *testing.T) {
         {"name": "metrics-bridge", "imageUri": "example/bridge:v1"}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", workloadDoc, artifactDoc)
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	assert.InEpsilon(t, 4.0, draft.Runtime.CPU, 0.0001)
@@ -667,7 +696,8 @@ func TestLive_DisabledAutoscalingKeepsTheReplicaAnswer(t *testing.T) {
         {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
     }`), &artifactDoc))
 
-	live := NewLive("68b0", workloadDoc, artifactDoc)
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	assert.Equal(t, 3, draft.Runtime.Replicas, "the group's own count, not the autoscaled zero")
@@ -995,7 +1025,8 @@ func TestLive_RenderRoundTripReporterShaped(t *testing.T) {
 	workloadDoc := reporterWorkloadDoc(t)
 	artifactDoc := reporterArtifactDoc(t)
 
-	live := NewLive(workloadID, workloadDoc, artifactDoc)
+	live, err := NewLive(workloadID, workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	applied, err := live.Apply(draft)
@@ -1034,7 +1065,10 @@ func reporterShapedLive(t *testing.T) Live {
 
 	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
 
-	return NewLive(workloadID, reporterWorkloadDoc(t), reporterArtifactDoc(t))
+	live, err := NewLive(workloadID, reporterWorkloadDoc(t), reporterArtifactDoc(t))
+	require.NoError(t, err)
+
+	return live
 }
 
 // Null autoscaling is echoed by the server as a placeholder but must not be
@@ -1107,7 +1141,8 @@ func TestLive_DoesNotMutateInputDocs(t *testing.T) {
 	workloadBefore := deepCopyMap(workloadDoc)
 	artifactBefore := deepCopyMap(artifactDoc)
 
-	_ = NewLive("68b0", workloadDoc, artifactDoc)
+	_, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	assert.Equal(t, workloadBefore, workloadDoc)
 	assert.Equal(t, artifactBefore, artifactDoc)
@@ -1275,7 +1310,8 @@ func TestLive_RenderReorderPreservesKeys(t *testing.T) {
 		]}]}
 	}`), &artifactDoc))
 
-	focused := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	focused, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	focusedRendered, err := focused.Render()
 	require.NoError(t, err)
@@ -1316,7 +1352,8 @@ func TestLive_EmptyBuildBlockRoundTripsAfterStripping(t *testing.T) {
 		]}]}
 	}`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	applied, err := live.Apply(draft)
@@ -1357,7 +1394,8 @@ func TestLive_NativelyEmptyBuildBlockRoundTrips(t *testing.T) {
 		]}]}
 	}`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	applied, err := live.Apply(draft)
@@ -1435,7 +1473,8 @@ func TestLive_RealBuildContainerStillStripsImageUriAndCodeRef(t *testing.T) {
 		]}]}
 	}`), &artifactDoc))
 
-	live := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	live, err := NewLive("68b0", map[string]any{"name": "a"}, artifactDoc)
+	require.NoError(t, err)
 
 	draft := live.Defaults()
 	applied, err := live.Apply(draft)
@@ -1480,7 +1519,8 @@ func TestLive_EnabledNullAutoscalingSurvivesStripping(t *testing.T) {
 		]}}
 	`), &artifactDoc))
 
-	live := NewLive("68b0", workloadDoc, artifactDoc)
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	// After stripping, the group reads as autoscaling ON.
 	assert.True(t, live.Autoscaled(),
@@ -1532,7 +1572,8 @@ func TestLive_EnabledNullAutoscalingWithBodyStillOn(t *testing.T) {
 		]}}
 	`), &artifactDoc))
 
-	live := NewLive("68b0", workloadDoc, artifactDoc)
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
 
 	assert.True(t, live.Autoscaled(),
 		"enabled: null with a body is still the platform's default-on")
@@ -1554,4 +1595,65 @@ func TestLive_EnabledNullAutoscalingWithBodyStillOn(t *testing.T) {
 	parsed, err := Parse(rendered, "")
 	require.NoError(t, err)
 	require.NoError(t, parsed.Validate())
+}
+
+// An artifact document carrying no usable spec is the review repro for
+// finding 7: a partial or permission-filtered artifact GET returns name and
+// type but no spec, and NewLive would render an inline artifact block with
+// only those two fields. Validate would then reject the file the CLI just
+// wrote ("artifact.spec: is required for an inline artifact") — the same
+// write-then-refuse class as the titled bug. NewLive must fail loudly at bind
+// time instead, naming the workload id so the user knows what to edit.
+func TestNewLive_SpeclessArtifactDocFailsWithWorkloadID(t *testing.T) {
+	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
+
+	// No spec key at all — the shape a permission-filtered GET leaves.
+	artifactDoc := map[string]any{"name": "art", "type": "application"}
+
+	_, err := NewLive(workloadID, map[string]any{"name": "wl"}, artifactDoc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), workloadID,
+		"the error must name the workload id so the user knows what to edit")
+	assert.Contains(t, err.Error(), "no artifact spec")
+}
+
+// An artifact doc whose spec is present but strips to nothing — every key is
+// server-managed or nil — is the same class of failure: after stripping, the
+// spec is empty and rendering it would produce a file Validate rejects.
+func TestNewLive_SpecStripsToEmptyFailsWithWorkloadID(t *testing.T) {
+	workloadID := "68b0c1d2e3f4a5b6c7d8e9f0"
+
+	// Every key inside spec is server-managed, so stripServerManaged leaves
+	// an empty map.
+	artifactDoc := map[string]any{
+		"name": "art",
+		"type": "application",
+		"spec": map[string]any{
+			"id":     "68a0",
+			"status": "locked",
+		},
+	}
+
+	_, err := NewLive(workloadID, map[string]any{"name": "wl"}, artifactDoc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), workloadID,
+		"the error must name the workload id even when spec strips to empty")
+	assert.Contains(t, err.Error(), "no artifact spec")
+}
+
+// An artifact doc with an explicitly empty spec mapping is the same failure:
+// there is nothing to bind, and the error fires at bind time rather than at
+// validate time.
+func TestNewLive_EmptySpecFailsWithWorkloadID(t *testing.T) {
+	workloadID := "68b0deadbeef"
+
+	artifactDoc := map[string]any{
+		"name": "art",
+		"type": "service",
+		"spec": map[string]any{},
+	}
+
+	_, err := NewLive(workloadID, map[string]any{"name": "wl"}, artifactDoc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), workloadID)
 }
