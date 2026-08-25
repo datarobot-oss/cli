@@ -37,14 +37,15 @@ func isNullish(node *yaml.Node) bool {
 	// Note: this helper deliberately collapses three wire shapes
 	// 1. absent,
 	// 2. explicit null, and
-	// 3. empty mapping — into a single "not set" meaning,
-	// because that is how the workload endpoints behave today.
+	// 3. empty mapping
+	// into a single "not set" meaning because that is how the workload
+	// endpoints behave today.
 	//
-	// GET responses echo null-valued keys as placeholders (autoscaling: null when
-	// no policy is configured, enabled: null inside one that is), and the create
-	// endpoint reads an empty block the same as a missing one. The CLI also never
-	// writes nulls back: stripKeys purges them so a committed manifest stays
-	// canonical even when the wire format is not.
+	// GET responses echo null-valued keys as placeholders (autoscaling: null
+	// when no policy is configured, enabled: null inside one that is), and the
+	// create endpoint reads an empty block the same as a missing one. The CLI
+	// also never writes nulls back: stripKeys purges them so a committed
+	// manifest stays canonical even when the wire format is not.
 	//
 	// If the API ever gives these shapes distinct meanings — the classic case
 	// being null-as-delete in a PATCH — this helper, its validator call sites,
