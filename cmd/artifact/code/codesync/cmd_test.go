@@ -314,6 +314,41 @@ func TestRunE_JSONOutput(t *testing.T) {
 	assert.Contains(t, out, `"v2"`)
 }
 
+// Exit is 0 and the upload list reads as a sync that will work, so this flag
+// is the only thing in the document that says the plan can never be applied.
+// The stderr notice does not reach a script.
+func TestRunE_JSONOutput_LockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": true`)
+	assert.False(t, fe.executed)
+}
+
+// The ordinary case says so too, rather than leaving a reader to infer it from
+// a key that is not there.
+func TestRunE_JSONOutput_UnlockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": false`)
+}
+
 // TestRunE_JSONOutput_ConflictWithoutYes: with conflicts present and
 // no --yes, the JSON path must emit the plan and stop — it must NOT
 // auto-execute. Mirrors the human-path quit branch and prevents a

@@ -1009,6 +1009,34 @@ func TestRun_LinkFailureNamesTheStrandedArtifact(t *testing.T) {
 	assert.NotContains(t, tr.steps, "sync")
 }
 
+// The other half of the same accident, on a directory that is already linked,
+// which is what every roll and every redraft is. The advice has to differ:
+// 'dr artifact code init' refuses a directory holding state, so naming it here
+// would send the reader in a circle, and deleting the state to force it would
+// throw away the catalog the redraft exists to keep. The artifact id still has
+// to reach the envelope, or a run that stranded one reports none.
+func TestRun_RelinkFailureNamesTheFileToEditInstead(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.save = func(string, wapi.Config) error { return errors.New("permission denied") }
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-1", "the stranded artifact has to be named")
+	assert.Contains(t, err.Error(), "artifactId")
+	assert.Contains(t, err.Error(), "config.json")
+	assert.NotContains(t, err.Error(), "dr artifact code init",
+		"that command refuses a directory that already has state")
+
+	assert.Equal(t, "art-1", result.ArtifactID,
+		"a run that created an artifact and then stranded it still has to report which")
+	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed once the link is unknown")
+}
+
 // A build that fails is the end of the deploy. Creating the workload anyway
 // would produce something that cannot start, and the message points at the
 // logs that say why rather than repeating that it failed.

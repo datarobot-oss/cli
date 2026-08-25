@@ -36,7 +36,7 @@ type PlanJSON struct {
 	// one case where a full upload list means the opposite of what it looks
 	// like, and a script reading only this document has nothing else to go on:
 	// the human warning goes to stderr and the exit status is 0.
-	Locked bool `json:"locked,omitempty"`
+	Locked bool `json:"locked"`
 }
 
 type FileActionJSON struct {

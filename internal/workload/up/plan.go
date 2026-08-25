@@ -107,6 +107,15 @@ func (p Plan) RollsArtifact() bool {
 	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
 }
 
+// MintsVersion reports whether this run will produce a new artifact. Only a
+// run that does can lock one, so it is what decides whether the plan says
+// anything about locking: a change that moves the sizing alone is applied in
+// place, and a stopped workload is simply started, both leaving the locked
+// artifact exactly as it is.
+func (p Plan) MintsVersion() bool {
+	return p.Creates || p.RollsArtifact()
+}
+
 // Action names the outcome, for the summary line and the JSON envelope.
 func (p Plan) Action() string {
 	switch {

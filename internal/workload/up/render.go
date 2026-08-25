@@ -165,7 +165,7 @@ func lockLines(plan Plan) []string {
 	// one is simply started: both leave the locked artifact exactly as it is,
 	// so saying a version was created and locked would describe a deploy that
 	// is not the one about to happen.
-	if !plan.Creates && !plan.RollsArtifact() {
+	if !plan.MintsVersion() {
 		return nil
 	}
 
@@ -292,9 +292,17 @@ func plural(n int, one, many string) string {
 // secret would be worse than a human-readable one, since it ends up in CI
 // artifacts.
 type PlanJSON struct {
-	Action   string   `json:"action"`
-	State    string   `json:"state"`
-	Creates  bool     `json:"creates"`
+	Action  string `json:"action"`
+	State   string `json:"state"`
+	Creates bool   `json:"creates"`
+
+	// Locked reports that this run will permanently lock the version it
+	// deploys, because the one it replaces is locked and the platform will not
+	// put a draft where a locked artifact was. It is the one consequence of a
+	// deploy that cannot be undone and that nothing in the file asked for, so a
+	// caller reading only this document has to be able to see it coming.
+	Locked bool `json:"locked"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -308,19 +316,32 @@ type CodeJSON struct {
 	Changed     bool `json:"changed"`
 	Files       int  `json:"files"`
 	FirstDeploy bool `json:"firstDeploy"`
+
+	// LinkLocked reports that the artifact this project pushes into can no
+	// longer take code, so the run will mint one that can and move the link
+	// onto it. The live workload is not locked in that case, so the envelope's
+	// own Locked field says nothing about it.
+	LinkLocked bool `json:"linkLocked"`
 }
 
 // JSON projects the plan into its machine-readable shape.
 func (p Plan) JSON() PlanJSON {
+	// Both lock facts are gated on the same question the printed plan asks, so
+	// the two renderings of one plan cannot come to disagree about whether this
+	// run locks anything.
+	mints := p.MintsVersion()
+
 	return PlanJSON{
 		Action:  p.Action(),
 		State:   p.State.String(),
 		Creates: p.Creates,
+		Locked:  p.Locked && mints,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),
 			Files:       p.Code.Files,
 			FirstDeploy: p.Code.FirstDeploy,
+			LinkLocked:  p.Code.LinkLocked && mints,
 		},
 		Artifact: describeAll(p.Artifact),
 		Runtime:  describeAll(p.Runtime),

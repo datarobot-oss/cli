@@ -313,3 +313,44 @@ func TestRender_RedraftOfALockedLinkIsAnnounced(t *testing.T) {
 	assert.Contains(t, out, "~ lock")
 	assert.Contains(t, out, "pushes to that instead")
 }
+
+// A caller reading only the JSON has no other way to learn that this run will
+// lock a version for good, or that it will redraft a locked link and move the
+// project onto something else. The envelope's own Locked field is the live
+// artifact's state, which is false on the create path precisely when the
+// redraft is what is about to happen.
+func TestPlanJSON_CarriesTheLockFacts(t *testing.T) {
+	rolls := Plan{
+		State:  StateRunning,
+		Locked: true,
+		Code:   CodeChange{Applies: true, Files: 1},
+	}.JSON()
+
+	assert.True(t, rolls.Locked)
+
+	redrafts := Plan{
+		State:   StateUnbound,
+		Creates: true,
+		Code:    CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
+	}.JSON()
+
+	assert.True(t, redrafts.Code.LinkLocked)
+	assert.False(t, redrafts.Locked, "no live artifact is being replaced on a create")
+}
+
+// The JSON is gated on the same question the printed plan is, or the two
+// renderings of one plan would disagree about whether it locks anything.
+func TestPlanJSON_NoLockFactsWhenNothingIsMinted(t *testing.T) {
+	sizing := Plan{
+		State:   StateRunning,
+		Locked:  true,
+		Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+	}.JSON()
+
+	assert.False(t, sizing.Locked, "a sizing change is applied in place and mints nothing")
+
+	start := Plan{State: StateStopped, Locked: true, Code: CodeChange{Applies: true, LinkLocked: true}}.JSON()
+
+	assert.False(t, start.Locked)
+	assert.False(t, start.Code.LinkLocked)
+}
