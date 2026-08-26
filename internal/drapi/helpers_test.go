@@ -64,7 +64,7 @@ func TestEndpointURL_PropagatesConfigError(t *testing.T) {
 	assert.Empty(t, got)
 }
 
-func TestErrFromResp_WithBody(t *testing.T) {
+func TestErrFromResp_LiftsFastAPIDetail(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusInternalServerError,
 		Body:       io.NopCloser(strings.NewReader(`{"detail":"boom"}`)),
@@ -72,12 +72,39 @@ func TestErrFromResp_WithBody(t *testing.T) {
 
 	err := ErrFromResp(resp, "https://example.test/api/v2/files/")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `body={"detail":"boom"}`)
+	// The server's own sentence, not a raw JSON dump.
+	assert.Contains(t, err.Error(), "boom")
+	assert.NotContains(t, err.Error(), "body=")
 
 	var httpErr *HTTPError
 
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
+	assert.Equal(t, "boom", httpErr.Detail)
+}
+
+func TestErrFromResp_NonStringDetailIsReencoded(t *testing.T) {
+	// FastAPI validation errors carry detail as an array; the field-level
+	// messages must survive into the error text.
+	resp := &http.Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Body:       io.NopCloser(strings.NewReader(`{"detail":[{"msg":"field required"}]}`)),
+	}
+
+	err := ErrFromResp(resp, "https://example.test/api/v2/files/")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "field required")
+}
+
+func TestErrFromResp_NonDetailBodyKeepsBodyForm(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(strings.NewReader("upstream connect error")),
+	}
+
+	err := ErrFromResp(resp, "https://example.test/api/v2/files/")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "body=upstream connect error")
 }
 
 func TestErrFromResp_EmptyBody(t *testing.T) {

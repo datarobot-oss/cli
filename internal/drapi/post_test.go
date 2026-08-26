@@ -91,6 +91,8 @@ func TestPost_NonSuccess(t *testing.T) {
 
 // Non-success response bodies must reach the caller so server validation
 // details (e.g. a FastAPI {"detail":[...]} envelope) survive in the error.
+// The detail is lifted out of its envelope, so the assertion is on the
+// field-level messages, not the verbatim body.
 func TestPost_NonSuccess_IncludesBody(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 
@@ -105,7 +107,8 @@ func TestPost_NonSuccess_IncludesBody(t *testing.T) {
 	resp, err := Post(server.URL, "", map[string]string{}) //nolint:bodyclose // resp is nil on error; Post closes it before returning
 	require.Error(t, err)
 	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), validationBody)
+	assert.Contains(t, err.Error(), "Field required")
+	assert.Contains(t, err.Error(), "spec")
 
 	var httpErr *HTTPError
 

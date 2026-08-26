@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -168,23 +169,67 @@ func IsBuildErrorStatus(s string) bool {
 	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
 }
 
+// Trigger retries are keyed on exactly the two statuses the platform answers
+// with explicit safe-to-retry semantics: 503 (a dependency it needs is
+// temporarily down) and 504 (the build service did not confirm the submission
+// and nothing was recorded on the artifact). Any other status fails fast —
+// a plain 500 from an older server may have half-succeeded, where re-POSTing
+// risks a duplicate build.
+var triggerRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
+
+// triggerRetrySleep is time.Sleep, replaced by tests so retry coverage does
+// not spend wall-clock time.
+var triggerRetrySleep = time.Sleep
+
+func isRetryableTriggerStatus(err error) bool {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	// A 503 is safe to retry wherever it was minted: a gateway answers it
+	// before the request reaches the platform. A 504 is only safe when the
+	// PLATFORM answered it — its "nothing was recorded" guarantee comes with
+	// a JSON detail body, which is what fills Detail. A proxy's own 504
+	// (HTML/plain body, Detail empty) means the platform may still be
+	// processing and might yet record the build, so retrying risks a
+	// duplicate.
+	switch httpErr.StatusCode {
+	case http.StatusServiceUnavailable:
+		return true
+	case http.StatusGatewayTimeout:
+		return httpErr.Detail != ""
+	}
+
+	return false
+}
+
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and
-// returns the trigger response. The defensive empty-slice check is in the
-// caller so the service layer remains a thin pass-through of the server
-// shape.
+// returns the trigger response, retrying the statuses the platform declares
+// safe to retry. The defensive empty-slice check is in the caller so the
+// service layer remains a thin pass-through of the server shape.
 func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/")
 	if err != nil {
 		return nil, err
 	}
 
-	var resp BuildTriggerResponse
+	for attempt := 0; ; attempt++ {
+		var resp BuildTriggerResponse
 
-	if err := drapi.PostJSON(url, "build", map[string]any{}, &resp); err != nil {
-		return nil, err
+		err := drapi.PostJSON(url, "build", map[string]any{}, &resp)
+		if err == nil {
+			return &resp, nil
+		}
+
+		if attempt >= len(triggerRetryDelays) || !isRetryableTriggerStatus(err) {
+			return nil, err
+		}
+
+		log.Debug("build trigger got a retryable status; retrying",
+			"artifact_id", artifactID, "attempt", attempt+1, "err", err)
+		triggerRetrySleep(triggerRetryDelays[attempt])
 	}
-
-	return &resp, nil
 }
 
 // GetArtifactBuild fetches a single Build by id.

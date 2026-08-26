@@ -265,6 +265,128 @@ func TestTriggerArtifactBuild_PropagatesValidationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "Artifact not found", "validation body must reach caller (0ae2527 regression)")
 }
 
+func TestTriggerArtifactBuild_RetriesGatewayTimeoutThenSucceeds(t *testing.T) {
+	installSkipAuth(t)
+
+	var slept []time.Duration
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(d time.Duration) { slept = append(slept, d) }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte(`{"detail":"The image build service did not confirm the build submission in time. No build was recorded on the artifact; it is safe to retry."}`))
+
+			return
+		}
+
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"buildIds":["b-1"]}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	resp, err := TriggerArtifactBuild("art-1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"b-1"}, resp.BuildIDs)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, []time.Duration{2 * time.Second}, slept)
+}
+
+func TestTriggerArtifactBuild_DoesNotRetryProxy504(t *testing.T) {
+	// A 504 without a FastAPI detail body was minted by a proxy, not the
+	// platform — the platform may still be processing and might yet record
+	// the build, so retrying risks a duplicate.
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) { t.Fatal("must not sleep: a proxy 504 is not retryable") }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = w.Write([]byte("<html>504 Gateway Time-out</html>"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
+func TestTriggerArtifactBuild_DoesNotRetryPlain500(t *testing.T) {
+	// A bare 500 has no safe-to-retry contract: an older server may have
+	// half-succeeded, and re-POSTing could start a duplicate build.
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) { t.Fatal("must not sleep: 500 is not retryable") }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"detail":"Internal server error"}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
+func TestTriggerArtifactBuild_GivesUpAfterRetryBudget(t *testing.T) {
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) {}
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"detail":"A DataRobot service needed to submit the build is temporarily unavailable, please retry in a few minutes."}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1+len(triggerRetryDelays), calls)
+	// The server's own sentence must reach the user, not a raw JSON dump.
+	assert.Contains(t, err.Error(), "temporarily unavailable")
+	assert.NotContains(t, err.Error(), `{"detail"`)
+}
+
 func TestGetArtifactBuild_Decodes(t *testing.T) {
 	installSkipAuth(t)
 
