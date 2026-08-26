@@ -262,7 +262,7 @@ Add periods to descriptions
 
 **Format**
 ```markdown
-✅ **Note:** The CLI requires Go 1.26.6 or later.
+✅ **Note:** The CLI requires Go 1.26.7 or later.
 
 ✅ **Important:** Never commit `.env` files to version control.
 
