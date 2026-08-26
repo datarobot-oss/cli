@@ -11,7 +11,12 @@ set -euo pipefail
 GO_REQUIRED=$(grep '^go ' go.mod | awk '{print $2}')
 GO_INSTALLED=$(go version | awk '{print $3}' | sed 's/go//')
 
-if [ "$GO_REQUIRED" != "$GO_INSTALLED" ]; then
+# A newer toolchain satisfies an older go.mod directive, and the release
+# feed only lists current versions — a superseded patch release cannot be
+# fetched at all. So only ever upgrade forward.
+if [ "$(printf '%s\n%s\n' "$GO_REQUIRED" "$GO_INSTALLED" | sort -V | head -n1)" = "$GO_REQUIRED" ]; then
+    echo "Go $GO_INSTALLED satisfies go.mod's go $GO_REQUIRED"
+elif [ "$GO_REQUIRED" != "$GO_INSTALLED" ]; then
     echo "Go mismatch: need $GO_REQUIRED, have $GO_INSTALLED. Upgrading..."
     ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
     TARBALL="go${GO_REQUIRED}.linux-${ARCH}.tar.gz"
