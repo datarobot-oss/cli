@@ -32,12 +32,18 @@ func TestExecEnvPicker_ShowsTheLanguageColumn(t *testing.T) {
 			ID: "ee-2", Name: "Node", ProgrammingLanguage: "other",
 			LatestSuccessfulVersion: &workload.EEVersion{ID: "v2"},
 		},
+		{
+			ID: "ee-3", Name: "R Lab", ProgrammingLanguage: "R",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "v3"},
+		},
 	}, 120, 40)
 
-	require.Len(t, picker.all, 2)
+	require.Len(t, picker.all, 3)
 	assert.Equal(t, []string{"BASE IMAGE", "LANGUAGE", "ID"}, picker.headers)
 	assert.Equal(t, []string{"Py 3.12", "python", "ee-1"}, picker.all[0].cells)
 	// "other" is where the platform files what it cannot name; as a column
 	// value it reads better as absence than as a category.
 	assert.Equal(t, []string{"Node", "—", "ee-2"}, picker.all[1].cells)
+	// The platform's own casing is kept: only the sort folds case.
+	assert.Equal(t, []string{"R Lab", "R", "ee-3"}, picker.all[2].cells)
 }

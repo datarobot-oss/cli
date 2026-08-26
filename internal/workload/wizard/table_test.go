@@ -171,6 +171,12 @@ func TestRowTable_FilterAcceptsSpaces(t *testing.T) {
 
 	table := newRowTable([]string{"NAME", "DETAIL"}, rows, true, 120, 44)
 
+	// A leading space is swallowed like "/": a filter of one space is
+	// invisible, and the esc that then seems to do nothing would be spent
+	// clearing it instead of going back.
+	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "swallowed, not handed to paging")
+	assert.Empty(t, table.filter, "a space does not start a filter")
+
 	typeFilter(&table, "py")
 	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "space is filter input, not paging")
 	typeFilter(&table, "3.1")

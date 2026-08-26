@@ -331,7 +331,7 @@ func TestListExecutionEnvironments_ClustersLanguagesWithOtherLast(t *testing.T) 
 		fmt.Fprintf(w, `{"data": [%s, %s, %s, %s, %s], "next": ""}`,
 			eeDocLang("ee-other", "AAA first by name alone", "other", "v1"),
 			eeDocLang("ee-none", "BBB unlabeled", "", "v2"),
-			eeDocLang("ee-r", "R Lab", "r", "v3"),
+			eeDocLang("ee-r", "R Lab", "R", "v3"),
 			eeDocLang("ee-java", "JVM", "java", "v4"),
 			eeDocLang("ee-py", "Py", "python", "v5"),
 		)
@@ -352,7 +352,8 @@ func TestListExecutionEnvironments_ClustersLanguagesWithOtherLast(t *testing.T) 
 
 	// java < python < r, then the catch-all and the unlabeled at the end by
 	// name — "other" is where the platform files what it cannot name, so it
-	// belongs after the languages that say something.
+	// belongs after the languages that say something. The capital "R" is the
+	// pin on the case folding: byte-sorted it would land ahead of java.
 	assert.Equal(t, []string{"ee-java", "ee-py", "ee-r", "ee-other", "ee-none"}, got)
 }
 

@@ -241,9 +241,15 @@ func (t *rowTable) update(msg tea.KeyMsg) bool {
 		// name like "Py 3.12" could not be typed. In a filterable table every
 		// printable character is filter input ("f" and "b" already are), and
 		// paging keeps pgup/pgdown.
-		t.filter += " "
+		//
+		// As a first keystroke it is swallowed like "/" above: a filter of
+		// one space is invisible on screen, and the esc that then seems to
+		// do nothing would be spent clearing it instead of going back.
+		if t.filter != "" {
+			t.filter += " "
 
-		t.apply()
+			t.apply()
+		}
 
 		return true
 	}
