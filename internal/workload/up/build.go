@@ -17,11 +17,15 @@ package up
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/tui"
 )
 
 // buildAndCreate is the first deploy of a project whose image the platform
@@ -317,19 +321,60 @@ func maybeBuild(
 	report *reporter,
 ) (string, error) {
 	if !fresh && !opts.ForceBuild && !changed(code, synced) {
-		built, err := hasImage(artifactID)
+		builds, err := listBuildsFn(artifactID, buildHistoryLimit)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
 		}
 
-		if built {
+		if hasImage(builds) {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
 			return "", nil
 		}
+
+		// The tree matches what was synced and no image exists yet — if a
+		// build of that code is already running (a previous up triggered it
+		// and died, or another terminal is mid-deploy), attach to it instead
+		// of starting a second one. Only safe on this path: when the code
+		// changed, a running build is building the old tree, and a fresh
+		// trigger — which supersedes it server-side — is the correct move.
+		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
+			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
+
+			return buildImage(artifactID, running, opts, report)
+		}
 	}
 
-	return buildImage(artifactID, opts, report)
+	return buildImage(artifactID, "", opts, report)
+}
+
+// runningBuild names the newest non-terminal build, "" when there is none
+// (the caller then just triggers, which is the pre-attach behavior and
+// always safe).
+func runningBuild(builds []workload.Build, maxAge time.Duration) string {
+	if len(builds) == 0 || workload.IsTerminalBuildStatus(builds[0].Status) {
+		return ""
+	}
+
+	// A non-terminal build older than a wait would ever tolerate is wedged —
+	// an orphaned trigger or a lost reconcile — not running. Attaching would
+	// wait the whole timeout on a build that can never finish; triggering
+	// supersedes it server-side, which is also the cleanup.
+	if !builds[0].CreatedAt.IsZero() && phaseClock().Sub(builds[0].CreatedAt) > maxAge {
+		return ""
+	}
+
+	return builds[0].ID
+}
+
+// attachMaxAge is how old a running build may be and still be worth attaching
+// to: the poll timeout, because a healthy build finishes within one wait.
+func attachMaxAge(opts Options) time.Duration {
+	if opts.PollTimeout > 0 {
+		return opts.PollTimeout
+	}
+
+	return 30 * time.Minute
 }
 
 // changed reports whether anything moved. The sync's own count is preferred
@@ -351,43 +396,81 @@ func changed(code CodeChange, synced *sync.Result) bool {
 // The exception is code pushed by `dr artifact code sync` between deploys,
 // which leaves a completed build of the previous version and a tree that
 // looks unchanged to `up`. That is what --force-build is for.
-func hasImage(artifactID string) (bool, error) {
-	builds, err := listBuildsFn(artifactID, buildHistoryLimit)
-	if err != nil {
-		return false, fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
-	}
-
+func hasImage(builds []workload.Build) bool {
 	for _, build := range builds {
 		if workload.IsBuildCompleted(build.Status) {
-			return true, nil
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }
 
 // buildHistoryLimit bounds the look back for a completed build. A handful of
 // attempts is all a deploy can have made; past that the answer is no.
 const buildHistoryLimit = 20
 
-// buildImage builds the artifact's image and waits for it. The wait is not
-// optional even under --detach: a workload created against an artifact with
-// no image would come up unable to start, and --detach promises not to wait
-// for the workload, not to deploy something that cannot run.
-func buildImage(artifactID string, opts Options, report *reporter) (string, error) {
+// buildImage builds the artifact's image and waits for it, streaming the
+// build's own log lines beneath the phase header while it runs. attachTo, when
+// set, is an already-running build to follow instead of triggering a new one.
+//
+// The wait is not optional even under --detach: a workload created against an
+// artifact with no image would come up unable to start, and --detach promises
+// not to wait for the workload, not to deploy something that cannot run.
+func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
 	var built *workload.Build
 
-	err := report.run("Building the image", func() error {
-		buildID, triggerErr := triggerBuild(artifactID)
-		if triggerErr != nil {
-			return triggerErr
+	err := report.stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		buildID := attachTo
+		if buildID == "" {
+			triggered, triggerErr := triggerBuild(artifactID)
+			if triggerErr != nil {
+				return triggerErr
+			}
+
+			buildID = triggered
+		}
+
+		// The line below is the phase's heartbeat: the trigger above can
+		// legitimately take minutes against a slow platform, and the first
+		// log line lags the build by however long ingestion takes, so without
+		// it the header sits alone and reads as a hang.
+		say("following build "+buildID+"; its first log lines can take a minute to arrive", tui.HintStyle)
+
+		// The tail is progress feedback only: it never errors, and after
+		// sustained fetch failures it says so once and goes quiet, while the
+		// build wait carries on. Its notices go into the stream marked as the
+		// CLI's own — silence here is indistinguishable from a hang, which is
+		// worse than one meta line among the build's output.
+		tail := workload.NewBuildLogTail(artifactID, buildID,
+			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
+			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
+
+		// Each status transition is narrated, because the stages before the
+		// builder speaks — accepted, waiting for a builder — are exactly the
+		// quiet ones where the user wonders whether anything is happening.
+		// Terminal statuses are left to the phase's own ending.
+		lastStatus := ""
+
+		onTick := func(b *workload.Build) {
+			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
+				lastStatus = b.Status
+
+				say(buildStatusLine(b.Status), tui.HintStyle)
+			}
+
+			tail.Poll()
 		}
 
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, nil)
+		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
+
+		// The final catch-up: ingestion lags the build, so the last lines
+		// routinely land after the wait, and the reorder buffer must drain.
+		tail.Finish()
 
 		return waitErr
 	})
@@ -407,6 +490,36 @@ func buildImage(artifactID string, opts Options, report *reporter) (string, erro
 	// A build still running when the wait expires keeps its id too: it is
 	// what the user needs to follow it to the end.
 	return built.ID, err
+}
+
+// buildLogLine renders one streamed build log line with the style its level
+// deserves. The message alone, dimmed, is the line for routine output; a
+// non-info level is called out and colored, because an error scrolling past
+// dimmed and unmarked defeats the point of streaming.
+func buildLogLine(e workload.WorkloadLogEntry) (string, lipgloss.Style) {
+	switch strings.ToLower(e.Level) {
+	case "", "info", "debug":
+		return e.Message, tui.HintStyle
+	case "warn", "warning":
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.WarnStyle
+	default:
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.ErrorStyle
+	}
+}
+
+// buildStatusLine narrates a build status for the stream, in words rather
+// than enum values for the two stages every build passes through.
+func buildStatusLine(status string) string {
+	switch strings.ToUpper(status) {
+	case workload.BuildStatusPending:
+		return "build accepted; waiting for a builder to pick it up"
+	case workload.BuildStatusInProgress:
+		return "builder running"
+	case "BUILT":
+		return "image built; pushing it to the registry"
+	default:
+		return "build is " + strings.ToLower(status)
+	}
 }
 
 // triggerBuild starts one build and names it. The endpoint answers with a

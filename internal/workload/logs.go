@@ -175,6 +175,13 @@ func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo 
 		return nil, err
 	}
 
+	return drainLogPages(pageURL, maxEntries, reqInfo)
+}
+
+// drainLogPages walks an OTEL logs route's pagination from pageURL,
+// newest-first, applying the same page-overlap dedup and maxEntries cap for
+// every log source.
+func drainLogPages(pageURL string, maxEntries int, reqInfo string) ([]WorkloadLogEntry, error) {
 	var all []WorkloadLogEntry
 
 	priorPages := make(map[string]struct{})
@@ -212,6 +219,11 @@ func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo 
 	return all, nil
 }
 
+// logsFetchFn retrieves one poll's worth of log lines newest-first. It is the
+// seam that lets the follower stream any OTEL log source: the workload stream
+// and a build's filtered artifact stream differ only in this function.
+type logsFetchFn func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error)
+
 // FollowWorkloadLogs streams a workload's log lines until ctx is cancelled
 // (Ctrl-C ends it cleanly with nil) or a terminal fetch error occurs. It
 // seeds with the most recent limit lines, then polls for newer ones, falling
@@ -230,13 +242,19 @@ func FollowWorkloadLogs(
 	onLine func(WorkloadLogEntry) error,
 	onWarn func(string),
 ) error {
-	f, err := newLogFollower(workloadID, limit, level, interval, onLine, onWarn)
+	fetch := func(maxEntries int, lvl, since, reqInfo string) ([]WorkloadLogEntry, error) { //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
+		return fetchWorkloadLogs(workloadID, maxEntries, lvl, since, reqInfo)
+	}
+
+	f, err := newLogFollower(fetch, limit, level, interval, onLine, onWarn)
 	if err != nil {
 		return err
 	}
 
+	f.gapHint = " (re-run with a larger --limit)"
+
 	for {
-		entries, hadSince, err := f.fetch() //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
+		entries, hadSince, err := f.fetch()
 		if err != nil {
 			retryNow, ferr := f.fetchFailure(err, hadSince)
 			if ferr != nil {
@@ -266,11 +284,21 @@ func FollowWorkloadLogs(
 
 // logFollower holds one follow stream's state between polls.
 type logFollower struct {
-	workloadID string
-	limit      int
-	level      string
-	onLine     func(WorkloadLogEntry) error
-	onWarn     func(string)
+	fetchFn logsFetchFn
+	limit   int
+	level   string
+	onLine  func(WorkloadLogEntry) error
+	onWarn  func(string)
+
+	// gapHint is appended to the possible-gap warning; it names the remedy,
+	// which only the caller knows (a --limit flag exists on `workload logs`
+	// but not on every stream this follower serves).
+	gapHint string
+
+	// lag is how far behind the newest-seen timestamp the cursor trails, so
+	// late-ingested lines are caught by the dedup overlap rather than
+	// skipped. Callers whose source ingests slowly (build logs) widen it.
+	lag time.Duration
 
 	dedup           *logDedup
 	cursor          time.Time // newest parsed timestamp; zero means window mode
@@ -280,13 +308,17 @@ type logFollower struct {
 }
 
 func newLogFollower(
-	workloadID string,
+	fetchFn logsFetchFn,
 	limit int,
 	level string,
 	interval time.Duration,
 	onLine func(WorkloadLogEntry) error,
 	onWarn func(string),
 ) (*logFollower, error) {
+	if fetchFn == nil {
+		return nil, errors.New("fetchFn is required")
+	}
+
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
@@ -304,13 +336,14 @@ func newLogFollower(
 	}
 
 	return &logFollower{
-		workloadID:   workloadID,
+		fetchFn:      fetchFn,
 		limit:        limit,
 		level:        level,
 		onLine:       onLine,
 		onWarn:       onWarn,
 		dedup:        newLogDedup(followSeenCap),
 		cursorUsable: true,
+		lag:          followLagAllowance,
 	}, nil
 }
 
@@ -322,13 +355,13 @@ func (f *logFollower) fetch() (entries []WorkloadLogEntry, hadSince bool, err er
 	maxEntries := f.limit
 
 	if f.seeded && f.cursorUsable && !f.cursor.IsZero() {
-		since = f.cursor.Add(-followLagAllowance).UTC().Format(time.RFC3339Nano)
+		since = f.cursor.Add(-f.lag).UTC().Format(time.RFC3339Nano)
 		maxEntries = 0
 	}
 
 	// Empty reqInfo silences drapi's per-request "Fetching ..." log so the
-	// follow stream stays just the workload's log lines.
-	entries, err = fetchWorkloadLogs(f.workloadID, maxEntries, f.level, since, "")
+	// follow stream stays just the source's log lines.
+	entries, err = f.fetchFn(maxEntries, f.level, since, "")
 
 	return entries, since != "", err
 }
@@ -352,7 +385,7 @@ func (f *logFollower) fetchFailure(err error, hadSince bool) (retryNow bool, _ e
 	f.transientErrors++
 
 	if f.transientErrors > maxTransientPollErrors {
-		return false, fmt.Errorf("fetch workload logs: %d consecutive transient errors, last: %w", f.transientErrors, err)
+		return false, fmt.Errorf("fetch logs: %d consecutive transient errors, last: %w", f.transientErrors, err)
 	}
 
 	f.onWarn(fmt.Sprintf("transient error fetching logs, retrying: %v", err))
@@ -365,15 +398,18 @@ func (f *logFollower) fetchFailure(err error, hadSince bool) (retryNow bool, _ e
 func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 	f.transientErrors = 0
 
-	// Newest first from the server; chronological for display.
+	// Newest first from the server; chronological for display. The reverse
+	// gets the bulk order right; the sort settles lines the collector
+	// ingested out of event order.
 	slices.Reverse(entries)
+	sortChronological(entries)
 
 	fresh := f.dedup.filterUnseen(entries)
 
 	// A full window with zero overlap means >limit lines arrived since the
 	// last poll and the excess is unfetchable.
 	if f.seeded && !hadSince && len(entries) == f.limit && len(fresh) == len(entries) {
-		f.onWarn(fmt.Sprintf("possible gap: more than %d new lines arrived since the last poll and some may have been skipped (re-run with a larger --limit)", f.limit))
+		f.onWarn(fmt.Sprintf("possible gap: more than %d new lines arrived since the last poll and some may have been skipped%s", f.limit, f.gapHint))
 	}
 
 	for _, e := range fresh {
@@ -382,15 +418,43 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 		}
 	}
 
+	f.advanceCursor(entries)
+
+	// An empty fetch seeds nothing: marking it seeded would pin a zero
+	// cursor, and the NEXT poll — the first with real lines — would be a
+	// window fetch capped at limit, gapping a producer that burst past it
+	// (a builder's opening seconds do exactly that).
+	if len(entries) > 0 {
+		f.seeded = true
+	}
+
+	return nil
+}
+
+// sortChronological stable-sorts entries by their parsed timestamps, settling
+// lines the collector ingested out of event order (a build's "#1 DONE"
+// arriving before its "#1 [internal] load"). Unparseable timestamps stay
+// where the server put them.
+func sortChronological(entries []WorkloadLogEntry) {
+	slices.SortStableFunc(entries, func(a, b WorkloadLogEntry) int {
+		ta, aok := parseLogTimestamp(a.Timestamp)
+		tb, bok := parseLogTimestamp(b.Timestamp)
+
+		if !aok || !bok {
+			return 0
+		}
+
+		return ta.Compare(tb)
+	})
+}
+
+// advanceCursor moves the cursor past the newest parseable timestamp.
+func (f *logFollower) advanceCursor(entries []WorkloadLogEntry) {
 	for _, e := range entries {
 		if t, ok := parseLogTimestamp(e.Timestamp); ok && t.After(f.cursor) {
 			f.cursor = t
 		}
 	}
-
-	f.seeded = true
-
-	return nil
 }
 
 // isFilterRejectedError reports whether the server rejected the query params
