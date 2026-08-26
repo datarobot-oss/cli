@@ -797,7 +797,7 @@ func create(
 		return result, nil
 	}
 
-	return settle(created.ID, result, opts, report)
+	return settle(created.ID, "", result, opts, report)
 }
 
 // startFirst brings a stopped workload up so the rest of the plan has
@@ -840,10 +840,10 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 	// Only the run that ends here may lock: locking is about the artifact left
 	// serving, and a start that is about to be rolled off is not that.
 	if only {
-		return settle(result.WorkloadID, result, opts, report)
+		return settle(result.WorkloadID, "", result, opts, report)
 	}
 
-	return awaitRunning(result.WorkloadID, result, opts, report)
+	return awaitRunning(result.WorkloadID, "", result, opts, report)
 }
 
 // requestStart POSTs the start and passes on the one thing the platform says
@@ -945,8 +945,17 @@ func isConflict(err error) bool {
 // awaitRunning instead: locking is about the artifact left serving, and an
 // artifact about to be rolled off is not it. Locking cannot be undone, so the
 // distinction is not a tidiness one.
-func settle(workloadID string, result Result, opts Options, report *reporter) (Result, error) {
-	result, err := awaitRunning(workloadID, result, opts, report)
+//
+// wantArtifactID is what makes the lock safe as well as the report honest. lock
+// makes result.ArtifactID permanent, and that is whatever the wait last saw: a
+// wait that returned early would lock the artifact being rolled off, leaving it
+// undeletable while the version actually serving stays a draft.
+//
+// It is also what puts verifyEndpoint after the cutover rather than inside it.
+// Before this wait existed, a roll GETted the endpoint mid-swap and reported
+// the version being replaced.
+func settle(workloadID, wantArtifactID string, result Result, opts Options, report *reporter) (Result, error) {
+	result, err := awaitRunning(workloadID, wantArtifactID, result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -964,11 +973,22 @@ func settle(workloadID string, result Result, opts Options, report *reporter) (R
 }
 
 // awaitRunning waits for the workload to come up and records where it landed.
-func awaitRunning(workloadID string, result Result, opts Options, report *reporter) (Result, error) {
+//
+// wantArtifactID is the artifact this run put there, and empty when the run
+// changed none: a create, a start and a resize all leave the running artifact
+// where it was. A roll names its candidate, because the workload reports
+// "running" for the whole of a swap and the status alone would settle the wait
+// before the new version had served anything.
+func awaitRunning(
+	workloadID, wantArtifactID string,
+	result Result,
+	opts Options,
+	report *reporter,
+) (Result, error) {
 	var final *workload.Workload
 
-	err := report.run("Waiting for the workload to run", func() error {
-		wl, waitErr := waitWorkloadFn(workloadID, opts.PollInterval, opts.PollTimeout, nil)
+	err := report.run(waitLabel(wantArtifactID, result), func() error {
+		wl, waitErr := waitWorkloadFn(workloadID, wantArtifactID, opts.PollInterval, opts.PollTimeout, nil)
 		final = wl
 
 		return waitErr
@@ -990,6 +1010,21 @@ func awaitRunning(workloadID string, result Result, opts Options, report *report
 	}
 
 	return result, nil
+}
+
+// waitLabel names what is actually being waited for.
+//
+// On a roll the workload never stopped running, so "waiting for the workload to
+// run" describes a wait that was over before it began, and printing it beside a
+// checkmark is how this bug read as a success. result.ArtifactID is still the
+// version that is serving at this point, so a want that differs from it is
+// precisely the roll case and nothing else.
+func waitLabel(wantArtifactID string, result Result) string {
+	if wantArtifactID != "" && wantArtifactID != result.ArtifactID {
+		return "Waiting for the new version to serve"
+	}
+
+	return "Waiting for the workload to run"
 }
 
 // lock makes the live artifact permanent. It runs only after the workload is

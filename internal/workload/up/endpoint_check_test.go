@@ -125,7 +125,7 @@ func TestRun_EndpointNotAnsweringDoesNotFailTheRun(t *testing.T) {
 	install(t, fakes{
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {
@@ -147,7 +147,7 @@ func TestRun_ReportsTheEndpointAnswer(t *testing.T) {
 	install(t, fakes{
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {

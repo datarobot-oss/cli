@@ -378,24 +378,57 @@ func GetWorkload(workloadID string) (*Workload, error) {
 }
 
 // WaitForWorkload polls GetWorkload on interval until the workload reaches a
-// terminal status (see IsTerminalWorkloadStatus) or deadline expires. It
-// returns the final Workload in every non-poll-error case so callers can render
-// it:
-//   - running: success, nil error.
+// terminal status (see IsTerminalWorkloadStatus) while serving wantArtifactID,
+// or the deadline expires. It returns the final Workload in every
+// non-poll-error case so callers can render it:
+//   - running the wanted artifact: success, nil error.
 //   - errored/terminated: the final workload alongside a failure error.
 //   - timeout: the last-seen workload alongside a timeout error (this covers a
-//     workload stuck in a non-running steady state such as stopped).
+//     workload stuck in a non-running steady state such as stopped, and one
+//     that is running but has never promoted the version the caller put there).
+//
+// wantArtifactID is the artifact the caller expects to find serving, and empty
+// when it has no expectation. A create, a start and a resize all leave the
+// running artifact where it was, so there is nothing for them to name; a roll
+// is the case this exists for.
+//
+// Naming it is what makes the wait mean anything there. The platform applies a
+// roll by replacing the workload with itself, and the version already serving
+// keeps serving for the whole of the swap, so the workload reports "running"
+// from before the rollout starts until after it ends. Waiting on the status
+// alone therefore returns on the first poll, on the old version, having proved
+// nothing: the command exits reporting success while the endpoint still answers
+// with the previous build.
+//
+// Ids are compared exactly, unlike every status comparison in this package.
+// Those fold because the platform does not agree with itself about the casing
+// of its enums. An object id is not an enum, and folding one would only hide a
+// mismatch worth seeing.
 //
 // onTick may be nil and is invoked after each poll for debug-only observation,
 // mirroring WaitForBuild.
 func WaitForWorkload(
-	workloadID string,
+	workloadID, wantArtifactID string,
 	interval, timeout time.Duration,
 	onTick func(*Workload),
 ) (*Workload, error) {
-	wl, err := pollWorkload(workloadID, interval, timeout, IsTerminalWorkloadStatus, onTick)
-	if err != nil || wl == nil {
-		return wl, err
+	// The error term comes first, and is deliberately not guarded by the
+	// artifact check. An errored workload is still reporting whatever it was
+	// running, which is never the artifact a roll is waiting for, so requiring
+	// both would poll a dead workload to its timeout instead of failing on the
+	// first sight of it.
+	stop := func(wl *Workload) bool {
+		return IsWorkloadErrorStatus(wl.Status) ||
+			(IsTerminalWorkloadStatus(wl.Status) && serving(wl, wantArtifactID))
+	}
+
+	wl, err := pollWorkload(workloadID, interval, timeout, stop, onTick)
+	if err != nil {
+		return wl, unpromoted(workloadID, wl, wantArtifactID, err)
+	}
+
+	if wl == nil {
+		return wl, nil
 	}
 
 	if IsWorkloadErrorStatus(wl.Status) {
@@ -404,6 +437,32 @@ func WaitForWorkload(
 	}
 
 	return wl, nil
+}
+
+// serving reports whether wl is running the artifact the caller named.
+//
+// An empty want is not a hole in the check: it is a caller that changed no
+// artifact, for whom the status is the whole question.
+func serving(wl *Workload, wantArtifactID string) bool {
+	return wantArtifactID == "" || wl.ArtifactID == wantArtifactID
+}
+
+// unpromoted replaces a bare timeout with what actually went wrong when the
+// workload was there all along and simply never took the new version.
+//
+// "timeout waiting for workload X" sends the reader looking for something that
+// is not stuck. Naming both artifacts says the rollout is what did not land and
+// that the old version is still the one answering, which is the difference
+// between reading logs and re-running the deploy.
+func unpromoted(workloadID string, wl *Workload, wantArtifactID string, err error) error {
+	if wl == nil || serving(wl, wantArtifactID) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"workload %s is %s but still serving artifact %s, not %s, so the rollout has not promoted "+
+			"the new version; check 'dr workload status %s': %w",
+		workloadID, wl.Status, wl.ArtifactID, wantArtifactID, workloadID, err)
 }
 
 // WaitForSteadyWorkload polls until the workload stops moving under its own
@@ -427,41 +486,68 @@ func WaitForSteadyWorkload(
 	interval, timeout time.Duration,
 	onTick func(*Workload),
 ) (*Workload, error) {
-	return pollWorkload(workloadID, interval, timeout, IsSteadyWorkloadStatus, onTick)
+	return pollWorkload(workloadID, interval, timeout, func(wl *Workload) bool {
+		return IsSteadyWorkloadStatus(wl.Status)
+	}, onTick)
 }
 
 // pollWorkload is the loop both waits share. It errors only on a poll that
-// failed and on the deadline, so the verdict on a status the loop stopped at is
-// the caller's to pass: the same "errored" is a failure to one of them and an
+// failed and on the deadline, so the verdict on a workload the loop stopped at
+// is the caller's to pass: the same "errored" is a failure to one of them and an
 // answer to the other.
 //
+// stop is handed the whole workload rather than its status because "has it
+// arrived" is not always a question about the status. A roll leaves the status
+// reading "running" from beginning to end, and the only thing that moves is
+// which artifact the workload names.
+//
 // The last-seen workload comes back with a timeout so a caller can still say
-// where it got to, and nothing at all comes back from a failed poll, since
-// there is no status to report.
+// where it got to, and nothing at all comes back from a failed poll, since a
+// wait that could not read the workload has no state to report.
+//
+// A transient failure is not a failed poll. These waits now run for as long as
+// a rollout takes, which is long enough for one 502 or one dropped connection
+// to land between two healthy polls, and failing a deploy that is going fine is
+// a worse answer than looking again. The allowance resets on every good poll,
+// so it forgives blips without ever forgiving an endpoint that has gone away.
 func pollWorkload(
 	workloadID string,
 	interval, timeout time.Duration,
-	stop func(string) bool,
+	stop func(*Workload) bool,
 	onTick func(*Workload),
 ) (*Workload, error) {
 	deadline := time.Now().Add(timeout)
 
+	var (
+		last      *Workload
+		transient int
+	)
+
 	for {
 		wl, err := GetWorkload(workloadID)
-		if err != nil {
+
+		switch {
+		case err == nil:
+			transient = 0
+			last = wl
+
+			if onTick != nil {
+				onTick(wl)
+			}
+
+			if stop(wl) {
+				return wl, nil
+			}
+
+		case isTransientPollError(err) && transient < maxTransientPollErrors:
+			transient++
+
+		default:
 			return nil, fmt.Errorf("poll workload %s: %w", workloadID, err)
 		}
 
-		if onTick != nil {
-			onTick(wl)
-		}
-
-		if stop(wl.Status) {
-			return wl, nil
-		}
-
 		if time.Now().After(deadline) {
-			return wl, fmt.Errorf("timeout waiting for workload %s after %s", workloadID, timeout)
+			return last, fmt.Errorf("timeout waiting for workload %s after %s", workloadID, timeout)
 		}
 
 		time.Sleep(interval)

@@ -37,16 +37,23 @@ import (
 // IsTerminalReplacementStatus treats an unrecognised status as still in
 // progress rather than guessing, the same stance IsTerminalBuildStatus takes.
 //
-// Known limitation, and the reason that stance is not free. A failure status
-// the platform adds later would be classified as still in progress, and if
-// the record is then cleared, WaitForReplacement reports the rollout as a
-// success. That "errored" had to be added at all is proof the vocabulary was
-// incomplete once already. Closing the hole properly means confirming after
-// the fact which artifact the workload ended up running, which needs a
-// verified answer about how quickly the workload reflects a completed
-// replacement; guessing at that would trade a rare false success for a
-// routine false failure. Worth settling the first time a rollout is driven
-// against a live instance.
+// That stance is not free: a failure status the platform adds later would be
+// classified as still in progress, and if the record is then cleared,
+// WaitForReplacement reports the rollout as a success. That "errored" had to be
+// added at all is proof the vocabulary was incomplete once already.
+//
+// A roll no longer rests on this. The deploy confirms after the fact which
+// artifact the workload ended up running, so a rollout this file mistook for a
+// success is caught by the wait that follows it rather than reported as one.
+// See WaitForWorkload's wantArtifactID.
+//
+// A resize still does rest on it, and that is the limitation that remains.
+// Applying new sizing replaces the workload with itself on the artifact it is
+// already running, so there is no artifact change for anything downstream to
+// confirm, and the record's own status is the only account of how it went. The
+// only other candidate signal is the runtime block converging on what was sent,
+// which cannot be trusted without knowing how the platform normalises it:
+// guessing there would trade a rare false success for a routine false failure.
 const (
 	ReplacementStatusCompleted = "completed"
 	ReplacementStatusFailed    = "failed"
@@ -331,10 +338,18 @@ func confirmWorkloadExists(workloadID string) error {
 // The two 404 cases mean opposite things, which is why this is not a plain
 // poll loop. Seen after a status, a 404 means the platform settled the
 // rollout and collected the record, which is success. Seen before any status,
-// it means nothing was ever active. That second case used to be reported as
-// an error unconditionally, which was wrong whenever the platform settled a
-// fast rollout before the first poll landed: passing started lets the wait
-// tell "it finished before I looked" from "it was never there".
+// it means either that nothing was ever active or that the platform settled a
+// fast rollout before the first poll landed; passing started is what lets the
+// wait tell those from each other.
+//
+// A 404 that arrives before any record has been watched has to earn its
+// meaning, because the first poll fires immediately after the POST that created
+// the record and a route that has not caught up yet answers exactly the same
+// way as one whose rollout is over. Believing it at once turned a swap that had
+// barely started into a wait that returned in no time at all, reporting a
+// rollout as finished while the endpoint went on serving the previous version
+// for as long as the swap really took. So an unwatched absence is counted
+// rather than acted on, and only a run of them settles the wait.
 //
 // A settled rollout does not guarantee a terminal Status on the way out. When
 // the record is collected before the first poll lands, the seed is the only
@@ -353,7 +368,12 @@ func WaitForReplacement(
 	}
 
 	deadline := time.Now().Add(timeout)
-	lastSeen := started
+
+	var (
+		lastSeen = started
+		watched  bool
+		absences int
+	)
 
 	for {
 		replacement, err := GetActiveReplacement(workloadID)
@@ -361,34 +381,71 @@ func WaitForReplacement(
 			return nil, fmt.Errorf("poll replacement for workload %s: %w", workloadID, err)
 		}
 
-		if replacement == nil {
-			if lastSeen == nil {
-				// Only reachable when started was nil, since lastSeen begins
-				// as started: this is the attach path, and the caller asked
-				// to follow a rollout that is not running.
-				return nil, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
+		switch {
+		case replacement != nil:
+			watched = true
+			absences = 0
+			lastSeen = replacement
+
+			if onTick != nil {
+				onTick(replacement)
 			}
 
-			return lastSeen, nil
-		}
+			if IsTerminalReplacementStatus(replacement.Status) {
+				return replacement, terminalReplacementErr(workloadID, replacement.Status)
+			}
 
-		lastSeen = replacement
+		default:
+			absences++
 
-		if onTick != nil {
-			onTick(replacement)
-		}
-
-		if IsTerminalReplacementStatus(replacement.Status) {
-			return replacement, terminalReplacementErr(workloadID, replacement.Status)
+			settled, done, err := absenceMeans(workloadID, lastSeen, watched, absences)
+			if done {
+				return settled, err
+			}
 		}
 
 		if time.Now().After(deadline) {
-			return replacement, fmt.Errorf("timeout waiting for replacement on workload %s after %s", workloadID, timeout)
+			return lastSeen, fmt.Errorf("timeout waiting for replacement on workload %s after %s", workloadID, timeout)
 		}
 
 		time.Sleep(interval)
 	}
 }
+
+// absenceMeans reads a 404 off the replacement route, which says three
+// different things depending on what the wait has seen before it.
+//
+// With nothing seen and nothing seeded, the caller asked to follow a rollout
+// that is not running: only reachable when started was nil, since lastSeen
+// begins as started, so this is the attach path. Gone after having been
+// watched is the platform collecting a rollout it has finished with, which is
+// the answer. Gone without ever having been watched is the ambiguous one, and
+// it settles the wait only once it has held for uncorroboratedAbsences polls.
+//
+// done reports whether the wait is over; when it is false the replacement is
+// nil and the caller polls again.
+func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absences int) (*Replacement, bool, error) {
+	switch {
+	case lastSeen == nil:
+		return nil, true, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
+
+	case watched, absences >= uncorroboratedAbsences:
+		return lastSeen, true, nil
+
+	default:
+		return nil, false, nil
+	}
+}
+
+// uncorroboratedAbsences is how many consecutive 404s it takes to believe a
+// rollout the wait never watched is already over.
+//
+// One is not enough, because the first poll lands immediately after the POST
+// and cannot tell a record that is finished from one that is not readable yet.
+// The cost of asking again is a couple of poll intervals on the rare run whose
+// rollout really did settle that fast; the cost of not asking is a deploy that
+// reports success while the previous version is still serving.
+const uncorroboratedAbsences = 3
 
 // defaultReplacementPollInterval keeps an exported poller from busy-spinning
 // when handed a non-positive interval. The CLI's own flags cannot produce one

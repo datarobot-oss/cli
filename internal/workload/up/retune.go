@@ -99,7 +99,7 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 
 	result.Action = ActionUpdated
 
-	return settle(result.WorkloadID, result, opts, report)
+	return settle(result.WorkloadID, "", result, opts, report)
 }
 
 // awaitResize follows the replacement a settings change starts. A failed one

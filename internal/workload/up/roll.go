@@ -58,10 +58,11 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 		return result, err
 	}
 
-	// result.ArtifactID stays on the version that is serving, and settle
-	// moves it when the rollout has actually promoted the new one. A failed
-	// swap leaves the old version running, so an envelope naming the
-	// candidate would send someone to read the wrong artifact.
+	// result.ArtifactID stays on the version that is serving, and settle moves
+	// it once the rollout has actually promoted the new one, which it now waits
+	// to see rather than assuming. A failed swap leaves the old version
+	// running, so an envelope naming the candidate would send someone to read
+	// the wrong artifact.
 
 	// A file that moved the sizing as well as the version rides both in on the
 	// same swap: the platform takes runtime alongside the artifact, so there is
@@ -277,6 +278,11 @@ func alsoStarting(live Live) string {
 
 // replace starts the rollout and follows it to the end. sizing is nil unless
 // the runtime block changed too, in which case it travels with the swap.
+//
+// The candidate travels into settle as well as into the POST. Both waits that
+// follow report on a workload that never stops saying "running" for the whole
+// of a swap, so naming the artifact is the only thing that makes either of them
+// wait for this rollout rather than for the state it was already in.
 func replace(
 	workloadID string,
 	made version,
@@ -335,7 +341,7 @@ func replace(
 
 	result.Action = ActionRolled
 
-	return settle(workloadID, result, opts, report)
+	return settle(workloadID, made.ID, result, opts, report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.

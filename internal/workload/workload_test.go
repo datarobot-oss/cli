@@ -180,20 +180,28 @@ func TestValidateWorkloadCreateRequest(t *testing.T) {
 // serverWorkloadDoc is a realistic workload document including server-side
 // extras the projection must ignore (owners, permissions, runtime).
 func serverWorkloadDoc(id, name, status string) string {
+	return serverWorkloadDocOn(id, name, status, "art-1")
+}
+
+// serverWorkloadDocOn is the same document with the running artifact named.
+// Which artifact a poll reports is the whole subject of the rollout waits, and
+// a fixture that always answers "art-1" is why the suite could not see a wait
+// settling on the version it was supposed to be replacing.
+func serverWorkloadDocOn(id, name, status, artifactID string) string {
 	return fmt.Sprintf(`{
 		"id": %q,
 		"name": %q,
 		"status": %q,
 		"type": "service",
 		"importance": "low",
-		"artifactId": "art-1",
+		"artifactId": %q,
 		"endpoint": "https://app.example.com/api/v2/endpoints/workloads/%s/",
 		"createdAt": "2026-06-10T08:00:00Z",
 		"updatedAt": "2026-06-10T08:05:00Z",
 		"owners": [{"id": "u-1", "email": "pii@example.com"}],
 		"permissions": ["CAN_DELETE"],
 		"runtime": {"containerGroups": []}
-	}`, id, name, status, id)
+	}`, id, name, status, artifactID, id)
 }
 
 func assertProjection(t *testing.T, w *Workload, id, name, status string) {
@@ -660,7 +668,7 @@ func TestWaitForSteadyWorkload_ReturnsAtStoppedWhereWaitForWorkloadWouldNot(t *t
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusStopped, wl.Status)
 
-	_, err = WaitForWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err = WaitForWorkload("wl-1", "", 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
@@ -758,7 +766,7 @@ func TestWaitForWorkload_RunningReturnsNil(t *testing.T) {
 
 	var ticks int
 
-	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, func(*Workload) {
+	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, func(*Workload) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -777,7 +785,7 @@ func TestWaitForWorkload_ErroredReturnsError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl, "errored returns final Workload alongside error")
 	assert.Equal(t, WorkloadStatusErrored, wl.Status)
@@ -806,7 +814,7 @@ func TestWaitForWorkload_PollsThroughStoppedUntilRunning(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusRunning, wl.Status)
 }
@@ -822,7 +830,130 @@ func TestWaitForWorkload_Timeout(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err := WaitForWorkload("wl-1", "", 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
+}
+
+// The regression test for a deploy that reported success while the endpoint
+// went on serving the previous build. A rolling swap leaves the workload
+// reporting "running" from beginning to end, so a wait that reads the status
+// alone settles on the first poll, on the version being replaced.
+func TestWaitForWorkload_KeepsPollingWhileTheOldArtifactServes(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Running throughout, which is the whole difficulty: the only thing
+		// that moves is which artifact the workload names.
+		artifact := "art-1"
+		if atomic.AddInt32(&hits, 1) >= 3 {
+			artifact = "art-2"
+		}
+
+		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, artifact))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "art-2", wl.ArtifactID, "the wait must settle on the version it was told to wait for")
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3),
+		"returning while the old artifact was still serving is the bug")
+}
+
+// A workload that comes up and never takes the new version has not failed in
+// any way the status can express, so the timeout is the only place left to say
+// what happened. A bare "timeout waiting for workload" sends the reader looking
+// for something that is not stuck.
+func TestWaitForWorkload_TimesOutWhenTheNewArtifactNeverServes(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-1"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", "art-2", 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	require.NotNil(t, wl, "a timeout returns the last-seen workload so a caller can say where it got to")
+	assert.Contains(t, err.Error(), "art-1", "the error names the version still serving")
+	assert.Contains(t, err.Error(), "art-2", "and the one that never arrived")
+	assert.Contains(t, err.Error(), "timeout")
+}
+
+// An errored workload is still reporting whatever it was running, which is
+// never the artifact a roll is waiting for. Requiring both would poll a dead
+// workload to its timeout instead of failing on the first sight of it.
+func TestWaitForWorkload_ErroredBeatsTheArtifactCheck(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusErrored, "art-1"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Minute, nil)
+	require.Error(t, err)
+	require.NotNil(t, wl)
+	assert.Contains(t, err.Error(), WorkloadStatusErrored)
+	assert.NotContains(t, err.Error(), "timeout", "the failure is the answer, not something to wait out")
+}
+
+// These waits now run for as long as a rollout takes, which is long enough for
+// one bad response to land between two healthy polls.
+func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&hits, 1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+
+			return
+		}
+
+		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Second, nil)
+	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
+	assert.Equal(t, "art-2", wl.ArtifactID)
+}
+
+// Forgiving a blip is not the same as forgiving an endpoint that has gone away.
+func TestWaitForWorkload_GivesUpOnANonTransientPollError(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Minute, nil)
+	require.Error(t, err)
+	assert.Nil(t, wl, "a wait that could not read the workload has no state to report")
+	assert.Contains(t, err.Error(), "poll workload")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "a 404 is an answer, not a blip to retry")
 }
