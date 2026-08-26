@@ -64,6 +64,10 @@ func TestEndpointURL_PropagatesConfigError(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// ErrFromResp interprets nothing: drapi serves APIs that disagree on their
+// error envelope, so even a well-formed FastAPI detail document stays a raw
+// body= dump here. Reading meaning into it is a caller's job (see
+// workload/apiclient).
 func TestErrFromResp_WithBody(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusInternalServerError,
@@ -78,6 +82,9 @@ func TestErrFromResp_WithBody(t *testing.T) {
 
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
+	assert.Empty(t, httpErr.Detail, "drapi does not read the envelope")
+	assert.JSONEq(t, `{"detail":"boom"}`, string(httpErr.Body),
+		"the raw bytes ride the error so a caller that knows its API's envelope can")
 }
 
 func TestErrFromResp_EmptyBody(t *testing.T) {

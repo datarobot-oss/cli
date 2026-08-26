@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Build statuses are server-side enum values (UPPERCASE). All five were
@@ -168,23 +171,92 @@ func IsBuildErrorStatus(s string) bool {
 	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
 }
 
+// Trigger retries are keyed on exactly the two statuses the platform answers
+// with explicit safe-to-retry semantics: 503 (a dependency it needs is
+// temporarily down) and 504 (the build service did not confirm the submission
+// and nothing was recorded on the artifact). Any other status fails fast —
+// a plain 500 from an older server may have half-succeeded, where re-POSTing
+// risks a duplicate build.
+var triggerRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
+
+// triggerRetrySleep is time.Sleep, replaced by tests so retry coverage does
+// not spend wall-clock time.
+var triggerRetrySleep = time.Sleep
+
+// triggerTimeoutSecs must comfortably exceed the platform's own budget for
+// the trigger: workload-api waits up to 30s for its image build service to
+// accept the submission before answering. A client that hangs up at or under
+// that budget abandons an answer already on the way — including the 504 that
+// says a retry is safe. A var so tests can shrink it. Observed live on
+// staging: the default 30s client timeout expired mid-trigger and the deploy
+// died on "context deadline exceeded" with no way to tell what happened.
+var triggerTimeoutSecs = 60
+
+// explainTriggerTimeout wraps a client-side timeout — the one failure where
+// the CLI hung up rather than the platform answering — with what the user
+// needs to know: the outcome is unknown, and re-running is safe because a new
+// trigger supersedes any build the lost request may have started. Every other
+// error passes through untouched.
+func explainTriggerTimeout(err error) error {
+	if !os.IsTimeout(err) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"the build trigger got no response within %ds; the platform may still have started the build. "+
+			"Re-running 'dr workload up' is safe: a new trigger supersedes any build this one started: %w",
+		triggerTimeoutSecs, err)
+}
+
+func isRetryableTriggerStatus(err error) bool {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	// A 503 is safe to retry wherever it was minted: a gateway answers it
+	// before the request reaches the platform. A 504 is only safe when the
+	// PLATFORM answered it — its "nothing was recorded" guarantee comes with
+	// a JSON detail body. A proxy's own 504 (HTML/plain body, no envelope)
+	// means the platform may still be processing and might yet record the
+	// build, so retrying risks a duplicate. The check reads the raw body
+	// rather than Detail, so it holds whatever layer shaped the error.
+	switch httpErr.StatusCode {
+	case http.StatusServiceUnavailable:
+		return true
+	case http.StatusGatewayTimeout:
+		return apiclient.ErrorDetail(httpErr.Body) != ""
+	}
+
+	return false
+}
+
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and
-// returns the trigger response. The defensive empty-slice check is in the
-// caller so the service layer remains a thin pass-through of the server
-// shape.
+// returns the trigger response, retrying the statuses the platform declares
+// safe to retry. The defensive empty-slice check is in the caller so the
+// service layer remains a thin pass-through of the server shape.
 func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/")
 	if err != nil {
 		return nil, err
 	}
 
-	var resp BuildTriggerResponse
+	for attempt := 0; ; attempt++ {
+		var resp BuildTriggerResponse
 
-	if err := drapi.PostJSON(url, "build", map[string]any{}, &resp); err != nil {
-		return nil, err
+		err := apiclient.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeoutSecs)
+		if err == nil {
+			return &resp, nil
+		}
+
+		if attempt >= len(triggerRetryDelays) || !isRetryableTriggerStatus(err) {
+			return nil, explainTriggerTimeout(err)
+		}
+
+		log.Debug("build trigger got a retryable status; retrying",
+			"artifact_id", artifactID, "attempt", attempt+1, "err", err)
+		triggerRetrySleep(triggerRetryDelays[attempt])
 	}
-
-	return &resp, nil
 }
 
 // GetArtifactBuild fetches a single Build by id.
