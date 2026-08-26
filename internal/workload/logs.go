@@ -41,8 +41,12 @@ const maxLogsPageSize = 1000
 // rather than skipped.
 const followLagAllowance = 10 * time.Second
 
-// followSeenCap bounds each follow dedup generation so memory stays bounded.
-const followSeenCap = 5000
+// followSeenCap bounds each follow dedup generation. It is a memory ceiling,
+// not the duplicate-suppression horizon: a since-mode follower prunes keys
+// that leave its fetch overlap, so live keys stay near the overlap's own
+// size and rotation never fires below a sustained ~800 lines/s. Only window
+// mode, which has no cursor to prune by, leans on the rotation itself.
+const followSeenCap = 50000
 
 // maxTransientPollErrors caps consecutive transient fetch failures a follow
 // tolerates before giving up; it resets on any successful poll.
@@ -420,10 +424,21 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 
 	f.advanceCursor(entries)
 
-	// An empty fetch seeds nothing: marking it seeded would pin a zero
-	// cursor, and the NEXT poll — the first with real lines — would be a
-	// window fetch capped at limit, gapping a producer that burst past it
-	// (a builder's opening seconds do exactly that).
+	// Forget only what the next fetch can no longer return: a since fetch
+	// starts at cursor-lag, so a key older than that is never offered again,
+	// while one inside the window must stay known however many lines came
+	// after it. Without this the dedup's rotation is a horizon a fast
+	// builder outruns, and the overlap prints twice.
+	if f.cursorUsable && !f.cursor.IsZero() {
+		f.dedup.prune(f.cursor.Add(-f.lag))
+	}
+
+	// Seeding waits for the first non-empty batch — not for the cursor's
+	// sake (an empty fetch leaves it zero, and the next poll is a window
+	// fetch either way) but for the gap warning above, which reads f.seeded
+	// as "the seed batch has already been shown". Armed by a leading empty
+	// poll, the first real batch filling the window would read as lines
+	// lost, when it is just the seed being as big as it was asked to be.
 	if len(entries) > 0 {
 		f.seeded = true
 	}
@@ -495,16 +510,25 @@ func logKey(e WorkloadLogEntry) string {
 	return e.Timestamp + "\x00" + e.Level + "\x00" + e.Message
 }
 
-// logDedup tracks emitted log lines, bounded by generational rotation: a
-// full current generation becomes prev (both consulted), so the last
-// genCap..2*genCap lines stay deduplicated.
+// logDedup tracks emitted log lines. Two bounds keep it honest. The caller
+// prunes keys older than what its next fetch can re-offer — the exact
+// invariant, because a key inside the fetch overlap has to stay known however
+// many lines arrived after it, or a fast builder's lines print twice off-TTY
+// where every duplicate is permanent. Generational rotation stays as the
+// memory ceiling for the callers where nothing prunes (window mode has no
+// cursor to prune by): the last genCap..2*genCap lines stay deduplicated.
 type logDedup struct {
-	cur, prev map[string]struct{}
+	cur, prev map[string]time.Time
 	genCap    int
+
+	// watermark is the newest parseable event time seen. A line whose own
+	// timestamp does not parse adopts it, so it ages out with its neighbors
+	// rather than living forever or dying at once.
+	watermark time.Time
 }
 
 func newLogDedup(genCap int) *logDedup {
-	return &logDedup{cur: make(map[string]struct{}), genCap: genCap}
+	return &logDedup{cur: make(map[string]time.Time), genCap: genCap}
 }
 
 // filterUnseen returns the entries whose key has not been seen, recording
@@ -525,13 +549,36 @@ func (d *logDedup) filterUnseen(entries []WorkloadLogEntry) []WorkloadLogEntry {
 
 		if len(d.cur) >= d.genCap {
 			d.prev = d.cur
-			d.cur = make(map[string]struct{}, d.genCap)
+			d.cur = make(map[string]time.Time, d.genCap)
 		}
 
-		d.cur[key] = struct{}{}
+		at, ok := parseLogTimestamp(e.Timestamp)
+		if ok && at.After(d.watermark) {
+			d.watermark = at
+		} else if !ok {
+			at = d.watermark
+		}
+
+		d.cur[key] = at
 
 		fresh = append(fresh, e)
 	}
 
 	return fresh
+}
+
+// prune forgets the keys no future fetch can re-offer: everything strictly
+// older than before, which the caller sets to its fetch floor (the cursor
+// minus its lag). Pruning is what keeps the generation cap a memory ceiling
+// rather than a duplicate-suppression horizon a fast producer can outrun:
+// kept ahead of the rotation, the live keys never reach genCap in the first
+// place.
+func (d *logDedup) prune(before time.Time) {
+	for _, generation := range []map[string]time.Time{d.cur, d.prev} {
+		for key, at := range generation {
+			if at.Before(before) {
+				delete(generation, key)
+			}
+		}
+	}
 }
