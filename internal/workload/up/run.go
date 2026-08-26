@@ -36,32 +36,36 @@ import (
 
 // Test seams. The deploy is mostly network, and the tests are not.
 var (
-	runWizardFn        = wizard.Run
-	createWorkloadFn   = workload.CreateWorkload
-	waitWorkloadFn     = workload.WaitForWorkload
-	waitSteadyFn       = workload.WaitForSteadyWorkload
-	listWorkloadsFn    = workload.ListWorkloads
-	startWorkloadFn    = workload.StartWorkload
-	createArtifactFn   = workload.CreateArtifact
-	getArtifactFn      = workload.GetArtifact
-	lockArtifactFn     = workload.LockArtifact
-	triggerBuildFn     = workload.TriggerArtifactBuild
-	waitBuildFn        = workload.WaitForBuild
-	listBuildsFn       = workload.ListArtifactBuilds
-	getCredentialFn    = workload.GetCredential
-	findCredentialFn   = workload.FindCredentialNamed
-	guardReplacementFn = workload.RefuseActiveReplacement
-	startReplacementFn = workload.StartReplacement
-	waitReplacementFn  = workload.WaitForReplacement
-	updateSettingsFn   = workload.UpdateWorkloadSettings
-	writeWorkloadIDFn  = manifest.WriteWorkloadID
-	codeChangeFn       = defaultCodeChange
-	projectLinkedFn    = wapi.Exists
-	loadProjectFn      = wapi.LoadConfig
-	initProjectFn      = wapi.Initialize
-	saveProjectFn      = wapi.SaveConfig
-	patchCodeRefFn     = workload.PatchArtifactCodeRef
-	syncProjectFn      = defaultSync
+	runWizardFn          = wizard.Run
+	createWorkloadFn     = workload.CreateWorkload
+	waitWorkloadFn       = workload.WaitForWorkload
+	waitSteadyFn         = workload.WaitForSteadyWorkload
+	listWorkloadsFn      = workload.ListWorkloads
+	startWorkloadFn      = workload.StartWorkload
+	createArtifactFn     = workload.CreateArtifact
+	copyArtifactFn       = workload.CloneArtifact
+	deleteArtifactFn     = workload.DeleteArtifact
+	recordBuiltFn        = recordBuiltVersion
+	updateArtifactSpecFn = workload.UpdateArtifactSpec
+	getArtifactFn        = workload.GetArtifact
+	lockArtifactFn       = workload.LockArtifact
+	triggerBuildFn       = workload.TriggerArtifactBuild
+	waitBuildFn          = workload.WaitForBuild
+	listBuildsFn         = workload.ListArtifactBuilds
+	getCredentialFn      = workload.GetCredential
+	findCredentialFn     = workload.FindCredentialNamed
+	guardReplacementFn   = workload.RefuseActiveReplacement
+	startReplacementFn   = workload.StartReplacement
+	waitReplacementFn    = workload.WaitForReplacement
+	updateSettingsFn     = workload.UpdateWorkloadSettings
+	writeWorkloadIDFn    = manifest.WriteWorkloadID
+	codeChangeFn         = defaultCodeChange
+	projectLinkedFn      = wapi.Exists
+	loadProjectFn        = wapi.LoadConfig
+	initProjectFn        = wapi.Initialize
+	saveProjectFn        = wapi.SaveConfig
+	patchCodeRefFn       = workload.PatchArtifactCodeRef
+	syncProjectFn        = defaultSync
 )
 
 // Options is everything a run needs from its caller.
@@ -164,7 +168,7 @@ func Run(opts Options) (Result, error) {
 
 	noteIgnoreFile(code, opts)
 
-	plan, err := Build(loaded, live, code)
+	plan, err := Build(loaded, live, code, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -1224,7 +1228,7 @@ func lock(result Result, report *reporter) (Result, error) {
 // a sync: the count it produces is what tells the deploy to mint a new version
 // and roll onto it. A refusal here would refuse that deploy, which is the only
 // way past a lock.
-func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
+func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) {
 	mode := loaded.Manifest.BuildMode()
 	if mode != manifest.BuildModeDockerfile && mode != manifest.BuildModeGenerated {
 		// A published image has no code to sync, and a file bound by artifact
@@ -1266,11 +1270,37 @@ func defaultCodeChange(loaded Loaded, _ Live) (change CodeChange, err error) {
 		Applies:      true,
 		Files:        len(plan.Uploads) + len(plan.Deletes),
 		IgnoreNotice: notice,
+		ImageStale:   imageStale(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched
 		// the artifact to build the plan, and a locked one is the reason it
 		// left a notice at all.
 		LinkLocked: engine.LockedNotice() != "",
 	}, nil
+}
+
+// imageStale reports that the running version's image was built from code the
+// artifact has since been pointed away from. `dr artifact code sync` moves what
+// the artifact claims without touching the working tree, so a deploy changing
+// only an environment variable would otherwise inherit an image built before
+// that sync and report success.
+//
+// Every answer it cannot establish is stale. The record is absent for every
+// project until its next build, and saying "not stale" there would put exactly
+// those runs on the fast path unchecked, where nothing would ever write the
+// record that ends it. Saying "stale" costs one build, and then it opens.
+func imageStale(projectDir string, live Live) bool {
+	if !projectLinkedFn(projectDir) {
+		return true
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || cfg.LastBuiltVersionID == nil {
+		return true
+	}
+
+	// No code reference on the running version is the same unknown from the
+	// other side: nothing says the image matches it.
+	return live.CodeVersionID == "" || *cfg.LastBuiltVersionID != live.CodeVersionID
 }
 
 // ignoreFileNotice is the deprecation line for this project, empty when there

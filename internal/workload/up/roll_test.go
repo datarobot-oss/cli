@@ -19,12 +19,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
@@ -920,12 +922,15 @@ func locks(steps []string) []string {
 	return out
 }
 
-// builtRoll is a roll of a project whose image the platform builds, with
-// every step wired to succeed. The live artifact is made a draft: the lock
-// ceremony has its own tests above, and leaving it locked would put a
-// confirmation in the middle of every assertion about the build.
+// builtRoll is a roll of a project whose image the platform builds and whose
+// code has changed, every step wired to succeed. The live artifact is a draft
+// so no lock confirmation lands among the build assertions.
 func builtRoll(tr *track) fakes {
 	f := wiredRoll(tr)
+
+	f.code = func(Loaded, Live) (CodeChange, error) {
+		return CodeChange{Applies: true, Files: 2}, nil
+	}
 
 	f.workloadD = func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil }
 	f.artifactD = func(string) (workload.Document, error) {
@@ -1374,10 +1379,9 @@ func TestRun_RollDoesNotReuseALockedLeftover(t *testing.T) {
 	assert.Contains(t, tr.steps, "replace:art-2")
 }
 
-// A spec-only roll moves a port or a probe and leaves the working tree alone,
-// so the sync mints no version and patches nothing. Without this the new
-// artifact would go to the builder with no code reference at all.
-func TestRun_SpecOnlyRollCarriesTheCodeOver(t *testing.T) {
+// A roll whose sync uploads nothing leaves the new version with no code of its
+// own, and the plan's file count is only a prediction.
+func TestRun_RollWithNothingToUploadCarriesTheCodeOver(t *testing.T) {
 	var tr track
 
 	f := builtRoll(&tr)
@@ -1392,16 +1396,15 @@ func TestRun_SpecOnlyRollCarriesTheCodeOver(t *testing.T) {
 
 	assert.Equal(t, []string{"art-2", "cat1", "ver1"}, tr.carried,
 		"a new version of the same code has to point at that code")
-	assert.Equal(t,
-		[]string{"guard", "create-artifact", "relink", "sync", "carry-code", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
-		tr.steps)
+	assert.Equal(t, []string{
+		"guard", "create-artifact", "relink", "sync", "carry-code", "build",
+		"guard", "replace:art-2", "await-rollout", "settle:art-2+drain",
+	}, tr.steps)
 	assert.Equal(t, "bld-2", result.BuildID, "a version born without an image still needs one")
 }
 
-// Nothing to upload and nothing recorded to inherit means there would be
-// nothing to build, which is worth saying before a builder is asked to
-// produce an image from an empty artifact.
-func TestRun_SpecOnlyRollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
+// A version with no code must not reach the builder, nor be promoted.
+func TestRun_RollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
 	var tr track
 
 	f := builtRoll(&tr)
@@ -1418,7 +1421,7 @@ func TestRun_SpecOnlyRollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
 	assert.Contains(t, err.Error(), "art-2")
 	assert.Contains(t, err.Error(), "nothing to build")
 	assert.NotContains(t, tr.steps, "build")
-	assert.NotContains(t, tr.steps, "replace:art-2", "a version with no code must not be promoted")
+	assert.NotContains(t, tr.steps, "replace:art-2")
 }
 
 // The version exists and only the local record of it failed to write. The
@@ -1467,4 +1470,460 @@ func TestRun_FailedBuildOnARollLeavesTheOldVersionServing(t *testing.T) {
 	assert.NotContains(t, tr.steps, "replace:art-2")
 	assert.Equal(t, "68a0000000000000000000a1", result.ArtifactID,
 		"the envelope names what is serving, which is still the old version")
+}
+
+// copiedArtifact is what a clone comes back as: its source's image and code.
+// The build rows stayed on the source.
+func copiedArtifact() *workload.Artifact {
+	primary := true
+
+	return &workload.Artifact{
+		ID:     "art-2",
+		Status: workload.ArtifactStatusDraft,
+		Spec: workload.Spec{
+			ContainerGroups: []workload.ContainerGroup{{
+				Containers: []workload.Container{{
+					Name:     "vllm-server",
+					Primary:  &primary,
+					ImageURI: "registry.internal/built-by-the-server:sha-abc123",
+					ImageBuildConfig: &workload.ImageBuildConfig{
+						CodeRef: &workload.CodeRef{
+							Datarobot: &workload.DatarobotCodeRef{CatalogID: "cat1", CatalogVersionID: "ver1"},
+						},
+					},
+				}},
+			}},
+		},
+	}
+}
+
+func copyStep(tr *track, copied *workload.Artifact) func(string, string) (*workload.Artifact, error) {
+	return func(sourceID, name string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "copy:"+sourceID)
+		tr.copiedAs = name
+		copied.Name = name
+
+		return copied, nil
+	}
+}
+
+func updateSpecStep(tr *track) func(string, json.RawMessage) error {
+	return func(artifactID string, spec json.RawMessage) error {
+		tr.steps = append(tr.steps, "update-spec:"+artifactID)
+		tr.updatedSpec = spec
+
+		return nil
+	}
+}
+
+// readBackStep answers the read after the write the way the platform does: the
+// written spec with the server-owned image put back. Anything that is not the
+// copy is the version now serving.
+func readBackStep(tr *track, copied *workload.Artifact, live func() workload.Document) func(string) (workload.Document, error) {
+	return func(id string) (workload.Document, error) {
+		if id != copied.ID || tr.updatedSpec == nil {
+			return live(), nil
+		}
+
+		var spec map[string]any
+
+		if err := json.Unmarshal(tr.updatedSpec, &spec); err != nil {
+			return nil, err
+		}
+
+		doc := workload.Document{"id": copied.ID, "status": copied.Status, "spec": spec}
+
+		if uri := workload.GetPrimaryContainerImageURI(*copied); uri != "" {
+			workload.PrimaryContainerInDocument(doc)["imageUri"] = uri
+		}
+
+		return doc, nil
+	}
+}
+
+func draftLiveArtifact() workload.Document {
+	d := docOf(liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
+}
+
+func runtimeOnlyRoll(tr *track) fakes {
+	return runtimeOnlyRollOf(tr, copiedArtifact())
+}
+
+func runtimeOnlyRollOf(tr *track, copied *workload.Artifact) fakes {
+	f := builtRoll(tr)
+
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.sync = emptySync(tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.copyArtifact = copyStep(tr, copied)
+	f.artifactD = readBackStep(tr, copied, draftLiveArtifact)
+	f.updateSpec = updateSpecStep(tr)
+	f.deleteArtifact = func(id string) error {
+		tr.steps = append(tr.steps, "delete:"+id)
+
+		return nil
+	}
+
+	return f
+}
+
+func envDrift() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest,
+			"            port: 8000\n",
+			"            port: 8000\n"+
+				"            environmentVars:\n"+
+				"              - name: LOG_LEVEL\n"+
+				"                value: debug\n", 1)
+}
+
+func buildDrift() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest,
+			"                source: provided\n",
+			"                source: generated\n"+
+				"                executionEnvironmentId: 6890000000000000000000e1\n"+
+				"                executionEnvironmentVersionId: 6890000000000000000000e2\n"+
+				"                entrypoint: [\"python\", \"app.py\"]\n", 1)
+}
+
+// The deploy this whole path exists for. The copy's code reference has to
+// survive the write, since the manifest states none.
+// Production is the same deploy plus the lock, and is where the saving is worth
+// most: the platform checks image provenance across the tenant, precisely so a
+// copy can still be locked.
+func TestRun_RuntimeOnlyRollCopiesTheRunningVersion(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		live  func() workload.Document
+		steps []string
+	}{
+		{
+			name:  "a draft is replaced by a draft",
+			live:  draftLiveArtifact,
+			steps: []string{"guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		},
+		{
+			name:  "a locked one is replaced by a locked one",
+			live:  func() workload.Document { return docOf(liveArtifactJSON) },
+			steps: []string{"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			f := runtimeOnlyRoll(&tr)
+			f.artifactD = readBackStep(&tr, copiedArtifact(), c.live)
+
+			install(t, f)
+
+			result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			assert.Equal(t, append([]string{
+				"guard", "copy:68a0000000000000000000a1", "update-spec:art-2", "relink", "sync",
+			}, c.steps...), tr.steps)
+			assert.Empty(t, result.BuildID, "a version that inherits an image has none to build")
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the project pushes to the version it made")
+			assert.Equal(t, "gpt-oss-20b-vllm-artifact", tr.copiedAs)
+
+			spec := string(tr.updatedSpec)
+			assert.Contains(t, spec, "LOG_LEVEL", "the change that started the run has to land")
+			assert.Contains(t, spec, `"catalogId":"cat1"`, "and must not cost the copy its code reference")
+			assert.Contains(t, spec, `"catalogVersionId":"ver1"`)
+		})
+	}
+}
+
+// The four ways a roll still pays for a build.
+func TestRun_RollsThatStillBuild(t *testing.T) {
+	noImage := func(f *fakes) {
+		f.artifactD = func(string) (workload.Document, error) {
+			d := docOf(liveArtifactJSON)
+			d["status"] = workload.ArtifactStatusDraft
+
+			delete(primaryOf(d), "imageUri")
+
+			return d, nil
+		}
+	}
+
+	stale := func(f *fakes) {
+		f.code = func(Loaded, Live) (CodeChange, error) {
+			return CodeChange{Applies: true, ImageStale: true}, nil
+		}
+	}
+
+	cases := []struct {
+		name     string
+		manifest string
+		force    bool
+		tweak    func(*fakes)
+	}{
+		{name: "the dockerfile changed", manifest: buildDrift()},
+		{name: "--force-build asked for one", manifest: envDrift(), force: true},
+		{name: "the running version has no image", manifest: envDrift(), tweak: noImage},
+		{name: "the code has moved past the running image", manifest: envDrift(), tweak: stale},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			f := runtimeOnlyRoll(&tr)
+			if c.tweak != nil {
+				c.tweak(&f)
+			}
+
+			install(t, f)
+
+			result, _, err := runIn(t, c.manifest, Options{NonInteractive: true, ForceBuild: c.force})
+			require.NoError(t, err)
+
+			assert.NotContains(t, tr.steps, "copy:68a0000000000000000000a1")
+			assert.Contains(t, tr.steps, "create-artifact")
+			assert.Equal(t, "bld-2", result.BuildID)
+		})
+	}
+}
+
+// The ways a copy goes wrong. Every one ends in the deploy that creates and
+// builds, so none fails a deploy that used to work. A copy that exists is
+// taken away first, unless it cannot be, where the run stops and names it.
+func TestRun_CopiesThatGoWrong(t *testing.T) {
+	refuse := func(status int) func(*fakes, *track, *workload.Artifact) {
+		return func(f *fakes, tr *track, _ *workload.Artifact) {
+			f.copyArtifact = func(id, _ string) (*workload.Artifact, error) {
+				tr.steps = append(tr.steps, "copy:"+id)
+
+				return nil, &drapi.HTTPError{StatusCode: status}
+			}
+		}
+	}
+
+	writeAnswers := func(err error) func(*fakes, *track, *workload.Artifact) {
+		return func(f *fakes, _ *track, _ *workload.Artifact) {
+			f.updateSpec = func(string, json.RawMessage) error { return err }
+		}
+	}
+
+	fellBack := []string{"create-artifact", "build"}
+	tookBack := []string{"delete:art-2", "create-artifact", "build"}
+
+	cases := []struct {
+		name       string
+		breaks     func(*fakes, *track, *workload.Artifact)
+		wantErr    string
+		wantSteps  []string
+		wantAbsent []string
+		wantBuild  string
+	}{
+		// 404 is a platform with no copy endpoint and 500 is one that broke.
+		// Neither left anything behind, so both take the fallback.
+		{
+			name: "the copy never happens", breaks: refuse(http.StatusNotFound),
+			wantSteps: fellBack, wantBuild: "bld-2",
+		},
+		{
+			name: "the write is refused", breaks: writeAnswers(&drapi.HTTPError{StatusCode: http.StatusNotFound}),
+			wantSteps: tookBack, wantBuild: "bld-2",
+		},
+		// Accepted, and the copy still does not say what the file says.
+		{
+			name: "the write lands nowhere", breaks: writeAnswers(nil),
+			wantSteps: tookBack, wantBuild: "bld-2",
+		},
+		{
+			// An artifact cannot be moved between repositories, so a copy that
+			// landed in one of its own would fork the version history for good.
+			name: "the copy lands in another repository",
+			breaks: func(f *fakes, _ *track, copied *workload.Artifact) {
+				copied.ArtifactRepositoryID = "repo-other"
+				f.artifactD = func(string) (workload.Document, error) {
+					d := draftLiveArtifact()
+					d["artifactRepositoryId"] = "repo-1"
+
+					return d, nil
+				}
+			},
+			wantSteps: tookBack, wantAbsent: []string{"update-spec:art-2"}, wantBuild: "bld-2",
+		},
+		{
+			name: "the write costs the copy its image",
+			breaks: func(f *fakes, tr *track, copied *workload.Artifact) {
+				f.updateSpec = func(id string, spec json.RawMessage) error {
+					tr.steps = append(tr.steps, "update-spec:"+id)
+					tr.updatedSpec = spec
+					copied.Spec.ContainerGroups[0].Containers[0].ImageURI = ""
+
+					return nil
+				}
+			},
+			wantSteps: []string{"build", "replace:art-2"}, wantBuild: "bld-2",
+		},
+		{
+			name: "the copy cannot be taken away either: its id is the only record",
+			breaks: func(f *fakes, _ *track, _ *workload.Artifact) {
+				f.updateSpec = func(string, json.RawMessage) error { return errors.New("spec rejected") }
+				f.deleteArtifact = func(string) error { return errors.New("still referenced") }
+			},
+			wantErr:    "left behind",
+			wantAbsent: []string{"create-artifact", "replace:art-2"},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			copied := copiedArtifact()
+			f := runtimeOnlyRollOf(&tr, copied)
+			c.breaks(&f, &tr, copied)
+
+			install(t, f)
+
+			result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+
+			if c.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), c.wantErr)
+				assert.Contains(t, err.Error(), manifest.FileName,
+					"a copy that cannot be made to match names the file it was measured against")
+			} else {
+				require.NoError(t, err)
+			}
+
+			for _, step := range c.wantSteps {
+				assert.Contains(t, tr.steps, step)
+			}
+
+			for _, step := range c.wantAbsent {
+				assert.NotContains(t, tr.steps, step)
+			}
+
+			assert.Equal(t, c.wantBuild, result.BuildID)
+			assert.False(t, result.Plan.JSON().KeepsImage, "no run that built or failed kept an image")
+		})
+	}
+}
+
+func TestInheritsImage_ArtifactType(t *testing.T) {
+	// The rest of inheritsImage's conditions are covered end to end by
+	// TestRun_RollsThatStillBuild. Only the type comparison is here, because it
+	// is the one the plan and the copy path came to answer differently.
+	plan := Plan{
+		Code: CodeChange{Applies: true},
+		Artifact: []Change{{Keys: []string{
+			keyContainerGroups, "default", keyContainers, "app", keyEnvironmentVars,
+		}}},
+	}
+	live := Live{ArtifactID: "art-1", ImageURI: "img", ArtifactType: "agent"}
+
+	for kind, want := range map[string]bool{
+		"":        true, // a file stating no type has no opinion
+		"agent":   true,
+		"Agent":   true, // the platform disagrees with itself about casing
+		"service": false,
+	} {
+		t.Run("file says "+kind, func(t *testing.T) {
+			assert.Equal(t, want, inheritsImage(live, plan, Options{}, kind, "an-artifact"))
+		})
+	}
+}
+
+// The record the next deploy reads is written by the build that made it, and
+// nothing else. A build that stopped recording would leave every later
+// runtime-only deploy inheriting an image with nothing to measure.
+func TestRun_RecordingWhatABuildWasMadeFrom(t *testing.T) {
+	cases := []struct {
+		name   string
+		copies bool
+		fails  bool
+		want   int
+	}{
+		{name: "a build that succeeds records it", want: 1},
+		{name: "a build that fails records nothing", fails: true},
+		{name: "a deploy that skips the build records nothing", copies: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var (
+				tr       track
+				recorded []string
+			)
+
+			file, f := builtDrift(), builtRoll(&tr)
+			if c.copies {
+				file, f = envDrift(), runtimeOnlyRoll(&tr)
+			}
+
+			f.linked = func(string) bool { return true }
+			f.project = syncedProject("68a0000000000000000000a1")
+			f.recordBuilt = func(dir string) { recorded = append(recorded, dir) }
+
+			if c.fails {
+				f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+					return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+						fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+				}
+			}
+
+			install(t, f)
+
+			_, _, err := runIn(t, file, Options{NonInteractive: true})
+			assert.Equal(t, c.fails, err != nil)
+			assert.Equal(t, !c.copies, slices.Contains(tr.steps, "build"))
+			assert.Len(t, recorded, c.want, "the record names the code an image was built from")
+		})
+	}
+}
+
+// A leftover carrying a code reference of its own is still re-anchored at the
+// code the project last synced, since `dr artifact create` and an abandoned
+// attempt both point at code older than the last sync. Only a leftover that
+// kept the running image is left alone.
+func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.sync = emptySync(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		primary := true
+
+		return &workload.Artifact{
+			ID:     id,
+			Status: workload.ArtifactStatusDraft,
+			Spec: workload.Spec{ContainerGroups: []workload.ContainerGroup{{
+				Containers: []workload.Container{{
+					Primary: &primary,
+					ImageBuildConfig: &workload.ImageBuildConfig{
+						CodeRef: &workload.CodeRef{
+							Datarobot: &workload.DatarobotCodeRef{CatalogID: "cat1", CatalogVersionID: "ver0"},
+						},
+					},
+				}},
+			}}},
+		}, nil
+	}
+	f.artifactD = artifactDocs("art-abandoned", 9000)
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "carry-code",
+		"a reference older than the last sync is not the code this deploy is for")
+	assert.Contains(t, tr.steps, "build")
+	assert.Equal(t, []string{"art-abandoned", "cat1", "ver1"}, tr.carried,
+		"the version the project last synced is what it is pointed at")
 }

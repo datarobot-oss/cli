@@ -50,11 +50,16 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 		return result, err
 	}
 
-	made, err := candidateArtifact(loaded, live, plan.Code, opts, report)
+	made, err := candidateArtifact(loaded, live, plan, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
 	result.BuildID = made.BuildID
+
+	// By here it is known rather than predicted: a leftover taken ahead of a
+	// copy, a platform with no copy endpoint and a tree that moved between the
+	// plan and the sync all reach this line having built anyway.
+	result.Plan.InheritsImage = plan.InheritsImage && err == nil && made.BuildID == ""
 
 	if err != nil {
 		return result, err
@@ -90,7 +95,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 func candidateArtifact(
 	loaded Loaded,
 	live Live,
-	code CodeChange,
+	plan Plan,
 	opts Options,
 	report *reporter,
 ) (version, error) {
@@ -100,8 +105,11 @@ func candidateArtifact(
 
 	repository := sameRepository(loaded, live)
 
-	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
-		return buildVersion(loaded, live, code, repository, opts, report)
+	// The same reading the plan used, rather than a second one off the parse
+	// tree: two answers to "does the platform build this image" coming apart is
+	// how a plan describes a deploy that does not happen.
+	if plan.Code.Applies {
+		return buildVersion(loaded, live, plan, repository, opts, report)
 	}
 
 	return createVersion(loaded, repository, labelNewVersion, report)
@@ -191,8 +199,8 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 // its say, so a lock taken here is one the run is committed to using.
 func matchLock(made version, report *reporter) (bool, error) {
 	// A candidate the file named, or one left by an earlier attempt, may
-	// already be locked, and locking twice is not a no-op at the platform.
-	// One created by this run is always a draft.
+	// already be locked, and locking twice answers 403. A create and a copy are
+	// both drafts, so only a leftover has to be asked about.
 	if !made.Fresh {
 		already, lockedErr := lockedAlready(made.ID)
 		if lockedErr != nil {

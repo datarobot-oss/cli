@@ -373,6 +373,45 @@ func CreateArtifact(payload any) (*Artifact, error) {
 	return &artifact, nil
 }
 
+// CloneArtifact copies an artifact into a new draft named name.
+func CloneArtifact(artifactID, name string) (*Artifact, error) {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/clone")
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]string{"name": name}
+
+	var artifact Artifact
+
+	if err := drapi.PostJSON(url, "artifact clone", body, &artifact); err != nil {
+		return nil, err
+	}
+
+	return &artifact, nil
+}
+
+// UpdateArtifactSpec writes a draft artifact's spec.
+//
+// containerGroups is replaced wholesale rather than merged key by key. The
+// platform re-injects what it owns on a build-from-source container, so a spec
+// that omits imageUri keeps the running image; codeRef is not re-injected,
+// which is why the copy path puts it back before writing.
+func UpdateArtifactSpec(artifactID string, spec json.RawMessage) error {
+	if len(spec) == 0 {
+		return errors.New("no artifact spec to update")
+	}
+
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
+	if err != nil {
+		return err
+	}
+
+	body := map[string]json.RawMessage{"spec": spec}
+
+	return drapi.PatchJSON(url, "artifact", body, nil)
+}
+
 func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
 	if err != nil {
@@ -394,6 +433,29 @@ func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error 
 	return drapi.PatchJSON(url, "artifact", body, nil)
 }
 
+// SpecWithPrimaryCodeRef returns spec with the primary container pointed at the
+// catalog pair given. An update replaces a container wholesale, so the file's
+// spec alone would erase the reference.
+func SpecWithPrimaryCodeRef(spec json.RawMessage, catalogID, catalogVersionID string) (json.RawMessage, error) {
+	var decoded map[string]any
+
+	if err := json.Unmarshal(spec, &decoded); err != nil {
+		return nil, fmt.Errorf("cannot read the artifact spec: %w", err)
+	}
+
+	// The map is shared rather than copied, so its edits are marshalled back.
+	if err := setPrimaryCodeRefInRawArtifact(map[string]any{"spec": decoded}, catalogID, catalogVersionID); err != nil {
+		return nil, err
+	}
+
+	updated, err := json.Marshal(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the artifact spec to JSON: %w", err)
+	}
+
+	return updated, nil
+}
+
 func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersionID string) error {
 	spec, ok := raw["spec"].(map[string]any)
 	if !ok {
@@ -405,76 +467,140 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 		return errors.New("artifact: spec.containerGroups missing or empty")
 	}
 
-	codeRef := map[string]any{
-		"datarobot": map[string]any{
-			"catalogId":        catalogID,
-			"catalogVersionId": catalogVersionID,
-		},
+	container := primaryContainerInGroups(groups)
+	if container == nil {
+		return noPrimaryContainer(groups)
 	}
 
-	if found := assignToPrimaryContainer(groups, codeRef); found {
+	setImageBuildConfigCodeRef(container, map[string]any{
+		keyRawDatarobot: map[string]any{
+			keyRawCatalogID:        catalogID,
+			keyRawCatalogVersionID: catalogVersionID,
+		},
+	})
+
+	return nil
+}
+
+// noPrimaryContainer says why the search came back empty. Asked only after it
+// has failed: checking groups[0] first would refuse an artifact whose flagged
+// primary sits in a later group.
+func noPrimaryContainer(groups []any) error {
+	group, ok := groups[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
+	}
+
+	if len(containersOfGroup(group)) == 0 {
+		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
+	}
+
+	return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
+}
+
+// Keys along the code reference inside a decoded container, spelled once so
+// the reader and the writer below cannot drift apart.
+const (
+	keyRawImageBuildConfig = "imageBuildConfig"
+	keyRawCodeRef          = "codeRef"
+	keyRawDatarobot        = "datarobot"
+	keyRawCatalogID        = "catalogId"
+	keyRawCatalogVersionID = "catalogVersionId"
+)
+
+// CodeRefInContainer reads the catalog pair a decoded container points at, nil
+// when it names none. The read half of setPrimaryCodeRefInRawArtifact.
+func CodeRefInContainer(container map[string]any) *DatarobotCodeRef {
+	build, _ := container[keyRawImageBuildConfig].(map[string]any)
+	ref, _ := build[keyRawCodeRef].(map[string]any)
+
+	datarobot, ok := ref[keyRawDatarobot].(map[string]any)
+	if !ok {
 		return nil
 	}
 
-	// Mirror ExtractCodeRef's [0][0] fallback when no container is flagged primary.
-	return assignToFirstContainer(groups, codeRef)
+	catalogID, _ := datarobot[keyRawCatalogID].(string)
+	catalogVersionID, _ := datarobot[keyRawCatalogVersionID].(string)
+
+	return &DatarobotCodeRef{CatalogID: catalogID, CatalogVersionID: catalogVersionID}
 }
 
-func assignToPrimaryContainer(groups []any, codeRef map[string]any) bool {
+// PrimaryContainerInDocument is primaryContainer for an artifact still in the
+// shape the server sent it. Two readings of which container is primary
+// disagreeing is how a plan promises an image the run cannot find.
+func PrimaryContainerInDocument(raw map[string]any) map[string]any {
+	spec, ok := raw["spec"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	groups, ok := spec["containerGroups"].([]any)
+	if !ok {
+		return nil
+	}
+
+	return primaryContainerInGroups(groups)
+}
+
+// primaryContainerInGroups is primaryContainer's rule for a decoded document:
+// the container flagged "primary", else the first.
+func primaryContainerInGroups(groups []any) map[string]any {
+	if flagged := flaggedPrimaryContainer(groups); flagged != nil {
+		return flagged
+	}
+
+	return firstContainerInGroups(groups)
+}
+
+// flaggedPrimaryContainer is the container that claims to be primary, if any.
+func flaggedPrimaryContainer(groups []any) map[string]any {
 	for _, g := range groups {
 		group, ok := g.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		containers, ok := group["containers"].([]any)
-		if !ok {
-			continue
-		}
-
-		for _, c := range containers {
-			container, ok := c.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			if isPrimaryContainer(container) {
-				setImageBuildConfigCodeRef(container, codeRef)
-
-				return true
+		for _, c := range containersOfGroup(group) {
+			if container, ok := c.(map[string]any); ok && isPrimaryContainer(container) {
+				return container
 			}
 		}
 	}
-
-	return false
-}
-
-func assignToFirstContainer(groups []any, codeRef map[string]any) error {
-	firstGroup, ok := groups[0].(map[string]any)
-	if !ok {
-		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
-	}
-
-	containers, ok := firstGroup["containers"].([]any)
-	if !ok || len(containers) == 0 {
-		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
-	}
-
-	firstContainer, ok := containers[0].(map[string]any)
-	if !ok {
-		return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
-	}
-
-	setImageBuildConfigCodeRef(firstContainer, codeRef)
 
 	return nil
+}
+
+func firstContainerInGroups(groups []any) map[string]any {
+	if len(groups) == 0 {
+		return nil
+	}
+
+	group, ok := groups[0].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	containers := containersOfGroup(group)
+	if len(containers) == 0 {
+		return nil
+	}
+
+	first, _ := containers[0].(map[string]any)
+
+	return first
+}
+
+func containersOfGroup(group map[string]any) []any {
+	containers, _ := group["containers"].([]any)
+
+	return containers
 }
 
 // setImageBuildConfigCodeRef preserves any existing dockerfile config and
 // seeds a "provided" Dockerfile default when imageBuildConfig is absent
 // (server requires a dockerfile on the imageBuildConfig).
 func setImageBuildConfigCodeRef(container map[string]any, codeRef map[string]any) {
-	ibc, ok := container["imageBuildConfig"].(map[string]any)
+	ibc, ok := container[keyRawImageBuildConfig].(map[string]any)
 	if !ok || ibc == nil {
 		ibc = map[string]any{
 			"dockerfile": map[string]any{
@@ -483,8 +609,8 @@ func setImageBuildConfigCodeRef(container map[string]any, codeRef map[string]any
 		}
 	}
 
-	ibc["codeRef"] = codeRef
-	container["imageBuildConfig"] = ibc
+	ibc[keyRawCodeRef] = codeRef
+	container[keyRawImageBuildConfig] = ibc
 }
 
 func isPrimaryContainer(container map[string]any) bool {

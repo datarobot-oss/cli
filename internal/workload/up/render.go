@@ -325,6 +325,9 @@ func lockLines(plan Plan) []string {
 // artifactLines describes the new immutable version, when there is one. Code
 // and spec both produce one, and they are reported as a single entry because
 // they are a single act: one version, built and rolled once.
+//
+// A version that keeps the running image says so: --dry-run is the whole of the
+// review a deploy gets.
 func artifactLines(plan Plan) []string {
 	if !plan.RollsArtifact() {
 		return nil
@@ -334,6 +337,10 @@ func artifactLines(plan Plan) []string {
 	if len(plan.Artifact) > 0 {
 		reason = fmt.Sprintf("new version, %d spec %s",
 			len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
+	}
+
+	if plan.InheritsImage {
+		reason += "; keeps the running image, so no rebuild"
 	}
 
 	return append([]string{entry("+", "artifact", reason)}, details(plan.Artifact)...)
@@ -458,6 +465,11 @@ type PlanJSON struct {
 	// legitimate first deploy.
 	PriorWorkloadID string `json:"priorWorkloadId"`
 
+	// KeepsImage reports that the version this run mints runs the image the
+	// current one runs, so no build happens. Intent under --dry-run, and what
+	// happened after a real run.
+	KeepsImage bool `json:"keepsImage"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -492,6 +504,9 @@ func (p Plan) JSON() PlanJSON {
 		Creates:         p.Creates,
 		Locked:          p.Locked && mints,
 		PriorWorkloadID: p.PriorWorkloadID,
+
+		// Already gated on there being a version to mint.
+		KeepsImage: p.InheritsImage,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),
