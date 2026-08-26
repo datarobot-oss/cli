@@ -68,9 +68,11 @@ func (r *reporter) run(label string, fn func() error) error {
 }
 
 // work performs the phase, with a spinner when there is a terminal to spin on.
+// The two-space prefix keeps the animated glyph in the column where stream's
+// ⠿ header and done's ✓ sit.
 func (r *reporter) work(label string, fn func() error) error {
 	if r.spinner {
-		return tui.RunWithSpinner(label, fn)
+		return tui.RunWithSpinnerPrefix("  ", label, fn)
 	}
 
 	return fn()
