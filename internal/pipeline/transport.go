@@ -57,9 +57,7 @@ func doJSON(method, endpoint string, body any, info string, out any) error {
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(jsonTimeout)
-
-	resp, err := client.Do(req)
+	resp, err := drapi.Do(req, jsonTimeout)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
@@ -144,9 +142,7 @@ func doDelete(endpoint, info string) error {
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(jsonTimeout)
-
-	resp, err := client.Do(req)
+	resp, err := drapi.Do(req, jsonTimeout)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", endpoint, err)
 	}
