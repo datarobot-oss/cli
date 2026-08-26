@@ -16,6 +16,7 @@ package workload
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -56,6 +57,36 @@ func fetchArtifactBuildLogs(artifactID, buildID string, maxEntries int, level, s
 	}
 
 	return drainLogPages(pageURL, maxEntries, reqInfo)
+}
+
+// FormatBuildLogLine renders one build log line for humans: the message alone
+// for routine output, a level marker for anything that deserves a glance —
+// an error scrolling past unmarked defeats the point of streaming. Styling is
+// the caller's business: a TTY colors what CI prints plain.
+func FormatBuildLogLine(e WorkloadLogEntry) string {
+	switch strings.ToLower(e.Level) {
+	case "", "info", "debug":
+		return e.Message
+	default:
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message
+	}
+}
+
+// BuildStatusLine narrates a build status for a stream, in words rather than
+// enum values for the stages every build passes through — the quiet ones
+// before the builder speaks are exactly where the user wonders whether
+// anything is happening.
+func BuildStatusLine(status string) string {
+	switch strings.ToUpper(status) {
+	case BuildStatusPending:
+		return "build accepted; waiting for a builder to pick it up"
+	case BuildStatusInProgress:
+		return "builder running"
+	case "BUILT":
+		return "image built; pushing it to the registry"
+	default:
+		return "build is " + strings.ToLower(status)
+	}
 }
 
 // buildLogHoldback is how long a line waits in the reorder buffer, measured

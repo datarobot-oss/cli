@@ -143,46 +143,6 @@ func TestLastN(t *testing.T) {
 	})
 }
 
-func TestParseBuildLogs(t *testing.T) {
-	t.Run("valid JSONL passthrough", func(t *testing.T) {
-		body := `{"asctime":"2026-06-09 10:00:00","levelname":"INFO","name":"image-builder","message":"start","build_id":"b-1"}
-{"asctime":"2026-06-09 10:00:01","levelname":"DEBUG","name":"image-builder","message":"detail","build_id":"b-1"}
-`
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		require.Len(t, entries, 2)
-		assert.Equal(t, "INFO", entries[0].Levelname)
-		assert.Equal(t, "start", entries[0].Message)
-		assert.Equal(t, "b-1", entries[0].BuildID)
-		assert.NotEmpty(t, entries[0].Raw, "raw bytes preserved for passthrough")
-	})
-
-	t.Run("malformed lines are skipped", func(t *testing.T) {
-		body := `{"levelname":"INFO","message":"ok"}
-not-json-garbage
-{"levelname":"ERROR","message":"bad"}
-`
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		require.Len(t, entries, 2)
-		assert.Equal(t, "ok", entries[0].Message)
-		assert.Equal(t, "bad", entries[1].Message)
-	})
-
-	t.Run("empty body returns empty slice", func(t *testing.T) {
-		entries, err := parseBuildLogs(strings.NewReader(""))
-		require.NoError(t, err)
-		assert.Empty(t, entries)
-	})
-
-	t.Run("blank lines are skipped", func(t *testing.T) {
-		body := "\n\n{\"levelname\":\"INFO\",\"message\":\"x\"}\n\n"
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		assert.Len(t, entries, 1)
-	})
-}
-
 func TestBuildLogEntry_MarshalJSON_PassesThroughRaw(t *testing.T) {
 	entry := BuildLogEntry{
 		Asctime:   "later", // would disagree with Raw to prove passthrough wins
@@ -544,18 +504,22 @@ func TestListArtifactBuilds_InvalidLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "limit")
 }
 
-func TestGetArtifactBuildLogs_ParsesJSONL(t *testing.T) {
+func TestGetArtifactBuildLogs_ReadsTheOTELStream(t *testing.T) {
 	installSkipAuth(t)
 
-	body := `{"asctime":"2026-06-09 10:00:00","levelname":"INFO","name":"image-builder","message":"line-1","build_id":"b-1"}
-{"asctime":"2026-06-09 10:00:01","levelname":"DEBUG","name":"image-builder","message":"line-2","build_id":"b-1"}
-`
+	var gotPath string
+
+	var gotQuery map[string][]string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/artifacts/art-1/builds/b-1/logs", r.URL.Path)
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
 
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(body))
+		// Newest first, as the OTEL route answers.
+		fmt.Fprint(w, logsPage("",
+			logEntryDocAt("2026-06-09 10:00:01.000000+00:00", "DEBUG", "line-2"),
+			logEntryDocAt("2026-06-09 10:00:00.000000+00:00", "INFO", "line-1"),
+		))
 	}))
 
 	defer srv.Close()
@@ -565,8 +529,19 @@ func TestGetArtifactBuildLogs_ParsesJSONL(t *testing.T) {
 	entries, err := GetArtifactBuildLogs("art-1", "b-1")
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
+
+	// The deprecated per-build proxy is gone: the artifact stream is read,
+	// narrowed to the one build via external_build_id.
+	assert.Equal(t, "/api/v2/otel/artifact/art-1/logs/", gotPath)
+	assert.Equal(t, []string{"external_build_id"}, gotQuery["searchKeys"])
+	assert.Equal(t, []string{"b-1"}, gotQuery["searchValues"])
+
+	// Chronological for display, mapped onto the legacy entry shape.
+	assert.Equal(t, "line-1", entries[0].Message)
 	assert.Equal(t, "INFO", entries[0].Levelname)
 	assert.Equal(t, "line-2", entries[1].Message)
+	assert.Equal(t, "b-1", entries[0].BuildID)
+	assert.NotEmpty(t, entries[0].Raw, "OTEL record preserved for JSON passthrough")
 }
 
 func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
@@ -728,13 +703,13 @@ func TestBuildSummaryFor_ReadsTheImageOffALowercaseCompleted(t *testing.T) {
 func TestBuildSummaryFor_FailureFetchesLogs(t *testing.T) {
 	installSkipAuth(t)
 
-	logBody := `{"levelname":"INFO","message":"start"}
-{"levelname":"ERROR","message":"boom"}
-`
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/logs") {
-			_, _ = w.Write([]byte(logBody))
+		if strings.Contains(r.URL.Path, "/otel/artifact/") {
+			// Newest first, as the OTEL route answers.
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-09 10:00:01.000000+00:00", "ERROR", "boom"),
+				logEntryDocAt("2026-06-09 10:00:00.000000+00:00", "INFO", "start"),
+			))
 
 			return
 		}
@@ -812,7 +787,7 @@ func TestBuildSummaryFor_FailureLogFetch502(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/logs") {
+		if strings.Contains(r.URL.Path, "/otel/artifact/") {
 			// Match the staging shape: 502 with a JSON detail body.
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = w.Write([]byte(`{"detail":"Failed to retrieve build logs"}`))

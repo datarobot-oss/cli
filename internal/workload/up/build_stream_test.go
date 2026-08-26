@@ -88,10 +88,10 @@ func TestBuildLogLine_MarksAndColorsNonInfoLevels(t *testing.T) {
 }
 
 func TestBuildStatusLine_NarratesTheQuietStages(t *testing.T) {
-	assert.Equal(t, "build accepted; waiting for a builder to pick it up", buildStatusLine("PENDING"))
-	assert.Equal(t, "builder running", buildStatusLine("IN_PROGRESS"))
-	assert.Equal(t, "image built; pushing it to the registry", buildStatusLine("BUILT"))
-	assert.Equal(t, "build is cancelling", buildStatusLine("CANCELLING"))
+	assert.Equal(t, "build accepted; waiting for a builder to pick it up", workload.BuildStatusLine("PENDING"))
+	assert.Equal(t, "builder running", workload.BuildStatusLine("IN_PROGRESS"))
+	assert.Equal(t, "image built; pushing it to the registry", workload.BuildStatusLine("BUILT"))
+	assert.Equal(t, "build is cancelling", workload.BuildStatusLine("CANCELLING"))
 }
 
 // terminalOfSize fakes the stream's terminal for the test's lifetime.
