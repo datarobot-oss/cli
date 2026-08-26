@@ -126,7 +126,7 @@ func TestNewStartModel_CapturesYesFlag(t *testing.T) {
 	m := NewStartModel(Options{AnswerYes: true})
 
 	assert.True(t, m.telemetry.yesFlag)
-	assert.False(t, m.telemetry.nonInteractive)
+	assert.True(t, m.telemetry.nonInteractive, "dr start --yes must report non_interactive=true")
 }
 
 func TestNewStartModel_CapturesNonInteractive(t *testing.T) {

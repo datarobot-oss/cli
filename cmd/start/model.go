@@ -136,8 +136,11 @@ func NewStartModel(opts Options) Model {
 		opts:     opts,
 		repoRoot: repoRoot,
 		telemetry: telemetryCapture{
-			yesFlag:        opts.AnswerYes,
-			nonInteractive: cli.IsNonInteractive(nil),
+			yesFlag: opts.AnswerYes,
+			// IsNonInteractive(nil) cannot see the --yes flag (it is bound to
+			// opts, not viper), so OR it in explicitly — same pattern as the
+			// prompt-skipping checks below.
+			nonInteractive: opts.AnswerYes || cli.IsNonInteractive(nil),
 		},
 	}
 }
