@@ -36,7 +36,6 @@ var (
 	listVersions      bool
 	filePath          string
 	pluginURL         string
-	yesFlag           bool
 )
 
 func Cmd() *cobra.Command {
@@ -72,7 +71,7 @@ Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 	cmd.Flags().BoolVar(&listPlugins, "list", false, "List available plugins from the registry")
 	cmd.Flags().StringVar(&filePath, "file", "", "Install from a local .tar.xz archive instead of the registry")
 	cmd.Flags().StringVar(&pluginURL, "url", "", "Install from an HTTP/HTTPS URL instead of the registry")
-	cmd.Flags().BoolVarP(&yesFlag, cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
 
 	// Mark mutually exclusive flags
 	cmd.MarkFlagsMutuallyExclusive("list", "versions", "version", "file", "url")
@@ -93,19 +92,19 @@ Use --url to install directly from an HTTP/HTTPS URL instead of the registry.`,
 	return cmd
 }
 
-func runInstall(_ *cobra.Command, args []string) error {
+func runInstall(cmd *cobra.Command, args []string) error {
 	if filePath != "" {
-		return runInstallFromFile(args)
+		return runInstallFromFile(cmd, args)
 	}
 
 	if pluginURL != "" {
-		return runInstallFromURL(args)
+		return runInstallFromURL(cmd, args)
 	}
 
-	return runInstallFromRegistry(args)
+	return runInstallFromRegistry(cmd, args)
 }
 
-func runInstallFromRegistry(args []string) error {
+func runInstallFromRegistry(cmd *cobra.Command, args []string) error {
 	finalRegistryURL := shared.NormalizeRegistryURL(registryURL)
 
 	var (
@@ -183,10 +182,10 @@ func runInstallFromRegistry(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", pluginEntry.Name)
 
-	return checkAndInstallPluginDeps(pluginEntry.Name)
+	return checkAndInstallPluginDeps(cmd, pluginEntry.Name)
 }
 
-func runInstallFromFile(args []string) error {
+func runInstallFromFile(cmd *cobra.Command, args []string) error {
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
@@ -215,10 +214,10 @@ func runInstallFromFile(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
-	return checkAndInstallPluginDeps(resolvedName)
+	return checkAndInstallPluginDeps(cmd, resolvedName)
 }
 
-func runInstallFromURL(args []string) error {
+func runInstallFromURL(cmd *cobra.Command, args []string) error {
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
@@ -247,7 +246,7 @@ func runInstallFromURL(args []string) error {
 	fmt.Println()
 	fmt.Printf("Run `dr %s --help` to get started.\n", resolvedName)
 
-	return checkAndInstallPluginDeps(resolvedName)
+	return checkAndInstallPluginDeps(cmd, resolvedName)
 }
 
 // headingWriter is an io.Writer that prepends a styled heading the first time
@@ -271,9 +270,10 @@ func (h *headingWriter) Write(p []byte) (int, error) {
 
 // confirmPluginDepsInstall returns true when the user consents to installing
 // missing plugin dependencies. Consent is granted automatically when -y/--yes
-// is set; otherwise the user is prompted interactively.
-func confirmPluginDepsInstall() bool {
-	if yesFlag || cli.IsNonInteractive(nil) {
+// is set on cmd (or via the NON_INTERACTIVE env var / viper key, as resolved by
+// cli.IsNonInteractive); otherwise the user is prompted interactively.
+func confirmPluginDepsInstall(cmd *cobra.Command) bool {
+	if cli.IsNonInteractive(cmd) {
 		return true
 	}
 
@@ -285,10 +285,10 @@ func confirmPluginDepsInstall() bool {
 // checkAndInstallPluginDeps reads the plugin's versions.yaml, checks prerequisites,
 // and prompts the user to install any missing or outdated tools.
 // Skips silently when no versions.yaml is present.
-func checkAndInstallPluginDeps(pluginName string) error {
+func checkAndInstallPluginDeps(cmd *cobra.Command, pluginName string) error {
 	out := &headingWriter{w: os.Stdout, heading: "Plugin Dependencies"}
 
-	if err := plugin.CheckAndInstallDeps(pluginName, confirmPluginDepsInstall, out); err != nil {
+	if err := plugin.CheckAndInstallDeps(pluginName, func() bool { return confirmPluginDepsInstall(cmd) }, out); err != nil {
 		if errors.Is(err, plugin.ErrDepsDeclined) {
 			return nil
 		}
