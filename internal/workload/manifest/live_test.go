@@ -1512,7 +1512,7 @@ func TestLive_NativelyEmptyBuildBlockRoundTrips(t *testing.T) {
 // doc with imageBuildConfig {dockerfile: null, codeRef: {...}} + imageUri →
 // stripKeys purges dockerfile:null → stripBuildOutputs deletes codeRef and,
 // because the config is now empty, drops the imageBuildConfig key and keeps
-// imageUri → the container classifies as BuildModeImage. (VAL-R3-006).
+// imageUri → the container classifies as BuildModeImage.
 func TestLive_EmptyBuildConfigClassifiedAsImage(t *testing.T) {
 	t.Run("natively empty", func(t *testing.T) {
 		container := map[string]any{
@@ -1618,14 +1618,14 @@ func TestLive_RealBuildContainerStillStripsImageUriAndCodeRef(t *testing.T) {
 }
 
 // TestLive_AutoscalingEnabledValuesSurviveStripping pins the boundary that
-// normalizeAutoscalingEnabled's removal must not cross: real autoscaling
-// enabled values (true and false) survive NewLive/Apply/Render unchanged, and
-// a null autoscaling block is still purged by the nil-purge in stripKeys.
+// real autoscaling enabled values (true and false) survive
+// NewLive/Apply/Render unchanged, and a null autoscaling block is still
+// purged by the nil-purge in stripKeys.
 //
 // autoscaling.enabled is non-nullable on the server (bool = Field(default=True),
 // protons/runtime.py:217), so enabled: null can never arrive from the server.
 // This test pins the shapes that CAN arrive and must keep round-tripping
-// cleanly both before and after the dead-defense removal.
+// cleanly.
 func TestLive_AutoscalingEnabledValuesSurviveStripping(t *testing.T) {
 	artifactJSON := `{
 		"name": "a",
