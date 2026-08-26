@@ -496,6 +496,8 @@ func buildStatusLine(status string) string {
 		return "build accepted; waiting for a builder to pick it up"
 	case workload.BuildStatusInProgress:
 		return "builder running"
+	case "BUILT":
+		return "image built; pushing it to the registry"
 	default:
 		return "build is " + strings.ToLower(status)
 	}

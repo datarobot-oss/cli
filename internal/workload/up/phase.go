@@ -80,95 +80,84 @@ func (r *reporter) work(label string, fn func() error) error {
 // animates exactly like the spinner every other phase shows.
 var streamSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
 
+// streamWindowRows caps the live region at header + this many lines: tall
+// enough to read progress, small enough to redraw cheaply and fit a viewport.
+const streamWindowRows = 10
+
 // stream executes one phase whose progress arrives as text lines rather than
 // a spinner. The label prints first as a header — animated in place on the
-// terminal, so it moves like every other phase's spinner — fn's lines print
-// styled and indented beneath it as they arrive, and the check-marked line
-// with the elapsed time prints after. The animation repaints only the header
-// row, never the cursor's own line, so it cannot fight with the stream.
+// terminal, so it moves like every other phase's spinner — and fn's lines
+// render beneath it as they arrive, with the check-marked line and elapsed
+// time printing after.
 //
-// On the terminal, every line is truncated to the width so it occupies
-// exactly one row, and a phase that SUCCEEDS erases its stream — header
-// included — leaving only the check-marked line, so a deploy's final
-// transcript stays clean. One row per line is what makes the erase count
-// exact; a resize mid-phase can still rewrap history, which at worst strands
-// a few lines. A failed phase keeps every line: they are the context for the
-// error. On a plain writer (no TTY, JSON mode) nothing is truncated or
-// erased, which is how CI logs stay complete.
+// On the terminal, the lines live in a fixed-height sliding window (the way
+// docker buildx renders): only the newest lines stay on screen, each
+// truncated to the width so it occupies exactly one row, and every new line
+// redraws the region in place. Nothing ever scrolls, which is what makes the
+// two cursor tricks safe — the cursor cannot move above the viewport, so a
+// region taller than the screen could neither be animated nor erased, and
+// scrolled-away rows would survive in scrollback where no escape code
+// reaches. A phase that SUCCEEDS erases the window — header included —
+// leaving only the check-marked line, so the deploy's final transcript stays
+// clean. A failed phase keeps the window's tail: the freshest context for
+// the error, with the full log a command away. On a plain writer (no TTY,
+// JSON mode) every line prints permanently, which is how CI logs stay
+// complete.
 func (r *reporter) stream(label string, fn func(say func(line string, style lipgloss.Style)) error) error {
 	started := phaseClock()
 
 	fmt.Fprintf(r.out, "  %s %s\n", tui.HintStyle.Render("⠿"), label)
 
 	// r.spinner is the "out is the terminal the user is watching" flag; a
-	// width is only meaningful, and cursor games only safe, on that terminal.
-	width := 0
+	// live region is only safe on that terminal, so anywhere else lines just
+	// print permanently.
+	var region *liveRegion
 	if r.spinner {
-		width = streamWidth()
-	}
-
-	var mu sync.Mutex
-
-	rows := 0
-
-	// repaintHeader rewrites the header row, which sits rows+1 rows above the
-	// cursor — exact because every streamed line occupies one row. The caller
-	// holds mu.
-	repaintHeader := func(glyph string) {
-		fmt.Fprintf(r.out, "\x1b[%dA\r  %s %s\x1b[K\x1b[%dB\r", rows+1, glyph, label, rows+1)
+		region = newLiveRegion(r.out, label)
 	}
 
 	stop := make(chan struct{})
 
 	var animator sync.WaitGroup
 
-	if width > 0 {
+	if region != nil {
 		animator.Add(1)
 
 		go func() {
 			defer animator.Done()
 
-			animateStreamHeader(stop, &mu, repaintHeader)
+			animateStreamHeader(stop, region)
 		}()
 	}
 
 	say := func(line string, style lipgloss.Style) {
-		mu.Lock()
-		defer mu.Unlock()
-
 		// A message with newlines would break the one-row-per-line math.
 		for _, part := range strings.Split(line, "\n") {
-			if width > 0 {
-				part = ansi.Truncate(part, max(width-6, 8), "…")
+			if region == nil {
+				fmt.Fprintf(r.out, "    %s\n", style.Render(part))
+			} else {
+				region.append(part, style)
 			}
-
-			fmt.Fprintf(r.out, "    %s\n", style.Render(part))
-
-			rows++
 		}
 	}
 
 	err := fn(say)
 
-	if width > 0 {
+	if region != nil {
 		close(stop)
 		animator.Wait()
 	}
 
 	if err != nil {
-		// A dead animation frame must not outlive the phase; the static
-		// glyph says "this phase stopped here" above the kept lines.
-		if width > 0 {
-			repaintHeader(tui.HintStyle.Render("⠿"))
+		if region != nil {
+			region.finishFailure()
 		}
 
 		return err
 	}
 
-	if width > 0 {
-		// Cursor up over the stream and its header, clear to the end of the
-		// screen; the check-marked line below replaces them.
-		fmt.Fprintf(r.out, "\x1b[%dA\x1b[0J", rows+1)
+	if region != nil {
+		region.finishSuccess()
 	}
 
 	r.done(label, phaseClock().Sub(started))
@@ -176,9 +165,89 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 	return nil
 }
 
-// animateStreamHeader cycles the header glyph until stop closes, locking mu
-// around each repaint so frames never interleave with streamed lines.
-func animateStreamHeader(stop <-chan struct{}, mu *sync.Mutex, repaint func(glyph string)) {
+// liveRegion is the fixed-height window a streamed phase renders into: the
+// header row plus up to window lines, redrawn in place so nothing ever
+// scrolls. All methods lock internally; the animator and the stream share it.
+type liveRegion struct {
+	out    io.Writer
+	label  string
+	width  int
+	window int
+
+	mu    sync.Mutex
+	tail  []string // rendered lines on screen, newest last
+	drawn int      // rows currently on screen below the header
+}
+
+// newLiveRegion sizes a region for the terminal, nil when there is none. The
+// window must fit the viewport with the header and a little slack: the cursor
+// cannot move above the viewport, so a taller region could neither be redrawn
+// nor erased, and scrolled-away rows would survive in scrollback.
+func newLiveRegion(out io.Writer, label string) *liveRegion {
+	width, height := streamSize()
+	if width <= 0 {
+		return nil
+	}
+
+	return &liveRegion{
+		out:    out,
+		label:  label,
+		width:  width,
+		window: min(streamWindowRows, max(height-4, 1)),
+	}
+}
+
+// append truncates the line to one row, slides the window, and repaints it.
+func (l *liveRegion) append(line string, style lipgloss.Style) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	line = ansi.Truncate(line, max(l.width-6, 8), "…")
+
+	l.tail = append(l.tail, "    "+style.Render(line))
+	if len(l.tail) > l.window {
+		l.tail = l.tail[len(l.tail)-l.window:]
+	}
+
+	if l.drawn > 0 {
+		fmt.Fprintf(l.out, "\x1b[%dA", l.drawn)
+	}
+
+	for _, row := range l.tail {
+		fmt.Fprintf(l.out, "\r%s\x1b[K\n", row)
+	}
+
+	l.drawn = len(l.tail)
+}
+
+// repaintHeader rewrites the header row, drawn+1 rows above the cursor —
+// exact because the window's lines each occupy one row.
+func (l *liveRegion) repaintHeader(glyph string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	fmt.Fprintf(l.out, "\x1b[%dA\r  %s %s\x1b[K\x1b[%dB\r", l.drawn+1, glyph, l.label, l.drawn+1)
+}
+
+// finishSuccess erases the window and its header; the caller's check-marked
+// line replaces them.
+func (l *liveRegion) finishSuccess() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	fmt.Fprintf(l.out, "\x1b[%dA\x1b[0J", l.drawn+1)
+}
+
+// finishFailure repaints the header static, so a dead animation frame does
+// not outlive the phase above the kept tail — the freshest context for the
+// error, with the full log a command away.
+func (l *liveRegion) finishFailure() {
+	l.repaintHeader(tui.HintStyle.Render("⠿"))
+}
+
+// animateStreamHeader cycles the region's header glyph until stop closes; the
+// region's own lock keeps frames from interleaving with streamed lines.
+func animateStreamHeader(stop <-chan struct{}, region *liveRegion) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -189,24 +258,23 @@ func animateStreamHeader(stop <-chan struct{}, mu *sync.Mutex, repaint func(glyp
 		case <-stop:
 			return
 		case <-ticker.C:
-			mu.Lock()
-			repaint(tui.InfoStyle.Render(streamSpinnerFrames[frame%len(streamSpinnerFrames)]))
-			mu.Unlock()
+			region.repaintHeader(tui.InfoStyle.Render(streamSpinnerFrames[frame%len(streamSpinnerFrames)]))
 
 			frame++
 		}
 	}
 }
 
-// streamWidth returns the width of the terminal the stream renders on, 0 when
-// there is none. A var so tests can exercise the terminal path without one.
-var streamWidth = func() int {
-	w, _, err := term.GetSize(int(os.Stderr.Fd()))
-	if err != nil || w <= 0 {
-		return 0
+// streamSize returns the (width, height) of the terminal the stream renders
+// on, zeros when there is none. A var so tests can exercise the terminal path
+// without one.
+var streamSize = func() (int, int) {
+	w, h, err := term.GetSize(int(os.Stderr.Fd()))
+	if err != nil || w <= 0 || h <= 0 {
+		return 0, 0
 	}
 
-	return w
+	return w, h
 }
 
 // done prints the completed phase. Durations are truncated to a tenth of a

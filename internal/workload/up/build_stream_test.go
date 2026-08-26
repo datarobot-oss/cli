@@ -17,6 +17,7 @@ package up
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -89,21 +90,28 @@ func TestBuildLogLine_MarksAndColorsNonInfoLevels(t *testing.T) {
 func TestBuildStatusLine_NarratesTheQuietStages(t *testing.T) {
 	assert.Equal(t, "build accepted; waiting for a builder to pick it up", buildStatusLine("PENDING"))
 	assert.Equal(t, "builder running", buildStatusLine("IN_PROGRESS"))
+	assert.Equal(t, "image built; pushing it to the registry", buildStatusLine("BUILT"))
 	assert.Equal(t, "build is cancelling", buildStatusLine("CANCELLING"))
+}
+
+// terminalOfSize fakes the stream's terminal for the test's lifetime.
+func terminalOfSize(t *testing.T, width, height int) {
+	t.Helper()
+
+	prev := streamSize
+	streamSize = func() (int, int) { return width, height }
+
+	t.Cleanup(func() { streamSize = prev })
 }
 
 func TestReporter_StreamCollapsesOnSuccessOnTerminal(t *testing.T) {
 	fixedClock(t, 2*time.Second)
-
-	prev := streamWidth
-	streamWidth = func() int { return 30 }
-
-	t.Cleanup(func() { streamWidth = prev })
+	terminalOfSize(t, 30, 24)
 
 	var out bytes.Buffer
 
 	// spinner=true marks out as the user's terminal, which is what arms
-	// truncation and the erase.
+	// truncation, the sliding window, and the erase.
 	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
 		say("short line", tui.HintStyle)
 		say("a very long line that cannot possibly fit in thirty columns", tui.HintStyle)
@@ -116,9 +124,33 @@ func TestReporter_StreamCollapsesOnSuccessOnTerminal(t *testing.T) {
 	// The long line was truncated to one row.
 	assert.Contains(t, text, "…")
 	assert.NotContains(t, text, "thirty columns")
-	// Two stream rows plus the header are erased, then the checkmark prints.
+	// Two window rows plus the header are erased, then the checkmark prints.
 	assert.Contains(t, text, "\x1b[3A\x1b[0J")
 	assert.Contains(t, text, "✓ Building the image (2s)")
+}
+
+func TestReporter_StreamWindowNeverOutgrowsTheViewport(t *testing.T) {
+	fixedClock(t, time.Second)
+	// A viewport shorter than the default window: the region must shrink to
+	// fit, or the cursor could not reach back over it (it cannot move above
+	// the viewport, and scrolled rows would survive in scrollback).
+	terminalOfSize(t, 40, 6)
+
+	var out bytes.Buffer
+
+	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		for i := range 20 {
+			say(fmt.Sprintf("line %d", i), tui.HintStyle)
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	// height-4 = 2 window rows, plus the header: the final erase is 3 rows.
+	assert.Contains(t, out.String(), "\x1b[3A\x1b[0J")
+	// The redraws never move the cursor further up than the window is tall.
+	assert.NotContains(t, out.String(), "\x1b[4A")
 }
 
 // unchangedSync is a sync result that moved nothing, which is the only state
