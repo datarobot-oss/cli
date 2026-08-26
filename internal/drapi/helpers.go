@@ -53,7 +53,7 @@ func ErrFromResp(resp *http.Response, requestURL string) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if detail := errorDetail(body); detail != "" {
+	if detail := ErrorDetail(body); detail != "" {
 		return &HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Detail: detail}
 	}
 
@@ -64,11 +64,14 @@ func ErrFromResp(resp *http.Response, requestURL string) error {
 	return &HTTPError{StatusCode: resp.StatusCode, URL: requestURL}
 }
 
-// errorDetail pulls the "detail" field out of a FastAPI-style JSON error
+// ErrorDetail pulls the "detail" field out of a FastAPI-style JSON error
 // body, or "" when the body is not such a document. Non-string details
 // (e.g. validation error arrays) are re-encoded as JSON rather than dropped:
 // they carry the field-level messages the caller needs.
-func errorDetail(body []byte) string {
+//
+// This is the one place that knows the server's error envelope; callers that
+// want a different fallback (e.g. the raw body) layer it on the "" return.
+func ErrorDetail(body []byte) string {
 	var payload struct {
 		Detail any `json:"detail"`
 	}

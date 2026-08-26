@@ -34,10 +34,12 @@ type HTTPError struct {
 	Detail     string
 }
 
-// Error implements the error interface for HTTPError.
+// Error implements the error interface for HTTPError. Both shapes carry the
+// URL: a message like "Internal server error" identifies nothing without the
+// endpoint it came from.
 func (e *HTTPError) Error() string {
 	if e.Detail != "" {
-		return fmt.Sprintf("HTTP %d %s: %s", e.StatusCode, http.StatusText(e.StatusCode), e.Detail)
+		return fmt.Sprintf("HTTP %d %s: %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.Detail, e.URL)
 	}
 
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
