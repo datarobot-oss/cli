@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -411,13 +410,20 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 			buildID = triggered
 		}
 
+		// The line below is the phase's heartbeat: the trigger above can
+		// legitimately take minutes against a slow platform, and the first
+		// log line lags the build by however long ingestion takes, so without
+		// it the header sits alone and reads as a hang.
+		say("following build " + buildID + "; its first log lines can take a minute to arrive")
+
 		// The tail is progress feedback only: it never errors, and after
 		// sustained fetch failures it says so once and goes quiet, while the
-		// build wait carries on. Warnings go to the debug log rather than the
-		// stream, where they would read as the build's own output.
+		// build wait carries on. Its notices go into the stream marked as the
+		// CLI's own — silence here is indistinguishable from a hang, which is
+		// worse than one meta line among the build's output.
 		tail := workload.NewBuildLogTail(artifactID, buildID,
 			func(e workload.WorkloadLogEntry) { say(buildLogLine(e)) },
-			func(w string) { log.Debug("build log tail", "msg", w) })
+			func(w string) { say("(log stream) " + w) })
 
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it

@@ -119,6 +119,9 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 	assert.Equal(t, "bld-running", buildID)
 	assert.Equal(t, "bld-running", waited)
 	assert.Contains(t, out.String(), "already running; attaching")
+	// The heartbeat line: the phase must say something before the first log
+	// line arrives, or a slow start reads as a hang.
+	assert.Contains(t, out.String(), "following build bld-running")
 }
 
 func TestMaybeBuild_TriggersDespiteRunningBuildWhenCodeChanged(t *testing.T) {
