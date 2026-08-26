@@ -24,6 +24,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/tui"
 	"golang.org/x/term"
 )
@@ -121,13 +122,42 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 
 	stop := make(chan struct{})
 
-	var animator sync.WaitGroup
+	var (
+		animator sync.WaitGroup
+		haltOnce sync.Once
+	)
+
+	// halt stops the animation exactly once. It is deferred so a panic inside
+	// fn cannot unwind past a still-ticking animator, and also called inline
+	// on both exits, because finishSuccess and finishFailure repaint rows the
+	// animator writes to and must not race it.
+	halt := func() {
+		if region == nil {
+			return
+		}
+
+		haltOnce.Do(func() {
+			close(stop)
+			animator.Wait()
+		})
+	}
+
+	defer halt()
 
 	if region != nil {
 		animator.Add(1)
 
 		go func() {
 			defer animator.Done()
+
+			// The animation is cosmetic; a panic here must not take the
+			// deploy down mid-build. Recovered into the debug log rather
+			// than swallowed, so it stays findable.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Debug("stream header animator panicked", "panic", r)
+				}
+			}()
 
 			animateStreamHeader(stop, region)
 		}()
@@ -146,10 +176,7 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 
 	err := fn(say)
 
-	if region != nil {
-		close(stop)
-		animator.Wait()
-	}
+	halt()
 
 	if err != nil {
 		if region != nil {

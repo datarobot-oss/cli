@@ -129,6 +129,34 @@ func TestReporter_StreamCollapsesOnSuccessOnTerminal(t *testing.T) {
 	assert.Contains(t, text, "✓ Building the image (2s)")
 }
 
+// A panic inside fn unwinds through stream. The deferred halt has to stop the
+// animator on the way out, or its ticker keeps writing escape codes to the
+// terminal until the process dies.
+func TestReporter_StreamStopsTheAnimatorWhenFnPanics(t *testing.T) {
+	terminalOfSize(t, 30, 24)
+
+	var out bytes.Buffer
+
+	panicked := func() (p any) {
+		defer func() { p = recover() }()
+
+		_ = newReporter(&out, true).stream("Building the image", func(func(string, lipgloss.Style)) error {
+			panic("boom")
+		})
+
+		return nil
+	}()
+	require.Equal(t, "boom", panicked, "the panic must still propagate; stream only cleans up")
+
+	// The deferred halt ran before the panic reached us, so the animator is
+	// stopped and the buffer may no longer move. A tick is 100ms; if one were
+	// still alive, this window would catch it repainting the header.
+	before := out.Len()
+
+	time.Sleep(250 * time.Millisecond)
+	assert.Equal(t, before, out.Len(), "a stopped animator writes nothing more")
+}
+
 func TestReporter_StreamWindowNeverOutgrowsTheViewport(t *testing.T) {
 	fixedClock(t, time.Second)
 	// A viewport shorter than the default window: the region must shrink to
