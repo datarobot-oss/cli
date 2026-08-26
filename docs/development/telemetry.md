@@ -254,6 +254,7 @@ cobra.OnFinalize (via cobra's deferred postRun, fires on success and error paths
     ├─ telemetry.EventFor(cmd, args) → if tracked, client.Track(event)
     ├─ Flush telemetry (3-second timeout)
     └─ log.Stop()
+```
 
 ### Stamping universal interaction flags
 
@@ -273,7 +274,6 @@ To expose another universal flag or environment override, extend
 `telemetry.StampInteractionMode` (and update its tests) rather than touching
 individual commands. **TODO:** when the next global automation flag is added,
 document its behavior here and wire it through the helper alongside `--yes`.
-```
 
 ### Reading RunE results in a PropExtractor
 
