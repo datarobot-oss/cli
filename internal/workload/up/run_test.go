@@ -630,6 +630,58 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
+// The name-conflict refusal must not recommend the state it is refusing.
+// Told to bind to an errored holder, the next run walks into that state's own
+// refusal — and the user who hand-cleared the binding because their workload
+// was stuck is sent back to the exact line they deleted: a loop.
+func TestRun_ConflictWithADeadHolderAdvisesDeleteNotRebinding(t *testing.T) {
+	for _, status := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
+		t.Run(status, func(t *testing.T) {
+			install(t, fakes{
+				create: func(any) (*workload.Workload, error) {
+					return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+				},
+				list: func(int, []string, string) ([]workload.Workload, error) {
+					dead := *running("wl-dead")
+					dead.Status = status
+
+					return []workload.Workload{dead}, nil
+				},
+			})
+
+			_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "dr workload delete wl-dead", "the exit is the delete")
+			assert.Contains(t, err.Error(), status, "say why binding is not offered")
+			assert.NotContains(t, err.Error(), "workloadId: wl-dead",
+				"binding advice against a dead holder is the loop this exists to break")
+		})
+	}
+}
+
+// The errored refusal carries its own exit. Ending at "check the logs" left
+// recovery to folklore: hand-deleting the workloadId loops through the name
+// conflict, and deleting the state directory throws the code catalog away
+// with it.
+func TestRun_ErroredRefusalNamesTheWayOut(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return workload.Document{"id": "wl-1", "name": "my-app", "status": workload.WorkloadStatusErrored}, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "diagnosis first: it may recover")
+	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0", "and the exit when it does not")
+	assert.Contains(t, err.Error(), "clears the binding", "the delete owns the binding, so nobody hand-edits the file")
+}
+
 func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) {

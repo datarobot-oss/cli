@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -704,10 +705,16 @@ func deployable(live Live, workloadName, dirFlag string) error {
 			workloadName, live.WorkloadID, dirFlag, manifest.FileName)
 
 	case StateErrored:
+		// The refusal carries its own exit. Ending at "check the logs" left
+		// recovery to folklore, and the folk remedy — hand-deleting the
+		// workloadId, or the whole state directory — either loops through the
+		// name conflict below or throws away the code catalog with it.
 		return fmt.Errorf(
 			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"Check 'dr workload logs' first; a slow start can report errored and then recover",
-			workloadName)
+				"Check 'dr workload logs %s' first; a slow start can report errored and then recover. "+
+				"If it stays errored, remove it with 'dr workload delete %s%s', which also clears the "+
+				"binding in %s, and deploy again to recreate it under the same name",
+			workloadName, live.WorkloadID, live.WorkloadID, dirFlag, manifest.FileName)
 
 	case StateSettling:
 		// The backstop, not the answer. Every run waits a moving workload out
@@ -766,7 +773,7 @@ func create(
 	err := report.run("Creating workload", func() error {
 		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
-			return nameTaken(createErr, result.Name, loaded.Path)
+			return nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded))
 		}
 
 		created = wl
@@ -897,7 +904,7 @@ func startingStatus(was string) string {
 //
 // So the run stops and hands the choice back, which costs one line in the
 // manifest in the case where adopting would have been right.
-func nameTaken(createErr error, workloadName, path string) error {
+func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 	if !isConflict(createErr) || workloadName == "" {
 		return createErr
 	}
@@ -912,6 +919,23 @@ func nameTaken(createErr error, workloadName, path string) error {
 	for i := range existing {
 		if existing[i].Name != workloadName {
 			continue
+		}
+
+		// A workload a deploy cannot act on must not be recommended for
+		// binding. Advising 'set workloadId' against an errored or terminated
+		// holder sends the next run straight into that state's refusal — and
+		// for the user who cleared the binding by hand because their workload
+		// was stuck, it closes a loop: the 409 recommending the exact line
+		// they just deleted. The advice is the one those refusals give:
+		// delete what holds the name.
+		if workload.IsWorkloadErrorStatus(existing[i].Status) {
+			return fmt.Errorf(
+				"a workload named %s already exists (%s), is %s, and nothing was deployed onto it. "+
+					"A deploy cannot act on it, so binding to it would only move this refusal. "+
+					"If it is this project's dead workload, remove it with 'dr workload delete %s%s' "+
+					"and deploy again to recreate the name. If it is not, rename this one in %s: %w",
+				workloadName, existing[i].ID, strings.ToLower(existing[i].Status),
+				existing[i].ID, dirFlag, path, createErr)
 		}
 
 		return fmt.Errorf(
