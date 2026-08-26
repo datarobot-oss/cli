@@ -83,8 +83,9 @@ func (r *reporter) work(label string, fn func() error) error {
 var streamSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
 
 // streamWindowRows caps the live region at header + this many lines: tall
-// enough to read progress, small enough to redraw cheaply and fit a viewport.
-const streamWindowRows = 10
+// enough to follow a build's parallel steps, small enough to redraw cheaply
+// and fit a viewport (shorter terminals shrink it further).
+const streamWindowRows = 20
 
 // stream executes one phase whose progress arrives as text lines rather than
 // a spinner. The label prints first as a header — animated in place on the
