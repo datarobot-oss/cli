@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -65,6 +67,34 @@ const (
         "name": "default",
         "containers": [
           {"name": "primary", "primary": true, "port": 8080, "imageUri": "registry/team/app:v1"}
+        ]
+      }
+    ]
+  }
+}`
+
+	// The same artifact with the credential reference already on it. A file
+	// that names the same reference therefore describes no artifact change, so
+	// a run that moves only the sizing really is a retune. Splicing the
+	// reference into the file alone would make it drift, and the run under test
+	// would quietly become a roll.
+	liveCredentialArtifactJSON = `{
+  "id": "68a0000000000000000000a1",
+  "name": "my-app-artifact",
+  "status": "draft",
+  "spec": {
+    "type": "service",
+    "containerGroups": [
+      {
+        "name": "default",
+        "containers": [
+          {
+            "name": "primary", "primary": true, "port": 8080, "imageUri": "registry/team/app:v1",
+            "environmentVars": [
+              {"source": "dr-credential", "name": "OPENAI_API_KEY",
+               "drCredentialId": "68b0cccc0000000000000003", "key": "apiToken"}
+            ]
+          }
         ]
       }
     ]
@@ -385,9 +415,11 @@ func TestRun_LockedProductionLeftAloneWhenTheAnswerIsNo(t *testing.T) {
 		Confirm: func(string, string) (bool, error) { return false, nil },
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "still running the version it was")
+	assert.Contains(t, err.Error(), "as it was")
 	assert.NotContains(t, tr.steps, "lock:art-2", "locking cannot be undone, so it must not happen on a no")
 	assert.NotContains(t, tr.steps, "replace:art-2")
+	assert.NotContains(t, tr.steps, "create-artifact",
+		"the question is put before anything is made, so a no leaves no draft behind")
 }
 
 // Being unable to ask is not the same as having been told to go ahead.
@@ -502,12 +534,189 @@ func TestRun_DetachedRollDoesNotWait(t *testing.T) {
 	assert.Contains(t, stderr, "not waiting")
 }
 
-// Rolling onto something that is not running is a different operation, and
-// guessing which half the user meant is worse than asking.
-func TestRun_StoppedWorkloadWithANewVersionSaysStartItFirst(t *testing.T) {
+// A stopped workload with a new version to roll is started first and then
+// rolled, in one run. It used to be refused, on the grounds that coming up on
+// the old version and then failing was the worst of both; the refusal was
+// worse, because it left the workload switched off and asked for two more
+// commands. From the start onwards this is the same deploy a running workload
+// gets, which is why the step list below is a roll's with a start in front.
+func TestRun_StoppedWorkloadWithANewVersionStartsThenRolls(t *testing.T) {
+	var tr track
+
+	f := stoppedRoll(&tr)
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "start", "await-start", "guard", "create-artifact", "guard",
+		"replace:art-2", "await-rollout", "settle",
+	}, tr.steps, "the guard that can refuse comes before the start that mutates")
+	assert.Equal(t, ActionRolled, result.Action,
+		"rolling is the more significant of the two things this run did")
+	assert.Contains(t, stderr, "started, having been stopped")
+	assert.Contains(t, stderr, "artifact")
+}
+
+// The sizing half of the same rule: a stopped workload whose file moved only a
+// resource figure is started and then resized, rather than refused for asking
+// for more than a start.
+func TestRun_StoppedWorkloadWithASizingChangeStartsThenRetunes(t *testing.T) {
+	var tr track
+
+	f := stoppedRoll(&tr)
+	f.settings = func(id string, runtime json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+		tr.rolledRuntime = runtime
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(boundImageManifest, "replicaCount: 1", "replicaCount: 2", 1)
+
+	result, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "start", "await-start", "guard", "settings", "await-rollout", "settle"},
+		tr.steps, "the guard that can refuse comes before the start that mutates")
+	assert.Equal(t, ActionUpdated, result.Action)
+}
+
+// A resize of a running workload deliberately skips the credential check, so
+// that a reference this deploy does not touch cannot refuse it. A stopped one
+// is not that run: it is started too, and a start is when the container
+// resolves its references from cold.
+//
+// The live artifact carries the reference as well as the file, which is what
+// makes this a retune. An earlier version of this test spliced the reference
+// into the file alone; that is artifact drift, so the run was a roll, the
+// settings seam was never called, and the rule the test is named for had no
+// coverage at all.
+func TestRun_StoppedRetuneStillVerifiesCredentials(t *testing.T) {
+	var (
+		tr      track
+		lookups int
+	)
+
+	f := stoppedRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveCredentialArtifactJSON), nil }
+	f.settings = func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+	f.cred = func(string) (*workload.Credential, error) {
+		lookups++
+
+		return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(withCredential(boundImageManifest), "replicaCount: 1", "replicaCount: 2", 1)
+
+	_, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Equal(t, 1, lookups)
+	assert.Empty(t, tr.steps, "a bad reference stops the run before it starts anything")
+}
+
+// The pairing that gives the test above its meaning: the same manifest against
+// a running workload is the one case that may skip the check, because a resize
+// sends no environment and the artifact keeps every variable it has.
+func TestRun_RunningRetuneWithACredentialSkipsTheCheck(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveCredentialArtifactJSON), nil }
+	f.settings = func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+	f.cred = func(string) (*workload.Credential, error) {
+		t.Fatal("a settings update sends no environment, so a credential must not be able to refuse it")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(withCredential(boundImageManifest), "replicaCount: 1", "replicaCount: 2", 1)
+
+	_, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, tr.steps, "settings")
+}
+
+// The lock is about the artifact left serving, so a run that starts a workload
+// only to roll it off that version must not lock what it is about to replace.
+// Locking cannot be undone, so this is not a tidiness point.
+func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
+	var tr track
+
+	install(t, stoppedRoll(&tr))
+
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"lock:art-2"}, locks(tr.steps),
+		"one lock, on the version the run left running")
+	assert.True(t, result.Locked)
+}
+
+// --detach says not to wait for the deploy. The start is not the deploy: the
+// rollout cannot be requested against a workload that is not up yet, so the
+// wait happens and the run says why rather than blocking in silence.
+func TestRun_DetachedStoppedRollWaitsForTheStartOnly(t *testing.T) {
+	var tr track
+
+	install(t, stoppedRoll(&tr))
+
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "start", "await-start", "guard", "create-artifact", "guard", "replace:art-2"},
+		tr.steps)
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+	assert.Contains(t, stderr, "not waiting")
+}
+
+// A credential id is a round trip each, and a stopped workload with drift
+// passes through both the branch that starts it and the one that rolls it.
+func TestRun_StoppedRollVerifiesCredentialsOnce(t *testing.T) {
+	var (
+		tr      track
+		lookups int
+	)
+
+	f := stoppedRoll(&tr)
+	f.cred = func(id string) (*workload.Credential, error) {
+		lookups++
+
+		return &workload.Credential{CredentialID: id}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, withCredential(newImage()), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, lookups, "the same credential must not be looked up once per branch")
+}
+
+// stoppedRoll is wiredRoll against a workload that is switched off, with the
+// start wired so the order of the two halves is assertable.
+func stoppedRoll(tr *track) fakes {
+	f := wiredRoll(tr)
+
 	f.workloadD = func(string) (workload.Document, error) {
 		d := docOf(liveImageWorkloadJSON)
 		d["status"] = workload.WorkloadStatusStopped
@@ -515,12 +724,61 @@ func TestRun_StoppedWorkloadWithANewVersionSaysStartItFirst(t *testing.T) {
 		return d, nil
 	}
 
-	install(t, f)
+	f.start = func(id string) (*workload.WorkloadOperationResponse, error) {
+		tr.steps = append(tr.steps, "start")
 
-	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dr workload start")
-	assert.Empty(t, tr.steps)
+		return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+	}
+
+	// The two waits are the same seam, so the label says which one this is:
+	// the first is the prerequisite start, the rest are the deploy settling.
+	settled := false
+	f.wait = func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		step := "await-start"
+		if settled {
+			step = "settle"
+		}
+
+		settled = true
+
+		tr.steps = append(tr.steps, step)
+
+		artifact := "68a0000000000000000000a1"
+		if step == "settle" {
+			artifact = "art-2"
+		}
+
+		return &workload.Workload{
+			ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
+			ArtifactID: artifact, Endpoint: "https://app.datarobot.com/workloads/68b0/",
+		}, nil
+	}
+
+	return f
+}
+
+// withCredential hangs a stored-credential reference off the primary
+// container, which is the one thing in a manifest no local check can judge.
+func withCredential(file string) string {
+	return strings.Replace(file, "imageUri: registry/team/app:",
+		"environmentVars:\n"+
+			"              - name: OPENAI_API_KEY\n"+
+			"                value: dr-credential:68b0cccc0000000000000003/apiToken\n"+
+			"            imageUri: registry/team/app:", 1)
+}
+
+// locks picks the lock steps out of a track, so a test about how many locks a
+// run took does not have to restate every other step to say so.
+func locks(steps []string) []string {
+	var out []string
+
+	for _, step := range steps {
+		if strings.HasPrefix(step, "lock:") {
+			out = append(out, step)
+		}
+	}
+
+	return out
 }
 
 // builtRoll is a roll of a project whose image the platform builds, with

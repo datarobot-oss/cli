@@ -31,9 +31,11 @@ import (
 // The order is not a preference. The guard comes first because a second
 // replacement POSTed while one is in flight queues another swap rather than
 // being refused, so the check that matters is the one immediately before the
-// call, and an early one saves a doomed run from creating anything. The
-// candidate is minted next, and the question of locking is put then, while
-// the answer still costs nothing.
+// call, and an early one saves a doomed run from creating anything.
+//
+// Whether a locked version may be rolled at all is settled by the caller,
+// before it. This can be reached with the workload already started, and a
+// question asked after that is one whose "no" has already changed something.
 //
 // The lock itself is last, inside replace, between the final guard and the
 // POST. The platform will not replace a locked artifact with a draft, so the
@@ -41,7 +43,7 @@ import (
 // locked for a rollout that is then refused can be neither unlocked nor
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
-func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
+func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options, report *reporter) (Result, error) {
 	if err := guardRollout(live.WorkloadID, "nothing was built or rolled out"); err != nil {
 		return result, err
 	}
@@ -60,13 +62,6 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 	// moves it when the rollout has actually promoted the new one. A failed
 	// swap leaves the old version running, so an envelope naming the
 	// candidate would send someone to read the wrong artifact.
-
-	// Asked now, locked later. Agreeing costs nothing that cannot be undone;
-	// the lock is taken inside replace, once the last guard has passed.
-	lock, err := confirmLock(live, result.Name, opts)
-	if err != nil {
-		return result, err
-	}
 
 	// A file that moved the sizing as well as the version rides both in on the
 	// same swap: the platform takes runtime alongside the artifact, so there is
@@ -161,6 +156,10 @@ func sameArtifactType(loaded Loaded, live Live) bool {
 // Only the question is asked here. The lock itself waits until immediately
 // before the swap, because locking is one-way and an artifact locked for a
 // rollout that never starts can be neither unlocked nor deleted.
+//
+// It is asked before the deploy touches anything, which is what lets the
+// refusal below tell the truth: nothing has happened yet, so the workload
+// really is still running what it was, and a stopped one is still stopped.
 func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 	if !live.Locked {
 		return false, nil
@@ -172,7 +171,11 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 	}
 
 	if !agreed {
-		return false, fmt.Errorf("cancelled: workload %s is still running the version it was", workloadName)
+		// Not "still running the version it was": the same question is asked of
+		// a stopped workload, which this run would have started, and telling
+		// someone their switched-off workload is still running is worse than
+		// saying less.
+		return false, fmt.Errorf("cancelled: nothing was deployed and workload %s is as it was", workloadName)
 	}
 
 	return true, nil

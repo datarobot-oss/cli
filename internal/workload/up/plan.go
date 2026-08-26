@@ -101,17 +101,45 @@ type Plan struct {
 	Locked bool
 }
 
-// Empty reports that the live state already matches the file. `up` prints
-// "Already up to date" and exits 0, having touched nothing.
+// Empty reports that the live state already matches the file and there is
+// nothing for the run to do about it. `up` prints "Already up to date" and
+// exits 0, having touched nothing.
 //
-// A stopped workload is never empty even when nothing differs: the user asked
-// to deploy, and a workload that is not running has not been deployed.
+// Matching the file is not sufficient, which is what actsOnState covers.
 func (p Plan) Empty() bool {
 	return !p.Creates &&
 		!p.Code.Changed() &&
 		len(p.Artifact) == 0 &&
 		len(p.Runtime) == 0 &&
-		p.State != StateStopped
+		!p.actsOnState()
+}
+
+// actsOnState reports the live states that give a run something to do even
+// when the file and the workload agree about every field.
+//
+// A stopped workload is the plain case: the user asked to deploy, and one that
+// is not running has not been deployed. The other two are about not lying. An
+// errored or terminated workload matches its file in exactly the way a crashed
+// process matches its source code, and the run that reaches them has to say so
+// rather than print a green tick: `up` announces what it found before it acts,
+// and "already up to date" over a header reading "errored" is the one summary
+// that sends the reader away.
+//
+// That mattered less when a deploy refused a moving workload outright. It
+// waits now, so a workload that dies while the deploy watches it is a case the
+// command deliberately observes, and reporting success for it would be a
+// success this run had a front-row seat to.
+func (p Plan) actsOnState() bool {
+	switch p.State {
+	case StateStopped, StateErrored, StateTerminated:
+		return true
+
+	case StateUnbound, StateMissing, StateSettling, StateRunning:
+		return false
+
+	default:
+		return false
+	}
 }
 
 // creates reports the states whose apply is a create rather than a reconcile.
@@ -176,6 +204,38 @@ func (p Plan) RollsArtifact() bool {
 // artifact exactly as it is.
 func (p Plan) MintsVersion() bool {
 	return p.Creates || p.RollsArtifact()
+}
+
+// OnlyStarts reports that starting the workload is the whole of what this run
+// does. It is asked twice on the stopped path, by the branch that decides
+// whether anything follows the start and by the start itself deciding whether
+// it may lock, and the two must not come to disagree: locking is one-way, so a
+// run that locked the version it was about to roll off could not take it back.
+func (p Plan) OnlyStarts() bool {
+	return p.Action() == ActionStarted
+}
+
+// Retunes reports that the sizing is the only thing this run changes: no
+// version is minted and the workload is updated where it stands. It is the
+// branch the apply takes, and it says nothing about whether the workload was
+// running when the run started, because by the time that branch is reached a
+// stopped one has been started.
+func (p Plan) Retunes() bool {
+	return !p.Creates && !p.RollsArtifact() && len(p.Runtime) > 0
+}
+
+// SendsNoEnvironment reports the one shape of deploy that resolves no
+// credential references, which is why the check that costs a round trip each
+// skips it: a resize sends the runtime block alone, so the artifact keeps every
+// variable it already has and a reference this deploy never touches must not be
+// able to refuse it.
+//
+// It is Retunes with one thing added rather than a second spelling of it. A
+// stopped workload whose file moved only its sizing is still started by the
+// run, and a start is when the container resolves its references from cold, so
+// that one verifies.
+func (p Plan) SendsNoEnvironment() bool {
+	return p.Retunes() && p.State != StateStopped
 }
 
 // Action names the outcome, for the summary line and the JSON envelope.

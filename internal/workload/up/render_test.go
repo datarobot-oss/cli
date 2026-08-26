@@ -35,6 +35,28 @@ func render(t *testing.T, s Summary, plan Plan) string {
 
 var appSummary = Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}
 
+// The header carries the platform's own word rather than the state it reduces
+// to. Stopped, suspended and interrupted are one state to the deploy and three
+// different things to a reader, and only one of them can be started at all, so
+// a suspended workload announced as "stopped" is a header that contradicts the
+// refusal printed under it.
+func TestRender_HeaderCarriesTheLiveStatusNotTheReducedState(t *testing.T) {
+	out := render(t,
+		Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "suspended"},
+		Plan{State: StateStopped})
+
+	assert.Contains(t, out, "my-app (68b0c1d2), suspended")
+	assert.NotContains(t, out, ", stopped")
+}
+
+// A summary with no status falls back to the state, which is what a plan built
+// without a live workload has.
+func TestRender_HeaderFallsBackToTheStateWithoutAStatus(t *testing.T) {
+	out := render(t, Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, Plan{State: StateStopped})
+
+	assert.Contains(t, out, "my-app (68b0c1d2), stopped")
+}
+
 func TestRender_Empty(t *testing.T) {
 	out := render(t, appSummary, Plan{State: StateRunning, Code: builtCode(0)})
 

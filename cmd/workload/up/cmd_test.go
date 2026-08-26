@@ -584,6 +584,21 @@ func TestCmd_FailedDeployDoesNotWarnAboutDrafts(t *testing.T) {
 	assert.False(t, draftWarned(stderr))
 }
 
+// The exception, and the reason it exists: a deploy onto a stopped workload
+// starts it before it rolls, so a run that fails after that has itself put a
+// draft on the air and started the eight hours. Saying nothing leaves a
+// workload running that the reader believes was never touched.
+func TestCmd_FailedDeployThatStartedTheWorkloadStillWarns(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("the rollout of workload wl-1 ended as failed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.True(t, draftWarned(stderr))
+}
+
 // A run that changed nothing still leaves a draft serving on the same clock.
 // "Already up to date" is not the same as "this will still be here tomorrow".
 func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
