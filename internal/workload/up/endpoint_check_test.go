@@ -98,6 +98,26 @@ func TestCheckEndpoint_SendsNoCredentials(t *testing.T) {
 	assert.Empty(t, gotAuth, "the GET carries no credentials")
 }
 
+// A redirect is reported as the 3xx it is, never followed: a gateway that
+// 302s an anonymous GET to a login page would otherwise have the check
+// report the login page's 200 for a container serving nothing — the one
+// case the check exists to catch.
+func TestCheckEndpoint_ReportsTheRedirectItselfWithoutFollowing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			t.Fatal("the redirect must not be followed")
+		}
+
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}))
+
+	defer srv.Close()
+
+	status, err := checkEndpointFn(srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusFound, status)
+}
+
 // A deploy whose endpoint answers nothing still succeeds. Failing it would be
 // the probe mistake again: a guess about the app's routes killing a deploy
 // the platform considers healthy.

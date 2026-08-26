@@ -90,6 +90,7 @@ const (
 	// deploy whose framework answers 404 there, minutes after the green tick
 	// and with nothing saying why. No probe by default, and the deploy's own
 	// endpoint check catches a container that answers nothing.
+
 	DefaultReplicas = 1
 	DefaultCPU      = 0.5
 	DefaultMemory   = "512MB"

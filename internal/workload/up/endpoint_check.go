@@ -34,7 +34,17 @@ const endpointCheckTimeout = 10 * time.Second
 // access log, and a 401 or 403 proves something is serving as well as a 200
 // does.
 var checkEndpointFn = func(url string) (int, error) {
-	resp, err := drapi.NewHTTPClient(endpointCheckTimeout).Get(url)
+	client := drapi.NewHTTPClient(endpointCheckTimeout)
+
+	// The endpoint's own answer, never a hop beyond it: a gateway that 302s
+	// an anonymous GET to a login page would otherwise have this line report
+	// the login page's 200 for a container serving nothing, which is the one
+	// case the check exists to catch. A redirect is reported as the 3xx it is.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return 0, err
 	}
@@ -63,7 +73,22 @@ func verifyEndpoint(result Result, report *reporter) {
 		return
 	}
 
-	status, err := checkEndpointFn(result.Endpoint)
+	var (
+		status int
+		err    error
+	)
+
+	// Wrapped like every other wait in the package, because it can sit for
+	// the whole timeout: a check that blocks for ten seconds printing nothing
+	// reads as a hang. The closure returns nil whatever happened — the
+	// check-marked line says the GET was made, and the lines below say what
+	// it found; failing the run is the one thing this must never do.
+	_ = report.run("Checking the endpoint", func() error {
+		status, err = checkEndpointFn(result.Endpoint)
+
+		return nil
+	})
+
 	if err != nil {
 		report.say("  %s\n", tui.WarnStyle.Render("⚠ The endpoint did not answer a GET: "+err.Error()))
 		report.say("    %s\n", tui.HintStyle.Render(

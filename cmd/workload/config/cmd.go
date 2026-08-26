@@ -165,8 +165,9 @@ func addFlags(cmd *cobra.Command, f *flags) {
 
 	cmd.Flags().IntVar(&f.answers.Port, "port", 0, "Container port (default: the Dockerfile's EXPOSE, else 8080).")
 	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "",
-		"Readiness path, e.g. /health. Without it no probe is written: a probe has to be written for the app "+
-			"it probes, and a wrong one stops a healthy deploy from ever going ready.")
+		"Readiness path, e.g. /health. A new manifest gets no probe without it: a probe has to be written "+
+			"for the app it probes, and a wrong one stops a healthy deploy from ever going ready. "+
+			"With --workload-id the bound workload's own probe is kept.")
 	// A flag of its own rather than an empty --health. Declining a probe is a
 	// different act from not mentioning one, and a flag that says so is both
 	// greppable in a CI script and impossible to type by accident.
