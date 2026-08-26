@@ -1,6 +1,6 @@
 module github.com/datarobot/cli
 
-go 1.26.6
+go 1.26.7
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
