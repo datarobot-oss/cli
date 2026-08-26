@@ -122,6 +122,14 @@ func IsSteadyWorkloadStatus(s string) bool {
 	return IsTerminalWorkloadStatus(s) || IsStoppedWorkloadStatus(s)
 }
 
+// IsSuspendedWorkloadStatus reports the one switched-off status a start cannot
+// undo. The platform ignores a start while a workload is suspended, so both the
+// plan that says what a deploy will do and the apply that refuses to do it have
+// to single this status out, and they must not spell it differently.
+func IsSuspendedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSuspended)
+}
+
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
 // workload can be switched off. They are grouped because a deploy treats them
 // alike, and named here because three files ask the same question: this one,

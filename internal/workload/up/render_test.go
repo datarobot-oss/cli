@@ -35,6 +35,36 @@ func render(t *testing.T, s Summary, plan Plan) string {
 
 var appSummary = Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}
 
+// A suspended workload must not be previewed as about to start. The platform
+// ignores a start while it is in that state, so the apply refuses it, and a dry
+// run never gets as far as the refusal: the plan is the only thing the reader
+// sees. Stopped, suspended and interrupted reduce to one state, which is why
+// the line needs the status as well.
+func TestRender_SuspendedIsNotPreviewedAsAStart(t *testing.T) {
+	out := render(t,
+		Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "suspended"},
+		Plan{State: StateStopped})
+
+	assert.Contains(t, out, "suspended, which a deploy cannot undo")
+	assert.NotContains(t, out, "started, having been")
+}
+
+// The two that can be started say which of them they were, because "stopped"
+// and "interrupted" are the same state to the deploy and not to the reader.
+func TestRender_AStartNamesWhatItIsStartingFrom(t *testing.T) {
+	for status, want := range map[string]string{
+		"stopped":     "started, having been stopped",
+		"interrupted": "started, having been interrupted",
+		"":            "started, having been stopped",
+	} {
+		out := render(t,
+			Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: status},
+			Plan{State: StateStopped})
+
+		assert.Contains(t, out, want, "status %q", status)
+	}
+}
+
 // The header carries the platform's own word rather than the state it reduces
 // to. Stopped, suspended and interrupted are one state to the deploy and three
 // different things to a reader, and only one of them can be started at all, so

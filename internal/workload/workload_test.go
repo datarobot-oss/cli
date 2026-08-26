@@ -615,6 +615,16 @@ func TestIsSteadyWorkloadStatus(t *testing.T) {
 		"an unrecognised status costs a wait rather than mistaking a transition for a destination")
 }
 
+func TestIsSuspendedWorkloadStatus(t *testing.T) {
+	assert.True(t, IsSuspendedWorkloadStatus(WorkloadStatusSuspended))
+	assert.True(t, IsSuspendedWorkloadStatus("SUSPENDED"), "it folds like every other status")
+
+	for _, s := range []string{WorkloadStatusStopped, WorkloadStatusInterrupted, WorkloadStatusRunning} {
+		assert.False(t, IsSuspendedWorkloadStatus(s),
+			"%s is not the status a start cannot undo", s)
+	}
+}
+
 func TestIsStoppedWorkloadStatus(t *testing.T) {
 	for _, s := range []string{WorkloadStatusStopped, WorkloadStatusSuspended, WorkloadStatusInterrupted} {
 		assert.True(t, IsStoppedWorkloadStatus(s), "%s is a way of being switched off", s)

@@ -165,7 +165,7 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 		return false, nil
 	}
 
-	agreed, err := confirmRoll(workloadName, opts)
+	agreed, err := confirmRoll(live, workloadName, opts)
 	if err != nil {
 		return false, err
 	}
@@ -234,7 +234,7 @@ func lockedAlready(artifactID string) (bool, error) {
 // A run that cannot ask is refused rather than waved through. Being unable to
 // prompt is not the same as having been told to go ahead, and the difference
 // matters exactly once.
-func confirmRoll(workloadName string, opts Options) (bool, error) {
+func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 	// Being able to ask settles it, ahead of any inference about whether
 	// anyone is there. NonInteractive is also true for --output json, which
 	// says how to format stdout rather than that production may be rolled
@@ -242,9 +242,10 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 	// already in.
 	if opts.Confirm != nil {
 		return opts.Confirm(fmt.Sprintf(
-			"Workload %s is running a locked version, which means production.\n"+
+			"Workload %s is on a locked version, which means production.%s\n"+
 				"The new version will be locked too, and locking cannot be undone.\n"+
-				"Type the workload name to roll it, anything else to stop: ", workloadName), workloadName)
+				"Type the workload name to roll it, anything else to stop: ",
+			workloadName, alsoStarting(live)), workloadName)
 	}
 
 	if opts.NonInteractive {
@@ -254,6 +255,24 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 	return false, errors.New(
 		"this rolls a locked, production version and there is no terminal to confirm on. " +
 			"Re-run with --yes to say so explicitly")
+}
+
+// alsoStarting is the clause the question needs when the workload is switched
+// off, and empty when it is not.
+//
+// The prompt used to open "is running a locked version", which was safe while a
+// stopped workload with drift was refused long before anyone was asked. It is
+// asked of one now, and telling somebody their switched-off workload is running
+// is exactly the wrong thing to say in the one prompt that guards production.
+// The version being locked is the fact that holds either way; that the run will
+// also switch the workload on is material to the answer, so it is said rather
+// than left to be discovered.
+func alsoStarting(live Live) string {
+	if live.State != StateStopped {
+		return ""
+	}
+
+	return " It is not running, and this deploy starts it."
 }
 
 // replace starts the rollout and follows it to the end. sizing is nil unless

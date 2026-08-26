@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 )
@@ -153,7 +154,7 @@ func lines(s Summary, plan Plan) []string {
 	// The plans whose reason to act is the state rather than a difference.
 	// Without a line the body is empty and the block reads as though nothing
 	// is about to happen, while the JSON beside it says otherwise.
-	if line := stateLine(plan.State); line != "" {
+	if line := stateLine(plan.State, s.Status); line != "" {
 		out = append(out, line)
 	}
 
@@ -168,17 +169,28 @@ func lines(s Summary, plan Plan) []string {
 	return out
 }
 
-// stateLine is what the live state alone puts in a plan, empty when the state
-// is not a reason to act by itself.
+// stateLine is what the live state puts in a plan, empty when the state is not
+// a reason to act by itself.
 //
-// The two that cannot be deployed onto get a line rather than being left to
+// The states that cannot be deployed onto get a line rather than being left to
 // the error below the block. A plan that renders as a bare header reads as a
 // run with nothing to do, which is the opposite of what a refusal is about to
 // say, and --dry-run never prints the error at all.
-func stateLine(state State) string {
+//
+// The status is needed as well as the state, for the one case where the
+// reduction is lossy in a way that changes what the run will do. Stopped,
+// suspended and interrupted are one state, and a start brings two of them back;
+// the platform ignores a start of a suspended workload, so promising one here
+// would preview an act the apply is about to refuse, and a dry run never gets
+// as far as the refusal.
+func stateLine(state State, status string) string {
 	switch state {
 	case StateStopped:
-		return entry("~", "workload", "started, having been stopped")
+		if workload.IsSuspendedWorkloadStatus(status) {
+			return entry("!", "workload", "suspended, which a deploy cannot undo")
+		}
+
+		return entry("~", "workload", "started, having been "+stoppedAs(status))
 
 	case StateErrored:
 		return entry("!", "workload", "errored, so there is nothing healthy to deploy onto")
@@ -192,6 +204,17 @@ func stateLine(state State) string {
 	default:
 		return ""
 	}
+}
+
+// stoppedAs is how the workload came to be switched off, for the line that says
+// it is about to be switched back on. Interrupted is not the same as stopped to
+// the person reading it, and the state they reduce to cannot tell them apart.
+func stoppedAs(status string) string {
+	if status == "" {
+		return "stopped"
+	}
+
+	return status
 }
 
 // createDetail names the workload about to be created. The plan is printed

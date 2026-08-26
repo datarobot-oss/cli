@@ -21,7 +21,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -737,7 +736,7 @@ func deployable(live Live, workloadName, dirFlag string) error {
 // the timeout for a transition that is never coming. Interrupted can be
 // started.
 func startable(live Live, workloadName string) error {
-	if !strings.EqualFold(live.Status, workload.WorkloadStatusSuspended) {
+	if !workload.IsSuspendedWorkloadStatus(live.Status) {
 		return nil
 	}
 

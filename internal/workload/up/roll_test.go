@@ -534,6 +534,60 @@ func TestRun_DetachedRollDoesNotWait(t *testing.T) {
 	assert.Contains(t, stderr, "not waiting")
 }
 
+// The production confirm is asked before anything is touched, which means it is
+// now asked of a workload that is switched off. It must not open by telling the
+// reader their workload is running: that is the one prompt where being wrong
+// about live state costs something, and the run is about to start it.
+func TestRun_LockedProductionPromptDoesNotClaimAStoppedWorkloadIsRunning(t *testing.T) {
+	var (
+		tr    track
+		asked string
+	)
+
+	f := lockedLive(stoppedRoll(&tr))
+
+	install(t, f)
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err)
+
+	assert.NotContains(t, asked, "is running a locked version")
+	assert.Contains(t, asked, "is on a locked version")
+	assert.Contains(t, asked, "this deploy starts it",
+		"that the run also switches the workload on is material to the answer")
+	assert.Equal(t, []string{"guard"}, tr.steps,
+		"a no leaves the workload off and nothing minted; only the checks ahead of it ran")
+}
+
+// The same prompt against a running workload says nothing about starting,
+// because nothing is being started.
+func TestRun_LockedProductionPromptSaysNothingAboutStartingWhenItIsUp(t *testing.T) {
+	var (
+		tr    track
+		asked string
+	)
+
+	install(t, lockedLive(wiredRoll(&tr)))
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, asked, "is on a locked version")
+	assert.NotContains(t, asked, "starts it")
+}
+
 // A stopped workload with a new version to roll is started first and then
 // rolled, in one run. It used to be refused, on the grounds that coming up on
 // the old version and then failing was the worst of both; the refusal was
