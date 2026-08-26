@@ -42,7 +42,7 @@ func TestIsNonInteractiveFlag(t *testing.T) {
 	assert.True(t, IsNonInteractive(cmd))
 }
 
-func TestIsNonInteractiveForceInteractiveOverrides(t *testing.T) {
+func TestIsNonInteractiveForceInteractiveDoesNotOverride(t *testing.T) {
 	t.Cleanup(viperx.Reset)
 	t.Setenv(reader.NonInteractiveEnv, "true")
 
@@ -52,5 +52,7 @@ func TestIsNonInteractiveForceInteractiveOverrides(t *testing.T) {
 
 	viperx.Set("force-interactive", true)
 
-	assert.False(t, IsNonInteractive(cmd))
+	// --force-interactive only forces setup wizards to re-run; it must not
+	// veto --yes / non-interactive consent for confirmation prompts.
+	assert.True(t, IsNonInteractive(cmd))
 }

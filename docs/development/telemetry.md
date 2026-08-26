@@ -264,7 +264,9 @@ current invocation is interactive. The helper runs exactly once in
 
 - `DATAROBOT_CLI_NON_INTERACTIVE=true` forces `non_interactive=true`
 - Any parsed `--yes` flag (including short `-y`) flips the flag for that session
-- `--force-interactive` overrides both so wizards still render during automation
+- `--force-interactive` is not an interaction signal: it only forces the setup wizard
+  to re-run (via `state.HasCompletedDotenvSetup`) and does not override `--yes` or the
+  env var for confirmation prompts
 - Commands can reuse the same logic directly via `cli.IsNonInteractive(cmd)`
 
 To expose another universal flag or environment override, extend

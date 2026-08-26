@@ -22,9 +22,9 @@
 //   - CommandAdder: a cobra.Command wrapper that filters feature-gated
 //     subcommands at registration time (command.go).
 //   - YesFlagName: the canonical "--yes"/"-y" flag name constant (flags.go).
-//   - IsNonInteractive: merges the three sources of automation signal —
-//     DATAROBOT_CLI_NON_INTERACTIVE env var, --yes flag, and --force-interactive
-//     override — into a single boolean (runtime.go).
+//   - IsNonInteractive: merges the two sources of automation signal —
+//     DATAROBOT_CLI_NON_INTERACTIVE env var and the --yes flag — into a
+//     single boolean (runtime.go).
 //   - ErrSilent: a sentinel error for commands that have already printed their
 //     own user-facing message and want cobra to stay quiet (command.go).
 package cli

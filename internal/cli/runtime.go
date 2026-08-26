@@ -28,13 +28,14 @@ import (
 )
 
 // IsNonInteractive reports whether the current command invocation should skip prompts.
-// It merges the non-interactive environment variable, any explicit --yes flag, and the
-// global --force-interactive override into a single truthy signal for automation.
+// It merges the non-interactive environment variable and any explicit --yes flag
+// into a single truthy signal for automation.
+//
+// --force-interactive is deliberately NOT consulted here: its documented scope is
+// forcing setup wizards to re-run (state.HasCompletedDotenvSetup), not vetoing
+// automation consent. Letting it override --yes would silently block scripted
+// invocations for any user who happens to set both.
 func IsNonInteractive(cmd *cobra.Command) bool {
-	if viperx.GetBool("force-interactive") {
-		return false
-	}
-
 	if reader.IsNonInteractive() {
 		return true
 	}

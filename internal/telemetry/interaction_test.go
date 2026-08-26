@@ -53,10 +53,10 @@ func TestStampInteractionMode_YesFlag(t *testing.T) {
 	assert.True(t, props.NonInteractive)
 }
 
-func TestStampInteractionMode_ForceInteractiveOverrides(t *testing.T) {
+func TestStampInteractionMode_ForceInteractiveDoesNotOverride(t *testing.T) {
 	t.Cleanup(viperx.Reset)
 
-	// Simulate both automation signals; force-interactive should still win.
+	// Simulate both automation signals plus --force-interactive.
 	t.Setenv(reader.NonInteractiveEnv, "true")
 	viperx.Set("force-interactive", true)
 
@@ -64,9 +64,11 @@ func TestStampInteractionMode_ForceInteractiveOverrides(t *testing.T) {
 	cmd.Flags().Bool(cli.YesFlagName, false, "skip prompts")
 	require.NoError(t, cmd.ParseFlags([]string{"--yes"}))
 
-	props := &CommonProperties{NonInteractive: true}
+	props := &CommonProperties{}
 
 	StampInteractionMode(props, cmd)
 
-	assert.False(t, props.NonInteractive)
+	// --force-interactive scopes to setup-wizard rerun (state package); it
+	// must not flip the telemetry non_interactive signal back to false.
+	assert.True(t, props.NonInteractive)
 }
