@@ -662,7 +662,8 @@ func TestFlow_HiddenFieldsKeepTheirValues(t *testing.T) {
 	assert.Contains(t, view, "1 replica")
 	assert.Contains(t, view, "0.5 cpu")
 	assert.Contains(t, view, "importance low")
-	assert.Contains(t, view, "Readiness: "+manifest.DefaultHealthPath+" on port 3000")
+	assert.Contains(t, view, "Readiness: no probe",
+		"nothing was typed into the health field, so no probe is written and the screen says so")
 }
 
 // Clearing the health path is how the screen declines the probe, and what
@@ -742,7 +743,7 @@ func TestFlow_HealthPathPlaceholderSaysNoProbe(t *testing.T) {
 
 	assert.Empty(t, model.inputs[fieldHealthPath].Value())
 	assert.Equal(t, healthPlaceholder, model.inputs[fieldHealthPath].Placeholder)
-	assert.NotContains(t, healthPlaceholder, manifest.DefaultHealthPath)
+	assert.NotContains(t, healthPlaceholder, "/", "the placeholder proposes no path")
 }
 
 // On the row, enter is the way to open it and the chord would be a second

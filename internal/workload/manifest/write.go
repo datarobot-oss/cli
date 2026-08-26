@@ -85,18 +85,15 @@ func ValidImportance(value string) bool {
 const (
 	DefaultImportance = "low"
 	DefaultPort       = 8080
-	// DefaultHealthPath is the root rather than /health because the probe has
-	// to pass on an application nobody wrote it for. Almost every HTTP service
-	// answers something at /, where /health is an endpoint the app has to have
-	// implemented; pointing a probe at one that does not exist is the most
-	// common first-deploy failure, and it presents as a deploy that never
-	// becomes ready rather than as a misconfigured probe. An app with a real
-	// health endpoint says so on the settings screen, and one that wants no
-	// probe at all clears the field.
-	DefaultHealthPath = "/"
-	DefaultReplicas   = 1
-	DefaultCPU        = 0.5
-	DefaultMemory     = "512MB"
+	// There is no default health path. A probe has to be written for the app
+	// it probes: any guessed path — / very much included — kills a healthy
+	// deploy whose framework answers 404 there, minutes after the green tick
+	// and with nothing saying why. No probe by default, and the deploy's own
+	// endpoint check catches a container that answers nothing.
+
+	DefaultReplicas = 1
+	DefaultCPU      = 0.5
+	DefaultMemory   = "512MB"
 
 	// GroupName and PrimaryContainerName appear in both halves of the file,
 	// which is how the sizing block is joined to the artifact block.
