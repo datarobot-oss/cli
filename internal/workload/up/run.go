@@ -197,8 +197,7 @@ func Run(opts Options) (Result, error) {
 		return result, err
 	}
 
-	summary := Summary{Name: result.Name, WorkloadID: result.WorkloadID, Status: live.Status}
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+	if err := announce(loaded, live, plan, result, opts); err != nil {
 		return result, err
 	}
 
@@ -554,6 +553,12 @@ func name(loaded Loaded, live Live) string {
 }
 
 // apply carries out the plan, or explains why it cannot.
+//
+// Most of the explaining happens earlier: Run refuses the states a deploy
+// cannot land on before it prints the plan, so a refusal no longer announces
+// work it will not attempt. deployable stays here as the backstop it always
+// was, and is the only thing that answers for a workload which was steady when
+// it was read and is moving again by the time it is acted on.
 func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
@@ -688,6 +693,61 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 	}
 
 	return loaded.Compiled.CredentialRefs
+}
+
+// announce prints the plan and says whether the run may carry it out, which is
+// one act rather than two: whether the plan is going to be applied changes how
+// it has to be written, so the question is asked before anything is printed.
+//
+// A refusal and a stderr that will not take a write are returned the same way,
+// because Run answers both identically: the result so far, and the error.
+//
+// Only a plan with something in it is judged. An empty plan says what it found
+// rather than listing work, so there is no announcement to correct, and
+// refusing here would turn today's exit 0 into a failure for a run that was
+// never going to change anything. --lock is the one empty plan that still
+// mutates, and lockOnly asks the same question for itself.
+func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) error {
+	var refused error
+
+	if !plan.Empty() {
+		refused = refusal(loaded, live, result.Name)
+	}
+
+	summary := Summary{
+		Name:       result.Name,
+		WorkloadID: result.WorkloadID,
+		Status:     live.Status,
+		Refused:    refused != nil,
+	}
+
+	if err := Render(opts.Stderr, summary, plan); err != nil {
+		return err
+	}
+
+	return refused
+}
+
+// refusal is why the state this plan was built against cannot take it, and nil
+// when it can.
+//
+// It is asked before the plan is printed. `up`'s contract is that the plan is
+// what is about to happen, so a block of changes above a refusal announces work
+// that is not going to be attempted, and the reader only finds that out on the
+// last line.
+//
+// Settling is deliberately not asked, though deployable refuses it. A moving
+// workload is waited out before the plan is built, so the only run that reaches
+// a plan still settling is a dry run, which does not wait and has nothing to
+// refuse: it previews where the deploy would land rather than acting on where
+// the workload is. deployable keeps that branch as the backstop it is
+// documented to be, at the point of action.
+func refusal(loaded Loaded, live Live, workloadName string) error {
+	if live.State == StateSettling {
+		return nil
+	}
+
+	return deployable(live, workloadName, dirFlagFor(loaded))
 }
 
 // deployable refuses the live states that cannot take a deploy, one message

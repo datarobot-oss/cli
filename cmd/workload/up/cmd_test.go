@@ -612,6 +612,113 @@ func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
 	assert.Contains(t, stderr, draftHeadline)
 }
 
+// A refused --dry-run is a failure, and its footer would read as a preview
+// that went to plan. The plan block above it already says it is disclaimed and
+// the error below says why, so the line between them is the one thing on the
+// screen still describing an ordinary run.
+func TestCmd_FailedDryRunDropsTheFooter(t *testing.T) {
+	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+
+	_, stderr, err := runCmd(t, "--dry-run")
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "Dry run: nothing was changed.")
+	assert.False(t, draftWarned(stderr))
+}
+
+// refused is the result a deploy hands back when the live state turned it
+// away: the workload is real and reports where it stands, and nothing was done
+// to it.
+func refused(status string) up.Result {
+	result := deployed()
+	result.Status = status
+	result.Action = up.ActionUnchanged
+
+	return result
+}
+
+// TestCmd_TerminatedRefusalOffersNoFollowUps is half the reported bug. Three
+// commands were printed under the error, and not one of them applies to a
+// workload that is not coming back: 'stop' on a terminated workload is
+// meaningless, and the refusal already names the delete that clears the way.
+func TestCmd_TerminatedRefusalOffersNoFollowUps(t *testing.T) {
+	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "Next:")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.NotContains(t, stderr, "dr workload logs")
+}
+
+// An errored workload is the other half, and it goes the other way: reading the
+// logs is exactly what to do next, and the list is the only place the id is
+// attached to the command. What it loses is 'stop', which is not a next step
+// for a deploy that never landed.
+func TestCmd_ErroredRefusalKeepsLogsAndStatusButNotStop(t *testing.T) {
+	stubRun(t, refused("errored"), errors.New("workload my-app is errored"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "Next:")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "dr workload stop")
+}
+
+// The rule is about the run having failed rather than about a refusal: a wait
+// that timed out, or a rollout that never completed, leaves a running workload
+// whose logs and status are the whole of what there is to look at.
+func TestCmd_AnyFailureKeepsLogsAndStatusButNotStop(t *testing.T) {
+	stubRun(t, deployed(), errors.New("timed out waiting"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.NotContains(t, stderr, "dr workload up --lock",
+		"a failed run is not advised to lock what it did not deploy")
+}
+
+// A deploy onto a stopped workload starts it before it rolls, so a run that
+// fails after that has itself put a draft on the air: draftIsServing says so,
+// and the warning prints. The list still does not offer --lock, because locking
+// a version this run could not finish is not the remedy; the warning names the
+// command inline for anyone who decides otherwise.
+func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("rollout never completed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.True(t, draftWarned(stderr), "the run left a draft running and has to say so")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "  dr workload up --lock  Lock the artifact")
+	assert.NotContains(t, stderr, "dr workload stop")
+}
+
+// A refusal still reports the workload it was refused by. Losing the id is how
+// a deploy becomes unfindable, and the endpoint is deliberately kept for the
+// same reason; only its success tick is dropped.
+func TestCmd_TerminatedRefusalStillReportsTheEndpoint(t *testing.T) {
+	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+
+	stdout, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout)
+	assert.Contains(t, stderr, "Workload endpoint:")
+	assert.NotContains(t, stderr, "✓ Workload endpoint:")
+}
+
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	cmd := Cmd()
 

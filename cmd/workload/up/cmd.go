@@ -33,6 +33,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/datarobot/cli/tui"
@@ -417,6 +418,16 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	draft := draftIsServing(f, result, failed)
 
 	if f.dryRun {
+		// A dry run that failed says nothing of its own. The error explains
+		// itself, and the footer's calm "nothing was changed" sitting above it
+		// reads as a preview that went to plan; a refused deploy is exactly the
+		// case, since the plan it just printed is disclaimed rather than
+		// promised. draftIsServing already withholds the warning for the same
+		// reason, so there is nothing left to print here either.
+		if failed {
+			return nil
+		}
+
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
 		draftWarning(cmd.ErrOrStderr(), draft, true)
 
@@ -492,28 +503,63 @@ func draftWarning(w io.Writer, draft, planned bool) {
 }
 
 // nextSteps lists what to run against the workload this deploy just touched,
-// on stderr so the endpoint on stdout stays pipeable. Nothing is printed for a
-// run that produced no workload: a list of commands that need an id is no help
-// to someone who has not got one.
+// on stderr so the endpoint on stdout stays pipeable. Nothing is printed when
+// there is nothing worth running: see followUps.
+func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
+	steps := followUps(result, dir, draft, failed)
+	if len(steps) == 0 {
+		return
+	}
+
+	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
+
+	for _, step := range steps {
+		fmt.Fprintf(w, "  %s  %s\n",
+			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	}
+}
+
+// followUps is what is worth running against this workload now, empty when
+// nothing is. A run that produced no workload is the first such case: a list of
+// commands that all name a workload is no help to someone who has not got one.
 //
 // The commands carry no id. A successful deploy leaves the manifest bound, so
 // they resolve from the project directory, and --dir carries a deploy that ran
 // somewhere else.
 //
-// A failed run is the exception, and takes the id instead. One of its shapes
-// is a workload created whose id could not be written back, where the binding
-// the bare commands need is exactly what is missing; printing them bare would
-// hand the reader three commands that cannot run. It is also what keeps
-// reportable's promise that a deploy which failed late is still findable.
+// A failed run is the exception, and takes the id instead. One of its shapes is
+// a workload created whose id could not be written back, where the binding the
+// bare commands need is exactly what is missing; printing them bare would hand
+// the reader commands that cannot run. It is also what keeps reportable's
+// promise that a deploy which failed late is still findable.
+//
+// A failed run also loses two of the lines, for the reason the endpoint's tick
+// is dropped on the same run. 'stop' is not a next step for a deploy that did
+// not land, and neither is --lock: a deploy onto a stopped workload starts it
+// before it rolls, so a run that fails after that really has put a draft on the
+// air, but locking a version this run could not finish is not the remedy for
+// it, and draftWarning names the command inline for anyone who decides
+// otherwise. --lock is in any case the one line that could not be made to name
+// the workload, since it takes no id, and on a failed run the manifest may hold
+// no binding for it to resolve. What survives is logs and status, which are the
+// right pair for an errored workload, a wait that timed out and a rollout that
+// never completed, and which carry the id that the errors naming those same
+// commands do not.
+//
+// A terminated workload gets nothing. None of the three mean anything against
+// something that is not coming back, and the refusal already names
+// 'dr workload delete', which is the only command that helps. Matched on the
+// status rather than through IsWorkloadErrorStatus, which also covers errored:
+// errored is exactly where logs and status earn their place.
 //
 // A draft deploy trades the stop line for --lock, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
-// to switch a workload off goes looking for the command; someone whose
-// workload switches itself off does not know there is anything to look for,
-// and this list is the one place they will read either way.
-func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
+// to switch a workload off goes looking for the command; someone whose workload
+// switches itself off does not know there is anything to look for, and this
+// list is the one place they will read either way.
+func followUps(result up.Result, dir string, draft, failed bool) [][2]string {
 	if result.WorkloadID == "" {
-		return
+		return nil
 	}
 
 	at := manifest.DirFlag(dir)
@@ -521,35 +567,32 @@ func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 		at = " " + result.WorkloadID
 	}
 
-	steps := [][2]string{
-		{"dr workload logs" + at, "View the container logs"},
-		{"dr workload status" + at, "Check the workload status"},
+	// No build-logs line on any of these paths. It needs an artifact id as well
+	// as a build id, and on a roll the two deliberately belong to different
+	// artifacts: BuildID is the candidate's, ArtifactID stays on the version
+	// still serving until the swap lands. Pairing them would send the reader to
+	// a 404 at exactly the moment they need the logs. The error from a failed
+	// build already names the right pair.
+	logs := [2]string{"dr workload logs" + at, "View the container logs"}
+	status := [2]string{"dr workload status" + at, "Check the workload status"}
+
+	if failed {
+		if strings.EqualFold(result.Status, workload.WorkloadStatusTerminated) {
+			return nil
+		}
+
+		return [][2]string{logs, status}
 	}
 
-	// --lock takes no id, so on a failed run it is the one line that cannot be
-	// made to name the workload. That is also the run where the manifest may
-	// hold no binding, which would make it create a second workload instead of
-	// locking this one, so it is left out rather than printed unrunnable.
-	if draft && !failed {
-		steps = append([][2]string{
-			{"dr workload up --lock" + manifest.DirFlag(dir), "Lock the artifact to make it permanent"},
-		}, steps...)
-	} else {
-		steps = append(steps,
-			[2]string{"dr workload stop" + at, "Stop the workload, retaining its version"})
+	if draft {
+		return [][2]string{
+			{"dr workload up --lock" + at, "Lock the artifact to make it permanent"},
+			logs, status,
+		}
 	}
 
-	// No build-logs line. It needs an artifact id as well as a build id, and
-	// on a roll the two deliberately belong to different artifacts: BuildID is
-	// the candidate's, ArtifactID stays on the version still serving until the
-	// swap lands. Pairing them would send the reader to a 404 at exactly the
-	// moment they need the logs. The error from a failed build already names
-	// the right pair.
-
-	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
-
-	for _, step := range steps {
-		fmt.Fprintf(w, "  %s  %s\n",
-			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	return [][2]string{
+		logs, status,
+		{"dr workload stop" + at, "Stop the workload, retaining its version"},
 	}
 }
