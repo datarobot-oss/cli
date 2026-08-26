@@ -472,7 +472,7 @@ func fetchLive(workloadID string) (manifest.Live, error) {
 		return manifest.Live{}, fmt.Errorf("cannot read the artifact of workload %s: %w", workloadID, err)
 	}
 
-	return manifest.NewLive(workloadID, workloadDoc, artifactDoc), nil
+	return manifest.NewLive(workloadID, workloadDoc, artifactDoc)
 }
 
 // checkRendered parses and validates what is about to be written, so a file

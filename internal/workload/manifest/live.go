@@ -26,7 +26,12 @@ import (
 // server's own bookkeeping: it assigns them, and a file that repeats them
 // back is either ignored or rejected. Stripping them recursively is safe
 // because the create spec has no legitimate key by these names anywhere.
-var serverManagedKeys = []string{"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId"}
+//
+// The list is derived from the field rule table (schema.go) so the strip
+// metadata lives in one place. See the strip scoping decision documented on
+// fieldRule: keys are deleted at ANY depth, including inside
+// codeRef.datarobot and any other nested mapping.
+var serverManagedKeys = serverManagedFieldKeys()
 
 // Live is a running workload, downloaded so a manifest can be written that
 // says everything the workload already says. Setup uses it when the user
@@ -53,20 +58,36 @@ type Live struct {
 // NewLive assembles the live view from the two documents the server returns,
 // stripping what only the server may set. workloadDoc is the workload,
 // artifactDoc the artifact it currently runs.
-func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
+//
+// It fails loudly when the artifact doc carries no usable spec — absent, or
+// stripped to nothing by the server-managed-key purge — so a partial or
+// permission-filtered artifact GET can never produce a manifest that Validate
+// would reject with "artifact.spec: is required for an inline artifact". The
+// error names the workload id, mirroring Apply's own "no primary container"
+// contract, because the right answer is to edit the file by hand rather than
+// let the CLI write something it would then refuse to read.
+func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, error) {
 	live := Live{
 		WorkloadID:   workloadID,
 		Name:         stringAt(workloadDoc, keyName),
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
 		ArtifactType: stringAt(artifactDoc, keyType),
-		Spec:         stripServerManaged(mapAt(artifactDoc, keySpec)),
-		Runtime:      stripServerManaged(mapAt(workloadDoc, keyRuntime)),
+		// stripServerManaged deep-copies once and strips both server-managed
+		// keys and nil-valued keys in a single recursive walk, so no second
+		// copy is allocated here.
+		Spec:    stripServerManaged(mapAt(artifactDoc, keySpec)),
+		Runtime: stripServerManaged(mapAt(workloadDoc, keyRuntime)),
 	}
 
 	stripBuildOutputs(live.Spec)
 
-	return live
+	if len(live.Spec) == 0 {
+		return live, fmt.Errorf("workload %s has no artifact spec; edit %s by hand instead",
+			workloadID, FileName)
+	}
+
+	return live, nil
 }
 
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the
@@ -163,24 +184,43 @@ func (m *Manifest) BuildMode() string {
 	return ""
 }
 
-// primaryContainerNode finds the container traffic reaches in a parsed spec,
-// falling back to the first container the way the live-document walk does.
-func primaryContainerNode(spec *yaml.Node) *yaml.Node {
-	var first *yaml.Node
-
-	for _, group := range seqItems(mapValue(spec, keyContainerGroups)) {
-		for _, container := range seqItems(mapValue(group, keyContainers)) {
-			if first == nil {
+// findPrimary walks container groups looking for the primary container,
+// falling back to the first container the way both the node and map walks do.
+// The traversal is parameterised by the container representation so the logic
+// lives once: *yaml.Node for parsed manifests, map[string]any for live server
+// documents. found is false when no containers exist at all; first is the
+// zero value (nil) in that case, matching what the individual walks returned.
+func findPrimary[C any](
+	groups []C,
+	containersOf func(C) []C,
+	isPrimary func(C) bool,
+) (first C, found bool) {
+	for _, group := range groups {
+		for _, container := range containersOf(group) {
+			if !found {
 				first = container
+				found = true
 			}
 
-			if isTrue(mapValue(container, keyPrimary)) {
-				return container
+			if isPrimary(container) {
+				return container, true
 			}
 		}
 	}
 
-	return first
+	return first, found
+}
+
+// primaryContainerNode finds the container traffic reaches in a parsed spec,
+// falling back to the first container the way the live-document walk does.
+func primaryContainerNode(spec *yaml.Node) *yaml.Node {
+	container, _ := findPrimary(
+		seqItems(mapValue(spec, keyContainerGroups)),
+		func(group *yaml.Node) []*yaml.Node { return seqItems(mapValue(group, keyContainers)) },
+		func(container *yaml.Node) bool { return isTrue(mapValue(container, keyPrimary)) },
+	)
+
+	return container
 }
 
 // runtimeDefaults reads the sizing the workload is actually running with, so
@@ -248,7 +288,7 @@ func liveBuild(container map[string]any) Build {
 		}
 	}
 
-	if buildConfig != nil {
+	if len(buildConfig) > 0 {
 		return Build{Mode: BuildModeUnchanged}
 	}
 
@@ -471,7 +511,7 @@ func (l *Live) runtimeGroup() map[string]any {
 // autoscaling: the file it would produce is one the ledger accepts.
 func autoscalingActive(group map[string]any) bool {
 	autoscaling := mapAt(group, keyAutoscaling)
-	if autoscaling == nil {
+	if len(autoscaling) == 0 {
 		return false
 	}
 
@@ -727,6 +767,8 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
+	hoistNameKeys(spec)
+
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
 	if l.ArtifactType != "" {
 		artifact = append(artifact, field{key: keyType, value: scalar(l.ArtifactType)})
@@ -736,24 +778,31 @@ func (l Live) Render() ([]byte, error) {
 		artifact = append(artifact, field{key: keySpec, value: spec})
 	}
 
-	fields := []field{
-		{key: keyWorkloadID, value: scalar(l.WorkloadID), comment: workloadIDComment},
-		{key: keyName, value: scalar(l.Name)},
-		{
-			key: keyImportance, value: scalar(orDefaultString(l.Importance, DefaultImportance)),
-			comment: "low | moderate | high | critical",
-		},
-		{key: keyArtifact, value: mapping(artifact...)},
-	}
-
 	runtime, err := documentNode(l.Runtime)
 	if err != nil {
 		return nil, err
 	}
 
-	if runtime != nil {
-		fields = append(fields, field{key: keyRuntime, value: runtime})
+	hoistNameKeys(runtime)
+
+	// The top-level field order is defined by the field rule table
+	// (schema.go) and shared with Draft.Render so both renderers emit the
+	// same key sequence.
+	values := map[string]*yaml.Node{
+		keyWorkloadID: scalar(l.WorkloadID),
+		keyName:       scalar(l.Name),
+		keyImportance: scalar(orDefaultString(l.Importance, DefaultImportance)),
+		keyArtifact:   mapping(artifact...),
 	}
+
+	if runtime != nil {
+		values[keyRuntime] = runtime
+	}
+
+	fields := orderedFields(values, map[string]string{
+		keyWorkloadID: workloadIDComment,
+		keyImportance: strings.Join(ImportanceLevels, " | "),
+	})
 
 	var buf bytes.Buffer
 
@@ -779,21 +828,13 @@ func (l Live) primaryContainer() map[string]any {
 }
 
 func primaryContainerOf(spec map[string]any) map[string]any {
-	var first map[string]any
+	container, _ := findPrimary(
+		slicesAt(spec, keyContainerGroups),
+		func(group map[string]any) []map[string]any { return slicesAt(group, keyContainers) },
+		func(container map[string]any) bool { return boolAt(container, keyPrimary) },
+	)
 
-	for _, group := range slicesAt(spec, keyContainerGroups) {
-		for _, container := range slicesAt(group, keyContainers) {
-			if first == nil {
-				first = container
-			}
-
-			if boolAt(container, keyPrimary) {
-				return container
-			}
-		}
-	}
-
-	return first
+	return container
 }
 
 // documentNode encodes a server document as a YAML node, nil for an empty
@@ -809,6 +850,83 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	}
 
 	return node, nil
+}
+
+// hoistNameKeys scopes name-promotion to identifier mappings: the
+// sequence-item mappings found under the identifier keys declared in the
+// field rule table (schema.go) — today, containerGroups and containers.
+// Arbitrary nested mappings that happen to carry a key literally called
+// "name" (e.g. labels: {team: x, name: not-an-id, zone: b}) are left in
+// their original key order, honouring the package's pass-through contract
+// (doc.go: unknown blocks "survive the round trip"; the spec and runtime
+// blocks are "passed through as the platform gave them"). Reordering every
+// mapping with a name key produced unexplained diff noise on every bind.
+//
+// The walk is scoped to mapping nodes: it returns early on anything else
+// (scalars and sequences carry no identifier keys). Within a mapping it
+// recurses into each value, so identifier keys nested inside other mappings
+// are found, but it only reorders the mappings that are sequence items under
+// those keys. The top-level manifest order is already controlled by Render's
+// orderedFields call (which consults the same table) and is never reached
+// here.
+func hoistNameKeys(node *yaml.Node) {
+	if node == nil {
+		return
+	}
+
+	// Only mapping nodes can carry containerGroups/containers keys; sequence
+	// and scalar nodes have nothing to hoist and nothing to descend through.
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+
+		// Identifier keys: hoist name inside each sequence-item mapping and
+		// recurse into those items so containers nested inside groups (and
+		// groups nested inside anything else) are reached. The sequence node
+		// itself is handled item-by-item here rather than via the generic
+		// descent, so its items are the only mappings touched. The set of
+		// identifier keys is derived from the field rule table (schema.go).
+		if hoistNameKeySet[key.Value] && value != nil {
+			if value.Kind == yaml.SequenceNode {
+				for _, item := range value.Content {
+					hoistNameInMapping(item)
+					hoistNameKeys(item)
+				}
+			}
+
+			continue
+		}
+
+		// Non-matching subtrees are walked via their values so
+		// containerGroups/containers appearing at any depth are still found,
+		// while opaque mappings they contain keep their key order.
+		hoistNameKeys(value)
+	}
+}
+
+// hoistNameInMapping moves a "name" key to the front of a mapping node's
+// Content, preserving every other key in its original order. It is a no-op
+// for non-mapping nodes or mappings without a name key.
+func hoistNameInMapping(node *yaml.Node) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == keyName {
+			nameKey := node.Content[i]
+			nameValue := node.Content[i+1]
+
+			copy(node.Content[2:i+2], node.Content[0:i])
+			node.Content[0] = nameKey
+			node.Content[1] = nameValue
+
+			return
+		}
+	}
 }
 
 // stripServerManaged removes the server's bookkeeping from a copy of the
@@ -827,7 +945,19 @@ func stripKeys(value any) {
 			delete(typed, key)
 		}
 
-		for _, child := range typed {
+		// Nil-valued keys are dropped in the same walk: the server echoes
+		// them as placeholders (e.g. autoscaling: null), and writing one
+		// into the committed manifest would confuse the validator. Empty
+		// maps are preserved; isNullish is the validator's counterpart that
+		// treats an empty mapping as absent rather than as a policy. The
+		// nullable set is documented in library/api-reference.md.
+		for key, child := range typed {
+			if child == nil {
+				delete(typed, key)
+
+				continue
+			}
+
 			stripKeys(child)
 		}
 	case []any:
@@ -841,21 +971,67 @@ func stripKeys(value any) {
 // was asked to do. A container that says how to build itself also carries the
 // image that came out and the code the last sync uploaded; both are re-earned
 // by the next deploy, and writing them into the file would pin a workload to
-// yesterday's image.
+// yesterday's image. It also strips the server-assigned build block, scoped
+// to containers on purpose: the bare word "build" is generic enough that
+// adding it to serverManagedKeys could eat a legitimate user key at some
+// other level of the spec. The computed imageOutdated flag is unambiguous,
+// so it lives in that list instead.
+//
+// The build-output keys (both container-scoped and buildConfig-scoped) are
+// declared in the field rule table (schema.go). This function consults the
+// table via containerBuildOutputKeys and buildConfigBuildOutputKeys so the
+// set of stripped keys lives in one place.
+//
+// An imageBuildConfig with real content (e.g. a dockerfile block) is a build
+// container: imageUri is deleted as a server-built pin and codeRef as
+// server-managed. An imageBuildConfig that is empty, or becomes empty after
+// deleting codeRef, is NOT a build container — the user-declared imageUri is
+// kept and the emptied imageBuildConfig key is removed entirely. This mirrors
+// the server's own rule at containers.py:415 ("either imageUri or
+// imageBuildConfig must be provided"): the rendered container must never
+// carry an empty imageBuildConfig: "{}" alongside a missing imageUri.
+//
+// The guard does not claim the rendered container always carries exactly one
+// valid image source. Today the server only accepts provided/generated
+// dockerfile sources (containers.py:84-95 discriminated union), so an
+// imageBuildConfig without a dockerfile key is a hypothetical future or
+// foreign shape. Such a shape is preserved verbatim under the pass-through
+// contract (doc.go: unknown blocks "survive the round trip"), and Validate's
+// dockerfile-required check flags it on the next run — the CLI does not bless
+// an unknown build source by rewriting or stripping it.
 func stripBuildOutputs(spec map[string]any) {
+	buildConfigOutputs := buildConfigBuildOutputKeys()
+	containerOutputs := containerBuildOutputKeys()
+
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
 			buildConfig := mapAt(container, keyImageBuildConfig)
-			if buildConfig == nil {
-				continue
+			if buildConfig != nil {
+				for _, key := range buildConfigOutputs {
+					delete(buildConfig, key)
+				}
+
+				// If the build config still has real content after stripping
+				// the build-output keys, this is a genuine build container:
+				// drop the server-built imageUri pin. If it emptied, the
+				// container is really an image container — drop the emptied
+				// imageBuildConfig key and keep imageUri.
+				if len(buildConfig) == 0 {
+					delete(container, keyImageBuildConfig)
+				} else {
+					delete(container, keyImageURI)
+				}
 			}
 
-			delete(container, keyImageURI)
-			delete(buildConfig, "codeRef")
+			for _, key := range containerOutputs {
+				delete(container, key)
+			}
 		}
 	}
 }
 
+// deepCopyMap returns a deep copy of document so the caller's input is not
+// mutated by the strip passes that run against it.
 func deepCopyMap(document map[string]any) map[string]any {
 	if document == nil {
 		return nil

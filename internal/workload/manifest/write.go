@@ -737,25 +737,30 @@ func joinComments(above, below string) string {
 const workloadIDComment = "managed by the CLI"
 
 func (d Draft) topLevelFields(build field) []field {
-	fields := make([]field, 0, 5)
-
-	if d.WorkloadID != "" {
-		fields = append(fields, field{key: keyWorkloadID, value: scalar(d.WorkloadID), comment: workloadIDComment})
-	}
-
 	importance := d.Importance
 	if importance == "" {
 		importance = DefaultImportance
 	}
 
-	fields = append(fields,
-		field{key: keyName, value: scalar(d.Name)},
-		field{key: keyImportance, value: scalar(importance), comment: strings.Join(ImportanceLevels, " | ")},
-		field{key: keyArtifact, value: d.artifact(build)},
-		field{key: keyRuntime, value: d.runtime()},
-	)
+	// The top-level field order is defined by the field rule table
+	// (schema.go) and shared with Live.Render so both renderers emit the
+	// same key sequence. workloadId is omitted when empty by leaving it
+	// absent from the values map; orderedFields skips keys that are missing.
+	values := map[string]*yaml.Node{
+		keyName:       scalar(d.Name),
+		keyImportance: scalar(importance),
+		keyArtifact:   d.artifact(build),
+		keyRuntime:    d.runtime(),
+	}
 
-	return fields
+	if d.WorkloadID != "" {
+		values[keyWorkloadID] = scalar(d.WorkloadID)
+	}
+
+	return orderedFields(values, map[string]string{
+		keyWorkloadID: workloadIDComment,
+		keyImportance: strings.Join(ImportanceLevels, " | "),
+	})
 }
 
 // artifact renders the half that says what runs: the versioned, lockable
