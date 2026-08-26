@@ -48,10 +48,19 @@ func phase6State(e *Engine) error {
 		cfg.LastSyncedVersionID = &versionForState
 	}
 
-	if err := wapi.SaveConfig(e.projectDir, cfg); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-
+	// Build and write the manifest BEFORE writing config. The failure
+	// direction is what matters, not elegance: if SaveManifest fails,
+	// config has not been advanced yet, so the next sync sees the old
+	// version in config, detects drift, fetches AllFiles, and rebuilds
+	// BASE from real remote data — safe and self-healing. The converse
+	// (config advanced, manifest stale) silently poisons BASE: the next
+	// sync sees no drift, fast-paths, copies the stale BASE to REMOTE,
+	// and reports "Up to date." forever.
+	//
+	// This reorder is data-safe: nothing between the two writes reads
+	// config from disk. buildNewBaseManifest reads only e.remote,
+	// e.plan, and e.uploadOutcome (all in-memory). e.config and
+	// populateResult are touched only after both writes complete.
 	manifest, err := buildNewBaseManifest(e, versionForState, now)
 	if err != nil {
 		return fmt.Errorf("build manifest: %w", err)
@@ -59,6 +68,10 @@ func phase6State(e *Engine) error {
 
 	if err := wapi.SaveManifest(e.projectDir, manifest); err != nil {
 		return fmt.Errorf("save manifest: %w", err)
+	}
+
+	if err := wapi.SaveConfig(e.projectDir, cfg); err != nil {
+		return fmt.Errorf("save config: %w", err)
 	}
 
 	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, now)); err != nil {

@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,16 +167,18 @@ func TestMissingSentEntry_BuildNewBaseManifestHardFails(t *testing.T) {
 
 // TestMissingSentEntry_Phase6DoesNotAdvanceManifest verifies that when
 // buildNewBaseManifest fails inside phase6State (because Sent is missing an
-// entry), manifest.json is not written — it retains its exact pre-sync
-// content. This is the on-disk consequence of the hard-fail.
+// entry), neither manifest.json nor config.json is written — both retain
+// their exact pre-sync content. This is the on-disk consequence of the
+// hard-fail combined with the manifest-before-config write ordering.
 //
-// NOTE: This test also exposes the SaveConfig-before-SaveManifest ordering
-// hazard: SaveConfig runs before buildNewBaseManifest, so config.json IS
-// advanced even though the manifest is not. The missing-Sent scenario is not
-// reachable through normal operation (uploadFilesParallel returns an error
-// if any upload fails, so a partial Sent never reaches Phase 6), but the
-// hazard is real and documented in architecture.md section 3.2. See
-// discoveredIssues in the handoff.
+// The invariant: config never moves ahead of the manifest. Phase 6 now
+// builds and writes the manifest first, then writes config. When
+// buildNewBaseManifest fails, neither write has occurred, so config stays
+// at the old version. The missing-Sent scenario is not reachable through
+// normal operation (uploadFilesParallel returns an error if any upload
+// fails, so a partial Sent never reaches Phase 6), but the ordering
+// invariant is what protects the reachable hazard (SaveManifest I/O
+// failure), so this test guards it directly.
 func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 	const (
 		catalogID = "cid-synced"
@@ -229,32 +233,24 @@ func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 	assert.Equal(t, pre.manifestBytes, mBytes,
 		"manifest.json must be byte-identical to its pre-sync content")
 
-	// config.json: SaveConfig runs BEFORE buildNewBaseManifest in phase6State.
-	// When buildNewBaseManifest fails, SaveConfig has already persisted the
-	// advanced config (LastSyncedVersionID = "ver-new"). This is the
-	// SaveConfig-before-SaveManifest ordering hazard documented in
-	// architecture.md section 3.2. The missing-Sent scenario is not reachable
-	// through normal operation (uploadFilesParallel returns an error on any
-	// upload failure, so a partial Sent never reaches Phase 6), so this
-	// hazard is theoretical. We assert the current behaviour and document
-	// the gap; see discoveredIssues in the handoff.
+	// config.json must NOT be advanced. Phase 6 now writes the manifest
+	// before config: buildNewBaseManifest runs first, and when it fails,
+	// neither SaveManifest nor SaveConfig has executed. Config stays at
+	// the old version, preserving the invariant that config never moves
+	// ahead of the manifest.
 	cBytes, err := os.ReadFile(wapi.ConfigPath(dir))
 	require.NoError(t, err)
 
-	// If the hazard were fixed (SaveConfig moved after buildNewBaseManifest,
-	// or made conditional on manifest success), this would assert equality.
-	// Today config IS advanced, so we assert the difference and name it.
-	assert.NotEqual(t, pre.configBytes, cBytes,
-		"config.json IS advanced by SaveConfig before buildNewBaseManifest fails (known hazard)")
+	assert.Equal(t, pre.configBytes, cBytes,
+		"config.json must be byte-identical to its pre-sync content — config never moves ahead of the manifest")
 
-	// The advanced config must point at the new version, proving the hazard
-	// is specifically the SaveConfig-before-SaveManifest ordering.
-	advancedCfg, err := wapi.LoadConfig(dir)
+	// Config must still point at the old version, proving the invariant.
+	unchangedCfg, err := wapi.LoadConfig(dir)
 	require.NoError(t, err)
 
-	require.NotNil(t, advancedCfg.LastSyncedVersionID)
-	assert.Equal(t, "ver-new", *advancedCfg.LastSyncedVersionID,
-		"config LastSyncedVersionID must be advanced (the hazard)")
+	require.NotNil(t, unchangedCfg.LastSyncedVersionID)
+	assert.Equal(t, "ver-synced", *unchangedCfg.LastSyncedVersionID,
+		"config LastSyncedVersionID must NOT be advanced when the manifest build fails")
 
 	// The project file must be unchanged (Phase 6 does not modify the tree).
 	content, err := os.ReadFile(filepath.Join(dir, "app.py"))
@@ -289,6 +285,265 @@ func TestMissingSentEntry_DoesNotFallBackToPhase2Hash(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, manifest.Files,
 		"no manifest must be produced when Sent is missing — no fallback")
+}
+
+// --- Phase 6 write-ordering invariants ---
+
+// TestSaveManifestFailure_DoesNotAdvanceConfig verifies that when SaveManifest
+// fails inside phase6State (injected by making manifest.json a directory so
+// the atomic rename fails), config.json is NOT advanced. Phase 6 now writes
+// the manifest before config: SaveManifest runs first, and when it fails,
+// SaveConfig has not executed. Config stays at the old version, preserving
+// the invariant that config never moves ahead of the manifest.
+//
+// This is the reachable hazard (SaveManifest I/O failure) that the write
+// reorder fixes. A stale config paired with an un-advanced manifest makes
+// the next sync detect drift, fetch AllFiles, and rebuild BASE from real
+// remote data — safe and self-healing. The converse (advanced config,
+// stale manifest) silently poisons BASE.
+func TestSaveManifestFailure_DoesNotAdvanceConfig(t *testing.T) {
+	const (
+		catalogID = "cid-synced"
+		versionID = "ver-synced"
+	)
+
+	dir := syncedProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	}, catalogID, versionID)
+
+	cfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+
+	pre := captureState(t, dir, []string{"app.py"})
+
+	// Make manifest.json a directory so AtomicWriteFile's rename fails.
+	// SaveManifest creates a temp file in the parent dir, then renames it
+	// over the target — renaming a file over a directory fails with EISDIR.
+	mPath := filepath.Join(wapi.Dir(dir), "manifest.json")
+
+	require.NoError(t, os.Remove(mPath))
+	require.NoError(t, os.Mkdir(mPath, 0o755))
+
+	t.Cleanup(func() { _ = os.RemoveAll(mPath) })
+
+	e := &Engine{
+		projectDir: dir,
+		config:     cfg,
+		plan: &SyncPlan{
+			Uploads: []FileAction{
+				{Path: "app.py", LocalHash: "phase2hash", LocalSize: 11},
+			},
+		},
+		remote: RemoteManifest{
+			"app.py": {Hash: sha256Hex([]byte("print('hi')\n")), Size: 11},
+		},
+		uploadOutcome: &UploadOutcome{
+			CatalogID: "cid-new",
+			VersionID: "ver-new",
+			Sent: map[string]FileEntry{
+				"app.py": {Hash: sha256Hex([]byte("print('changed')\n")), Size: 14},
+			},
+		},
+		newCatalogID: "cid-new",
+		newVersionID: "ver-new",
+		nowFn:        time.Now,
+	}
+
+	err = phase6State(e)
+
+	require.Error(t, err, "phase6State must fail when SaveManifest fails")
+	assert.Contains(t, err.Error(), "save manifest",
+		"error must come from SaveManifest, not SaveConfig")
+
+	// config.json must NOT be advanced — SaveConfig runs after SaveManifest,
+	// which failed, so config was never written.
+	cBytes, err := os.ReadFile(wapi.ConfigPath(dir))
+	require.NoError(t, err)
+
+	assert.Equal(t, pre.configBytes, cBytes,
+		"config.json must be byte-identical to its pre-sync content — config never moves ahead of the manifest")
+
+	unchangedCfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+
+	require.NotNil(t, unchangedCfg.LastSyncedVersionID)
+	assert.Equal(t, "ver-synced", *unchangedCfg.LastSyncedVersionID,
+		"config LastSyncedVersionID must NOT be advanced when SaveManifest fails")
+}
+
+// TestSaveConfigFailure_ManifestAdvanced_NextSyncResyncs verifies the safe
+// failure direction: when SaveManifest succeeds but SaveConfig fails (injected
+// by making config.json a directory), the manifest IS advanced (new version,
+// new hashes) while config stays stale (old version). The next sync detects
+// drift (config old != artifact new), fetches AllFiles rather than
+// fast-pathing, and converges — config is updated to match the manifest.
+//
+// This is the self-healing property that makes manifest-before-config the
+// safe ordering: an advanced manifest paired with a stale config makes the
+// next run re-sync, whereas an advanced config paired with a stale manifest
+// silently poisons BASE and reports "Up to date." forever.
+func TestSaveConfigFailure_ManifestAdvanced_NextSyncResyncs(t *testing.T) {
+	const (
+		catalogID = "cid-synced"
+		versionID = "ver-synced"
+		newVerID  = "ver-new"
+	)
+
+	dir := syncedProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	}, catalogID, versionID)
+
+	cfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+
+	pre := captureState(t, dir, []string{"app.py"})
+
+	// Make config.json a directory so SaveConfig's atomic rename fails.
+	// SaveManifest writes to manifest.json (a regular file), so it succeeds;
+	// SaveConfig writes to config.json (now a directory), so it fails.
+	cPath := wapi.ConfigPath(dir)
+
+	require.NoError(t, os.Remove(cPath))
+	require.NoError(t, os.Mkdir(cPath, 0o755))
+
+	t.Cleanup(func() { _ = os.RemoveAll(cPath) })
+
+	streamedContent := "print('changed')\n"
+	streamedHash := sha256Hex([]byte(streamedContent))
+	streamedSize := int64(len(streamedContent))
+
+	// Modify the disk file to match what was "uploaded" so that after
+	// SaveManifest writes the streamed hash, local == base and the next
+	// sync's plan is empty (the point is drift detection, not finding work).
+	modifyFile(t, dir, "app.py", streamedContent)
+
+	// Include .drignore in remote so the manifest carries it through —
+	// buildNewBaseManifest seeds from remote, then overrides uploaded paths.
+	ignoreHash, ignoreSize, err := hashLocal(t, dir, ignore.FileName)
+	require.NoError(t, err)
+
+	e := &Engine{
+		projectDir: dir,
+		config:     cfg,
+		plan: &SyncPlan{
+			Uploads: []FileAction{
+				{Path: "app.py", LocalHash: "phase2hash", LocalSize: 11},
+			},
+		},
+		remote: RemoteManifest{
+			"app.py":        {Hash: sha256Hex([]byte("print('hi')\n")), Size: 11},
+			ignore.FileName: {Hash: ignoreHash, Size: ignoreSize},
+		},
+		uploadOutcome: &UploadOutcome{
+			CatalogID: "cid-new",
+			VersionID: newVerID,
+			Sent: map[string]FileEntry{
+				"app.py": {Hash: streamedHash, Size: streamedSize},
+			},
+		},
+		newCatalogID: "cid-new",
+		newVersionID: newVerID,
+		nowFn:        time.Now,
+	}
+
+	err = phase6State(e)
+
+	require.Error(t, err, "phase6State must fail when SaveConfig fails")
+	assert.Contains(t, err.Error(), "save config",
+		"error must come from SaveConfig, not SaveManifest")
+
+	// manifest.json IS advanced — SaveManifest ran before SaveConfig and
+	// succeeded. The manifest now carries the new version and the streamed hash.
+	manifest, err := wapi.LoadManifest(dir)
+	require.NoError(t, err)
+
+	assert.Equal(t, wapi.ManifestVersion, manifest.Version)
+
+	require.NotNil(t, manifest.SyncedVersionID)
+	assert.Equal(t, newVerID, *manifest.SyncedVersionID,
+		"manifest syncedVersionId must be advanced")
+
+	fm, ok := manifest.Files["app.py"]
+	require.True(t, ok)
+
+	assert.Equal(t, streamedHash, fm.Hash,
+		"manifest must carry the streamed hash")
+	assert.Equal(t, streamedSize, fm.Size,
+		"manifest must carry the streamed size")
+
+	// Restore config.json with the old content so the next sync can load it.
+	// This simulates the real-world state after a SaveConfig failure: the
+	// file retains its pre-sync content because the atomic write never landed.
+	require.NoError(t, os.RemoveAll(cPath))
+	require.NoError(t, os.WriteFile(cPath, pre.configBytes, 0o644))
+
+	// Build the fake's server state from the manifest that SaveManifest wrote,
+	// so AllFiles returns exactly what BASE describes. This ensures the next
+	// sync sees base == remote and the plan is empty — the point is that the
+	// sync runs the full pipeline (drift detection, AllFiles fetch) rather
+	// than fast-pathing, not that it finds work to do.
+	serverFiles := make(map[string]filesapi.FileMeta, len(manifest.Files))
+
+	for path, fm := range manifest.Files {
+		serverFiles[path] = filesapi.FileMeta{Hash: fm.Hash, Size: fm.Size}
+	}
+
+	// The next sync must detect drift (config old != artifact new), fetch
+	// AllFiles rather than fast-pathing, and converge.
+	fake := (&fakeFilesClient{
+		catalogID: catalogID,
+		stageID:   "stage-should-not-be-used",
+		versionID: newVerID,
+	}).withVersion(catalogID, newVerID, serverFiles)
+
+	e2, err := newWithDeps(dir, Options{Yes: true}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, catalogID, newVerID), nil
+			},
+			PatchFn: func(_, _, _ string) error { return nil },
+		},
+		Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e2.Close() })
+
+	plan, err := e2.Plan()
+	require.NoError(t, err)
+
+	// Drift was detected: AllFiles was called (not fast-pathed).
+	assert.Equal(t, 1, fake.AllFilesCalls(),
+		"drift must trigger an AllFiles round-trip, not the fast path")
+
+	// The plan should be empty: manifest (advanced) == remote (AllFiles),
+	// and local == base (no disk changes since the failed sync). But the
+	// sync ran the full pipeline — it did not silently fast-path.
+	assert.True(t, plan.IsEmpty(),
+		"plan should be empty — manifest matches remote, no disk changes")
+
+	// Execute to run Phase 6, which updates config to the new version.
+	result, err := e2.Execute(plan)
+	require.NoError(t, err)
+
+	require.NotNil(t, result)
+
+	// Config must now converge to the new version — self-healing.
+	convergedCfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+
+	require.NotNil(t, convergedCfg.LastSyncedVersionID)
+	assert.Equal(t, newVerID, *convergedCfg.LastSyncedVersionID,
+		"config must converge to the new version after the self-healing sync")
+
+	// Manifest and config must agree.
+	convergedManifest, err := wapi.LoadManifest(dir)
+	require.NoError(t, err)
+
+	require.NotNil(t, convergedManifest.SyncedVersionID)
+	assert.Equal(t, *convergedCfg.LastSyncedVersionID, *convergedManifest.SyncedVersionID,
+		"config and manifest must agree on the version after convergence")
 }
 
 // --- VAL-UPLOAD-011b / VAL-UPLOAD-013: Failure modes through the engine ---
