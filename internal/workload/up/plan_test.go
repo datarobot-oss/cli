@@ -330,20 +330,64 @@ func TestBuild_UnboundDoesNotDiff(t *testing.T) {
 	assert.True(t, plan.Code.Changed())
 }
 
-// TestBuild_MissingWorkloadStillPlans: a workload deleted from under the
-// manifest is refused at apply time, but --dry-run still has to say what
-// would have happened, so the plan is computed rather than short-circuited.
-func TestBuild_MissingWorkloadStillPlans(t *testing.T) {
+// TestBuild_MissingWorkloadPlansACreate: a workload deleted from under the
+// manifest is drift, and the apply for it is a create. The plan says so in one
+// line rather than listing every field the file names against an empty live
+// object, which is what a comparison would produce and what a reader would
+// have to wade through.
+func TestBuild_MissingWorkloadPlansACreate(t *testing.T) {
 	plan, err := Build(
 		loadedFrom(planPayload),
-		Live{State: StateMissing},
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
 		builtCode(0),
 	)
 	require.NoError(t, err)
 
-	assert.False(t, plan.Creates, "a vanished workload is not a licence to create a second one")
+	assert.True(t, plan.Creates)
 	assert.Equal(t, StateMissing, plan.State)
-	assert.NotEmpty(t, plan.Artifact, "with no live spec, everything the file names is an addition")
+	assert.Equal(t, ActionCreated, plan.Action())
+	assert.Empty(t, plan.Artifact, "a create says so once instead of per field")
+	assert.Empty(t, plan.Runtime)
+}
+
+// TestBuild_MissingWorkloadKeepsTheDeadID: the id the file was bound to is the
+// only thing separating "deleted, recreate it" from "you are pointed at the
+// wrong instance", so the plan has to be able to print it.
+func TestBuild_MissingWorkloadKeepsTheDeadID(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
+		builtCode(0),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", plan.PriorWorkloadID)
+}
+
+// TestBuild_TerminatedWorkloadIsNotACreate: a terminated workload still
+// exists and still owns its name, so the apply for it is a refusal, not a
+// create. Planning one would announce a name the create would not use and a
+// binding that has not gone anywhere.
+func TestBuild_TerminatedWorkloadIsNotACreate(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateTerminated},
+		builtCode(0),
+	)
+	require.NoError(t, err)
+
+	assert.False(t, plan.Creates)
+	assert.Empty(t, plan.PriorWorkloadID)
+}
+
+// TestBuild_FirstDeployHasNoPriorBinding: a create only names an id when it is
+// replacing a binding, so an unbound manifest must not print one.
+func TestBuild_FirstDeployHasNoPriorBinding(t *testing.T) {
+	plan, err := Build(loadedFrom(planPayload), Live{State: StateUnbound}, builtCode(0))
+	require.NoError(t, err)
+
+	assert.True(t, plan.Creates)
+	assert.Empty(t, plan.PriorWorkloadID)
 }
 
 func TestBuild_CarriesCodeAndStateThrough(t *testing.T) {
@@ -556,4 +600,66 @@ func TestBuild_NoTypeInTheFileIsNotDrift(t *testing.T) {
 
 	assert.Empty(t, plan.Artifact)
 	assert.True(t, plan.Empty())
+}
+
+// creates() and deployable() are two switches over the same enum answering two
+// halves of one question: which states an apply may proceed from, and which of
+// those it creates in rather than reconciles. `exhaustive` catches a new State
+// missing from either switch, but not an existing one filed under the wrong
+// branch in only one of them, and the two ways that goes wrong are the two
+// worst outcomes this change has: creating over a workload that is still there,
+// or refusing one that this change exists to recover.
+//
+// So the relationship is asserted rather than left to two lists staying in step
+// by inspection: a state a create can happen in must be a state an apply is
+// allowed to proceed from at all.
+func TestCreates_IsASubsetOfWhatDeployableAllows(t *testing.T) {
+	for _, state := range allStates() {
+		if !creates(state) {
+			continue
+		}
+
+		err := deployable(Live{State: state}, "my-app", "")
+		assert.NoError(t, err, "%s creates but is refused, so nothing can act on the plan", state)
+	}
+}
+
+// The other direction, stated as the classification it is rather than derived,
+// so moving a state between the two branches has to be a deliberate edit here
+// as well. Terminated is the one that reads like it belongs with Missing and
+// does not: the workload still exists, still holds its name and still owns its
+// artifact, so a create collides with the name and every line of the plan about
+// it would be false.
+func TestCreates_ClassifiesEveryState(t *testing.T) {
+	want := map[State]bool{
+		StateUnbound:    true,
+		StateMissing:    true,
+		StateTerminated: false,
+		StateStopped:    false,
+		StateSettling:   false,
+		StateRunning:    false,
+		StateErrored:    false,
+	}
+
+	require.Len(t, want, len(allStates()), "a new State needs a row here")
+
+	for _, state := range allStates() {
+		expected, ok := want[state]
+		require.True(t, ok, "%s is not classified", state)
+		assert.Equal(t, expected, creates(state), "%s", state)
+	}
+}
+
+// allStates is every value of the enum, so a table over it cannot silently miss
+// one that was added since.
+func allStates() []State {
+	return []State{
+		StateUnbound,
+		StateMissing,
+		StateTerminated,
+		StateStopped,
+		StateSettling,
+		StateRunning,
+		StateErrored,
+	}
 }

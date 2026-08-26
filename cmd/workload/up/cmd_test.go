@@ -18,9 +18,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,6 +194,30 @@ func TestCmd_RefusesBindingFlags(t *testing.T) {
 	}
 }
 
+// A --dir the OS would not call a directory is refused by name, the same as
+// `dr workload delete` refuses it. Left to the manifest search it came back as
+// a bare "not a directory: <abs path>" with nothing saying which flag put that
+// path there, and the two commands print this flag at each other.
+func TestCmd_RefusesADirThatIsNotADirectory(t *testing.T) {
+	for name, dir := range map[string]string{
+		"absent": "no-such-directory",
+		"a file": filepath.Join(t.TempDir(), "file"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if name == "a file" {
+				require.NoError(t, os.WriteFile(dir, []byte("x"), 0o600))
+			}
+
+			stubRun(t, deployed(), nil)
+
+			_, _, err := runCmd(t, "--dir", dir)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--dir "+dir)
+			assert.ErrorIs(t, err, manifest.ErrNotADirectory)
+		})
+	}
+}
+
 func TestCmd_DryRunSaysSoAndPrintsNoEndpoint(t *testing.T) {
 	result := deployed()
 	result.Endpoint = ""
@@ -207,10 +234,13 @@ func TestCmd_DryRunSaysSoAndPrintsNoEndpoint(t *testing.T) {
 func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 	seen := stubRun(t, deployed(), nil)
 
-	_, _, err := runCmd(t, "--detach", "--dir", "/tmp/project")
+	// A real directory, because --dir is now checked before the deploy runs.
+	project := t.TempDir()
+
+	_, _, err := runCmd(t, "--detach", "--dir", project)
 	require.NoError(t, err)
 	assert.True(t, seen.Detach)
-	assert.Equal(t, "/tmp/project", seen.Dir)
+	assert.Equal(t, project, seen.Dir)
 
 	locking := stubRun(t, deployed(), nil)
 

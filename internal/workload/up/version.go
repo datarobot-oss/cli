@@ -151,6 +151,15 @@ func createVersion(loaded Loaded, repositoryID, label string, report *reporter) 
 			repositoryID)
 	}
 
+	// An id is the whole of what a link records, and SaveConfig does not
+	// validate the way Initialize does: linking to an empty one writes a
+	// config.json every later command rejects as corrupt. Refusing here keeps a
+	// malformed response from turning into damaged local state, and keeps the
+	// dereference below from panicking on a body that decoded to null.
+	if created == nil || created.ID == "" {
+		return version{}, errors.New("the platform accepted the artifact but reported no id for it")
+	}
+
 	return version{ID: created.ID, Fresh: true}, nil
 }
 
@@ -352,20 +361,38 @@ func joinable(draft *workload.Artifact, repositoryID string) bool {
 // nobody promotes; promoting one whose spec was never confirmed costs a
 // rollout of the wrong thing.
 func describes(loaded Loaded, artifactID string) bool {
-	payload, err := loaded.Compiled.ArtifactPayload()
+	doc, err := getArtifactDocFn(artifactID)
 	if err != nil {
 		return false
+	}
+
+	matches, err := specMatches(loaded, doc)
+
+	return err == nil && matches
+}
+
+// specMatches is describes with the failure kept separate, for a caller whose
+// answer to "cannot tell" is not the same as its answer to "no".
+//
+// Reusing a draft that might not match costs a rollout of the wrong thing, so
+// describes folds an unreadable artifact into "no". Replacing one costs the
+// artifact being replaced, so a caller that mints on "no" must not mint on a
+// fault: that orphans the artifact the project is pushing to and starts the
+// lineage again for a reason that was never established.
+//
+// The document is passed in rather than fetched, so a caller that already has
+// it, or that needs the lock status off the same read, pays one round trip
+// instead of two to the same resource.
+func specMatches(loaded Loaded, doc workload.Document) (bool, error) {
+	payload, err := loaded.Compiled.ArtifactPayload()
+	if err != nil {
+		return false, err
 	}
 
 	var want map[string]any
 
 	if err := json.Unmarshal(payload, &want); err != nil {
-		return false
-	}
-
-	doc, err := getArtifactDocFn(artifactID)
-	if err != nil {
-		return false
+		return false, err
 	}
 
 	// The name is the CLI's own, derived from the workload's, and the block
@@ -398,7 +425,7 @@ func describes(loaded Loaded, artifactID string) bool {
 	// leaves everything the file still mentions matching, the leftover is
 	// reused, and it is rolled out still carrying the variable that was
 	// deleted, which minting a fresh artifact would have dropped.
-	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0
+	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0, nil
 }
 
 // sameArtifactTypeIn reports whether two artifact blocks name the same kind,

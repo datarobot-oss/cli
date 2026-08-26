@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -110,6 +111,13 @@ const (
 // atomicWrite is the durable write, a variable so a test can make it fail and
 // check that the reservation is taken back.
 var atomicWrite = fsutil.AtomicWriteFile
+
+// ErrUnreadable reports that a manifest could not be read or parsed at all, as
+// distinct from an edit that failed after the file was understood. A caller
+// editing a file it merely found, rather than one it was handed, needs to tell
+// those apart: an unparseable file may not be about its business, while a
+// write that fails on a file whose contents it matched certainly is.
+var ErrUnreadable = errors.New("manifest could not be read")
 
 // ErrExists reports that a manifest is already present at the target path.
 // Setup never rewrites one: the file is the interface after the first write,
@@ -308,49 +316,209 @@ func Write(path string, data []byte) error {
 // workload exists, so the next run finds it. Comments, unknown keys and their
 // order are preserved, because the file is re-emitted from the tree it was
 // parsed into rather than regenerated.
+func WriteWorkloadID(path, workloadID string) error {
+	_, err := editRoot(path, "record the workload id", false, func(root *yaml.Node) (bool, error) {
+		setWorkloadID(root, workloadID)
+
+		return true, nil
+	})
+
+	return err
+}
+
+// ClearWorkloadID removes the binding, but only when it is the one the caller
+// expects, and reports whether it did. It is what `dr workload delete` calls
+// once the workload it names is gone: the id the CLI wrote is the CLI's to
+// take back, and leaving it behind points the next deploy at something that no
+// longer exists.
+//
+// The id is compared inside the same parse that performs the removal. Checking
+// it against a separate read would leave a window in which a concurrent `up`
+// writes a fresh binding, and this call then deletes a live id it never
+// looked at.
+//
+// A manifest with no binding, or a different one, is not an error: both report
+// false and write nothing. A file this cannot edit without damaging it is an
+// error carrying its own remedy, because the caller prints what it is given.
+func ClearWorkloadID(path, wantWorkloadID string) (bool, error) {
+	changed, err := editRoot(path, "clear the workload id", true, func(root *yaml.Node) (bool, error) {
+		return clearWorkloadID(root, wantWorkloadID)
+	})
+
+	return changed, err
+}
+
+// editRoot is the read-modify-write both binding edits share: parse to a node
+// tree, hand the root mapping to mutate, and re-emit only if something
+// changed. Re-emitting preserves comments, unknown keys and their order, which
+// regenerating from a struct would not.
+//
+// action names the edit for the errors that mention it, so a failure says what
+// the CLI was trying to do rather than only where it stopped.
+//
+// markUnreadable wraps the read and parse failures in ErrUnreadable. Only the
+// caller that edits a file it merely found wants that: it stays quiet about a
+// file it cannot judge relevant. The write-back knows its file, and tagging its
+// failures as unreadable makes its own caller report "could not be written:
+// manifest could not be read".
 //
 // This is the one way into the package that does not go through Parse, so it
 // runs the alias guard itself. Reaching here means the file already parsed
-// once, and neither the top-level walk below nor the encoder expands an alias,
-// so nothing known today needs the check. It is here because that reasoning is
-// about the current implementation of two other functions, and a guard that
-// holds only while nobody edits them is not one.
-func WriteWorkloadID(path, workloadID string) error {
+// once, and neither the walks below nor the encoder expands an alias, so
+// nothing known today needs the check. It is here because that reasoning is
+// about the current implementation of other functions, and a guard that holds
+// only while nobody edits them is not one.
+func editRoot(path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error)) (bool, error) {
+	unreadable := func(format string, args ...any) error {
+		err := fmt.Errorf(format, args...)
+		if markUnreadable {
+			return fmt.Errorf("%w: %w", ErrUnreadable, err)
+		}
+
+		return err
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", path, err)
+		return false, unreadable("cannot read %s: %w", path, err)
 	}
 
-	var doc yaml.Node
-
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("cannot parse %s: %w", path, err)
+	doc, root, err := soleDocument(data, path, action, unreadable)
+	if err != nil {
+		return false, err
 	}
 
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return fmt.Errorf("cannot record the workload id in %s: root must be a YAML mapping", path)
+	// The mutator's own message says what it refused and why, and every caller
+	// already has the path it passed in.
+	changed, err := mutate(root)
+	if err != nil || !changed {
+		return false, err
 	}
 
-	if err := checkAliases(doc.Content[0]); err != nil {
-		return fmt.Errorf("cannot record the workload id in %s: %w", path, err)
+	rendered, err := encodeDoc(doc)
+	if err != nil {
+		return false, fmt.Errorf("cannot render %s: %w", path, err)
 	}
 
-	setWorkloadID(doc.Content[0], workloadID)
+	// Reported as unchanged when the write fails: the caller's question is
+	// whether the file on disk now lacks the binding, and it does not.
+	if err := fsutil.AtomicWriteFile(path, matchLineEndings(data, rendered)); err != nil {
+		return false, err
+	}
 
+	return true, nil
+}
+
+// soleDocument reads the one document a manifest is, and hands back its root
+// mapping. Everything it refuses is a file this edit cannot put back the way
+// it found it.
+func soleDocument(
+	data []byte, path, action string, unreadable func(string, ...any) error,
+) (*yaml.Node, *yaml.Node, error) {
+	docs, err := decodeAll(data)
+	if err != nil {
+		return nil, nil, unreadable("cannot parse %s: %w", path, err)
+	}
+
+	// The reader never looks past the first document. Editing a file that
+	// carries more would have to put the rest back byte for byte, and it
+	// cannot: yaml.v3 hangs a comment that opens the second document off the
+	// end of the first, so re-emitting moves the user's text between them.
+	// Not marked unreadable: the file parsed, so a caller can tell it is a
+	// manifest and that this is a refusal to edit rather than an inability to
+	// judge it. Swallowing it would leave `dr workload delete` reporting
+	// nothing at all about a binding it declined to take back.
+	if len(docs) > 1 {
+		return nil, nil, fmt.Errorf(
+			"the file holds %d YAML documents, and this edit would not put them back as it found them. "+
+				"Edit it by hand", len(docs))
+	}
+
+	// An empty file is its own diagnosis with its own remedy, and it is the
+	// same file Parse would refuse in the same words. A generic "root must be a
+	// YAML mapping" here would explain one state two ways depending on which
+	// function reached the file first.
+	if len(docs) == 0 || len(docs[0].Content) == 0 {
+		return nil, nil, unreadable("cannot %s in %s: %w", action, path, ErrEmptyFile)
+	}
+
+	if docs[0].Content[0].Kind != yaml.MappingNode {
+		return nil, nil, unreadable("cannot %s in %s: root must be a YAML mapping", action, path)
+	}
+
+	root := docs[0].Content[0]
+
+	// An alias bomb is unreadable in the sense that matters here: the file
+	// cannot be walked safely, so nothing can say whether it is even about the
+	// caller's business.
+	if err := checkAliases(root); err != nil {
+		return nil, nil, unreadable("cannot %s in %s: %w", action, path, err)
+	}
+
+	return docs[0], root, nil
+}
+
+// decodeAll reads every document in the file, so a caller can tell a manifest
+// from a stream that merely starts like one.
+func decodeAll(data []byte) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+
+	var docs []*yaml.Node
+
+	for {
+		var doc yaml.Node
+
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		docs = append(docs, &doc)
+	}
+
+	return docs, nil
+}
+
+// encodeDoc renders one document back to bytes.
+func encodeDoc(doc *yaml.Node) ([]byte, error) {
 	var buf bytes.Buffer
 
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 
-	if err := enc.Encode(&doc); err != nil {
-		return fmt.Errorf("cannot render %s: %w", path, err)
+	if err := enc.Encode(doc); err != nil {
+		return nil, err
 	}
 
 	if err := enc.Close(); err != nil {
-		return fmt.Errorf("cannot render %s: %w", path, err)
+		return nil, err
 	}
 
-	return fsutil.AtomicWriteFile(path, buf.Bytes())
+	return buf.Bytes(), nil
+}
+
+// matchLineEndings gives the rewritten file back the line endings it came
+// with. The YAML encoder only ever emits LF, so re-emitting a CRLF file would
+// convert every line in it: a one-key edit would land in review as a
+// whole-file diff.
+//
+// Only a file that is wholly CRLF is converted back. A mixed file is left as
+// the encoder produced it, because guessing from one stray terminator is how
+// a single CRLF line, or a CRLF sitting inside a block scalar where it is
+// content rather than a line ending, converts everything around it.
+func matchLineEndings(original, rendered []byte) []byte {
+	crlf := bytes.Count(original, []byte("\r\n"))
+	if crlf == 0 || crlf != bytes.Count(original, []byte("\n")) {
+		return rendered
+	}
+
+	rendered = bytes.ReplaceAll(rendered, []byte("\r\n"), []byte("\n"))
+
+	return bytes.ReplaceAll(rendered, []byte("\n"), []byte("\r\n"))
 }
 
 // setWorkloadID replaces the binding in place when the key is there, and
@@ -375,6 +543,195 @@ func setWorkloadID(root *yaml.Node, workloadID string) {
 	}
 
 	root.Content = append([]*yaml.Node{key, scalar(workloadID)}, root.Content...)
+}
+
+// clearWorkloadID drops the binding when it is the one the caller named, and
+// reports whether it found it. It is the inverse of setWorkloadID, and the file
+// it edits belongs to the user, so it gives back everything that function moved
+// and takes nothing that was not the binding's.
+//
+// Every occurrence goes, not just the first. YAML calls a repeated key invalid
+// and this reader does not: it returns the first match and never looks further,
+// so a hand-edited file can hold a second binding nothing reports. Repeated
+// keys that disagree are refused outright rather than half-removed, because
+// removing the one the reader reports would promote the other to the binding
+// without anyone asking.
+//
+// Three refusals carry their own remedy, because the caller prints what it is
+// given and each needs a different answer:
+//
+//   - the binding is the file's only recognized key, so removing it leaves a
+//     document Parse rejects as not a manifest, and because the file still
+//     exists nothing falls back to the wizard;
+//   - the binding carries a YAML anchor something else aliases, so removing it
+//     strands the alias and the file never loads again;
+//   - repeated keys disagree.
+func clearWorkloadID(root *yaml.Node, wantWorkloadID string) (bool, error) {
+	// Gathered first, because what to do about a value that does not match
+	// depends on how many bindings there are. One is simply another project's
+	// file and none of this command's business; two that disagree cannot be
+	// resolved by removing either.
+	var at []int
+
+	matches := 0
+
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != keyWorkloadID {
+			continue
+		}
+
+		at = append(at, i)
+
+		// Through the alias, because the reader is: WorkloadID resolves one
+		// before answering, so a binding written as an alias is the binding
+		// this project deploys to. Comparing the raw node would read the
+		// anchor's name, match nothing, and leave the file exactly as stale as
+		// before while reporting success on the delete.
+		if resolveAlias(root.Content[i+1]).Value == wantWorkloadID {
+			matches++
+		}
+	}
+
+	if len(at) == 0 || matches == 0 {
+		return false, nil
+	}
+
+	if err := removable(root, at, matches); err != nil {
+		return false, err
+	}
+
+	kept, banner, trailing := partition(root)
+
+	// Reuses the reader's own notion of what makes a file a manifest, so the
+	// two cannot drift apart and start disagreeing about one file.
+	if !hasRecognizedKey(&yaml.Node{Kind: yaml.MappingNode, Content: kept}) {
+		return false, fmt.Errorf(
+			"%s is the only key this file is recognized by, and a manifest without it is not one. "+
+				"Delete the file instead", keyWorkloadID)
+	}
+
+	kept[0].HeadComment = joinComments(banner, kept[0].HeadComment)
+
+	// A comment that sat under the binding belongs where it sat. Hoisting a
+	// bottom-of-file note to the first key moves the user's text somewhere
+	// they never put it.
+	if trailing != "" {
+		if at[len(at)-1]+2 >= len(root.Content) {
+			last := kept[len(kept)-1]
+			last.FootComment = joinComments(trailing, last.FootComment)
+		} else {
+			kept[0].HeadComment = joinComments(kept[0].HeadComment, trailing)
+		}
+	}
+
+	root.Content = kept
+
+	return true, nil
+}
+
+// partition splits the root into what survives and the comments the removed
+// pairs were carrying: the file's banner, when the binding held the first key,
+// and whatever sat underneath the binding.
+func partition(root *yaml.Node) (kept []*yaml.Node, banner, trailing string) {
+	kept = make([]*yaml.Node, 0, len(root.Content))
+
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+
+		if key.Value != keyWorkloadID {
+			kept = append(kept, key, value)
+
+			continue
+		}
+
+		if i == 0 {
+			banner = joinComments(banner, key.HeadComment)
+		}
+
+		trailing = joinComments(trailing, joinComments(key.FootComment, value.FootComment))
+	}
+
+	return kept, banner, trailing
+}
+
+// removable refuses the two shapes that cannot be edited into a sound file:
+// repeated keys that disagree, and a binding whose anchor something else
+// aliases.
+func removable(root *yaml.Node, at []int, matches int) error {
+	if matches != len(at) {
+		return fmt.Errorf(
+			"%s appears %d times with different values, so removing one would make another the binding "+
+				"without anyone choosing it. Edit the file by hand", keyWorkloadID, len(at))
+	}
+
+	for _, i := range at {
+		if anchor := anchorOn(root.Content[i], root.Content[i+1]); anchor != "" && aliasesAnchor(root, anchor, i) {
+			return fmt.Errorf(
+				"the %s value carries the anchor %q, which the rest of the file refers to. Removing it would "+
+					"leave that reference pointing at nothing. Edit the file by hand", keyWorkloadID, anchor)
+		}
+	}
+
+	return nil
+}
+
+// anchorOn reports the anchor a binding carries, on either node of the pair.
+func anchorOn(key, value *yaml.Node) string {
+	if value.Anchor != "" {
+		return value.Anchor
+	}
+
+	return key.Anchor
+}
+
+// aliasesAnchor reports whether anything outside the pair at skip refers to
+// the anchor. yaml.v3 resolves aliases at decode time, so the alias nodes are
+// still in the tree and the encoder writes them back as aliases; dropping what
+// they point at leaves a file that never loads again.
+func aliasesAnchor(root *yaml.Node, anchor string, skip int) bool {
+	found := false
+
+	var walk func(n *yaml.Node)
+
+	walk = func(n *yaml.Node) {
+		if n == nil || found {
+			return
+		}
+
+		if n.Kind == yaml.AliasNode && n.Value == anchor {
+			found = true
+
+			return
+		}
+
+		for _, child := range n.Content {
+			walk(child)
+		}
+	}
+
+	for i, node := range root.Content {
+		if i == skip || i == skip+1 {
+			continue
+		}
+
+		walk(node)
+	}
+
+	return found
+}
+
+// joinComments stacks two comment blocks, keeping either when the other is
+// empty. yaml.Node comments are newline-separated blocks already, so this is
+// the whole of it.
+func joinComments(above, below string) string {
+	switch {
+	case above == "":
+		return below
+	case below == "":
+		return above
+	}
+
+	return above + "\n" + below
 }
 
 const workloadIDComment = "managed by the CLI"

@@ -32,14 +32,33 @@ const (
 	StateUnbound State = iota
 
 	// StateMissing is a manifest naming a workload the platform does not
-	// have, usually because it was deleted from the UI. `up` errors and
-	// names the fix rather than quietly creating a second workload, because
-	// creating one would leave the user with two things called the same and
-	// no idea which one their URL points at.
+	// have, usually because it was deleted from the UI or with
+	// `dr workload delete`. It is drift like any other: the file says what
+	// should exist, so `up` creates it and the plan names the id that went
+	// missing.
+	//
+	// This reverses an earlier rule that refused and told the user to rebind
+	// or clear the id by hand. The reasoning behind that rule does not hold:
+	// it feared leaving two workloads of the same name with no way to tell
+	// which one the URL pointed at, but a 404 means the first one is gone, so
+	// there is no pair. What refusing did produce was a dead end, on the
+	// recovery path, pointing at a `config --workload-id` that will not edit
+	// an existing manifest.
+	//
+	// The hazard that is real: a 404 also means "not on this instance". A
+	// manifest deployed against the wrong endpoint, organisation or token
+	// resolves to nothing and is recreated somewhere unintended. Refusing
+	// everyone to catch that case was the wrong trade, so the plan names the
+	// missing id instead. That line is the whole warning, because the plan is
+	// announced and applied without a confirm.
 	StateMissing
 
 	// StateTerminated is the end of a workload's life and is not restartable.
-	// Treated like StateMissing: rebind or clear the id.
+	// It is not treated like StateMissing, though the two look alike from the
+	// file's side. A terminated workload still exists: the platform returns
+	// it, and it keeps its name and its artifact, so creating over it collides
+	// with the name it still owns. `up` refuses and names the one thing that
+	// clears the way, which is deleting it.
 	StateTerminated
 
 	// StateStopped covers stopped, suspended and interrupted. `up` starts it

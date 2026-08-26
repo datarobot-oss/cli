@@ -164,9 +164,13 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Read here rather than in Build, which is kept off the filesystem so its
+	// tests can stay there too.
+	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
+
 	result := Result{
 		Plan:       plan,
-		WorkloadID: live.WorkloadID,
+		WorkloadID: boundID(live),
 		Name:       name(loaded, live),
 		Status:     plan.State.String(),
 		Endpoint:   live.Endpoint,
@@ -199,7 +203,7 @@ func Run(opts Options) (Result, error) {
 	}
 
 	if plan.Empty() {
-		return lockOnly(live, result, opts)
+		return lockOnly(loaded, live, result, opts)
 	}
 
 	return apply(loaded, live, plan, result, opts)
@@ -220,12 +224,16 @@ func Run(opts Options) (Result, error) {
 // healthy workload. Only a stopped one is excluded by Empty itself; an errored
 // workload with no drift still lands here, and locking cannot be undone, so
 // this refuses rather than making something permanent out of something broken.
-func lockOnly(live Live, result Result, opts Options) (Result, error) {
+func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, error) {
 	if !opts.Lock || result.Locked {
 		return result, nil
 	}
 
-	if err := deployable(live, result.Name); err != nil {
+	// loaded is threaded through for the remedy a refusal names: a terminated
+	// workload is cleared by `dr workload delete`, and that command only finds
+	// this project's manifest if the message carries the same --dir the deploy
+	// was given.
+	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
@@ -369,6 +377,41 @@ func load(dir string, opts Options) (Loaded, error) {
 	return Load(dir)
 }
 
+// boundID is the workload this run is about, for the envelope and for a
+// failure that has to report something.
+//
+// A binding that resolved to nothing is deliberately not it. Nothing answers
+// to that id, so handing it to a caller gives them something whose only use is
+// a 404, and a run that then fails to create would have reported a workload
+// that has never existed. The create overwrites this on success; the plan
+// carries the dead id separately, for a reader rather than for a script.
+//
+// Keyed on the state rather than on plan.PriorWorkloadID, which today tracks
+// the same thing. Deciding what the envelope reports by testing a render field
+// welds the two together across files: the moment anything populates that
+// field for a second state, this empties WorkloadID, reportable() goes false,
+// and the whole JSON document disappears from stdout on a failed run.
+func boundID(live Live) string {
+	if live.State == StateMissing {
+		return ""
+	}
+
+	return live.WorkloadID
+}
+
+// dirFlagFor is the " --dir <path>" a remedy has to carry to reach this
+// project, and empty when the working directory already does.
+//
+// A message that names `dr workload delete <id>` without it is false in
+// exactly the layout --dir was added for: a project one level down is
+// invisible to a search that only walks upward, so the command runs, finds
+// nothing, and prints nothing. `delete` prints the same suffix back at `up`,
+// so both go through one implementation rather than two notions of "already
+// there" that can disagree about one directory.
+func dirFlagFor(loaded Loaded) string {
+	return manifest.DirFlag(loaded.ProjectDir)
+}
+
 // name is what to call this workload: the live one's name once it exists, the
 // file's before that.
 func name(loaded Loaded, live Live) string {
@@ -381,7 +424,7 @@ func name(loaded Loaded, live Live) string {
 
 // apply carries out the plan, or explains why it cannot.
 func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
-	if err := deployable(live, result.Name); err != nil {
+	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
@@ -446,20 +489,29 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 }
 
 // deployable refuses the live states that cannot take a deploy, one message
-// each. None of them are guesses: a workload that is gone stays gone, and one
-// that is unsettled may still be on its way somewhere.
+// each. None is a guess: an unsettled workload may still be on its way
+// somewhere, an errored one has nothing safe underneath it, and a terminated
+// one is not coming back.
 //
-// Stopped is not among them. A stopped workload is one POST away from being
-// deployable, and `up` means "make the file true", which for something that
-// is not running means starting it.
-func deployable(live Live, workloadName string) error {
+// Missing is not among them. A binding that resolves to nothing is drift, and
+// the apply for it is a create; the plan says which id went missing so a
+// wrong-instance run is visible rather than silent.
+//
+// Terminated is, even though it too names something that will never run again.
+// The difference is that it still exists: it holds its name and its artifact,
+// so a create collides with itself, and the message has to name the one thing
+// that clears the way rather than pretend the workload is gone.
+//
+// Stopped is not among them either. A stopped workload is one POST away from
+// being deployable, and `up` means "make the file true", which for something
+// that is not running means starting it.
+func deployable(live Live, workloadName, dirFlag string) error {
 	switch live.State {
-	case StateMissing, StateTerminated:
+	case StateTerminated:
 		return fmt.Errorf(
-			"the workload this manifest is bound to is %s. "+
-				"Bind to a live one with 'dr workload config --workload-id <id>', or remove workloadId from %s "+
-				"to create a new workload on the next deploy",
-			live.State, manifest.FileName)
+			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact. "+
+				"Remove it with 'dr workload delete %s%s', which also clears the binding in %s, then deploy again",
+			workloadName, live.WorkloadID, dirFlag, manifest.FileName)
 
 	case StateErrored:
 		return fmt.Errorf(
@@ -472,7 +524,7 @@ func deployable(live Live, workloadName string) error {
 			"workload %s is still settling. Wait for it to finish, then deploy",
 			workloadName)
 
-	case StateUnbound, StateRunning:
+	case StateUnbound, StateMissing, StateRunning:
 		return nil
 
 	case StateStopped:
@@ -538,7 +590,8 @@ func create(
 	if err := writeWorkloadIDFn(loaded.Path, created.ID); err != nil {
 		return result, fmt.Errorf(
 			"workload %s was created but its id could not be written to %s. "+
-				"Add 'workloadId: %s' by hand, or the next deploy will create a second workload: %w",
+				"Set 'workloadId: %s' by hand, replacing any workloadId already there, "+
+				"or the next deploy will create a second workload: %w",
 			created.ID, loaded.Path, created.ID, err)
 	}
 
@@ -645,7 +698,8 @@ func nameTaken(createErr error, workloadName, path string) error {
 
 		return fmt.Errorf(
 			"a workload named %s already exists (%s) and nothing was deployed onto it. "+
-				"If it is this project's, add 'workloadId: %s' to %s and deploy again, which will print "+
+				"If it is this project's, set 'workloadId: %s' in %s, replacing any already there, "+
+				"and deploy again, which will print "+
 				"what would change before changing it. If it is not, rename this one in %s: %w",
 			workloadName, existing[i].ID, existing[i].ID, path, path, createErr)
 	}

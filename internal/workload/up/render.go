@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -112,7 +113,7 @@ func lines(s Summary, plan Plan) []string {
 	var out []string
 
 	if plan.Creates {
-		out = append(out, entry("+", "workload", createDetail(s)))
+		out = append(out, entry("+", "workload", createDetail(s, plan)))
 	}
 
 	// A stopped workload is the one plan whose reason to act is the state
@@ -137,12 +138,68 @@ func lines(s Summary, plan Plan) []string {
 // createDetail names the workload about to be created. The plan is printed
 // before anything happens, and --dry-run prints it instead of acting, so it
 // says what will happen rather than what has.
-func createDetail(s Summary) string {
+//
+// A create that replaces a binding reads differently from a first deploy and
+// has to say so. The file expected to find something and did not, which is
+// either a workload that was deleted, the ordinary case, or a run pointed at
+// an instance that never had it. Naming the id is what lets the reader tell
+// those apart, and it is the only warning there is: the plan is announced and
+// then applied, never confirmed.
+func createDetail(s Summary, plan Plan) string {
 	if s.Name == "" {
+		// Only reachable before a name exists to print; Validate requires one,
+		// so both branches below name the workload.
 		return "will be created, with its first artifact"
 	}
 
-	return s.Name + " will be created, with its first artifact"
+	if plan.PriorWorkloadID == "" {
+		return s.Name + " will be created" + fromArtifact(plan)
+	}
+
+	// The dead binding leads, because it is the warning: the plan is announced
+	// and then applied, never confirmed, so the one line that distinguishes a
+	// deleted workload from a run pointed at the wrong instance has to come
+	// first. Which artifact the new workload comes up on follows it rather than
+	// being dropped, since the flow this most often follows produces both facts
+	// at once: a workload deleted outside the CLI leaves the binding stale and
+	// the artifact link exactly where it was.
+	line := fmt.Sprintf("%s will be created: %s is bound to %s, which no longer exists",
+		s.Name, manifest.FileName, shortID(plan.PriorWorkloadID))
+
+	if !reusesLink(plan) {
+		return line
+	}
+
+	return line + "; it comes up on the artifact this project is linked to"
+}
+
+// fromArtifact says which artifact a create is working from.
+func fromArtifact(plan Plan) string {
+	// A locked link is neither reused nor a first artifact: a new one is made
+	// and the link moves onto it. The lock line below says exactly that, so
+	// this says nothing rather than contradicting it two lines above.
+	if plan.Code.LinkLocked {
+		return ""
+	}
+
+	// Saying "its first artifact" of a project that already pushes to one is
+	// wrong in the flow this most often follows: a delete clears the binding
+	// and leaves the artifact link exactly where it was.
+	if reusesLink(plan) {
+		return ", on the artifact this project is linked to"
+	}
+
+	return ", with its first artifact"
+}
+
+// reusesLink reports whether the create will consult the project's artifact
+// link at all. Only a build does: a manifest naming a published image posts its
+// artifact inline and never reads the state directory, so a project can be
+// linked and still be getting a brand new artifact.
+// A locked link is not reused either: it cannot take code, so the run mints a
+// replacement and moves the project onto that.
+func reusesLink(plan Plan) bool {
+	return plan.LinkedArtifact && plan.Code.Applies && !plan.Code.LinkLocked
 }
 
 // codeDetail says how much of the tree is going up.
@@ -303,6 +360,14 @@ type PlanJSON struct {
 	// caller reading only this document has to be able to see it coming.
 	Locked bool `json:"locked"`
 
+	// PriorWorkloadID is the binding this create replaces, empty on a first
+	// deploy. It is carried because the text plan's warning about a dead
+	// binding is a line on stderr, which nothing machine-readable can gate on:
+	// a CI job whose token resolves to the wrong organisation sees every
+	// workload 404, and without this field its envelope is identical to a
+	// legitimate first deploy.
+	PriorWorkloadID string `json:"priorWorkloadId"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -332,10 +397,11 @@ func (p Plan) JSON() PlanJSON {
 	mints := p.MintsVersion()
 
 	return PlanJSON{
-		Action:  p.Action(),
-		State:   p.State.String(),
-		Creates: p.Creates,
-		Locked:  p.Locked && mints,
+		Action:          p.Action(),
+		State:           p.State.String(),
+		Creates:         p.Creates,
+		Locked:          p.Locked && mints,
+		PriorWorkloadID: p.PriorWorkloadID,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),

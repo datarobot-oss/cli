@@ -138,7 +138,11 @@ func Look(workloadID string) (Live, error) {
 	workloadDoc, err := getWorkloadDocFn(workloadID)
 	if err != nil {
 		if isNotFound(err) {
-			return Live{State: StateMissing}, nil
+			// The id travels on even though nothing answers to it. What the
+			// file was bound to is the whole difference between "this creates a
+			// workload" and "the thing you were pointing at is gone", and the
+			// plan is the only place that gets said.
+			return Live{Live: manifest.Live{WorkloadID: workloadID}, State: StateMissing}, nil
 		}
 
 		return Live{}, fmt.Errorf("cannot read workload %s: %w", workloadID, err)
