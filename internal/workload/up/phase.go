@@ -232,7 +232,7 @@ func (l *liveRegion) append(line string, style lipgloss.Style) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	line = ansi.Truncate(line, max(l.width-6, 8), "…")
+	line = ansi.Truncate(sanitizeRow(line), max(l.width-6, 8), "…")
 
 	l.tail = append(l.tail, "    "+style.Render(line))
 	if len(l.tail) > l.window {
@@ -248,6 +248,44 @@ func (l *liveRegion) append(line string, style lipgloss.Style) {
 	}
 
 	l.drawn = len(l.tail)
+}
+
+// sanitizeRow rewrites the control characters the region's row math cannot
+// survive. ansi.Truncate counts a tab as zero columns while the terminal
+// renders it, so a near-width line carrying one comes out wider than the
+// row and wraps, putting every redraw after it off by a row; a bare CR sends
+// the cursor back to column 0, so the \x1b[K meant for the line's tail
+// blanks the row instead. ESC stays: build output carries its own colors,
+// and Truncate counts those correctly.
+func sanitizeRow(line string) string {
+	if !strings.ContainsFunc(line, isRowControl) {
+		return line
+	}
+
+	var b strings.Builder
+
+	b.Grow(len(line))
+
+	for _, r := range line {
+		switch {
+		case r == '\t':
+			// The four columns a terminal gives an unlucky tab, in spaces
+			// the width math can count.
+			b.WriteString("    ")
+		case isRowControl(r):
+			// Dropped: nothing a one-row window can render.
+		default:
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
+}
+
+// isRowControl reports a control character other than ESC, which is the one
+// with a legitimate job on a rendered row.
+func isRowControl(r rune) bool {
+	return (r < 0x20 || r == 0x7f) && r != '\x1b'
 }
 
 // repaintHeader rewrites the header row, drawn+1 rows above the cursor —

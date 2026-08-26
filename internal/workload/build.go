@@ -15,13 +15,12 @@
 package workload
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -261,6 +260,13 @@ func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 
 // GetArtifactBuild fetches a single Build by id.
 func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
+	return fetchArtifactBuild(artifactID, buildID, "build")
+}
+
+// fetchArtifactBuild is GetArtifactBuild with the caller choosing drapi's
+// per-request log label; the poll loop passes "" so its every-five-seconds
+// fetch line cannot interleave with a streamed build log.
+func fetchArtifactBuild(artifactID, buildID, reqInfo string) (*Build, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID))
 	if err != nil {
 		return nil, err
@@ -268,7 +274,7 @@ func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
 
 	var build Build
 
-	if err := drapi.GetJSON(url, "build", &build); err != nil {
+	if err := drapi.GetJSON(url, reqInfo, &build); err != nil {
 		return nil, err
 	}
 
@@ -318,54 +324,39 @@ func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 	return all, nil
 }
 
-// GetArtifactBuildLogs returns parsed log entries for a build. The endpoint
-// emits newline-delimited JSON; we tolerate malformed lines so a single bad
-// record cannot blank the whole tail. The original bytes for each line are
-// preserved in Raw so JSON output can pass them through unchanged.
+// GetArtifactBuildLogs returns a build's log lines, oldest first, read from
+// the artifact's OTEL stream filtered by external_build_id — the replacement
+// for the deprecated GET /artifacts/{id}/builds/{id}/logs proxy, whose
+// records only existed for as long as IBS retained the build. The OTEL
+// records are mapped onto the legacy BuildLogEntry shape so level filtering
+// and both renderers carry over; Raw holds the OTEL record itself, which is
+// what JSON output now passes through.
 func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID) + "/logs")
+	otel, err := fetchArtifactBuildLogs(artifactID, buildID, 0, "", "", "build logs")
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := drapi.Get(url, "build logs")
-	if err != nil {
-		return nil, err
-	}
+	// Newest first from the server; chronological for display, with the sort
+	// settling lines the collector ingested out of event order.
+	slices.Reverse(otel)
+	sortChronological(otel)
 
-	defer resp.Body.Close()
+	entries := make([]BuildLogEntry, 0, len(otel))
 
-	return parseBuildLogs(resp.Body)
-}
-
-func parseBuildLogs(r io.Reader) ([]BuildLogEntry, error) {
-	scanner := bufio.NewScanner(r)
-	// Each line can be a multi-KB structured log; bump the buffer past the
-	// 64KiB default to accommodate verbose entries without truncation.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var entries []BuildLogEntry
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
+	for _, e := range otel {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			raw = nil // the named fields still render; only passthrough is lost
 		}
 
-		var entry BuildLogEntry
-		if err := json.Unmarshal(line, &entry); err != nil {
-			// Skip malformed lines rather than fail the whole fetch;
-			// log payloads regularly include non-JSON tail lines from
-			// the underlying buildkit pipe.
-			continue
-		}
-
-		entry.Raw = append(json.RawMessage(nil), line...)
-		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read build logs: %w", err)
+		entries = append(entries, BuildLogEntry{
+			Asctime:   e.Timestamp,
+			Levelname: strings.ToUpper(e.Level),
+			Message:   e.Message,
+			BuildID:   buildID,
+			Raw:       raw,
+		})
 	}
 
 	return entries, nil
@@ -385,7 +376,7 @@ func WaitForBuild(
 	deadline := time.Now().Add(timeout)
 
 	for {
-		build, err := GetArtifactBuild(artifactID, buildID)
+		build, err := fetchArtifactBuild(artifactID, buildID, "")
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}

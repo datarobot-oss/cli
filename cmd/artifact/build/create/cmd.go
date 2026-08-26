@@ -17,6 +17,7 @@ package create
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/cmd/internal/pollflags"
@@ -41,10 +42,11 @@ The artifact-id argument is optional when run inside a directory linked
 via 'dr artifact code init': the id is read from .datarobot/workload/config.json.
 
 By default the command prints the new build IDs (one per line) and
-exits. With --wait it polls each build until it reaches a terminal
-status (COMPLETED, FAILED, or CANCELLED) and prints a summary with
-duration and resulting image_uri. On failure the tail of the build
-logs is dumped to stderr.
+exits. With --wait it follows each build to a terminal status
+(COMPLETED, FAILED, or CANCELLED), streaming the build's own log lines
+and status transitions to stderr while it waits, then prints a summary
+with duration and resulting image_uri. On failure the tail of the
+build logs is dumped to stderr.
 
 JSON output emits one document:
   - without --wait: the raw trigger response {"buildIds":[...]}.
@@ -141,7 +143,7 @@ func waitForAllBuilds(
 	for _, buildID := range buildIDs {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
-		build, werr := workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout, nil)
+		build, werr := waitStreaming(cmd, artifactID, buildID, poll)
 		if werr != nil && firstWaitErr == nil {
 			firstWaitErr = werr
 		}
@@ -161,4 +163,42 @@ func waitForAllBuilds(
 	}
 
 	return summaries, firstWaitErr
+}
+
+// waitStreaming polls the build to its terminal status while printing its
+// own log lines and status transitions to stderr as they arrive, so a --wait
+// is a live transcript rather than a silent poll. Lines go to stderr like
+// every other progress message here: stdout stays the summary document.
+func waitStreaming(
+	cmd *cobra.Command,
+	artifactID, buildID string,
+	poll pollflags.Set,
+) (*workload.Build, error) {
+	out := cmd.ErrOrStderr()
+
+	tail := workload.NewBuildLogTail(artifactID, buildID,
+		func(e workload.WorkloadLogEntry) { fmt.Fprintln(out, "  "+workload.FormatBuildLogLine(e)) },
+		func(w string) { fmt.Fprintln(out, "  (log stream) "+w) })
+
+	// Narrate status transitions: the stages before the builder speaks are
+	// exactly the quiet ones where the user wonders if anything is happening.
+	// Terminal statuses are left to the summary.
+	lastStatus := ""
+
+	build, err := workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout,
+		func(b *workload.Build) {
+			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
+				lastStatus = b.Status
+
+				fmt.Fprintln(out, "  "+workload.BuildStatusLine(b.Status))
+			}
+
+			tail.Poll()
+		})
+
+	// One more poll after the terminal status: ingestion lags the build, so
+	// the last lines routinely land after the wait has already ended.
+	tail.Poll()
+
+	return build, err
 }

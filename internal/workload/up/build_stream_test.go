@@ -88,10 +88,10 @@ func TestBuildLogLine_MarksAndColorsNonInfoLevels(t *testing.T) {
 }
 
 func TestBuildStatusLine_NarratesTheQuietStages(t *testing.T) {
-	assert.Equal(t, "build accepted; waiting for a builder to pick it up", buildStatusLine("PENDING"))
-	assert.Equal(t, "builder running", buildStatusLine("IN_PROGRESS"))
-	assert.Equal(t, "image built; pushing it to the registry", buildStatusLine("BUILT"))
-	assert.Equal(t, "build is cancelling", buildStatusLine("CANCELLING"))
+	assert.Equal(t, "build accepted; waiting for a builder to pick it up", workload.BuildStatusLine("PENDING"))
+	assert.Equal(t, "builder running", workload.BuildStatusLine("IN_PROGRESS"))
+	assert.Equal(t, "image built; pushing it to the registry", workload.BuildStatusLine("BUILT"))
+	assert.Equal(t, "build is cancelling", workload.BuildStatusLine("CANCELLING"))
 }
 
 // terminalOfSize fakes the stream's terminal for the test's lifetime.
@@ -155,6 +155,46 @@ func TestReporter_StreamStopsTheAnimatorWhenFnPanics(t *testing.T) {
 
 	time.Sleep(250 * time.Millisecond)
 	assert.Equal(t, before, out.Len(), "a stopped animator writes nothing more")
+}
+
+// The region's row math assumes one line is one row. ansi.Truncate counts a
+// tab as zero columns while the terminal renders it, so a near-width line
+// carrying one wraps and every redraw after it is off by a row; a bare CR
+// sends the cursor to column 0 so the trailing \x1b[K blanks the row. Both
+// are rewritten before the width math sees them.
+func TestLiveRegion_SanitizesControlCharactersBeforeTheRowMath(t *testing.T) {
+	tests := map[string]struct{ in, want string }{
+		"tab becomes the columns it renders as": {"a\tb", "a    b"},
+		"bare CR is dropped":                    {"pull\rdone", "pulldone"},
+		"other C0 controls are dropped":         {"a\x07b\x08c", "abc"},
+		"escape survives for ANSI colors":       {"\x1b[31mred\x1b[0m", "\x1b[31mred\x1b[0m"},
+		"a clean line passes through":           {"step 1/4: FROM base", "step 1/4: FROM base"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, test.want, sanitizeRow(test.in))
+		})
+	}
+}
+
+// End to end: a tab inside a streamed line reaches the terminal as spaces,
+// never as a character the width math counted as zero.
+func TestReporter_StreamRendersTabsAsSpaces(t *testing.T) {
+	fixedClock(t, time.Second)
+	terminalOfSize(t, 40, 24)
+
+	var out bytes.Buffer
+
+	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		say("a\tb", tui.HintStyle)
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	assert.NotContains(t, out.String(), "\t")
+	assert.Contains(t, out.String(), "a    b")
 }
 
 func TestReporter_StreamWindowNeverOutgrowsTheViewport(t *testing.T) {

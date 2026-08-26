@@ -456,7 +456,7 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
 				lastStatus = b.Status
 
-				say(buildStatusLine(b.Status), tui.HintStyle)
+				say(workload.BuildStatusLine(b.Status), tui.HintStyle)
 			}
 
 			tail.Poll()
@@ -492,33 +492,19 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 	return built.ID, err
 }
 
-// buildLogLine renders one streamed build log line with the style its level
-// deserves. The message alone, dimmed, is the line for routine output; a
-// non-info level is called out and colored, because an error scrolling past
-// dimmed and unmarked defeats the point of streaming.
+// buildLogLine renders one streamed build log line, colored by its level —
+// the wording is the shared formatter's, so `dr artifact build create --wait`
+// and this stream say the same thing; only the styling is this terminal's.
 func buildLogLine(e workload.WorkloadLogEntry) (string, lipgloss.Style) {
+	line := workload.FormatBuildLogLine(e)
+
 	switch strings.ToLower(e.Level) {
 	case "", "info", "debug":
-		return e.Message, tui.HintStyle
+		return line, tui.HintStyle
 	case "warn", "warning":
-		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.WarnStyle
+		return line, tui.WarnStyle
 	default:
-		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.ErrorStyle
-	}
-}
-
-// buildStatusLine narrates a build status for the stream, in words rather
-// than enum values for the two stages every build passes through.
-func buildStatusLine(status string) string {
-	switch strings.ToUpper(status) {
-	case workload.BuildStatusPending:
-		return "build accepted; waiting for a builder to pick it up"
-	case workload.BuildStatusInProgress:
-		return "builder running"
-	case "BUILT":
-		return "image built; pushing it to the registry"
-	default:
-		return "build is " + strings.ToLower(status)
+		return line, tui.ErrorStyle
 	}
 }
 
