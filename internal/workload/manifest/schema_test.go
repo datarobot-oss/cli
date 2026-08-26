@@ -157,7 +157,12 @@ func fullServerWorkloadDoc(t *testing.T) map[string]any {
 					"autoscaling": null,
 					"resolvedBundle": {"catalogId": "cat1", "catalogVersionId": "ver1"},
 					"containers": [
-						{"name": "app", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}
+						{
+							"name": "app",
+							"resourceAllocation": {"cpu": 1, "memory": "1GB"},
+							"status": "running",
+							"updatedAt": "2026-01-02T00:00:00Z"
+						}
 					]
 				}
 			]
@@ -193,6 +198,11 @@ func fullServerArtifactDoc(t *testing.T) map[string]any {
 							"name": "app",
 							"primary": true,
 							"port": 8080,
+							"id": "68a0000000000000000000a1",
+							"artifactId": "68a0000000000000000000a1",
+							"endpoint": "app.datarobot.com",
+							"status": "locked",
+							"createdAt": "2026-01-01T00:00:00Z",
 							"imageUri": "registry.internal/built-by-server:abc",
 							"imageOutdated": true,
 							"build": {
