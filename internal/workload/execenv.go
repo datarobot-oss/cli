@@ -16,6 +16,7 @@ package workload
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/datarobot/cli/internal/config"
@@ -23,10 +24,12 @@ import (
 )
 
 // ExecutionEnvironment is the projection of the server's EE document the CLI
-// needs to build a generated-Dockerfile artifact spec.
+// needs to build a generated-Dockerfile artifact spec and to present the
+// base-image picker.
 type ExecutionEnvironment struct {
 	ID                      string     `json:"id"`
 	Name                    string     `json:"name"`
+	ProgrammingLanguage     string     `json:"programmingLanguage"`
 	LatestSuccessfulVersion *EEVersion `json:"latestSuccessfulVersion"`
 }
 
@@ -83,9 +86,17 @@ func ResolveExecutionEnvironment(nameOrID string) (id, versionID string, err err
 }
 
 // ListExecutionEnvironments returns up to limit environments that have a
-// version to build from, for the setup wizard's base-image picker. Ones with
-// no successful version are dropped rather than offered: picking one would
-// fail at build time with nothing the user could do about it.
+// version to build from, for the setup wizard's base-image picker, sorted so
+// the list reads as one: languages clustered (the catch-all "other" last, as
+// the least informative), names alphabetical within each. Ones with no
+// successful version are dropped rather than offered: picking one would fail
+// at build time with nothing the user could do about it.
+//
+// The whole listing is drained BEFORE sorting and trimming, deliberately:
+// the endpoint offers no server-side ordering, so trimming while paging
+// would keep whichever environments the server happened to list first and
+// silently drop the rest — an arbitrary subset masquerading as "the list".
+// Sorted first, the trim keeps a deterministic, explainable prefix.
 func ListExecutionEnvironments(limit int) ([]ExecutionEnvironment, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive, got %d", limit)
@@ -96,7 +107,7 @@ func ListExecutionEnvironments(limit int) ([]ExecutionEnvironment, error) {
 		return nil, err
 	}
 
-	environments := make([]ExecutionEnvironment, 0, limit)
+	var environments []ExecutionEnvironment
 
 	for pages := 0; pageURL != ""; pages++ {
 		if pages >= maxExecEnvPages {
@@ -111,9 +122,7 @@ func ListExecutionEnvironments(limit int) ([]ExecutionEnvironment, error) {
 			return nil, err
 		}
 
-		if environments = appendBuildable(environments, list.Data, limit); len(environments) == limit {
-			return environments, nil
-		}
+		environments = appendBuildable(environments, list.Data)
 
 		next, err := nextPage(list.Next)
 		if err != nil {
@@ -123,24 +132,52 @@ func ListExecutionEnvironments(limit int) ([]ExecutionEnvironment, error) {
 		pageURL = next
 	}
 
+	sortExecutionEnvironments(environments)
+
+	if len(environments) > limit {
+		environments = environments[:limit]
+	}
+
 	return environments, nil
 }
 
-// appendBuildable adds the environments a build can target, stopping at limit.
-func appendBuildable(into, page []ExecutionEnvironment, limit int) []ExecutionEnvironment {
+// appendBuildable adds the environments a build can target.
+func appendBuildable(into, page []ExecutionEnvironment) []ExecutionEnvironment {
 	for _, ee := range page {
 		if ee.LatestSuccessfulVersion == nil {
 			continue
 		}
 
 		into = append(into, ee)
-
-		if len(into) == limit {
-			return into
-		}
 	}
 
 	return into
+}
+
+// sortExecutionEnvironments orders the picker's list: languages clustered
+// alphabetically with the catch-all "other" (and anything unlabeled) last,
+// names alphabetical within a language, all case-insensitively. Stable, so
+// same-named environments keep the server's relative order.
+func sortExecutionEnvironments(environments []ExecutionEnvironment) {
+	slices.SortStableFunc(environments, func(a, b ExecutionEnvironment) int {
+		if c := strings.Compare(languageSortKey(a.ProgrammingLanguage), languageSortKey(b.ProgrammingLanguage)); c != 0 {
+			return c
+		}
+
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+}
+
+// languageSortKey folds a language for grouping and banishes the catch-all to
+// the end: "other" is where the platform files everything it cannot name, so
+// it says the least and belongs after the languages that say something.
+func languageSortKey(language string) string {
+	lower := strings.ToLower(strings.TrimSpace(language))
+	if lower == "" || lower == "other" {
+		return "\x7f" // sorts after any letter
+	}
+
+	return lower
 }
 
 // nextPage validates a paging cursor, returning "" at the end of the listing.
