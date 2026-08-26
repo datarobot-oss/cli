@@ -30,49 +30,55 @@ import (
 // POST it to FilesAPI, poll until terminal.
 type ZipUploader struct{}
 
-// ApplyUploads zips the files, POSTs, and polls until done.
-func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (string, string, error) {
-	zipPath, err := buildZip(e.projectDir, files)
+// ApplyUploads zips the files, POSTs, polls until done, and returns the
+// per-path streamed hashes so Phase 6 can record what entered the archive.
+func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
+	zipPath, sent, err := buildZip(e.projectDir, files)
 	if err != nil {
-		return "", "", err
+		return UploadOutcome{}, err
 	}
 
 	defer func() { _ = os.Remove(zipPath) }()
 
 	zipFile, err := os.Open(zipPath)
 	if err != nil {
-		return "", "", fmt.Errorf("open built zip: %w", err)
+		return UploadOutcome{}, fmt.Errorf("open built zip: %w", err)
 	}
 
 	defer func() { _ = zipFile.Close() }()
 
 	stat, err := zipFile.Stat()
 	if err != nil {
-		return "", "", fmt.Errorf("stat built zip: %w", err)
+		return UploadOutcome{}, fmt.Errorf("stat built zip: %w", err)
 	}
 
 	resp, err := postZip(e, zipFile, stat.Size())
 	if err != nil {
-		return "", "", err
+		return UploadOutcome{}, err
 	}
 
 	// Small archives complete inline (201, no statusId); larger ones
 	// come back 202 with a statusId we then poll.
 	if resp.StatusID != "" {
 		if err := waitForCompletion(e, resp.StatusID); err != nil {
-			return "", "", err
+			return UploadOutcome{}, err
 		}
 	}
 
-	return resp.CatalogID, resp.CatalogVersionID, nil
+	return UploadOutcome{
+		CatalogID: resp.CatalogID,
+		VersionID: resp.CatalogVersionID,
+		Sent:      sent,
+	}, nil
 }
 
-// buildZip writes a zip archive to a temp file. Buffering on disk
-// keeps very large zips from pinning a multi-GiB allocation.
-func buildZip(projectDir string, files []FileAction) (string, error) {
+// buildZip writes a zip archive to a temp file and returns the per-path
+// streamed hashes. Buffering on disk keeps very large zips from pinning a
+// multi-GiB allocation.
+func buildZip(projectDir string, files []FileAction) (string, map[string]FileEntry, error) {
 	tmp, err := os.CreateTemp("", "wapi-sync-*.zip")
 	if err != nil {
-		return "", fmt.Errorf("create zip tempfile: %w", err)
+		return "", nil, fmt.Errorf("create zip tempfile: %w", err)
 	}
 
 	defer func() { _ = tmp.Close() }()
@@ -81,27 +87,32 @@ func buildZip(projectDir string, files []FileAction) (string, error) {
 
 	defer func() { _ = zw.Close() }()
 
+	sent := make(map[string]FileEntry, len(files))
+
 	for _, fa := range files {
 		abs := filepath.Join(projectDir, filepath.FromSlash(fa.Path))
 
-		if err := addToZip(zw, abs, fa.Path); err != nil {
+		entry, err := addToZip(zw, abs, fa.Path)
+		if err != nil {
 			_ = os.Remove(tmp.Name())
-			return "", err
+			return "", nil, err
 		}
+
+		sent[fa.Path] = entry
 	}
 
 	if err := zw.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
-		return "", fmt.Errorf("close zip writer: %w", err)
+		return "", nil, fmt.Errorf("close zip writer: %w", err)
 	}
 
-	return tmp.Name(), nil
+	return tmp.Name(), sent, nil
 }
 
-func addToZip(zw *zip.Writer, src, archivePath string) error {
+func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("open %s for zip: %w", src, err)
+		return FileEntry{}, fmt.Errorf("open %s for zip: %w", src, err)
 	}
 
 	defer func() { _ = in.Close() }()
@@ -110,14 +121,22 @@ func addToZip(zw *zip.Writer, src, archivePath string) error {
 
 	w, err := zw.CreateHeader(hdr)
 	if err != nil {
-		return fmt.Errorf("zip header for %s: %w", archivePath, err)
+		return FileEntry{}, fmt.Errorf("zip header for %s: %w", archivePath, err)
 	}
 
-	if _, err := io.Copy(w, in); err != nil {
-		return fmt.Errorf("copy %s into zip: %w", archivePath, err)
+	// Hash the bytes entering the archive, not the Phase-2 planned hash.
+	// MultiWriter mirrors the download verification at download.go: a file
+	// rewritten between plan and zip-build must leave BASE describing what
+	// the server extracted. The size comes from io.Copy's return, not from
+	// fa.LocalSize, so it always describes the bytes that entered the archive.
+	h := newStreamHasher()
+
+	n, err := io.Copy(io.MultiWriter(w, h), in)
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("copy %s into zip: %w", archivePath, err)
 	}
 
-	return nil
+	return streamedEntry(h, n), nil
 }
 
 // postZip dispatches to UploadFromZipNew (first-sync, no catalog) or

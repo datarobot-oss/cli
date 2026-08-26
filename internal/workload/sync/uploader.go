@@ -14,11 +14,23 @@
 
 package sync
 
-// Uploader pushes a SyncPlan's Uploads and returns the resulting
-// (catalogID, newVersionID). When catalogID is empty (first-sync against
-// an empty artifact) the implementation creates a new catalog.
+// UploadOutcome is what an Uploader actually accomplished. Sent carries the
+// hash and size of the bytes that really crossed the wire, keyed by the same
+// forward-slash relative path used everywhere else in the manifest. Phase 6
+// seeds each uploaded file's manifest entry from Sent, never from the Phase-2
+// planned hash — a per-path fallback to the planned hash is the original
+// poisoning bug and must not exist anywhere in the code.
+type UploadOutcome struct {
+	CatalogID string
+	VersionID string
+	Sent      map[string]FileEntry
+}
+
+// Uploader pushes a SyncPlan's Uploads and returns the resulting outcome.
+// When the artifact has no catalog (first-sync against an empty artifact)
+// the implementation creates a new one.
 type Uploader interface {
-	ApplyUploads(e *Engine, files []FileAction) (catalogID, versionID string, err error)
+	ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error)
 }
 
 // ChooseUploader picks stage for small change sets (tight error semantics)
