@@ -254,14 +254,20 @@ func (a Answers) importance() string {
 	return strings.ToLower(strings.TrimSpace(a.Importance))
 }
 
-// healthPath is the path to probe: the flag, the documented default, or
-// nothing at all when the probe was declined.
+// healthPath is the path to probe: the flag's answer, or nothing at all.
+//
+// There is deliberately no default. A probe has to be written for the app it
+// probes: pointing one at / kills every API-only deploy whose framework 404s
+// there, and it presents as a workload that goes ERRORED minutes later with
+// nothing saying why. A wrong probe kills a healthy deploy, which is worse
+// than no probe — the deploy's own endpoint check is what catches a container
+// that answers nothing.
 func (a Answers) healthPath() string {
 	if a.NoProbe {
 		return ""
 	}
 
-	return orDefault(a.HealthPath, manifest.DefaultHealthPath)
+	return a.HealthPath
 }
 
 // The range a primary container's port may fall in. The floor is the

@@ -122,7 +122,7 @@ func (l Live) Defaults() Draft {
 	}
 
 	// The health path is left empty when the container has no readiness probe,
-	// rather than falling back to DefaultHealthPath like everything else here.
+	// rather than falling back to a default like everything else here.
 	// A workload running without a probe has to arrive saying so: the screen
 	// shows the absence, and Apply can then read a path as the answer someone
 	// gave rather than as a default it must be careful not to attach.

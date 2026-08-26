@@ -947,8 +947,17 @@ func isConflict(err error) bool {
 // distinction is not a tidiness one.
 func settle(workloadID string, result Result, opts Options, report *reporter) (Result, error) {
 	result, err := awaitRunning(workloadID, result, opts, report)
-	if err != nil || !opts.Lock {
+	if err != nil {
 		return result, err
+	}
+
+	// One GET against the endpoint, reported and never fatal. Running means
+	// the container started; with no probe written by default, whether
+	// anything answers is a question nobody has asked yet.
+	verifyEndpoint(result, report)
+
+	if !opts.Lock {
+		return result, nil
 	}
 
 	return lock(result, report)

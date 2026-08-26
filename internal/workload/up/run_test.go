@@ -194,6 +194,9 @@ type fakes struct {
 	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	builds      func(string, int) ([]workload.Build, error)
 
+	// checkEndpoint is the one GET a deploy ends with.
+	checkEndpoint func(string) (int, error)
+
 	// The roll track: refuse to queue a second swap, start one, follow it.
 	guard       func(string) error
 	replace     func(string, string, json.RawMessage) (*workload.Replacement, error)
@@ -213,6 +216,11 @@ func install(t *testing.T, f fakes) {
 	// should not have to say so, and neither may touch a real project.
 	force(t, &writeWorkloadIDFn, func(string, string) error { return nil })
 	force(t, &codeChangeFn, func(Loaded, Live) (CodeChange, error) { return CodeChange{}, nil })
+
+	// The endpoint check would otherwise GET whatever URL the fixture
+	// carries, spending a real network timeout per test that reaches settle.
+	force(t, &checkEndpointFn, func(string) (int, error) { return http.StatusOK, nil })
+	swap(t, &checkEndpointFn, f.checkEndpoint)
 
 	// swap leaves a seam alone when the test supplied nothing, so without this
 	// a stopped fixture with no start fake POSTs to whatever tenant the

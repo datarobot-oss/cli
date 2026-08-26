@@ -133,7 +133,7 @@ func TestAnswers_DraftFromDetectionAlone(t *testing.T) {
 	assert.Equal(t, manifest.BuildModeDockerfile, draft.Build.Mode)
 	assert.Equal(t, detected.Name, draft.Name)
 	assert.Equal(t, 3000, draft.Port)
-	assert.Equal(t, manifest.DefaultHealthPath, draft.HealthPath)
+	assert.Empty(t, draft.HealthPath, "no probe by default: a guessed path kills API-only deploys that 404 at /")
 	assert.Equal(t, manifest.TypeService, draft.Type)
 	assert.Equal(t, manifest.DefaultImportance, draft.Importance)
 	assert.Equal(t, manifest.DefaultReplicas, draft.Runtime.Replicas)

@@ -27,7 +27,9 @@ import (
 )
 
 // serviceDraft is the Dockerfile happy path: what a user gets by pressing
-// Enter through every screen in a directory that has a Dockerfile.
+// Enter through every screen in a directory that has a Dockerfile, plus a
+// probe typed on the settings screen: no probe is written by default, and
+// this fixture is what pins the render of one that was asked for.
 func serviceDraft() Draft {
 	return Draft{
 		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
@@ -35,7 +37,7 @@ func serviceDraft() Draft {
 		Type:       TypeService,
 		Build:      Build{Mode: BuildModeDockerfile},
 		Port:       DefaultPort,
-		HealthPath: DefaultHealthPath,
+		HealthPath: "/",
 		Runtime:    Runtime{Replicas: DefaultReplicas, CPU: DefaultCPU, Memory: DefaultMemory},
 	}
 }
