@@ -234,6 +234,18 @@ func (t *rowTable) update(msg tea.KeyMsg) bool {
 		t.apply()
 
 		return true
+
+	case msg.Type == tea.KeySpace:
+		// Space arrives as its own key type, never inside KeyRunes, and the
+		// table underneath binds it to page-down — so without this case a
+		// name like "Py 3.12" could not be typed. In a filterable table every
+		// printable character is filter input ("f" and "b" already are), and
+		// paging keeps pgup/pgdown.
+		t.filter += " "
+
+		t.apply()
+
+		return true
 	}
 
 	return t.moveCursor(msg)
