@@ -295,6 +295,11 @@ type logFollower struct {
 	// but not on every stream this follower serves).
 	gapHint string
 
+	// lag is how far behind the newest-seen timestamp the cursor trails, so
+	// late-ingested lines are caught by the dedup overlap rather than
+	// skipped. Callers whose source ingests slowly (build logs) widen it.
+	lag time.Duration
+
 	dedup           *logDedup
 	cursor          time.Time // newest parsed timestamp; zero means window mode
 	cursorUsable    bool      // false once the server rejects the startTime filter
@@ -338,6 +343,7 @@ func newLogFollower(
 		onWarn:       onWarn,
 		dedup:        newLogDedup(followSeenCap),
 		cursorUsable: true,
+		lag:          followLagAllowance,
 	}, nil
 }
 
@@ -349,7 +355,7 @@ func (f *logFollower) fetch() (entries []WorkloadLogEntry, hadSince bool, err er
 	maxEntries := f.limit
 
 	if f.seeded && f.cursorUsable && !f.cursor.IsZero() {
-		since = f.cursor.Add(-followLagAllowance).UTC().Format(time.RFC3339Nano)
+		since = f.cursor.Add(-f.lag).UTC().Format(time.RFC3339Nano)
 		maxEntries = 0
 	}
 
@@ -412,13 +418,15 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 		}
 	}
 
-	for _, e := range entries {
-		if t, ok := parseLogTimestamp(e.Timestamp); ok && t.After(f.cursor) {
-			f.cursor = t
-		}
-	}
+	f.advanceCursor(entries)
 
-	f.seeded = true
+	// An empty fetch seeds nothing: marking it seeded would pin a zero
+	// cursor, and the NEXT poll — the first with real lines — would be a
+	// window fetch capped at limit, gapping a producer that burst past it
+	// (a builder's opening seconds do exactly that).
+	if len(entries) > 0 {
+		f.seeded = true
+	}
 
 	return nil
 }
@@ -438,6 +446,15 @@ func sortChronological(entries []WorkloadLogEntry) {
 
 		return ta.Compare(tb)
 	})
+}
+
+// advanceCursor moves the cursor past the newest parseable timestamp.
+func (f *logFollower) advanceCursor(entries []WorkloadLogEntry) {
+	for _, e := range entries {
+		if t, ok := parseLogTimestamp(e.Timestamp); ok && t.After(f.cursor) {
+			f.cursor = t
+		}
+	}
 }
 
 // isFilterRejectedError reports whether the server rejected the query params

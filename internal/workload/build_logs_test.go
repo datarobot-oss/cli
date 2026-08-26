@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,6 +92,56 @@ func TestBuildLogTail_EmitsOnlyUnseenLinesAcrossPolls(t *testing.T) {
 
 	assert.Equal(t, []string{"a", "b", "c"}, lines)
 	assert.Equal(t, 2, calls)
+}
+
+func TestBuildLogTail_EmptyFirstPollDoesNotPinAZeroCursor(t *testing.T) {
+	installSkipAuth(t)
+
+	calls := 0
+
+	var startTimes []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+
+		startTimes = append(startTimes, r.URL.Query().Get("startTime"))
+
+		switch calls {
+		case 1:
+			// The stream is empty right after the trigger.
+			fmt.Fprint(w, logsPage(""))
+		default:
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-11 14:04:15.000001+00:00", "INFO", "b"),
+				logEntryDocAt("2026-06-11 14:04:14.084208+00:00", "INFO", "a"),
+			))
+		}
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	var lines []string
+
+	tail := NewBuildLogTail("art-1", "bld-1", func(e WorkloadLogEntry) {
+		lines = append(lines, e.Message)
+	}, nil)
+
+	tail.Poll() // empty: must NOT seed
+	tail.Poll() // first real batch: window fetch, seeds the cursor
+	tail.Poll() // since-based, trailing by the build tail's own lag
+
+	assert.Equal(t, []string{"a", "b"}, lines)
+	require.Len(t, startTimes, 3)
+	// The empty poll and the first real batch are window fetches...
+	assert.Empty(t, startTimes[0])
+	assert.Empty(t, startTimes[1])
+	// ...and the third trails the newest timestamp by the build lag, not the
+	// runtime follower's default.
+	newest, ok := parseLogTimestamp("2026-06-11 14:04:15.000001+00:00")
+	require.True(t, ok)
+	assert.Equal(t, newest.Add(-buildLogLagAllowance).UTC().Format(time.RFC3339Nano), startTimes[2])
 }
 
 func TestBuildLogTail_DisablesAfterSustainedFailuresWithoutErroring(t *testing.T) {

@@ -28,12 +28,19 @@ import (
 // build. The query keys are camelCase; their snake_case forms are rejected
 // with a 400.
 
-// buildLogSeedLimit is how many recent lines seed a build tail. A tail on a
-// freshly triggered build starts from an empty stream, so the seed only
-// matters when attaching to a build already in progress, where the recent
-// tail is the context the user needs — a couple of live-window's worth, not
-// the whole history the renderer would immediately slide past.
-const buildLogSeedLimit = 40
+// buildLogSeedLimit is how many lines a window-mode fetch may carry: the
+// server's own page cap, because a builder can burst hundreds of lines in
+// one poll interval and anything smaller gaps the opening of the build.
+// Once the first non-empty batch seeds the time cursor, fetches are
+// since-based and unbounded, so this only governs the first batch and an
+// attach's seed.
+const buildLogSeedLimit = maxLogsPageSize
+
+// buildLogLagAllowance is the build tail's cursor lag. Build-log ingestion
+// trails the builder by 20-40s (measured on staging), far past the runtime
+// follower's default; a line ingested later than the lag window is skipped
+// forever, so the window errs wide and the dedup absorbs the overlap.
+const buildLogLagAllowance = 60 * time.Second
 
 // fetchArtifactBuildLogs retrieves one build's log lines newest-first across
 // pages, by filtering the artifact's OTEL stream on external_build_id.
@@ -80,6 +87,10 @@ func NewBuildLogTail(artifactID, buildID string, onLine func(WorkloadLogEntry), 
 	// builder only said at debug costs a debugging session.
 	follower, err := newLogFollower(fetch, buildLogSeedLimit, "", time.Second,
 		func(e WorkloadLogEntry) error { onLine(e); return nil }, onWarn)
+	if err == nil {
+		follower.lag = buildLogLagAllowance
+	}
+
 	if err != nil {
 		// Unreachable with the constants above; a nil follower simply means
 		// the tail never emits, which is the contract's worst case anyway.
