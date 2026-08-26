@@ -6,7 +6,7 @@
 # sources lib.sh, initialises its own isolated env, and cleans up on exit, so
 # any subset can also be run directly:
 #
-#   bash smoke_test_scripts/workload/scenario_a_roundtrip.sh
+#   bash smoke_test_scripts/workload/RAPTOR-19533-A-roundtrip.sh
 #
 # Usage:
 #   DR_API_TOKEN=... ./smoke_test_scripts/run_workload_smoke_test.sh [scenario ...]
@@ -35,14 +35,15 @@ else
     fi
 fi
 
-# Map a short name to its script.
+# Map a short name to its script. Files are named <TICKET>-<LETTER>-<name>.sh
+# (see workload/TICKETS.md); the artifact scenario has no ticket.
 scenario_script() {
     case "$1" in
-        a|A)        printf '%s/scenario_a_roundtrip.sh'  "$WL_DIR" ;;
-        b|B)        printf '%s/scenario_b_sweep.sh'      "$WL_DIR" ;;
-        c|C)        printf '%s/scenario_c_rebind.sh'     "$WL_DIR" ;;
-        d|D)        printf '%s/scenario_d_built.sh'      "$WL_DIR" ;;
-        artifact)   printf '%s/scenario_artifact.sh'    "$WL_DIR" ;;
+        a|A)        printf '%s/RAPTOR-19533-A-roundtrip.sh'  "$WL_DIR" ;;
+        b|B)        printf '%s/RAPTOR-19533-B-sweep.sh'      "$WL_DIR" ;;
+        c|C)        printf '%s/RAPTOR-19533-C-rebind.sh'     "$WL_DIR" ;;
+        d|D)        printf '%s/RAPTOR-19533-D-built.sh'      "$WL_DIR" ;;
+        artifact)   printf '%s/artifact-lifecycle.sh'       "$WL_DIR" ;;
         *) echo "❌ unknown scenario: $1" >&2; return 1 ;;
     esac
 }
