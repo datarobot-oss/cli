@@ -18,12 +18,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 )
 
-func Post(url, info string, body any) (*http.Response, error) {
+// Post sends body as JSON. timeoutSecs optionally overrides the default
+// client timeout, the same seam Get has: a caller whose endpoint does slow
+// synchronous work server-side (e.g. triggering an image build) must outlive
+// the server's own internal budget or it abandons answers already on the way.
+func Post(url, info string, body any, timeoutSecs ...int) (*http.Response, error) {
+	timeout := DefaultClientTimeout
+	if len(timeoutSecs) > 0 {
+		timeout = time.Duration(timeoutSecs[0]) * time.Second
+	}
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -52,7 +62,7 @@ func Post(url, info string, body any) (*http.Response, error) {
 		return nil, err
 	}
 
-	resp, err := NewHTTPClient(DefaultClientTimeout).Do(req)
+	resp, err := NewHTTPClient(timeout).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +106,8 @@ func restoreRequestBody(req *http.Request) error {
 	return nil
 }
 
-func PostJSON(url, info string, body, v any) error {
-	resp, err := Post(url, info, body)
+func PostJSON(url, info string, body, v any, timeoutSecs ...int) error {
+	resp, err := Post(url, info, body, timeoutSecs...)
 	if err != nil {
 		return err
 	}

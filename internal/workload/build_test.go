@@ -358,6 +358,35 @@ func TestTriggerArtifactBuild_DoesNotRetryPlain500(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+func TestTriggerArtifactBuild_ClientTimeoutSaysRerunIsSafe(t *testing.T) {
+	// When the CLI itself hangs up (no response at all), the outcome is
+	// unknown — no status code, no retry. The error must say re-running is
+	// safe rather than leaving a bare "context deadline exceeded".
+	installSkipAuth(t)
+
+	origTimeout := triggerTimeoutSecs
+	triggerTimeoutSecs = 1
+
+	t.Cleanup(func() { triggerTimeoutSecs = origTimeout })
+
+	release := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release // hold the response until the client has given up
+
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Re-running 'dr workload up' is safe")
+	assert.Contains(t, err.Error(), "may still have started")
+}
+
 func TestTriggerArtifactBuild_GivesUpAfterRetryBudget(t *testing.T) {
 	installSkipAuth(t)
 

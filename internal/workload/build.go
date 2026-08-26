@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -181,6 +182,31 @@ var triggerRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
 // not spend wall-clock time.
 var triggerRetrySleep = time.Sleep
 
+// triggerTimeoutSecs must comfortably exceed the platform's own budget for
+// the trigger: workload-api waits up to 30s for its image build service to
+// accept the submission before answering. A client that hangs up at or under
+// that budget abandons an answer already on the way — including the 504 that
+// says a retry is safe. A var so tests can shrink it. Observed live on
+// staging: the default 30s client timeout expired mid-trigger and the deploy
+// died on "context deadline exceeded" with no way to tell what happened.
+var triggerTimeoutSecs = 60
+
+// explainTriggerTimeout wraps a client-side timeout — the one failure where
+// the CLI hung up rather than the platform answering — with what the user
+// needs to know: the outcome is unknown, and re-running is safe because a new
+// trigger supersedes any build the lost request may have started. Every other
+// error passes through untouched.
+func explainTriggerTimeout(err error) error {
+	if !os.IsTimeout(err) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"the build trigger got no response within %ds; the platform may still have started the build. "+
+			"Re-running 'dr workload up' is safe: a new trigger supersedes any build this one started: %w",
+		triggerTimeoutSecs, err)
+}
+
 func isRetryableTriggerStatus(err error) bool {
 	var httpErr *drapi.HTTPError
 	if !errors.As(err, &httpErr) {
@@ -217,13 +243,13 @@ func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	for attempt := 0; ; attempt++ {
 		var resp BuildTriggerResponse
 
-		err := drapi.PostJSON(url, "build", map[string]any{}, &resp)
+		err := drapi.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeoutSecs)
 		if err == nil {
 			return &resp, nil
 		}
 
 		if attempt >= len(triggerRetryDelays) || !isRetryableTriggerStatus(err) {
-			return nil, err
+			return nil, explainTriggerTimeout(err)
 		}
 
 		log.Debug("build trigger got a retryable status; retrying",
