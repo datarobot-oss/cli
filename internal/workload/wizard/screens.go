@@ -1143,12 +1143,25 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, heigh
 		}
 
 		rows = append(rows, tableRow{
-			cells: []string{ee.Name, ee.ID},
+			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
 			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
 		})
 	}
 
-	return newRowTable([]string{"BASE IMAGE", "ID"}, rows, true, width, height)
+	return newRowTable([]string{"BASE IMAGE", "LANGUAGE", "ID"}, rows, true, width, height)
+}
+
+// languageLabel renders the language column: the platform's value as it came
+// (only the sort folds case; a server that says "R" is shown saying "R"), and
+// a dash where it says "other" or nothing — a word that means "unlabeled"
+// reads better as absence than as a category.
+func languageLabel(language string) string {
+	trimmed := strings.TrimSpace(language)
+	if lower := strings.ToLower(trimmed); lower == "" || lower == "other" {
+		return "—"
+	}
+
+	return trimmed
 }
 
 // replicaValue leaves the field empty rather than showing a zero, which is
