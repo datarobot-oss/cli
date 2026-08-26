@@ -347,16 +347,21 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Structural tests against the production singleton (read-only, no Execute)
+// Structural tests (read-only, no Execute)
 // ---------------------------------------------------------------------------
 
 // TestWorkloadCommandNotPresentByDefault verifies that workload is absent from
-// the default command tree. The feature gate is evaluated during init() so we
-// inspect the production singleton; no execution is required.
+// the default command tree. Uses a fresh isolated build with the feature-gate
+// env var neutralized so the test passes even when
+// DATAROBOT_CLI_FEATURE_WORKLOAD is set in the ambient environment.
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+
+	root := newIsolatedRootCmd()
+
 	var found bool
 
-	for _, subCmd := range RootCmd.Commands() {
+	for _, subCmd := range root.Commands() {
 		if subCmd.Name() == "workload" {
 			found = true
 			break
@@ -368,12 +373,17 @@ func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
 
 // TestArtifactCommandNotPresentByDefault verifies that artifact is absent from
 // the default command tree. The artifact command shares the "workload" feature
-// gate, so it is filtered out by cli.CommandAdder during init() when the gate
-// is not enabled (the default).
+// gate, so it is filtered out by cli.CommandAdder during Build() when the gate
+// is not enabled. Uses a fresh isolated build with the env var neutralized so
+// the test passes even when DATAROBOT_CLI_FEATURE_WORKLOAD is set.
 func TestArtifactCommandNotPresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+
+	root := newIsolatedRootCmd()
+
 	var found bool
 
-	for _, subCmd := range RootCmd.Commands() {
+	for _, subCmd := range root.Commands() {
 		if subCmd.Name() == "artifact" {
 			found = true
 			break
