@@ -15,9 +15,11 @@
 package up
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,24 +54,41 @@ func TestStateFor(t *testing.T) {
 // status silently becomes StateSettling, which is the safe answer but not
 // necessarily the right one, so the reminder is worth having.
 func TestStateFor_EveryPlatformStatusIsMapped(t *testing.T) {
-	known := []string{
-		workload.WorkloadStatusUnknown,
-		workload.WorkloadStatusSubmitted,
-		workload.WorkloadStatusProvisioning,
-		workload.WorkloadStatusLaunching,
-		workload.WorkloadStatusRunning,
-		workload.WorkloadStatusSuspended,
-		workload.WorkloadStatusInterrupted,
-		workload.WorkloadStatusStopping,
-		workload.WorkloadStatusStopped,
-		workload.WorkloadStatusErrored,
-		workload.WorkloadStatusTerminated,
-	}
+	assert.Len(t, platformStatuses, 11, "the platform's status enum changed; revisit stateFor")
 
-	assert.Len(t, known, 11, "the platform's status enum changed; revisit stateFor")
-
-	for _, status := range known {
+	for _, status := range platformStatuses {
 		assert.NotEmpty(t, stateFor(status).String(), "status %q maps to a nameless state", status)
+	}
+}
+
+// platformStatuses is every status the platform serialises, in one place so a
+// twelfth cannot be added to one test's copy and missed by another's. The
+// tripwire above is what makes that worth doing: it fails when the enum grows,
+// and it would be no use if the list it guards were not the list the other
+// tests range over.
+var platformStatuses = []string{
+	workload.WorkloadStatusUnknown,
+	workload.WorkloadStatusSubmitted,
+	workload.WorkloadStatusProvisioning,
+	workload.WorkloadStatusLaunching,
+	workload.WorkloadStatusRunning,
+	workload.WorkloadStatusSuspended,
+	workload.WorkloadStatusInterrupted,
+	workload.WorkloadStatusStopping,
+	workload.WorkloadStatusStopped,
+	workload.WorkloadStatusErrored,
+	workload.WorkloadStatusTerminated,
+}
+
+// Two packages classify the same eleven statuses and have to agree: stateFor
+// decides whether a deploy waits, and IsSteadyWorkloadStatus decides when that
+// wait ends. Drift between them is a deadlock rather than a wrong answer, since
+// the wait would end on a status the plan still calls unsettled, or never end
+// on one the plan is happy to deploy onto.
+func TestStateFor_AgreesWithTheSteadyPredicate(t *testing.T) {
+	for _, status := range append(slices.Clone(platformStatuses), "a-status-the-platform-added-later") {
+		assert.Equal(t, workload.IsSteadyWorkloadStatus(status), stateFor(status) != StateSettling,
+			"status %q is classified differently by stateFor and IsSteadyWorkloadStatus", status)
 	}
 }
 
@@ -118,6 +137,33 @@ func TestStateFor_FoldsCase(t *testing.T) {
 		{"LAUNCHING", StateSettling},
 	} {
 		assert.Equal(t, c.want, stateFor(c.status), "status %q", c.status)
+	}
+}
+
+// deployable's settling arm survives the wait: every run waits a moving
+// workload out before planning, so what reaches this is a workload that was
+// steady when it was read and is moving again by the time it is acted on. The
+// table test that used to cover it went away with the refusal, and an
+// uncovered refusal is one a later simplification can turn into a nil return
+// with the suite still green.
+func TestDeployable_RefusesAWorkloadThatStartedMovingAgain(t *testing.T) {
+	err := deployable(Live{
+		Live:   manifest.Live{WorkloadID: "wl-1"},
+		State:  StateSettling,
+		Status: workload.WorkloadStatusLaunching,
+	}, "my-app", "")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), workload.WorkloadStatusLaunching,
+		"the message describes where it is rather than guessing how it got there")
+	assert.Contains(t, err.Error(), "dr workload status wl-1")
+}
+
+// The states a deploy can act on say nothing, which is what keeps the arm
+// above from being a catch-all.
+func TestDeployable_AcceptsTheStatesADeployCanActOn(t *testing.T) {
+	for _, state := range []State{StateUnbound, StateMissing, StateRunning} {
+		require.NoError(t, deployable(Live{State: state}, "my-app", ""), "state %s", state)
 	}
 }
 

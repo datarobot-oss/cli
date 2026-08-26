@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 )
@@ -30,6 +31,13 @@ import (
 type Summary struct {
 	Name       string
 	WorkloadID string
+
+	// Status is the platform's own word for what the workload is doing. The
+	// header prints it rather than the State it reduces to, because the
+	// reduction is lossy in the one place it matters: stopped, suspended and
+	// interrupted are one state to the deploy and three quite different things
+	// to a reader, and only one of them can actually be started.
+	Status string
 }
 
 // shortIDLen is how much of an id is enough to recognise it. The platform's
@@ -60,7 +68,7 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	}
 
 	if plan.Empty() {
-		b.WriteString("\n" + tui.SuccessStyle.Render("✓ Already up to date") + "\n")
+		b.WriteString("\n" + settledVerdict(plan) + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -79,6 +87,25 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	return err
 }
 
+// settledVerdict is what an empty plan means, which is not always that there
+// is nothing to do.
+//
+// A workload still moving is the exception, and it only reaches here on a dry
+// run, which does not wait. The plan for it was computed against a state that
+// is on its way somewhere else, so "already up to date" would be a claim the
+// run has no way to make: a workload halfway through stopping matches its file
+// until it finishes, at which point the deploy that follows starts it again.
+// Saying nothing differs, without saying it will differ, is how a preview comes
+// to read as the opposite of what the deploy will do.
+func settledVerdict(plan Plan) string {
+	if plan.State == StateSettling {
+		return tui.WarnStyle.Render("Nothing differs yet, but this workload is still settling") + "\n" +
+			tui.HintStyle.Render("  What a deploy does depends on where it lands, so it waits first.")
+	}
+
+	return tui.SuccessStyle.Render("✓ Already up to date")
+}
+
 // header names the workload being deployed onto and says what state it is in.
 //
 // There is nothing to head a plan with when no workload exists yet: naming a
@@ -95,7 +122,15 @@ func header(s Summary, plan Plan) string {
 		name = "workload"
 	}
 
-	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), plan.State)
+	// The state is the fallback rather than the answer, for a caller that has
+	// no status to hand: every live read has one, and the plans built without a
+	// live workload never reach this line.
+	state := s.Status
+	if state == "" {
+		state = plan.State.String()
+	}
+
+	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), state)
 }
 
 // shortID trims an id to something a person can compare at a glance.
@@ -116,12 +151,11 @@ func lines(s Summary, plan Plan) []string {
 		out = append(out, entry("+", "workload", createDetail(s, plan)))
 	}
 
-	// A stopped workload is the one plan whose reason to act is the state
-	// rather than a difference. Without a line for it the body is empty and
-	// the block reads as though nothing is about to happen, while the JSON
-	// beside it says the action is "started".
-	if plan.State == StateStopped {
-		out = append(out, entry("~", "workload", "started, having been stopped"))
+	// The plans whose reason to act is the state rather than a difference.
+	// Without a line the body is empty and the block reads as though nothing
+	// is about to happen, while the JSON beside it says otherwise.
+	if line := stateLine(plan.State, s.Status); line != "" {
+		out = append(out, line)
 	}
 
 	if plan.Code.Changed() {
@@ -133,6 +167,54 @@ func lines(s Summary, plan Plan) []string {
 	out = append(out, runtimeLines(plan)...)
 
 	return out
+}
+
+// stateLine is what the live state puts in a plan, empty when the state is not
+// a reason to act by itself.
+//
+// The states that cannot be deployed onto get a line rather than being left to
+// the error below the block. A plan that renders as a bare header reads as a
+// run with nothing to do, which is the opposite of what a refusal is about to
+// say, and --dry-run never prints the error at all.
+//
+// The status is needed as well as the state, for the one case where the
+// reduction is lossy in a way that changes what the run will do. Stopped,
+// suspended and interrupted are one state, and a start brings two of them back;
+// the platform ignores a start of a suspended workload, so promising one here
+// would preview an act the apply is about to refuse, and a dry run never gets
+// as far as the refusal.
+func stateLine(state State, status string) string {
+	switch state {
+	case StateStopped:
+		if workload.IsSuspendedWorkloadStatus(status) {
+			return entry("!", "workload", "suspended, which a deploy cannot undo")
+		}
+
+		return entry("~", "workload", "started, having been "+stoppedAs(status))
+
+	case StateErrored:
+		return entry("!", "workload", "errored, so there is nothing healthy to deploy onto")
+
+	case StateTerminated:
+		return entry("!", "workload", "terminated, and it still holds its name and artifact")
+
+	case StateUnbound, StateMissing, StateSettling, StateRunning:
+		return ""
+
+	default:
+		return ""
+	}
+}
+
+// stoppedAs is how the workload came to be switched off, for the line that says
+// it is about to be switched back on. Interrupted is not the same as stopped to
+// the person reading it, and the state they reduce to cannot tell them apart.
+func stoppedAs(status string) string {
+	if status == "" {
+		return "stopped"
+	}
+
+	return status
 }
 
 // createDetail names the workload about to be created. The plan is printed
@@ -277,8 +359,12 @@ func runtimeLines(plan Plan) []string {
 // entry formats one plan line: a marker, the class, and what happens to it.
 func entry(marker, class, detail string) string {
 	style := changeStyle
-	if marker == "+" {
+
+	switch marker {
+	case "+":
 		style = addStyle
+	case "!":
+		style = blockStyle
 	}
 
 	return fmt.Sprintf("  %s %s %s",
@@ -293,6 +379,10 @@ var (
 	planTitleStyle = lipgloss.NewStyle().Bold(true)
 	addStyle       = tui.SuccessStyle
 	changeStyle    = tui.WarnStyle
+
+	// A state the deploy cannot act on at all, which is neither an addition
+	// nor a change but the reason there will be neither.
+	blockStyle = tui.ErrorStyle
 )
 
 // details lists individual changes under their entry, capped, saying out loud

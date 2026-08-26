@@ -169,6 +169,7 @@ type fakes struct {
 	wizard         func(wizard.Options) (wizard.Result, error)
 	create         func(any) (*workload.Workload, error)
 	wait           func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	waitSteady     func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	list           func(int, []string, string) ([]workload.Workload, error)
 	start          func(string) (*workload.WorkloadOperationResponse, error)
 	lock           func(string) (*workload.Artifact, error)
@@ -221,6 +222,17 @@ func install(t *testing.T, f fakes) {
 
 		return nil, nil
 	})
+
+	// The same for the wait a settling workload triggers, which a fixture can
+	// reach without the test having asked for it.
+	force(t, &waitSteadyFn,
+		func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatalf("the run waited on workload %s to settle, which this test did not wire", id)
+
+			return nil, nil
+		})
+
+	swap(t, &waitSteadyFn, f.waitSteady)
 
 	// The placeholder message looks a credential up by name. Left unwired it
 	// would list credentials from whatever tenant the developer is logged
@@ -700,13 +712,15 @@ func TestRun_LockIsNotAttemptedWhenTheWorkloadFailed(t *testing.T) {
 
 // TestRun_RefusesTheStatesThatCannotTakeADeploy checks each live state gets
 // its own message rather than a generic failure.
+//
+// The settling statuses are not among them any more: a workload still moving is
+// waited out before the plan is built, so it is deployed rather than refused.
 func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 	cases := []struct {
 		status string
 		want   string
 	}{
 		{workload.WorkloadStatusErrored, "dr workload logs"},
-		{workload.WorkloadStatusProvisioning, "still settling"},
 	}
 
 	for _, c := range cases {
@@ -728,6 +742,227 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 			_, _, err := runIn(t, bound, Options{NonInteractive: true})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), c.want)
+		})
+	}
+}
+
+// The reported dead end: a workload mid-transition used to be refused with
+// "wait for it to finish, then deploy", which is work the command can do
+// itself. It waits, re-reads, and deploys against where the workload landed.
+func TestRun_SettlingWorkloadIsWaitedOutAndThenDeployed(t *testing.T) {
+	var (
+		looks  int
+		waited string
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := stoppedWorkload(t)
+			if looks == 1 {
+				d["status"] = workload.WorkloadStatusProvisioning
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			waited = id
+
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopped}, nil
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", waited)
+	assert.Equal(t, 2, looks, "the workload is re-read, because a transition can land somewhere new")
+	assert.Equal(t, ActionStarted, result.Action,
+		"the plan is built against where it settled, which here is stopped")
+	assert.Contains(t, stderr, "Waiting for the workload to settle")
+}
+
+// A workload still moving after the wait gave up has not been deployed onto.
+// The message names where it got to, because "still stopping after 30m" is what
+// decides whether to wait longer or go and look at the platform.
+func TestRun_SettlingThatNeverLandsStopsBeforeMutating(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusStopping
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopping},
+				errors.New("timeout waiting for workload " + id + " after 30m0s")
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("a run that never got a settled state must not have deployed")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was still stopping")
+	assert.Contains(t, err.Error(), "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+
+	// The binding survives the failure. Without it the command prints no JSON
+	// envelope at all, and losing the id is how a deploy becomes unfindable.
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A workload deleted while the deploy was waiting it out is drift, not a wait
+// that failed. Reporting "did not settle" against an id nothing answers to
+// would send the reader to a status command that 404s, when the answer `up`
+// already has for a workload that is gone is to create one.
+func TestRun_WorkloadDeletedDuringTheWaitIsRecreated(t *testing.T) {
+	var looks int
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+			if looks > 1 {
+				return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+			}
+
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusStopping
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, ActionCreated, result.Action)
+}
+
+// --detach is about not waiting for the deploy to serve, and this wait is
+// before the deploy: what to apply cannot be known until the workload stops
+// moving. Blocking is right, blocking in silence is not.
+func TestRun_DetachedRunSaysWhyItIsWaitingToSettle(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopped}, nil
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+	})
+
+	// stoppedWorkload is read once as stopping so the wait fires, and the
+	// re-read is the stopped fixture the seam above already returns.
+	first := true
+
+	force(t, &getWorkloadDocFn, func(string) (workload.Document, error) {
+		d := stoppedWorkload(t)
+
+		if first {
+			first = false
+			d["status"] = workload.WorkloadStatusStopping
+		}
+
+		return d, nil
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+}
+
+// A preview must not block for the poll timeout: it changes nothing, so the
+// honest answer is the plan as things stand plus a note that a deploy would
+// wait. The header carries the state, so nothing here reads as settled.
+func TestRun_DryRunOnASettlingWorkloadDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusLaunching
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Contains(t, stderr, "settling")
+	assert.Equal(t, "settling", result.Status)
+
+	// The trap this closes: nothing differs from the state as it stands, so the
+	// preview used to claim the deploy would do nothing, while the deploy that
+	// follows waits for the stop to land and then starts the workload.
+	assert.NotContains(t, stderr, "Already up to date")
+}
+
+// A workload that dies while the deploy is watching it must not be reported as
+// a success. The deploy now waits transitions out, so a workload that settles
+// into errored is one this run had a front-row seat to, and the file matching
+// it field for field is not a reason to print a green tick over the wreckage.
+func TestRun_SettlingIntoErroredIsNotReportedAsUpToDate(t *testing.T) {
+	for _, status := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
+		t.Run(status, func(t *testing.T) {
+			var looks int
+
+			install(t, fakes{
+				workloadD: func(string) (workload.Document, error) {
+					looks++
+
+					d := doc(t, liveWorkloadJSON)
+					d["status"] = status
+
+					if looks == 1 {
+						d["status"] = workload.WorkloadStatusProvisioning
+					}
+
+					return d, nil
+				},
+				artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+				waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+					return &workload.Workload{ID: id, Status: status}, nil
+				},
+			})
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.Error(t, err, "a broken workload is not a successful deploy")
+			assert.NotContains(t, stderr, "Already up to date")
+			assert.Contains(t, stderr, status, "the plan says what it found before the error explains it")
 		})
 	}
 }
@@ -1641,17 +1876,36 @@ func TestRun_StartsAStoppedWorkload(t *testing.T) {
 	assert.Contains(t, stderr, "Starting workload")
 }
 
-// A plan that asks for more than a start is refused whole. Starting the
-// workload first would bring it up on the version it was stopped on and then
-// report a failure, which leaves the user worse off than refusing did.
-func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
+// The reported dead end: a stopped workload whose file asks for more than a
+// start used to be refused, with a remedy naming two more commands. It is one
+// run now, and the plan says both halves of it out loud.
+func TestRun_StoppedWithDriftStartsAndThenReconciles(t *testing.T) {
+	var order []string
+
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
 		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
-		start: func(string) (*workload.WorkloadOperationResponse, error) {
-			t.Fatal("a refused plan must not have started anything")
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			order = append(order, "start")
 
-			return nil, nil
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		settings: func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+			order = append(order, "settings")
+
+			return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+		},
+		waitReplace: func(_ string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			started.Status = workload.ReplacementStatusCompleted
+
+			return started, nil
+		},
+		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			order = append(order, "wait")
+
+			return running(id), nil
 		},
 	})
 
@@ -1660,10 +1914,14 @@ func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
 	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
 		strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 4", 1)
 
-	_, _, err := runIn(t, drifted, Options{NonInteractive: true})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dr workload start")
-	assert.Contains(t, err.Error(), "more than starting it")
+	result, stderr, err := runIn(t, drifted, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"start", "wait", "settings", "wait"}, order,
+		"the workload has to be up before a settings change can land on it")
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Contains(t, stderr, "started, having been stopped")
+	assert.Contains(t, stderr, "runtime")
 }
 
 func TestRun_StartFailureNamesTheWorkload(t *testing.T) {

@@ -121,9 +121,7 @@ func stateFor(status string) State {
 	case strings.EqualFold(status, workload.WorkloadStatusRunning):
 		return StateRunning
 
-	case strings.EqualFold(status, workload.WorkloadStatusStopped),
-		strings.EqualFold(status, workload.WorkloadStatusSuspended),
-		strings.EqualFold(status, workload.WorkloadStatusInterrupted):
+	case workload.IsStoppedWorkloadStatus(status):
 		return StateStopped
 
 	case strings.EqualFold(status, workload.WorkloadStatusTerminated):

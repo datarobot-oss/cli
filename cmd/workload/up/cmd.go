@@ -142,6 +142,12 @@ allocation, is applied in place instead. Nothing is built and no version is
 made, because what the workload runs has not changed. A deploy that moves both
 sends the sizing with the rollout, so the new version comes up with it.
 
+A workload that is not ready to be deployed onto is dealt with rather than
+refused. One still starting or stopping is waited out and then re-read, so the
+plan is built against where it landed. A stopped one is started and then
+reconciled in the same run, which is one command whether the file asks for a
+start alone or for a start and a new version.
+
 Examples:
   dr workload up
   dr workload up --dry-run
@@ -362,8 +368,13 @@ func reportable(result up.Result) bool {
 //
 // The three refusals, in order:
 //
-//   - A failed run says nothing. The error is what the reader needs, and
-//     "your broken deploy is also temporary" buries it.
+//   - A failed run says nothing, unless the failure came after it started the
+//     workload. The error is usually what the reader needs and "your broken
+//     deploy is also temporary" buries it; but a deploy onto a stopped
+//     workload starts it before it rolls, so a run that fails after that has
+//     itself put a draft on the air and started the eight hours. Saying
+//     nothing there leaves a workload running that the reader believes was
+//     never touched.
 //   - --lock says nothing, because the run is the remedy. This also covers a
 //     --lock whose lock failed, where the returned error names the artifact
 //     and explains the state better than a generic warning would.
@@ -379,8 +390,15 @@ func reportable(result up.Result) bool {
 // of a locked artifact onto a fresh workload would be called temporary and
 // then advised to lock what is already locked.
 func draftIsServing(f flags, result up.Result, failed bool) bool {
-	if failed || f.lock || result.Locked {
+	if f.lock || result.Locked {
 		return false
+	}
+
+	if failed {
+		// Action is what this run actually did, not what it wanted, so it says
+		// "started" only when the start went through. A run that failed before
+		// that changed nothing and has nothing to warn about.
+		return result.Action == up.ActionStarted
 	}
 
 	return f.dryRun || result.WorkloadID != ""
