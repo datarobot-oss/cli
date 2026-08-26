@@ -524,8 +524,8 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 // results and this wait had none, rather than replaying the seed as if it
 // were an observation.
 //
-// The absence has to hold across several polls before it counts, so this also
-// pins that a rollout which really is over still settles the wait.
+// The absence has to hold across several polls, so this also pins that a
+// rollout which really is over still settles the wait.
 func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 	var hits int32
 
@@ -549,13 +549,9 @@ func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 }
 
 // TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord is the cost of
-// the seed above, and the reason a lone 404 is no longer believed.
-//
-// The first poll fires immediately after the POST that created the record, so a
-// 404 there says equally "the rollout is over" and "the route has not caught up
-// yet". Taking it at face value ended the wait in no time at all, which let a
-// deploy report a swap as finished while it was still rolling and the endpoint
-// still answered with the previous build.
+// the seed above. The first poll fires immediately after the POST, so a 404
+// there says equally "the rollout is over" and "the route has not caught up",
+// and taking it at face value ended the wait before the swap had begun.
 func TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord(t *testing.T) {
 	var hits int32
 

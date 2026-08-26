@@ -66,10 +66,9 @@ func wiredRetune(tr *track, sent *json.RawMessage) fakes {
 			return started, nil
 		},
 		// A resize changes no version, so it must not tell the wait to expect
-		// one: there is nothing for the workload to promote, and a wait given an
-		// artifact that is never going to move would run to its timeout.
-		wait: func(id, want string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
-			tr.steps = append(tr.steps, "settle:"+want)
+		// one: a wait on an artifact that never moves runs to its timeout.
+		wait: func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, servingLabel(want))
 
 			return &workload.Workload{
 				ID: id, Name: "gpt-oss-20b-vllm", Status: workload.WorkloadStatusRunning,
@@ -109,7 +108,7 @@ func TestRun_RuntimeOnlyChangeIsAppliedInPlace(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
-			"await-resize", "settle:",
+			"await-resize", "settle:+drain",
 		}, tr.steps,
 		"the platform resizes by rolling a replacement, so that is what has to be guarded and followed")
 	assert.Equal(t, ActionUpdated, result.Action)
@@ -238,7 +237,7 @@ func TestRun_RetuneFailureNamesTheWorkload(t *testing.T) {
 	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
 		return nil, errors.New("replicaCount and autoscaling are mutually exclusive")
 	}
-	f.wait = func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a settings call that failed changed nothing to wait for")
 
 		return nil, nil
@@ -270,7 +269,7 @@ func TestRun_RetuneReportsAReplacementThatFailed(t *testing.T) {
 
 		return started, errors.New("replacement ended as FAILED")
 	}
-	f.wait = func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a resize that failed leaves nothing to settle")
 
 		return nil, nil
@@ -379,7 +378,7 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
-		"await-resize", "settle:", "lock:68a0000000000000000000a1",
+		"await-resize", "settle:+drain", "lock:68a0000000000000000000a1",
 	}, tr.steps, "the lock comes last, once the workload is serving again")
 	assert.True(t, result.Locked)
 }

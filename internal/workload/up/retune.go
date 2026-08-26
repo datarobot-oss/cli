@@ -17,6 +17,7 @@ package up
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/datarobot/cli/internal/workload"
 )
@@ -93,13 +94,18 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 	// After the wait, for the reason a roll records it after its own: a
 	// settings replacement that ends failed leaves the workload on the sizing
 	// it had, so reporting an update would name something that did not happen.
+	waitFrom := time.Now()
+
 	if err := awaitResize(result.WorkloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
 	result.Action = ActionUpdated
 
-	return settle(result.WorkloadID, "", result, opts, report)
+	// A resize changes no artifact, but it does replace a generation, so the
+	// wait still has to see the outgoing one stop answering.
+	return settle(result.WorkloadID, workload.Serving{AwaitDrain: true},
+		result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitResize follows the replacement a settings change starts. A failed one

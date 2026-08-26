@@ -183,10 +183,8 @@ func serverWorkloadDoc(id, name, status string) string {
 	return serverWorkloadDocOn(id, name, status, "art-1")
 }
 
-// serverWorkloadDocOn is the same document with the running artifact named.
-// Which artifact a poll reports is the whole subject of the rollout waits, and
-// a fixture that always answers "art-1" is why the suite could not see a wait
-// settling on the version it was supposed to be replacing.
+// serverWorkloadDocOn names the running artifact. A fixture that always says
+// "art-1" is why the suite could not see a wait settle on the old version.
 func serverWorkloadDocOn(id, name, status, artifactID string) string {
 	return fmt.Sprintf(`{
 		"id": %q,
@@ -202,6 +200,55 @@ func serverWorkloadDocOn(id, name, status, artifactID string) string {
 		"permissions": ["CAN_DELETE"],
 		"runtime": {"containerGroups": []}
 	}`, id, name, status, artifactID, id)
+}
+
+// serverProtonList is the proton route's answer, one entry per generation.
+func serverProtonList(pairs ...[2]string) string {
+	entries := make([]string, 0, len(pairs))
+
+	for i, p := range pairs {
+		entries = append(entries, fmt.Sprintf(
+			`{"id":"proton-%d","name":"a","workloadId":"wl-1","artifactId":%q,"status":%q,`+
+				`"createdAt":"2026-06-10T08:00:00Z","updatedAt":"2026-06-10T08:05:00Z"}`,
+			i+1, p[0], p[1]))
+	}
+
+	return fmt.Sprintf(`{"count":%d,"totalCount":%d,"data":[%s]}`,
+		len(entries), len(entries), strings.Join(entries, ","))
+}
+
+// serveWorkloadAndProtons answers both routes the wait reads; an empty protons
+// body answers 404, as a cluster without the route does.
+func serveWorkloadAndProtons(t *testing.T, doc, protons func() string) {
+	t.Helper()
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/protons/") {
+			body := doc()
+			if body == "" {
+				w.WriteHeader(http.StatusBadGateway)
+
+				return
+			}
+
+			fmt.Fprint(w, body)
+
+			return
+		}
+
+		body := ""
+		if protons != nil {
+			body = protons()
+		}
+
+		if body == "" {
+			w.WriteHeader(http.StatusNotFound)
+
+			return
+		}
+
+		fmt.Fprint(w, body)
+	}))
 }
 
 func assertProjection(t *testing.T, w *Workload, id, name, status string) {
@@ -668,7 +715,7 @@ func TestWaitForSteadyWorkload_ReturnsAtStoppedWhereWaitForWorkloadWouldNot(t *t
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusStopped, wl.Status)
 
-	_, err = WaitForWorkload("wl-1", "", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err = WaitForWorkload("wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
@@ -766,7 +813,7 @@ func TestWaitForWorkload_RunningReturnsNil(t *testing.T) {
 
 	var ticks int
 
-	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, func(*Workload) {
+	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, func(*Workload) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -785,7 +832,7 @@ func TestWaitForWorkload_ErroredReturnsError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl, "errored returns final Workload alongside error")
 	assert.Equal(t, WorkloadStatusErrored, wl.Status)
@@ -814,7 +861,7 @@ func TestWaitForWorkload_PollsThroughStoppedUntilRunning(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", "", time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusRunning, wl.Status)
 }
@@ -830,46 +877,103 @@ func TestWaitForWorkload_Timeout(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForWorkload("wl-1", "", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err := WaitForWorkload("wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
 
-// The regression test for a deploy that reported success while the endpoint
-// went on serving the previous build. A rolling swap leaves the workload
-// reporting "running" from beginning to end, so a wait that reads the status
-// alone settles on the first poll, on the version being replaced.
+// The regression test: a rolling swap leaves the workload reporting "running"
+// throughout, so a status-only wait settles at once, on the old version.
 func TestWaitForWorkload_KeepsPollingWhileTheOldArtifactServes(t *testing.T) {
-	installSkipAuth(t)
-
 	var hits int32
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Running throughout, which is the whole difficulty: the only thing
-		// that moves is which artifact the workload names.
-		artifact := "art-1"
-		if atomic.AddInt32(&hits, 1) >= 3 {
-			artifact = "art-2"
-		}
+	serveWorkloadAndProtons(t,
+		func() string {
+			// Running throughout: the only thing that moves is the artifact.
+			artifact := "art-1"
+			if atomic.AddInt32(&hits, 1) >= 3 {
+				artifact = "art-2"
+			}
 
-		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, artifact))
-	}))
+			return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, artifact)
+		},
+		func() string { return serverProtonList([2]string{"art-2", ProtonStatusRunning}) })
 
-	defer srv.Close()
-
-	installEndpoint(t, srv.URL)
-
-	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "art-2", wl.ArtifactID, "the wait must settle on the version it was told to wait for")
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3),
 		"returning while the old artifact was still serving is the bug")
 }
 
-// A workload that comes up and never takes the new version has not failed in
-// any way the status can express, so the timeout is the only place left to say
-// what happened. A bare "timeout waiting for workload" sends the reader looking
-// for something that is not stuck.
+// The measured shape of the bug: the workload names the new artifact while the
+// previous generation is still draining and still answering.
+func TestWaitForWorkload_WaitsOutTheDrainingGeneration(t *testing.T) {
+	var hits int32
+
+	serveWorkloadAndProtons(t,
+		// The workload has already moved on; it is not the thing that knows.
+		func() string { return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2") },
+		func() string {
+			if atomic.AddInt32(&hits, 1) < 3 {
+				return serverProtonList(
+					[2]string{"art-2", ProtonStatusRunning},
+					[2]string{"art-1", ProtonStatusDraining},
+				)
+			}
+
+			// The outgoing generation lingers in stopping long after the
+			// endpoint switched, so settling here keeps a finished deploy from
+			// being held open.
+			return serverProtonList(
+				[2]string{"art-2", ProtonStatusRunning},
+				[2]string{"art-1", "stopping"},
+			)
+		})
+
+	_, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3),
+		"the old generation was still answering the endpoint")
+}
+
+// A cluster that refuses the protons route must not fail every rollout on it.
+// The route is corroboration, not the rollout, and these deploys exited 0
+// before it was consulted at all.
+func TestWaitForWorkload_RefusedProtonRouteFallsBackToTheArtifact(t *testing.T) {
+	for _, code := range []int{
+		http.StatusNotFound, http.StatusForbidden,
+		http.StatusMethodNotAllowed, http.StatusUnprocessableEntity,
+	} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			unconfirmed := 0
+
+			serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/protons/") {
+					w.WriteHeader(code)
+
+					return
+				}
+
+				fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2"))
+			}))
+
+			want := Serving{
+				ArtifactID:    "art-2",
+				AwaitDrain:    true,
+				OnUnconfirmed: func(string) { unconfirmed++ },
+			}
+
+			wl, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Second, nil)
+			require.NoError(t, err)
+			assert.Equal(t, "art-2", wl.ArtifactID)
+			assert.Positive(t, unconfirmed, "the caller has to know the handover went unconfirmed")
+		})
+	}
+}
+
+// A workload that never takes the new version has not failed in any way the
+// status can express, so the timeout has to say so.
 func TestWaitForWorkload_TimesOutWhenTheNewArtifactNeverServes(t *testing.T) {
 	installSkipAuth(t)
 
@@ -881,7 +985,7 @@ func TestWaitForWorkload_TimesOutWhenTheNewArtifactNeverServes(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", "art-2", 5*time.Millisecond, 25*time.Millisecond, nil)
+	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl, "a timeout returns the last-seen workload so a caller can say where it got to")
 	assert.Contains(t, err.Error(), "art-1", "the error names the version still serving")
@@ -889,9 +993,8 @@ func TestWaitForWorkload_TimesOutWhenTheNewArtifactNeverServes(t *testing.T) {
 	assert.Contains(t, err.Error(), "timeout")
 }
 
-// An errored workload is still reporting whatever it was running, which is
-// never the artifact a roll is waiting for. Requiring both would poll a dead
-// workload to its timeout instead of failing on the first sight of it.
+// An errored workload still reports whatever it was running, so requiring the
+// artifact would poll a dead workload to its timeout.
 func TestWaitForWorkload_ErroredBeatsTheArtifactCheck(t *testing.T) {
 	installSkipAuth(t)
 
@@ -903,23 +1006,22 @@ func TestWaitForWorkload_ErroredBeatsTheArtifactCheck(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Minute, nil)
+	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Minute, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl)
 	assert.Contains(t, err.Error(), WorkloadStatusErrored)
 	assert.NotContains(t, err.Error(), "timeout", "the failure is the answer, not something to wait out")
 }
 
-// These waits now run for as long as a rollout takes, which is long enough for
-// one bad response to land between two healthy polls.
-func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
-	installSkipAuth(t)
+// A rollout that has built, promoted and started serving must not be reported
+// as failed because the second request, the one that was only corroborating it,
+// fell over. The wait forgives a run of them and then says so.
+func TestWaitForWorkload_ForgivesAProtonRouteThatKeepsFailing(t *testing.T) {
+	reasons := 0
 
-	var hits int32
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if atomic.AddInt32(&hits, 1) == 1 {
-			w.WriteHeader(http.StatusBadGateway)
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/protons/") {
+			w.WriteHeader(http.StatusInternalServerError)
 
 			return
 		}
@@ -927,33 +1029,57 @@ func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
 		fmt.Fprint(w, serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2"))
 	}))
 
-	defer srv.Close()
+	want := Serving{
+		ArtifactID:    "art-2",
+		AwaitDrain:    true,
+		OnUnconfirmed: func(string) { reasons++ },
+	}
 
-	installEndpoint(t, srv.URL)
-
-	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Second, nil)
-	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
+	wl, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Minute, nil)
+	require.NoError(t, err, "the deploy itself was fine; only the corroborating read was not")
+	require.NotNil(t, wl)
 	assert.Equal(t, "art-2", wl.ArtifactID)
+	assert.Positive(t, reasons, "and the caller has to know it went unconfirmed")
 }
 
-// Forgiving a blip is not the same as forgiving an endpoint that has gone away.
-func TestWaitForWorkload_GivesUpOnANonTransientPollError(t *testing.T) {
-	installSkipAuth(t)
+// An empty list is both "this route has nothing to say" and "the drained
+// generation is collected and its replacement is not listed yet". Waiting
+// forever on the second reading turns a finished deploy into a timeout.
+func TestWaitForWorkload_SettlesOnAnEmptyProtonListThatPersists(t *testing.T) {
+	var polls int32
 
+	serveWorkloadAndProtons(t,
+		func() string { return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2") },
+		func() string {
+			atomic.AddInt32(&polls, 1)
+
+			return `{"count":0,"totalCount":0,"data":[]}`
+		})
+
+	want := Serving{ArtifactID: "art-2", AwaitDrain: true}
+
+	_, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Minute, nil)
+	require.NoError(t, err, "an absence that never resolves must not run to the timeout")
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&polls), int32(uncorroboratedAbsences),
+		"but it is given a few polls to resolve first")
+}
+
+// These waits run for as long as a rollout takes, long enough for one bad
+// response to land between two healthy polls.
+func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
 	var hits int32
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&hits, 1)
-		w.WriteHeader(http.StatusNotFound)
-	}))
+	serveWorkloadAndProtons(t,
+		func() string {
+			if atomic.AddInt32(&hits, 1) == 1 {
+				return ""
+			}
 
-	defer srv.Close()
+			return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2")
+		},
+		func() string { return serverProtonList([2]string{"art-2", ProtonStatusRunning}) })
 
-	installEndpoint(t, srv.URL)
-
-	wl, err := WaitForWorkload("wl-1", "art-2", time.Millisecond, time.Minute, nil)
-	require.Error(t, err)
-	assert.Nil(t, wl, "a wait that could not read the workload has no state to report")
-	assert.Contains(t, err.Error(), "poll workload")
-	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "a 404 is an answer, not a blip to retry")
+	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
+	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
+	assert.Equal(t, "art-2", wl.ArtifactID)
 }

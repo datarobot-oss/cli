@@ -168,7 +168,7 @@ runtime:
 type fakes struct {
 	wizard         func(wizard.Options) (wizard.Result, error)
 	create         func(any) (*workload.Workload, error)
-	wait           func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	wait           func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	waitSteady     func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	list           func(int, []string, string) ([]workload.Workload, error)
 	start          func(string) (*workload.WorkloadOperationResponse, error)
@@ -296,6 +296,17 @@ func install(t *testing.T, f fakes) {
 	swap(t, &updateSettingsFn, f.settings)
 }
 
+// servingLabel renders what a wait was asked to confirm, so a trace shows the
+// difference between a create (nothing), a resize (drain only) and a roll.
+func servingLabel(want workload.Serving) string {
+	label := "settle:" + want.ArtifactID
+	if want.AwaitDrain {
+		label += "+drain"
+	}
+
+	return label
+}
+
 // swap installs fake over the seam at target, and does nothing when the test
 // did not supply one. reflect is what makes that distinction possible: a nil
 // func in a type parameter is still a value, so there is no way to compare it
@@ -386,7 +397,7 @@ func TestRun_NoManifestOnATerminalRunsTheWizard(t *testing.T) {
 			return wizard.Result{Path: opts.Dir}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
@@ -549,31 +560,6 @@ runtime:
           resourceAllocation: {cpu: 3, memory: 22GB, gpu: 1}
 `
 
-// The other half of the label. A create really is waiting for the workload to
-// come up, and really does have only one version, so it names no artifact and
-// keeps the wording it had.
-func TestRun_CreateStillSaysItIsWaitingForTheWorkload(t *testing.T) {
-	var wanted string
-
-	install(t, fakes{
-		create: func(any) (*workload.Workload, error) {
-			return running("wl-new"), nil
-		},
-		writeID: func(string, string) error { return nil },
-		wait: func(_, want string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
-			wanted = want
-
-			return running("wl-new"), nil
-		},
-	})
-
-	_, stderr, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
-	require.NoError(t, err)
-
-	assert.Empty(t, wanted, "a create has nothing to promote, so it names no artifact to wait for")
-	assert.Contains(t, stderr, "Waiting for the workload to run")
-}
-
 func TestRun_CreatesFromAPublishedImage(t *testing.T) {
 	var (
 		payload              any
@@ -591,7 +577,7 @@ func TestRun_CreatesFromAPublishedImage(t *testing.T) {
 
 			return nil
 		},
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
@@ -642,7 +628,7 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 
 			return nil
 		},
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("nothing was deployed, so there is nothing to wait for")
 
 			return nil, nil
@@ -683,7 +669,7 @@ func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 func TestRun_DetachSkipsTheWait(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("--detach must not wait")
 
 			return nil, nil
@@ -703,7 +689,7 @@ func TestRun_LockHappensAfterTheWorkloadServes(t *testing.T) {
 
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			order = append(order, "wait")
 
 			return running("wl-new"), nil
@@ -724,7 +710,7 @@ func TestRun_LockHappensAfterTheWorkloadServes(t *testing.T) {
 func TestRun_LockIsNotAttemptedWhenTheWorkloadFailed(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			errored := running("wl-new")
 			errored.Status = workload.WorkloadStatusErrored
 
@@ -808,7 +794,7 @@ func TestRun_SettlingWorkloadIsWaitedOutAndThenDeployed(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -884,7 +870,7 @@ func TestRun_WorkloadDeletedDuringTheWaitIsRecreated(t *testing.T) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -1016,7 +1002,7 @@ func TestRun_MissingWorkloadIsRecreated(t *testing.T) {
 
 			return nil
 		},
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
@@ -1043,7 +1029,7 @@ func TestRun_MissingWorkloadNamesTheDeadBinding(t *testing.T) {
 		},
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
@@ -1189,7 +1175,7 @@ func wiredBuild(tr *track) fakes {
 
 			return running("wl-1"), nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	}
@@ -1553,7 +1539,7 @@ func TestRun_DetachStillWaitsForTheImage(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.wait = func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("--detach does not wait for the workload")
 
 		return nil, nil
@@ -1732,7 +1718,7 @@ func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {
 func TestRun_ForceBuildOnAPublishedImageSaysSo(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		build: func(string) (*workload.BuildTriggerResponse, error) {
@@ -1777,7 +1763,7 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 			return running("wl-new"), nil
 		},
 		writeID: func(string, string) error { return nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {
@@ -1803,7 +1789,7 @@ func TestRun_CreatesFromALockedArtifactReportsItLocked(t *testing.T) {
 	install(t, fakes{
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {
@@ -1888,7 +1874,7 @@ func TestRun_StartsAStoppedWorkload(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "queued"}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 		create: func(any) (*workload.Workload, error) {
@@ -1935,7 +1921,7 @@ func TestRun_StoppedWithDriftStartsAndThenReconciles(t *testing.T) {
 
 			return started, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			order = append(order, "wait")
 
 			return running(id), nil
@@ -1964,7 +1950,7 @@ func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
 		start: func(string) (*workload.WorkloadOperationResponse, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("there is nothing to wait for when the start was refused")
 
 			return nil, nil
@@ -1985,7 +1971,7 @@ func TestRun_DetachedStartDoesNotWait(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("--detach returns as soon as the start is requested")
 
 			return nil, nil
@@ -2040,7 +2026,7 @@ func TestRun_InterruptedStartsLikeAnyStoppedWorkload(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -2062,7 +2048,7 @@ func TestRun_StartAcknowledgementIsPrinted(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "Proton is already running"}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -2083,7 +2069,7 @@ func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 		lock: func(string) (*workload.Artifact, error) {
@@ -2126,7 +2112,7 @@ func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id, _ string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			order = append(order, "wait")
 
 			return running(id), nil
@@ -2267,7 +2253,7 @@ func TestRun_ResolvedCredentialDeploys(t *testing.T) {
 			return &workload.Credential{CredentialID: id, Name: "my-app/OPENAI_API_KEY"}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-1"), nil },
-		wait: func(string, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-1"), nil
 		},
 	})

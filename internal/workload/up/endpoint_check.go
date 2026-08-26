@@ -68,7 +68,7 @@ var checkEndpointFn = func(url string) (int, error) {
 // judged for exactly that reason: a 404 at / is how a healthy API-only
 // framework answers, and only the person who wrote the app knows whether it
 // is fine.
-func verifyEndpoint(result Result, report *reporter) {
+func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 	if result.Endpoint == "" {
 		return
 	}
@@ -102,6 +102,18 @@ func verifyEndpoint(result Result, report *reporter) {
 
 	report.say("  %s\n", tui.HintStyle.Render(
 		"Endpoint check: an anonymous GET answered HTTP "+httpStatusLabel(status)+"."))
+
+	// Said only when the wait could not confirm the handover, and carrying the
+	// reason, because they are not the same problem: an install without the
+	// route is a platform fact, while a 403 is this token's own permissions.
+	// The GET above describes whatever answers now, and where the handover went
+	// unconfirmed "now" can be inside the window where the workload already
+	// names the new artifact and the endpoint is still on the old one.
+	if unconfirmed != "" {
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The deploy could not tell whether the previous version has stopped answering, because "+
+				unconfirmed+". The line above may describe it."))
+	}
 }
 
 // httpStatusLabel renders "404 Not Found" rather than a bare number, because
