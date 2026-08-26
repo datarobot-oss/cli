@@ -31,34 +31,21 @@ import (
 // Test isolation helper
 // ---------------------------------------------------------------------------
 
-// newIsolatedRootCmd returns a fresh *cli.CommandAdder built by a new
-// RootFactory with all side-effecting dependencies replaced by safe no-ops.
-// Each call returns an independent command tree so that:
+// newIsolatedRootCmd returns a fresh *cli.CommandAdder built by
+// NewIsolatedRootFactory, which replaces every side-effecting dependency
+// with a safe no-op. Each call returns an independent command tree so that:
 //   - viperx global state set by one test cannot bleed into the next
+//   - global viper flag bindings are not re-pointed at the test tree
 //   - http.DefaultTransport is not mutated by TLS setup
 //   - Plugin discovery (filesystem + network) is skipped
 //   - The first-run animation is suppressed
+//   - No telemetry client is constructed or transmitted with
 //
 // Use this helper for any test that calls Execute() on the root command.
 // Tests that only inspect the static command tree (flags, subcommands,
 // annotations) may continue to reference the package-level RootCmd singleton.
 func newIsolatedRootCmd() *cli.CommandAdder {
-	return NewRootFactory(
-		// Skip viperx initialization and drconfig.yaml reads so env vars set
-		// by one test cannot bleed into the next via shared viper state.
-		WithConfigInitializer(func(_ *cobra.Command, _ string) error { return nil }),
-		// Skip http.DefaultTransport mutation to avoid TLS state leaking across tests.
-		WithTLSSetup(func(_ *cobra.Command) error { return nil }),
-		// Return a minimal props struct instead of hitting the network or disk
-		// for device/user IDs, account info, etc.
-		WithTelemetryProps(func() *telemetry.CommonProperties {
-			return &telemetry.CommonProperties{}
-		}),
-		// Skip plugin discovery (filesystem walk + subprocess invocations).
-		WithPluginRegistrar(func(_ *cobra.Command) {}),
-		// Suppress the first-run animation; there is no TTY in test processes.
-		WithAnimation(func() {}),
-	).Build()
+	return NewIsolatedRootFactory().Build()
 }
 
 // ---------------------------------------------------------------------------
