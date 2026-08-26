@@ -15,6 +15,7 @@
 package get
 
 import (
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -25,8 +26,10 @@ import (
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
+	var ref idargs.Ref
+
 	cmd := &cobra.Command{
-		Use:   "get <workload-id>",
+		Use:   "get [<workload-id>]",
 		Short: "Display details of a workload.",
 		Long: `Display details of a single workload.
 
@@ -41,18 +44,28 @@ this command until the status is "running", then call the endpoint.
 
 By default, output is human-readable. Use --output-format json for machine-parseable output.
 
+` + idargs.HelpText + `
+
 Example:
+  dr workload get
   dr workload get 68b0c1d2e3f4a5b6c7d8e9f0
   dr workload get 68b0c1d2e3f4a5b6c7d8e9f0 --output-format json`,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			wl, err := workload.GetWorkload(args[0])
+			var err error
+
+			ref, err = idargs.Resolve(cmd, args)
 			if err != nil {
 				return err
+			}
+
+			wl, err := workload.GetWorkload(ref.ID)
+			if err != nil {
+				return ref.Wrap(err)
 			}
 
 			return workload.RenderWorkload(outputFormat, *wl)
@@ -60,11 +73,13 @@ Example:
 	}
 
 	outputformat.AddFlag(cmd, &outputFormat)
+	idargs.AddDirFlag(cmd)
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
-			"workload_id":   telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"workload_id":        ref.ID,
+			"workload_id_source": ref.Source,
+			"output_format":      string(outputFormat),
 		}
 	})
 

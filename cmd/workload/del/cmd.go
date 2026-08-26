@@ -24,13 +24,10 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
-	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/fsutil"
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -40,8 +37,10 @@ import (
 )
 
 func Cmd() *cobra.Command {
+	var ref idargs.Ref
+
 	cmd := &cobra.Command{
-		Use:   "delete <workload-id>",
+		Use:   "delete [<workload-id>]",
 		Short: "Delete a workload.",
 		Long: `Delete a workload by id.
 
@@ -59,57 +58,53 @@ in a subdirectory is not visible from its parent.
 
 Without --yes the command asks for confirmation.
 
+` + idargs.HelpText + `
+
 Example:
+  dr workload delete
   dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0
   dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes`,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, err := confirmDelete(cmd, args[0])
+			// Resolve first: it reads --dir and refuses a path that is not a
+			// directory, and a typo is worth catching while it still costs
+			// nothing, on this side of an irreversible call.
+			var err error
+
+			ref, err = idargs.Resolve(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			confirmed, err := confirmDelete(cmd, ref.ID)
 			if err != nil || !confirmed {
 				return err
 			}
 
-			// Not discarded: a lookup failure means the flag was renamed or
-			// dropped, and the silent fallback is a search from the working
-			// directory, which is the behaviour --dir exists to replace.
-			dir, err := cmd.Flags().GetString("dir")
-			if err != nil {
-				return fmt.Errorf("cannot read --dir: %w", err)
+			if err := workload.DeleteWorkload(ref.ID); err != nil {
+				return handleDeleteError(err, ref.ID)
 			}
 
-			// Checked before the delete, not after: a typo is worth catching
-			// while it still costs nothing, and the cleanup that reports it
-			// runs on the far side of an irreversible call.
-			if dir != "" && !fsutil.DirExists(dir) {
-				return fmt.Errorf("--dir %s: %w", dir, manifest.ErrNotADirectory)
-			}
+			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
 
-			if err := workload.DeleteWorkload(args[0]); err != nil {
-				return handleDeleteError(err, args[0])
-			}
-
-			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + args[0]))
-
-			clearStaleBinding(cmd.ErrOrStderr(), dir, args[0])
+			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
-	cmd.Flags().String("dir", "", "Project directory whose manifest holds the binding, searched upward from here.")
+	idargs.AddDirFlag(cmd)
+	idargs.AddYesFlag(cmd, "Skip the confirmation prompt.")
 
-	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
-	// flag itself is read directly from cmd.Flags() so an explicit --yes does
-	// not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		yesFlag, _ := cmd.Flags().GetBool("yes")
 
-	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id": telemetry.FirstArg(args),
-			"yes":         cli.IsNonInteractive(cmd),
+			"workload_id":        ref.ID,
+			"workload_id_source": ref.Source,
+			"yes":                yesFlag || viperx.GetBool("yes"),
 		}
 	})
 
@@ -121,15 +116,7 @@ Example:
 // interactively. A declined prompt is (false, nil) so the command exits 0
 // as a no-op.
 func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
-	if cli.IsNonInteractive(cmd) {
-		return true, nil
-	}
-
-	if !reader.IsStdinTerminal() {
-		return false, errors.New("confirmation required: pass --yes (or set DATAROBOT_CLI_NON_INTERACTIVE=1) to delete without a prompt")
-	}
-
-	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
+	confirmed, err := idargs.Confirm(cmd,
 		"Delete workload "+workloadID+"? This stops and removes a running workload. [y/N] ")
 	if err != nil {
 		return false, err

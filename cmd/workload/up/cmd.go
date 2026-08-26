@@ -449,7 +449,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	}
 
 	draftWarning(cmd.ErrOrStderr(), draft, false)
-	nextSteps(cmd.ErrOrStderr(), result, draft)
+	nextSteps(cmd.ErrOrStderr(), result, f.dir, draft, failed)
 
 	return nil
 }
@@ -504,28 +504,42 @@ func draftWarning(w io.Writer, draft, planned bool) {
 // run that produced no workload: a list of commands that need an id is no help
 // to someone who has not got one.
 //
+// The commands carry no id. A successful deploy leaves the manifest bound, so
+// they resolve from the project directory, and --dir carries a deploy that ran
+// somewhere else. A failed run is the exception: one of its shapes is a
+// workload created whose id could not be written back, where the binding the
+// bare commands need is exactly what is missing, so the id is named above them
+// instead. That also keeps reportable's promise that a deploy which failed
+// late is still findable.
+//
 // A draft deploy trades the stop line for --lock, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
 // to switch a workload off goes looking for the command; someone whose
 // workload switches itself off does not know there is anything to look for,
 // and this list is the one place they will read either way.
-func nextSteps(w io.Writer, result up.Result, draft bool) {
+func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 	if result.WorkloadID == "" {
 		return
 	}
 
+	at := manifest.DirFlag(dir)
+
+	if failed {
+		fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Workload: "+result.WorkloadID))
+	}
+
 	steps := [][2]string{
-		{"dr workload logs " + result.WorkloadID, "View the container logs"},
-		{"dr workload status " + result.WorkloadID, "Check the workload status"},
+		{"dr workload logs" + at, "View the container logs"},
+		{"dr workload status" + at, "Check the workload status"},
 	}
 
 	if draft {
 		steps = append([][2]string{
-			{"dr workload up --lock", "Lock the artifact to make it permanent"},
+			{"dr workload up --lock" + at, "Lock the artifact to make it permanent"},
 		}, steps...)
 	} else {
 		steps = append(steps,
-			[2]string{"dr workload stop " + result.WorkloadID, "Stop the workload, retaining its version"})
+			[2]string{"dr workload stop" + at, "Stop the workload, retaining its version"})
 	}
 
 	// No build-logs line. It needs an artifact id as well as a build id, and

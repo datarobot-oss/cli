@@ -174,7 +174,7 @@ dr workload stop  <workload-id> [--output-format text|json]
 Print a workload's current status as a bare value (for example `running`), so it drops straight into scripts. An `errored` status is a valid answer, so the command still exits `0`. Use `dr workload get` for the full document.
 
 ```bash
-dr workload status <workload-id> [--output-format text|json]
+dr workload status [<workload-id>] [--dir <path>] [--output-format text|json]
 ```
 
 ### `endpoint`
@@ -187,12 +187,16 @@ curl "$(dr workload endpoint <workload-id>)health"
 
 The command fails when the workload has no endpoint URL yet.
 
+```bash
+dr workload endpoint [<workload-id>] [--dir <path>]
+```
+
 ### `logs`
 
 Show the application logs from a workload's containers. By default it prints the most recent `--limit` lines oldest-first, like `kubectl logs --tail`. Use `--level` to drop everything below a severity, and `--follow` (`-f`) to keep streaming new lines as they arrive (Ctrl-C to stop).
 
 ```bash
-dr workload logs <workload-id> [--limit N] [--level <level>] [--follow] [--output-format text|json]
+dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [--follow] [--output-format text|json]
 ```
 
 **Flags:**
@@ -201,6 +205,24 @@ dr workload logs <workload-id> [--limit N] [--level <level>] [--follow] [--outpu
 - `--level <level>`: minimum level to show (`debug`, `info`, `warn`, `warning`, `error`, `critical`). Empty keeps every line.
 - `--follow`, `-f`: stream new lines as they arrive.
 - `--output-format <text|json>`: output format. Defaults to `text`. With `--follow`, JSON is emitted as one object per line (JSON Lines).
+
+## Working in a project directory
+
+Every command that takes a `<workload-id>` can leave it out inside a project that `dr workload up` has deployed. The id is read from the `workloadId` in the nearest `.datarobot.yaml`, searched upward from `--dir` (the current directory by default), and the command says on stderr which workload it picked:
+
+```bash
+cd my-app
+dr workload status          # instead of dr workload status 68b0c1d2e3f4a5b6c7d8e9f0
+dr workload logs --follow
+```
+
+A typed id always wins over the manifest. `--dir` is what reaches a project the current directory cannot see, because the search only walks upward:
+
+```bash
+dr workload logs --dir site   # the project deployed with 'dr workload up --dir site'
+```
+
+Because `stop`, `start` and `delete` change something, they ask for confirmation when the id came from a manifest rather than from you. Pass `--yes` (or set `DATAROBOT_CLI_NON_INTERACTIVE=1`) to skip the prompt in a script. A typed id is never prompted.
 
 ## Shared flags
 

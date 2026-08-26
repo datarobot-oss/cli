@@ -28,13 +28,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd_RequiresArg(t *testing.T) {
+func TestCmd_ArgIsOptional(t *testing.T) {
 	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{})
 
-	err := cmd.Execute()
-	require.Error(t, err)
+	require.NoError(t, cmd.Args(cmd, []string{"68b0c1d2e3f4a5b6c7d8e9f0"}))
+	require.NoError(t, cmd.Args(cmd, nil))
+	require.Error(t, cmd.Args(cmd, []string{"a", "b"}))
 }
 
 // In tests stdin is not a terminal, so without --yes the command must stop
