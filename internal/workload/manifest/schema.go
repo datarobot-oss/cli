@@ -181,7 +181,7 @@ func topLevelOrderedFields() []string {
 		}
 	}
 
-	sort.Slice(ordered, func(i, j int) bool {
+	sort.SliceStable(ordered, func(i, j int) bool {
 		return ordered[i].topLevelOrder < ordered[j].topLevelOrder
 	})
 
