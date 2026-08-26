@@ -27,7 +27,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
@@ -136,8 +136,11 @@ func NewStartModel(opts Options) Model {
 		opts:     opts,
 		repoRoot: repoRoot,
 		telemetry: telemetryCapture{
-			yesFlag:        opts.AnswerYes,
-			nonInteractive: viperx.GetBool("yes"),
+			yesFlag: opts.AnswerYes,
+			// IsNonInteractive(nil) cannot see the --yes flag (it is bound to
+			// opts, not viper), so OR it in explicitly — same pattern as the
+			// prompt-skipping checks below.
+			nonInteractive: opts.AnswerYes || cli.IsNonInteractive(nil),
 		},
 	}
 }
@@ -351,7 +354,7 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.telemetry.missingMsgs = msg.checkResult.MissingMsgs
 	m.telemetry.wrongVersionMsgs = msg.checkResult.WrongVersionMsgs
 
-	autoInstall := m.opts.AnswerYes || viperx.GetBool("yes")
+	autoInstall := m.opts.AnswerYes || cli.IsNonInteractive(nil)
 
 	log.Debug("start: handling missing deps", "count", len(msg.prerequisites), "auto_install", autoInstall)
 
@@ -647,7 +650,7 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		// Found a quickstart script
 		// Don't wait for confirmation if '--yes' flag is set or
 		// DATAROBOT_CLI_NON_INTERACTIVE env var is true
-		waitForConfirmation := !m.opts.AnswerYes && !viperx.GetBool("yes")
+		waitForConfirmation := !m.opts.AnswerYes && !cli.IsNonInteractive(nil)
 
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),

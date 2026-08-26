@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
@@ -93,7 +94,7 @@ func defaultDeps() Deps {
 
 func init() {
 	// --yes is read directly from cobra; only the env var binds to viper
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 }
 
 // Cmd returns the cobra.Command for `dr artifact code sync`.
@@ -142,7 +143,7 @@ Example:
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
-	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; auto-confirm.")
+	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
@@ -206,14 +207,13 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 // DATAROBOT_CLI_NON_INTERACTIVE env-var override into Yes, so the
 // downstream helpers see a single source of truth.
 func parseRunFlags(cmd *cobra.Command) runFlags {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	diff, _ := cmd.Flags().GetBool("diff")
 
 	return runFlags{
 		DryRun: dryRun,
 		Diff:   diff,
-		Yes:    yesFlag || viperx.GetBool("yes"),
+		Yes:    cli.IsNonInteractive(cmd),
 	}
 }
 

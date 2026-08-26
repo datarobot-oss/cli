@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/amplitude/analytics-go/amplitude"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -95,4 +96,34 @@ func TestStaleFinalizersDoNotRetrack(t *testing.T) {
 
 	assert.Equal(t, 1, clientB.count(), "second execute should track exactly one event")
 	assert.Equal(t, 1, clientA.count(), "stale finalizer from first execute must not re-track")
+}
+
+// TestPersistentPreRunStampsInteractionMode verifies that persistentPreRun
+// stamps the merged non-interactive signal onto the collected telemetry
+// props: a --yes invocation must report NonInteractive even though the
+// collector only seeds the env-var signal. Without the StampInteractionMode
+// call in persistentPreRun, --yes-only invocations would report
+// non_interactive=false to analytics.
+func TestPersistentPreRunStampsInteractionMode(t *testing.T) {
+	// Seed props the way the production collector would for an interactive
+	// run: NonInteractive unset. persistentPreRun must overwrite it with the
+	// merged signal once flags are parsed.
+	props := &telemetry.CommonProperties{}
+
+	root := NewIsolatedRootFactory(
+		WithTelemetryProps(func() *telemetry.CommonProperties { return props }),
+	).Build()
+
+	stub := &cobra.Command{
+		Use:  "stub",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+
+	stub.Flags().Bool(cli.YesFlagName, false, "")
+	root.AddCommand(stub)
+
+	root.SetArgs([]string{"stub", "--yes"})
+	require.NoError(t, root.Execute())
+
+	assert.True(t, props.NonInteractive, "persistentPreRun must stamp non_interactive for --yes invocations")
 }
