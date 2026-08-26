@@ -416,7 +416,7 @@ func specMatches(loaded Loaded, doc workload.Document) (bool, error) {
 	// attempt refuses that one too. It is the same question the plan asks, so
 	// it is asked the same way, folded and with only the live side defaulted.
 	if !sameArtifactTypeIn(want, doc) {
-		return false
+		return false, nil
 	}
 
 	// Both directions, which is the difference between this and measuring
