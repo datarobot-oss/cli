@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"slices"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -57,16 +58,43 @@ func fetchArtifactBuildLogs(artifactID, buildID string, maxEntries int, level, s
 	return drainLogPages(pageURL, maxEntries, reqInfo)
 }
 
+// buildLogHoldback is how long a line waits in the reorder buffer, measured
+// against the newest event time seen. OTEL ingestion delivers lines seconds
+// out of order across polls; holding each line back lets a late sibling slot
+// in ahead of it, at the cost of the stream trailing the builder by this
+// much. Finish drains the buffer regardless, so nothing is ever withheld
+// past the build's end.
+const buildLogHoldback = 10 * time.Second
+
 // BuildLogTail streams one build's log lines incrementally, driven by the
 // caller's own cadence (WaitForBuild's per-poll callback) rather than a
-// clock of its own. It is strictly progress feedback: no fetch failure is
-// ever surfaced as an error, because a build must not fail — or appear to —
-// over a hiccup in reading its logs. After too many consecutive failures the
-// tail disables itself, says so once through onWarn, and stays quiet.
+// clock of its own. Lines pass through a holdback reorder buffer so
+// late-ingested lines print in event order rather than arrival order.
+//
+// It is strictly progress feedback: no fetch failure is ever surfaced as an
+// error, because a build must not fail — or appear to — over a hiccup in
+// reading its logs. After too many consecutive failures the tail disables
+// itself, says so once through onWarn, and stays quiet.
 type BuildLogTail struct {
 	follower *logFollower
+	onLine   func(WorkloadLogEntry)
 	onWarn   func(string)
 	disabled bool
+
+	// The reorder buffer: lines sorted by event time (arrival order breaking
+	// ties), flushed once they age past the newest-seen event time minus the
+	// holdback.
+	pending []bufferedLogLine
+	seq     int
+	newest  time.Time
+}
+
+// bufferedLogLine is one held-back line: its parsed event time and an
+// arrival sequence number that keeps equal or unparseable timestamps stable.
+type bufferedLogLine struct {
+	at    time.Time
+	seq   int
+	entry WorkloadLogEntry
 }
 
 // NewBuildLogTail builds a tail for one build's lines. onLine receives each
@@ -85,19 +113,75 @@ func NewBuildLogTail(artifactID, buildID string, onLine func(WorkloadLogEntry), 
 	// caller's poll cadence is the real clock. Level stays the server default
 	// (debug) deliberately: dim noise costs a glance, a failure detail the
 	// builder only said at debug costs a debugging session.
-	follower, err := newLogFollower(fetch, buildLogSeedLimit, "", time.Second,
-		func(e WorkloadLogEntry) error { onLine(e); return nil }, onWarn)
-	if err == nil {
-		follower.lag = buildLogLagAllowance
-	}
+	tail := &BuildLogTail{onLine: onLine, onWarn: onWarn}
 
+	follower, err := newLogFollower(fetch, buildLogSeedLimit, "", time.Second,
+		func(e WorkloadLogEntry) error { tail.buffer(e); return nil }, onWarn)
 	if err != nil {
 		// Unreachable with the constants above; a nil follower simply means
 		// the tail never emits, which is the contract's worst case anyway.
-		return &BuildLogTail{disabled: true, onWarn: onWarn}
+		tail.disabled = true
+
+		return tail
 	}
 
-	return &BuildLogTail{follower: follower, onWarn: onWarn}
+	follower.lag = buildLogLagAllowance
+	tail.follower = follower
+
+	return tail
+}
+
+// buffer inserts one line into the reorder buffer and advances the
+// event-time watermark. Unparseable timestamps adopt the current watermark,
+// so they flush with their neighbors instead of jamming the buffer.
+func (t *BuildLogTail) buffer(e WorkloadLogEntry) {
+	at, ok := parseLogTimestamp(e.Timestamp)
+	if !ok {
+		at = t.newest
+	}
+
+	if at.After(t.newest) {
+		t.newest = at
+	}
+
+	t.pending = append(t.pending, bufferedLogLine{at: at, seq: t.seq, entry: e})
+	t.seq++
+}
+
+// flush emits buffered lines in event order: everything when all is set,
+// otherwise only lines older than the holdback watermark, so a late sibling
+// still to arrive can slot in ahead of what remains held.
+func (t *BuildLogTail) flush(all bool) {
+	slices.SortStableFunc(t.pending, func(a, b bufferedLogLine) int {
+		if c := a.at.Compare(b.at); c != 0 {
+			return c
+		}
+
+		return a.seq - b.seq
+	})
+
+	watermark := t.newest.Add(-buildLogHoldback)
+
+	kept := t.pending[:0]
+
+	for _, line := range t.pending {
+		if all || !line.at.After(watermark) {
+			t.onLine(line.entry)
+		} else {
+			kept = append(kept, line)
+		}
+	}
+
+	t.pending = kept
+}
+
+// Finish performs the final catch-up poll and drains the reorder buffer.
+// Call it once after the build wait ends: ingestion lags the build, so the
+// last lines routinely land after the terminal status, and nothing may stay
+// withheld once the stream is over.
+func (t *BuildLogTail) Finish() {
+	t.Poll()
+	t.flush(true)
 }
 
 // Poll fetches once and emits any unseen lines. Call it from the build wait's
@@ -127,7 +211,9 @@ func (t *BuildLogTail) Poll() {
 		return
 	}
 
-	// onLine never returns an error (see NewBuildLogTail), so emit cannot
+	// buffer never returns an error (see NewBuildLogTail), so emit cannot
 	// fail; the return is the follower's contract, not this tail's.
 	_ = t.follower.emit(entries, hadSince)
+
+	t.flush(false)
 }

@@ -468,9 +468,9 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
 
-		// One more poll after the terminal status: ingestion lags the build,
-		// so the last lines routinely land after the wait has already ended.
-		tail.Poll()
+		// The final catch-up: ingestion lags the build, so the last lines
+		// routinely land after the wait, and the reorder buffer must drain.
+		tail.Finish()
 
 		return waitErr
 	})

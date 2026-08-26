@@ -89,9 +89,52 @@ func TestBuildLogTail_EmitsOnlyUnseenLinesAcrossPolls(t *testing.T) {
 
 	tail.Poll()
 	tail.Poll()
+	tail.flush(true) // drain the holdback buffer without another fetch
 
 	assert.Equal(t, []string{"a", "b", "c"}, lines)
 	assert.Equal(t, 2, calls)
+}
+
+func TestBuildLogTail_HoldbackReordersLateLines(t *testing.T) {
+	installSkipAuth(t)
+
+	calls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		switch calls {
+		case 1:
+			// The newer line arrives first...
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-11 14:04:16.000000+00:00", "INFO", "later"),
+			))
+		default:
+			// ...its older sibling only in the NEXT poll, the ingestion
+			// pattern that used to print "later" before "earlier".
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-11 14:04:16.000000+00:00", "INFO", "later"),
+				logEntryDocAt("2026-06-11 14:04:15.000000+00:00", "INFO", "earlier"),
+			))
+		}
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	var lines []string
+
+	tail := NewBuildLogTail("art-1", "bld-1", func(e WorkloadLogEntry) {
+		lines = append(lines, e.Message)
+	}, nil)
+
+	tail.Poll()
+	tail.Poll()
+	tail.flush(true)
+
+	// The holdback let the late older line slot in ahead.
+	assert.Equal(t, []string{"earlier", "later"}, lines)
 }
 
 func TestBuildLogTail_EmptyFirstPollDoesNotPinAZeroCursor(t *testing.T) {
@@ -131,6 +174,7 @@ func TestBuildLogTail_EmptyFirstPollDoesNotPinAZeroCursor(t *testing.T) {
 	tail.Poll() // empty: must NOT seed
 	tail.Poll() // first real batch: window fetch, seeds the cursor
 	tail.Poll() // since-based, trailing by the build tail's own lag
+	tail.flush(true)
 
 	assert.Equal(t, []string{"a", "b"}, lines)
 	require.Len(t, startTimes, 3)
