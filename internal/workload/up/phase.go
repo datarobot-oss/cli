@@ -17,9 +17,14 @@ package up
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/tui"
+	"golang.org/x/term"
 )
 
 // phaseClock is the time source, swapped by tests so a check-marked line's
@@ -74,28 +79,66 @@ func (r *reporter) work(label string, fn func() error) error {
 // a spinner. The label prints first as a header, fn's lines print dimmed and
 // indented beneath it as they arrive, and the check-marked line with the
 // elapsed time prints after — so the spinner and the stream never fight over
-// the terminal (no spinner runs at all during a streamed phase). On a plain
-// writer (no TTY, JSON mode) the same lines print undecorated, which is how
-// CI logs stay readable.
+// the terminal (no spinner runs at all during a streamed phase).
 //
-// A failure prints nothing extra, exactly like run: the error carries the
-// story, and the lines already streamed are the context.
-func (r *reporter) stream(label string, fn func(say func(line string)) error) error {
+// On the terminal, every line is truncated to the width so it occupies
+// exactly one row, and a phase that SUCCEEDS erases its stream — header
+// included — leaving only the check-marked line, so a deploy's final
+// transcript stays clean. One row per line is what makes the erase count
+// exact; a resize mid-phase can still rewrap history, which at worst strands
+// a few lines. A failed phase keeps every line: they are the context for the
+// error. On a plain writer (no TTY, JSON mode) nothing is truncated or
+// erased, which is how CI logs stay complete.
+func (r *reporter) stream(label string, fn func(say func(line string, style lipgloss.Style)) error) error {
 	started := phaseClock()
 
 	fmt.Fprintf(r.out, "  %s %s\n", tui.HintStyle.Render("⠿"), label)
 
-	say := func(line string) {
-		fmt.Fprintf(r.out, "    %s\n", tui.HintStyle.Render(line))
+	// r.spinner is the "out is the terminal the user is watching" flag; a
+	// width is only meaningful, and erasing only safe, on that terminal.
+	width := 0
+	if r.spinner {
+		width = streamWidth()
+	}
+
+	rows := 0
+	say := func(line string, style lipgloss.Style) {
+		// A message with newlines would break the one-row-per-line math.
+		for _, part := range strings.Split(line, "\n") {
+			if width > 0 {
+				part = ansi.Truncate(part, max(width-6, 8), "…")
+			}
+
+			fmt.Fprintf(r.out, "    %s\n", style.Render(part))
+
+			rows++
+		}
 	}
 
 	if err := fn(say); err != nil {
 		return err
 	}
 
+	if width > 0 {
+		// Cursor up over the stream and its header, clear to the end of the
+		// screen; the check-marked line below replaces them.
+		fmt.Fprintf(r.out, "\x1b[%dA\x1b[0J", rows+1)
+	}
+
 	r.done(label, phaseClock().Sub(started))
 
 	return nil
+}
+
+// streamWidth returns the width of the terminal the stream renders on, 0 when
+// there is none. A var so tests can exercise the terminal path without one.
+var streamWidth = func() int {
+	w, _, err := term.GetSize(int(os.Stderr.Fd()))
+	if err != nil || w <= 0 {
+		return 0
+	}
+
+	return w
 }
 
 // done prints the completed phase. Durations are truncated to a tenth of a

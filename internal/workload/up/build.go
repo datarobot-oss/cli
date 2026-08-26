@@ -19,10 +19,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/tui"
 )
 
 // buildAndCreate is the first deploy of a project whose image the platform
@@ -399,7 +401,7 @@ const buildHistoryLimit = 20
 func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
 	var built *workload.Build
 
-	err := report.stream("Building the image", func(say func(string)) error {
+	err := report.stream("Building the image", func(say func(string, lipgloss.Style)) error {
 		buildID := attachTo
 		if buildID == "" {
 			triggered, triggerErr := triggerBuild(artifactID)
@@ -414,7 +416,7 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// legitimately take minutes against a slow platform, and the first
 		// log line lags the build by however long ingestion takes, so without
 		// it the header sits alone and reads as a hang.
-		say("following build " + buildID + "; its first log lines can take a minute to arrive")
+		say("following build "+buildID+"; its first log lines can take a minute to arrive", tui.HintStyle)
 
 		// The tail is progress feedback only: it never errors, and after
 		// sustained fetch failures it says so once and goes quiet, while the
@@ -422,14 +424,29 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// CLI's own — silence here is indistinguishable from a hang, which is
 		// worse than one meta line among the build's output.
 		tail := workload.NewBuildLogTail(artifactID, buildID,
-			func(e workload.WorkloadLogEntry) { say(buildLogLine(e)) },
-			func(w string) { say("(log stream) " + w) })
+			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
+			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
+
+		// Each status transition is narrated, because the stages before the
+		// builder speaks — accepted, waiting for a builder — are exactly the
+		// quiet ones where the user wonders whether anything is happening.
+		// Terminal statuses are left to the phase's own ending.
+		lastStatus := ""
+
+		onTick := func(b *workload.Build) {
+			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
+				lastStatus = b.Status
+
+				say(buildStatusLine(b.Status), tui.HintStyle)
+			}
+
+			tail.Poll()
+		}
 
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout,
-			func(*workload.Build) { tail.Poll() })
+		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
 
 		// One more poll after the terminal status: ingestion lags the build,
@@ -456,15 +473,31 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 	return built.ID, err
 }
 
-// buildLogLine renders one streamed build log line. The message alone is the
-// line for routine output; a non-info level is called out, because an error
-// scrolling past dimmed and unmarked defeats the point of streaming.
-func buildLogLine(e workload.WorkloadLogEntry) string {
+// buildLogLine renders one streamed build log line with the style its level
+// deserves. The message alone, dimmed, is the line for routine output; a
+// non-info level is called out and colored, because an error scrolling past
+// dimmed and unmarked defeats the point of streaming.
+func buildLogLine(e workload.WorkloadLogEntry) (string, lipgloss.Style) {
 	switch strings.ToLower(e.Level) {
 	case "", "info", "debug":
-		return e.Message
+		return e.Message, tui.HintStyle
+	case "warn", "warning":
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.WarnStyle
 	default:
-		return "[" + strings.ToUpper(e.Level) + "] " + e.Message
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message, tui.ErrorStyle
+	}
+}
+
+// buildStatusLine narrates a build status for the stream, in words rather
+// than enum values for the two stages every build passes through.
+func buildStatusLine(status string) string {
+	switch strings.ToUpper(status) {
+	case workload.BuildStatusPending:
+		return "build accepted; waiting for a builder to pick it up"
+	case workload.BuildStatusInProgress:
+		return "builder running"
+	default:
+		return "build is " + strings.ToLower(status)
 	}
 }
 

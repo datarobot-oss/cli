@@ -20,8 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
+	"github.com/datarobot/cli/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,9 +33,9 @@ func TestReporter_StreamPrintsHeaderLinesAndCheckmark(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, false).stream("Building the image", func(say func(string)) error {
-		say("step 1/4: FROM base")
-		say("step 2/4: COPY . .")
+	err := newReporter(&out, false).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		say("step 1/4: FROM base", tui.HintStyle)
+		say("step 2/4: COPY . .", tui.HintStyle)
 
 		return nil
 	})
@@ -59,8 +61,8 @@ func TestReporter_StreamFailurePrintsNoCheckmark(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, false).stream("Building the image", func(say func(string)) error {
-		say("step 1/4: FROM base")
+	err := newReporter(&out, false).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		say("step 1/4: FROM base", tui.HintStyle)
 
 		return errors.New("boom")
 	})
@@ -70,15 +72,53 @@ func TestReporter_StreamFailurePrintsNoCheckmark(t *testing.T) {
 	assert.Contains(t, out.String(), "step 1/4: FROM base")
 }
 
-func TestBuildLogLine_MarksNonInfoLevels(t *testing.T) {
-	assert.Equal(t, "pulling layer",
-		buildLogLine(workload.WorkloadLogEntry{Level: "INFO", Message: "pulling layer"}))
-	assert.Equal(t, "cache key",
-		buildLogLine(workload.WorkloadLogEntry{Level: "debug", Message: "cache key"}))
-	assert.Equal(t, "[ERROR] no space left on device",
-		buildLogLine(workload.WorkloadLogEntry{Level: "error", Message: "no space left on device"}))
-	assert.Equal(t, "[WARNING] deprecated base image",
-		buildLogLine(workload.WorkloadLogEntry{Level: "warning", Message: "deprecated base image"}))
+func TestBuildLogLine_MarksAndColorsNonInfoLevels(t *testing.T) {
+	line, style := buildLogLine(workload.WorkloadLogEntry{Level: "INFO", Message: "pulling layer"})
+	assert.Equal(t, "pulling layer", line)
+	assert.Equal(t, tui.HintStyle, style)
+
+	line, style = buildLogLine(workload.WorkloadLogEntry{Level: "error", Message: "no space left on device"})
+	assert.Equal(t, "[ERROR] no space left on device", line)
+	assert.Equal(t, tui.ErrorStyle, style)
+
+	line, style = buildLogLine(workload.WorkloadLogEntry{Level: "warning", Message: "deprecated base image"})
+	assert.Equal(t, "[WARNING] deprecated base image", line)
+	assert.Equal(t, tui.WarnStyle, style)
+}
+
+func TestBuildStatusLine_NarratesTheQuietStages(t *testing.T) {
+	assert.Equal(t, "build accepted; waiting for a builder to pick it up", buildStatusLine("PENDING"))
+	assert.Equal(t, "builder running", buildStatusLine("IN_PROGRESS"))
+	assert.Equal(t, "build is cancelling", buildStatusLine("CANCELLING"))
+}
+
+func TestReporter_StreamCollapsesOnSuccessOnTerminal(t *testing.T) {
+	fixedClock(t, 2*time.Second)
+
+	prev := streamWidth
+	streamWidth = func() int { return 30 }
+
+	t.Cleanup(func() { streamWidth = prev })
+
+	var out bytes.Buffer
+
+	// spinner=true marks out as the user's terminal, which is what arms
+	// truncation and the erase.
+	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		say("short line", tui.HintStyle)
+		say("a very long line that cannot possibly fit in thirty columns", tui.HintStyle)
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	text := out.String()
+	// The long line was truncated to one row.
+	assert.Contains(t, text, "…")
+	assert.NotContains(t, text, "thirty columns")
+	// Two stream rows plus the header are erased, then the checkmark prints.
+	assert.Contains(t, text, "\x1b[3A\x1b[0J")
+	assert.Contains(t, text, "✓ Building the image (2s)")
 }
 
 // unchangedSync is a sync result that moved nothing, which is the only state
@@ -122,6 +162,8 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 	// The heartbeat line: the phase must say something before the first log
 	// line arrives, or a slow start reads as a hang.
 	assert.Contains(t, out.String(), "following build bld-running")
+	// The status transition the stub's onTick delivered is narrated.
+	assert.Contains(t, out.String(), "builder running")
 }
 
 func TestMaybeBuild_TriggersDespiteRunningBuildWhenCodeChanged(t *testing.T) {
