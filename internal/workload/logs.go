@@ -175,6 +175,13 @@ func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo 
 		return nil, err
 	}
 
+	return drainLogPages(pageURL, maxEntries, reqInfo)
+}
+
+// drainLogPages walks an OTEL logs route's pagination from pageURL,
+// newest-first, applying the same page-overlap dedup and maxEntries cap for
+// every log source.
+func drainLogPages(pageURL string, maxEntries int, reqInfo string) ([]WorkloadLogEntry, error) {
 	var all []WorkloadLogEntry
 
 	priorPages := make(map[string]struct{})
@@ -212,6 +219,11 @@ func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo 
 	return all, nil
 }
 
+// logsFetchFn retrieves one poll's worth of log lines newest-first. It is the
+// seam that lets the follower stream any OTEL log source: the workload stream
+// and a build's filtered artifact stream differ only in this function.
+type logsFetchFn func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error)
+
 // FollowWorkloadLogs streams a workload's log lines until ctx is cancelled
 // (Ctrl-C ends it cleanly with nil) or a terminal fetch error occurs. It
 // seeds with the most recent limit lines, then polls for newer ones, falling
@@ -230,13 +242,17 @@ func FollowWorkloadLogs(
 	onLine func(WorkloadLogEntry) error,
 	onWarn func(string),
 ) error {
-	f, err := newLogFollower(workloadID, limit, level, interval, onLine, onWarn)
+	fetch := func(maxEntries int, lvl, since, reqInfo string) ([]WorkloadLogEntry, error) { //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
+		return fetchWorkloadLogs(workloadID, maxEntries, lvl, since, reqInfo)
+	}
+
+	f, err := newLogFollower(fetch, limit, level, interval, onLine, onWarn)
 	if err != nil {
 		return err
 	}
 
 	for {
-		entries, hadSince, err := f.fetch() //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
+		entries, hadSince, err := f.fetch()
 		if err != nil {
 			retryNow, ferr := f.fetchFailure(err, hadSince)
 			if ferr != nil {
@@ -266,11 +282,11 @@ func FollowWorkloadLogs(
 
 // logFollower holds one follow stream's state between polls.
 type logFollower struct {
-	workloadID string
-	limit      int
-	level      string
-	onLine     func(WorkloadLogEntry) error
-	onWarn     func(string)
+	fetchFn logsFetchFn
+	limit   int
+	level   string
+	onLine  func(WorkloadLogEntry) error
+	onWarn  func(string)
 
 	dedup           *logDedup
 	cursor          time.Time // newest parsed timestamp; zero means window mode
@@ -280,13 +296,17 @@ type logFollower struct {
 }
 
 func newLogFollower(
-	workloadID string,
+	fetchFn logsFetchFn,
 	limit int,
 	level string,
 	interval time.Duration,
 	onLine func(WorkloadLogEntry) error,
 	onWarn func(string),
 ) (*logFollower, error) {
+	if fetchFn == nil {
+		return nil, errors.New("fetchFn is required")
+	}
+
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
@@ -304,7 +324,7 @@ func newLogFollower(
 	}
 
 	return &logFollower{
-		workloadID:   workloadID,
+		fetchFn:      fetchFn,
 		limit:        limit,
 		level:        level,
 		onLine:       onLine,
@@ -327,8 +347,8 @@ func (f *logFollower) fetch() (entries []WorkloadLogEntry, hadSince bool, err er
 	}
 
 	// Empty reqInfo silences drapi's per-request "Fetching ..." log so the
-	// follow stream stays just the workload's log lines.
-	entries, err = fetchWorkloadLogs(f.workloadID, maxEntries, f.level, since, "")
+	// follow stream stays just the source's log lines.
+	entries, err = f.fetchFn(maxEntries, f.level, since, "")
 
 	return entries, since != "", err
 }
@@ -352,7 +372,7 @@ func (f *logFollower) fetchFailure(err error, hadSince bool) (retryNow bool, _ e
 	f.transientErrors++
 
 	if f.transientErrors > maxTransientPollErrors {
-		return false, fmt.Errorf("fetch workload logs: %d consecutive transient errors, last: %w", f.transientErrors, err)
+		return false, fmt.Errorf("fetch logs: %d consecutive transient errors, last: %w", f.transientErrors, err)
 	}
 
 	f.onWarn(fmt.Sprintf("transient error fetching logs, retrying: %v", err))

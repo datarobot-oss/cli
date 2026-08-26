@@ -70,6 +70,34 @@ func (r *reporter) work(label string, fn func() error) error {
 	return fn()
 }
 
+// stream executes one phase whose progress arrives as text lines rather than
+// a spinner. The label prints first as a header, fn's lines print dimmed and
+// indented beneath it as they arrive, and the check-marked line with the
+// elapsed time prints after — so the spinner and the stream never fight over
+// the terminal (no spinner runs at all during a streamed phase). On a plain
+// writer (no TTY, JSON mode) the same lines print undecorated, which is how
+// CI logs stay readable.
+//
+// A failure prints nothing extra, exactly like run: the error carries the
+// story, and the lines already streamed are the context.
+func (r *reporter) stream(label string, fn func(say func(line string)) error) error {
+	started := phaseClock()
+
+	fmt.Fprintf(r.out, "  %s %s\n", tui.HintStyle.Render("⠿"), label)
+
+	say := func(line string) {
+		fmt.Fprintf(r.out, "    %s\n", tui.HintStyle.Render(line))
+	}
+
+	if err := fn(say); err != nil {
+		return err
+	}
+
+	r.done(label, phaseClock().Sub(started))
+
+	return nil
+}
+
 // done prints the completed phase. Durations are truncated to a tenth of a
 // second: a deploy is measured in minutes and the extra digits are noise.
 func (r *reporter) done(label string, elapsed time.Duration) {

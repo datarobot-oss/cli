@@ -17,7 +17,9 @@ package up
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -317,19 +319,42 @@ func maybeBuild(
 	report *reporter,
 ) (string, error) {
 	if !fresh && !opts.ForceBuild && !changed(code, synced) {
-		built, err := hasImage(artifactID)
+		builds, err := listBuildsFn(artifactID, buildHistoryLimit)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
 		}
 
-		if built {
+		if hasImage(builds) {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
 			return "", nil
 		}
+
+		// The tree matches what was synced and no image exists yet — if a
+		// build of that code is already running (a previous up triggered it
+		// and died, or another terminal is mid-deploy), attach to it instead
+		// of starting a second one. Only safe on this path: when the code
+		// changed, a running build is building the old tree, and a fresh
+		// trigger — which supersedes it server-side — is the correct move.
+		if running := runningBuild(builds); running != "" {
+			report.say("  A build of this code is already running; attaching to it.\n")
+
+			return buildImage(artifactID, running, opts, report)
+		}
 	}
 
-	return buildImage(artifactID, opts, report)
+	return buildImage(artifactID, "", opts, report)
+}
+
+// runningBuild names the newest non-terminal build, "" when there is none
+// (the caller then just triggers, which is the pre-attach behavior and
+// always safe).
+func runningBuild(builds []workload.Build) string {
+	if len(builds) == 0 || workload.IsTerminalBuildStatus(builds[0].Status) {
+		return ""
+	}
+
+	return builds[0].ID
 }
 
 // changed reports whether anything moved. The sync's own count is preferred
@@ -351,43 +376,59 @@ func changed(code CodeChange, synced *sync.Result) bool {
 // The exception is code pushed by `dr artifact code sync` between deploys,
 // which leaves a completed build of the previous version and a tree that
 // looks unchanged to `up`. That is what --force-build is for.
-func hasImage(artifactID string) (bool, error) {
-	builds, err := listBuildsFn(artifactID, buildHistoryLimit)
-	if err != nil {
-		return false, fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
-	}
-
+func hasImage(builds []workload.Build) bool {
 	for _, build := range builds {
 		if workload.IsBuildCompleted(build.Status) {
-			return true, nil
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }
 
 // buildHistoryLimit bounds the look back for a completed build. A handful of
 // attempts is all a deploy can have made; past that the answer is no.
 const buildHistoryLimit = 20
 
-// buildImage builds the artifact's image and waits for it. The wait is not
-// optional even under --detach: a workload created against an artifact with
-// no image would come up unable to start, and --detach promises not to wait
-// for the workload, not to deploy something that cannot run.
-func buildImage(artifactID string, opts Options, report *reporter) (string, error) {
+// buildImage builds the artifact's image and waits for it, streaming the
+// build's own log lines beneath the phase header while it runs. attachTo, when
+// set, is an already-running build to follow instead of triggering a new one.
+//
+// The wait is not optional even under --detach: a workload created against an
+// artifact with no image would come up unable to start, and --detach promises
+// not to wait for the workload, not to deploy something that cannot run.
+func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
 	var built *workload.Build
 
-	err := report.run("Building the image", func() error {
-		buildID, triggerErr := triggerBuild(artifactID)
-		if triggerErr != nil {
-			return triggerErr
+	err := report.stream("Building the image", func(say func(string)) error {
+		buildID := attachTo
+		if buildID == "" {
+			triggered, triggerErr := triggerBuild(artifactID)
+			if triggerErr != nil {
+				return triggerErr
+			}
+
+			buildID = triggered
 		}
+
+		// The tail is progress feedback only: it never errors, and after
+		// sustained fetch failures it says so once and goes quiet, while the
+		// build wait carries on. Warnings go to the debug log rather than the
+		// stream, where they would read as the build's own output.
+		tail := workload.NewBuildLogTail(artifactID, buildID,
+			func(e workload.WorkloadLogEntry) { say(buildLogLine(e)) },
+			func(w string) { log.Debug("build log tail", "msg", w) })
 
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, nil)
+		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout,
+			func(*workload.Build) { tail.Poll() })
 		built = b
+
+		// One more poll after the terminal status: ingestion lags the build,
+		// so the last lines routinely land after the wait has already ended.
+		tail.Poll()
 
 		return waitErr
 	})
@@ -407,6 +448,18 @@ func buildImage(artifactID string, opts Options, report *reporter) (string, erro
 	// A build still running when the wait expires keeps its id too: it is
 	// what the user needs to follow it to the end.
 	return built.ID, err
+}
+
+// buildLogLine renders one streamed build log line. The message alone is the
+// line for routine output; a non-info level is called out, because an error
+// scrolling past dimmed and unmarked defeats the point of streaming.
+func buildLogLine(e workload.WorkloadLogEntry) string {
+	switch strings.ToLower(e.Level) {
+	case "", "info", "debug":
+		return e.Message
+	default:
+		return "[" + strings.ToUpper(e.Level) + "] " + e.Message
+	}
 }
 
 // triggerBuild starts one build and names it. The endpoint answers with a
