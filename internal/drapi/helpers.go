@@ -15,7 +15,6 @@
 package drapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,49 +44,17 @@ func EndpointURL(path string, query url.Values) (string, error) {
 // up to 512 bytes of the response body for context. It always closes
 // resp.Body, so callers must not read it after calling this function.
 //
-// When the body is a FastAPI-style `{"detail": ...}` document, the detail is
-// lifted into HTTPError.Detail so the user reads the server's own sentence
-// instead of a raw JSON dump; anything else keeps the body= form, whose URL
-// is what makes an unstructured failure diagnosable.
+// The body is carried raw on HTTPError.Body, uninterpreted: drapi serves
+// every DataRobot API the CLI talks to, and they do not agree on an error
+// envelope, so reading meaning into the bytes is a caller's job (see
+// workload/apiclient for the Workload API's).
 func ErrFromResp(resp *http.Response, requestURL string) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if detail := ErrorDetail(body); detail != "" {
-		return &HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Detail: detail}
-	}
-
 	if len(body) > 0 {
-		return fmt.Errorf("%w: body=%s", &HTTPError{StatusCode: resp.StatusCode, URL: requestURL}, body)
+		return fmt.Errorf("%w: body=%s", &HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Body: body}, body)
 	}
 
 	return &HTTPError{StatusCode: resp.StatusCode, URL: requestURL}
-}
-
-// ErrorDetail pulls the "detail" field out of a FastAPI-style JSON error
-// body, or "" when the body is not such a document. Non-string details
-// (e.g. validation error arrays) are re-encoded as JSON rather than dropped:
-// they carry the field-level messages the caller needs.
-//
-// This is the one place that knows the server's error envelope; callers that
-// want a different fallback (e.g. the raw body) layer it on the "" return.
-func ErrorDetail(body []byte) string {
-	var payload struct {
-		Detail any `json:"detail"`
-	}
-
-	if err := json.Unmarshal(body, &payload); err != nil || payload.Detail == nil {
-		return ""
-	}
-
-	if detail, ok := payload.Detail.(string); ok {
-		return detail
-	}
-
-	encoded, err := json.Marshal(payload.Detail)
-	if err != nil {
-		return ""
-	}
-
-	return string(encoded)
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Build statuses are server-side enum values (UPPERCASE). All five were
@@ -216,15 +217,15 @@ func isRetryableTriggerStatus(err error) bool {
 	// A 503 is safe to retry wherever it was minted: a gateway answers it
 	// before the request reaches the platform. A 504 is only safe when the
 	// PLATFORM answered it — its "nothing was recorded" guarantee comes with
-	// a JSON detail body, which is what fills Detail. A proxy's own 504
-	// (HTML/plain body, Detail empty) means the platform may still be
-	// processing and might yet record the build, so retrying risks a
-	// duplicate.
+	// a JSON detail body. A proxy's own 504 (HTML/plain body, no envelope)
+	// means the platform may still be processing and might yet record the
+	// build, so retrying risks a duplicate. The check reads the raw body
+	// rather than Detail, so it holds whatever layer shaped the error.
 	switch httpErr.StatusCode {
 	case http.StatusServiceUnavailable:
 		return true
 	case http.StatusGatewayTimeout:
-		return httpErr.Detail != ""
+		return apiclient.ErrorDetail(httpErr.Body) != ""
 	}
 
 	return false
@@ -243,7 +244,7 @@ func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	for attempt := 0; ; attempt++ {
 		var resp BuildTriggerResponse
 
-		err := drapi.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeoutSecs)
+		err := apiclient.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeoutSecs)
 		if err == nil {
 			return &resp, nil
 		}

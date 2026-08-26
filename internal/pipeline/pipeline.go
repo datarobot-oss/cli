@@ -420,8 +420,25 @@ func buildMultipartBody(filePath string, fields map[string]string) (*bytes.Buffe
 // extractErrorDetail attempts to pull a "detail" string from a JSON error body
 // returned by FastAPI. Falls back to the raw body if the field is absent.
 func extractErrorDetail(body []byte) string {
-	if detail := drapi.ErrorDetail(body); detail != "" {
-		return detail
+	if len(body) == 0 {
+		return ""
+	}
+
+	var payload struct {
+		Detail any `json:"detail"`
+	}
+
+	err := json.Unmarshal(body, &payload)
+	if err == nil && payload.Detail != nil {
+		switch detail := payload.Detail.(type) {
+		case string:
+			return detail
+		default:
+			encoded, encErr := json.Marshal(detail)
+			if encErr == nil {
+				return string(encoded)
+			}
+		}
 	}
 
 	return string(body)

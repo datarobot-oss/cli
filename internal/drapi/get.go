@@ -32,6 +32,13 @@ type HTTPError struct {
 	StatusCode int
 	URL        string
 	Detail     string
+
+	// Body is up to 512 bytes of the error response, raw and uninterpreted.
+	// DataRobot's APIs do not agree on an error envelope (FastAPI services
+	// answer {"detail": ...}, the drflask Public API {"message": ...}, a
+	// proxy plain text), so drapi carries the bytes and a caller that knows
+	// its API's shape reads meaning into them — e.g. workload/apiclient.
+	Body []byte
 }
 
 // Error implements the error interface for HTTPError. Both shapes carry the
