@@ -226,6 +226,38 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 	assert.Contains(t, out.String(), "builder running")
 }
 
+func TestMaybeBuild_TriggersInsteadOfAttachingToAWedgedBuild(t *testing.T) {
+	fixedClock(t, time.Second)
+
+	// A non-terminal build older than any wait would tolerate is wedged (an
+	// orphaned trigger, a lost reconcile), not running: attaching would wait
+	// the whole timeout on it, while a fresh trigger supersedes it.
+	stale := time.Date(2026, time.August, 12, 9, 0, 0, 0, time.UTC) // 3h before fixedClock's base
+
+	force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-wedged", Status: "IN_PROGRESS", CreatedAt: stale}}, nil
+	})
+
+	triggered := false
+
+	force(t, &triggerBuildFn, func(string) (*workload.BuildTriggerResponse, error) {
+		triggered = true
+
+		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-new"}}, nil
+	})
+	force(t, &waitBuildFn, func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: "COMPLETED"}, nil
+	})
+
+	var out bytes.Buffer
+
+	buildID, err := maybeBuild("art-1", false, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
+	require.NoError(t, err)
+	assert.True(t, triggered, "a wedged build must be superseded, not attached to")
+	assert.Equal(t, "bld-new", buildID)
+	assert.NotContains(t, out.String(), "attaching")
+}
+
 func TestMaybeBuild_TriggersDespiteRunningBuildWhenCodeChanged(t *testing.T) {
 	fixedClock(t, time.Second)
 

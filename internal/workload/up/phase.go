@@ -154,8 +154,8 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 			// deploy down mid-build. Recovered into the debug log rather
 			// than swallowed, so it stays findable.
 			defer func() {
-				if r := recover(); r != nil {
-					log.Debug("stream header animator panicked", "panic", r)
+				if rec := recover(); rec != nil {
+					log.Debug("stream header animator panicked", "panic", rec)
 				}
 			}()
 

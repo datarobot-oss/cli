@@ -251,6 +251,8 @@ func FollowWorkloadLogs(
 		return err
 	}
 
+	f.gapHint = " (re-run with a larger --limit)"
+
 	for {
 		entries, hadSince, err := f.fetch()
 		if err != nil {
@@ -287,6 +289,11 @@ type logFollower struct {
 	level   string
 	onLine  func(WorkloadLogEntry) error
 	onWarn  func(string)
+
+	// gapHint is appended to the possible-gap warning; it names the remedy,
+	// which only the caller knows (a --limit flag exists on `workload logs`
+	// but not on every stream this follower serves).
+	gapHint string
 
 	dedup           *logDedup
 	cursor          time.Time // newest parsed timestamp; zero means window mode
@@ -385,15 +392,18 @@ func (f *logFollower) fetchFailure(err error, hadSince bool) (retryNow bool, _ e
 func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 	f.transientErrors = 0
 
-	// Newest first from the server; chronological for display.
+	// Newest first from the server; chronological for display. The reverse
+	// gets the bulk order right; the sort settles lines the collector
+	// ingested out of event order.
 	slices.Reverse(entries)
+	sortChronological(entries)
 
 	fresh := f.dedup.filterUnseen(entries)
 
 	// A full window with zero overlap means >limit lines arrived since the
 	// last poll and the excess is unfetchable.
 	if f.seeded && !hadSince && len(entries) == f.limit && len(fresh) == len(entries) {
-		f.onWarn(fmt.Sprintf("possible gap: more than %d new lines arrived since the last poll and some may have been skipped (re-run with a larger --limit)", f.limit))
+		f.onWarn(fmt.Sprintf("possible gap: more than %d new lines arrived since the last poll and some may have been skipped%s", f.limit, f.gapHint))
 	}
 
 	for _, e := range fresh {
@@ -411,6 +421,23 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 	f.seeded = true
 
 	return nil
+}
+
+// sortChronological stable-sorts entries by their parsed timestamps, settling
+// lines the collector ingested out of event order (a build's "#1 DONE"
+// arriving before its "#1 [internal] load"). Unparseable timestamps stay
+// where the server put them.
+func sortChronological(entries []WorkloadLogEntry) {
+	slices.SortStableFunc(entries, func(a, b WorkloadLogEntry) int {
+		ta, aok := parseLogTimestamp(a.Timestamp)
+		tb, bok := parseLogTimestamp(b.Timestamp)
+
+		if !aok || !bok {
+			return 0
+		}
+
+		return ta.Compare(tb)
+	})
 }
 
 // isFilterRejectedError reports whether the server rejected the query params

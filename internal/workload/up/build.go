@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
@@ -337,8 +338,8 @@ func maybeBuild(
 		// of starting a second one. Only safe on this path: when the code
 		// changed, a running build is building the old tree, and a fresh
 		// trigger — which supersedes it server-side — is the correct move.
-		if running := runningBuild(builds); running != "" {
-			report.say("  A build of this code is already running; attaching to it.\n")
+		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
+			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
 
 			return buildImage(artifactID, running, opts, report)
 		}
@@ -350,12 +351,30 @@ func maybeBuild(
 // runningBuild names the newest non-terminal build, "" when there is none
 // (the caller then just triggers, which is the pre-attach behavior and
 // always safe).
-func runningBuild(builds []workload.Build) string {
+func runningBuild(builds []workload.Build, maxAge time.Duration) string {
 	if len(builds) == 0 || workload.IsTerminalBuildStatus(builds[0].Status) {
 		return ""
 	}
 
+	// A non-terminal build older than a wait would ever tolerate is wedged —
+	// an orphaned trigger or a lost reconcile — not running. Attaching would
+	// wait the whole timeout on a build that can never finish; triggering
+	// supersedes it server-side, which is also the cleanup.
+	if !builds[0].CreatedAt.IsZero() && phaseClock().Sub(builds[0].CreatedAt) > maxAge {
+		return ""
+	}
+
 	return builds[0].ID
+}
+
+// attachMaxAge is how old a running build may be and still be worth attaching
+// to: the poll timeout, because a healthy build finishes within one wait.
+func attachMaxAge(opts Options) time.Duration {
+	if opts.PollTimeout > 0 {
+		return opts.PollTimeout
+	}
+
+	return 30 * time.Minute
 }
 
 // changed reports whether anything moved. The sync's own count is preferred

@@ -31,8 +31,9 @@ import (
 // buildLogSeedLimit is how many recent lines seed a build tail. A tail on a
 // freshly triggered build starts from an empty stream, so the seed only
 // matters when attaching to a build already in progress, where the recent
-// tail is the context the user needs.
-const buildLogSeedLimit = 200
+// tail is the context the user needs — a couple of live-window's worth, not
+// the whole history the renderer would immediately slide past.
+const buildLogSeedLimit = 40
 
 // fetchArtifactBuildLogs retrieves one build's log lines newest-first across
 // pages, by filtering the artifact's OTEL stream on external_build_id.
@@ -75,7 +76,8 @@ func NewBuildLogTail(artifactID, buildID string, onLine func(WorkloadLogEntry), 
 
 	// The interval passed here only satisfies the follower's validation; the
 	// caller's poll cadence is the real clock. Level stays the server default
-	// so the stream carries everything the builder said.
+	// (debug) deliberately: dim noise costs a glance, a failure detail the
+	// builder only said at debug costs a debugging session.
 	follower, err := newLogFollower(fetch, buildLogSeedLimit, "", time.Second,
 		func(e WorkloadLogEntry) error { onLine(e); return nil }, onWarn)
 	if err != nil {
