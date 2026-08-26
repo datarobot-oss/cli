@@ -30,6 +30,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
@@ -383,7 +384,10 @@ func TestRun_NoManifestOnATerminalRunsTheWizard(t *testing.T) {
 
 			writeManifest(t, dir, unboundImageManifest)
 
-			return wizard.Result{Path: opts.Dir}, nil
+			// Path is the manifest itself, as the real wizard reports it;
+			// load follows it, so a fake handing back the directory would
+			// send the deploy to the parent.
+			return wizard.Result{Path: manifest.Path(opts.Dir)}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {

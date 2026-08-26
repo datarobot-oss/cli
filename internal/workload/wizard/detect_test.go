@@ -222,3 +222,44 @@ func TestParseProblem_UnrecognizablePayloadYieldsNoLine(t *testing.T) {
 
 	assert.Equal(t, `unexpected character "-" in variable name`, parseProblem(err, "A=1\n"))
 }
+
+// A directory with none of the usual project files is suspect, and the offer
+// is its marker-bearing subdirectories: hidden ones are never the project,
+// empty ones say nothing, and one already holding a manifest is entered with
+// --dir rather than set up afresh.
+func TestDetect_SuspectDirOffersItsProjectLookingSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+
+	app := filepath.Join(dir, "my-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "pyproject.toml"), []byte("[project]\n"), 0o644))
+
+	hidden := filepath.Join(dir, ".cache")
+	require.NoError(t, os.MkdirAll(hidden, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hidden, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0o755))
+
+	configured := filepath.Join(dir, "configured")
+	require.NoError(t, os.MkdirAll(configured, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configured, "go.mod"), []byte("module x\n"), 0o644))
+	require.NoError(t, os.WriteFile(manifest.Path(configured), []byte("name: x\n"), 0o644))
+
+	detected := Detect(dir)
+
+	assert.True(t, detected.SuspectDir())
+	require.Len(t, detected.Candidates, 1)
+	assert.Equal(t, "my-app", detected.Candidates[0].Rel)
+	assert.Equal(t, []string{"Dockerfile", "pyproject.toml"}, detected.Candidates[0].Markers)
+}
+
+// A directory carrying any project file is not suspect, and the subdirectory
+// scan never runs: a directory that looks like a project needs no offer.
+func TestDetect_MarkerBearingDirIsNotSuspect(t *testing.T) {
+	detected := Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\n"))
+
+	assert.False(t, detected.SuspectDir())
+	assert.Contains(t, detected.RootMarkers, "Dockerfile")
+	assert.Empty(t, detected.Candidates)
+}

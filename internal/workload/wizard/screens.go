@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ const namePlaceholder = "my-app-name"
 // runInteractiveFlow asks the questions and returns the manifest the user
 // agreed to. The workload list is fetched up front because the first screen
 // depends on it: with nothing to bind to, there is no binding question.
-func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft, error) {
+func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft, string, error) {
 	// No screen can settle these, so they are not questions the wizard gets to
 	// ask. Started anyway, the error would sit behind the loading view while
 	// the fetch ran, and arriving at the first screen would clear it and drop
@@ -71,7 +72,7 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// never starts.
 	for _, check := range []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive} {
 		if err := check(); err != nil {
-			return nil, manifest.Draft{}, err
+			return nil, manifest.Draft{}, "", err
 		}
 	}
 
@@ -80,7 +81,7 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
 		fetched, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
 		if err != nil {
-			return nil, manifest.Draft{}, err
+			return nil, manifest.Draft{}, "", err
 		}
 
 		workloads = fetched
@@ -101,12 +102,12 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	final, err := tui.Run(started,
 		tea.WithAltScreen(), tea.WithOutput(interactiveOutput(opts.Stderr)))
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	finished, ok := tui.Unwrap(final).(flow)
 	if !ok {
-		return nil, manifest.Draft{}, ErrCancelled
+		return nil, manifest.Draft{}, "", ErrCancelled
 	}
 
 	// Printed here rather than from inside the flow: until tui.Run returns,
@@ -114,7 +115,11 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// underneath a full-screen redraw.
 	reportImport(opts.Stderr, finished.imports)
 
-	return finished.result()
+	content, draft, err := finished.result()
+
+	// The directory screen may have moved the project; the caller writes the
+	// manifest where the flow ended up, not where setup was started.
+	return content, draft, finished.detected.Dir, err
 }
 
 // interactiveOutput is where the wizard draws. bubbletea needs the real
@@ -139,7 +144,7 @@ func (f *flow) enter(at screen) {
 	case screenBinding, screenExecEnv:
 		f.enterPicker(at)
 
-	case screenKind, screenA2A, screenSource:
+	case screenKind, screenA2A, screenSource, screenDirectory:
 		f.enterChoice(at)
 		f.choice.liveValue = f.liveChoice(at)
 
@@ -189,14 +194,39 @@ func (f *flow) enterPicker(at screen) {
 		}
 
 	case screenName, screenKind, screenA2A, screenSource, screenEntrypoint,
-		screenImage, screenSettings, screenEnv, screenConfirm:
+		screenImage, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		// Not lists.
 	}
+}
+
+// directoryOptions is the directory question's offer: the subdirectories
+// that look like project roots first — the likely intent, so the cursor
+// opens on the fix — and staying put last, because the check is a suspicion
+// and being wrong about it has to cost one keystroke.
+func (f flow) directoryOptions() []option {
+	options := make([]option, 0, len(f.detected.Candidates)+1)
+
+	for _, candidate := range f.detected.Candidates {
+		options = append(options, option{
+			value: filepath.Join(f.detected.Dir, candidate.Rel),
+			label: "./" + candidate.Rel,
+			note:  "has " + strings.Join(candidate.Markers, ", "),
+		})
+	}
+
+	return append(options, option{
+		value: f.detected.Dir,
+		label: "Use this directory anyway",
+		note:  "everything under it is uploaded on deploy",
+	})
 }
 
 // enterChoice prepares the menu screens.
 func (f *flow) enterChoice(at screen) {
 	switch at {
+	case screenDirectory:
+		f.choice = newChoice(f.directoryOptions(), "", "")
+
 	case screenKind:
 		f.choice = newChoice([]option{
 			{value: manifest.TypeService, label: "Service", note: "standard HTTP workload"},
@@ -255,7 +285,8 @@ func (f *flow) enterInputs(at screen) {
 		// screen has no tea.Cmd of its own to return it through.
 		f.focusCmd = f.applyFocus()
 
-	case screenBinding, screenExecEnv, screenKind, screenA2A, screenSource, screenEnv, screenConfirm:
+	case screenBinding, screenExecEnv, screenKind, screenA2A, screenSource, screenEnv,
+		screenConfirm, screenDirectory:
 		// No text entry.
 	}
 }
@@ -340,7 +371,7 @@ func (f flow) liveChoice(at screen) string {
 	case screenSource:
 		return live.Build.Mode
 	case screenBinding, screenName, screenExecEnv, screenEntrypoint,
-		screenImage, screenSettings, screenEnv, screenConfirm:
+		screenImage, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		return ""
 	}
 
@@ -399,6 +430,11 @@ func (f flow) sourceConflictNote() string {
 // screen is shown, read before anything is answered.
 func (f flow) screenIntro() string {
 	switch f.at {
+	case screenDirectory:
+		return "Deploying uploads everything under the project directory and builds from it, so " +
+			"running setup from the wrong place — the app's parent, most often — fails minutes later, " +
+			"after the questions are answered. This is a suspicion, not a verdict: staying put is fine " +
+			"if this really is the project."
 	case screenName:
 		return ""
 	case screenKind:
@@ -434,7 +470,7 @@ func (f flow) screenNote() string {
 		return f.confirmNote()
 	case screenKind, screenSource, screenImage, screenExecEnv:
 		return f.boundScreenNote()
-	case screenName, screenA2A, screenEntrypoint:
+	case screenName, screenA2A, screenEntrypoint, screenDirectory:
 		return ""
 	}
 
@@ -455,7 +491,7 @@ func (f flow) boundScreenNote() string {
 	case screenImage:
 		return f.liveValuesNote()
 	case screenBinding, screenName, screenA2A, screenExecEnv,
-		screenEntrypoint, screenSettings, screenEnv, screenConfirm:
+		screenEntrypoint, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		return ""
 	}
 
@@ -465,6 +501,7 @@ func (f flow) boundScreenNote() string {
 // questions is what each screen asks. Phrasing them in one place keeps the
 // wizard sounding like one voice rather than ten.
 var questions = map[screen]string{
+	screenDirectory:  "This directory has none of the usual project files. Deploy which one?",
 	screenBinding:    "Which workload should this repository deploy to?",
 	screenName:       "Name of your workload",
 	screenKind:       "What kind of workload is this?",
@@ -494,7 +531,7 @@ func (f flow) body() string {
 	case screenBinding, screenExecEnv:
 		return f.picker.view(f.width)
 
-	case screenKind, screenSource:
+	case screenKind, screenSource, screenDirectory:
 		return f.choice.view()
 
 	case screenEnv:

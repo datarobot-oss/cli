@@ -40,8 +40,10 @@ func SetStdinTerminalForTest(isTerminal bool) func() {
 }
 
 // SetInteractiveFlowForTest replaces the wizard itself, so a command-level
-// test can tell whether it would have run.
-func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, error)) func() {
+// test can tell whether it would have run. The string is the project
+// directory the flow settled on, which is Detected.Dir unless the user chose
+// another on the directory screen.
+func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, string, error)) func() {
 	original := runInteractiveFlowFn
 	runInteractiveFlowFn = flow
 
@@ -130,10 +132,16 @@ func Run(opts Options) (Result, error) {
 		warnUnreadEnvFile(opts.Stderr, detected)
 	}
 
-	content, draft, err := opts.resolve(detected)
+	content, draft, projectDir, err := opts.resolve(detected)
 	if err != nil {
 		return Result{}, err
 	}
+
+	// The interactive flow may have moved the project: everything from here
+	// on — the write, the validation's Dockerfile check, the reported path —
+	// belongs to the directory resolve settled on, which headless runs return
+	// unchanged.
+	path = manifest.Path(projectDir)
 
 	// A file that came from a running workload is judged as the platform's
 	// news, not as a bug in the wizard.
@@ -142,7 +150,7 @@ func Run(opts Options) (Result, error) {
 		author = authorLive
 	}
 
-	if err := checkRendered(content, dir, author); err != nil {
+	if err := checkRendered(content, projectDir, author); err != nil {
 		return Result{}, err
 	}
 
@@ -199,8 +207,10 @@ func existing(path string) (Result, error) {
 }
 
 // resolve produces the manifest bytes, from flags alone when nothing may
-// prompt and from the wizard otherwise.
-func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, error) {
+// prompt and from the wizard otherwise. The directory it returns is where the
+// project actually is: Detected.Dir, unless the interactive flow's directory
+// screen chose another.
+func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, error) {
 	if o.NonInteractive || !isStdinTerminalFn() {
 		return o.resolveHeadless(detected)
 	}
@@ -208,24 +218,56 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, error) {
 	return runInteractiveFlowFn(o, detected)
 }
 
-func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, error) {
+func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, string, error) {
+	// Headless can warn but not offer: the check that interactively becomes
+	// the directory question is a line on stderr here, and never a refusal —
+	// a valid project cannot be reliably recognized, so a wrong guess has to
+	// cost nothing.
+	warnSuspectDir(o.Stderr, detected)
+
 	if o.Answers.WorkloadID != "" {
 		return o.resolveHeadlessBound(detected)
 	}
 
 	draft, err := o.Answers.draft(detected)
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
 
 	content, err := draft.Render()
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
-	return content, draft, nil
+	return content, draft, detected.Dir, nil
+}
+
+// warnSuspectDir says when the directory looks like the wrong place to run
+// setup from — none of the usual project files — and names the subdirectories
+// that look right, because the fix is one --dir away and this is the last
+// moment before six questions and an artifact are spent on the wrong tree.
+func warnSuspectDir(w io.Writer, detected Detected) {
+	if !detected.SuspectDir() {
+		return
+	}
+
+	line := fmt.Sprintf("Warning: %s has none of the usual project files (Dockerfile, pyproject.toml, "+
+		"package.json, ...). If this is not the project root, everything here would be uploaded on deploy.",
+		detected.Dir)
+
+	if len(detected.Candidates) > 0 {
+		names := make([]string, 0, len(detected.Candidates))
+		for _, candidate := range detected.Candidates {
+			names = append(names, candidate.Rel)
+		}
+
+		line += fmt.Sprintf(" These look like project roots: %s — pass --dir to use one.",
+			strings.Join(names, ", "))
+	}
+
+	fmt.Fprintln(w, line)
 }
 
 // storeSecrets sends each secret to the credential store and reports what
@@ -251,19 +293,19 @@ func (o Options) storeSecrets(vars []manifest.EnvVar, detected Detected, workloa
 // resolveHeadlessBound binds to a live workload without prompting: the live
 // spec is downloaded and the flags are applied on top, so a headless bind is
 // the same operation the picker performs.
-func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft, error) {
+func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft, string, error) {
 	live, err := fetchLive(o.Answers.WorkloadID)
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	if err := o.Answers.checkProbeEditable(live); err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	draft, err := o.Answers.applyTo(live.Defaults(), detected)
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	// A name the workload already declares keeps its running value, so it is
@@ -276,12 +318,12 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 
 	applied, err := live.Apply(draft)
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	content, err := applied.Render()
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	// Read off the workload as it arrived, not off applied: the point is what
@@ -289,7 +331,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// above has no file to warn about.
 	warnLiveSecretLiterals(o.Stderr, live)
 
-	return content, draft, nil
+	return content, draft, detected.Dir, nil
 }
 
 // applyTo layers the flags over defaults that already came from somewhere

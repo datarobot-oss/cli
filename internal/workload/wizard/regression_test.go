@@ -1413,7 +1413,7 @@ func TestFlow_ConfirmPreviewDoesNotOfferScrollingItDoesNotNeed(t *testing.T) {
 // open on it: the error would sit behind the loading view, the fetch would
 // run anyway, and arriving at the first screen would clear it.
 func TestRunInteractiveFlow_RejectsWorkloadIDWithName(t *testing.T) {
-	_, _, err := runInteractiveFlow(
+	_, _, _, err := runInteractiveFlow(
 		Options{Dir: t.TempDir(), Answers: Answers{WorkloadID: "68b0", Name: "my-app"}},
 		dockerfileProject(t))
 	require.Error(t, err)
@@ -1697,4 +1697,60 @@ func TestFlow_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
 	// The running value stands: .env is the developer's copy and may be stale.
 	assert.Contains(t, string(model.content), "value: info")
 	assert.NotContains(t, string(model.content), "value: debug")
+}
+
+// parentOfProject is setup run from the wrong place: the directory itself
+// carries nothing, and the app sits one level down with a Dockerfile whose
+// EXPOSE the re-detection must pick up.
+func parentOfProject(t *testing.T) Detected {
+	t.Helper()
+
+	dir := t.TempDir()
+	app := filepath.Join(dir, "my-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	writeDockerfile(t, app, "FROM scratch\nEXPOSE 3000\n")
+
+	return Detect(dir)
+}
+
+// Run from a directory that looks wrong, the wizard's first question is the
+// directory itself — before the name, because every suggestion the other
+// screens show was read from it.
+func TestFlow_SuspectDirAsksForTheDirectoryFirst(t *testing.T) {
+	model := newFlow(parentOfProject(t), nil, Answers{})
+	require.Equal(t, screenDirectory, model.at)
+
+	// The cursor opens on the candidate — the likely intent — and choosing it
+	// re-reads everything from the chosen directory: the name suggestion and
+	// the EXPOSE port now belong to the app, not its parent.
+	model = press(t, model, "enter")
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenName, model.at)
+	assert.Equal(t, "my-app", model.detected.Name)
+	assert.True(t, model.detected.HasDockerfile)
+	assert.Equal(t, 3000, model.draft.Port)
+	assert.False(t, model.detected.SuspectDir())
+}
+
+// Staying put is one keystroke past the offer, because the check is a
+// suspicion: a valid project cannot be reliably recognized, and being wrong
+// must be cheap.
+func TestFlow_SuspectDirCanBeKeptAnyway(t *testing.T) {
+	detected := parentOfProject(t)
+
+	model := newFlow(detected, nil, Answers{})
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "down", "enter")
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenName, model.at)
+	assert.Equal(t, detected.Dir, model.detected.Dir, "the directory setup ran from stands")
+}
+
+// A suspect directory with nothing to offer has no question to ask: an offer
+// needs candidates, and the headless warning covers the rest.
+func TestFlow_SuspectDirWithoutCandidatesAsksNothingExtra(t *testing.T) {
+	model := newFlow(Detect(t.TempDir()), nil, Answers{})
+
+	assert.Equal(t, screenName, model.at)
 }

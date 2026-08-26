@@ -211,10 +211,10 @@ func TestCmd_JSONImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
@@ -238,10 +238,10 @@ func TestCmd_YesImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
