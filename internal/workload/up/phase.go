@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -75,11 +76,16 @@ func (r *reporter) work(label string, fn func() error) error {
 	return fn()
 }
 
+// streamSpinnerFrames are spinner.Dot's frames, so a streamed phase's header
+// animates exactly like the spinner every other phase shows.
+var streamSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+
 // stream executes one phase whose progress arrives as text lines rather than
-// a spinner. The label prints first as a header, fn's lines print dimmed and
-// indented beneath it as they arrive, and the check-marked line with the
-// elapsed time prints after — so the spinner and the stream never fight over
-// the terminal (no spinner runs at all during a streamed phase).
+// a spinner. The label prints first as a header — animated in place on the
+// terminal, so it moves like every other phase's spinner — fn's lines print
+// styled and indented beneath it as they arrive, and the check-marked line
+// with the elapsed time prints after. The animation repaints only the header
+// row, never the cursor's own line, so it cannot fight with the stream.
 //
 // On the terminal, every line is truncated to the width so it occupies
 // exactly one row, and a phase that SUCCEEDS erases its stream — header
@@ -95,14 +101,41 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 	fmt.Fprintf(r.out, "  %s %s\n", tui.HintStyle.Render("⠿"), label)
 
 	// r.spinner is the "out is the terminal the user is watching" flag; a
-	// width is only meaningful, and erasing only safe, on that terminal.
+	// width is only meaningful, and cursor games only safe, on that terminal.
 	width := 0
 	if r.spinner {
 		width = streamWidth()
 	}
 
+	var mu sync.Mutex
+
 	rows := 0
+
+	// repaintHeader rewrites the header row, which sits rows+1 rows above the
+	// cursor — exact because every streamed line occupies one row. The caller
+	// holds mu.
+	repaintHeader := func(glyph string) {
+		fmt.Fprintf(r.out, "\x1b[%dA\r  %s %s\x1b[K\x1b[%dB\r", rows+1, glyph, label, rows+1)
+	}
+
+	stop := make(chan struct{})
+
+	var animator sync.WaitGroup
+
+	if width > 0 {
+		animator.Add(1)
+
+		go func() {
+			defer animator.Done()
+
+			animateStreamHeader(stop, &mu, repaintHeader)
+		}()
+	}
+
 	say := func(line string, style lipgloss.Style) {
+		mu.Lock()
+		defer mu.Unlock()
+
 		// A message with newlines would break the one-row-per-line math.
 		for _, part := range strings.Split(line, "\n") {
 			if width > 0 {
@@ -115,7 +148,20 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 		}
 	}
 
-	if err := fn(say); err != nil {
+	err := fn(say)
+
+	if width > 0 {
+		close(stop)
+		animator.Wait()
+	}
+
+	if err != nil {
+		// A dead animation frame must not outlive the phase; the static
+		// glyph says "this phase stopped here" above the kept lines.
+		if width > 0 {
+			repaintHeader(tui.HintStyle.Render("⠿"))
+		}
+
 		return err
 	}
 
@@ -128,6 +174,28 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 	r.done(label, phaseClock().Sub(started))
 
 	return nil
+}
+
+// animateStreamHeader cycles the header glyph until stop closes, locking mu
+// around each repaint so frames never interleave with streamed lines.
+func animateStreamHeader(stop <-chan struct{}, mu *sync.Mutex, repaint func(glyph string)) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	frame := 0
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			mu.Lock()
+			repaint(tui.InfoStyle.Render(streamSpinnerFrames[frame%len(streamSpinnerFrames)]))
+			mu.Unlock()
+
+			frame++
+		}
+	}
 }
 
 // streamWidth returns the width of the terminal the stream renders on, 0 when
