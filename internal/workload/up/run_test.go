@@ -2123,6 +2123,46 @@ func TestRun_ReplacementForADivergedSpecJoinsTheSameLineage(t *testing.T) {
 	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID)
 }
 
+// The same lineage question asked of an agent, which is what makes it a
+// regression test rather than a duplicate.
+//
+// The comparison that decides whether the linked draft still matches used to
+// normalise the live document in place, taking the type off it. The next line
+// read that type to pick the repository, found nothing, defaulted it to
+// service, and concluded the file had changed the artifact's kind. Every
+// redraft of an agent therefore started a new lineage instead of joining its
+// own, silently and permanently. Nothing caught it because every other fixture
+// here is a service, where the default happens to be the right answer.
+func TestRun_ReplacementForADivergedAgentJoinsTheSameLineage(t *testing.T) {
+	var tr track
+
+	f := divergedLink(wiredBuild(&tr), &tr)
+
+	inner := f.artifactD
+	f.artifactD = func(id string) (workload.Document, error) {
+		d, err := inner(id)
+		if err != nil {
+			return nil, err
+		}
+
+		d[keyType] = "agent"
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	agent := strings.Replace(unboundDockerfileManifest, "type: service", "type: agent", 1)
+
+	_, _, err := runIn(t, agent, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1",
+		"an agent redraft joins its own lineage, exactly as a service does")
+}
+
 // The other half of that equivalence. The tree was already synced into the
 // artifact the file has since diverged from, so the sync onto its replacement
 // can find nothing to upload and the new version would go to the builder with

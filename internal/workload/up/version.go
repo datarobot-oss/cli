@@ -384,6 +384,15 @@ func describes(loaded Loaded, artifactID string) bool {
 // it, or that needs the lock status off the same read, pays one round trip
 // instead of two to the same resource.
 func specMatches(loaded Loaded, doc workload.Document) (bool, error) {
+	// The comparison below normalises both sides in place, and the live side
+	// belongs to the caller. ensureArtifact hands the same document to
+	// redraftRepository immediately afterwards, which reads the type off it;
+	// left shared, this would take that type away, an agent would read as a
+	// service, and the replacement would open a new repository rather than
+	// joining the lineage it is a version of. A silent lineage fork on the
+	// recovery path is a poor price for one map allocation.
+	doc = detachedArtifact(doc)
+
 	payload, err := loaded.Compiled.ArtifactPayload()
 	if err != nil {
 		return false, err
@@ -416,7 +425,7 @@ func specMatches(loaded Loaded, doc workload.Document) (bool, error) {
 	// attempt refuses that one too. It is the same question the plan asks, so
 	// it is asked the same way, folded and with only the live side defaulted.
 	if !sameArtifactTypeIn(want, doc) {
-		return false
+		return false, nil
 	}
 
 	// Both directions, which is the difference between this and measuring
@@ -426,6 +435,36 @@ func specMatches(loaded Loaded, doc workload.Document) (bool, error) {
 	// reused, and it is rolled out still carrying the variable that was
 	// deleted, which minting a fresh artifact would have dropped.
 	return len(Subset(want, doc)) == 0 && len(Extra(want, doc)) == 0, nil
+}
+
+// detachedArtifact is doc with the two maps the normalisation writes to copied,
+// so a caller's document survives being compared.
+//
+// It copies exactly what hoistArtifactType and sameArtifactTypeIn touch: the
+// top level, where the type is written and then removed, and the spec, where a
+// type written inside it is deleted from. Everything deeper is shared, which is
+// safe because nothing below reaches it, and a deep copy of a document that can
+// carry an entire container spec is not worth paying for a two-key edit.
+func detachedArtifact(doc workload.Document) workload.Document {
+	if doc == nil {
+		return nil
+	}
+
+	out := make(workload.Document, len(doc))
+	for k, v := range doc {
+		out[k] = v
+	}
+
+	if spec, ok := out[keySpec].(map[string]any); ok {
+		copied := make(map[string]any, len(spec))
+		for k, v := range spec {
+			copied[k] = v
+		}
+
+		out[keySpec] = copied
+	}
+
+	return out
 }
 
 // sameArtifactTypeIn reports whether two artifact blocks name the same kind,
