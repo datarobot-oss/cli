@@ -276,13 +276,20 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 	if len(e.plan.Uploads) > 0 {
 		uploader := ChooseUploader(e.plan)
 
-		cid, vid, err := uploader.ApplyUploads(e, e.plan.Uploads)
+		outcome, err := uploader.ApplyUploads(e, e.plan.Uploads)
 		if err != nil {
 			return "", "", err
 		}
 
-		newCatalogID = cid
-		newVersionID = vid
+		// Store the outcome on the engine so Phase 6 can read
+		// outcome.Sent[path]. The phase pipeline runs each phase
+		// independently via runPhases with no per-phase return
+		// threading, so Engine state is the only channel between
+		// Phase 5 and Phase 6.
+		e.uploadOutcome = &outcome
+
+		newCatalogID = outcome.CatalogID
+		newVersionID = outcome.VersionID
 	}
 
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {

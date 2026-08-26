@@ -16,6 +16,7 @@ package sync
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,28 +28,34 @@ import (
 // missing, create stage, upload each file, apply stage.
 type StageUploader struct{}
 
-// ApplyUploads pushes files via the stage workflow.
-func (StageUploader) ApplyUploads(e *Engine, files []FileAction) (string, string, error) {
+// ApplyUploads pushes files via the stage workflow and returns the per-path
+// streamed hashes so Phase 6 can record what the server actually received.
+func (StageUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
 	catalogID, err := ensureCatalog(e)
 	if err != nil {
-		return "", "", err
+		return UploadOutcome{}, err
 	}
 
 	stage, err := e.files.CreateStage(catalogID)
 	if err != nil {
-		return "", "", fmt.Errorf("create stage: %w", err)
+		return UploadOutcome{}, fmt.Errorf("create stage: %w", err)
 	}
 
-	if err := uploadFilesParallel(e, catalogID, stage.StageID, files); err != nil {
-		return "", "", err
+	sent, err := uploadFilesParallel(e, catalogID, stage.StageID, files)
+	if err != nil {
+		return UploadOutcome{}, err
 	}
 
 	apply, err := e.files.ApplyStage(catalogID, stage.StageID, filesapi.OverwriteReplace)
 	if err != nil {
-		return "", "", fmt.Errorf("apply stage: %w", err)
+		return UploadOutcome{}, fmt.Errorf("apply stage: %w", err)
 	}
 
-	return catalogID, apply.CatalogVersionID, nil
+	return UploadOutcome{
+		CatalogID: catalogID,
+		VersionID: apply.CatalogVersionID,
+		Sent:      sent,
+	}, nil
 }
 
 // ensureCatalog returns the catalog ID, creating a new one when neither
@@ -66,12 +73,23 @@ func ensureCatalog(e *Engine) (string, error) {
 	return cat.CatalogID, nil
 }
 
-// uploadFilesParallel uploads files up to UploadConcurrency. The first
-// error closes done to stop other workers from starting; in-flight
-// workers still finish their current upload before the function returns.
-func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileAction) error {
+// uploadResult carries one file's streamed hash and size from a worker
+// goroutine to the orchestrator via a buffered result channel, matching the
+// existing errCh convention rather than adding a mutex-guarded map.
+type uploadResult struct {
+	path  string
+	entry FileEntry
+}
+
+// uploadFilesParallel uploads files up to UploadConcurrency and collects
+// per-path streamed hashes. The first error closes done to stop other workers
+// from starting; in-flight workers still finish their current upload before
+// the function returns. Both errCh and resCh are buffered to len(files) so a
+// send never blocks or drops. resCh is closed by the orchestrator only, after
+// wg.Wait, following the same convention as errCh.
+func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileAction) (map[string]FileEntry, error) {
 	if len(files) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	done := make(chan struct{})
@@ -83,6 +101,7 @@ func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileActio
 
 	sem := make(chan struct{}, UploadConcurrency)
 	errCh := make(chan error, len(files))
+	resCh := make(chan uploadResult, len(files))
 
 	var wg sync.WaitGroup
 
@@ -103,39 +122,68 @@ func uploadFilesParallel(e *Engine, catalogID, stageID string, files []FileActio
 
 			defer func() { <-sem }()
 
-			if err := uploadOneToStage(e, catalogID, stageID, fa); err != nil {
+			entry, err := uploadOneToStage(e, catalogID, stageID, fa)
+			if err != nil {
 				select {
 				case errCh <- err:
 					cancel()
 				default:
 				}
+
+				return
 			}
+
+			resCh <- uploadResult{path: fa.Path, entry: entry}
 		}()
 	}
 
 	wg.Wait()
 	close(errCh)
+	close(resCh)
 
 	if err := <-errCh; err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	sent := make(map[string]FileEntry, len(files))
+
+	for r := range resCh {
+		sent[r.path] = r.entry
+	}
+
+	return sent, nil
 }
 
-func uploadOneToStage(e *Engine, catalogID, stageID string, fa FileAction) error {
+func uploadOneToStage(e *Engine, catalogID, stageID string, fa FileAction) (FileEntry, error) {
 	abs := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
 
 	f, err := os.Open(abs)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", fa.Path, err)
+		return FileEntry{}, fmt.Errorf("open %s: %w", fa.Path, err)
 	}
 
 	defer func() { _ = f.Close() }()
 
-	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, fa.LocalSize, f); err != nil {
-		return fmt.Errorf("upload %s: %w", fa.Path, err)
+	// Content-length from the already-open handle, not a fresh os.Stat: a
+	// fresh stat reopens the TOCTOU window and can follow a symlink swapped
+	// in since the plan phase. Do not abort merely because this differs from
+	// fa.LocalSize — a mid-run edit is legitimate; upload the current bytes
+	// and let the recorded hash be the truth.
+	stat, err := f.Stat()
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("stat %s: %w", fa.Path, err)
 	}
 
-	return nil
+	size := stat.Size()
+
+	// Hash the exact bytes streamed, not the Phase-2 planned hash. TeeReader
+	// is the right primitive: UploadToStage pipes the body through io.Copy,
+	// so every byte that reaches the wire passes through the hasher.
+	h := newStreamHasher()
+
+	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, size, io.TeeReader(f, h)); err != nil {
+		return FileEntry{}, fmt.Errorf("upload %s: %w", fa.Path, err)
+	}
+
+	return streamedEntry(h, size), nil
 }

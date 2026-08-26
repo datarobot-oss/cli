@@ -52,7 +52,11 @@ func phase6State(e *Engine) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	manifest := buildNewBaseManifest(e, versionForState, now)
+	manifest, err := buildNewBaseManifest(e, versionForState, now)
+	if err != nil {
+		return fmt.Errorf("build manifest: %w", err)
+	}
+
 	if err := wapi.SaveManifest(e.projectDir, manifest); err != nil {
 		return fmt.Errorf("save manifest: %w", err)
 	}
@@ -72,9 +76,13 @@ func phase6State(e *Engine) error {
 	return nil
 }
 
-// buildNewBaseManifest computes NEW_BASE = REMOTE + uploads (local hashes)
-// - deletes, with conflicts resolved as remote-wins.
-func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time) wapi.Manifest {
+// buildNewBaseManifest computes NEW_BASE = REMOTE + uploads (streamed hashes)
+// - deletes, with conflicts resolved as remote-wins. Each uploaded path's
+// hash and size come from the UploadOutcome recorded in Phase 5 — the bytes
+// that actually crossed the wire, not the Phase-2 planned hash. A missing
+// Sent entry is a hard error naming the path: a per-path fallback to the
+// planned hash IS the original poisoning bug and must not exist here.
+func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time) (wapi.Manifest, error) {
 	files := make(map[string]wapi.FileMeta, len(e.remote))
 
 	for path, fe := range e.remote {
@@ -82,7 +90,20 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	}
 
 	for _, fa := range e.plan.Uploads {
-		files[fa.Path] = wapi.FileMeta{Hash: fa.LocalHash, Size: fa.LocalSize}
+		if e.uploadOutcome == nil {
+			return wapi.Manifest{}, fmt.Errorf("internal: no upload outcome recorded for %s", fa.Path)
+		}
+
+		sent, ok := e.uploadOutcome.Sent[fa.Path]
+		if !ok {
+			// Refuse rather than fall back: phase6 overwrites unconditionally,
+			// so a per-path fallback to fa.LocalHash silently reintroduces
+			// the poisoning. Either every upload has a Sent entry, or the
+			// sync fails.
+			return wapi.Manifest{}, fmt.Errorf("internal: no streamed hash recorded for %s", fa.Path)
+		}
+
+		files[fa.Path] = wapi.FileMeta{Hash: sent.Hash, Size: sent.Size}
 	}
 
 	for _, fa := range e.plan.Deletes {
@@ -105,7 +126,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 		SyncedAt:        &syncedAtCopy,
 		SyncedVersionID: &versionCopy,
 		Files:           files,
-	}
+	}, nil
 }
 
 // syncHistoryEntry assembles the JSONL line written to history.log.
