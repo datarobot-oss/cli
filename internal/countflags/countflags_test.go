@@ -72,6 +72,19 @@ func TestPositiveInt_RejectsGarbage(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestPositiveInt_RejectsOutOfRangeValues(t *testing.T) {
+	cmd := &cobra.Command{}
+
+	var limit int
+
+	cmd.Flags().Var(PositiveInt(&limit, 100), "limit", "usage")
+
+	// Beyond the int64 range strconv.ParseInt itself reports "value out of
+	// range"; nothing is truncated or silently clamped.
+	err := cmd.ParseFlags([]string{"--limit", "99999999999999999999"})
+	require.Error(t, err)
+}
+
 func TestNonNegativeInt_AllowsZero(t *testing.T) {
 	cmd := &cobra.Command{}
 

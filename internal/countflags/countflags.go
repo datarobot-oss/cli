@@ -24,6 +24,7 @@ package countflags
 
 import (
 	"errors"
+	"math"
 	"strconv"
 
 	"github.com/spf13/pflag"
@@ -57,13 +58,18 @@ func NonNegativeInt(p *int, value int) pflag.Value {
 
 // Set parses s with the same base-0, 64-bit semantics as pflag's built-in
 // int flag, so the only behavior change versus IntVar is the bound check.
+// The parsed int64 is also checked against the platform int maximum before
+// narrowing: int is 32-bit on some architectures, and an unchecked
+// conversion would silently truncate (CodeQL incorrect-conversion-between-
+// integer-types). On 64-bit builds the upper bound is unreachable and only
+// documents intent.
 func (v *boundedIntValue) Set(s string) error {
 	parsed, err := strconv.ParseInt(s, 0, 64)
 	if err != nil {
 		return err
 	}
 
-	if parsed < int64(v.min) {
+	if parsed < int64(v.min) || parsed > math.MaxInt {
 		return errors.New(v.msg)
 	}
 
