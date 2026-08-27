@@ -652,10 +652,19 @@ func TestRun_ConflictWithADeadHolderAdvisesDeleteNotRebinding(t *testing.T) {
 			_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
 			require.Error(t, err)
 
-			assert.Contains(t, err.Error(), "dr workload delete wl-dead", "the exit is the delete")
+			assert.Contains(t, err.Error(), "dr workload delete wl-dead --dir ",
+				"the exit is the delete, carrying the flag that reaches this project")
 			assert.Contains(t, err.Error(), status, "say why binding is not offered")
 			assert.NotContains(t, err.Error(), "workloadId: wl-dead",
 				"binding advice against a dead holder is the loop this exists to break")
+
+			// Errored is the one dead-looking state that can recover, so it is
+			// hedged with diagnosis first; terminated really is final.
+			if status == workload.WorkloadStatusErrored {
+				assert.Contains(t, err.Error(), "dr workload logs wl-dead", "diagnosis before deletion")
+			} else {
+				assert.NotContains(t, err.Error(), "dr workload logs", "no hedge for a state that cannot recover")
+			}
 		})
 	}
 }
