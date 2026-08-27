@@ -60,7 +60,7 @@ func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, 
 		return fmt.Errorf("build upload url: %w", err)
 	}
 
-	req, err := newStreamingMultipartRequest(requestURL, nil, name, size, body)
+	req, err := newStreamingMultipartRequest(requestURL, nil, nil, name, size, body)
 	if err != nil {
 		return err
 	}
