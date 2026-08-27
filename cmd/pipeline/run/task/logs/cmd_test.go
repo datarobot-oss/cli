@@ -70,3 +70,11 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected --%s flag", name)
 	}
 }
+
+func TestCmd_RejectsNegativeTail(t *testing.T) {
+	// --tail 0 stays valid (no limit); negatives die at parse time via
+	// countflags.NonNegativeInt, before any request is made.
+	err := runCmd(t, "--pipeline", "p-1", "--run", "d-1", "--tail", "-1", "1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a non-negative integer")
+}
