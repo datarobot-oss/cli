@@ -34,11 +34,14 @@ import (
 
 const wireID = "68b0c1d2e3f4a5b6c7d8e9f0"
 
-// TestUnboundID covers the whole feature end to end for every verb that takes
-// an id: the workloadId in .datarobot.yaml reaches the request URL, and the
-// notice naming it goes to the command's stderr rather than the process's.
-// The per-leaf tests only check arity, so this is what catches a leaf that
-// forgot to resolve.
+// TestUnboundID covers the feature end to end for the verbs that take an id:
+// the workloadId in .datarobot.yaml reaches the request URL, and the notice
+// naming it goes to the command's stderr rather than the process's. The
+// per-leaf tests only check arity, so this is what catches a leaf that forgot
+// to resolve.
+//
+// `stop` is covered by its own confirmation test instead, because a stopped
+// workload is the state the others would then be read against.
 func TestUnboundID(t *testing.T) {
 	var (
 		mu   sync.Mutex
@@ -74,13 +77,16 @@ func TestUnboundID(t *testing.T) {
 	t.Chdir(dir)
 
 	for _, c := range []struct {
-		verb string
-		want string
+		verb  string
+		want  string
+		extra []string
 	}{
-		{"status", "GET /api/v2/workloads/" + wireID + "/"},
-		{"get", "GET /api/v2/workloads/" + wireID + "/"},
-		{"endpoint", "GET /api/v2/workloads/" + wireID + "/"},
-		{"logs", "GET /api/v2/otel/workload/" + wireID + "/logs/"},
+		{"status", "GET /api/v2/workloads/" + wireID + "/", nil},
+		{"get", "GET /api/v2/workloads/" + wireID + "/", nil},
+		{"endpoint", "GET /api/v2/workloads/" + wireID + "/", nil},
+		{"logs", "GET /api/v2/otel/workload/" + wireID + "/logs/", nil},
+		{"start", "POST /api/v2/workloads/" + wireID + "/start", []string{"--yes"}},
+		{"delete", "DELETE /api/v2/workloads/" + wireID + "/", []string{"--yes"}},
 	} {
 		t.Run(c.verb, func(t *testing.T) {
 			mu.Lock()
@@ -90,7 +96,9 @@ func TestUnboundID(t *testing.T) {
 			var stderr bytes.Buffer
 
 			cmd := Cmd()
-			cmd.SetArgs([]string{c.verb})
+			// The mutating verbs ask about a workload they were not given, so
+			// they are answered here; resolution is what this is testing.
+			cmd.SetArgs(append([]string{c.verb}, c.extra...))
 			cmd.SetErr(&stderr)
 
 			require.NoError(t, cmd.Execute())
@@ -99,6 +107,7 @@ func TestUnboundID(t *testing.T) {
 			defer mu.Unlock()
 
 			assert.Contains(t, seen, c.want)
+			restoreManifest(t, dir)
 			assert.Contains(t, stderr.String(), wireID)
 			assert.Contains(t, stderr.String(), manifest.FileName)
 		})
@@ -136,4 +145,13 @@ func TestUnboundID_SilentInJSON(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.Empty(t, stderr.String())
+}
+
+// A successful delete takes the binding back out of the manifest, so the rows
+// after it would have nothing to resolve.
+func restoreManifest(t *testing.T, dir string) {
+	t.Helper()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, manifest.FileName),
+		[]byte("workloadId: "+wireID+"\nname: my-app\n"), 0o600))
 }

@@ -78,9 +78,9 @@ Example:
 
 	idargs.AddDirFlag(cmd)
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id":        ref.ID,
+			"workload_id":        idargs.TelemetryID(ref, args),
 			"workload_id_source": ref.Source,
 		}
 	})

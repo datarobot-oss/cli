@@ -99,10 +99,10 @@ Example:
 					fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+msg)
 				}
 
-				return workload.FollowWorkloadLogs(cmd.Context(), ref.ID, limit, parsedLevel, interval,
+				return ref.Wrap(workload.FollowWorkloadLogs(cmd.Context(), ref.ID, limit, parsedLevel, interval,
 					func(e workload.WorkloadLogEntry) error {
 						return workload.RenderWorkloadLogLine(outputFormat, e)
-					}, onWarn)
+					}, onWarn))
 			}
 
 			entries, err := workload.GetWorkloadLogs(ref.ID, limit, parsedLevel)
@@ -124,11 +124,11 @@ Example:
 		"Interval between polls when --follow is set.")
 	_ = cmd.Flags().MarkHidden("poll-interval")
 
-	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
 
 		return map[string]any{
-			"workload_id":        ref.ID,
+			"workload_id":        idargs.TelemetryID(ref, args),
 			"workload_id_source": ref.Source,
 			"limit":              limit,
 			"level":              level,

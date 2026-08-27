@@ -661,3 +661,26 @@ func TestCmd_FailedRunStillNamesTheWorkload(t *testing.T) {
 
 	assert.Contains(t, stderr, "68b0c1d2e3f4a5b6c7d8e9f0")
 }
+
+// --lock takes no id, so on a failed run it cannot be made to name the
+// workload, and that is the run whose manifest may hold no binding. Printed
+// bare it would create a second workload instead of locking this one.
+func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("id could not be written"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	_, next, found := strings.Cut(stderr, "Next:")
+	require.True(t, found)
+
+	// Scoped to the block: the draft warning above it names the same command
+	// as prose, and says the same thing on the successful runs where it is
+	// sound. This is about the copy-and-run list.
+	assert.NotContains(t, next, "--lock")
+	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
+		"the lines that can name the workload still do")
+}

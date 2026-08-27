@@ -71,7 +71,7 @@ Example:
 
 			// Only an ambient target is confirmed: a typed id is the consent.
 			if ref.FromManifest() {
-				confirmed, err := idargs.Confirm(cmd, idargs.AmbientPrompt("Stop", ref))
+				confirmed, err := idargs.Confirm(cmd, idargs.AmbientPrompt("Stop", ref), idargs.EnvMayConsent)
 				if err != nil || !confirmed {
 					return err
 				}
@@ -100,9 +100,9 @@ Example:
 	idargs.AddDirFlag(cmd)
 	idargs.AddYesFlag(cmd, "Stop a manifest-named workload without confirmation.")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id":        ref.ID,
+			"workload_id":        idargs.TelemetryID(ref, args),
 			"workload_id_source": ref.Source,
 			"output_format":      string(outputFormat),
 		}

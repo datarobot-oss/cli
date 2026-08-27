@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Added
 
 - `dr workload status`, `dr workload get`, `dr workload endpoint` and `dr workload logs` now take the workload id as an optional argument. Left out, it is read from the `workloadId` in the nearest `.datarobot.yaml`, searched upward from the new `--dir` flag (the current directory by default), so the commands `dr workload up` points you at can be run as printed from the project it just deployed. A typed id still wins, and is used without reading any manifest. The workload that was picked is named on stderr, except under `--output-format json`, where anything on stderr would break `2>&1 | jq .`.
-- `dr workload stop`, `dr workload start` and `dr workload delete` take the workload id optionally too, on the same terms. Because they change something, a workload named by the manifest rather than by you is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question, and a typed id is never questioned. `stop` and `start` gained `--yes` for this.
+- `dr workload stop`, `dr workload start` and `dr workload delete` take the workload id optionally too, on the same terms. Because they change something, a workload named by the manifest rather than by you is confirmed first; a typed id is never questioned. `--yes` skips the question, and `stop` and `start` gained that flag for this. `DATAROBOT_CLI_NON_INTERACTIVE=1` also skips it on `stop` and `start`, but not on a manifest-named `delete`: that variable is set once across a pipeline, and deleting something nobody named is not what it was set for.
 - `dr workload delete --dir <path>`: which project's manifest holds the binding to clear, matching the flag `up` and `config` already take.
 
 ## Fixed

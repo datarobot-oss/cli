@@ -68,9 +68,6 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Resolve first: it reads --dir and refuses a path that is not a
-			// directory, and a typo is worth catching while it still costs
-			// nothing, on this side of an irreversible call.
 			var err error
 
 			ref, err = idargs.Resolve(cmd, args)
@@ -78,13 +75,13 @@ Example:
 				return err
 			}
 
-			confirmed, err := confirmDelete(cmd, ref.ID)
+			confirmed, err := confirmDelete(cmd, ref)
 			if err != nil || !confirmed {
 				return err
 			}
 
 			if err := workload.DeleteWorkload(ref.ID); err != nil {
-				return handleDeleteError(err, ref.ID)
+				return handleDeleteError(err, ref)
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
@@ -96,37 +93,51 @@ Example:
 	}
 
 	idargs.AddDirFlag(cmd)
+	// Only here does --dir also decide which manifest gets its binding cleared,
+	// which is the whole reason a delete by typed id still takes the flag.
+	cmd.Flags().Lookup("dir").Usage += " Its binding to the deleted workload is cleared too."
+
 	idargs.AddYesFlag(cmd, "Skip the confirmation prompt.")
 
-	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
 		yesFlag, _ := cmd.Flags().GetBool("yes")
 
 		return map[string]any{
-			"workload_id":        ref.ID,
+			"workload_id":        idargs.TelemetryID(ref, args),
 			"workload_id_source": ref.Source,
-			"yes":                yesFlag || viperx.GetBool("yes"),
+			// The environment variable is only consent for a workload the user
+			// named, so reporting it unconditionally would say yes about the
+			// runs this command refuses for want of it.
+			"yes": yesFlag || (!ref.FromManifest() && viperx.GetBool("yes")),
 		}
 	})
 
 	return cmd
 }
 
-// confirmDelete returns (true, nil) when the deletion may proceed: either
-// --yes / DATAROBOT_CLI_NON_INTERACTIVE was given, or the user confirmed
-// interactively. A declined prompt is (false, nil) so the command exits 0
-// as a no-op.
-func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
-	confirmed, err := idargs.Confirm(cmd,
-		"Delete workload "+workloadID+"? This stops and removes a running workload. [y/N] ")
-	if err != nil {
-		return false, err
+// confirmDelete returns (true, nil) when the deletion may proceed: either it
+// was already answered, or the user confirmed interactively. A declined prompt
+// is (false, nil) so the command exits 0 as a no-op.
+//
+// A workload the manifest named rather than the user takes the explicit --yes
+// only. Delete is the one irreversible verb here, and the environment variable
+// that suppresses wizards in CI should not also stand as consent to remove
+// something nobody typed.
+func confirmDelete(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
+	env := idargs.EnvMayConsent
+	if ref.FromManifest() {
+		env = idargs.EnvMayNotConsent
 	}
 
-	if !confirmed {
-		fmt.Println(tui.DimStyle.Render("Aborted."))
+	named := "workload " + ref.ID
+	if ref.FromManifest() {
+		// An id the reader never typed is nothing to compare against; the file
+		// that chose it is what makes the answer meaningful.
+		named += ", named by " + ref.DisplayPath()
 	}
 
-	return confirmed, nil
+	return idargs.Confirm(cmd,
+		"Delete "+named+"? This stops and removes a running workload. [y/N] ", env)
 }
 
 // handleDeleteError converts a 404 into a friendly informational message
@@ -141,16 +152,26 @@ func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
 // branch where nothing was actually deleted, would be the stronger claim made
 // on the weaker evidence. A binding that really is dead is cleared by the
 // deploy that recreates it.
-func handleDeleteError(err error, workloadID string) error {
+func handleDeleteError(err error, ref idargs.Ref) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render("No workload found with id: " + workloadID))
+		// The manifest is named when it, rather than the user, chose the id:
+		// otherwise this reports an id the reader has never seen and gives
+		// them nowhere to look.
+		said := "No workload found with id: " + ref.ID
+		if ref.FromManifest() {
+			said += ", named by " + ref.DisplayPath()
+		}
+
+		fmt.Println(tui.DimStyle.Render(said))
 
 		return nil
 	}
 
-	return err
+	// Anything else keeps the provenance too, which is what turns a bare 403
+	// against an ambient id into something actionable.
+	return ref.Wrap(err)
 }
 
 // clearStaleBinding takes back the workloadId the CLI wrote into a manifest,
@@ -206,7 +227,8 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 	// Appending a single generic "remove that line" walked the user into the
 	// empty manifest the only-key refusal exists to prevent.
 	if err != nil {
-		fmt.Fprintln(w, tui.DimStyle.Render("Could not remove workloadId from "+path+": "+err.Error()))
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not remove workloadId from "+idargs.DisplayPath(path)+": "+err.Error()))
 
 		return
 	}
@@ -216,7 +238,8 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 	}
 
 	fmt.Fprintln(w, tui.DimStyle.Render(
-		"Removed workloadId from "+path+"; the next 'dr workload up"+manifest.DirFlag(dir)+"' creates a new workload."))
+		"Removed workloadId from "+idargs.DisplayPath(path)+
+			"; the next 'dr workload up"+manifest.DirFlag(dir)+"' creates a new workload."))
 
 	noteLinkedArtifact(w, filepath.Dir(path))
 }

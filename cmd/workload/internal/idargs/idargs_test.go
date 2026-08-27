@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -135,12 +136,11 @@ func TestRefWrap(t *testing.T) {
 		err := ref.Wrap(notFound)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "/p/.datarobot.yaml")
-		assert.Contains(t, err.Error(), "not found")
+		assert.Contains(t, err.Error(), "not on this instance")
 
-		// The HTTP error is deliberately not chained: its "404 Not Found (url:
-		// ...)" tail is longer than the sentence explaining it, and nothing
-		// reads the status back off a command error.
-		assert.NotContains(t, err.Error(), "url:")
+		// The HTTPError stays in the chain, so a caller can still read the
+		// status back off it.
+		require.ErrorIs(t, err, notFound)
 	})
 
 	t.Run("a 403 does not claim the workload is missing", func(t *testing.T) {
@@ -161,4 +161,38 @@ func TestRefWrap(t *testing.T) {
 		ref := Ref{ID: boundID, Source: WorkloadIDSourceManifest, Path: "/p"}
 		assert.Equal(t, other, ref.Wrap(other))
 	})
+}
+
+// The explicit-id invariant through Resolve rather than resolve: a typed id
+// reads no manifest, even when --dir points somewhere that has none.
+func TestResolve_TypedIDReadsNoManifest(t *testing.T) {
+	empty := t.TempDir()
+	testutil.SetTestHomeDir(t, empty)
+
+	cmd := &cobra.Command{Use: "logs"}
+	AddDirFlag(cmd)
+	require.NoError(t, cmd.Flags().Set("dir", empty))
+
+	ref, err := Resolve(cmd, []string{"typed-id"})
+	require.NoError(t, err)
+	assert.Equal(t, "typed-id", ref.ID)
+	assert.False(t, ref.FromManifest())
+
+	// The same directory has nothing to answer with when there is no id.
+	_, err = Resolve(cmd, nil)
+	require.ErrorIs(t, err, manifest.ErrNotFound)
+}
+
+// A --dir the user typed is checked whether or not an id came with it: a flag
+// accepted and discarded is how a typo becomes "why did nothing change".
+func TestResolve_ChecksDirEvenWithATypedID(t *testing.T) {
+	cmd := &cobra.Command{Use: "logs"}
+	AddDirFlag(cmd)
+	require.NoError(t, cmd.Flags().Set("dir", filepath.Join(t.TempDir(), "gone")))
+
+	_, err := Resolve(cmd, []string{"typed-id"})
+	require.ErrorIs(t, err, manifest.ErrNotADirectory)
+
+	_, err = Resolve(cmd, nil)
+	require.ErrorIs(t, err, manifest.ErrNotADirectory)
 }

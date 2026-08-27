@@ -35,6 +35,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -59,6 +60,11 @@ func AddDirFlag(cmd *cobra.Command) {
 // The notice is printed here rather than at each call site so seven commands
 // cannot each decide differently whether to say.
 func Resolve(cmd *cobra.Command, args []string) (Ref, error) {
+	// A --dir the user typed is always checked, even alongside an id that
+	// makes it redundant: a silently discarded flag is how a typo turns into
+	// "why did nothing change", and `up` and `delete` both refuse the same
+	// mistake. Only the search is skipped for a typed id, which is the part
+	// that would read a manifest.
 	dir, err := dirFlag(cmd)
 	if err != nil {
 		return Ref{}, err
@@ -78,12 +84,26 @@ func Resolve(cmd *cobra.Command, args []string) (Ref, error) {
 // silent. JSON runs stay quiet: stdout purity is only half the contract, and
 // `--output-format json 2>&1 | jq .` has to parse too.
 func announce(cmd *cobra.Command, ref Ref) {
-	if !ref.FromManifest() || outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+	if !ref.FromManifest() || emitsJSON(cmd) {
 		return
 	}
 
 	fmt.Fprintln(cmd.ErrOrStderr(),
-		tui.DimStyle.Render("Using workload "+ref.ID+" from "+ref.Path))
+		tui.DimStyle.Render("Using workload "+ref.ID+" from "+shortPath(ref.Path)))
+}
+
+// emitsJSON reports whether this command renders a JSON document.
+//
+// Keyed on the command's own flag rather than the effective value, because
+// --output-format is registered on the root as well: `delete` and `endpoint`
+// inherit a value they never act on, and staying quiet for it would cost them
+// their attribution to buy nothing.
+func emitsJSON(cmd *cobra.Command) bool {
+	if cmd.LocalFlags().Lookup("output-format") == nil {
+		return false
+	}
+
+	return outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON
 }
 
 // dirFlag reads --dir and defaults it to where the shell is standing.
@@ -97,6 +117,17 @@ func dirFlag(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("cannot read --dir: %w", err)
 	}
 
+	return ProjectDir(dir)
+}
+
+// ProjectDir turns a --dir value into the directory to search, defaulting to
+// where the shell is standing.
+//
+// A flag naming something other than a directory is refused here rather than
+// left to the manifest search, which knows the path but not that a flag
+// supplied it. Shared with `up` because the two print this remedy at each
+// other, and answering one typo two ways is its own small confusion.
+func ProjectDir(dir string) (string, error) {
 	if dir != "" {
 		if !fsutil.DirExists(dir) {
 			return "", fmt.Errorf("--dir %s: %w", dir, manifest.ErrNotADirectory)
@@ -111,6 +142,19 @@ func dirFlag(cmd *cobra.Command) (string, error) {
 	}
 
 	return cwd, nil
+}
+
+// DisplayPath is Path as a reader would type it.
+func (r Ref) DisplayPath() string {
+	return DisplayPath(r.Path)
+}
+
+// DisplayPath renders any path the way the messages in this feature do, for a
+// caller that holds one without a Ref around it. One rendering, because two
+// lines of the same output naming the same file differently reads as two
+// files.
+func DisplayPath(path string) string {
+	return shortPath(path)
 }
 
 const (
@@ -214,12 +258,13 @@ func (r Ref) Wrap(err error) error {
 	// same manifest read against the wrong endpoint, organisation or token
 	// answers exactly this way, so the remedy names both.
 	if httpErr.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("no access to workload %s, named by %s", r.ID, shortPath(r.Path))
+		return fmt.Errorf("no access to workload %s, named by %s: %w", r.ID, shortPath(r.Path), err)
 	}
 
 	return fmt.Errorf(
-		"workload %s not found. %s names it; check the endpoint and organisation, or redeploy with 'dr workload up%s'",
-		r.ID, shortPath(r.Path), manifest.DirFlag(r.Dir))
+		"workload %s is not on this instance; %s names it. Check the endpoint and organisation, "+
+			"or redeploy with 'dr workload up%s': %w",
+		r.ID, shortPath(r.Path), manifest.DirFlag(r.Dir), err)
 }
 
 // shortPath renders a path the way a reader would type it: relative when that
@@ -238,4 +283,15 @@ func shortPath(path string) string {
 	}
 
 	return rel
+}
+
+// TelemetryID is the workload id to report: the resolved one, falling back to
+// whatever was typed. RunE assigns the Ref, so a run that fails before it
+// (authentication, a bad flag) would otherwise report nothing at all.
+func TelemetryID(ref Ref, args []string) string {
+	if ref.ID != "" {
+		return ref.ID
+	}
+
+	return telemetry.FirstArg(args)
 }
