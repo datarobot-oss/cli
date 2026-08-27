@@ -86,9 +86,21 @@ func TestWapiignoreShadowWarning_LegacyOnly(t *testing.T) {
 	assert.Contains(t, notice, ignore.FileName, "notice must name the current file to rename to")
 }
 
+// wantShadowWarning pins the exact ShadowWarning text emitted when both
+// ignore filenames are present. The warning is the only signal a user gets
+// that patterns they wrote are inert, so a wording change should be a
+// deliberate, reviewed act — pinning the full sentence makes it one. The
+// text lives in the ignore matcher; this constant is transcribed from it
+// (not produced through the same Sprintf, which would make the pin
+// self-fulfilling).
+const wantShadowWarning = "Both .drignore and .wapiignore are present. .drignore is the one in effect, " +
+	"and the patterns in .wapiignore are not applied. Merge them into .drignore and delete .wapiignore."
+
 // TestWapiignoreShadowWarning_BothPresent verifies that the shadow warning
 // fires when both .drignore and .wapiignore are present. The current name wins
-// and the legacy patterns are inert, which the warning must say.
+// and the legacy patterns are inert, which the warning must say. The warning
+// is emitted through log.Warn (never through IgnoreFileNotice), so the
+// capture seam is what pins the actual text.
 func TestWapiignoreShadowWarning_BothPresent(t *testing.T) {
 	dir := initProject(t, map[string]string{
 		ignore.FileName:       "*.new\n",
@@ -97,12 +109,38 @@ func TestWapiignoreShadowWarning_BothPresent(t *testing.T) {
 
 	e := lockfileEngine(t, dir, noLockfileRunner)
 
-	_, err := e.Plan()
-	require.NoError(t, err)
+	logged := captureWarnLog(t, func() {
+		_, err := e.Plan()
+		require.NoError(t, err)
+	})
 
 	// The shadow warning goes to log.Warn, not to IgnoreFileNotice. The
 	// notice is empty because the current name is in effect.
 	assert.Empty(t, e.IgnoreFileNotice(), "current name in effect has no deprecation notice")
+
+	assert.Contains(t, logged, wantShadowWarning,
+		"the shadow warning must actually be emitted, with this exact text")
+}
+
+// TestWapiignoreShadowWarning_NotFiredWithoutLegacyFile is the false-positive
+// control for the pinned warning: with only the current filename present
+// there is nothing being shadowed, and no shadow warning may reach the log.
+// Without this control an always-warn implementation would pass the positive
+// test above.
+func TestWapiignoreShadowWarning_NotFiredWithoutLegacyFile(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		ignore.FileName: "*.tmp\n",
+	})
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	logged := captureWarnLog(t, func() {
+		_, err := e.Plan()
+		require.NoError(t, err)
+	})
+
+	assert.NotContains(t, logged, wantShadowWarning,
+		"no shadow warning when the legacy file is absent")
 }
 
 // TestSystemExcludes_StillExcluded verifies that built-in system-excluded paths
@@ -630,10 +668,13 @@ func TestPlanAction_BothSidesDifferent(t *testing.T) {
 	assert.Equal(t, ClsConflict, conflicts[0].Classification)
 }
 
-// TestPlanAction_RemoteWinsResolution verifies that the remote-wins resolution
-// path downloads the remote version. When a conflict is resolved (remote
-// wins), the conflict path's manifest entry has the remote hash, not a
-// streamed upload hash. This is tested through Execute with the fake.
+// TestPlanAction_RemoteWinsResolution verifies that the remote-wins
+// resolution path downloads the remote version and that the remote bytes
+// actually land on disk. The plan-structure half pins that the conflict
+// row carries the server's hash (Phase 6's buildNewBaseManifest resolves
+// conflicts through fa.RemoteHash); the Execute half pins that the
+// resolution really wrote those bytes, kept the local side as a .LOCAL.
+// copy, and recorded the remote hash in the new BASE.
 func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	const (
 		catalogID   = "cid-rw"
@@ -646,32 +687,31 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	}, catalogID, versionID)
 
 	// Modify the file locally.
-	modifyFile(t, dir, "app.py", "print('local-change')\n")
+	localContent := "print('local-change')\n"
+	modifyFile(t, dir, "app.py", localContent)
 
 	// The server has a different version. The artifact's codeRef points at
 	// remoteVerID (different from the synced versionID) so the engine detects
-	// drift and fetches AllFiles for the remote version.
+	// drift and fetches AllFiles for the remote version. The remote version
+	// is seeded with recorded content so the fake can actually serve the
+	// conflict's download; .drignore is seeded with the disk's own bytes so
+	// it is unchanged on both sides and adds no plan rows.
 	remoteContent := "print('remote-change')\n"
 	remoteHash := sha256Hex([]byte(remoteContent))
+
+	drignoreBytes, err := os.ReadFile(filepath.Join(dir, ignore.FileName))
+	require.NoError(t, err)
 
 	fake := (&fakeFilesClient{
 		catalogID: catalogID,
 		stageID:   "stage-rw",
 		versionID: "ver-rw-next",
-	}).withVersion(catalogID, remoteVerID, map[string]filesapi.FileMeta{
-		"app.py":    {Hash: remoteHash, Size: int64(len(remoteContent))},
-		".drignore": {Hash: sha256Hex([]byte("")), Size: 0},
+	}).withVersionContent(catalogID, remoteVerID, map[string][]byte{
+		"app.py":        []byte(remoteContent),
+		ignore.FileName: drignoreBytes,
 	})
 
-	// The fake's DownloadFile fails with a specific
-	// "no downloadable content registered" error unless the test registers
-	// downloadable content via withDownloadable, so we cannot Execute a
-	// conflict resolution through the fake. Instead, verify the plan
-	// structure: the conflict is in the Conflicts list, and the conflict
-	// path's RemoteHash is the server's hash. Phase 6 (buildNewBaseManifest)
-	// uses fa.RemoteHash for conflict entries, which is the remote-wins
-	// resolution.
-	e, err := newWithDeps(dir, Options{DryRun: true, Yes: true}, Deps{
+	e, err := newWithDeps(dir, Options{Yes: true}, Deps{
 		Files: fake,
 		Artifacts: &fakeArtifactStore{
 			GetFn: func(id string) (*workload.Artifact, error) {
@@ -701,6 +741,46 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	require.Equal(t, "app.py", conflict.Path)
 	assert.Equal(t, remoteHash, conflict.RemoteHash,
 		"conflict's RemoteHash must be the server's hash (remote-wins resolution uses this)")
+
+	result, err := e.Execute(plan)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.ConflictCount)
+
+	// Remote wins: the server's exact bytes must now sit at the original
+	// path, hashing to the advertised checksum.
+	onDisk, readErr := os.ReadFile(filepath.Join(dir, "app.py"))
+	require.NoError(t, readErr)
+
+	assert.Equal(t, remoteContent, string(onDisk), "remote-wins resolution must write the remote bytes")
+	assert.Equal(t, remoteHash, sha256Hex(onDisk), "written bytes must hash to the server's checksum")
+
+	// The local side of the conflict survives as a .LOCAL.<ts> copy.
+	entries, readErr := os.ReadDir(dir)
+	require.NoError(t, readErr)
+
+	var localCopy string
+
+	for _, ent := range entries {
+		if strings.HasPrefix(ent.Name(), "app.py.LOCAL.") {
+			localCopy = ent.Name()
+		}
+	}
+
+	require.NotEmpty(t, localCopy, "local side of the conflict must be preserved as a .LOCAL. copy")
+
+	localBytes, readErr := os.ReadFile(filepath.Join(dir, localCopy))
+	require.NoError(t, readErr)
+	assert.Equal(t, localContent, string(localBytes), "the .LOCAL. copy must hold the pre-conflict local bytes")
+
+	// The new BASE records the remote hash for the conflicted path — the
+	// remote-wins rule made real by Phase 6.
+	manifest, manifestErr := wapi.LoadManifest(dir)
+	require.NoError(t, manifestErr)
+	assert.Equal(t, remoteHash, manifest.Files["app.py"].Hash,
+		"manifest must record the remote hash for the conflict-resolved path")
+
+	assert.Equal(t, 1, fake.DownloadFileCalls(), "conflict resolution must have pulled the remote bytes exactly once")
 }
 
 // ---------------------------------------------------------------------------

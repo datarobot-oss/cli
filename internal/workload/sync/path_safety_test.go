@@ -43,9 +43,10 @@ var unsafeServerPaths = []string{
 func TestDownloadOne_RejectsUnsafeServerPath(t *testing.T) {
 	for _, bad := range unsafeServerPaths {
 		t.Run(bad, func(t *testing.T) {
-			// fakeFilesClient.DownloadFile returns "DownloadFile not
-			// expected" — if SafeRelPath fails first the error message
-			// is the unsafe-path wrapper, proving no remote call ran.
+			// The fake now serves recorded content for safe paths, so the
+			// assertion that the error is the unsafe-path wrapper proves
+			// SafeRelPath fired before any remote call ran — the fake was
+			// never reached.
 			e := &Engine{projectDir: t.TempDir(), files: &fakeFilesClient{}}
 
 			err := downloadOne(e, "cid", "vid", FileAction{Path: bad})
