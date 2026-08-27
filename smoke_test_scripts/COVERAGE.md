@@ -11,6 +11,7 @@ This document tracks what is covered by smoke tests across all platforms. Use it
 | `run_plugin_update_smoke_test.sh` | Unix | `task smoke-test` |
 | `run_self_update_smoke_test.sh` | Unix (macOS for brew tests) | manual / CI |
 | `run_pre_release_smoke_test.sh` | Unix (Linux / macOS) | `task smoke-test-pre-release` (gates release promotion) |
+| `run_workload_smoke_test.sh` | Unix | `task smoke-test-workload` (local only; CI wiring pending team review) |
 
 ---
 
@@ -69,6 +70,12 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | brew install → `dr self update` uses brew path | ✅ (macOS) | ❌ | Skipped on Linux |
 | Template min-version satisfied → update is no-op | ✅ | ❌ | Stretch test |
 | Template min-version satisfied → `dr self update -f` upgrades | ✅ | ❌ | Stretch test |
+| **Workload / Artifact** (`run_workload_smoke_test.sh`) — `task smoke-test-workload` | | | Local only; CI wiring pending team review. Uses the CLI's existing `drconfig.yaml` auth; set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override. Sets `DATAROBOT_CLI_FEATURE_WORKLOAD=true`. |
+| A: whoami create → bind → up round trip + validation probes | ✅ | ❌ | Guards `up` validates at load time before server mutation |
+| B: account sweep — dry-run bind every workload on the account | ✅ | ❌ | Mirrors Woj's 4/4 binding-failure repro |
+| C: re-bind preserves live tuning; FileExists guard; delete-rebind restore | ✅ | ❌ | Known bug RAPTOR-19697: memory renders as 512MB (asserted) |
+| D: built-workload rebuild round trip (ErrImagePull regression) | ✅ (opt-in) | ❌ | ~20-30 min, two image builds; `task smoke-test-workload-full` or `d` arg |
+| Artifact: create → get → list → code init/sync/versions → del | ✅ | ❌ | CLI-side focus (manifest, .drignore, exit codes); complements `workload-api/tests/acceptance`. `dr artifact lock` not automated: a build-config draft needs a completed build to lock, and a locked artifact can't be deleted/unlocked via the CLI (would leak state) — covered manually / via Scenario D |
 
 ---
 

@@ -304,6 +304,16 @@ tasks:
     deps: [build]
     cmds:
       - ./smoke_test_scripts/run_plugin_update_smoke_test.sh
+  smoke-test-workload:
+    desc: "Run workload/artifact acceptance scenarios (live; uses configured drconfig.yaml auth)"
+    deps: [build]
+    cmds:
+      - ./smoke_test_scripts/run_workload_smoke_test.sh {{.CLI_ARGS}}
+  smoke-test-workload-full:
+    desc: "Run the full workload/artifact acceptance suite incl. the ~20-30 min built-workload scenario (live; uses configured drconfig.yaml auth)"
+    deps: [build]
+    cmds:
+      - WORKLOAD_SMOKE_INCLUDE_D=1 ./smoke_test_scripts/run_workload_smoke_test.sh
 
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
