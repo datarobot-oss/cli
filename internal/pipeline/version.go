@@ -71,8 +71,14 @@ type Graph struct {
 	Edges    []GraphEdge   `json:"edges"`
 }
 
-// ListVersions fetches a paginated list of versions for a pipeline.
+// ListVersions returns up to limit versions for a pipeline, starting at
+// offset. The per-request page size is clamped to the server ceiling; larger
+// limits are satisfied by walking the envelope's next-links.
 func ListVersions(pipelineID string, offset, limit int) ([]PipelineVersion, error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/versions")
 	if err != nil {
 		return nil, err
@@ -83,22 +89,9 @@ func ListVersions(pipelineID string, offset, limit int) ([]PipelineVersion, erro
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[PipelineVersion]
-
-	err = doJSON(http.MethodGet, endpoint, nil, "pipeline versions", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return page.Data, nil
+	return walkDataRows[PipelineVersion](endpoint+"?"+query.Encode(), "pipeline versions", limit)
 }
 
 // GetVersion fetches a single version of a pipeline.

@@ -89,8 +89,14 @@ func CreateSchedule(pipelineID string, body ScheduleCreateRequest) (*Schedule, e
 	return &result, nil
 }
 
-// ListSchedules returns a paginated list of all schedules for a pipeline.
+// ListSchedules returns up to limit schedules for a pipeline, starting at
+// offset. The per-request page size is clamped to the server ceiling; larger
+// limits are satisfied by walking the envelope's next-links.
 func ListSchedules(pipelineID string, offset, limit int) ([]Schedule, error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := scheduleBase(pipelineID)
 	if err != nil {
 		return nil, err
@@ -101,22 +107,9 @@ func ListSchedules(pipelineID string, offset, limit int) ([]Schedule, error) {
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[Schedule]
-
-	err = doJSON(http.MethodGet, endpoint, nil, "schedules", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return page.Data, nil
+	return walkDataRows[Schedule](endpoint+"?"+query.Encode(), "schedules", limit)
 }
 
 // GetSchedule fetches a single schedule by id.

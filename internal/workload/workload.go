@@ -468,14 +468,6 @@ func pollWorkload(
 	}
 }
 
-type WorkloadList struct {
-	Data       []Workload `json:"data"`
-	Count      int        `json:"count"`
-	TotalCount int        `json:"totalCount"`
-	Next       string     `json:"next"`
-	Previous   string     `json:"previous"`
-}
-
 // maxPageSize is the server-enforced ceiling on the list endpoints' limit query
 // param (1..100); larger values are rejected with a 422, so the page size is
 // clamped and larger totals are satisfied via next-links. Shared by the
@@ -513,40 +505,7 @@ func ListWorkloads(limit, offset int, statuses []string, enclave string) ([]Work
 		return nil, err
 	}
 
-	return paginateWorkloads(pageURL, limit)
-}
-
-// paginateWorkloads follows next-links from pageURL, accumulating workloads
-// until limit is reached or the pages run out. It is split from ListWorkloads
-// to keep that function's cyclomatic complexity under the linter threshold.
-func paginateWorkloads(pageURL string, limit int) ([]Workload, error) {
-	var all []Workload
-
-	for pageURL != "" {
-		var list WorkloadList
-
-		if err := drapi.GetJSON(pageURL, "workloads", &list); err != nil {
-			return nil, err
-		}
-
-		all = append(all, list.Data...)
-
-		if len(all) >= limit {
-			return all[:limit], nil
-		}
-
-		if list.Next == "" {
-			break
-		}
-
-		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
-			return nil, err
-		}
-
-		pageURL = list.Next
-	}
-
-	return all, nil
+	return listWalk[Workload](pageURL, "workloads", limit)
 }
 
 // DeleteWorkload deletes a workload. The server stops the backing proton(s)

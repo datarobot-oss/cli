@@ -126,11 +126,15 @@ func TestListImages_AddsPaginationQuery(t *testing.T) {
 	assert.Equal(t, ImageStatusReady, items[0].LatestStatus)
 }
 
-func TestListImages_OmitsZeroPagination(t *testing.T) {
+func TestListImages_OmitsZeroOffset(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Empty(t, r.URL.RawQuery)
+		// offset=0 stays omitted from the query; a limit is always sent now
+		// that list responses are walked via next-links with a clamped page
+		// size, so the server's default page size no longer applies.
+		assert.Empty(t, r.URL.Query().Get("offset"))
+		assert.NotEmpty(t, r.URL.Query().Get("limit"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[],"totalCount":0,"count":0}`))
@@ -140,7 +144,7 @@ func TestListImages_OmitsZeroPagination(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	items, err := ListImages(0, 0)
+	items, err := ListImages(0, 5)
 	require.NoError(t, err)
 	assert.Empty(t, items)
 }

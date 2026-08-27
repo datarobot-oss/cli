@@ -95,8 +95,14 @@ func CreateRun(pipelineID string, scope Scope, version *int, inputID, imageID st
 	return &result, nil
 }
 
-// ListRuns returns a paginated slice of runs for the given scope.
+// ListRuns returns up to limit runs for the given scope, starting at offset.
+// The per-request page size is clamped to the server ceiling; larger limits
+// are satisfied by walking the envelope's next-links.
 func ListRuns(pipelineID string, scope Scope, version *int, offset, limit int) ([]Run, error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches")
 	if err != nil {
 		return nil, err
@@ -107,22 +113,9 @@ func ListRuns(pipelineID string, scope Scope, version *int, offset, limit int) (
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[Run]
-
-	err = doJSON(http.MethodGet, endpoint, nil, "runs", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return page.Data, nil
+	return walkDataRows[Run](endpoint+"?"+query.Encode(), "runs", limit)
 }
 
 // GetRun fetches a single run by id within the given scope.

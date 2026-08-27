@@ -293,14 +293,6 @@ func GetArtifact(artifactID string) (*Artifact, error) {
 	return &artifact, nil
 }
 
-type ArtifactList struct {
-	Data       []Artifact `json:"data"`
-	Count      int        `json:"count"`
-	TotalCount int        `json:"totalCount"`
-	Next       string     `json:"next"`
-	Previous   string     `json:"previous"`
-}
-
 type ArtifactCreateRequest struct {
 	Name        string             `json:"name"`
 	Description string             `json:"description,omitempty"`
@@ -554,38 +546,5 @@ func ListArtifacts(limit, offset int, status Status) ([]Artifact, error) {
 		return nil, err
 	}
 
-	return paginateArtifacts(pageURL, limit)
-}
-
-// paginateArtifacts follows next-links from pageURL, accumulating artifacts
-// until limit is reached or the pages run out. Split from ListArtifacts to
-// keep that function's cyclomatic complexity under the linter threshold.
-func paginateArtifacts(pageURL string, limit int) ([]Artifact, error) {
-	var all []Artifact
-
-	for pageURL != "" {
-		var list ArtifactList
-
-		if err := drapi.GetJSON(pageURL, "artifacts", &list); err != nil {
-			return nil, err
-		}
-
-		all = append(all, list.Data...)
-
-		if len(all) >= limit {
-			return all[:limit], nil
-		}
-
-		if list.Next == "" {
-			break
-		}
-
-		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
-			return nil, err
-		}
-
-		pageURL = list.Next
-	}
-
-	return all, nil
+	return listWalk[Artifact](pageURL, "artifacts", limit)
 }

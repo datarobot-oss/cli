@@ -243,9 +243,14 @@ func CreateImage(name, description string, pip []string, conda *CondaValue, pyth
 	return &result, nil
 }
 
-// ListImages returns a paginated slice of images. The API returns a
-// DataPage envelope; results are newest first.
+// ListImages returns up to limit images starting at offset, newest first.
+// The per-request page size is clamped to the server ceiling; larger limits
+// are satisfied by walking the envelope's next-links.
 func ListImages(offset, limit int) ([]ImageSummary, error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images")
 	if err != nil {
 		return nil, err
@@ -256,22 +261,9 @@ func ListImages(offset, limit int) ([]ImageSummary, error) {
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[ImageSummary]
-
-	err = doJSON(http.MethodGet, endpoint, nil, "images", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return page.Data, nil
+	return walkDataRows[ImageSummary](endpoint+"?"+query.Encode(), "images", limit)
 }
 
 // ImageLogsResponse mirrors PipelineImageLogsResponse from the API.

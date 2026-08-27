@@ -140,8 +140,15 @@ func CreatePipeline(filePath, description, name, mode, imageID string) (*CreateR
 	return &result, nil
 }
 
-// ListPipelines fetches a paginated list of pipelines from GET /api/v2/pipelines.
+// ListPipelines fetches up to limit pipelines starting at offset from
+// GET /api/v2/pipelines, walking the envelope's next-links past the server's
+// per-request page-size ceiling. TotalCount in the returned envelope stays
+// the server's true total so renderers keep showing "Showing N of <total>".
 func ListPipelines(mode, search string, offset, limit int) (*DataPage[ListItem], error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := config.GetEndpointURL("/api/v2/pipelines")
 	if err != nil {
 		return nil, err
@@ -160,22 +167,9 @@ func ListPipelines(mode, search string, offset, limit int) (*DataPage[ListItem],
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[ListItem]
-
-	err = drapi.GetJSON(endpoint, "pipelines", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return &page, nil
+	return walkDataPage[ListItem](endpoint+"?"+query.Encode(), "pipelines", limit)
 }
 
 // escapeID percent-encodes a caller-supplied pipeline id so reserved path
