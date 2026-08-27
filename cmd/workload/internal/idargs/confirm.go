@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
@@ -32,9 +33,9 @@ import (
 // Only the environment variable is bound to viper: an explicit --yes read
 // through viper would land in AllSettings() and persist to drconfig.yaml.
 func AddYesFlag(cmd *cobra.Command, usage string) {
-	cmd.Flags().BoolP("yes", "y", false, usage)
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, usage)
 
-	_ = viperx.BindEnv("yes", reader.NonInteractiveEnv)
+	_ = viperx.BindEnv(cli.YesFlagName, reader.NonInteractiveEnv)
 }
 
 // EnvConsent says whether the non-interactive environment variable may stand
@@ -60,8 +61,15 @@ const (
 // `stop` and `start` ask only when the workload was named by a manifest rather
 // than by the user.
 func Confirm(cmd *cobra.Command, question string, env EnvConsent) (bool, error) {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	if yesFlag || (bool(env) && declaredNonInteractive()) {
+	yesFlag, _ := cmd.Flags().GetBool(cli.YesFlagName)
+	if yesFlag {
+		return true, nil
+	}
+
+	// Past the flag, cli.IsNonInteractive is exactly "the environment says so",
+	// which is the half of automation consent an ambient delete refuses.
+	declared := cli.IsNonInteractive(cmd)
+	if declared && bool(env) {
 		return true, nil
 	}
 
@@ -84,7 +92,7 @@ func Confirm(cmd *cobra.Command, question string, env EnvConsent) (bool, error) 
 	// where it does not mean "yes". Reading it only as consent would leave the
 	// one case that refuses it, an ambient delete, blocking on a prompt nobody
 	// is there to answer.
-	if declaredNonInteractive() || !canAsk(cmd) {
+	if declared || !canAsk(cmd) {
 		return false, errors.New("confirmation required: " + remedy + " to run without a prompt")
 	}
 
@@ -130,15 +138,4 @@ func canAsk(cmd *cobra.Command) bool {
 	}
 
 	return term.IsTerminal(int(f.Fd())) //nolint:gosec // uintptr and int are same size on supported platforms
-}
-
-// declaredNonInteractive reports whether the run was declared non-interactive.
-//
-// Both sources are read. viper carries the repo's standard binding for the
-// flag's env var, and reader owns the variable itself and accepts every truthy
-// spelling of it; viper's cast takes only the ones strconv.ParseBool knows, so
-// DATAROBOT_CLI_NON_INTERACTIVE=yes reaches the spinner and the auth flow but
-// would not reach here on the binding alone.
-func declaredNonInteractive() bool {
-	return viperx.GetBool("yes") || reader.IsNonInteractive()
 }

@@ -26,7 +26,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
-	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -100,7 +100,7 @@ Example:
 	idargs.AddYesFlag(cmd, "Skip the confirmation prompt.")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
+		yesFlag, _ := cmd.Flags().GetBool(cli.YesFlagName)
 
 		return map[string]any{
 			"workload_id":        idargs.TelemetryID(ref, args),
@@ -108,7 +108,7 @@ Example:
 			// The environment variable is only consent for a workload the user
 			// named, so reporting it unconditionally would say yes about the
 			// runs this command refuses for want of it.
-			"yes": yesFlag || (!ref.FromManifest() && viperx.GetBool("yes")),
+			"yes": yesFlag || (!ref.FromManifest() && cli.IsNonInteractive(cmd)),
 		}
 	})
 
