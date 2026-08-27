@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -60,8 +61,8 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of images to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Pagination offset")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of images to return")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
