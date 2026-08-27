@@ -31,6 +31,7 @@ func Cmd() *cobra.Command {
 
 	var (
 		limit    int
+		offset   int
 		statuses []string
 		enclave  string
 	)
@@ -55,6 +56,8 @@ nothing.
 Example:
   dr workload list
   dr workload list --limit 10
+  dr workload list --offset 100
+  dr workload list --offset 100 --limit 50
   dr workload list --status running
   dr workload list --status errored --status interrupted
   dr workload list --enclave prod-east
@@ -69,6 +72,10 @@ Example:
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
 
+			if offset < 0 {
+				return fmt.Errorf("invalid --offset %d: must be non-negative", offset)
+			}
+
 			// A blank --enclave would silently drop the filter and list
 			// everything, the opposite of what the flag asked for.
 			if cmd.Flags().Changed("enclave") && strings.TrimSpace(enclave) == "" {
@@ -80,7 +87,7 @@ Example:
 				return err
 			}
 
-			workloads, err := workload.ListWorkloads(limit, parsedStatuses, enclave)
+			workloads, err := workload.ListWorkloads(limit, offset, parsedStatuses, enclave)
 			if err != nil {
 				return err
 			}
@@ -92,6 +99,7 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Number of workloads to skip before returning results")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")
 	cmd.Flags().StringVar(&enclave, "enclave", "",
@@ -99,9 +107,11 @@ Example:
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
+		offset, _ := c.Flags().GetInt("offset")
 
 		return map[string]any{
 			"limit":         limit,
+			"offset":        offset,
 			"output_format": string(outputFormat),
 			"status":        strings.Join(statuses, ","),
 			"enclave":       enclave,

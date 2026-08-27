@@ -907,7 +907,7 @@ func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 		return createErr
 	}
 
-	existing, err := listWorkloadsFn(conflictSearchLimit, nil, "")
+	existing, err := listWorkloadsFn(conflictSearchLimit, 0, nil, "")
 	if err != nil {
 		// The conflict is the real story; a failure to look up what caused it
 		// is a footnote that should not replace it.

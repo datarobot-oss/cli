@@ -346,7 +346,7 @@ func TestListWorkloads_SinglePageWithStatusFilter(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	workloads, err := ListWorkloads(25, []string{"running", "errored"}, "")
+	workloads, err := ListWorkloads(25, 0, []string{"running", "errored"}, "")
 	require.NoError(t, err)
 	require.Len(t, workloads, 1)
 	assert.Equal(t, "wl-1", workloads[0].ID)
@@ -364,7 +364,7 @@ func TestListWorkloads_EnclaveFilter(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	workloads, err := ListWorkloads(25, nil, "prod-east")
+	workloads, err := ListWorkloads(25, 0, nil, "prod-east")
 	require.NoError(t, err)
 	require.Len(t, workloads, 1)
 }
@@ -382,7 +382,7 @@ func TestListWorkloads_TrimsEnclave(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := ListWorkloads(25, nil, "  prod-east  ")
+	_, err := ListWorkloads(25, 0, nil, "  prod-east  ")
 	require.NoError(t, err)
 }
 
@@ -400,7 +400,7 @@ func TestListWorkloads_NoEnclaveParamWhenUnfiltered(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := ListWorkloads(25, nil, "")
+	_, err := ListWorkloads(25, 0, nil, "")
 	require.NoError(t, err)
 }
 
@@ -418,7 +418,7 @@ func TestListWorkloads_ClampsPageSizeToServerMax(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := ListWorkloads(250, nil, "")
+	_, err := ListWorkloads(250, 0, nil, "")
 	require.NoError(t, err)
 }
 
@@ -453,7 +453,7 @@ func TestListWorkloads_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	workloads, err := ListWorkloads(3, nil, "")
+	workloads, err := ListWorkloads(3, 0, nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
 	require.Len(t, workloads, 3)
@@ -462,9 +462,17 @@ func TestListWorkloads_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 func TestListWorkloads_RejectsNonPositiveLimit(t *testing.T) {
 	for _, limit := range []int{0, -1} {
-		_, err := ListWorkloads(limit, nil, "")
+		_, err := ListWorkloads(limit, 0, nil, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be positive")
+	}
+}
+
+func TestListWorkloads_RejectsNegativeOffset(t *testing.T) {
+	for _, offset := range []int{-1} {
+		_, err := ListWorkloads(1, offset, nil, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
 	}
 }
 

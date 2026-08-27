@@ -60,6 +60,16 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
 }
 
+func TestCmd_InvalidOffset(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--offset", "-1"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be non-negative")
+}
+
 func TestCmd_BlankEnclave(t *testing.T) {
 	// An explicit empty --enclave must fail loudly rather than silently
 	// listing every workload with the filter dropped.

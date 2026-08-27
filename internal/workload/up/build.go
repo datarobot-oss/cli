@@ -134,7 +134,7 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 // cannot say. It turns the advice from "find out what owns this" into a line
 // the reader can paste.
 func workloadOn(artifactID string) string {
-	existing, err := listWorkloadsFn(conflictSearchLimit, nil, "")
+	existing, err := listWorkloadsFn(conflictSearchLimit, 0, nil, "")
 	if err != nil {
 		return ""
 	}

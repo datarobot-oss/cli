@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -948,4 +949,57 @@ func TestPrimaryHelpers_AgreeAcrossGroups(t *testing.T) {
 
 	assert.Equal(t, "real", PrimaryContainerName(art))
 	assert.Equal(t, "real:1", GetPrimaryContainerImageURI(art))
+}
+
+// serverArtifactDoc builds a minimal artifact JSON doc for list-page tests.
+func serverArtifactDoc(id, name, status string) string {
+	return fmt.Sprintf(`{"id":%q,"name":%q,"status":%q}`, id, name, status)
+}
+
+// artifactListPage wraps docs in the ArtifactList pagination envelope, mirroring
+// workloadListPage so the artifact list tests can assert next-link following.
+func artifactListPage(next string, docs ...string) string {
+	nextJSON := "null"
+	if next != "" {
+		nextJSON = fmt.Sprintf("%q", next)
+	}
+
+	return fmt.Sprintf(
+		`{"data": [%s], "count": %d, "totalCount": %d, "next": %s, "previous": null}`,
+		strings.Join(docs, ","), len(docs), len(docs), nextJSON,
+	)
+}
+
+func TestListArtifacts_RejectsNonPositiveLimit(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		_, err := ListArtifacts(limit, 0, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be positive")
+	}
+}
+
+func TestListArtifacts_RejectsNegativeOffset(t *testing.T) {
+	for _, offset := range []int{-1} {
+		_, err := ListArtifacts(1, offset, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
+	}
+}
+
+func TestListArtifacts_ClampsPageSizeToServerMax(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The server rejects limit > 100 with a 422, so the page size must
+		// be clamped even when --limit asks for more.
+		assert.Equal(t, "100", r.URL.Query().Get("limit"))
+		fmt.Fprint(w, artifactListPage("", serverArtifactDoc("art-1", "a", "draft")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListArtifacts(250, 0, "")
+	require.NoError(t, err)
 }
