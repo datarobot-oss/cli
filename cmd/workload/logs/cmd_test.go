@@ -46,7 +46,7 @@ func TestCmd_RejectsNonPositiveLimit(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid --limit 0")
+	assert.Contains(t, err.Error(), "must be a positive integer")
 }
 
 func TestCmd_ParsesFollowFlag(t *testing.T) {
