@@ -1111,6 +1111,44 @@ func TestRun_DryRunOnASettlingWorkloadWithDriftIsStillAPreview(t *testing.T) {
 	assert.NotContains(t, stderr, "Nothing below will be applied")
 }
 
+// The other half of the settling exemption, and the reason it is keyed on the
+// dry run rather than on the state.
+//
+// awaitSteady ends with a fresh Look, so a workload can be steady when the wait
+// lands and moving again one call later. That run is not a preview: deployable
+// refuses it at the point of action either way, so the plan printed above that
+// refusal has to carry the same disclaimer every other refused state gets.
+// Exempting the state wholesale left this one path announcing work it would not
+// do, which is the defect itself, in one of the two states the report named.
+func TestRun_SettlingOnTheReReadIsRefusedLikeAnyOtherState(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusProvisioning
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			// Steady at the moment the wait lands; the Look that follows
+			// disagrees, which is the race this covers.
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
+		},
+	})
+
+	_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a state a deploy can act on")
+
+	assert.Contains(t, stderr, "Nothing below will be applied",
+		"a real run refused for settling is refused like any other state")
+
+	note := strings.Index(stderr, "Nothing below will be applied")
+	change := strings.Index(stderr, "+ artifact")
+	require.Positive(t, change)
+	assert.Less(t, note, change)
+}
+
 // A workload that dies while the deploy is watching it must not be reported as
 // a success. The deploy now waits transitions out, so a workload that settles
 // into errored is one this run had a front-row seat to, and the file matching

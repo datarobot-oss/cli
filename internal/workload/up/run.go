@@ -711,7 +711,7 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 	var refused error
 
 	if !plan.Empty() {
-		refused = refusal(loaded, live, result.Name)
+		refused = refusal(loaded, live, result.Name, opts.DryRun)
 	}
 
 	summary := Summary{
@@ -736,22 +736,24 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // that is not going to be attempted, and the reader only finds that out on the
 // last line.
 //
-// Settling is deliberately not asked, though deployable refuses it. A moving
-// workload is waited out before the plan is built, so the run that ordinarily
-// reaches a plan still settling is a dry run, which does not wait and has
-// nothing to refuse: it previews where the deploy would land rather than acting
-// on where the workload is. Refusing it here would contradict the line printed
-// above the plan, which says a deploy would wait.
+// Settling is exempt on a dry run alone, which is the one asymmetry here.
 //
-// It is not the only way to get here, which is why this exempts the state
-// rather than the dry run. awaitSteady ends with a fresh Look, and a workload
-// that starts moving again between the wait landing and that read arrives here
-// settling on an ordinary deploy. That run is not previewing anything and does
-// have to be refused -- by deployable, at the point of action, which is the
-// backstop its settling branch is documented to be and the only place that can
-// tell a stale read from a live one.
-func refusal(loaded Loaded, live Live, workloadName string) error {
-	if live.State == StateSettling {
+// A moving workload is waited out before the plan is built, so a dry run is
+// what ordinarily reaches a plan still settling: it does not wait, and it has
+// nothing to refuse, because it previews where the deploy would land rather
+// than acting on where the workload is. Refusing it would contradict the line
+// printed directly above the plan, which says a deploy would wait.
+//
+// A real run reaching here settling is a different thing entirely. awaitSteady
+// ends with a fresh Look, so the workload was steady when the wait landed and
+// is moving again one call later. That run is not previewing anything, and
+// deployable refuses it moments afterwards regardless -- so leaving it out of
+// the question here bought nothing and cost the plan its disclaimer, which is
+// the whole defect this change exists to fix, in the one state the report named
+// alongside errored. deployable keeps its settling branch as the backstop for
+// everything that reaches the apply by another route.
+func refusal(loaded Loaded, live Live, workloadName string, dryRun bool) error {
+	if live.State == StateSettling && dryRun {
 		return nil
 	}
 
