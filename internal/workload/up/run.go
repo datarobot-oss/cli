@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -699,15 +700,19 @@ func deployable(live Live, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
 		return fmt.Errorf(
-			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact. "+
-				"Remove it with 'dr workload delete %s%s', which also clears the binding in %s, then deploy again",
-			workloadName, live.WorkloadID, dirFlag, manifest.FileName)
+			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact — "+
+				"%s, then deploy again",
+			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true))
 
 	case StateErrored:
+		// The refusal carries its own exit. Ending at "check the logs" left
+		// recovery to folklore, and the folk remedy — hand-deleting the
+		// workloadId, or the whole state directory — either loops through the
+		// name conflict below or throws away the code catalog with it.
 		return fmt.Errorf(
 			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"Check 'dr workload logs' first; a slow start can report errored and then recover",
-			workloadName)
+				"%sIf it stays errored, %s, and deploy again to recreate it under the same name",
+			workloadName, erroredCaveat(live.WorkloadID), deleteRemedy(live.WorkloadID, dirFlag, true))
 
 	case StateSettling:
 		// The backstop, not the answer. Every run waits a moving workload out
@@ -766,7 +771,7 @@ func create(
 	err := report.run("Creating workload", func() error {
 		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
-			return nameTaken(createErr, result.Name, loaded.Path)
+			return nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded))
 		}
 
 		created = wl
@@ -897,7 +902,7 @@ func startingStatus(was string) string {
 //
 // So the run stops and hands the choice back, which costs one line in the
 // manifest in the case where adopting would have been right.
-func nameTaken(createErr error, workloadName, path string) error {
+func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 	if !isConflict(createErr) || workloadName == "" {
 		return createErr
 	}
@@ -914,6 +919,30 @@ func nameTaken(createErr error, workloadName, path string) error {
 			continue
 		}
 
+		// A workload a deploy cannot act on must not be recommended for
+		// binding. Advising 'set workloadId' against an errored or terminated
+		// holder sends the next run straight into that state's refusal — and
+		// for the user who cleared the binding by hand because their workload
+		// was stuck, it closes a loop: the 409 recommending the exact line
+		// they just deleted. The advice is the one those refusals give:
+		// delete what holds the name.
+		if workload.IsWorkloadErrorStatus(existing[i].Status) {
+			// Errored gets the same hedge deployable's own refusal carries;
+			// terminated really is final, so it keeps the certainty.
+			caveat := ""
+			if !strings.EqualFold(existing[i].Status, workload.WorkloadStatusTerminated) {
+				caveat = erroredCaveat(existing[i].ID)
+			}
+
+			return fmt.Errorf(
+				"a workload named %s already exists (%s), is %s, and nothing was deployed onto it. "+
+					"A deploy cannot act on it, so binding to it would only move this refusal. "+
+					"%sIf it is this project's dead workload, %s "+
+					"and deploy again to recreate the name. If it is not, rename this one in %s: %w",
+				workloadName, existing[i].ID, strings.ToLower(existing[i].Status),
+				caveat, deleteRemedy(existing[i].ID, dirFlag, false), path, createErr)
+		}
+
 		return fmt.Errorf(
 			"a workload named %s already exists (%s) and nothing was deployed onto it. "+
 				"If it is this project's, set 'workloadId: %s' in %s, replacing any already there, "+
@@ -923,6 +952,29 @@ func nameTaken(createErr error, workloadName, path string) error {
 	}
 
 	return createErr
+}
+
+// deleteRemedy is the recovery every dead-workload refusal spells out, one
+// implementation so the wording cannot drift between them. clearsBinding adds
+// what the delete does to the manifest, which is only true when this project
+// is bound to the workload being deleted — a create conflict has no binding
+// to clear.
+func deleteRemedy(workloadID, dirFlag string, clearsBinding bool) string {
+	remedy := fmt.Sprintf("remove it with 'dr workload delete %s%s'", workloadID, dirFlag)
+	if clearsBinding {
+		remedy += ", which also clears the binding in " + manifest.FileName
+	}
+
+	return remedy
+}
+
+// erroredCaveat is the hedge every message about an errored workload carries:
+// errored is the one dead-looking state that can still recover, so advising
+// its deletion with certainty would have a slow starter deleted mid-start.
+func erroredCaveat(workloadID string) string {
+	return fmt.Sprintf(
+		"Check 'dr workload logs %s' first; a slow start can report errored and then recover. ",
+		workloadID)
 }
 
 // conflictSearchLimit bounds the lookup behind a create conflict. Past this
