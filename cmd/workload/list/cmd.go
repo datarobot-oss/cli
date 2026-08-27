@@ -16,10 +16,10 @@ package list
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -68,14 +68,6 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
-
-			if offset < 0 {
-				return fmt.Errorf("invalid --offset %d: must be non-negative", offset)
-			}
-
 			// A blank --enclave would silently drop the filter and list
 			// everything, the opposite of what the flag asked for.
 			if cmd.Flags().Changed("enclave") && strings.TrimSpace(enclave) == "" {
@@ -98,8 +90,8 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
-	cmd.Flags().IntVar(&offset, "offset", 0, "Number of workloads to skip before returning results")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of workloads to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of workloads to skip before returning results")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")
 	cmd.Flags().StringVar(&enclave, "enclave", "",
