@@ -384,10 +384,25 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 			live.WorkloadID, err)
 	}
 
-	// A settled record stays readable for a while after the rollout ends, and
-	// waiting on one would block every deploy for as long as it lingers.
-	if active == nil || workload.IsTerminalReplacementStatus(active.Status) {
+	if active == nil {
 		return live, nil
+	}
+
+	// A settled record stays readable for a while after the rollout ends, so
+	// waiting on one would block every deploy for as long as it lingers. It is
+	// still re-read rather than returned as it stands: a terminal record means a
+	// swap landed recently, possibly in the window between the read above and
+	// this one, and the snapshot from before it names the outgoing artifact.
+	// Planning against that would roll a version the platform had just
+	// installed, and a --lock run would make the version being rolled off
+	// permanent, which cannot be undone.
+	//
+	// The residual, stated rather than pretended away: a swap whose record is
+	// collected inside that same window reads as nil above and is not re-read.
+	// Closing it means re-reading on every deploy, which doubles the workload
+	// GET on the quiet path to catch a window narrower than the one this covers.
+	if workload.IsTerminalReplacementStatus(active.Status) {
+		return Look(live.WorkloadID)
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
@@ -397,6 +412,19 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 	if opts.DryRun {
 		report.say("  %s\n", tui.HintStyle.Render(
 			"A deploy would wait for this rollout to finish and plan against where it lands."))
+
+		// The plan below is computed against a workload the platform is already
+		// moving, so an empty one is not "up to date": the swap decides what
+		// differs, and it has not landed. StateSettling is what says so, and it
+		// is the same answer for the same reason a workload halfway through
+		// stopping gets. Without it the preview prints "Already up to date"
+		// directly beneath the note above, contradicting it.
+		//
+		// Safe to synthesise because it is confined to the preview. Every state
+		// that decides the shape of a plan already groups settling with running
+		// (see actsOnState and creates), so only the verdict moves; and a real
+		// run never arrives here with it, because it waits and re-reads instead.
+		live.State = StateSettling
 
 		return live, nil
 	}

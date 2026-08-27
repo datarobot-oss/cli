@@ -1467,6 +1467,126 @@ func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
 }
 
+// The narrow race the pre-plan read opens, and the reason a terminal record is
+// re-read rather than returned as it stands. The swap lands between the
+// workload read and the replacement read, so the route answers "completed" and
+// there is nothing to wait for — but the snapshot in hand is from before the
+// swap and names the artifact being rolled off.
+//
+// --lock is where that costs something that cannot be taken back: the lock
+// lands on result.ArtifactID, which is seeded from that snapshot, so a run
+// missing the re-read makes the outgoing version permanent.
+func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
+	const (
+		outgoing = "68a0000000000000000000a1"
+		incoming = "68a0000000000000000000b2"
+	)
+
+	var (
+		looks  int
+		locked string
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := doc(t, liveWorkloadJSON)
+			if looks > 1 {
+				// The swap has landed by the time anything re-reads.
+				d["artifactId"] = incoming
+			}
+
+			return d, nil
+		},
+		artifactD: func(id string) (workload.Document, error) {
+			d := draftArtifact(t)
+			d["id"] = id
+
+			return d, nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{
+				ID: "rep-1", ArtifactID: incoming, Status: workload.ReplacementStatusCompleted,
+			}, nil
+		},
+		waitReplace: func(string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			t.Fatal("a settled record is nothing to wait for")
+
+			return nil, nil
+		},
+		lock: func(artifactID string) (*workload.Artifact, error) {
+			locked = artifactID
+
+			return &workload.Artifact{ID: artifactID, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, looks, "a terminal record means a swap landed, so the snapshot is re-read")
+	assert.Equal(t, incoming, locked,
+		"locking is one-way, so it must land on what the swap installed, never on the version rolled off")
+	assert.Equal(t, incoming, result.ArtifactID)
+}
+
+// A record that says nothing is in flight is no evidence a swap just happened,
+// so the quiet path stays one workload read. Without this the fix above would
+// double the read on every deploy to close a window it cannot see anyway.
+func TestRun_NoRolloutRecordCostsNoSecondRead(t *testing.T) {
+	var looks int
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			return doc(t, liveWorkloadJSON), nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, 1, looks, "nothing in flight is nothing to re-read")
+}
+
+// A preview during a swap must not print the one verdict it cannot support. The
+// plan is computed against a workload the platform is already moving, so an
+// empty one says the swap has not landed yet, not that there is nothing to do —
+// and "Already up to date" directly beneath "a deploy would wait" is a preview
+// contradicting itself.
+//
+// The fixture matches the live state field for field, which is what makes the
+// plan empty and is exactly the shape that used to print the wrong answer.
+func TestRun_DryRunDuringARolloutDoesNotClaimUpToDate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", ArtifactID: "68a0…b2", Status: "promoting"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, stderr, "Already up to date",
+		"the swap decides what differs, and it has not landed")
+	assert.Contains(t, stderr, "still settling")
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Equal(t, "settling", result.Status,
+		"the envelope reports the state, and a workload mid-swap is not settled")
+}
+
 // A manifest with nothing to resolve has no workload to ask about, and the
 // replacement route answers the same 404 for "no such workload" as it does for
 // "nothing in flight". Asking would be a round trip whose answer cannot be
