@@ -15,9 +15,8 @@
 package list
 
 import (
-	"fmt"
-
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -56,14 +55,6 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
-
-			if offset < 0 {
-				return fmt.Errorf("invalid --offset %d: must be non-negative", offset)
-			}
-
 			artifacts, err := workload.ListArtifacts(limit, offset, status)
 			if err != nil {
 				return err
@@ -76,8 +67,8 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	workload.AddStatusFlag(cmd, &status)
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
-	cmd.Flags().IntVar(&offset, "offset", 0, "Number of artifacts to skip before returning results")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of artifacts to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of artifacts to skip before returning results")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")

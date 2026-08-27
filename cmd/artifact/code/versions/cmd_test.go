@@ -267,12 +267,12 @@ func TestVersions_NonPositiveLimitRejected(t *testing.T) {
 			dir := initLinkedDir(t, "cat-1", "")
 
 			cmd, _ := newTestCmd(t, dir, Deps{})
-			require.NoError(t, cmd.Flags().Set("limit", val))
 
-			err := cmd.Execute()
+			// Rejected at parse time by countflags.PositiveInt, before any
+			// request is made, so only the Set error needs asserting.
+			err := cmd.Flags().Set("limit", val)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "invalid --limit "+val)
-			assert.Contains(t, err.Error(), "must be positive")
+			assert.Contains(t, err.Error(), "must be a positive integer")
 		})
 	}
 }

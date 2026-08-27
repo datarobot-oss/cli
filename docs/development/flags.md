@@ -7,6 +7,7 @@ This guide covers best practices for defining and managing **command-line flags*
 ## Table of contents
 
 - [Define flags clearly](#define-flags-clearly)
+- [Count flags (parse-time validation)](#count-flags-parse-time-validation)
 - [Global output-format pattern](#global-output-format-pattern)
 - [Universal flags (forwarded to plugins)](#universal-flags-forwarded-to-plugins)
 - [Mark flag groups](#mark-flag-groups)
@@ -41,6 +42,40 @@ func Cmd() *cobra.Command {
     return cmd
 }
 ```
+
+## Count flags (parse-time validation)
+
+Flags that carry a count — `--limit`, `--offset`, `--tail`, `--concurrency` —
+register through `internal/countflags` so out-of-range values are rejected
+while the flags are parsed, before the command runs:
+
+```go
+import "github.com/datarobot/cli/internal/countflags"
+
+cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of workloads to return")
+cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of workloads to skip before returning results")
+```
+
+- `PositiveInt` rejects zero and negative values. Use it for page sizes: a
+  limit of 0 would fetch nothing and read as an empty result instead of an
+  error.
+- `NonNegativeInt` allows zero (meaningful as "from the start" or "no limit")
+  and rejects negatives.
+- Both bind a caller-owned `int`; read the resolved value from your variable
+  as with `IntVar`, and `Flags().GetInt(...)` (used by telemetry closures)
+  keeps working.
+- Do **not** use them where 0 means "unset, use a default" (for example
+  `workload config --port`), or for selectors like `--node-id`.
+
+Invalid input fails at parse time with cobra's standard wrapping:
+
+```
+Error: invalid argument "0" for "--limit" flag: must be a positive integer
+```
+
+so `RunE` stays free of flag-shape checks. Keep library-level argument
+validation in `internal/...` as defense in depth for non-CLI callers. The
+pattern follows `cmd/internal/pollflags`, which does the same for durations.
 
 ## Global output-format pattern
 
