@@ -21,6 +21,7 @@ import (
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/tui"
 )
 
 // roll moves a live workload onto a new version of what the file describes.
@@ -245,7 +246,7 @@ func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 			"Workload %s is on a locked version, which means production.%s\n"+
 				"The new version will be locked too, and locking cannot be undone.\n"+
 				"Type the workload name to roll it, anything else to stop: ",
-			workloadName, alsoStarting(live)), workloadName)
+			tui.WarnStyle.Render("`"+workloadName+"`"), alsoStarting(live)), workloadName)
 	}
 
 	if opts.NonInteractive {
