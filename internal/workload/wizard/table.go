@@ -121,10 +121,13 @@ func tableStyles() table.Styles {
 		BorderBottom(true).
 		Bold(true).
 		Padding(0, 1)
-	s.Cell = valueStyle.Padding(0, 1)
-	// No padding here: bubbles/table applies Selected to the whole row after
-	// the cells already carry theirs, so padding again shifts the highlighted
-	// row a column out of line with the rest.
+	// Cells carry no colour of their own. bubbles/table renders each cell and
+	// then wraps the cursor row in Selected; a cell that set its own foreground
+	// would emit a reset that swallows the selected row's colour, so the colour
+	// is left off here and the selected row is the only thing coloured.
+	s.Cell = lipgloss.NewStyle().Padding(0, 1)
+	// No padding on Selected: it wraps the already-padded row, so padding again
+	// would shift the highlighted row a column out of line with the rest.
 	s.Selected = selectedStyle
 
 	return s

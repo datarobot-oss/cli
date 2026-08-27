@@ -29,11 +29,15 @@ var (
 	// labelStyle names a field without competing with its value.
 	labelStyle = tui.HintStyle
 
-	// valueStyle is a value the user typed or accepted.
-	valueStyle = tui.BaseTextStyle
-
-	// selectedStyle marks the row or option under the cursor.
-	selectedStyle = tui.BaseTextStyle.Foreground(tui.TitleColor).Bold(true)
+	// selectedStyle marks whatever is under the cursor — a menu option, the
+	// advanced-options row, a picker row — in one yellow, so a selection reads
+	// the same wherever the wizard shows a list of things to choose between.
+	// The pickers show it only because their table cells are left uncoloured
+	// (see tableStyles): bubbles/table colours each cell before wrapping the
+	// row, and a coloured cell's reset codes would swallow this foreground.
+	selectedStyle = tui.BaseTextStyle.
+			Foreground(tui.GetAdaptiveColor(tui.DrYellow, tui.DrYellowDark)).
+			Bold(true)
 
 	// noteStyle is the sentence explaining the question. Italic so it reads as
 	// an aside rather than as another thing to answer.
