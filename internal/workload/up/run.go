@@ -555,6 +555,13 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		return result, err
 	}
 
+	// Pulled before anything is started or rolled, so a directory that turns
+	// out to hold the wrong thing is refused before the run has touched the
+	// workload.
+	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
+		return result, err
+	}
+
 	report := newReporter(opts.Stderr, opts.Spinner)
 
 	// Everything that can refuse this run goes first, because a start is a
