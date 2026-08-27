@@ -476,10 +476,11 @@ type WorkloadList struct {
 	Previous   string     `json:"previous"`
 }
 
-// maxWorkloadPageSize is the server-enforced ceiling on the list endpoint's
-// limit query param (1..100); larger values are rejected with a 422, so the
-// page size is clamped and larger totals are satisfied via next-links.
-const maxWorkloadPageSize = 100
+// maxPageSize is the server-enforced ceiling on the list endpoints' limit query
+// param (1..100); larger values are rejected with a 422, so the page size is
+// clamped and larger totals are satisfied via next-links. Shared by the
+// workload and artifact list endpoints, which enforce the same ceiling.
+const maxPageSize = 100
 
 // ListWorkloads fetches up to limit workloads starting at offset, optionally
 // filtered by status and by the name of the Enclave they actually run on.
@@ -496,7 +497,7 @@ func ListWorkloads(limit, offset int, statuses []string, enclave string) ([]Work
 	enclave = strings.TrimSpace(enclave)
 
 	query := url.Values{}
-	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
+	query.Set("limit", strconv.Itoa(min(limit, maxPageSize)))
 	query.Set("offset", strconv.Itoa(offset))
 
 	for _, s := range statuses {

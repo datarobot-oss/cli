@@ -468,6 +468,14 @@ func TestListWorkloads_RejectsNonPositiveLimit(t *testing.T) {
 	}
 }
 
+func TestListWorkloads_RejectsNegativeOffset(t *testing.T) {
+	for _, offset := range []int{-1} {
+		_, err := ListWorkloads(1, offset, nil, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
+	}
+}
+
 func TestDeleteWorkload_Success(t *testing.T) {
 	installSkipAuth(t)
 

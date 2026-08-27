@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -528,18 +529,38 @@ func DeleteArtifact(artifactID string) error {
 	return drapi.DeleteJSON(url, "artifact", nil, nil)
 }
 
+// ListArtifacts fetches up to limit artifacts starting at offset, optionally
+// filtered by status. It validates its arguments and clamps the page size to
+// the server-enforced ceiling, mirroring ListWorkloads.
 func ListArtifacts(limit, offset int, status Status) ([]Artifact, error) {
-	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit) + "&offset=" + strconv.Itoa(offset)
-
-	if status != "" {
-		endpoint += "&status=" + string(status)
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	pageURL, err := config.GetEndpointURL(endpoint)
+	if offset < 0 {
+		return nil, fmt.Errorf("invalid offset %d: must be non-negative", offset)
+	}
+
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(min(limit, maxPageSize)))
+	query.Set("offset", strconv.Itoa(offset))
+
+	if status != "" {
+		query.Set("status", string(status))
+	}
+
+	pageURL, err := drapi.EndpointURL("/artifacts/", query)
 	if err != nil {
 		return nil, err
 	}
 
+	return paginateArtifacts(pageURL, limit)
+}
+
+// paginateArtifacts follows next-links from pageURL, accumulating artifacts
+// until limit is reached or the pages run out. Split from ListArtifacts to
+// keep that function's cyclomatic complexity under the linter threshold.
+func paginateArtifacts(pageURL string, limit int) ([]Artifact, error) {
 	var all []Artifact
 
 	for pageURL != "" {
