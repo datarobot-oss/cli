@@ -324,10 +324,10 @@ func TestTriggerArtifactBuild_ClientTimeoutSaysRerunIsSafe(t *testing.T) {
 	// safe rather than leaving a bare "context deadline exceeded".
 	installSkipAuth(t)
 
-	origTimeout := triggerTimeoutSecs
-	triggerTimeoutSecs = 1
+	origTimeout := triggerTimeout
+	triggerTimeout = time.Millisecond
 
-	t.Cleanup(func() { triggerTimeoutSecs = origTimeout })
+	t.Cleanup(func() { triggerTimeout = origTimeout })
 
 	release := make(chan struct{})
 

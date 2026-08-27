@@ -21,11 +21,21 @@
 // therefore carries a failed response's body raw and uninterpreted, and this
 // package is where the Workload API's envelope is read into meaning. The
 // same split exists for pipelines, whose client layer is internal/pipeline.
+//
+// Contract: every exported function here must keep returning something
+// errors.As can unpack into *drapi.HTTPError — the original error unchanged,
+// %w-wrapped, or (as LiftDetail's detail-found branch does) a fresh
+// *drapi.HTTPError carrying the same StatusCode/URL. At least 32 call sites
+// across cmd/pipeline, cmd/artifact, cmd/workload, cmd/dotenv,
+// internal/workload, and internal/pipeline depend on errors.As(err, &httpErr)
+// succeeding to read StatusCode. Breaking that chain is silent: no compile
+// error, no red test — every one of those checks just starts returning false.
 package apiclient
 
 import (
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -33,9 +43,9 @@ import (
 // PostJSON is drapi.PostJSON with the Workload API's error envelope applied:
 // a failure whose body is a {"detail": ...} document is rewrapped so the
 // caller reads the server's own sentence instead of a raw JSON dump. Every
-// other error passes through untouched.
-func PostJSON(url, info string, body, v any, timeoutSecs ...int) error {
-	return LiftDetail(drapi.PostJSON(url, info, body, v, timeoutSecs...))
+// other error passes through untouched. timeout forwards to drapi.PostJSON.
+func PostJSON(url, info string, body, v any, timeout ...time.Duration) error {
+	return LiftDetail(drapi.PostJSON(url, info, body, v, timeout...))
 }
 
 // LiftDetail applies the Workload API's error envelope to an error minted by

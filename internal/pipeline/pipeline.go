@@ -311,9 +311,7 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(uploadTimeout)
-
-	resp, err := client.Do(req)
+	resp, err := drapi.Do(req, uploadTimeout)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", endpoint, err)
 	}

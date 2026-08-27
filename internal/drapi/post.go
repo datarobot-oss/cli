@@ -24,14 +24,15 @@ import (
 	"github.com/datarobot/cli/internal/log"
 )
 
-// Post sends body as JSON. timeoutSecs optionally overrides the default
-// client timeout, the same seam Get has: a caller whose endpoint does slow
-// synchronous work server-side (e.g. triggering an image build) must outlive
-// the server's own internal budget or it abandons answers already on the way.
-func Post(url, info string, body any, timeoutSecs ...int) (*http.Response, error) {
-	timeout := DefaultClientTimeout
-	if len(timeoutSecs) > 0 {
-		timeout = time.Duration(timeoutSecs[0]) * time.Second
+// Post sends body as JSON. timeout optionally overrides DefaultClientTimeout,
+// the same seam Get has: a caller whose endpoint does slow synchronous work
+// server-side (e.g. triggering an image build) must outlive the server's own
+// internal budget or it abandons answers already on the way. Omitted, or ≤0,
+// falls back to DefaultClientTimeout (see NewHTTPClient).
+func Post(url, info string, body any, timeout ...time.Duration) (*http.Response, error) {
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
 	}
 
 	payload, err := json.Marshal(body)
@@ -62,7 +63,7 @@ func Post(url, info string, body any, timeoutSecs ...int) (*http.Response, error
 		return nil, err
 	}
 
-	resp, err := NewHTTPClient(timeout).Do(req)
+	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +107,9 @@ func restoreRequestBody(req *http.Request) error {
 	return nil
 }
 
-func PostJSON(url, info string, body, v any, timeoutSecs ...int) error {
-	resp, err := Post(url, info, body, timeoutSecs...)
+// PostJSON is Post with the response body decoded into v. timeout forwards to Post.
+func PostJSON(url, info string, body, v any, timeout ...time.Duration) error {
+	resp, err := Post(url, info, body, timeout...)
 	if err != nil {
 		return err
 	}
