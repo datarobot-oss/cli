@@ -69,3 +69,17 @@ func TestCmd_InvalidOffset(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be non-negative")
 }
+
+func TestCmd_BlankEnclave(t *testing.T) {
+	// An explicit empty --enclave must fail loudly rather than silently
+	// listing every workload with the filter dropped.
+	for _, value := range []string{"", "   "} {
+		cmd := Cmd()
+		cmd.PreRunE = nil
+		cmd.SetArgs([]string{"--enclave", value})
+
+		err := cmd.Execute()
+		require.Error(t, err, "enclave %q", value)
+		assert.Contains(t, err.Error(), "invalid --enclave")
+	}
+}

@@ -25,6 +25,14 @@ import (
 )
 
 // eeDoc is one execution environment as the server serializes it.
+// eeDocLang is eeDoc with a programmingLanguage, for the sorting tests.
+func eeDocLang(id, name, language, versionID string) string {
+	return fmt.Sprintf(
+		`{"id": %q, "name": %q, "programmingLanguage": %q, "latestSuccessfulVersion": {"id": %q}}`,
+		id, name, language, versionID,
+	)
+}
+
 func eeDoc(id, name, versionID string) string {
 	if versionID == "" {
 		return fmt.Sprintf(`{"id": %q, "name": %q, "latestSuccessfulVersion": null}`, id, name)
@@ -269,7 +277,7 @@ func TestListExecutionEnvironments_SkipsVersionlessEnvironments(t *testing.T) {
 	assert.Equal(t, "ee-3", environments[1].ID)
 }
 
-func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
+func TestListExecutionEnvironments_DrainsSortsAndTrimsDeterministically(t *testing.T) {
 	installSkipAuth(t)
 
 	// next is filled in once the server has an address; the handler only ever
@@ -280,11 +288,19 @@ func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		pages++
 
-		fmt.Fprintf(w, `{"data": [%s, %s], "next": %q}`,
-			eeDoc(fmt.Sprintf("ee-%da", pages), "A", "ver-a"),
-			eeDoc(fmt.Sprintf("ee-%db", pages), "B", "ver-b"),
-			next,
-		)
+		switch pages {
+		case 1:
+			fmt.Fprintf(w, `{"data": [%s, %s], "next": %q}`,
+				eeDocLang("ee-pyz", "Zephyr", "python", "v1"),
+				eeDocLang("ee-oth", "Aardvark", "other", "v2"),
+				next,
+			)
+		default:
+			fmt.Fprintf(w, `{"data": [%s, %s], "next": ""}`,
+				eeDocLang("ee-pya", "apex", "Python", "v3"),
+				eeDocLang("ee-r", "Stats", "r", "v4"),
+			)
+		}
 	}))
 
 	defer srv.Close()
@@ -296,8 +312,49 @@ func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
 	environments, err := ListExecutionEnvironments(3)
 	require.NoError(t, err)
 
-	assert.Len(t, environments, 3)
-	assert.Equal(t, 2, pages, "paging stops as soon as the limit is reached")
+	// Every page is read BEFORE trimming: an unsorted early stop would keep
+	// whichever environments the server listed first, an arbitrary subset.
+	assert.Equal(t, 2, pages, "the whole listing is drained before sorting and trimming")
+
+	// Languages cluster (case-insensitively), names sort within a language,
+	// and the trim cuts the SORTED list — here dropping the catch-all
+	// "other" entry, the least informative group, not a random page-two row.
+	require.Len(t, environments, 3)
+	assert.Equal(t, []string{"ee-pya", "ee-pyz", "ee-r"},
+		[]string{environments[0].ID, environments[1].ID, environments[2].ID})
+}
+
+func TestListExecutionEnvironments_ClustersLanguagesWithOtherLast(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"data": [%s, %s, %s, %s, %s], "next": ""}`,
+			eeDocLang("ee-other", "AAA first by name alone", "other", "v1"),
+			eeDocLang("ee-none", "BBB unlabeled", "", "v2"),
+			eeDocLang("ee-r", "R Lab", "R", "v3"),
+			eeDocLang("ee-java", "JVM", "java", "v4"),
+			eeDocLang("ee-py", "Py", "python", "v5"),
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	environments, err := ListExecutionEnvironments(50)
+	require.NoError(t, err)
+	require.Len(t, environments, 5)
+
+	got := make([]string, 0, len(environments))
+	for _, ee := range environments {
+		got = append(got, ee.ID)
+	}
+
+	// java < python < r, then the catch-all and the unlabeled at the end by
+	// name — "other" is where the platform files what it cannot name, so it
+	// belongs after the languages that say something. The capital "R" is the
+	// pin on the case folding: byte-sorted it would land ahead of java.
+	assert.Equal(t, []string{"ee-java", "ee-py", "ee-r", "ee-other", "ee-none"}, got)
 }
 
 func TestListExecutionEnvironments_ServerError(t *testing.T) {

@@ -25,6 +25,7 @@ import (
 type spinnerModel struct {
 	spinner Loading
 	label   string
+	prefix  string
 	fn      func() error
 	done    bool
 }
@@ -60,18 +61,30 @@ func (m spinnerModel) View() string {
 		return ""
 	}
 
-	return InfoStyle.Render(m.spinner.View()+" ") + m.label + "\n"
+	// The Dot frames carry their own trailing space, so nothing more goes
+	// between glyph and label: one column, the same gap the glyph-led lines
+	// around a spinner (a phase list's "✓ label") leave.
+	return m.prefix + InfoStyle.Render(m.spinner.View()) + m.label + "\n"
 }
 
 // RunWithSpinner runs fn in the background while showing an animated spinner
 // with the given label. Returns the error from fn, if any.
 func RunWithSpinner(label string, fn func() error) error {
+	return RunWithSpinnerPrefix("", label, fn)
+}
+
+// RunWithSpinnerPrefix is RunWithSpinner with a fixed prefix ahead of the
+// glyph on every frame, including the non-interactive fallback line. The
+// glyph leads the line, so a caller aligning the spinner under other
+// glyph-led output (a phase list's "  ✓ label") has to hand the indent in
+// here; an indent on the label could never move the glyph.
+func RunWithSpinnerPrefix(prefix, label string, fn func() error) error {
 	if !reader.IsStdinTerminal() {
 		return fn()
 	}
 
 	if reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stderr, InfoStyle.Render("• ")+label)
+		fmt.Fprintln(os.Stderr, prefix+InfoStyle.Render("• ")+label)
 
 		return fn()
 	}
@@ -81,6 +94,7 @@ func RunWithSpinner(label string, fn func() error) error {
 	m := spinnerModel{
 		spinner: NewLoading(),
 		label:   label,
+		prefix:  prefix,
 		fn: func() error {
 			fnErr = fn()
 

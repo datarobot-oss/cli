@@ -16,6 +16,7 @@ package codesync
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
@@ -39,6 +40,8 @@ type fakeEngine struct {
 	executeErr    error
 	stale         bool
 	migrationNote string
+	ignoreNotice  string
+	lockedNote    string
 	fetcher       display.ContentFetcher
 	closeErr      error
 
@@ -63,6 +66,10 @@ func (f *fakeEngine) Close() error {
 func (f *fakeEngine) StaleRollbackRestored() bool { return f.stale }
 
 func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
+
+func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
+
+func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 
@@ -186,6 +193,27 @@ func TestRunE_DryRun_NonEmpty_NoExecute(t *testing.T) {
 	assert.False(t, fe.executed)
 }
 
+// The engine lets a preview plan against a locked artifact, because the
+// deploy needs the count. What the preview must never do is read as a sync
+// that is going to work, so whatever the engine says about the lock has to
+// reach the reader.
+func TestRunE_LockedNoticeReachesStderr(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "is locked")
+	assert.False(t, fe.executed)
+}
+
 // TestRunE_PlanError_Propagates: errors from Plan surface verbatim.
 func TestRunE_PlanError_Propagates(t *testing.T) {
 	dir := t.TempDir()
@@ -199,6 +227,70 @@ func TestRunE_PlanError_Propagates(t *testing.T) {
 	_, _, _, err := runWithDeps(t, deps, flags)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, upstream)
+}
+
+// The ignore-file notice is an advisory, not data. It belongs on stderr in
+// every mode, and under --output-format json stdout has to stay parseable end
+// to end, which is asserted by decoding it rather than by looking for the
+// notice's absence: a substring check passes for any stdout that merely lacks
+// that one sentence.
+func TestRunE_IgnoreFileNotice_GoesToStderrAndLeavesStdoutParseable(t *testing.T) {
+	const notice = "Using .wapiignore for sync ignore patterns."
+
+	for _, format := range []string{"", "json"} {
+		t.Run("output-format="+format, func(t *testing.T) {
+			dir := t.TempDir()
+			linkProject(t, dir)
+
+			fe := &fakeEngine{
+				plan:         &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+				result:       &sync.Result{NewVersion: "v2", UploadedCount: 1},
+				ignoreNotice: notice,
+			}
+
+			flags := map[string]string{"dir": dir, "yes": "true"}
+			if format != "" {
+				flags["output-format"] = format
+			}
+
+			_, stdout, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+			require.NoError(t, err)
+
+			assert.Contains(t, stderr.String(), notice)
+			assert.NotContains(t, stdout.String(), notice)
+
+			if format == "json" {
+				assertOnlyJSON(t, stdout)
+			}
+		})
+	}
+}
+
+// assertOnlyJSON drains r as a stream of JSON documents and fails if anything
+// else is in there. The command emits the plan and then the result, so the
+// count is not fixed, but "parses to EOF" is the property the repo's
+// JSON-purity rule actually states.
+func assertOnlyJSON(t *testing.T, r io.Reader) {
+	t.Helper()
+
+	dec := json.NewDecoder(r)
+
+	docs := 0
+
+	for {
+		var doc json.RawMessage
+
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		require.NoError(t, err, "stdout must contain only JSON documents")
+
+		docs++
+	}
+
+	assert.Positive(t, docs, "expected at least one JSON document on stdout")
 }
 
 // TestRunE_JSONOutput emits the plan plus result as two JSON
@@ -220,6 +312,41 @@ func TestRunE_JSONOutput(t *testing.T) {
 	out := stdout.String()
 	assert.Contains(t, out, `"a.py"`)
 	assert.Contains(t, out, `"v2"`)
+}
+
+// Exit is 0 and the upload list reads as a sync that will work, so this flag
+// is the only thing in the document that says the plan can never be applied.
+// The stderr notice does not reach a script.
+func TestRunE_JSONOutput_LockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		lockedNote: "Artifact art-1 is locked, so this is a preview only.",
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": true`)
+	assert.False(t, fe.executed)
+}
+
+// The ordinary case says so too, rather than leaving a reader to infer it from
+// a key that is not there.
+func TestRunE_JSONOutput_UnlockedIsFlagged(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"locked": false`)
 }
 
 // TestRunE_JSONOutput_ConflictWithoutYes: with conflicts present and

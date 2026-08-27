@@ -159,6 +159,8 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 			fmt.Print(tui.InfoStyle.Render(dotenvBaseURL))
 			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
 		} else {
+			// Blames the token for any non-200, unlike the env-var leg.
+			// Splitting on the status here is a planned follow-up.
 			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
 			fmt.Print(tui.BaseTextStyle.Render("Run "))
 			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))

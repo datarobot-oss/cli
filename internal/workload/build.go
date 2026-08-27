@@ -15,11 +15,12 @@
 package workload
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"net/http"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Build statuses are server-side enum values (UPPERCASE). All five were
@@ -141,46 +143,130 @@ type BuildSummary struct {
 // will not progress further (COMPLETED, FAILED, CANCELLED). Unknown statuses
 // are treated as non-terminal so polling keeps going rather than declaring
 // success on a status the server added without telling us.
+//
+// The comparison folds case, as the replacement and artifact classifiers do.
+// These constants are upper case where the workload's are lower, which is the
+// platform disagreeing with itself about the casing of its own status enums;
+// read exactly, a build answering "completed" would be polled until the
+// timeout and then fail a deploy whose image was already built.
 func IsTerminalBuildStatus(s string) bool {
-	switch s {
-	case BuildStatusCompleted, BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
+	return IsBuildErrorStatus(s) || IsBuildCompleted(s)
+}
 
-	return false
+// IsBuildCompleted reports whether s is the one terminal status that produced
+// an image.
+//
+// It exists so the question is asked the same way everywhere. Folding the
+// terminal check while a consumer went on comparing exactly was worse than not
+// folding at all: the wait would accept a lowercase "completed" and the code
+// reading the result would call the same build unfinished, so a deploy would
+// succeed its wait and then have no image to ship.
+func IsBuildCompleted(s string) bool {
+	return strings.EqualFold(s, BuildStatusCompleted)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
 func IsBuildErrorStatus(s string) bool {
-	switch s {
-	case BuildStatusFailed, BuildStatusCancelled:
+	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
+}
+
+// Trigger retries are keyed on exactly the two statuses the platform answers
+// with explicit safe-to-retry semantics: 503 (a dependency it needs is
+// temporarily down) and 504 (the build service did not confirm the submission
+// and nothing was recorded on the artifact). Any other status fails fast —
+// a plain 500 from an older server may have half-succeeded, where re-POSTing
+// risks a duplicate build.
+var triggerRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
+
+// triggerRetrySleep is time.Sleep, replaced by tests so retry coverage does
+// not spend wall-clock time.
+var triggerRetrySleep = time.Sleep
+
+// triggerTimeout must comfortably exceed the platform's own budget for
+// the trigger: workload-api waits up to 30s for its image build service to
+// accept the submission before answering. A client that hangs up at or under
+// that budget abandons an answer already on the way — including the 504 that
+// says a retry is safe. A var so tests can shrink it. Observed live on
+// staging: the default 30s client timeout expired mid-trigger and the deploy
+// died on "context deadline exceeded" with no way to tell what happened.
+var triggerTimeout = 60 * time.Second
+
+// explainTriggerTimeout wraps a client-side timeout — the one failure where
+// the CLI hung up rather than the platform answering — with what the user
+// needs to know: the outcome is unknown, and re-running is safe because a new
+// trigger supersedes any build the lost request may have started. Every other
+// error passes through untouched.
+func explainTriggerTimeout(err error) error {
+	if !os.IsTimeout(err) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"the build trigger got no response within %s; the platform may still have started the build. "+
+			"Re-running 'dr workload up' is safe: a new trigger supersedes any build this one started: %w",
+		triggerTimeout, err)
+}
+
+func isRetryableTriggerStatus(err error) bool {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	// A 503 is safe to retry wherever it was minted: a gateway answers it
+	// before the request reaches the platform. A 504 is only safe when the
+	// PLATFORM answered it — its "nothing was recorded" guarantee comes with
+	// a JSON detail body. A proxy's own 504 (HTML/plain body, no envelope)
+	// means the platform may still be processing and might yet record the
+	// build, so retrying risks a duplicate. The check reads the raw body
+	// rather than Detail, so it holds whatever layer shaped the error.
+	switch httpErr.StatusCode {
+	case http.StatusServiceUnavailable:
 		return true
+	case http.StatusGatewayTimeout:
+		return apiclient.ErrorDetail(httpErr.Body) != ""
 	}
 
 	return false
 }
 
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and
-// returns the trigger response. The defensive empty-slice check is in the
-// caller so the service layer remains a thin pass-through of the server
-// shape.
+// returns the trigger response, retrying the statuses the platform declares
+// safe to retry. The defensive empty-slice check is in the caller so the
+// service layer remains a thin pass-through of the server shape.
 func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/")
 	if err != nil {
 		return nil, err
 	}
 
-	var resp BuildTriggerResponse
+	for attempt := 0; ; attempt++ {
+		var resp BuildTriggerResponse
 
-	if err := drapi.PostJSON(url, "build", map[string]any{}, &resp); err != nil {
-		return nil, err
+		err := apiclient.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeout)
+		if err == nil {
+			return &resp, nil
+		}
+
+		if attempt >= len(triggerRetryDelays) || !isRetryableTriggerStatus(err) {
+			return nil, explainTriggerTimeout(err)
+		}
+
+		log.Debug("build trigger got a retryable status; retrying",
+			"artifact_id", artifactID, "attempt", attempt+1, "err", err)
+		triggerRetrySleep(triggerRetryDelays[attempt])
 	}
-
-	return &resp, nil
 }
 
 // GetArtifactBuild fetches a single Build by id.
 func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
+	return fetchArtifactBuild(artifactID, buildID, "build")
+}
+
+// fetchArtifactBuild is GetArtifactBuild with the caller choosing drapi's
+// per-request log label; the poll loop passes "" so its every-five-seconds
+// fetch line cannot interleave with a streamed build log.
+func fetchArtifactBuild(artifactID, buildID, reqInfo string) (*Build, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID))
 	if err != nil {
 		return nil, err
@@ -188,7 +274,7 @@ func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
 
 	var build Build
 
-	if err := drapi.GetJSON(url, "build", &build); err != nil {
+	if err := drapi.GetJSON(url, reqInfo, &build); err != nil {
 		return nil, err
 	}
 
@@ -238,54 +324,39 @@ func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 	return all, nil
 }
 
-// GetArtifactBuildLogs returns parsed log entries for a build. The endpoint
-// emits newline-delimited JSON; we tolerate malformed lines so a single bad
-// record cannot blank the whole tail. The original bytes for each line are
-// preserved in Raw so JSON output can pass them through unchanged.
+// GetArtifactBuildLogs returns a build's log lines, oldest first, read from
+// the artifact's OTEL stream filtered by external_build_id — the replacement
+// for the deprecated GET /artifacts/{id}/builds/{id}/logs proxy, whose
+// records only existed for as long as IBS retained the build. The OTEL
+// records are mapped onto the legacy BuildLogEntry shape so level filtering
+// and both renderers carry over; Raw holds the OTEL record itself, which is
+// what JSON output now passes through.
 func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID) + "/logs")
+	otel, err := fetchArtifactBuildLogs(artifactID, buildID, 0, "", "", "build logs")
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := drapi.Get(url, "build logs")
-	if err != nil {
-		return nil, err
-	}
+	// Newest first from the server; chronological for display, with the sort
+	// settling lines the collector ingested out of event order.
+	slices.Reverse(otel)
+	sortChronological(otel)
 
-	defer resp.Body.Close()
+	entries := make([]BuildLogEntry, 0, len(otel))
 
-	return parseBuildLogs(resp.Body)
-}
-
-func parseBuildLogs(r io.Reader) ([]BuildLogEntry, error) {
-	scanner := bufio.NewScanner(r)
-	// Each line can be a multi-KB structured log; bump the buffer past the
-	// 64KiB default to accommodate verbose entries without truncation.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var entries []BuildLogEntry
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
+	for _, e := range otel {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			raw = nil // the named fields still render; only passthrough is lost
 		}
 
-		var entry BuildLogEntry
-		if err := json.Unmarshal(line, &entry); err != nil {
-			// Skip malformed lines rather than fail the whole fetch;
-			// log payloads regularly include non-JSON tail lines from
-			// the underlying buildkit pipe.
-			continue
-		}
-
-		entry.Raw = append(json.RawMessage(nil), line...)
-		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read build logs: %w", err)
+		entries = append(entries, BuildLogEntry{
+			Asctime:   e.Timestamp,
+			Levelname: strings.ToUpper(e.Level),
+			Message:   e.Message,
+			BuildID:   buildID,
+			Raw:       raw,
+		})
 	}
 
 	return entries, nil
@@ -305,7 +376,7 @@ func WaitForBuild(
 	deadline := time.Now().Add(timeout)
 
 	for {
-		build, err := GetArtifactBuild(artifactID, buildID)
+		build, err := fetchArtifactBuild(artifactID, buildID, "")
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}
@@ -350,7 +421,7 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		DurationSeconds: buildDurationSeconds(*build),
 	}
 
-	if build.Status != BuildStatusCompleted {
+	if !IsBuildCompleted(build.Status) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {

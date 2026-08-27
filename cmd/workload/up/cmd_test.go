@@ -18,8 +18,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,12 +53,21 @@ func stubRun(t *testing.T, result up.Result, err error) *up.Options {
 func runCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
+	return runCmdWithInput(t, "", args...)
+}
+
+// runCmdWithInput is runCmd with something waiting on stdin, for the one
+// question the deploy asks.
+func runCmdWithInput(t *testing.T, input string, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+
 	cmd := Cmd()
 
 	var out, errOut bytes.Buffer
 
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader(input))
 	cmd.SetArgs(args)
 
 	// The command's own PreRunE authenticates, which a unit test must not do.
@@ -128,6 +141,25 @@ func TestCmd_BuildIDIsNullNotEmpty(t *testing.T) {
 	assert.Nil(t, value, "no build happened, which is not the same as a build that produced nothing")
 }
 
+// The other half of the same promise: a deploy that did build says which one,
+// so a pipeline can fetch the logs without going looking for it.
+func TestCmd_BuildIDIsCarriedWhenABuildRan(t *testing.T) {
+	result := deployed()
+	result.BuildID = "68c0000000000000000000b2"
+
+	stubRun(t, result, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68c0000000000000000000b2", body["buildId"])
+}
+
 // TestCmd_JSONImpliesNonInteractive stops a wizard being drawn on stderr
 // while stdout is being parsed.
 func TestCmd_JSONImpliesNonInteractive(t *testing.T) {
@@ -162,6 +194,30 @@ func TestCmd_RefusesBindingFlags(t *testing.T) {
 	}
 }
 
+// A --dir the OS would not call a directory is refused by name, the same as
+// `dr workload delete` refuses it. Left to the manifest search it came back as
+// a bare "not a directory: <abs path>" with nothing saying which flag put that
+// path there, and the two commands print this flag at each other.
+func TestCmd_RefusesADirThatIsNotADirectory(t *testing.T) {
+	for name, dir := range map[string]string{
+		"absent": "no-such-directory",
+		"a file": filepath.Join(t.TempDir(), "file"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if name == "a file" {
+				require.NoError(t, os.WriteFile(dir, []byte("x"), 0o600))
+			}
+
+			stubRun(t, deployed(), nil)
+
+			_, _, err := runCmd(t, "--dir", dir)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--dir "+dir)
+			assert.ErrorIs(t, err, manifest.ErrNotADirectory)
+		})
+	}
+}
+
 func TestCmd_DryRunSaysSoAndPrintsNoEndpoint(t *testing.T) {
 	result := deployed()
 	result.Endpoint = ""
@@ -178,10 +234,13 @@ func TestCmd_DryRunSaysSoAndPrintsNoEndpoint(t *testing.T) {
 func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 	seen := stubRun(t, deployed(), nil)
 
-	_, _, err := runCmd(t, "--detach", "--dir", "/tmp/project")
+	// A real directory, because --dir is now checked before the deploy runs.
+	project := t.TempDir()
+
+	_, _, err := runCmd(t, "--detach", "--dir", project)
 	require.NoError(t, err)
 	assert.True(t, seen.Detach)
-	assert.Equal(t, "/tmp/project", seen.Dir)
+	assert.Equal(t, project, seen.Dir)
 
 	locking := stubRun(t, deployed(), nil)
 
@@ -238,6 +297,26 @@ func TestCmd_FailureAfterTheWorkloadExistsStillEmitsTheEnvelope(t *testing.T) {
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", body["workloadId"])
 }
 
+// A build that fails never creates a workload, so gating the envelope on the
+// workload id alone would drop the one id the failure produced and leave a
+// pipeline with nothing to fetch the logs with.
+func TestCmd_FailedBuildStillEmitsTheEnvelope(t *testing.T) {
+	stubRun(t, up.Result{BuildID: "68c0000000000000000000b2", Action: "created"},
+		errors.New("build 68c0000000000000000000b2 finished as FAILED"))
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.Error(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope),
+		"a failed build is still a build someone has to go and read")
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68c0000000000000000000b2", body["buildId"])
+	assert.Empty(t, body["workloadId"])
+}
+
 // TestCmd_FailureBeforeAnythingExistsJustFails: there is no id to report, so
 // an envelope of empty strings would be noise.
 func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
@@ -247,6 +326,290 @@ func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.Contains(t, err.Error(), "manifest")
+}
+
+// The deploy asks one question, and only the exact name answers it. The
+// question goes to stderr because stdout carries the endpoint.
+func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
+	cases := []struct {
+		typed string
+		want  bool
+	}{
+		{"my-app\n", true},
+		{"  my-app  \n", true},
+		{"y\n", false},
+		{"My-App\n", false},
+		{"\n", false},
+		{"", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.typed, func(t *testing.T) {
+			cmd := Cmd()
+
+			var errOut bytes.Buffer
+
+			cmd.SetErr(&errOut)
+			cmd.SetIn(strings.NewReader(c.typed))
+
+			agreed, err := typedConfirm(cmd)("Type the workload name: ", "my-app")
+			require.NoError(t, err)
+
+			assert.Equal(t, c.want, agreed)
+			assert.Contains(t, errOut.String(), "Type the workload name: ")
+		})
+	}
+}
+
+// The question reaches the deploy wired up, so a locked production roll can
+// actually be answered from a terminal.
+func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmdWithInput(t, "my-app\n")
+	require.NoError(t, err)
+	require.NotNil(t, seen.Confirm)
+
+	agreed, err := seen.Confirm("anything? ", "my-app")
+	require.NoError(t, err)
+	assert.True(t, agreed)
+}
+
+// onATerminal makes the run look like one a person is watching. A test
+// harness always pipes stdin, so without this every test is the CI case.
+func onATerminal(t *testing.T) {
+	t.Helper()
+
+	prev := isStdinTerminalFn
+	isStdinTerminalFn = func() bool { return true }
+
+	t.Cleanup(func() { isStdinTerminalFn = prev })
+}
+
+// --yes is the answer, so there is nothing left to ask and the deploy is
+// handed no way to ask it.
+func TestCmd_YesHandsTheDeployNoQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--yes")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm, "--yes already said yes")
+}
+
+// --output-format json keeps the wizard off the terminal, but it says how to
+// format stdout rather than that production may be rolled without a word.
+// Somebody is still there, so the question still reaches the deploy.
+func TestCmd_JSONOutputStillHandsOverTheQuestion(t *testing.T) {
+	onATerminal(t)
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive, "no wizard may be drawn into the document")
+	assert.NotNil(t, seen.Confirm, "but there is still someone to ask about production")
+}
+
+// With no terminal there is nobody to ask, which is the CI case: the deploy
+// gets no question and rolls on the review the pipeline already had.
+func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.True(t, seen.NonInteractive)
+	assert.Nil(t, seen.Confirm)
+}
+
+// The warning leads with one of these, and which one is not cosmetic. A dry
+// run has changed nothing and may be previewing a workload that does not exist
+// yet, so the present tense would contradict the "nothing was changed" line
+// printed directly above it.
+const (
+	draftHeadline     = "This workload is running a draft artifact."
+	draftHeadlinePlan = "This workload would run a draft artifact."
+)
+
+// draftWarned reports whether either tense reached the stream, for the tests
+// that assert silence and have no reason to care which one was suppressed.
+func draftWarned(stderr string) bool {
+	return strings.Contains(stderr, draftHeadline) || strings.Contains(stderr, draftHeadlinePlan)
+}
+
+// A deploy onto a draft is on a clock nothing in the output used to mention:
+// the workload is stopped eight hours after it starts running, whatever it is
+// serving, so an endpoint shared in the afternoon can be dead by morning.
+func TestCmd_DraftDeploySaysItIsTemporary(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, "stopped after 8 hours")
+	assert.Contains(t, stderr, "dr workload up --lock")
+
+	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout,
+		"the warning is prose and belongs on stderr, so the endpoint stays pipeable")
+}
+
+// The deadline is stated, and stated as a running time rather than an idle
+// one. The platform's sweep selects on how long the workload has been running
+// and never on whether it served anything, so "idle" or "inactive" here would
+// be a comfortable lie to the one person who most needs the truth: someone
+// about to share an endpoint they intend to keep using.
+func TestCmd_DraftWarningStatesTheDeadline(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "8 hours", "the figure is the platform's own published contract")
+	assert.Contains(t, stderr, "whether or not they are in use", "the clock does not care about traffic")
+
+	for _, wrong := range []string{"idle", "inactiv", "reclaim"} {
+		assert.NotContains(t, stderr, wrong,
+			"nothing deletes the artifact, and the timeout is not an inactivity one")
+	}
+}
+
+// The trade the ticket asked for. Someone who wants to stop a workload goes
+// looking for the command; someone whose workload stops by itself does not
+// know there is anything to look for.
+func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "the other two lines stay")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A locked artifact is permanent, so there is nothing to warn about and the
+// stop line keeps its slot.
+func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
+	result := deployed()
+	result.Locked = true
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.False(t, draftWarned(stderr))
+	assert.NotContains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A --lock run is the remedy, so telling it about drafts would be telling it
+// what it just did.
+func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t, "--lock")
+	require.NoError(t, err)
+	assert.False(t, draftWarned(stderr))
+}
+
+// Someone previewing a first deploy is exactly who the warning is for, and a
+// first deploy has no workload id yet, so the dry run cannot be gated on one.
+func TestCmd_DryRunWarnsAboutADraftItWouldDeploy(t *testing.T) {
+	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
+
+	stdout, stderr, err := runCmd(t, "--dry-run")
+	require.NoError(t, err)
+
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "nothing was changed")
+	assert.Contains(t, stderr, draftHeadlinePlan,
+		"a preview has deployed nothing, so it may not claim the workload is already running one")
+	assert.NotContains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, "dr workload up --lock",
+		"a dry run never reaches the Next list, so the warning has to carry the remedy itself")
+}
+
+func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
+	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
+
+	_, stderr, err := runCmd(t, "--dry-run", "--lock")
+	require.NoError(t, err)
+	assert.False(t, draftWarned(stderr))
+}
+
+// The purity rule, held against the one thing added since it was written: the
+// warning is prose, and prose never reaches a machine-readable stream.
+func TestCmd_JSONOutputCarriesNoDraftProse(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "stdout must stay one JSON document")
+	assert.False(t, draftWarned(stdout))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, false, body["locked"], "the envelope already says this in a form a machine can read")
+}
+
+// Nothing was deployed, so there is no endpoint with a clock on it and the
+// warning would be about nothing. Same guard the Next list already uses.
+func TestCmd_NoWorkloadSaysNothingAboutDrafts(t *testing.T) {
+	stubRun(t, up.Result{BuildID: "68c0000000000000000000b2"}, errors.New("build failed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.False(t, draftWarned(stderr))
+}
+
+// A failed deploy has one thing worth reading and it is the error. Telling
+// someone their broken deploy is also temporary buries it.
+func TestCmd_FailedDeployDoesNotWarnAboutDrafts(t *testing.T) {
+	stubRun(t, deployed(), errors.New("timed out waiting"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.False(t, draftWarned(stderr))
+}
+
+// The exception, and the reason it exists: a deploy onto a stopped workload
+// starts it before it rolls, so a run that fails after that has itself put a
+// draft on the air and started the eight hours. Saying nothing leaves a
+// workload running that the reader believes was never touched.
+func TestCmd_FailedDeployThatStartedTheWorkloadStillWarns(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("the rollout of workload wl-1 ended as failed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+	assert.True(t, draftWarned(stderr))
+}
+
+// A run that changed nothing still leaves a draft serving on the same clock.
+// "Already up to date" is not the same as "this will still be here tomorrow".
+func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionUnchanged
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, draftHeadline)
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {

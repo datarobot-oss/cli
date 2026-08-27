@@ -46,6 +46,38 @@
 // because a typed round trip silently drops every field this release has not
 // heard of, and half the point is that those survive.
 //
+// A deploy comes in two shapes, decided by whether the manifest names a
+// published image or asks the platform to build one. The first is a single
+// create. The second has to make an artifact, push the working tree to it and
+// wait for an image before there is anything for a workload to run, and it
+// does them in that order so a run that dies partway leaves something the
+// next one picks up rather than a workload pointing at an image that does not
+// exist. Which artifact a checkout pushes to is local state, kept beside the
+// code rather than in the committed manifest, because it is a property of the
+// clone and not of the project.
+//
+// A workload that already exists is rolled rather than created again: a new
+// version is minted, the platform swaps onto it, and the endpoint survives.
+// The version a file names by id is promoted as it stands, and one the
+// platform builds is filled first, by the same three acts as a first deploy.
+// The order there is what keeps it safe to run against something in use: the
+// project is pointed at the new version before the code is pushed, so an
+// upload can never rewrite what is currently serving. A run that dies between
+// minting a version and promoting it leaves a draft nothing points at, and
+// the next run continues with it rather than adding another to the pile.
+//
+// Locking is one-way, and it is the rule both deploy shapes have to obey the
+// same way: a locked artifact can take neither new code nor a new image, so
+// the next version of a locked thing is a new artifact rather than a change to
+// it. It joins the lineage the locked one belongs to, the checkout's link
+// moves onto it, and the code the locked one was running is carried across
+// when the working tree has nothing to upload. Whether the successor is itself
+// locked is the one part that differs: a roll onto a locked version has to
+// lock it, because the platform refuses to put a draft where a locked artifact
+// was, while a first deploy leaves it a draft unless the run asked for a lock.
+// A deploy that refused instead would be a one-way door, since a workload that
+// must stay up has to be locked and a locked one could then never be changed.
+//
 // Non-scope: no terminal output and no cobra. Rendering a plan and running
 // the phases belong to the command; this package hands back values.
 package up

@@ -15,9 +15,11 @@
 package workload
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
@@ -72,20 +74,25 @@ type Replacement struct {
 
 // IsTerminalReplacementStatus reports whether s is a status the replacement
 // will not progress from.
+//
+// The comparison is case-insensitive. To be plain about why: this route has
+// only ever been seen answering in lower case, so the fold is hardening rather
+// than a fix for something observed. What justifies it is that the platform is
+// not consistent across resources, its build statuses being upper case where
+// these and the workload's are lower, and that the artifact's lock check
+// already folds for the same reason. The cost of being wrong is one-sided:
+// reading a settled "COMPLETED" as still in progress would refuse every deploy
+// for as long as the record lingers, with a message calling a finished
+// replacement one in progress.
 func IsTerminalReplacementStatus(s string) bool {
-	switch s {
-	case ReplacementStatusCompleted, ReplacementStatusFailed, ReplacementStatusErrored:
-		return true
-	}
-
-	return false
+	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
 
 // IsFailedReplacementStatus reports whether s is a terminal failure. On
 // failure the workload reverts to the artifact it was running before the
 // replacement started, so a failed rollout never promotes.
 func IsFailedReplacementStatus(s string) bool {
-	return s == ReplacementStatusFailed || s == ReplacementStatusErrored
+	return strings.EqualFold(s, ReplacementStatusFailed) || strings.EqualFold(s, ReplacementStatusErrored)
 }
 
 // replacementURL builds the single route all three verbs share.
@@ -102,7 +109,7 @@ func replacementURL(workloadID string) (string, error) {
 // answers the same way for a workload that does not exist, and the body
 // saying which never reaches this layer, because drapi.Get discards it. A
 // caller that has not already established the workload exists should use
-// GuardNoActiveReplacement, which pays for one extra request to tell the two
+// RefuseActiveReplacement, which asks the same question with the ambiguity
 // apart, rather than reading (nil, nil) as proof of anything.
 func GetActiveReplacement(workloadID string) (*Replacement, error) {
 	url, err := replacementURL(workloadID)
@@ -129,22 +136,35 @@ func GetActiveReplacement(workloadID string) (*Replacement, error) {
 //
 // It is not idempotent: called while a replacement is already in flight it
 // queues a second swap rather than rejecting, so callers guard with
-// GuardNoActiveReplacement first.
+// RefuseActiveReplacement first.
 //
 // Both artifacts must share draft or locked status; the platform rejects a
 // mismatch, which is why a locked workload has to have its successor locked
 // before this is called. That is not enforced here because the caller is the
 // one holding both statuses, and the lock has to happen between the guard and
 // this call.
-func StartReplacement(workloadID, artifactID string) (*Replacement, error) {
+//
+// runtime is optional and may be nil. When a deploy changes the sizing as well
+// as the version, sending both here is what brings the candidate up under the
+// sizing it was asked for: applying them as two operations either resizes the
+// version being rolled off, or starts the new one under the old sizing, which
+// is how a larger model meets a bundle that cannot hold it.
+func StartReplacement(workloadID, artifactID string, runtime json.RawMessage) (*Replacement, error) {
 	url, err := replacementURL(workloadID)
 	if err != nil {
 		return nil, err
 	}
 
-	body := map[string]string{
+	body := map[string]any{
 		"artifactId": artifactID,
 		"strategy":   rollingStrategy,
+	}
+
+	// Omitted rather than sent as null when there is nothing to change, so a
+	// rollout that only swaps the version does not read as a settings change
+	// as well.
+	if len(runtime) > 0 {
+		body["runtime"] = runtime
 	}
 
 	var replacement Replacement
@@ -189,30 +209,43 @@ func CancelReplacement(workloadID string) error {
 	return nil
 }
 
-// GuardNoActiveReplacement refuses to proceed when workloadID already has a
-// replacement in flight, because POSTing another queues a second swap instead
-// of erroring. Callers should run it twice: once up front, so a doomed
-// command fails before it mutates anything, and once immediately before
-// StartReplacement, which is the guard that actually holds, since the live
-// state can change in between.
+// RefuseActiveReplacement refuses to proceed when workloadID already has a
+// replacement in flight, because starting another queues a second swap instead
+// of erroring.
 //
-// Being the up-front check is why it does not simply trust an empty answer.
-// The replacement route returns the same 404 for "nothing in flight" and for
-// "no such workload", so an unchecked guard would wave through exactly the
-// mistyped id it exists to catch, and the command would go on to create and
-// possibly lock an artifact before discovering the target was never real.
-// One extra request on the quiet path buys that, and the quiet path is about
-// to spend minutes rolling a workload.
-func GuardNoActiveReplacement(workloadID string) error {
+// How many times to call it follows from what sits between the check and the
+// call it protects. A roll mints and may lock an artifact in between, so it
+// runs this twice: once up front, so a doomed command fails before it makes
+// anything, and once immediately before the swap, which is the check that
+// actually holds, since the live state can change in between. A caller with
+// nothing in between runs it once, because there the two are the same moment.
+//
+// A refusal wraps ErrReplacementInFlight; everything else it returns is a
+// failure to find out. Callers that want to say which operation was stopped
+// should wrap the second kind and leave the first alone, since the refusal
+// already names the workload and the remedy.
+//
+// It reads an empty answer as "nothing in flight", which is only safe because
+// every caller has already established the workload exists. The replacement
+// route answers the same 404 for "nothing in flight" and for "no such
+// workload", so a caller that has not settled that first would wave through
+// exactly the mistyped id it means to catch. `up` settles it in Look, before
+// the plan is even built.
+func RefuseActiveReplacement(workloadID string) error {
 	active, err := GetActiveReplacement(workloadID)
 	if err != nil {
 		return err
 	}
 
 	if active == nil {
-		return confirmWorkloadExists(workloadID)
+		return nil
 	}
 
+	return refuseActive(workloadID, active)
+}
+
+// refuseActive is the verdict both entry points share once a record is in hand.
+func refuseActive(workloadID string, active *Replacement) error {
 	// A settled replacement stays readable for a while after it ends, and
 	// WaitForReplacement returns the moment it sees a terminal status, so the
 	// record is usually still there when the next command looks. Refusing on
@@ -224,9 +257,45 @@ func GuardNoActiveReplacement(workloadID string) error {
 	}
 
 	return fmt.Errorf(
-		"workload %s already has a replacement in progress (to artifact %s, status %s); wait for it to settle before starting another",
-		workloadID, active.ArtifactID, active.Status,
+		"workload %s: %w%s; wait for it to settle before starting another",
+		workloadID, ErrReplacementInFlight, describeActive(active),
 	)
+}
+
+// ErrReplacementInFlight marks the refusal, so a caller can tell a rollout it
+// should wait out from a failure to find out whether there is one. The two
+// want different words: the first is a state, the second is a read that did
+// not happen, and a caller that wrapped both would put "cannot tell whether"
+// in front of a sentence that already knows.
+//
+// It reads as a whole sentence rather than as a fragment of the message above,
+// because a sentinel is the one error a caller may hand on by itself.
+var ErrReplacementInFlight = errors.New("a replacement is already in progress")
+
+// describeActive names what is in flight, carrying only the fields the
+// platform actually filled in.
+//
+// The artifact is one of them because a settings change rolls the workload
+// onto the artifact it is already running, and the platform returns no
+// candidate for it. Naming one unconditionally printed an empty field
+// mid-sentence, or the id of the version the plan had just reported as live,
+// which reads as a rollout onto itself.
+func describeActive(active *Replacement) string {
+	parts := make([]string, 0, 2)
+
+	if active.ArtifactID != "" {
+		parts = append(parts, "to artifact "+active.ArtifactID)
+	}
+
+	if active.Status != "" {
+		parts = append(parts, "status "+active.Status)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 // confirmWorkloadExists turns the replacement route's ambiguous 404 into a

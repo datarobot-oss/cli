@@ -158,11 +158,11 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
   `BindPFlags`. Bind only specific persistent flags explicitly via
   `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
+- **Read transient flags directly from cobra**: e.g. `cmd.Flags().GetBool(cli.YesFlagName)`.
   Do not bind them with `viperx.BindPFlag`.
 - **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with
+  `cli.IsNonInteractive(cmd)` rather than inlining the flag/env OR yourself.
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
@@ -176,6 +176,7 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
 - **Security** — Input validation, security boundaries, threat models
 - **Testing** — Race detector, error path coverage, test seams
+- **User Files** — In-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry
 
 **Resource & Operations** (prevents hangs, leaks, platform bugs):
 
@@ -204,6 +205,7 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
 - **JSON output purity**: When `--output-format json` is set, stdout must contain only valid JSON. All deprecation warnings, logs, usage, and update hints go to stderr
 - **Platforms**: Add build tags, match signatures, test on target platforms
+- **User files**: Re-emit the parsed tree, never regenerate; CLI markers must die with the key they annotate; refuse a file you cannot put back soundly
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 

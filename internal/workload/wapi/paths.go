@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // Exported names used by external callers (tests, sync commands).
@@ -51,7 +52,6 @@ const (
 	manifestFile      = "manifest.json"
 	historyBackupFile = "history.log.1"
 	gitignoreFile     = ".gitignore"
-	wapiignoreFile    = ".wapiignore"
 
 	gitignoreContents = "*\n"
 
@@ -128,10 +128,11 @@ func gitignorePath(projectDir string) string {
 	return filepath.Join(Dir(projectDir), gitignoreFile)
 }
 
-// .wapiignore lives at the project root, not inside the state directory: it is
-// authored and committed by the user, the same convention as .gitignore.
-func wapiignorePath(projectDir string) string {
-	return filepath.Join(projectDir, wapiignoreFile)
+// The ignore file lives at the project root, not inside the state directory:
+// it is authored and committed by the user, the same convention as .gitignore.
+// The name comes from the package that reads it so the two cannot drift.
+func ignorePath(projectDir string) string {
+	return filepath.Join(projectDir, ignore.FileName)
 }
 
 // Exists reports whether the project is linked, at either the current or the

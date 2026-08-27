@@ -23,4 +23,8 @@ const (
 	QuickstartScriptPath = ".datarobot/cli/bin"
 	// LocalPluginDir is the project-local plugin directory relative to CWD.
 	LocalPluginDir = ".datarobot/cli/bin"
+	// TemplateDetectStateFileName is the one entry in DataRobotTemplateDetectCliPath
+	// that does not mark a directory as a template. Older CLI versions wrote it
+	// outside template directories, so its presence alone proves nothing.
+	TemplateDetectStateFileName = "state.yaml"
 )

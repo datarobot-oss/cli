@@ -17,9 +17,12 @@ package up
 import (
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
 // Change is one field the manifest asks for that the live object does not
@@ -86,7 +89,7 @@ func walk(path string, want, have any, present bool, out *[]Change) {
 	case []any:
 		walkList(path, w, have, out)
 	default:
-		if !equal(want, have) {
+		if !equalAt(path, want, have) {
 			*out = append(*out, Change{Path: path, Want: want, Have: have})
 		}
 	}
@@ -200,6 +203,58 @@ func equal(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+// memoryField is the one leaf whose two sides are written differently: the
+// file says "512MB" and the platform stores and returns 512000000.
+const memoryField = ".memory"
+
+// equalAt compares a leaf, knowing which field it is.
+//
+// Only a size is compared loosely, and only where the path says the leaf is
+// one. Without this the same sizing written two ways reads as drift on every
+// run, for ever, so a workload can never report itself up to date; with it
+// applied everywhere, an unrelated numeric string would quietly compare equal
+// to its number.
+func equalAt(path string, a, b any) bool {
+	if equal(a, b) {
+		return true
+	}
+
+	return strings.HasSuffix(path, memoryField) && sameMemory(a, b)
+}
+
+// sameMemory reports whether two values are the same size written differently.
+// It answers false unless both sides parse as a size, so nothing else is
+// compared loosely by accident.
+func sameMemory(a, b any) bool {
+	left, ok := memoryBytes(a)
+	if !ok {
+		return false
+	}
+
+	right, ok := memoryBytes(b)
+
+	return ok && left == right
+}
+
+// memoryBytes reads a size from either shape the two sides use: the file's
+// string, or the platform's number.
+func memoryBytes(v any) (int64, bool) {
+	switch typed := v.(type) {
+	case string:
+		return manifest.MemoryBytes(typed)
+	case float64:
+		// JSON numbers arrive as float64. A size is a whole number of bytes,
+		// so anything fractional is not one.
+		if typed != math.Trunc(typed) {
+			return 0, false
+		}
+
+		return int64(typed), true
+	default:
+		return 0, false
+	}
+}
+
 // join builds a dotted path, skipping the leading dot at the root.
 func join(path, key string) string {
 	if path == "" {
@@ -224,5 +279,88 @@ func format(v any) string {
 		return fmt.Sprintf("[%d item(s)]", len(value))
 	default:
 		return fmt.Sprintf("%v", value)
+	}
+}
+
+// Extra reports every element of a name-keyed list that have carries and want
+// does not name, as paths.
+//
+// It is the question Subset deliberately does not ask. Measuring drift against
+// a running workload is one-directional on purpose: a field the file leaves
+// out is left alone rather than reverted. But "could this document have been
+// produced by this file?" is a different question, and there a name the file
+// never mentions is proof that it could not, because creating it fresh would
+// not have put that name there.
+//
+// Only names are compared, never the keys inside an element. The platform
+// fills in its own defaults and server-owned fields, so an element the file
+// does name always carries more than the file said and none of that is
+// evidence of anything. The name-keyed lists are different: containerGroups,
+// containers and environmentVars are the file's own, and the platform adds no
+// entries to them.
+func Extra(want, have map[string]any) []string {
+	var out []string
+
+	extra("", want, have, &out)
+
+	return out
+}
+
+// extra walks have alongside want. It iterates have's keys rather than want's,
+// because the case worth catching is a list the file no longer mentions at
+// all: deleting the last environment variable drops the whole block from the
+// file, and a walk driven by want would never look at it.
+func extra(path string, want map[string]any, have map[string]any, out *[]string) {
+	for _, key := range slices.Sorted(maps.Keys(have)) {
+		at := join(path, key)
+
+		if list, ok := have[key].([]any); ok && nameKeyed(list) {
+			extraInList(at, want[key], list, out)
+
+			continue
+		}
+
+		child, ok := have[key].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		wanted, ok := want[key].(map[string]any)
+		if !ok {
+			// The file says nothing about this object, so nothing inside it
+			// can be something the file removed.
+			continue
+		}
+
+		extra(at, wanted, child, out)
+	}
+}
+
+// extraInList compares one name-keyed list. A want side that is missing or is
+// not a list reads as empty, which is exactly what deleting the block means.
+func extraInList(path string, want any, have []any, out *[]string) {
+	named := map[string]map[string]any{}
+
+	if list, ok := want.([]any); ok {
+		named = byName(list)
+	}
+
+	for _, item := range have {
+		element, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		name, _ := element["name"].(string)
+		at := fmt.Sprintf("%s[%s]", path, name)
+
+		counterpart, found := named[name]
+		if !found {
+			*out = append(*out, at)
+
+			continue
+		}
+
+		extra(at, counterpart, element, out)
 	}
 }

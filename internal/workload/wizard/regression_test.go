@@ -45,8 +45,7 @@ func stubLiveDocs(t *testing.T) {
 				"containers": [
 					{"name": "primary", "resourceAllocation": {"cpu": 4, "memory": "8GB"}},
 					{"name": "sidecar", "resourceAllocation": {"cpu": 0.5, "memory": "1GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "readinessProbe": {"path": "/alive", "port": 8000}},
 				{"name": "sidecar", "imageUri": "registry/side:v1"}]}]}}`))
@@ -173,8 +172,7 @@ func TestFlow_BackAndForthKeepsTheA2AAnswer(t *testing.T) {
 func TestFlow_BoundKindTheWizardCannotAuthorIsKept(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "nim-app", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "nim-artifact", "spec": {"type": "nim",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "nim-artifact", "type": "nim", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "nvcr.io/nim/llama:latest"}]}]}}`))
 
 	workloads := []workload.Workload{{ID: "68b0", Name: "nim-app", UpdatedAt: time.Now()}}
@@ -263,7 +261,7 @@ func TestFlow_FailedBaseImageListShowsNoStaleRows(t *testing.T) {
 func TestFlow_ConfirmWithNothingRenderedReportsTheRealError(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "odd", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "odd-artifact", "spec": {"type": "service", "containerGroups": []}}`))
+		documentFrom(t, `{"name": "odd-artifact", "type": "service", "spec": {"containerGroups": []}}`))
 
 	workloads := []workload.Workload{{ID: "68b0", Name: "odd", UpdatedAt: time.Now()}}
 	model := press(t, newFlow(dockerfileProject(t), workloads, Answers{}), "down", "enter")
@@ -326,7 +324,7 @@ func TestRun_SizingFlagsApplyToABoundWorkload(t *testing.T) {
 func TestAnswers_A2AFlagSemantics(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "agent-app", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "agent-artifact", "spec": {"type": "agent", "a2aEnabled": true,
+		documentFrom(t, `{"name": "agent-artifact", "type": "agent", "spec": {"a2aEnabled": true,
 			"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
@@ -355,8 +353,7 @@ func TestRun_LiveWorkloadTheReaderRejectsSaysSo(t *testing.T) {
 		documentFrom(t, `{"name": "binary-units", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "4Gi"}}]}]}}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
 	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0"}))
@@ -421,10 +418,12 @@ func TestInteractiveOutput_NeverStdout(t *testing.T) {
 	assert.Same(t, os.Stderr, interactiveOutput(&bytes.Buffer{}))
 }
 
-// The .env keys reach the file as commented placeholders by default, because
-// a deploy that silently drops the app's configuration is the worse default.
-// Values never do.
+// The .env keys reach the file by default, because a deploy that silently
+// drops the app's configuration is the worse default. Values never do: an
+// ordinary setting is a literal, a secret is a reference.
 func TestRun_EnvKeysAreListedByDefault(t *testing.T) {
+	noCredentialStore(t, errors.New("no store in this test"))
+
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
 		[]byte("LOG_LEVEL=debug\nOPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz01\n"), 0o600))
@@ -440,8 +439,8 @@ func TestRun_EnvKeysAreListedByDefault(t *testing.T) {
 	assert.Contains(t, written, "- name: LOG_LEVEL")
 	assert.Contains(t, written, "value: debug")
 
-	// The secret is a reference carrying the placeholder, and its value never
-	// leaves .env.
+	// With no store to send it to, the secret is a reference carrying the
+	// placeholder. Its value never leaves .env either way.
 	assert.Contains(t, written, "- name: OPENAI_API_KEY")
 	assert.Contains(t, written, "dr-credential:PLACEHOLDER/apiToken")
 	assert.NotContains(t, written, "sk-abcdefghijklmnopqrstuvwxyz01")
@@ -494,7 +493,10 @@ func TestFlow_EnvTableIsPerRowAndOverridable(t *testing.T) {
 	assert.Contains(t, view, "←/→", "the legend names the keys that change a row")
 
 	// Accepting the classifier's proposal lists the two deployable keys and
-	// drops the local-only one.
+	// drops the local-only one. The preview shows the placeholder because
+	// nothing has been stored yet: the secrets are sent when the confirm
+	// screen is accepted, so a wizard that is cancelled leaves no credential
+	// behind.
 	accepted := press(t, model, "enter")
 	require.Equal(t, screenConfirm, accepted.at)
 	assert.Contains(t, string(accepted.content), "- name: LOG_LEVEL")
@@ -572,15 +574,14 @@ func TestFlow_EnvTableOverridesAreIndependentAndPersist(t *testing.T) {
 	assert.Equal(t, EnvSecret, returned.envTable.rows[0].Kind)
 }
 
-// Importance is written to every manifest, so it is worth one field rather
-// than a hand edit. The enum is not verified against a running platform, so
-// the prompt checks it while the reader passes anything through.
-func TestFlow_ImportanceIsAskedAndValidated(t *testing.T) {
-	model := newFlow(dockerfileProject(t), nil, Answers{})
-	model = press(t, pastName(t, model), "enter", "enter")
-	require.Equal(t, screenSettings, model.at)
+// Importance has a working default and most users have no basis to answer it,
+// so it sits behind the advanced row rather than on the screen. The enum is
+// not verified against a running platform, so the prompt checks it while the
+// reader passes anything through.
+func TestFlow_ImportanceIsBehindAdvancedAndValidated(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
 
-	last := len(settingsLabels) - 1
+	last := settingsFieldCount - 1
 	assert.Equal(t, manifest.DefaultImportance, model.inputs[last].Placeholder)
 
 	// The note for the field explains it, once the cursor is on it.
@@ -599,6 +600,230 @@ func TestFlow_ImportanceIsAskedAndValidated(t *testing.T) {
 	require.NoError(t, accepted.failed)
 	assert.Equal(t, "high", accepted.draft.Importance)
 	assert.Contains(t, string(accepted.content), "importance: high")
+}
+
+// The row is reachable directly, and the legend says so: tabbing onto a row
+// and pressing enter is not something anyone guesses from a screen that shows
+// one field.
+func TestFlow_AdvancedKeyOpensTheRowFromAnyField(t *testing.T) {
+	model := atSettings(t)
+
+	assert.Contains(t, model.View(), "["+advancedKey+"]", "the legend advertises the key")
+	require.Equal(t, fieldPort, model.focus)
+
+	model = press(t, model, advancedKey)
+	assert.True(t, model.advancedOpen)
+	assert.Equal(t, firstAdvancedField, model.focus, "opening lands on the first revealed field")
+	assert.Contains(t, model.View(), "Health path")
+
+	// And from inside a revealed field it closes, putting the cursor somewhere
+	// that still exists.
+	model = press(t, model, "tab", advancedKey)
+	assert.False(t, model.advancedOpen)
+	assert.Equal(t, fieldPort, model.focus)
+	assert.NotContains(t, model.View(), "Health path")
+
+	// The screen is still submitted from there.
+	model = press(t, model, "enter")
+	assert.Equal(t, screenConfirm, model.at)
+}
+
+// The screen is made of text inputs, so a letter is text. Nothing on it can
+// be a bare-key command: [a] would land in the port rather than opening the
+// row it names.
+func TestFlow_LettersAreTypedRatherThanTakenAsCommands(t *testing.T) {
+	model := press(t, atSettings(t), "a")
+
+	assert.False(t, model.advancedOpen, "no bare key opens the row")
+	assert.Equal(t, "3000a", model.inputs[fieldPort].Value(), "the keystroke belongs to the focused field")
+}
+
+// A run that never opens the advanced row writes exactly what the wizard has
+// always written: moving five fields out of sight moved no values.
+func TestFlow_HiddenFieldsKeepTheirValues(t *testing.T) {
+	detected := dockerfileProject(t)
+
+	model := press(t, pastName(t, newFlow(detected, nil, Answers{})), "enter", "enter", "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+	require.False(t, model.advancedOpen)
+
+	expected := defaultDraft(detected)
+	expected.Name = "test-app"
+
+	want, err := expected.Render()
+	require.NoError(t, err)
+
+	assert.Equal(t, string(want), string(model.content))
+
+	// And the confirm screen states each of them, so nothing is written that
+	// was never on screen.
+	view := model.View()
+	assert.Contains(t, view, "1 replica")
+	assert.Contains(t, view, "0.5 cpu")
+	assert.Contains(t, view, "importance low")
+	assert.Contains(t, view, "Readiness: no probe",
+		"nothing was typed into the health field, so no probe is written and the screen says so")
+}
+
+// Clearing the health path is how the screen declines the probe, and what
+// comes out carries no probe block and still validates.
+func TestFlow_ClearedHealthPathWritesNoProbe(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+	require.Equal(t, firstAdvancedField, model.focus)
+
+	model = press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	assert.Contains(t, model.View(), "no probe")
+
+	parsed, err := manifest.Parse(model.content, model.detected.Dir)
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate(), "a workload without a probe is a valid workload")
+}
+
+// A path that is set still has to be one, so the rule the empty field relaxes
+// is not the rule the field enforces.
+func TestFlow_HealthPathStillHasToBeAPath(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldHealthPath, "health"), "enter")
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "must start with /")
+}
+
+// A field that fails validation while it is out of sight has to come into
+// sight. An error naming a field nobody can see is a screen with no way
+// forward, and the value being refused often came from a flag or from the
+// bound workload rather than from anything typed here.
+func TestFlow_RefusedHiddenFieldOpensTheAdvancedRow(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	// Close the row again, leaving a bad value behind it. Closing puts the
+	// cursor back on the port, so enter from there submits the screen.
+	model = press(t, withField(model, fieldMemory, "4Gi"), "shift+tab", "enter")
+	require.False(t, model.advancedOpen)
+	require.Equal(t, fieldPort, model.focus)
+
+	model = press(t, model, "enter")
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "1000-based unit")
+
+	assert.True(t, model.advancedOpen, "the row opens on the field that was refused")
+	assert.Equal(t, fieldMemory, model.focus, "and the cursor is on it")
+	assert.Contains(t, model.View(), "Memory", "so the error names something on screen")
+}
+
+// Clearing importance takes the documented default rather than being refused,
+// which is what the headless path does with the same input. It is the field
+// next to the health path, where clearing is meaningful, so two adjacent
+// fields disagreeing about the same gesture would be its own trap.
+func TestFlow_ClearedImportanceTakesTheDefault(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldImportance, ""), "enter")
+
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+	assert.Equal(t, manifest.DefaultImportance, model.draft.Importance)
+}
+
+// The placeholder has to say what an empty field means, because here it means
+// the opposite of what a placeholder means everywhere else on the screen.
+func TestFlow_HealthPathPlaceholderSaysNoProbe(t *testing.T) {
+	model := newFlow(dockerfileProject(t), nil, Answers{NoProbe: true})
+	model = press(t, pastName(t, model), "enter", "enter")
+	require.Equal(t, screenSettings, model.at)
+
+	assert.Empty(t, model.inputs[fieldHealthPath].Value())
+	assert.Equal(t, healthPlaceholder, model.inputs[fieldHealthPath].Placeholder)
+	assert.NotContains(t, healthPlaceholder, "/", "the placeholder proposes no path")
+}
+
+// On the row, enter is the way to open it and the chord would be a second
+// entry saying the same word. The legend has room for one of them.
+func TestFlow_AdvancedRowLegendSaysOneThingOnce(t *testing.T) {
+	onRow := press(t, atSettings(t), "tab")
+	require.Equal(t, advancedStop, onRow.focus)
+
+	view := onRow.View()
+	assert.Contains(t, view, "[enter] "+advancedLabel)
+	assert.NotContains(t, view, "["+advancedKey+"]", "the chord duplicates enter here")
+}
+
+// Moving the cursor to a refused field has to schedule that field's cursor
+// blink too, or the caret sits frozen in a field the user is being asked to fix.
+func TestFlow_RefusedFieldSchedulesItsCursor(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldMemory, "4Gi"), "shift+tab", "enter")
+	require.False(t, model.advancedOpen)
+
+	updated, cmd := model.Update(keyMsg("enter"))
+
+	next, ok := updated.(flow)
+	require.True(t, ok)
+	require.Error(t, next.failed)
+
+	assert.True(t, next.advancedOpen)
+	assert.NotNil(t, cmd, "the cursor moved, so its blink has to be scheduled")
+}
+
+// A port that is refused takes the cursor back to the port, wherever it was.
+func TestFlow_PortFailureMovesTheCursorToThePort(t *testing.T) {
+	model := openAdvanced(t, atSettings(t))
+
+	model = press(t, withField(model, fieldPort, "80"), "enter")
+
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "too low")
+	assert.Equal(t, fieldPort, model.focus)
+}
+
+// A probe flag the bound workload cannot honour is refused on the terminal
+// path too. Applying it nowhere and saying nothing is what the headless path
+// already refuses to do.
+func TestFlow_BoundUneditableProbeRefusesTheFlag(t *testing.T) {
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "artifactId": "68a1"}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+			{"name": "primary", "primary": true, "port": 9000, "imageUri": "registry/tcp:v1",
+			 "readinessProbe": {"tcpSocket": {"port": 9000}, "periodSeconds": 10}}]}]}}`))
+
+	model := newFlow(dockerfileProject(t), nil, Answers{
+		WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		NoProbe:    true,
+	})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+
+	next, ok := updated.(flow)
+	require.True(t, ok)
+
+	require.Error(t, next.fatal)
+	assert.Contains(t, next.fatal.Error(), "--no-readiness-probe")
+	assert.Contains(t, next.fatal.Error(), "does not model")
+}
+
+// openAdvanced reveals the fields behind the advanced row and leaves the
+// cursor on the first of them, which is where a test that wants one of those
+// fields has to start.
+func openAdvanced(t *testing.T, model flow) flow {
+	t.Helper()
+
+	// Opening puts the cursor on the first revealed field, so no tab is needed
+	// to reach it.
+	model = press(t, model, "tab", "enter")
+
+	require.True(t, model.advancedOpen)
+	require.Equal(t, firstAdvancedField, model.focus)
+
+	return model
 }
 
 // The confirm screen names the file it is about to write, because --dir means
@@ -638,21 +863,43 @@ func withField(model flow, i int, value string) flow {
 }
 
 // Each field explains itself when the cursor reaches it, so the screen stays
-// readable on a narrow terminal instead of running a hint off the edge.
+// readable on a narrow terminal instead of running a hint off the edge. The
+// walk starts at the port, passes the advanced row, and reaches the rest only
+// once that row is open.
 func TestFlow_SettingsNotesFollowTheCursor(t *testing.T) {
-	model := newFlow(dockerfileProject(t), nil, Answers{})
-	model = press(t, pastName(t, model), "enter", "enter")
-	require.Equal(t, screenSettings, model.at)
+	model := atSettings(t)
 
 	// The port note carries its provenance, which no other field has.
 	assert.Contains(t, model.View(), "1024 or above")
 	assert.Contains(t, model.View(), "EXPOSE 3000")
 
+	model = press(t, model, "tab")
+	assert.Contains(t, model.View(), "working default", "the row says what it holds")
+
+	model = press(t, model, "enter")
+	require.True(t, model.advancedOpen)
+	require.Equal(t, screenSettings, model.at, "the row's enter opens it rather than submitting the screen")
+
+	// Opening lands on the first revealed field, so its note is already up.
 	wanted := []string{"Readiness probe path", "protons", "Fractional values", "Binary units", "Scheduling priority"}
 	for i, want := range wanted {
-		model = press(t, model, "tab")
-		assert.Containsf(t, model.View(), want, "note for %s", settingsLabels[i+1])
+		if i > 0 {
+			model = press(t, model, "tab")
+		}
+
+		assert.Containsf(t, model.View(), want, "note for %s", settingsLabels[firstAdvancedField+i])
 	}
+}
+
+// atSettings walks a fresh Dockerfile project to the settings screen, which
+// several tests need before they can say anything about it.
+func atSettings(t *testing.T) flow {
+	t.Helper()
+
+	model := press(t, pastName(t, newFlow(dockerfileProject(t), nil, Answers{})), "enter", "enter")
+	require.Equal(t, screenSettings, model.at)
+
+	return model
 }
 
 // Walking back to the base-image screen shows the list again. Arrival work
@@ -793,7 +1040,7 @@ func TestRowTable_SlashStartsEmptyRatherThanFiltering(t *testing.T) {
 func TestFlow_DockerfileConflictOnlyOnTheSourceScreen(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "builds-a-dockerfile", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000,
 				"imageBuildConfig": {"dockerfile": {"source": "provided"}}}]}]}}`))
 
@@ -901,6 +1148,7 @@ func TestFlow_BindingSelectionSurvivesBackNavigation(t *testing.T) {
 // entirely while the command still reported them as written.
 func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 	stubLiveDocs(t)
+	credentialStore(t)
 
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName),
@@ -914,7 +1162,8 @@ func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 	assert.Equal(t, 2, result.EnvKeysListed)
 	assert.Contains(t, written, "LOG_LEVEL")
 	assert.Contains(t, written, "debug")
-	assert.Contains(t, written, "dr-credential:PLACEHOLDER/apiToken")
+	assert.Contains(t, written, "dr-credential:66f000000000000000000001/apiToken",
+		"binding stores its secrets like any other run")
 	assert.NotContains(t, written, "Xk9mPq2vLw8nRt5yBc3z", "a secret's value stays in .env")
 
 	parsed, err := manifest.Load(result.Path)
@@ -927,7 +1176,7 @@ func TestRun_BoundWorkloadCarriesEnv(t *testing.T) {
 func TestRun_BoundWorkloadKeepsItsOwnEnv(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "has-env", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1",
 				"environmentVars": [{"name": "LOG_LEVEL", "value": "warn"}]}]}]}}`))
 
@@ -950,7 +1199,7 @@ func TestRun_BoundWorkloadKeepsItsOwnEnv(t *testing.T) {
 func TestRun_BoundWorkloadWithoutARuntimeBlock(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "no-runtime", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "a", "spec": {"type": "service", "containerGroups": [{"name": "default",
+		documentFrom(t, `{"name": "a", "type": "service", "spec": {"containerGroups": [{"name": "default",
 			"containers": [{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/a:v1"}]}]}}`))
 
 	result, err := Run(headless(t.TempDir(), Answers{
@@ -1179,8 +1428,7 @@ func TestFlow_BindKeepsTheFlagsGivenBeforeTheFetch(t *testing.T) {
 		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
 
 	model := newFlow(dockerfileProject(t), nil, Answers{
@@ -1207,6 +1455,130 @@ func mustFetchLive(t *testing.T, id string) manifest.Live {
 	require.NoError(t, err)
 
 	return live
+}
+
+// stubUnreadableProbeLive points the binding path at a workload whose probe
+// declares no path: a shape this release preserves rather than rewrites.
+func stubUnreadableProbeLive(t *testing.T) {
+	t.Helper()
+
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/tcp:v1",
+				 "readinessProbe": {"tcpSocket": {"port": 9100}, "periodSeconds": 10}}]}]}}`))
+}
+
+// A path typed for a probe the merge will not rewrite is refused while the
+// answer can still be taken back, rather than accepted and dropped on the way
+// to the file.
+func TestFlow_UnreadableProbeRefusesATypedPath(t *testing.T) {
+	stubUnreadableProbeLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	require.Empty(t, model.inputs[fieldHealthPath].Value())
+	// Asserted on a phrase short enough to survive the note's wrapping.
+	assert.Contains(t, model.View(), "readiness probe with no path")
+
+	model = press(t, withField(model, fieldHealthPath, "/ready"), "enter")
+
+	require.Equal(t, screenSettings, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "would not reach the file")
+
+	// Leaving it alone is still the way through, and the probe survives.
+	accepted := press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, accepted.at)
+	require.NoError(t, accepted.failed)
+	assert.Contains(t, string(accepted.content), "tcpSocket")
+}
+
+// stubProbelessLive points the binding path at a workload running without a
+// readiness probe, which the platform allows and which the wizard must not
+// quietly fix.
+func stubProbelessLive(t *testing.T) {
+	t.Helper()
+
+	stubLive(t, documentFrom(t, `{"name": "no-probe-app", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 2, "memory": "4GB"}}]}]}}`),
+		documentFrom(t, `{"name": "no-probe-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/np:v1"}]}]}}`))
+}
+
+// boundAtSettings binds to whatever the live stubs describe and walks to the
+// settings screen, which for an image-built workload is three screens in.
+func boundAtSettings(t *testing.T) flow {
+	t.Helper()
+
+	model := newFlow(dockerfileProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter", "enter", "enter") // kind, source, keep the live image
+	require.Equal(t, screenSettings, model.at)
+
+	return model
+}
+
+// Bound to a workload that runs without a probe, the field arrives empty and
+// the screen says why. It used to arrive showing /health, accept anything
+// typed over it, and discard it: the workload's own configuration was neither
+// shown nor changeable.
+func TestFlow_BoundWorkloadWithoutAProbeSaysSo(t *testing.T) {
+	stubProbelessLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+
+	assert.Empty(t, model.inputs[fieldHealthPath].Value())
+	assert.Contains(t, model.View(), "runs without a readiness probe")
+
+	model = press(t, model, "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	assert.Empty(t, model.diff, "leaving it alone changes nothing about the workload")
+}
+
+// Typing a path on that screen is an answer, so it adds the probe. The rule
+// the wizard keeps is that it never adds one nobody asked for, not that it
+// cannot add one at all.
+func TestFlow_BoundWorkloadTakesAProbeWhenAsked(t *testing.T) {
+	stubProbelessLive(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	model = press(t, withField(model, fieldHealthPath, "/ready"), "enter")
+
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.Contains(t, string(model.content), "path: /ready")
+	assert.Contains(t, model.diff, "readinessProbe", "adding one is a change to something running, so it is shown")
+}
+
+// And clearing the path of a workload that has one takes the block away
+// rather than leaving it pointed at nothing.
+func TestFlow_BoundWorkloadDropsAClearedProbe(t *testing.T) {
+	stubLiveDocs(t)
+
+	model := openAdvanced(t, boundAtSettings(t))
+	require.Equal(t, "/alive", model.inputs[fieldHealthPath].Value())
+
+	model = press(t, withField(model, fieldHealthPath, ""), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.NoError(t, model.failed)
+
+	assert.NotContains(t, string(model.content), "readinessProbe")
+	// Named rather than checked for a "-": every unified diff carries one in
+	// its own header, so that would pass for any change at all.
+	assert.Contains(t, model.diff, "-            readinessProbe:",
+		"removing it is a change to something running")
+	assert.Contains(t, model.diff, "-              path: /alive")
 }
 
 // --skip-env is an answer. Interactively it has to skip the screen, not show
@@ -1238,8 +1610,7 @@ func TestFlow_AutoscaledBoundWorkloadPassesTheSettingsScreen(t *testing.T) {
 			"runtime": {"containerGroups": [{"name": "default",
 				"autoscaling": {"enabled": true, "minReplicaCount": 2, "maxReplicaCount": 9},
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3"}]}]}}`))
 
 	model := newFlow(dockerfileProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
@@ -1294,8 +1665,7 @@ func TestFlow_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
 		documentFrom(t, `{"name": "triage-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3",
 				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"}]}]}]}}`))
 

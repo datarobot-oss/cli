@@ -53,14 +53,14 @@ func stubCredentials(t *testing.T, present map[string]bool, failWith error) *[]s
 func TestVerifyCredentials_NoRefsAsksNothing(t *testing.T) {
 	asked := stubCredentials(t, nil, nil)
 
-	require.NoError(t, verifyCredentials(nil))
+	require.NoError(t, verifyCredentials(nil, "my-app"))
 	assert.Empty(t, *asked, "a manifest with no references must not touch the network")
 }
 
 func TestVerifyCredentials_PresentPasses(t *testing.T) {
 	asked := stubCredentials(t, map[string]bool{"cred-1": true}, nil)
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: "cred-1", Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 12},
 	})
 
@@ -74,7 +74,7 @@ func TestVerifyCredentials_PresentPasses(t *testing.T) {
 func TestVerifyCredentials_DeduplicatesByID(t *testing.T) {
 	asked := stubCredentials(t, map[string]bool{"cred-1": true}, nil)
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: "cred-1", Key: "apiToken", EnvName: "TOKEN_A", Line: 12},
 		{CredentialID: "cred-1", Key: "password", EnvName: "TOKEN_B", Line: 15},
 	})
@@ -89,7 +89,7 @@ func TestVerifyCredentials_DeduplicatesByID(t *testing.T) {
 func TestVerifyCredentials_MissingNamesVariableAndLine(t *testing.T) {
 	stubCredentials(t, map[string]bool{}, nil)
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: "cred-gone", Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 12},
 	})
 
@@ -105,7 +105,7 @@ func TestVerifyCredentials_MissingNamesVariableAndLine(t *testing.T) {
 func TestVerifyCredentials_PlaceholderIsRefusedWithoutALookup(t *testing.T) {
 	asked := stubCredentials(t, nil, nil)
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: manifest.CredentialPlaceholder, Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 12},
 	})
 
@@ -121,7 +121,7 @@ func TestVerifyCredentials_PlaceholderIsRefusedWithoutALookup(t *testing.T) {
 func TestVerifyCredentials_ReportsEveryProblem(t *testing.T) {
 	stubCredentials(t, map[string]bool{"cred-ok": true}, nil)
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: manifest.CredentialPlaceholder, EnvName: "FIRST", Line: 10},
 		{CredentialID: "cred-ok", EnvName: "SECOND", Line: 13},
 		{CredentialID: "cred-gone", EnvName: "THIRD", Line: 16},
@@ -139,7 +139,7 @@ func TestVerifyCredentials_ReportsEveryProblem(t *testing.T) {
 func TestVerifyCredentials_TransportFailureIsNotAMissingCredential(t *testing.T) {
 	stubCredentials(t, nil, &drapi.HTTPError{StatusCode: http.StatusBadGateway})
 
-	err := verifyCredentials([]manifest.CredentialRef{
+	err := verifyRefs([]manifest.CredentialRef{
 		{CredentialID: "cred-1", EnvName: "OPENAI_API_KEY", Line: 12},
 	})
 
@@ -156,8 +156,54 @@ func TestVerifyCredentials_TransportFailureIsNotAMissingCredential(t *testing.T)
 func TestVerifyCredentials_NonHTTPErrorPropagates(t *testing.T) {
 	stubCredentials(t, nil, errors.New("no endpoint configured"))
 
-	err := verifyCredentials([]manifest.CredentialRef{{CredentialID: "cred-1", EnvName: "X", Line: 1}})
+	err := verifyRefs([]manifest.CredentialRef{{CredentialID: "cred-1", EnvName: "X", Line: 1}})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no endpoint configured")
+}
+
+// verifyRefs is verifyCredentials with the workload name every test would
+// otherwise have to repeat. The name only shapes the lookup behind a
+// placeholder, which is its own test.
+func verifyRefs(refs []manifest.CredentialRef) error {
+	return verifyCredentials(refs, "my-app")
+}
+
+// The commonest reason setup leaves a placeholder is that the name it wanted
+// was taken, which means the id the file needs already exists. Naming it, with
+// the caveat that a tenant-wide name says nothing about what is stored under
+// it, turns the message into an edit rather than an errand.
+func TestVerifyCredentials_PlaceholderNamesTheCredentialThatExists(t *testing.T) {
+	var asked string
+
+	restore := findCredentialFn
+	findCredentialFn = func(name string, _ int) (*workload.Credential, error) {
+		asked = name
+
+		return &workload.Credential{CredentialID: "66f0aaaa0000000000000001", Name: name}, nil
+	}
+
+	t.Cleanup(func() { findCredentialFn = restore })
+
+	err := verifyCredentials([]manifest.CredentialRef{
+		{CredentialID: manifest.CredentialPlaceholder, Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 22},
+	}, "my-app")
+
+	require.Error(t, err)
+	assert.Equal(t, "my-app/OPENAI_API_KEY", asked, "the lookup uses the name setup would have created")
+	assert.Contains(t, err.Error(), "66f0aaaa0000000000000001", "the id that belongs on the line")
+	assert.Contains(t, err.Error(), manifest.CredentialPlaceholder, "what to replace")
+	assert.Contains(t, err.Error(), "tenant-wide", "a name is not proof of the value behind it")
+}
+
+// With nothing of that name, the message says what to do rather than pointing
+// at a credential that does not exist.
+func TestVerifyCredentials_PlaceholderWithNoMatchStillSaysWhatToDo(t *testing.T) {
+	err := verifyCredentials([]manifest.CredentialRef{
+		{CredentialID: manifest.CredentialPlaceholder, Key: "apiToken", EnvName: "OPENAI_API_KEY", Line: 22},
+	}, "my-app")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Store the value as a credential")
+	assert.Contains(t, err.Error(), "replace "+manifest.CredentialPlaceholder)
 }

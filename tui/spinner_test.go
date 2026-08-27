@@ -16,6 +16,7 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -134,6 +135,41 @@ func TestRunWithSpinner_LabelRendered(t *testing.T) {
 	view := m.View()
 
 	assert.Contains(t, view, "my special label")
+}
+
+// The prefix exists so a spinner can sit in an indented block: the glyph
+// leads the line, so only a prefix ahead of it can move it into the column
+// where the surrounding "  ✓ label" lines put theirs.
+func TestSpinnerModel_ViewLeadsWithThePrefix(t *testing.T) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = InfoStyle
+
+	m := spinnerModel{
+		spinner: Loading{Spinner: s},
+		label:   "Loading…",
+		prefix:  "  ",
+	}
+
+	view := m.View()
+
+	assert.True(t, strings.HasPrefix(view, "  "), "the prefix must come before the glyph")
+	assert.Contains(t, view, "Loading…")
+}
+
+// One column between glyph and label, not two: the Dot frames carry their own
+// trailing space, and a second one would push the label out of line with the
+// text of the "✓ label" rows rendered around the spinner.
+func TestSpinnerModel_ViewLeavesOneColumnAfterTheGlyph(t *testing.T) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+
+	m := spinnerModel{
+		spinner: Loading{Spinner: s},
+		label:   "Loading…",
+	}
+
+	assert.NotContains(t, m.View(), "  Loading…", "exactly the frame's own space separates glyph and label")
 }
 
 func TestSpinnerModel_InitReturnsBatch(t *testing.T) {

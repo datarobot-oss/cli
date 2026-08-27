@@ -26,7 +26,12 @@ import (
 // server's own bookkeeping: it assigns them, and a file that repeats them
 // back is either ignored or rejected. Stripping them recursively is safe
 // because the create spec has no legitimate key by these names anywhere.
-var serverManagedKeys = []string{"id", "createdAt", "updatedAt", "status", "endpoint", "artifactId", "workloadId"}
+//
+// The list is derived from the field rule table (schema.go) so the strip
+// metadata lives in one place. See the strip scoping decision documented on
+// fieldRule: keys are deleted at ANY depth, including inside
+// codeRef.datarobot and any other nested mapping.
+var serverManagedKeys = serverManagedFieldKeys()
 
 // Live is a running workload, downloaded so a manifest can be written that
 // says everything the workload already says. Setup uses it when the user
@@ -43,6 +48,9 @@ type Live struct {
 	Name         string
 	Importance   string
 	ArtifactName string
+	// ArtifactType is the artifact's kind, which the platform keeps beside the
+	// spec rather than inside it.
+	ArtifactType string
 	Spec         map[string]any
 	Runtime      map[string]any
 }
@@ -50,25 +58,42 @@ type Live struct {
 // NewLive assembles the live view from the two documents the server returns,
 // stripping what only the server may set. workloadDoc is the workload,
 // artifactDoc the artifact it currently runs.
-func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) Live {
+//
+// It fails loudly when the artifact doc carries no usable spec — absent, or
+// stripped to nothing by the server-managed-key purge — so a partial or
+// permission-filtered artifact GET can never produce a manifest that Validate
+// would reject with "artifact.spec: is required for an inline artifact". The
+// error names the workload id, mirroring Apply's own "no primary container"
+// contract, because the right answer is to edit the file by hand rather than
+// let the CLI write something it would then refuse to read.
+func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, error) {
 	live := Live{
 		WorkloadID:   workloadID,
 		Name:         stringAt(workloadDoc, keyName),
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
-		Spec:         stripServerManaged(mapAt(artifactDoc, keySpec)),
-		Runtime:      stripServerManaged(mapAt(workloadDoc, keyRuntime)),
+		ArtifactType: stringAt(artifactDoc, keyType),
+		// stripServerManaged deep-copies once and strips both server-managed
+		// keys and nil-valued keys in a single recursive walk, so no second
+		// copy is allocated here.
+		Spec:    stripServerManaged(mapAt(artifactDoc, keySpec)),
+		Runtime: stripServerManaged(mapAt(workloadDoc, keyRuntime)),
 	}
 
 	stripBuildOutputs(live.Spec)
 
-	return live
+	if len(live.Spec) == 0 {
+		return live, fmt.Errorf("workload %s has no artifact spec; edit %s by hand instead",
+			workloadID, FileName)
+	}
+
+	return live, nil
 }
 
 // Type reports the artifact's kind, so the wizard's Q3 opens on what the
 // workload already is.
 func (l Live) Type() string {
-	return stringAt(l.Spec, keyType)
+	return l.ArtifactType
 }
 
 // Defaults reads the live spec into the answers the wizard's screens open on.
@@ -80,10 +105,9 @@ func (l Live) Defaults() Draft {
 		WorkloadID: l.WorkloadID,
 		Name:       l.Name,
 		Importance: orDefaultString(l.Importance, DefaultImportance),
-		Type:       orDefaultString(l.Type(), TypeService),
+		Type:       ArtifactTypeOrDefault(l.Type()),
 		A2AEnabled: boolAt(l.Spec, keyA2AEnabled),
 		Port:       DefaultPort,
-		HealthPath: DefaultHealthPath,
 		Build:      Build{Mode: BuildModeDockerfile},
 		Runtime:    l.runtimeDefaults(),
 	}
@@ -97,6 +121,11 @@ func (l Live) Defaults() Draft {
 		draft.Port = port
 	}
 
+	// The health path is left empty when the container has no readiness probe,
+	// rather than falling back to a default like everything else here.
+	// A workload running without a probe has to arrive saying so: the screen
+	// shows the absence, and Apply can then read a path as the answer someone
+	// gave rather than as a default it must be careful not to attach.
 	if path := stringAt(mapAt(container, keyReadinessProbe), keyPath); path != "" {
 		draft.HealthPath = path
 	}
@@ -104,6 +133,28 @@ func (l Live) Defaults() Draft {
 	draft.Build = liveBuild(container)
 
 	return draft
+}
+
+// ReadinessProbe reports what the running workload does about readiness:
+// whether the primary container declares a probe at all, and whether this
+// release can read a path out of it.
+//
+// The two are separate questions, and Defaults answers neither on its own: it
+// reports a probe with no readable path the same way it reports no probe, as an
+// empty HealthPath. Only the screens care about the difference, and they care a
+// lot, because an empty field means "no probe" to everything downstream.
+func (l Live) ReadinessProbe() (present, readable bool) {
+	container := l.primaryContainer()
+	if container == nil {
+		return false, false
+	}
+
+	probe := mapAt(container, keyReadinessProbe)
+	if probe == nil {
+		return false, false
+	}
+
+	return true, stringAt(probe, keyPath) != ""
 }
 
 // BuildMode reports how the primary container's image comes to be, in the
@@ -133,24 +184,43 @@ func (m *Manifest) BuildMode() string {
 	return ""
 }
 
-// primaryContainerNode finds the container traffic reaches in a parsed spec,
-// falling back to the first container the way the live-document walk does.
-func primaryContainerNode(spec *yaml.Node) *yaml.Node {
-	var first *yaml.Node
-
-	for _, group := range seqItems(mapValue(spec, keyContainerGroups)) {
-		for _, container := range seqItems(mapValue(group, keyContainers)) {
-			if first == nil {
+// findPrimary walks container groups looking for the primary container,
+// falling back to the first container the way both the node and map walks do.
+// The traversal is parameterised by the container representation so the logic
+// lives once: *yaml.Node for parsed manifests, map[string]any for live server
+// documents. found is false when no containers exist at all; first is the
+// zero value (nil) in that case, matching what the individual walks returned.
+func findPrimary[C any](
+	groups []C,
+	containersOf func(C) []C,
+	isPrimary func(C) bool,
+) (first C, found bool) {
+	for _, group := range groups {
+		for _, container := range containersOf(group) {
+			if !found {
 				first = container
+				found = true
 			}
 
-			if isTrue(mapValue(container, keyPrimary)) {
-				return container
+			if isPrimary(container) {
+				return container, true
 			}
 		}
 	}
 
-	return first
+	return first, found
+}
+
+// primaryContainerNode finds the container traffic reaches in a parsed spec,
+// falling back to the first container the way the live-document walk does.
+func primaryContainerNode(spec *yaml.Node) *yaml.Node {
+	container, _ := findPrimary(
+		seqItems(mapValue(spec, keyContainerGroups)),
+		func(group *yaml.Node) []*yaml.Node { return seqItems(mapValue(group, keyContainers)) },
+		func(container *yaml.Node) bool { return isTrue(mapValue(container, keyPrimary)) },
+	)
+
+	return container
 }
 
 // runtimeDefaults reads the sizing the workload is actually running with, so
@@ -218,7 +288,7 @@ func liveBuild(container map[string]any) Build {
 		}
 	}
 
-	if buildConfig != nil {
+	if len(buildConfig) > 0 {
 		return Build{Mode: BuildModeUnchanged}
 	}
 
@@ -240,7 +310,11 @@ func (l Live) Apply(draft Draft) (Live, error) {
 		applied.Spec = map[string]any{}
 	}
 
-	applied.Spec[keyType] = draft.Type
+	applied.ArtifactType = draft.Type
+
+	// Any type the server echoed inside the spec is noise: it pops spec.type
+	// on the way in and reads the artifact's own type instead.
+	delete(applied.Spec, keyType)
 
 	if draft.Type == TypeAgent && draft.A2AEnabled {
 		applied.Spec[keyA2AEnabled] = true
@@ -283,7 +357,7 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 
 		value := v.Value
 		if v.Secret {
-			value = CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey
+			value = CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey
 		}
 
 		existing = append(existing, map[string]any{keyName: v.Name, keyValue: value})
@@ -437,7 +511,7 @@ func (l *Live) runtimeGroup() map[string]any {
 // autoscaling: the file it would produce is one the ledger accepts.
 func autoscalingActive(group map[string]any) bool {
 	autoscaling := mapAt(group, keyAutoscaling)
-	if autoscaling == nil {
+	if len(autoscaling) == 0 {
 		return false
 	}
 
@@ -508,11 +582,15 @@ func (l Live) primaryContainerName() string {
 	return stringAt(container, keyName)
 }
 
-// applyReadiness writes the port and, where the workload already has a
-// readiness probe, keeps it pointing at the same place. It does not add one:
-// a workload deliberately running without a probe should not acquire the
-// wizard's default /health, which a container that does not serve it would
-// never pass.
+// applyReadiness writes the port and points the readiness probe wherever the
+// answers say, which includes having no probe at all.
+//
+// The draft's path is empty unless something asked for one: Defaults leaves it
+// empty for a container running without a probe, so a workload deliberately
+// running without one cannot acquire the wizard's default /health, which a
+// container that does not serve it would never pass. What reaches here
+// non-empty was typed on a screen or passed as a flag, and adding the probe is
+// then the answer rather than an invention.
 func applyReadiness(container map[string]any, draft Draft) {
 	previous, hadPort := intAt(container, keyPort)
 
@@ -523,27 +601,97 @@ func applyReadiness(container map[string]any, draft Draft) {
 	// nothing would otherwise produce a file rejecting its own port.
 	container[keyPrimary] = true
 
-	if probe := mapAt(container, keyReadinessProbe); probe != nil {
-		probe[keyPath] = draft.HealthPath
-		probe[keyPort] = draft.Port
-	}
+	rewritten := applyProbe(container, draft)
 
 	if !hadPort || previous == draft.Port {
 		return
 	}
 
-	// The other probes are blocks the wizard has no question for, and they are
-	// preserved as they stand. One that was watching the container's port still
-	// has to follow it: a startup probe left behind on the old port is how a
-	// changed port becomes a deploy that never reports ready. A probe aimed
-	// somewhere else was aimed there deliberately and keeps its own port.
-	for _, key := range []string{keyStartupProbe, keyLivenessProbe} {
-		probe := mapAt(container, key)
+	// Probes the wizard has no question for are preserved as they stand. One
+	// whose own port was watching the container's still has to follow it: a
+	// startup probe left behind on the old port is how a changed port becomes a
+	// deploy that never reports ready. A probe aimed somewhere else was aimed
+	// there deliberately and keeps its own port.
+	//
+	// Nested ports follow too. A tcpSocket or gRPC probe keeps its port one
+	// level down, and leaving that on a port the container no longer listens on
+	// is the same never-reports-ready deploy this loop exists to prevent. Only
+	// a port that matched the container's old one moves, so a probe deliberately
+	// aimed elsewhere is still left alone whatever shape it is written in.
+	following := []string{keyStartupProbe, keyLivenessProbe}
+	if !rewritten {
+		// A readiness probe this release could not read was left alone above,
+		// so it follows the same rule as the other two rather than keeping a
+		// port the container no longer listens on.
+		following = append(following, keyReadinessProbe)
+	}
 
-		if port, ok := intAt(probe, keyPort); ok && port == previous {
-			probe[keyPort] = draft.Port
+	for _, key := range following {
+		followPort(mapAt(container, key), previous, draft.Port)
+	}
+}
+
+// followPort moves a probe from one port to another, at the probe's own level
+// and one level down, which is where the shapes this release does not model
+// keep theirs. It descends no further: past that, a "port" is as likely to
+// belong to something the probe merely mentions as to the thing it dials.
+func followPort(probe map[string]any, from, to int) {
+	if probe == nil {
+		return
+	}
+
+	if port, ok := intAt(probe, keyPort); ok && port == from {
+		probe[keyPort] = to
+	}
+
+	for _, value := range probe {
+		nested, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if port, ok := intAt(nested, keyPort); ok && port == from {
+			nested[keyPort] = to
 		}
 	}
+}
+
+// applyProbe settles the readiness probe and reports whether it rewrote or
+// removed one, so the caller knows whether the block still needs the port
+// treatment every other probe gets.
+//
+// A block whose path this release cannot read is left exactly as it stands. An
+// empty draft path means "no probe", but only for a probe the user could see:
+// Defaults reports a TCP, gRPC or otherwise unmodelled probe as an empty path
+// too, and deleting on that would throw away a running workload's own
+// configuration because the reader did not recognize its shape.
+func applyProbe(container map[string]any, draft Draft) bool {
+	probe := mapAt(container, keyReadinessProbe)
+
+	switch {
+	case probe != nil && stringAt(probe, keyPath) == "":
+		return false
+
+	case !draft.WantsReadinessProbe():
+		// Declined. The block goes rather than being left pointing at an empty
+		// path, which is neither a probe nor an absence of one.
+		delete(container, keyReadinessProbe)
+
+	case probe != nil:
+		probe[keyPath] = draft.healthPath()
+		probe[keyPort] = draft.Port
+
+	default:
+		// Asked for on a workload that has none. Only the two fields the wizard
+		// knows about are written; the timings are the platform's defaults,
+		// which is what a probe added here has always meant.
+		container[keyReadinessProbe] = map[string]any{
+			keyPath: draft.healthPath(),
+			keyPort: draft.Port,
+		}
+	}
+
+	return true
 }
 
 // applyBuild sets the image source, editing the live build block in place
@@ -619,19 +767,15 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
+	hoistNameKeys(spec)
+
 	artifact := []field{{key: keyName, value: scalar(l.ArtifactName)}}
-	if spec != nil {
-		artifact = append(artifact, field{key: keySpec, value: spec})
+	if l.ArtifactType != "" {
+		artifact = append(artifact, field{key: keyType, value: scalar(l.ArtifactType)})
 	}
 
-	fields := []field{
-		{key: keyWorkloadID, value: scalar(l.WorkloadID), comment: workloadIDComment},
-		{key: keyName, value: scalar(l.Name)},
-		{
-			key: keyImportance, value: scalar(orDefaultString(l.Importance, DefaultImportance)),
-			comment: "low | moderate | high | critical",
-		},
-		{key: keyArtifact, value: mapping(artifact...)},
+	if spec != nil {
+		artifact = append(artifact, field{key: keySpec, value: spec})
 	}
 
 	runtime, err := documentNode(l.Runtime)
@@ -639,9 +783,26 @@ func (l Live) Render() ([]byte, error) {
 		return nil, err
 	}
 
-	if runtime != nil {
-		fields = append(fields, field{key: keyRuntime, value: runtime})
+	hoistNameKeys(runtime)
+
+	// The top-level field order is defined by the field rule table
+	// (schema.go) and shared with Draft.Render so both renderers emit the
+	// same key sequence.
+	values := map[string]*yaml.Node{
+		keyWorkloadID: scalar(l.WorkloadID),
+		keyName:       scalar(l.Name),
+		keyImportance: scalar(orDefaultString(l.Importance, DefaultImportance)),
+		keyArtifact:   mapping(artifact...),
 	}
+
+	if runtime != nil {
+		values[keyRuntime] = runtime
+	}
+
+	fields := orderedFields(values, map[string]string{
+		keyWorkloadID: workloadIDComment,
+		keyImportance: strings.Join(ImportanceLevels, " | "),
+	})
 
 	var buf bytes.Buffer
 
@@ -667,21 +828,13 @@ func (l Live) primaryContainer() map[string]any {
 }
 
 func primaryContainerOf(spec map[string]any) map[string]any {
-	var first map[string]any
+	container, _ := findPrimary(
+		slicesAt(spec, keyContainerGroups),
+		func(group map[string]any) []map[string]any { return slicesAt(group, keyContainers) },
+		func(container map[string]any) bool { return boolAt(container, keyPrimary) },
+	)
 
-	for _, group := range slicesAt(spec, keyContainerGroups) {
-		for _, container := range slicesAt(group, keyContainers) {
-			if first == nil {
-				first = container
-			}
-
-			if boolAt(container, keyPrimary) {
-				return container
-			}
-		}
-	}
-
-	return first
+	return container
 }
 
 // documentNode encodes a server document as a YAML node, nil for an empty
@@ -697,6 +850,83 @@ func documentNode(document map[string]any) (*yaml.Node, error) {
 	}
 
 	return node, nil
+}
+
+// hoistNameKeys scopes name-promotion to identifier mappings: the
+// sequence-item mappings found under the identifier keys declared in the
+// field rule table (schema.go) — today, containerGroups and containers.
+// Arbitrary nested mappings that happen to carry a key literally called
+// "name" (e.g. labels: {team: x, name: not-an-id, zone: b}) are left in
+// their original key order, honouring the package's pass-through contract
+// (doc.go: unknown blocks "survive the round trip"; the spec and runtime
+// blocks are "passed through as the platform gave them"). Reordering every
+// mapping with a name key produced unexplained diff noise on every bind.
+//
+// The walk is scoped to mapping nodes: it returns early on anything else
+// (scalars and sequences carry no identifier keys). Within a mapping it
+// recurses into each value, so identifier keys nested inside other mappings
+// are found, but it only reorders the mappings that are sequence items under
+// those keys. The top-level manifest order is already controlled by Render's
+// orderedFields call (which consults the same table) and is never reached
+// here.
+func hoistNameKeys(node *yaml.Node) {
+	if node == nil {
+		return
+	}
+
+	// Only mapping nodes can carry containerGroups/containers keys; sequence
+	// and scalar nodes have nothing to hoist and nothing to descend through.
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+
+		// Identifier keys: hoist name inside each sequence-item mapping and
+		// recurse into those items so containers nested inside groups (and
+		// groups nested inside anything else) are reached. The sequence node
+		// itself is handled item-by-item here rather than via the generic
+		// descent, so its items are the only mappings touched. The set of
+		// identifier keys is derived from the field rule table (schema.go).
+		if hoistNameKeySet[key.Value] && value != nil {
+			if value.Kind == yaml.SequenceNode {
+				for _, item := range value.Content {
+					hoistNameInMapping(item)
+					hoistNameKeys(item)
+				}
+			}
+
+			continue
+		}
+
+		// Non-matching subtrees are walked via their values so
+		// containerGroups/containers appearing at any depth are still found,
+		// while opaque mappings they contain keep their key order.
+		hoistNameKeys(value)
+	}
+}
+
+// hoistNameInMapping moves a "name" key to the front of a mapping node's
+// Content, preserving every other key in its original order. It is a no-op
+// for non-mapping nodes or mappings without a name key.
+func hoistNameInMapping(node *yaml.Node) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == keyName {
+			nameKey := node.Content[i]
+			nameValue := node.Content[i+1]
+
+			copy(node.Content[2:i+2], node.Content[0:i])
+			node.Content[0] = nameKey
+			node.Content[1] = nameValue
+
+			return
+		}
+	}
 }
 
 // stripServerManaged removes the server's bookkeeping from a copy of the
@@ -715,7 +945,19 @@ func stripKeys(value any) {
 			delete(typed, key)
 		}
 
-		for _, child := range typed {
+		// Nil-valued keys are dropped in the same walk: the server echoes
+		// them as placeholders (e.g. autoscaling: null), and writing one
+		// into the committed manifest would confuse the validator. Empty
+		// maps are preserved; isNullish is the validator's counterpart that
+		// treats an empty mapping as absent rather than as a policy. The
+		// nullable set is documented in library/api-reference.md.
+		for key, child := range typed {
+			if child == nil {
+				delete(typed, key)
+
+				continue
+			}
+
 			stripKeys(child)
 		}
 	case []any:
@@ -729,21 +971,67 @@ func stripKeys(value any) {
 // was asked to do. A container that says how to build itself also carries the
 // image that came out and the code the last sync uploaded; both are re-earned
 // by the next deploy, and writing them into the file would pin a workload to
-// yesterday's image.
+// yesterday's image. It also strips the server-assigned build block, scoped
+// to containers on purpose: the bare word "build" is generic enough that
+// adding it to serverManagedKeys could eat a legitimate user key at some
+// other level of the spec. The computed imageOutdated flag is unambiguous,
+// so it lives in that list instead.
+//
+// The build-output keys (both container-scoped and buildConfig-scoped) are
+// declared in the field rule table (schema.go). This function consults the
+// table via containerBuildOutputKeys and buildConfigBuildOutputKeys so the
+// set of stripped keys lives in one place.
+//
+// An imageBuildConfig with real content (e.g. a dockerfile block) is a build
+// container: imageUri is deleted as a server-built pin and codeRef as
+// server-managed. An imageBuildConfig that is empty, or becomes empty after
+// deleting codeRef, is NOT a build container — the user-declared imageUri is
+// kept and the emptied imageBuildConfig key is removed entirely. This mirrors
+// the server's own rule at containers.py:415 ("either imageUri or
+// imageBuildConfig must be provided"): the rendered container must never
+// carry an empty imageBuildConfig: "{}" alongside a missing imageUri.
+//
+// The guard does not claim the rendered container always carries exactly one
+// valid image source. Today the server only accepts provided/generated
+// dockerfile sources (containers.py:84-95 discriminated union), so an
+// imageBuildConfig without a dockerfile key is a hypothetical future or
+// foreign shape. Such a shape is preserved verbatim under the pass-through
+// contract (doc.go: unknown blocks "survive the round trip"), and Validate's
+// dockerfile-required check flags it on the next run — the CLI does not bless
+// an unknown build source by rewriting or stripping it.
 func stripBuildOutputs(spec map[string]any) {
+	buildConfigOutputs := buildConfigBuildOutputKeys()
+	containerOutputs := containerBuildOutputKeys()
+
 	for _, group := range slicesAt(spec, keyContainerGroups) {
 		for _, container := range slicesAt(group, keyContainers) {
 			buildConfig := mapAt(container, keyImageBuildConfig)
-			if buildConfig == nil {
-				continue
+			if buildConfig != nil {
+				for _, key := range buildConfigOutputs {
+					delete(buildConfig, key)
+				}
+
+				// If the build config still has real content after stripping
+				// the build-output keys, this is a genuine build container:
+				// drop the server-built imageUri pin. If it emptied, the
+				// container is really an image container — drop the emptied
+				// imageBuildConfig key and keep imageUri.
+				if len(buildConfig) == 0 {
+					delete(container, keyImageBuildConfig)
+				} else {
+					delete(container, keyImageURI)
+				}
 			}
 
-			delete(container, keyImageURI)
-			delete(buildConfig, "codeRef")
+			for _, key := range containerOutputs {
+				delete(container, key)
+			}
 		}
 	}
 }
 
+// deepCopyMap returns a deep copy of document so the caller's input is not
+// mutated by the strip passes that run against it.
 func deepCopyMap(document map[string]any) map[string]any {
 	if document == nil {
 		return nil

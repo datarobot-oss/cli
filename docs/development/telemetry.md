@@ -243,6 +243,8 @@ PersistentPreRunE (root.go)
     ├─ Initialize CommonProperties (session ID, user ID, env, ...)
     ├─ Stamp props.CommandKind = "core" or "plugin"
     │   based on telemetry.IsPluginCommand(cmd)
+    ├─ Stamp props.NonInteractive via telemetry.StampInteractionMode
+    │   so every event shares the same automation signal
     ├─ Build telemetry.Client
     └─ Register cobra.OnFinalize (closes over cmd, args, client)
     ↓
@@ -253,6 +255,25 @@ cobra.OnFinalize (via cobra's deferred postRun, fires on success and error paths
     ├─ Flush telemetry (3-second timeout)
     └─ log.Stop()
 ```
+
+### Stamping universal interaction flags
+
+`telemetry.StampInteractionMode` centralizes everything that decides whether the
+current invocation is interactive. The helper runs exactly once in
+`root.PersistentPreRunE`, so every event in the session inherits the same
+`non_interactive` property without each command needing to parse flags on its own.
+
+- `DATAROBOT_CLI_NON_INTERACTIVE=true` forces `non_interactive=true`
+- Any parsed `--yes` flag (including short `-y`) flips the flag for that session
+- `--force-interactive` is not an interaction signal: it only forces the setup wizard
+  to re-run (via `state.HasCompletedDotenvSetup`) and does not override `--yes` or the
+  env var for confirmation prompts
+- Commands can reuse the same logic directly via `cli.IsNonInteractive(cmd)`
+
+To expose another universal flag or environment override, extend
+`telemetry.StampInteractionMode` (and update its tests) rather than touching
+individual commands. **TODO:** when the next global automation flag is added,
+document its behavior here and wire it through the helper alongside `--yes`.
 
 ### Reading RunE results in a PropExtractor
 

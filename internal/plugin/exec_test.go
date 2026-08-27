@@ -198,12 +198,17 @@ func TestExecutePluginContextCancellation(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that traps SIGTERM, writes a marker, and exits cleanly
+	// A script that traps SIGTERM, writes a marker, and exits cleanly. It
+	// also announces readiness: the trap has to be installed before the
+	// cancel fires, or the default handler kills the shell and the exit code
+	// asserts on the race rather than on the graceful path.
 	markerFile := filepath.Join(t.TempDir(), "sigterm-received")
+	readyFile := filepath.Join(t.TempDir(), "ready")
 	script := fmt.Sprintf(`#!/bin/sh
 trap 'touch %s; exit 55' TERM
+touch %s
 while true; do sleep 0.1; done
-`, markerFile)
+`, markerFile, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "trap-term.sh")
 	createScript(t, scriptPath, script)
@@ -216,8 +221,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start and install its signal handler
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 
@@ -240,11 +244,14 @@ func TestExecutePluginContextCancellationKillsUnresponsive(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that ignores SIGTERM entirely
-	script := `#!/bin/sh
+	// A script that ignores SIGTERM entirely, announcing readiness once the
+	// trap is installed so the cancel cannot race the shell's startup.
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
 trap '' TERM
+touch %s
 while true; do sleep 0.1; done
-`
+`, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
 	createScript(t, scriptPath, script)
@@ -257,8 +264,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 

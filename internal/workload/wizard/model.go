@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,17 @@ type flow struct {
 	envTable envTable
 	picker   rowTable
 	inputs   []textinput.Model
-	focus    int
+	// focus is the settings screen's cursor: a field index, or advancedStop
+	// when the row that opens the rest of the screen is what is focused.
+	focus int
+	// advancedOpen is whether that row is open. It survives leaving the screen
+	// and coming back, so back-navigation returns to the screen the user left
+	// rather than folding their own fields away again.
+	advancedOpen bool
+	// focusCmd parks the cursor-blink command from a focus change that happened
+	// somewhere with no tea.Cmd to return, so the caller that does have one can
+	// hand it on.
+	focusCmd tea.Cmd
 
 	// loading is the message shown while a screen waits on the network.
 	loading string
@@ -100,6 +111,24 @@ type flow struct {
 	// fatal ends the run with a reason rather than as a cancellation, for the
 	// failures no screen can recover from.
 	fatal error
+
+	// imports is what storing the secrets did, read once the flow has ended
+	// and the terminal is back. imported stops a second attempt: the confirm
+	// screen can be reached twice, and a credential already stored must not be
+	// stored again under a second name.
+	imports  Import
+	imported bool
+
+	// dryRun stops the confirm screen storing anything. A run that promises
+	// to write no file must not leave a credential behind either, and a
+	// credential outlives the run that made it.
+	dryRun bool
+
+	// handEdited records that the confirm screen's [e] was used, so the file
+	// about to be written is the user's bytes rather than a render of the
+	// draft. It decides how the credential ids get in: re-rendering would
+	// throw the edit away.
+	handEdited bool
 
 	// nameGiven distinguishes a name the user chose from the one the
 	// directory suggested, so returning to the screen shows the answer that
@@ -128,6 +157,13 @@ type execEnvsLoadedMsg struct {
 type editedMsg struct {
 	content []byte
 	err     error
+}
+
+// secretsStoredMsg carries the variables with their credential ids filled in,
+// and the record of which of them made it.
+type secretsStoredMsg struct {
+	vars   []manifest.EnvVar
+	report Import
 }
 
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
@@ -234,6 +270,9 @@ func (f flow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editedMsg:
 		return f.edited(msg)
 
+	case secretsStoredMsg:
+		return f.secretsStored(msg)
+
 	case tea.KeyMsg:
 		return f.key(msg)
 	}
@@ -254,10 +293,28 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	f.failed = nil
 
+	if f.at == screenSettings && msg.String() == advancedKey {
+		// Assigned before returning, not called inside the return list: the
+		// call mutates f through a pointer receiver, and Go does not specify
+		// whether the f being returned is copied before or after it runs.
+		cmd := f.toggleAdvanced()
+
+		return f, cmd
+	}
+
 	switch msg.String() {
 	case "esc":
 		return f.back()
 	case "enter":
+		// On the advanced row enter is the row's own action. The screen is
+		// still submitted with enter from any of its fields, which is where the
+		// cursor starts.
+		if f.onAdvancedRow() {
+			cmd := f.toggleAdvanced()
+
+			return f, cmd
+		}
+
 		return f.advance()
 	}
 
@@ -305,17 +362,7 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return f, nil
 
 	case screenName, screenEntrypoint, screenImage, screenSettings:
-		if key, ok := msg.(tea.KeyMsg); ok && f.at == screenSettings && isFocusKey(key) {
-			f.moveFocus(key)
-
-			return f, nil
-		}
-
-		var cmd tea.Cmd
-
-		f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
-
-		return f, cmd
+		return f.delegateToInput(msg)
 
 	case screenConfirm:
 		var cmd tea.Cmd
@@ -326,6 +373,37 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return f, nil
+}
+
+// delegateToInput routes a message on the text-entry screens: to the focus
+// ring when the key moves between fields, and to the focused field otherwise.
+func (f flow) delegateToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, isKey := msg.(tea.KeyMsg)
+
+	if isKey && f.at == screenSettings && isFocusKey(key) {
+		cmd := f.moveFocus(key)
+
+		return f, cmd
+	}
+
+	// The advanced row is not a field, so a keystroke on it has nowhere to be
+	// typed. Without this it would go into whichever input the index happened
+	// to reach, or panic on the one it does not have. Only keystrokes are
+	// swallowed: everything else routed here belongs to a component that is
+	// still on screen, and dropping it would end whatever it is driving.
+	if isKey && f.onAdvancedRow() {
+		return f, nil
+	}
+
+	if f.focus < 0 {
+		return f, nil
+	}
+
+	var cmd tea.Cmd
+
+	f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
+
+	return f, cmd
 }
 
 // updateSelection routes a key to whichever selection component the current
@@ -365,7 +443,10 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 	if err != nil {
 		f.failed = err
 
-		return f, nil
+		// A refusal still moves the cursor to the field it is about, and the
+		// blink that goes with it has to be scheduled or the caret sits frozen
+		// in a field the user is being asked to edit.
+		return f, f.takeFocusCmd()
 	}
 
 	if cmd != nil {
@@ -479,6 +560,92 @@ var accepting = map[screen]func(*flow) (tea.Cmd, error){
 	screenImage:      (*flow).acceptImage,
 	screenSettings:   (*flow).acceptSettings,
 	screenEnv:        (*flow).acceptEnv,
+	screenConfirm:    (*flow).acceptConfirm,
+}
+
+// acceptConfirm stores the secrets, and is the last thing that happens before
+// the file is written.
+//
+// Here rather than when the env table is left, because a credential outlives
+// the run that created it: someone who walks the wizard to the end and then
+// cancels should not have left a secret on the platform. The cost is that the
+// confirm screen shows the reference carrying the placeholder while the file
+// written a moment later carries the id. That is the right way round; the
+// screen is where a secret's value could leak, and no value is on it either
+// way.
+func (f *flow) acceptConfirm() (tea.Cmd, error) {
+	// A dry run stores nothing, the same as the headless path. The references
+	// keep their placeholders, which is what a file nobody created a
+	// credential for should say.
+	if f.imported || f.dryRun || pendingSecrets(f.draft.EnvVars) == 0 {
+		return nil, nil
+	}
+
+	f.loading = "Storing secrets…"
+
+	vars, detected, name := f.draft.EnvVars, f.detected, f.draft.Name
+
+	return func() tea.Msg {
+		stored, report := importSecrets(vars, detected, name)
+
+		return secretsStoredMsg{vars: stored, report: report}
+	}, nil
+}
+
+// secretsStored records the ids and puts them in the file, so what is written
+// is what was on screen with the placeholders resolved. A failure now is
+// fatal: the credentials exist, and ending as a cancellation would say nothing
+// happened.
+func (f flow) secretsStored(msg secretsStoredMsg) (tea.Model, tea.Cmd) {
+	f.loading = ""
+	f.imported = true
+	f.imports = msg.report
+	f.draft.EnvVars = msg.vars
+
+	if err := f.resolveContent(); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
+	f.done = true
+
+	return f, tea.Quit
+}
+
+// resolveContent puts the new credential ids into what is about to be written.
+//
+// A file nobody touched is re-rendered from the draft, which now carries them.
+// One edited by hand on the confirm screen is not: re-rendering would throw
+// that edit away silently, at the last moment before the write, including any
+// credential id the user pasted in themselves. The placeholders in their own
+// bytes are rewritten instead.
+func (f *flow) resolveContent() error {
+	if !f.handEdited {
+		return f.render()
+	}
+
+	resolved, err := manifest.ResolveCredentials(f.content, credentialIDs(f.draft.EnvVars))
+	if err != nil {
+		return err
+	}
+
+	f.content = resolved
+
+	return f.rediff()
+}
+
+// credentialIDs is the id stored for each variable, by variable name.
+func credentialIDs(vars []manifest.EnvVar) map[string]string {
+	ids := make(map[string]string, len(vars))
+
+	for _, v := range vars {
+		if v.Secret && v.CredentialID != "" {
+			ids[v.Name] = v.CredentialID
+		}
+	}
+
+	return ids
 }
 
 // accept validates and records the current screen's answer. A non-nil command
@@ -553,10 +720,13 @@ func (f *flow) acceptBinding() (tea.Cmd, error) {
 	if item.id == createNewID {
 		// Start over rather than carrying the previous pick's name, kind and
 		// image forward: "create a new workload" after looking at an existing
-		// one must not prefill a copy of it.
+		// one must not prefill a copy of it. Starting over means from this
+		// run's own flags, not from nothing: a flag the user passed is an
+		// answer they gave, and looking at a workload and declining it is not
+		// a reason to withdraw it.
 		if f.live != nil {
 			f.live = nil
-			f.draft = defaultDraft(f.detected)
+			f.draft = f.answers.partialDraft(f.detected)
 		}
 
 		f.draft.WorkloadID = ""
@@ -673,43 +843,50 @@ func (f flow) autoscaled() bool {
 
 // acceptSettings validates every field before recording any of them, so a
 // screen that is refused leaves the answers exactly as the user left them.
+// Fields behind the advanced row are validated too, since a bad --cpu has to
+// fail here rather than at write time, and a refusal there opens the row: an
+// error naming a field nobody can see is a screen with no way forward.
 func (f *flow) acceptSettings() (tea.Cmd, error) {
 	port, err := strconv.Atoi(f.field(fieldPort))
 	if err != nil {
-		return nil, errors.New("the port must be a number")
+		return nil, f.reveal(fieldPort, errors.New("the port must be a number"))
 	}
 
 	if err := checkPort(port, "port"); err != nil {
-		return nil, err
+		return nil, f.reveal(fieldPort, err)
 	}
 
 	path := f.field(fieldHealthPath)
-	if !strings.HasPrefix(path, "/") {
-		return nil, errors.New("the health path must start with /")
+	if err := f.acceptHealthPath(path); err != nil {
+		return nil, f.reveal(fieldHealthPath, err)
 	}
 
 	replicas, err := f.acceptReplicas()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldReplicas, err)
 	}
 
 	cpu, err := f.acceptCPU()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldCPU, err)
 	}
 
 	memory := f.field(fieldMemory)
 	if !manifest.ValidMemory(memory) {
-		return nil, fmt.Errorf("memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
-			strings.Join(manifest.MemoryUnits(), ", "))
+		return nil, f.reveal(fieldMemory, fmt.Errorf(
+			"memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
+			strings.Join(manifest.MemoryUnits(), ", ")))
 	}
 
 	memory = manifest.NormalizeMemory(memory)
 
-	importance := strings.ToLower(f.field(fieldImportance))
+	// An empty field takes the documented default, the same as the headless
+	// path, rather than being the one field on this screen where clearing is
+	// fatal.
+	importance := orDefault(strings.ToLower(f.field(fieldImportance)), manifest.DefaultImportance)
 	if !manifest.ValidImportance(importance) {
-		return nil, fmt.Errorf("importance must be one of %s",
-			strings.Join(manifest.ImportanceLevels, ", "))
+		return nil, f.reveal(fieldImportance, fmt.Errorf("importance must be one of %s",
+			strings.Join(manifest.ImportanceLevels, ", ")))
 	}
 
 	f.draft.Port = port
@@ -720,6 +897,43 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 	return nil, nil
 }
 
+// acceptHealthPath holds the probe field to what the file can express. An
+// empty path is the answer "no readiness probe", which the file records by
+// carrying no probe block at all; a path that is set still has to be one.
+//
+// The third case is a bound workload whose probe declares no path. That shape
+// is preserved rather than rewritten, so a path typed here would be accepted
+// and then quietly dropped by the merge. It is refused while the answer can
+// still be taken back, and the note beside the field says why.
+func (f flow) acceptHealthPath(path string) error {
+	if path != "" && !strings.HasPrefix(path, "/") {
+		return errors.New("the health path must start with /, or leave it empty to run without a probe")
+	}
+
+	if present, readable := f.liveReadinessProbe(); present && !readable && path != "" {
+		return fmt.Errorf(
+			"%s runs a readiness probe with no path, which is kept as it is rather than rewritten, "+
+				"so a path here would not reach the file; clear the field to leave it alone",
+			f.live.Name)
+	}
+
+	return nil
+}
+
+// reveal puts the cursor on the field a validation error is about, opening the
+// advanced row when that is where the field lives. The error is returned
+// unchanged so the caller reads as one statement.
+func (f *flow) reveal(field int, err error) error {
+	if field >= firstAdvancedField {
+		f.advancedOpen = true
+	}
+
+	f.focus = field
+	f.focusCmd = f.applyFocus()
+
+	return err
+}
+
 // field is the trimmed contents of one input on the current screen.
 func (f flow) field(i int) string {
 	return strings.TrimSpace(f.inputs[i].Value())
@@ -727,35 +941,48 @@ func (f flow) field(i int) string {
 
 // onEnter starts whatever the screen needs before it can be answered.
 func (f *flow) onEnter(at screen) tea.Cmd {
+	// Whatever entering the screen did to the cursor rides along with the work
+	// the screen starts, since both reach bubbletea through this one return.
+	focus := f.takeFocusCmd()
+
 	switch at {
 	case screenExecEnv:
 		if len(f.execEnvs) > 0 {
 			// Already fetched, and enter() has rebuilt the table from it.
-			return nil
+			return focus
 		}
 
 		f.loading = "Loading base images…"
 
-		return func() tea.Msg {
+		return tea.Batch(focus, func() tea.Msg {
 			environments, err := listExecEnvsFn(execEnvPickLimit)
 
 			return execEnvsLoadedMsg{environments: environments, err: err}
-		}
+		})
 
 	case screenConfirm:
 		if err := f.render(); err != nil {
 			f.failed = err
 		}
 
-		return nil
+		return focus
 
 	case screenBinding, screenName, screenKind, screenA2A, screenSource,
 		screenEntrypoint, screenImage, screenSettings, screenEnv:
 		// Everything these screens show is already in hand.
-		return nil
+		return focus
 	}
 
-	return nil
+	return focus
+}
+
+// takeFocusCmd hands over the parked cursor-blink command and clears it, so it
+// is scheduled once rather than on every later return.
+func (f *flow) takeFocusCmd() tea.Cmd {
+	cmd := f.focusCmd
+	f.focusCmd = nil
+
+	return cmd
 }
 
 // render produces the file the confirm screen shows, and for a bound workload
@@ -827,6 +1054,17 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	live := msg.live
+
+	// The same refusal the headless bind makes, for the same reason: a probe
+	// flag this workload cannot honour is an instruction the run would carry
+	// out nowhere, and the screen it would go unnoticed on is one the user has
+	// to open a drawer to reach. Same flags, same answer, terminal or not.
+	if err := f.answers.checkProbeEditable(live); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
 	f.live = &live
 	// The live spec is the new set of defaults, not the new set of answers:
 	// --replicas and --memory were given before the fetch and still stand.
@@ -844,7 +1082,7 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	f.at = screenKind
 	f.enter(f.at)
 
-	return f, nil
+	return f, f.takeFocusCmd()
 }
 
 func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
@@ -871,16 +1109,27 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	f.content = msg.content
+	f.handEdited = true
 
 	// The diff has to be recomputed against what the editor left, not
 	// cleared: an empty diff is how the screen says "nothing changes for the
 	// running workload", which an edited file has no business claiming.
+	if err := f.rediff(); err != nil {
+		f.failed = err
+
+		return f, nil
+	}
+
+	return f, nil
+}
+
+// rediff recomputes what the confirm screen shows against the current bytes,
+// which is only meaningful when a live workload is being changed.
+func (f *flow) rediff() error {
 	if f.live != nil {
 		before, err := f.live.Render()
 		if err != nil {
-			f.failed = err
-
-			return f, nil
+			return err
 		}
 
 		f.diff = unifiedDiff(f.live.Name, string(before), string(f.content))
@@ -888,7 +1137,7 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 
 	f.buildPreview()
 
-	return f, nil
+	return nil
 }
 
 func (f flow) result() ([]byte, manifest.Draft, error) {
@@ -915,14 +1164,84 @@ func isFocusKey(msg tea.KeyMsg) bool {
 	return false
 }
 
-func (f *flow) moveFocus(msg tea.KeyMsg) {
-	f.inputs[f.focus].Blur()
+// moveFocus walks the settings screen's stops: the port, the advanced row, and
+// the fields that row reveals while it is open. Only the settings screen has
+// more than one thing to move between, which is why this is not reached from
+// the other input screens.
+func (f *flow) moveFocus(msg tea.KeyMsg) tea.Cmd {
+	stops := f.settingsStops()
 
-	if msg.String() == "shift+tab" || msg.String() == "up" {
-		f.focus = (f.focus - 1 + len(f.inputs)) % len(f.inputs)
-	} else {
-		f.focus = (f.focus + 1) % len(f.inputs)
+	// Not found and the first stop are different things, and slices.Index
+	// spells both -1 and the sentinel this ring uses the same way. A focus that
+	// is not a stop is a broken invariant rather than a reason to move, so it
+	// restarts the walk deliberately instead of being clamped into one.
+	at := slices.Index(stops, f.focus)
+	if at < 0 {
+		at = 0
 	}
 
-	f.inputs[f.focus].Focus()
+	step := 1
+	if msg.String() == "shift+tab" || msg.String() == "up" {
+		step = -1
+	}
+
+	f.focus = stops[(at+step+len(stops))%len(stops)]
+
+	return f.applyFocus()
+}
+
+// toggleAdvanced shows or hides the fields behind the row and puts the cursor
+// somewhere that still exists afterwards: on the first revealed field when it
+// opens, since reaching them is the point, and back on the port when it closes,
+// since the field the cursor was in has just gone.
+func (f *flow) toggleAdvanced() tea.Cmd {
+	f.advancedOpen = !f.advancedOpen
+
+	if f.advancedOpen {
+		f.focus = firstAdvancedField
+	} else {
+		f.focus = fieldPort
+	}
+
+	return f.applyFocus()
+}
+
+// settingsStops is the order the cursor visits. The advanced half is built
+// from the field order, so a field added behind the row needs no second edit
+// here; the visible half is the port and the row, and making a second field
+// always-visible does mean editing this literal.
+func (f flow) settingsStops() []int {
+	stops := []int{fieldPort, advancedStop}
+
+	if !f.advancedOpen {
+		return stops
+	}
+
+	for field := firstAdvancedField; field < settingsFieldCount; field++ {
+		stops = append(stops, field)
+	}
+
+	return stops
+}
+
+// applyFocus puts the cursor in the focused field, and in none of them when
+// the advanced row is what is focused.
+//
+// The command it returns starts the cursor blinking in the newly focused
+// field, and has to reach the caller: dropped, the field keeps a static block
+// where the caret should be, which reads as a field that cannot be typed into.
+func (f *flow) applyFocus() tea.Cmd {
+	var cmd tea.Cmd
+
+	for i := range f.inputs {
+		if i == f.focus {
+			cmd = f.inputs[i].Focus()
+
+			continue
+		}
+
+		f.inputs[i].Blur()
+	}
+
+	return cmd
 }

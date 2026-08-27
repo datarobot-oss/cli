@@ -63,6 +63,42 @@ func swapLiveFns(t *testing.T, getWorkload, getArtifact func(string) (workload.D
 	t.Cleanup(func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact })
 }
 
+// Headless there is no screen to explain that a probe is being preserved, so a
+// flag that cannot be carried out is an error rather than a run that reports
+// success having ignored the one thing it was asked to change.
+func TestRun_ProbeFlagOnAnUnmodelledProbeIsRefused(t *testing.T) {
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/tcp:v1",
+				 "readinessProbe": {"tcpSocket": {"port": 9100}, "periodSeconds": 10}}]}]}}`))
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+
+	for name, answers := range map[string]Answers{
+		"declined": {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", NoProbe: true},
+		"a path":   {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", HealthPath: "/ready"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Run(Options{Dir: dir, NonInteractive: true, Answers: answers})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "readiness probe with no path")
+			assert.NoFileExists(t, manifest.Path(dir))
+		})
+	}
+
+	// Binding without saying anything about the probe still works, and keeps it.
+	result, err := Run(Options{
+		Dir: dir, NonInteractive: true,
+		Answers: Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+		DryRun:  true,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(result.Content), "tcpSocket")
+}
+
 func documentFrom(t *testing.T, raw string) workload.Document {
 	t.Helper()
 
@@ -164,8 +200,8 @@ func TestRun_ExistingManifestThatDoesNotValidate(t *testing.T) {
 	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(`name: broken
 artifact:
   name: broken-artifact
+  type: service
   spec:
-    type: service
     containerGroups:
       - name: default
         containers:
@@ -233,8 +269,7 @@ func TestRun_BindsToALiveWorkload(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "high", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "autoscaling": {"enabled": true, "maxReplicaCount": 9},
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 2, "memory": "4GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9"}]}]}}`))
 
 	dir := t.TempDir()
@@ -277,8 +312,7 @@ func boundWithLiveEnv(t *testing.T, envVars string) {
 		documentFrom(t, `{"name": "live-app", "importance": "high", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "1GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "environmentVars": `+envVars+`}]}]}}`))
 }
@@ -338,7 +372,7 @@ func TestRun_BoundWorkloadDoesNotGuessAtLiveValues(t *testing.T) {
 // clear, in either spelling, so neither is a finding.
 func TestRun_BoundWorkloadIgnoresCredentialReferences(t *testing.T) {
 	boundWithLiveEnv(t, `[{"name": "SHORTHAND_KEY", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
-		{"name": "OBJECT_KEY", "source": "credential",
+		{"name": "OBJECT_KEY", "source": "dr-credential",
 		 "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}]`)
 
 	assert.NotContains(t, boundRun(t), "looks like a secret")
@@ -414,8 +448,7 @@ func liveGeneratedAgent(t *testing.T) {
 		documentFrom(t, `{"name": "live-agent", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-agent-artifact", "spec": {"type": "agent",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "agent", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000,
 				 "imageBuildConfig": {"dockerfile": {"source": "generated",
 				   "entrypoint": ["python", "old.py"],
@@ -491,8 +524,7 @@ func TestRun_BoundServiceRejectsA2A(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9"}]}]}}`))
 
 	_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", A2AEnabled: true}))
@@ -509,8 +541,7 @@ func TestRun_BoundEnvCountsOnlyWhatWasAdded(t *testing.T) {
 		documentFrom(t, `{"name": "live-app", "importance": "low", "artifactId": "68a1",
 			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
 				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
-		documentFrom(t, `{"name": "live-app-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "live-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 8000, "imageUri": "registry/live:v9",
 				 "environmentVars": [{"name": "LOG_LEVEL", "value": "info"},
 				                     {"name": "OPENAI_API_KEY", "value": "live"}]}]}]}}`))

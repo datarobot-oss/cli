@@ -30,6 +30,13 @@ type PlanJSON struct {
 	Deletes   []FileActionJSON `json:"deletes"`
 	Conflicts []FileActionJSON `json:"conflicts"`
 	Stats     PlanStatsJSON    `json:"stats"`
+
+	// Locked marks a plan that can never be applied, because the artifact it
+	// was computed against is immutable. A preview of a locked artifact is the
+	// one case where a full upload list means the opposite of what it looks
+	// like, and a script reading only this document has nothing else to go on:
+	// the human warning goes to stderr and the exit status is 0.
+	Locked bool `json:"locked"`
 }
 
 type FileActionJSON struct {
@@ -52,15 +59,16 @@ type PlanStatsJSON struct {
 }
 
 // RenderPlanJSON writes plan as pretty-printed JSON to w.
-func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan) error {
+func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 
 	if plan == nil {
-		return enc.Encode(PlanJSON{})
+		return enc.Encode(PlanJSON{Locked: locked})
 	}
 
 	out := PlanJSON{
+		Locked:    locked,
 		Uploads:   actionsJSON(plan.Uploads),
 		Downloads: actionsJSON(plan.Downloads),
 		Deletes:   actionsJSON(plan.Deletes),

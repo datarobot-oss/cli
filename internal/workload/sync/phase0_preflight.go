@@ -30,7 +30,7 @@ import (
 // anything on disk, and they read fine either way because the path helpers
 // fall back to the legacy location on their own.
 func phase0Preflight(e *Engine) error {
-	if !e.opts.DryRun && !e.opts.ShowDiffs {
+	if !e.previewOnly() {
 		e.migrationNote = wapi.EnsureMigrated(e.projectDir)
 	}
 

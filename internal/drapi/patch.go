@@ -18,12 +18,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 )
 
-func Patch(url, info string, body any) (*http.Response, error) {
+// Patch sends body as JSON via HTTP PATCH. timeout optionally overrides
+// DefaultClientTimeout, the same seam Get/Post have. Omitted, or ≤0, falls
+// back to DefaultClientTimeout (see NewHTTPClient).
+func Patch(url, info string, body any, timeout ...time.Duration) (*http.Response, error) {
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -41,7 +50,7 @@ func Patch(url, info string, body any) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	if info != "" {
-		log.Infof("Updating %s at: %s", info, url)
+		log.Debugf("Updating %s at: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
@@ -50,7 +59,7 @@ func Patch(url, info string, body any) (*http.Response, error) {
 		return nil, err
 	}
 
-	resp, err := NewHTTPClient(DefaultClientTimeout).Do(req)
+	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -64,12 +73,18 @@ func Patch(url, info string, body any) (*http.Response, error) {
 	return resp, err
 }
 
+// isPatchSuccess accepts 202 as well as 200 and 204. A route that starts work
+// rather than finishing it answers Accepted with a handle to follow, which the
+// workload settings route does: it applies new sizing by rolling a
+// replacement. Reading that as a failure would report every accepted change as
+// broken while the platform got on with it.
 func isPatchSuccess(code int) bool {
-	return code == http.StatusOK || code == http.StatusNoContent
+	return code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent
 }
 
-func PatchJSON(url, info string, body, v any) error {
-	resp, err := Patch(url, info, body)
+// PatchJSON is Patch with the response body decoded into v. timeout forwards to Patch.
+func PatchJSON(url, info string, body, v any, timeout ...time.Duration) error {
+	resp, err := Patch(url, info, body, timeout...)
 	if err != nil {
 		return err
 	}

@@ -26,6 +26,7 @@ If you're new to developing the CLI, start here:
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
 - **[Workload state directory validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
+- **[Editing user-owned files](editing-user-files.md)**&mdash;rules for in-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry, and when a refusal beats a rewrite.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
 - **[Telemetry](telemetry.md)**&mdash;how usage analytics linked to your DataRobot user ID are collected, how to add events, and how to opt out.
 
@@ -73,7 +74,7 @@ See [Building](building.md) for detailed workflow documentation.
 
 Before you begin development:
 
-- **Go 1.26.6 or later**&mdash;required for building the CLI.
+- **Go 1.26.7 or later**&mdash;required for building the CLI.
 - **Git**&mdash;version control.
 - **Task**&mdash;task runner for development commands.
 - **golangci-lint**&mdash;installed automatically via `task dev-init`.

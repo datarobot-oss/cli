@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -49,7 +50,7 @@ func defaultDeps() Deps {
 
 func init() {
 	// Per project rules: bind only the env var, read the flag directly from cobra.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 }
 
 func Cmd() *cobra.Command {
@@ -98,14 +99,13 @@ Example:
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("clean", false, "Remove checkout directories instead of downloading.")
-	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts.")
+	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts.")
 
 	return c
 }
 
 func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.OutputFormat, deps Deps) error {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	yes := yesFlag || viperx.GetBool("yes")
+	yes := cli.IsNonInteractive(cmd)
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
 	clean, _ := cmd.Flags().GetBool("clean")

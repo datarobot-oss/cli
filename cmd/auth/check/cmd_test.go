@@ -16,6 +16,10 @@ package check
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,4 +41,34 @@ func TestCheckCLICredentials_QuotedEndpointNamesEndpointNotToken(t *testing.T) {
 	require.False(t, valid)
 	assert.Contains(t, buf.String(), "DATAROBOT_ENDPOINT environment variable is invalid")
 	assert.NotContains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+}
+
+// The '.env' leg consumes VerifyToken's error as an opaque non-nil; the typed
+// *config.HTTPStatusError must leave its message and verdict unchanged.
+func TestVerifyDotenvToken_StatusErrorKeepsMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	orig := os.Stdout
+
+	t.Cleanup(func() { os.Stdout = orig })
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout = w
+
+	valid := verifyDotenvToken(server.URL+"/api/v2", "expired-token")
+
+	os.Stdout = orig
+
+	require.NoError(t, w.Close())
+
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	require.False(t, valid)
+	assert.Contains(t, string(out), "DATAROBOT_API_TOKEN in '.env' is invalid or expired")
 }

@@ -146,12 +146,19 @@ dr workload list [--status <status>] [--limit N] [--output-format text|json]
 Delete a workload by id. A running workload is stopped first and then removed. The artifact it was created from is not deleted. You are asked to confirm unless `--yes` is set.
 
 ```bash
-dr workload delete <workload-id> [--yes]
+dr workload delete <workload-id> [--yes] [--dir <path>]
 ```
 
 **Flags:**
 
 - `--yes`, `-y`: skip the confirmation prompt. Also honored via `DATAROBOT_CLI_NON_INTERACTIVE=1`.
+- `--dir <path>`: project directory whose manifest holds the binding, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
+
+If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next `dr workload up` creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
+
+A manifest this edit cannot make sound again is refused rather than rewritten, with the reason and the remedy: a binding whose value something else aliases, repeated `workloadId` keys that disagree, a file whose only recognized key is the binding, and a file carrying more than one YAML document.
+
+A workload that was already gone before the command ran is reported, and the binding is left alone: a 404 says the workload is not on this instance, which is not the same as saying it no longer exists. That case, and deletion from the UI or by a teammate, is handled at deploy time instead: `dr workload up` treats a binding that resolves to nothing as drift, creates a new workload, and names the id it could not find in both the plan and the JSON envelope.
 
 ### `start` / `stop`
 

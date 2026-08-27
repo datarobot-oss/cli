@@ -149,7 +149,7 @@ If you would like to build and install from source, you can do so by following t
 
 #### Prerequisites
 
-- Go 1.26.6 or later (for building from source)
+- Go 1.26.7 or later (for building from source)
 - Git
 - [Task](https://taskfile.dev/) (for development and task running)
 
@@ -519,3 +519,11 @@ Built with:
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
 - [Viper](https://github.com/spf13/viper)&mdash;configuration management.
 - [Task](https://taskfile.dev/)&mdash;task runner.
+
+## Contributors
+
+<a href="https://github.com/datarobot-oss/cli/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=datarobot-oss/cli&max=48" alt="Contributors"/>
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).

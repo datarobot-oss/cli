@@ -342,3 +342,119 @@ func TestChange_String(t *testing.T) {
 	assert.Equal(t, "entrypoint: [1 item(s)] -> [2 item(s)]",
 		Change{Path: "entrypoint", Have: []any{"a"}, Want: []any{"a", "b"}}.String())
 }
+
+// Extra is the half Subset deliberately leaves out: what the live side
+// carries that the file no longer names.
+func TestExtra_FindsWhatTheFileNoLongerNames(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		have string
+		out  []string
+	}{
+		{
+			name: "an env var the file dropped",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[primary].environmentVars[FOO]"},
+		},
+		{
+			name: "the last env var, so the file has no block at all",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","port":8080,"environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[primary].environmentVars[FOO]"},
+		},
+		{
+			name: "a sidecar the file dropped",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary"},{"name":"metrics"}]}]}}`,
+			out: []string{"spec.containerGroups[default].containers[metrics]"},
+		},
+		{
+			name: "nothing removed, so nothing to report",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			have: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":8080}]}]}}`,
+			out:  nil,
+		},
+		{
+			name: "server-owned fields are not removals",
+			want: `{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary"}]}]}}`,
+			have: `{"id":"art-1","status":"draft","spec":{"containerGroups":[{"name":"default","containers":[
+			        {"name":"primary","imageUri":"registry/built:sha","readinessProbe":{"path":"/health"}}]}]}}`,
+			out: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var want, have map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(tc.want), &want))
+			require.NoError(t, json.Unmarshal([]byte(tc.have), &have))
+
+			assert.Equal(t, tc.out, Extra(want, have))
+		})
+	}
+}
+
+// The two questions are not the same one asked twice: a file that adds
+// something is Subset's business and a file that removes something is Extra's,
+// and each is silent about the other.
+func TestExtra_AndSubsetAnswerDifferentQuestions(t *testing.T) {
+	var want, have map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"spec":{"containerGroups":[{"name":"default","containers":[{"name":"primary","port":9000}]}]}}`), &want))
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"spec":{"containerGroups":[{"name":"default","containers":[
+		  {"name":"primary","port":8080,"environmentVars":[{"name":"FOO","value":"1"}]}]}]}}`), &have))
+
+	assert.Len(t, Subset(want, have), 1, "the port the file moved")
+	assert.Len(t, Extra(want, have), 1, "the variable the file dropped")
+}
+
+// The platform stores a size as bytes and returns it that way, so "512MB" in
+// the file and 512000000 in the live workload are one sizing written twice.
+// Reporting that as drift meant a workload could never be up to date: every
+// run rebuilt and rolled a project nobody had touched.
+func TestSubset_MemoryIsTheSameSizeWrittenTwoWays(t *testing.T) {
+	want := map[string]any{
+		"containerGroups": []any{map[string]any{
+			"name": "default",
+			"containers": []any{map[string]any{
+				"name":               "primary",
+				"resourceAllocation": map[string]any{"cpu": 0.5, "memory": "512MB"},
+			}},
+		}},
+	}
+	have := map[string]any{
+		"containerGroups": []any{map[string]any{
+			"name": "default",
+			"containers": []any{map[string]any{
+				"name":               "primary",
+				"resourceAllocation": map[string]any{"cpu": 0.5, "memory": 512000000.0},
+			}},
+		}},
+	}
+
+	assert.Empty(t, Subset(want, have), "512MB and 512000000 are the same sizing")
+}
+
+func TestSubset_ADifferentSizeIsStillDrift(t *testing.T) {
+	want := map[string]any{"resourceAllocation": map[string]any{"memory": "1GB"}}
+	have := map[string]any{"resourceAllocation": map[string]any{"memory": 512000000.0}}
+
+	assert.Len(t, Subset(want, have), 1, "1GB is not 512MB")
+}
+
+// The loose comparison is keyed on the field name, so a numeric string
+// elsewhere does not quietly compare equal to its number.
+func TestSubset_OnlyMemoryComparesAcrossTypes(t *testing.T) {
+	want := map[string]any{"port": "8080"}
+	have := map[string]any{"port": 8080.0}
+
+	assert.Len(t, Subset(want, have), 1, "a port written as a string is still a difference")
+}

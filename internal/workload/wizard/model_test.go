@@ -69,6 +69,8 @@ func keyMsg(key string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case advancedKey:
+		return tea.KeyMsg{Type: tea.KeyCtrlO}
 	case "backspace":
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	default:
@@ -79,6 +81,10 @@ func keyMsg(key string) tea.KeyMsg {
 // typeInto clears the focused field and types value into it.
 func typeInto(t *testing.T, model flow, value string) flow {
 	t.Helper()
+
+	// The advanced row is a focus stop with no input behind it, so a test that
+	// drifts onto it should say that rather than panic on index -1.
+	require.GreaterOrEqual(t, model.focus, 0, "no field is focused")
 
 	model.inputs[model.focus].SetValue("")
 
@@ -198,7 +204,7 @@ func TestFlow_BindingScreenLeadsWhenThereAreWorkloads(t *testing.T) {
 func TestFlow_BindingDownloadsTheLiveSpec(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "triage-agent", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "agent", "a2aEnabled": true,
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "agent", "spec": {"a2aEnabled": true,
 			"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3",
 				 "readinessProbe": {"path": "/alive", "port": 9001}}]}]}}`))
@@ -474,8 +480,7 @@ func TestFlow_ConfirmProducesTheManifest(t *testing.T) {
 func TestFlow_ConfirmDiffsABoundWorkload(t *testing.T) {
 	stubLive(t,
 		documentFrom(t, `{"name": "triage-agent", "artifactId": "68a1"}`),
-		documentFrom(t, `{"name": "triage-agent-artifact", "spec": {"type": "service",
-			"containerGroups": [{"name": "default", "containers": [
+		documentFrom(t, `{"name": "triage-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
 				{"name": "primary", "primary": true, "port": 9001, "imageUri": "registry/triage:v3",
 				 "readinessProbe": {"path": "/alive", "port": 9001}}]}]}}`))
 

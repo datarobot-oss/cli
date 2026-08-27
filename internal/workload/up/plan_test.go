@@ -245,6 +245,45 @@ func TestBuild_SplitsDriftIntoItsTwoHalves(t *testing.T) {
 	assert.Equal(t, ActionRolled, plan.Action(), "a spec change mints a version even with sizing alongside")
 }
 
+// A file bound to an artifact by id describes no spec, so the field walk has
+// nothing to compare. Pointing at a version other than the one running is
+// still the entire plan, and reporting "already up to date" while the file
+// and the workload disagree would be the worst kind of wrong.
+func TestBuild_BoundToAnotherArtifactIsARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`),
+		ArtifactID: "68b0bbbb0000000000000002",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifactId"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action())
+	assert.False(t, plan.Empty())
+}
+
+// The same file against the workload already running that artifact plans
+// nothing, or every deploy would roll a version onto itself.
+func TestBuild_BoundToTheRunningArtifactIsEmpty(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68a0000000000000000000a1"}`),
+		ArtifactID: "68a0000000000000000000a1",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}
+
 func TestBuild_RuntimeOnlyDriftDoesNotRoll(t *testing.T) {
 	resized := `{
 	  "name": "my-app",
@@ -291,20 +330,64 @@ func TestBuild_UnboundDoesNotDiff(t *testing.T) {
 	assert.True(t, plan.Code.Changed())
 }
 
-// TestBuild_MissingWorkloadStillPlans: a workload deleted from under the
-// manifest is refused at apply time, but --dry-run still has to say what
-// would have happened, so the plan is computed rather than short-circuited.
-func TestBuild_MissingWorkloadStillPlans(t *testing.T) {
+// TestBuild_MissingWorkloadPlansACreate: a workload deleted from under the
+// manifest is drift, and the apply for it is a create. The plan says so in one
+// line rather than listing every field the file names against an empty live
+// object, which is what a comparison would produce and what a reader would
+// have to wade through.
+func TestBuild_MissingWorkloadPlansACreate(t *testing.T) {
 	plan, err := Build(
 		loadedFrom(planPayload),
-		Live{State: StateMissing},
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
 		builtCode(0),
 	)
 	require.NoError(t, err)
 
-	assert.False(t, plan.Creates, "a vanished workload is not a licence to create a second one")
+	assert.True(t, plan.Creates)
 	assert.Equal(t, StateMissing, plan.State)
-	assert.NotEmpty(t, plan.Artifact, "with no live spec, everything the file names is an addition")
+	assert.Equal(t, ActionCreated, plan.Action())
+	assert.Empty(t, plan.Artifact, "a create says so once instead of per field")
+	assert.Empty(t, plan.Runtime)
+}
+
+// TestBuild_MissingWorkloadKeepsTheDeadID: the id the file was bound to is the
+// only thing separating "deleted, recreate it" from "you are pointed at the
+// wrong instance", so the plan has to be able to print it.
+func TestBuild_MissingWorkloadKeepsTheDeadID(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
+		builtCode(0),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", plan.PriorWorkloadID)
+}
+
+// TestBuild_TerminatedWorkloadIsNotACreate: a terminated workload still
+// exists and still owns its name, so the apply for it is a refusal, not a
+// create. Planning one would announce a name the create would not use and a
+// binding that has not gone anywhere.
+func TestBuild_TerminatedWorkloadIsNotACreate(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateTerminated},
+		builtCode(0),
+	)
+	require.NoError(t, err)
+
+	assert.False(t, plan.Creates)
+	assert.Empty(t, plan.PriorWorkloadID)
+}
+
+// TestBuild_FirstDeployHasNoPriorBinding: a create only names an id when it is
+// replacing a binding, so an unbound manifest must not print one.
+func TestBuild_FirstDeployHasNoPriorBinding(t *testing.T) {
+	plan, err := Build(loadedFrom(planPayload), Live{State: StateUnbound}, builtCode(0))
+	require.NoError(t, err)
+
+	assert.True(t, plan.Creates)
+	assert.Empty(t, plan.PriorWorkloadID)
 }
 
 func TestBuild_CarriesCodeAndStateThrough(t *testing.T) {
@@ -324,4 +407,259 @@ func TestBuild_BadPayloadIsReported(t *testing.T) {
 	_, err := Build(loadedFrom("{not json"), Live{State: StateRunning}, builtCode(0))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "compiled manifest")
+}
+
+// A file may write the type inside the spec, which the platform accepts and
+// the ledger does not forbid. The live artifact still comes back without one,
+// so comparing the two blocks reported the type missing on every run: a
+// re-deploy of an untouched project minted a version and rolled, then found it
+// missing again, with no state anywhere that could end the loop. Reproduced
+// against staging before it was fixed.
+func TestBuild_TypeInsideTheSpecIsNotPerpetualDrift(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {"type": "service"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact), "the file and the workload agree about the type")
+	assert.True(t, plan.Empty(), "a re-deploy of an untouched project has nothing to do")
+}
+
+// The other half of that fix: reading the type from inside the spec must not
+// mean ignoring it. A file that turns a service into an agent there is asking
+// for a new lineage exactly as it would beside the spec.
+func TestBuild_TypeChangeInsideTheSpecIsStillARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {"type": "agent"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action())
+}
+
+// Beside the spec wins when a file says both, because that is where the
+// platform keeps the answer.
+func TestBuild_TypeBesideTheSpecWinsOverTypeWithinIt(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {"type": "service"}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact), "the type beside the spec is the one that counts")
+}
+
+// The line the reader sees has to be the comparison that was made. Reporting
+// the raw empty string rendered "artifact.type:  -> agent", a change with
+// nothing on the left, about a side this code had just decided means service.
+func TestBuild_TypeChangeAgainstAnUnstatedLiveTypeReadsAsService(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = ""
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	require.Len(t, plan.Artifact, 1)
+	assert.Equal(t, "service", plan.Artifact[0].Have, "the silence was read as a service, so that is what it says")
+	assert.Equal(t, "artifact.type: service -> agent", plan.Artifact[0].String())
+}
+
+// An artifact that states no type is a service, because that is what the
+// platform defaults it to. Reading the silence as a difference would be drift
+// a file saying "service" could never settle.
+func TestBuild_LiveArtifactWithNoStatedTypeIsAService(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "service", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = ""
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, paths(plan.Artifact))
+}
+
+// The type sits beside the spec, not in it: the platform reads the
+// discriminator off the artifact and pops any type sent within the spec, so
+// the spec walk is blind to it. Without a comparison of its own, turning a
+// service into an agent reads as already up to date.
+func TestBuild_ArtifactTypeChangeIsARoll(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
+	assert.Equal(t, ActionRolled, plan.Action(), "a different kind of artifact needs a new version")
+	assert.False(t, plan.Empty())
+}
+
+// The same file against a workload already running that kind plans nothing,
+// or every deploy of an agent would roll it onto itself.
+func TestBuild_MatchingArtifactTypeIsEmpty(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}
+
+// A spelling difference is not a change. Nothing in the file can resolve one,
+// because the platform normalises the value and hands the same thing back, so
+// a case-sensitive comparison here is drift that never clears: every run mints
+// a version and rolls a workload nobody touched, for ever. The ledger does not
+// enforce an enum on the type, so a hand-written "Service" reaches this.
+func TestBuild_ArtifactTypeSpellingIsNotAChange(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "Service", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty(), "a workload nobody changed is already up to date")
+}
+
+// Saying nothing about the type is not the same as asking for a service. A
+// manifest written before the type moved out of the spec names none, and this
+// walk never reverts what the file leaves out.
+func TestBuild_NoTypeInTheFileIsNotDrift(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "agent"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Artifact)
+	assert.True(t, plan.Empty())
+}
+
+// creates() and deployable() are two switches over the same enum answering two
+// halves of one question: which states an apply may proceed from, and which of
+// those it creates in rather than reconciles. `exhaustive` catches a new State
+// missing from either switch, but not an existing one filed under the wrong
+// branch in only one of them, and the two ways that goes wrong are the two
+// worst outcomes this change has: creating over a workload that is still there,
+// or refusing one that this change exists to recover.
+//
+// So the relationship is asserted rather than left to two lists staying in step
+// by inspection: a state a create can happen in must be a state an apply is
+// allowed to proceed from at all.
+func TestCreates_IsASubsetOfWhatDeployableAllows(t *testing.T) {
+	for _, state := range allStates() {
+		if !creates(state) {
+			continue
+		}
+
+		err := deployable(Live{State: state}, "my-app", "")
+		assert.NoError(t, err, "%s creates but is refused, so nothing can act on the plan", state)
+	}
+}
+
+// The other direction, stated as the classification it is rather than derived,
+// so moving a state between the two branches has to be a deliberate edit here
+// as well. Terminated is the one that reads like it belongs with Missing and
+// does not: the workload still exists, still holds its name and still owns its
+// artifact, so a create collides with the name and every line of the plan about
+// it would be false.
+func TestCreates_ClassifiesEveryState(t *testing.T) {
+	want := map[State]bool{
+		StateUnbound:    true,
+		StateMissing:    true,
+		StateTerminated: false,
+		StateStopped:    false,
+		StateSettling:   false,
+		StateRunning:    false,
+		StateErrored:    false,
+	}
+
+	require.Len(t, want, len(allStates()), "a new State needs a row here")
+
+	for _, state := range allStates() {
+		expected, ok := want[state]
+		require.True(t, ok, "%s is not classified", state)
+		assert.Equal(t, expected, creates(state), "%s", state)
+	}
+}
+
+// allStates is every value of the enum, so a table over it cannot silently miss
+// one that was added since.
+func allStates() []State {
+	return []State{
+		StateUnbound,
+		StateMissing,
+		StateTerminated,
+		StateStopped,
+		StateSettling,
+		StateRunning,
+		StateErrored,
+	}
 }

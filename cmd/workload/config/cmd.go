@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -117,11 +118,13 @@ Examples:
 
 	// Only the env var binds to viper; --yes is read from cobra so it never
 	// persists into drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		nonInteractive := cli.IsNonInteractive(cmd)
+
 		return map[string]any{
-			"yes":           f.yes || viperx.GetBool("yes"),
+			"yes":           nonInteractive,
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
@@ -140,7 +143,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	// only guessing is what the project directory can be read for, so the
 	// help text has to say that rather than leave "defaults" to be read as
 	// the other command's meaning.
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false,
+	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Do not prompt; answer every question from flags and what the project directory shows. "+
 			"A question neither of those answers is an error naming the flag that would settle it.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the manifest and write nothing.")
@@ -164,11 +167,31 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.answers.Image, "image", "", "Published image URI. Required with --build-mode image.")
 
 	cmd.Flags().IntVar(&f.answers.Port, "port", 0, "Container port (default: the Dockerfile's EXPOSE, else 8080).")
-	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /health).")
+	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "",
+		"Readiness path, e.g. /health. A new manifest gets no probe without it: a probe has to be written "+
+			"for the app it probes, and a wrong one stops a healthy deploy from ever going ready. "+
+			"With --workload-id the bound workload's own probe is kept.")
+	// A flag of its own rather than an empty --health. Declining a probe is a
+	// different act from not mentioning one, and a flag that says so is both
+	// greppable in a CI script and impossible to type by accident.
+	// Deliberately about the file rather than about the running workload: `up`
+	// leaves out what the file leaves out, so a probe already deployed goes
+	// only when the artifact is rebuilt for some other reason.
+	cmd.Flags().BoolVar(&f.answers.NoProbe, "no-readiness-probe", false,
+		"Write no readiness probe, so traffic is not gated on a health check. Exclusive with --health. "+
+			"With --workload-id it drops the probe from the manifest; a deployed probe goes on the next artifact build.")
 
 	cmd.Flags().IntVar(&f.answers.Replicas, "replicas", 0, "Replica count (default 1).")
 	cmd.Flags().Float64Var(&f.answers.CPU, "cpu", 0, "CPU per replica (default 0.5).")
 	cmd.Flags().StringVar(&f.answers.Memory, "memory", "", "Memory per replica (default 512MB).")
+	// Applied when the workload is created. `up` compares the artifact spec and
+	// the runtime block, and importance is neither, so changing it for a
+	// workload that already exists is an edit the file records and the next
+	// deploy does not carry.
+	cmd.Flags().StringVar(&f.answers.Importance, "importance", "",
+		"Scheduling priority when capacity is constrained: "+
+			strings.Join(manifest.ImportanceLevels, ", ")+
+			" (default "+manifest.DefaultImportance+", or the bound workload's own level). Applied on create.")
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
@@ -188,7 +211,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 
 	// JSON output implies non-interactive: a wizard on stderr alongside a
 	// machine-readable stdout is a trap for whoever is parsing it.
-	yes := f.yes || viperx.GetBool("yes")
+	yes := cli.IsNonInteractive(cmd)
 
 	result, err := wizard.Run(wizard.Options{
 		Dir:            dir,
