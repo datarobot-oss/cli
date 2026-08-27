@@ -38,7 +38,7 @@ func TestListVersions_TargetsCorrectURL(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	items, err := ListVersions("p-1", 10, 0)
+	items, err := ListVersions("p-1", 10, 5)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, 1, items[0].Version)

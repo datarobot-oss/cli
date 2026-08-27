@@ -69,15 +69,6 @@ type Build struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
-// BuildList is the paginated envelope returned by GET /artifacts/{id}/builds/.
-type BuildList struct {
-	Data       []Build `json:"data"`
-	Count      int     `json:"count"`
-	TotalCount int     `json:"totalCount"`
-	Next       string  `json:"next"`
-	Previous   string  `json:"previous"`
-}
-
 // BuildLogEntry is one record from the JSONL log stream. Decoded fields are
 // the ones we read for filtering and human rendering; Raw is the verbatim
 // source line so JSON output can pass through every server field unchanged.
@@ -282,46 +273,21 @@ func fetchArtifactBuild(artifactID, buildID, reqInfo string) (*Build, error) {
 }
 
 // ListArtifactBuilds returns up to limit Builds for the artifact, walking
-// pagination the same way ListArtifacts does.
+// pagination the same way ListArtifacts does. The per-request page size is
+// clamped to the shared server ceiling; next-links satisfy larger totals.
 func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	endpoint := "/api/v2/artifacts/" + escapeID(artifactID) + "/builds/?limit=" + strconv.Itoa(limit)
+	endpoint := "/api/v2/artifacts/" + escapeID(artifactID) + "/builds/?limit=" + strconv.Itoa(min(limit, maxPageSize))
 
 	pageURL, err := config.GetEndpointURL(endpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	var all []Build
-
-	for pageURL != "" {
-		var list BuildList
-
-		if err := drapi.GetJSON(pageURL, "builds", &list); err != nil {
-			return nil, err
-		}
-
-		all = append(all, list.Data...)
-
-		if len(all) >= limit {
-			return all[:limit], nil
-		}
-
-		if list.Next == "" {
-			break
-		}
-
-		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
-			return nil, err
-		}
-
-		pageURL = list.Next
-	}
-
-	return all, nil
+	return listWalk[Build](pageURL, "builds", limit)
 }
 
 // GetArtifactBuildLogs returns a build's log lines, oldest first, read from

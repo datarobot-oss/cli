@@ -75,8 +75,14 @@ func CreateInput(pipelineID string, scope Scope, version *int, payload map[strin
 	return &result, nil
 }
 
-// ListInputs returns a paginated slice of inputs for the given scope.
+// ListInputs returns up to limit inputs for the given scope, starting at
+// offset. The per-request page size is clamped to the server ceiling; larger
+// limits are satisfied by walking the envelope's next-links.
 func ListInputs(pipelineID string, scope Scope, version *int, offset, limit int) ([]Input, error) {
+	if err := validatePagination(offset, limit); err != nil {
+		return nil, err
+	}
+
 	endpoint, err := EndpointFor(pipelineID, scope, version, "inputs")
 	if err != nil {
 		return nil, err
@@ -87,22 +93,9 @@ func ListInputs(pipelineID string, scope Scope, version *int, offset, limit int)
 		query.Set("offset", strconv.Itoa(offset))
 	}
 
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
+	query.Set("limit", strconv.Itoa(min(limit, pipelinePageSize)))
 
-	if encoded := query.Encode(); encoded != "" {
-		endpoint = endpoint + "?" + encoded
-	}
-
-	var page DataPage[Input]
-
-	err = doJSON(http.MethodGet, endpoint, nil, "inputs", &page)
-	if err != nil {
-		return nil, err
-	}
-
-	return page.Data, nil
+	return walkDataRows[Input](endpoint+"?"+query.Encode(), "inputs", limit)
 }
 
 // GetInput fetches a single input by id within the given scope.

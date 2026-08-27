@@ -956,7 +956,7 @@ func serverArtifactDoc(id, name, status string) string {
 	return fmt.Sprintf(`{"id":%q,"name":%q,"status":%q}`, id, name, status)
 }
 
-// artifactListPage wraps docs in the ArtifactList pagination envelope, mirroring
+// artifactListPage wraps docs in the artifact list pagination envelope, mirroring
 // workloadListPage so the artifact list tests can assert next-link following.
 func artifactListPage(next string, docs ...string) string {
 	nextJSON := "null"
