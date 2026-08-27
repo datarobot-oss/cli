@@ -57,6 +57,12 @@ const (
 type flow struct {
 	detected  Detected
 	workloads []workload.Workload
+	// offer is the Detected the directory question was built from, frozen at
+	// construction: acceptDirectory re-points detected at the chosen tree,
+	// and rebuilding the offer from that tree would make the question
+	// unanswerable a second time — Escape must find the original candidates,
+	// not the choice's own (empty) ones.
+	offer Detected
 	// pendingBind is a workload id a flag named, fetched by Init before the
 	// first screen so a flag-driven bind downloads the live spec exactly as
 	// the picker would.
@@ -174,19 +180,16 @@ type secretsStoredMsg struct {
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
 	f := flow{detected: detected, workloads: workloads, answers: answers, pendingBind: answers.WorkloadID}
 
-	draft, err := answers.draft(detected)
-	if err != nil {
-		// Interactively an unanswerable flag set is not fatal: the screens
-		// exist to answer exactly this. Everything the flags did settle is
-		// kept.
-		draft = answers.partialDraft(detected)
-	}
-
-	f.draft = draft
+	f.draft = answers.draftOrPartial(detected)
 	// A name passed as a flag is an answer the user gave, so the screen shows
 	// it as a value rather than re-offering the directory's suggestion.
 	f.nameGiven = answers.Name != ""
+
 	f.at = f.first(answers)
+	if f.at == screenDirectory {
+		f.offer = detected
+	}
+
 	f.enter(f.at)
 
 	// Only a flag the wizard cannot ask about is worth reporting on arrival.
@@ -196,7 +199,11 @@ func newFlow(detected Detected, workloads []workload.Workload, answers Answers) 
 	// about something the user has not been asked yet.
 	f.failed = answers.check()
 
-	if f.pendingBind != "" {
+	// A flag-named workload is fetched behind a loading view — but not while
+	// the directory question is on screen: the view would swallow every key
+	// and the question would never be seen (the fetch is deferred to the
+	// answer instead, see acceptDirectory and Init).
+	if f.pendingBind != "" && f.at != screenDirectory {
 		f.loading = "Reading workload " + f.pendingBind + "…"
 	}
 
@@ -239,6 +246,12 @@ func (f flow) firstQuestion(answers Answers) screen {
 
 func (f flow) Init() tea.Cmd {
 	if f.pendingBind == "" {
+		return nil
+	}
+
+	// The directory answer decides which tree the bound workload syncs from,
+	// so it comes first; acceptDirectory starts this fetch once it is given.
+	if f.at == screenDirectory {
 		return nil
 	}
 
@@ -694,23 +707,27 @@ func (f *flow) acceptKind() (tea.Cmd, error) {
 }
 
 // acceptDirectory re-reads the project from the directory chosen. This is
-// always the first screen, so no other answer exists yet and the draft is
-// rebuilt exactly the way newFlow built it — everything Detect suggests
-// (name, port, Dockerfile, .env) belonged to the old directory.
+// always the first screen, so no answer beyond this one exists yet and the
+// draft is rebuilt the way newFlow built it — everything Detect suggests
+// (name, port, Dockerfile, .env) belonged to the old directory. The env
+// table is dropped for the same reason: built once from the old tree, it
+// would otherwise write the old directory's variables into the new one's
+// manifest. f.offer stays untouched throughout, so Escape re-poses the
+// original question.
 func (f *flow) acceptDirectory() (tea.Cmd, error) {
-	chosen := f.choice.value()
-	if chosen == f.detected.Dir {
-		return nil, nil
+	if chosen := f.choice.value(); chosen != f.detected.Dir {
+		f.detected = Detect(chosen)
+		f.draft = f.answers.draftOrPartial(f.detected)
+		f.envTable = envTable{}
 	}
 
-	f.detected = Detect(chosen)
+	// A flag-named workload's fetch was deferred to here (see Init): the
+	// directory is settled, so the loading view no longer hides a question.
+	if f.pendingBind != "" {
+		f.loading = "Reading workload " + f.pendingBind + "…"
 
-	draft, err := f.answers.draft(f.detected)
-	if err != nil {
-		draft = f.answers.partialDraft(f.detected)
+		return fetchLiveCmd(f.pendingBind), nil
 	}
-
-	f.draft = draft
 
 	return nil, nil
 }

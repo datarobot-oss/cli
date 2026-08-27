@@ -630,16 +630,38 @@ func TestRun_HeadlessWarnsAboutASuspectDirectory(t *testing.T) {
 
 	var stderr bytes.Buffer
 
+	// Dockerfile mode syncs local code, which is what the warning is about —
+	// and a suspect directory genuinely has no Dockerfile, so the run then
+	// fails on its own terms. The warning must land first: it names the fix
+	// (--dir web) for the failure that follows.
 	_, err := Run(Options{
 		Dir: dir, NonInteractive: true, Stderr: &stderr,
-		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeDockerfile},
 	})
-	require.NoError(t, err, "a suspicion never fails the run")
+	require.Error(t, err, "no Dockerfile here; the warning explains why")
 
 	warning := stderr.String()
 	assert.Contains(t, warning, "none of the usual project files")
 	assert.Contains(t, warning, "web", "the offer names what looks right")
 	assert.Contains(t, warning, "--dir", "and the flag that takes it")
+}
+
+// An image-mode run never syncs local directory contents, so the suspect-dir
+// warning would describe a risk that cannot happen — it stays quiet.
+func TestRun_HeadlessImageModeSkipsTheSuspectDirWarning(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "none of the usual project files")
 }
 
 // A directory that carries a project file gets no warning: the check is about

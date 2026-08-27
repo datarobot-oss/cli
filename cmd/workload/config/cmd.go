@@ -284,7 +284,10 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			warnLiterals(stderr, result.Draft.EnvVars)
 		}
 
-		fmt.Fprint(stderr, "\nNext: dr workload up\n")
+		// The wizard may have written the manifest into a directory the shell
+		// is not standing in; a bare `up` there would configure and deploy
+		// the wrong tree.
+		fmt.Fprintf(stderr, "\nNext: dr workload up%s\n", manifest.DirFlag(filepath.Dir(result.Path)))
 	}
 
 	// stdout carries the path and nothing else, so it can be piped.

@@ -128,9 +128,7 @@ func Run(opts Options) (Result, error) {
 
 	detected := Detect(dir)
 
-	if !opts.Answers.SkipEnv {
-		warnUnreadEnvFile(opts.Stderr, detected)
-	}
+	opts.warnEnvFile(detected)
 
 	content, draft, projectDir, err := opts.resolve(detected)
 	if err != nil {
@@ -142,6 +140,14 @@ func Run(opts Options) (Result, error) {
 	// belongs to the directory resolve settled on, which headless runs return
 	// unchanged.
 	path = manifest.Path(projectDir)
+
+	// The chosen directory's own .env gets the same courtesy the starting
+	// one got above: a parse failure must not read as "there was nothing to
+	// import". The flow re-detected on the way, but only the warning's
+	// reader was lost — the TUI owned the terminal at the time.
+	if projectDir != dir {
+		opts.warnEnvFile(Detect(projectDir))
+	}
 
 	// A file that came from a running workload is judged as the platform's
 	// news, not as a bug in the wizard.
@@ -212,46 +218,54 @@ func existing(path string) (Result, error) {
 // screen chose another.
 func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, error) {
 	if o.NonInteractive || !isStdinTerminalFn() {
-		return o.resolveHeadless(detected)
+		// Headless can warn but not offer: the check that interactively
+		// becomes the directory question is a line on stderr here, and never
+		// a refusal — a valid project cannot be reliably recognized, so a
+		// wrong guess has to cost nothing. Only the headless paths return
+		// detected.Dir unchanged, so the fourth value is settled right here.
+		o.warnSuspectDir(detected)
+
+		content, draft, err := o.resolveHeadless(detected)
+
+		return content, draft, detected.Dir, err
 	}
 
 	return runInteractiveFlowFn(o, detected)
 }
 
-func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, string, error) {
-	// Headless can warn but not offer: the check that interactively becomes
-	// the directory question is a line on stderr here, and never a refusal —
-	// a valid project cannot be reliably recognized, so a wrong guess has to
-	// cost nothing.
-	warnSuspectDir(o.Stderr, detected)
-
+func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, error) {
 	if o.Answers.WorkloadID != "" {
 		return o.resolveHeadlessBound(detected)
 	}
 
 	draft, err := o.Answers.draft(detected)
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
 
 	content, err := draft.Render()
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
-	return content, draft, detected.Dir, nil
+	return content, draft, nil
 }
 
 // warnSuspectDir says when the directory looks like the wrong place to run
 // setup from — none of the usual project files — and names the subdirectories
 // that look right, because the fix is one --dir away and this is the last
 // moment before six questions and an artifact are spent on the wrong tree.
-func warnSuspectDir(w io.Writer, detected Detected) {
-	if !detected.SuspectDir() {
+//
+// An image-mode run is exempt: it never syncs local directory contents, so
+// "everything here would be uploaded" describes a risk that cannot happen.
+func (o Options) warnSuspectDir(detected Detected) {
+	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
 		return
 	}
+
+	w := o.Stderr
 
 	line := fmt.Sprintf("Warning: %s has none of the usual project files (Dockerfile, pyproject.toml, "+
 		"package.json, ...). If this is not the project root, everything here would be uploaded on deploy.",
@@ -263,8 +277,13 @@ func warnSuspectDir(w io.Writer, detected Detected) {
 			names = append(names, candidate.Rel)
 		}
 
-		line += fmt.Sprintf(" These look like project roots: %s — pass --dir to use one.",
-			strings.Join(names, ", "))
+		more := ""
+		if detected.MoreCandidates {
+			more = ", and more exist"
+		}
+
+		line += fmt.Sprintf(" These look like project roots: %s%s — pass --dir to use one.",
+			strings.Join(names, ", "), more)
 	}
 
 	fmt.Fprintln(w, line)
@@ -293,19 +312,19 @@ func (o Options) storeSecrets(vars []manifest.EnvVar, detected Detected, workloa
 // resolveHeadlessBound binds to a live workload without prompting: the live
 // spec is downloaded and the flags are applied on top, so a headless bind is
 // the same operation the picker performs.
-func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft, string, error) {
+func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft, error) {
 	live, err := fetchLive(o.Answers.WorkloadID)
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	if err := o.Answers.checkProbeEditable(live); err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	draft, err := o.Answers.applyTo(live.Defaults(), detected)
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	// A name the workload already declares keeps its running value, so it is
@@ -318,12 +337,12 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 
 	applied, err := live.Apply(draft)
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	content, err := applied.Render()
 	if err != nil {
-		return nil, manifest.Draft{}, "", err
+		return nil, manifest.Draft{}, err
 	}
 
 	// Read off the workload as it arrived, not off applied: the point is what
@@ -331,7 +350,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// above has no file to warn about.
 	warnLiveSecretLiterals(o.Stderr, live)
 
-	return content, draft, detected.Dir, nil
+	return content, draft, nil
 }
 
 // applyTo layers the flags over defaults that already came from somewhere
@@ -596,6 +615,16 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 	fmt.Fprintf(stderr,
 		"Warning: a manifest already exists at %s. Writing one in %s means a deploy from either directory reads a different file.\n",
 		found, dir)
+}
+
+// warnEnvFile is warnUnreadEnvFile behind the opt-out: --skip-env means the
+// user declined the import, so a failed read is not news either.
+func (o Options) warnEnvFile(detected Detected) {
+	if o.Answers.SkipEnv {
+		return
+	}
+
+	warnUnreadEnvFile(o.Stderr, detected)
 }
 
 // warnUnreadEnvFile says so when a .env is there but contributed nothing.

@@ -403,6 +403,42 @@ func TestRun_NoManifestOnATerminalRunsTheWizard(t *testing.T) {
 	assert.Equal(t, "wl-new", result.WorkloadID)
 }
 
+// TestRun_WizardRedirectIsFollowed: the wizard's directory question can move
+// the project into a subdirectory, and the deploy must follow the manifest it
+// wrote there — re-searching from where the command ran walks upward and
+// cannot see it.
+func TestRun_WizardRedirectIsFollowed(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+
+	var boundPath string
+
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			writeManifest(t, app, unboundImageManifest)
+
+			return wizard.Result{Path: manifest.Path(app)}, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		writeID: func(path, _ string) error {
+			boundPath = path
+
+			return nil
+		},
+	})
+
+	var stderr bytes.Buffer
+
+	result, err := Run(Options{Dir: dir, Stderr: &stderr})
+	require.NoError(t, err)
+	assert.Equal(t, "wl-new", result.WorkloadID)
+	assert.Equal(t, manifest.Path(app), boundPath, "the id lands in the manifest the wizard wrote")
+}
+
 func TestRun_DryRunAppliesNothing(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) {

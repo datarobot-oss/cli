@@ -204,20 +204,28 @@ func (f *flow) enterPicker(at screen) {
 // opens on the fix — and staying put last, because the check is a suspicion
 // and being wrong about it has to cost one keystroke.
 func (f flow) directoryOptions() []option {
-	options := make([]option, 0, len(f.detected.Candidates)+1)
+	// Built from the frozen offer, never from f.detected: accepting a
+	// candidate re-points detected at the chosen tree, and Escape has to
+	// find the original question, not the choice's own view of itself.
+	options := make([]option, 0, len(f.offer.Candidates)+1)
 
-	for _, candidate := range f.detected.Candidates {
+	for _, candidate := range f.offer.Candidates {
 		options = append(options, option{
-			value: filepath.Join(f.detected.Dir, candidate.Rel),
+			value: filepath.Join(f.offer.Dir, candidate.Rel),
 			label: "./" + candidate.Rel,
 			note:  "has " + strings.Join(candidate.Markers, ", "),
 		})
 	}
 
+	stayNote := "everything under it is uploaded on deploy"
+	if f.offer.MoreCandidates {
+		stayNote += " · more candidates exist — pass --dir to name one"
+	}
+
 	return append(options, option{
-		value: f.detected.Dir,
+		value: f.offer.Dir,
 		label: "Use this directory anyway",
-		note:  "everything under it is uploaded on deploy",
+		note:  stayNote,
 	})
 }
 

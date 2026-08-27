@@ -1754,3 +1754,58 @@ func TestFlow_SuspectDirWithoutCandidatesAsksNothingExtra(t *testing.T) {
 
 	assert.Equal(t, screenName, model.at)
 }
+
+// Escape from the next screen has to find the original question: accepting a
+// candidate re-points detected at the chosen tree, and an offer rebuilt from
+// there would list that tree's own subdirectories instead.
+func TestFlow_DirectoryOfferSurvivesEscape(t *testing.T) {
+	model := newFlow(parentOfProject(t), nil, Answers{})
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "enter")
+	require.Equal(t, screenName, model.at)
+
+	model = press(t, model, "esc")
+	require.Equal(t, screenDirectory, model.at)
+
+	options := model.directoryOptions()
+	require.Len(t, options, 2)
+	assert.Equal(t, "./my-app", options[0].label)
+}
+
+// Choosing another directory drops the env table along with the draft: built
+// from the old tree's .env, it would otherwise write the parent's variables
+// into the chosen project's manifest. Staying put keeps it, because nothing
+// it was built from has changed.
+func TestFlow_ChangingDirectoryDropsTheOldEnvTable(t *testing.T) {
+	stale := envTable{rows: []EnvVar{{Name: "PARENT_ONLY"}}}
+
+	model := newFlow(parentOfProject(t), nil, Answers{})
+	require.Equal(t, screenDirectory, model.at)
+
+	model.envTable = stale
+	model = press(t, model, "down", "enter") // stay put
+	assert.Len(t, model.envTable.rows, 1, "the same tree keeps its table")
+
+	model = press(t, model, "esc")
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "enter") // take the candidate
+	assert.Empty(t, model.envTable.rows, "another tree starts from its own .env")
+}
+
+// A --workload-id bind must not hide the directory question behind the
+// loading view: the fetch waits for the answer, then starts.
+func TestFlow_BindWaitsForTheDirectoryAnswer(t *testing.T) {
+	model := newFlow(parentOfProject(t), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+	require.Equal(t, screenDirectory, model.at)
+	assert.Empty(t, model.loading, "the question must be visible")
+	assert.Nil(t, model.Init(), "the fetch waits for the directory answer")
+
+	updated, cmd := model.Update(keyMsg("enter"))
+	next, ok := updated.(flow)
+	require.True(t, ok)
+
+	assert.NotNil(t, cmd, "the deferred fetch starts once the directory is settled")
+	assert.NotEmpty(t, next.loading)
+}
