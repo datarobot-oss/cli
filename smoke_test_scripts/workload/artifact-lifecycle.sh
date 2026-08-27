@@ -62,8 +62,9 @@ wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "artifact create"
 AID="$(printf '%s' "$WL_OUT" | jq -r '.id')"
 wl::pass "created draft artifact $AID"
 
-# Cleanup: best-effort HTTP delete via the CLI's own delete subcommand.
-trap 'wl::dr_capture artifact delete "$AID" --yes 2>/dev/null || true' EXIT
+# Register the artifact for best-effort cleanup on exit (wl::cleanup deletes
+# it via the CLI's own delete subcommand — no separate trap needed).
+wl::register_artifact "$AID"
 
 # --- get / list round-trip --------------------------------------------------
 wl::dr_capture artifact get "$AID" --output-format json
@@ -120,7 +121,7 @@ current="$(printf '%s' "$versions" | jq -r 'first(.[]? | select(.isCurrent == tr
 [[ "$current" == "$sv" ]] || wl::fail "current version $current != manifest.syncedVersionId $sv"
 wl::pass "current version matches manifest.syncedVersionId"
 
-# --- del: cleanup (best-effort; the EXIT trap also tries) -------------------
+# --- del: explicit delete (wl::cleanup also tries on exit) ------------------
 # The artifact is still an unlocked draft (no build was triggered), so the
 # server allows delete. A locked artifact cannot be deleted (409) — another
 # reason lock is not exercised here.

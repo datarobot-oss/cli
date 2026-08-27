@@ -229,16 +229,28 @@ wl::wait_for_status() {
 
 # Workloads created by the current scenario, stopped best-effort on exit.
 WL_CREATED_WORKLOADS=()
+# Artifacts created by the current scenario, deleted best-effort on exit.
+WL_ARTIFACT_IDS=()
 
 wl::register_workload() {
     WL_CREATED_WORKLOADS+=("$1")
 }
 
-# Best-effort stop of every registered workload. Draft workloads have an 8h
-# TTL, but we don't rely on it: a wedged errored workload can block re-runs.
+wl::register_artifact() {
+    WL_ARTIFACT_IDS+=("$1")
+}
+
+# Best-effort cleanup: delete registered artifacts, stop registered
+# workloads, then remove the scratch dir. Draft workloads have an 8h TTL,
+# but we don't rely on it: a wedged errored workload can block re-runs.
 wl::cleanup() {
     local rc=$?
     local id
+    for id in "${WL_ARTIFACT_IDS[@]:-}"; do
+        [[ -n "$id" ]] || continue
+        "$DR_BIN" artifact delete "$id" --yes >/dev/null 2>&1 || true
+        echo "  🧹 deleted artifact $id"
+    done
     for id in "${WL_CREATED_WORKLOADS[@]:-}"; do
         [[ -n "$id" ]] || continue
         "$DR_BIN" workload stop "$id" >/dev/null 2>&1 || true

@@ -72,7 +72,8 @@ while read -r id; do
     [[ -n "$id" ]] || continue
     d="$(mktemp -d)"
     printf 'FROM containous/whoami:latest\nEXPOSE 8080\nCMD ["--port", "8080"]\n' > "$d/Dockerfile"
-    if wl::dr_capture workload config --dir "$d" --yes --workload-id "$id" --dry-run; then
+    wl::dr_capture workload config --dir "$d" --yes --workload-id "$id" --dry-run
+    if [[ "$WL_RC" -eq 0 ]]; then
         # --dry-run prints the manifest to stdout and writes NO file; grep the
         # captured output, not $d/.datarobot.yaml (missing file → grep exit 2
         # silently falls into the OK branch and masks leaks).
