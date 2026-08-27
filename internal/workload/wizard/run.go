@@ -40,8 +40,10 @@ func SetStdinTerminalForTest(isTerminal bool) func() {
 }
 
 // SetInteractiveFlowForTest replaces the wizard itself, so a command-level
-// test can tell whether it would have run.
-func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, error)) func() {
+// test can tell whether it would have run. The string is the project
+// directory the flow settled on, which is Detected.Dir unless the user chose
+// another on the directory screen.
+func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, string, error)) func() {
 	original := runInteractiveFlowFn
 	runInteractiveFlowFn = flow
 
@@ -126,13 +128,25 @@ func Run(opts Options) (Result, error) {
 
 	detected := Detect(dir)
 
-	if !opts.Answers.SkipEnv {
-		warnUnreadEnvFile(opts.Stderr, detected)
-	}
+	opts.warnEnvFile(detected)
 
-	content, draft, err := opts.resolve(detected)
+	content, draft, projectDir, err := opts.resolve(detected)
 	if err != nil {
 		return Result{}, err
+	}
+
+	// The interactive flow may have moved the project: everything from here
+	// on — the write, the validation's Dockerfile check, the reported path —
+	// belongs to the directory resolve settled on, which headless runs return
+	// unchanged.
+	path = manifest.Path(projectDir)
+
+	// The chosen directory's own .env gets the same courtesy the starting
+	// one got above: a parse failure must not read as "there was nothing to
+	// import". The flow re-detected on the way, but only the warning's
+	// reader was lost — the TUI owned the terminal at the time.
+	if projectDir != dir {
+		opts.warnEnvFile(Detect(projectDir))
 	}
 
 	// A file that came from a running workload is judged as the platform's
@@ -142,7 +156,7 @@ func Run(opts Options) (Result, error) {
 		author = authorLive
 	}
 
-	if err := checkRendered(content, dir, author); err != nil {
+	if err := checkRendered(content, projectDir, author); err != nil {
 		return Result{}, err
 	}
 
@@ -199,10 +213,21 @@ func existing(path string) (Result, error) {
 }
 
 // resolve produces the manifest bytes, from flags alone when nothing may
-// prompt and from the wizard otherwise.
-func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, error) {
+// prompt and from the wizard otherwise. The directory it returns is where the
+// project actually is: Detected.Dir, unless the interactive flow's directory
+// screen chose another.
+func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, error) {
 	if o.NonInteractive || !isStdinTerminalFn() {
-		return o.resolveHeadless(detected)
+		// Headless can warn but not offer: the check that interactively
+		// becomes the directory question is a line on stderr here, and never
+		// a refusal — a valid project cannot be reliably recognized, so a
+		// wrong guess has to cost nothing. Only the headless paths return
+		// detected.Dir unchanged, so the fourth value is settled right here.
+		o.warnSuspectDir(detected)
+
+		content, draft, err := o.resolveHeadless(detected)
+
+		return content, draft, detected.Dir, err
 	}
 
 	return runInteractiveFlowFn(o, detected)
@@ -226,6 +251,42 @@ func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, err
 	}
 
 	return content, draft, nil
+}
+
+// warnSuspectDir says when the directory looks like the wrong place to run
+// setup from — none of the usual project files — and names the subdirectories
+// that look right, because the fix is one --dir away and this is the last
+// moment before six questions and an artifact are spent on the wrong tree.
+//
+// An image-mode run is exempt: it never syncs local directory contents, so
+// "everything here would be uploaded" describes a risk that cannot happen.
+func (o Options) warnSuspectDir(detected Detected) {
+	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
+		return
+	}
+
+	w := o.Stderr
+
+	line := fmt.Sprintf("Warning: %s has none of the usual project files (Dockerfile, pyproject.toml, "+
+		"package.json, ...). If this is not the project root, everything here would be uploaded on deploy.",
+		detected.Dir)
+
+	if len(detected.Candidates) > 0 {
+		names := make([]string, 0, len(detected.Candidates))
+		for _, candidate := range detected.Candidates {
+			names = append(names, candidate.Rel)
+		}
+
+		more := ""
+		if detected.MoreCandidates {
+			more = ", and more exist"
+		}
+
+		line += fmt.Sprintf(" These look like project roots: %s%s — pass --dir to use one.",
+			strings.Join(names, ", "), more)
+	}
+
+	fmt.Fprintln(w, line)
 }
 
 // storeSecrets sends each secret to the credential store and reports what
@@ -554,6 +615,16 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 	fmt.Fprintf(stderr,
 		"Warning: a manifest already exists at %s. Writing one in %s means a deploy from either directory reads a different file.\n",
 		found, dir)
+}
+
+// warnEnvFile is warnUnreadEnvFile behind the opt-out: --skip-env means the
+// user declined the import, so a failed read is not news either.
+func (o Options) warnEnvFile(detected Detected) {
+	if o.Answers.SkipEnv {
+		return
+	}
+
+	warnUnreadEnvFile(o.Stderr, detected)
 }
 
 // warnUnreadEnvFile says so when a .env is there but contributed nothing.

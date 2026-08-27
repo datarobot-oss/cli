@@ -390,8 +390,8 @@ func TestRun_BoundWorkloadWithoutAnArtifact(t *testing.T) {
 // Cancelling writes nothing and says so, so `config && up` stops here.
 func TestRun_CancelledWritesNothing(t *testing.T) {
 	original := runInteractiveFlowFn
-	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, error) {
-		return nil, manifest.Draft{}, ErrCancelled
+	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, string, error) {
+		return nil, manifest.Draft{}, "", ErrCancelled
 	}
 
 	t.Cleanup(func() { runInteractiveFlowFn = original })
@@ -412,10 +412,10 @@ func TestRun_CancelledWritesNothing(t *testing.T) {
 // Without a terminal nothing prompts, even when --yes was not passed.
 func TestRun_NoTerminalNeverPrompts(t *testing.T) {
 	originalFlow := runInteractiveFlowFn
-	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, error) {
+	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, string, error) {
 		t.Fatal("the wizard must not run without a terminal")
 
-		return nil, manifest.Draft{}, nil
+		return nil, manifest.Draft{}, "", nil
 	}
 
 	t.Cleanup(func() { runInteractiveFlowFn = originalFlow })
@@ -617,4 +617,98 @@ func TestRun_SkipEnvSilencesTheUnreadableEnvWarning(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, stderr.String())
+}
+
+// Headless can warn but not offer: the directory check becomes a stderr line
+// naming the subdirectories that look right, and never a refusal — a valid
+// project cannot be reliably recognized, so a wrong guess must cost nothing.
+func TestRun_HeadlessWarnsAboutASuspectDirectory(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	// Dockerfile mode syncs local code, which is what the warning is about —
+	// and a suspect directory genuinely has no Dockerfile, so the run then
+	// fails on its own terms. The warning must land first: it names the fix
+	// (--dir web) for the failure that follows.
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeDockerfile},
+	})
+	require.Error(t, err, "no Dockerfile here; the warning explains why")
+
+	warning := stderr.String()
+	assert.Contains(t, warning, "none of the usual project files")
+	assert.Contains(t, warning, "web", "the offer names what looks right")
+	assert.Contains(t, warning, "--dir", "and the flag that takes it")
+}
+
+// An image-mode run never syncs local directory contents, so the suspect-dir
+// warning would describe a risk that cannot happen — it stays quiet.
+func TestRun_HeadlessImageModeSkipsTheSuspectDirWarning(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "none of the usual project files")
+}
+
+// A directory that carries a project file gets no warning: the check is about
+// the parent-of-the-app mistake, not about lecturing every project.
+func TestRun_HeadlessStaysQuietAboutAProjectRoot(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "usual project files")
+}
+
+// The manifest lands where the flow ended up. The interactive directory
+// question can move the project, and writing to the directory setup was
+// started from would put the file beside the app instead of inside it.
+func TestRun_WritesWhereTheFlowEndedUp(t *testing.T) {
+	parent := t.TempDir()
+	app := filepath.Join(parent, "app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+
+	restoreFlow := SetInteractiveFlowForTest(
+		func(Options, Detected) ([]byte, manifest.Draft, string, error) {
+			draft := defaultDraft(Detect(app))
+			draft.Name = "moved"
+			draft.Build = manifest.Build{Mode: manifest.BuildModeImage, ImageURI: "registry/team/app:v1"}
+
+			content, err := draft.Render()
+
+			return content, draft, app, err
+		})
+	defer restoreFlow()
+
+	restoreTerminal := SetStdinTerminalForTest(true)
+	defer restoreTerminal()
+
+	var stderr bytes.Buffer
+
+	result, err := Run(Options{Dir: parent, Stderr: &stderr})
+	require.NoError(t, err)
+
+	assert.Equal(t, manifest.Path(app), result.Path)
+	assert.FileExists(t, manifest.Path(app), "written where the flow chose")
+	assert.NoFileExists(t, manifest.Path(parent), "not where setup was started")
 }

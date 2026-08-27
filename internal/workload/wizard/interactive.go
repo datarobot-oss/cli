@@ -42,6 +42,19 @@ const execEnvPickLimit = 200
 // Every answer the flags did give survives, including the ones no screen asks
 // about (the runtime sizing) and the binding, which would otherwise be lost
 // and turn a bind into a create.
+// draftOrPartial is the draft the flags settle, falling back to the partial
+// draft when the flag set cannot be fully answered — interactively that is
+// not fatal, it is what the screens exist to resolve. One name for the step
+// newFlow and acceptDirectory both take, so the two cannot drift.
+func (a Answers) draftOrPartial(detected Detected) manifest.Draft {
+	draft, err := a.draft(detected)
+	if err != nil {
+		return a.partialDraft(detected)
+	}
+
+	return draft
+}
+
 func (a Answers) partialDraft(detected Detected) manifest.Draft {
 	kind := manifest.ArtifactTypeOrDefault(a.Type)
 

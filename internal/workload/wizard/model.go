@@ -45,6 +45,11 @@ const (
 	screenSettings
 	screenEnv
 	screenConfirm
+	// screenDirectory is conditional and first when shown: it exists only
+	// when the directory looks like the wrong place to run setup from and
+	// there are subdirectories to offer instead. Everything Detect suggests
+	// hangs off the answer, so nothing else may be asked before it.
+	screenDirectory
 )
 
 // flow is the wizard: one model for every screen, because the screens share
@@ -52,6 +57,12 @@ const (
 type flow struct {
 	detected  Detected
 	workloads []workload.Workload
+	// offer is the Detected the directory question was built from, frozen at
+	// construction: acceptDirectory re-points detected at the chosen tree,
+	// and rebuilding the offer from that tree would make the question
+	// unanswerable a second time — Escape must find the original candidates,
+	// not the choice's own (empty) ones.
+	offer Detected
 	// pendingBind is a workload id a flag named, fetched by Init before the
 	// first screen so a flag-driven bind downloads the live spec exactly as
 	// the picker would.
@@ -169,19 +180,16 @@ type secretsStoredMsg struct {
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
 	f := flow{detected: detected, workloads: workloads, answers: answers, pendingBind: answers.WorkloadID}
 
-	draft, err := answers.draft(detected)
-	if err != nil {
-		// Interactively an unanswerable flag set is not fatal: the screens
-		// exist to answer exactly this. Everything the flags did settle is
-		// kept.
-		draft = answers.partialDraft(detected)
-	}
-
-	f.draft = draft
+	f.draft = answers.draftOrPartial(detected)
 	// A name passed as a flag is an answer the user gave, so the screen shows
 	// it as a value rather than re-offering the directory's suggestion.
 	f.nameGiven = answers.Name != ""
+
 	f.at = f.first(answers)
+	if f.at == screenDirectory {
+		f.offer = detected
+	}
+
 	f.enter(f.at)
 
 	// Only a flag the wizard cannot ask about is worth reporting on arrival.
@@ -191,7 +199,11 @@ func newFlow(detected Detected, workloads []workload.Workload, answers Answers) 
 	// about something the user has not been asked yet.
 	f.failed = answers.check()
 
-	if f.pendingBind != "" {
+	// A flag-named workload is fetched behind a loading view — but not while
+	// the directory question is on screen: the view would swallow every key
+	// and the question would never be seen (the fetch is deferred to the
+	// answer instead, see acceptDirectory and Init).
+	if f.pendingBind != "" && f.at != screenDirectory {
 		f.loading = "Reading workload " + f.pendingBind + "…"
 	}
 
@@ -204,9 +216,21 @@ func defaultDraft(detected Detected) manifest.Draft {
 	return Answers{}.partialDraft(detected)
 }
 
-// first picks the opening screen. Binding is skipped when there is nothing to
-// bind to, or when a flag already said which workload this is.
+// first picks the opening screen. The directory question, when it exists,
+// comes before everything: a bound workload still syncs its code from here,
+// and every suggestion the other screens show was read from this directory.
 func (f flow) first(answers Answers) screen {
+	if f.detected.SuspectDir() && len(f.detected.Candidates) > 0 {
+		return screenDirectory
+	}
+
+	return f.firstQuestion(answers)
+}
+
+// firstQuestion picks the first ordinary screen. Binding is skipped when
+// there is nothing to bind to, or when a flag already said which workload
+// this is.
+func (f flow) firstQuestion(answers Answers) screen {
 	// A named workload is fetched by Init, and the kind screen is where the
 	// questions resume once it arrives.
 	if answers.WorkloadID != "" {
@@ -222,6 +246,12 @@ func (f flow) first(answers Answers) screen {
 
 func (f flow) Init() tea.Cmd {
 	if f.pendingBind == "" {
+		return nil
+	}
+
+	// The directory answer decides which tree the bound workload syncs from,
+	// so it comes first; acceptDirectory starts this fetch once it is given.
+	if f.at == screenDirectory {
 		return nil
 	}
 
@@ -354,7 +384,7 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return f, nil
 
-	case screenKind, screenA2A, screenSource, screenEnv:
+	case screenKind, screenA2A, screenSource, screenEnv, screenDirectory:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			f.updateSelection(key)
 		}
@@ -516,6 +546,10 @@ func (f flow) next() screen {
 // branch is the four answers that change where the flow goes next.
 func (f flow) branch() (screen, bool) {
 	switch f.at {
+	case screenDirectory:
+		// The flow restarts where it would have begun: the answer decided
+		// what every later screen suggests, not where the questions go.
+		return f.firstQuestion(f.answers), true
 	case screenBinding:
 		// A bound workload is already named.
 		return screenKind, f.live != nil
@@ -550,6 +584,7 @@ func (f flow) afterSource() (screen, bool) {
 // accepting maps each screen to what recording its answer means. Screens
 // absent from the table (the confirm screen) have nothing to record.
 var accepting = map[screen]func(*flow) (tea.Cmd, error){
+	screenDirectory:  (*flow).acceptDirectory,
 	screenBinding:    (*flow).acceptBinding,
 	screenName:       (*flow).acceptName,
 	screenKind:       (*flow).acceptKind,
@@ -666,6 +701,32 @@ func (f *flow) acceptKind() (tea.Cmd, error) {
 	if kind := f.choice.value(); kind != f.draft.Type {
 		f.draft.Type = kind
 		f.draft.A2AEnabled = false
+	}
+
+	return nil, nil
+}
+
+// acceptDirectory re-reads the project from the directory chosen. This is
+// always the first screen, so no answer beyond this one exists yet and the
+// draft is rebuilt the way newFlow built it — everything Detect suggests
+// (name, port, Dockerfile, .env) belonged to the old directory. The env
+// table is dropped for the same reason: built once from the old tree, it
+// would otherwise write the old directory's variables into the new one's
+// manifest. f.offer stays untouched throughout, so Escape re-poses the
+// original question.
+func (f *flow) acceptDirectory() (tea.Cmd, error) {
+	if chosen := f.choice.value(); chosen != f.detected.Dir {
+		f.detected = Detect(chosen)
+		f.draft = f.answers.draftOrPartial(f.detected)
+		f.envTable = envTable{}
+	}
+
+	// A flag-named workload's fetch was deferred to here (see Init): the
+	// directory is settled, so the loading view no longer hides a question.
+	if f.pendingBind != "" {
+		f.loading = "Reading workload " + f.pendingBind + "…"
+
+		return fetchLiveCmd(f.pendingBind), nil
 	}
 
 	return nil, nil
@@ -968,7 +1029,7 @@ func (f *flow) onEnter(at screen) tea.Cmd {
 		return focus
 
 	case screenBinding, screenName, screenKind, screenA2A, screenSource,
-		screenEntrypoint, screenImage, screenSettings, screenEnv:
+		screenEntrypoint, screenImage, screenSettings, screenEnv, screenDirectory:
 		// Everything these screens show is already in hand.
 		return focus
 	}

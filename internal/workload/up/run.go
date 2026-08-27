@@ -489,8 +489,16 @@ func load(dir string, opts Options) (Loaded, error) {
 			"%w. Run 'dr workload config' to create one, then deploy", err)
 	}
 
-	if _, err := runWizardFn(wizard.Options{Dir: dir, Stderr: opts.Stderr}); err != nil {
+	setup, err := runWizardFn(wizard.Options{Dir: dir, Stderr: opts.Stderr})
+	if err != nil {
 		return Loaded{}, err
+	}
+
+	// The wizard's directory question may have moved the project, and the
+	// deploy has to follow the file it wrote: re-searching from where the
+	// command ran walks upward and cannot see a manifest one level down.
+	if setup.Path != "" {
+		return Load(filepath.Dir(setup.Path))
 	}
 
 	return Load(dir)
