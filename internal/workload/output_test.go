@@ -452,6 +452,29 @@ func TestRenderBuildLogs_JSONPassthroughPreservesRaw(t *testing.T) {
 	assert.Equal(t, "raw", got[0]["message"])
 }
 
+func TestRenderBuildLogs_TextEmpty(t *testing.T) {
+	var stderr string
+
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			require.NoError(t, RenderBuildLogs(outputformat.OutputFormatText, nil))
+		})
+	})
+
+	// The hint goes to stderr so stdout stays log lines only (pipe/grep safe).
+	assert.Empty(t, stdout)
+	assert.Equal(t, "No logs found.\n", stderr)
+}
+
+func TestRenderBuildLogs_JSONAlwaysArray(t *testing.T) {
+	output := captureStdout(t, func() {
+		require.NoError(t, RenderBuildLogs(outputformat.OutputFormatJSON, nil))
+	})
+
+	// A regression that emits `null` instead of a JSON array must fail here.
+	assert.JSONEq(t, `[]`, output)
+}
+
 func TestFilterLogsByLevel(t *testing.T) {
 	entries := []BuildLogEntry{
 		{Levelname: "DEBUG", Message: "d"},

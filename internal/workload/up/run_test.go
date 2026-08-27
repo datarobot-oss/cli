@@ -159,6 +159,7 @@ type fakes struct {
 	build       func(string) (*workload.BuildTriggerResponse, error)
 	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	builds      func(string, int) ([]workload.Build, error)
+	hasLogs     func(string, string) bool
 
 	// The roll track: refuse to queue a second swap, start one, follow it.
 	guard       func(string) error
@@ -233,6 +234,11 @@ func install(t *testing.T, f fakes) {
 	swap(t, &triggerBuildFn, f.build)
 	swap(t, &waitBuildFn, f.waitBuild)
 	swap(t, &listBuildsFn, f.builds)
+
+	// Defaults to "no logs" so a test that does not care does not make a
+	// real network call by accident.
+	force(t, &hasLogsFn, func(string, string) bool { return false })
+	swap(t, &hasLogsFn, f.hasLogs)
 
 	// Nothing stands in the way of a rollout unless a test says so, because
 	// the quiet answer is the one every other roll test wants.
@@ -895,6 +901,8 @@ func TestRun_FailedBuildStopsAndNamesTheLogs(t *testing.T) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
+	// Logs exist for this build, so the failure message should point at them.
+	f.hasLogs = func(string, string) bool { return true }
 
 	install(t, f)
 

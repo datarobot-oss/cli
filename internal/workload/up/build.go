@@ -332,10 +332,10 @@ func buildImage(artifactID string, opts Options, report *reporter) (string, erro
 	}
 
 	if workload.IsBuildErrorStatus(built.Status) {
-		// Said here rather than left to the wait's own wording, because this
-		// is the only place that knows which artifact the build belongs to.
-		return built.ID, fmt.Errorf("build %s finished as %s; see 'dr artifact build logs %s %s'",
-			built.ID, built.Status, artifactID, built.ID)
+		// Precheck log availability before suggesting the logs command --
+		// this is the only call site with no already-fetched log info, so
+		// it's the one place that needs its own extra fetch.
+		return built.ID, workload.BuildFailureMessage(artifactID, built.ID, built.Status, hasLogsFn(artifactID, built.ID))
 	}
 
 	// A build still running when the wait expires keeps its id too: it is
