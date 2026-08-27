@@ -130,6 +130,15 @@ func IsSuspendedWorkloadStatus(s string) bool {
 	return strings.EqualFold(s, WorkloadStatusSuspended)
 }
 
+// IsTerminatedWorkloadStatus reports the one status a workload never comes back
+// from. It is named here for the same reason IsSuspendedWorkloadStatus is: the
+// deploy and the shell that prints its result both have to single this status
+// out, they must not spell it differently, and the shell would otherwise be
+// comparing against a constant it reaches only through State.String().
+func IsTerminatedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusTerminated)
+}
+
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
 // workload can be switched off. They are grouped because a deploy treats them
 // alike, and named here because three files ask the same question: this one,

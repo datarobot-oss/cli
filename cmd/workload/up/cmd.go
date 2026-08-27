@@ -385,6 +385,22 @@ func reportable(result up.Result) bool {
 // gets here: see bindLocked in internal/workload/up. Without it a promotion
 // of a locked artifact onto a fresh workload would be called temporary and
 // then advised to lock what is already locked.
+// terminated reports that the workload this run is about is not coming back.
+//
+// Status rather than Plan.State, and deliberately: the plan's state is what was
+// found before the run acted, so a deploy that started a workload which then
+// died reads as "stopped" there and as "terminated" here. Status is the last
+// thing known about the workload, which is the question both callers are
+// actually asking.
+//
+// The predicate lives in internal/workload rather than as a comparison here,
+// because the value being matched arrives by two routes -- the platform's own
+// status on a live read, and State.String() on a refusal -- and a literal in
+// this package would be relying on those two agreeing by coincidence.
+func terminated(result up.Result) bool {
+	return workload.IsTerminatedWorkloadStatus(result.Status)
+}
+
 func draftIsServing(f flags, result up.Result, failed bool) bool {
 	if f.lock || result.Locked {
 		return false
@@ -394,7 +410,14 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 		// Action is what this run actually did, not what it wanted, so it says
 		// "started" only when the start went through. A run that failed before
 		// that changed nothing and has nothing to warn about.
-		return result.Action == up.ActionStarted
+		//
+		// Terminated is excluded even so. A workload that started and then
+		// reached the end of its life is running nothing, so the clock this
+		// warns about is not ticking and the remedy it names would be a lock on
+		// the artifact of something that is never coming back. followUps drops
+		// its whole list for the same state, and the two must agree: a warning
+		// with no follow-ups reads as advice the command forgot to give.
+		return result.Action == up.ActionStarted && !terminated(result)
 	}
 
 	return f.dryRun || result.WorkloadID != ""
@@ -548,9 +571,9 @@ func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 //
 // A terminated workload gets nothing. None of the three mean anything against
 // something that is not coming back, and the refusal already names
-// 'dr workload delete', which is the only command that helps. Matched on the
-// status rather than through IsWorkloadErrorStatus, which also covers errored:
-// errored is exactly where logs and status earn their place.
+// 'dr workload delete', which is the only command that helps. Asked through
+// terminated rather than through IsWorkloadErrorStatus, which also covers
+// errored: errored is exactly where logs and status earn their place.
 //
 // A draft deploy trades the stop line for --lock, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
@@ -577,7 +600,7 @@ func followUps(result up.Result, dir string, draft, failed bool) [][2]string {
 	status := [2]string{"dr workload status" + at, "Check the workload status"}
 
 	if failed {
-		if strings.EqualFold(result.Status, workload.WorkloadStatusTerminated) {
+		if terminated(result) {
 			return nil
 		}
 

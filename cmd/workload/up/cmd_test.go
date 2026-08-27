@@ -572,6 +572,12 @@ func TestCmd_NoWorkloadSaysNothingAboutDrafts(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
 	assert.False(t, draftWarned(stderr))
+
+	// The same run has no follow-ups either, and for its own reason: every
+	// command in the list needs an id, and this run never produced one. Pinned
+	// here because the guard that says so sits above the failed branch in
+	// followUps, where a later edit could reorder it out of the way.
+	assert.NotContains(t, stderr, "Next:")
 }
 
 // A failed deploy has one thing worth reading and it is the error. Telling
@@ -617,7 +623,7 @@ func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
 // the error below says why, so the line between them is the one thing on the
 // screen still describing an ordinary run.
 func TestCmd_FailedDryRunDropsTheFooter(t *testing.T) {
-	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
 
 	_, stderr, err := runCmd(t, "--dry-run")
 	require.Error(t, err)
@@ -628,10 +634,12 @@ func TestCmd_FailedDryRunDropsTheFooter(t *testing.T) {
 
 // refused is the result a deploy hands back when the live state turned it
 // away: the workload is real and reports where it stands, and nothing was done
-// to it.
-func refused(status string) up.Result {
+// to it. Status and the plan's state agree here because a refusal sets the
+// first from the second, which is the shape the shell reads.
+func refused(state up.State) up.Result {
 	result := deployed()
-	result.Status = status
+	result.Status = state.String()
+	result.Plan.State = state
 	result.Action = up.ActionUnchanged
 
 	return result
@@ -642,7 +650,7 @@ func refused(status string) up.Result {
 // workload that is not coming back: 'stop' on a terminated workload is
 // meaningless, and the refusal already names the delete that clears the way.
 func TestCmd_TerminatedRefusalOffersNoFollowUps(t *testing.T) {
-	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
 
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
@@ -657,7 +665,7 @@ func TestCmd_TerminatedRefusalOffersNoFollowUps(t *testing.T) {
 // attached to the command. What it loses is 'stop', which is not a next step
 // for a deploy that never landed.
 func TestCmd_ErroredRefusalKeepsLogsAndStatusButNotStop(t *testing.T) {
-	stubRun(t, refused("errored"), errors.New("workload my-app is errored"))
+	stubRun(t, refused(up.StateErrored), errors.New("workload my-app is errored"))
 
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
@@ -705,11 +713,30 @@ func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
 	assert.NotContains(t, stderr, "dr workload stop")
 }
 
+// A run that started a workload which then reached the end of its life warns
+// about nothing and offers nothing. The draft clock this would otherwise
+// mention is not ticking, because a terminated workload is running no artifact
+// at all, and the two halves of the footer have to agree: a warning above an
+// empty follow-up list reads as advice the command forgot to finish.
+func TestCmd_StartedThenTerminatedWarnsAboutNoDraft(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+	result.Status = "terminated"
+
+	stubRun(t, result, errors.New("workload my-app finished as terminated"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.False(t, draftWarned(stderr), "nothing is running, so nothing is on a clock")
+	assert.NotContains(t, stderr, "Next:")
+}
+
 // A refusal still reports the workload it was refused by. Losing the id is how
 // a deploy becomes unfindable, and the endpoint is deliberately kept for the
 // same reason; only its success tick is dropped.
 func TestCmd_TerminatedRefusalStillReportsTheEndpoint(t *testing.T) {
-	stubRun(t, refused("terminated"), errors.New("workload my-app is terminated"))
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
 
 	stdout, stderr, err := runCmd(t)
 	require.Error(t, err)

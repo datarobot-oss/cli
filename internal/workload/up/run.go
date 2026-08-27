@@ -737,11 +737,19 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // last line.
 //
 // Settling is deliberately not asked, though deployable refuses it. A moving
-// workload is waited out before the plan is built, so the only run that reaches
-// a plan still settling is a dry run, which does not wait and has nothing to
-// refuse: it previews where the deploy would land rather than acting on where
-// the workload is. deployable keeps that branch as the backstop it is
-// documented to be, at the point of action.
+// workload is waited out before the plan is built, so the run that ordinarily
+// reaches a plan still settling is a dry run, which does not wait and has
+// nothing to refuse: it previews where the deploy would land rather than acting
+// on where the workload is. Refusing it here would contradict the line printed
+// above the plan, which says a deploy would wait.
+//
+// It is not the only way to get here, which is why this exempts the state
+// rather than the dry run. awaitSteady ends with a fresh Look, and a workload
+// that starts moving again between the wait landing and that read arrives here
+// settling on an ordinary deploy. That run is not previewing anything and does
+// have to be refused -- by deployable, at the point of action, which is the
+// backstop its settling branch is documented to be and the only place that can
+// tell a stale read from a live one.
 func refusal(loaded Loaded, live Live, workloadName string) error {
 	if live.State == StateSettling {
 		return nil

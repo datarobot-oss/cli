@@ -1281,9 +1281,9 @@ func TestRun_TerminatedWorkloadDoesNotAnnounceACreate(t *testing.T) {
 	assert.NotContains(t, stderr, "no longer exists", "it does still exist")
 }
 
-// terminatedLive is the live pair for a workload that has reached the end of
-// its life still holding its name and its artifact.
-func terminatedLive(t *testing.T, status string) fakes {
+// liveIn is the live pair for a workload the platform reports in status,
+// still holding its name and its artifact.
+func liveIn(t *testing.T, status string) fakes {
 	t.Helper()
 
 	return fakes{
@@ -1313,8 +1313,8 @@ func driftedManifest() string {
 // take a deploy is usually about to ask what the deploy would have been. What
 // changes is that the block says so before the reader gets to it.
 //
-// Both refusals are driven, because they differ in the remedy they name and in
-// what is worth running afterwards.
+// All three refusals are driven: they differ in the remedy they name, in what
+// is worth running afterwards, and in how they reach deployable at all.
 func TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt(t *testing.T) {
 	cases := []struct {
 		status string
@@ -1322,11 +1322,18 @@ func TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt(t *testing.T) {
 	}{
 		{workload.WorkloadStatusTerminated, "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0"},
 		{workload.WorkloadStatusErrored, "dr workload logs"},
+
+		// Suspended reaches the refusal by its own route, through
+		// deployable's stopped branch and into startable, and is the one
+		// refused status whose State is shared with a state that deploys
+		// perfectly well. A note that keyed off the state rather than the
+		// answer would go missing here and nowhere else.
+		{workload.WorkloadStatusSuspended, "suspended"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.status, func(t *testing.T) {
-			install(t, terminatedLive(t, c.status))
+			install(t, liveIn(t, c.status))
 
 			_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
 			require.Error(t, err)
@@ -1365,7 +1372,7 @@ func TestRun_AnAppliedPlanIsStillAnnounced(t *testing.T) {
 // exit code. The plan is still printed, disclaimed, so the answer is not just
 // the refusal.
 func TestRun_RefusedDryRunIsAFailureNotAPreview(t *testing.T) {
-	install(t, terminatedLive(t, workload.WorkloadStatusTerminated))
+	install(t, liveIn(t, workload.WorkloadStatusTerminated))
 
 	result, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true, DryRun: true})
 	require.Error(t, err)
