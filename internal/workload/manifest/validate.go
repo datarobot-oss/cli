@@ -56,6 +56,13 @@ const (
 	sourceGenerated = "generated"
 )
 
+// environmentVars source discriminators that carry no value field. The string
+// variant (source absent or "string") requires a non-null value; the
+// credential and api-key variants resolve their value server-side. The
+// dr-credential discriminator is shared with compile.go's credentialSource;
+// api-key is validate-only because the compiler does not expand it.
+const sourceAPIKey = "api-key"
+
 // dockerfileName is the only Dockerfile a provided build may name. Setup
 // writes no path at all, so this is a fixed expectation of the project root
 // rather than a default that can be pointed elsewhere.
@@ -197,22 +204,43 @@ func (v *validator) add(node, anchor *yaml.Node, path, format string, args ...an
 	v.errs = append(v.errs, FieldError{Path: path, Line: line, Msg: fmt.Sprintf(format, args...)})
 }
 
+// requiredString looks up key in node's mapping, asserts the value is a
+// non-empty string scalar, and records a finding when it is not. It returns
+// the string and ok; ok is false when the key is missing, null, or empty.
+// The finding is anchored to the looked-up node's own line, falling back to
+// node (the parent) when the key is absent — the same anchor pattern the
+// individual checks used before this helper captured it.
+func (v *validator) requiredString(node *yaml.Node, key, path, format string, args ...any) (string, bool) {
+	valueNode := mapValue(node, key)
+
+	value, ok := scalarString(valueNode)
+	if !ok || value == "" {
+		v.add(valueNode, node, path, format, args...)
+
+		return "", false
+	}
+
+	return value, true
+}
+
 // checkName holds the one field the create endpoint always needs.
 func (v *validator) checkName(root *yaml.Node) {
-	node := mapValue(root, keyName)
-
-	if name, ok := scalarString(node); !ok || name == "" {
-		v.add(node, root, keyName, "is required and must be a non-empty string")
-	}
+	v.requiredString(root, keyName, keyName, "is required and must be a non-empty string")
 }
 
 // checkArtifactBinding holds the create endpoint's either-or: an inline
 // artifact to build, or the id of one that already exists.
+//
+// Uses isNull (not isNullish) for the inline-artifact presence test: the
+// server never echoes artifact: {} (it sends artifact: null on unset), and
+// Pydantic 422s on artifact: {} with a confusing missing-fields error. An
+// empty mapping must still count as "set" so that artifact: {} alongside
+// artifactId is caught locally with the clean exactly-one-of message.
 func (v *validator) checkArtifactBinding(root *yaml.Node) {
 	inline := mapValue(root, keyArtifact)
 	byID, _ := scalarString(mapValue(root, keyArtifactID))
 
-	if (inline != nil) == (byID != "") {
+	if (!isNull(inline)) == (byID != "") {
 		v.add(nil, root, "",
 			"exactly one of %s (inline definition) or %s (existing artifact) is required",
 			keyArtifact, keyArtifactID)
@@ -231,14 +259,20 @@ type groupShape struct {
 // shape the runtime block is checked against. A manifest that binds an
 // existing artifact by id returns no shape, and the runtime name checks are
 // skipped: the names live server-side where the CLI cannot see them.
+//
+// Uses isNull (not isNullish) so that artifact: {} (an empty mapping, no
+// artifactId) enters the check and reports "spec is required for an inline
+// artifact" rather than falling through to the binding error. The server
+// never echoes artifact: {} and Pydantic 422s on it, so the empty-mapping arm
+// of isNullish would only mask a genuinely-broken file.
 func (v *validator) checkArtifact(artifact *yaml.Node) []groupShape {
-	if artifact == nil {
+	if isNull(artifact) {
 		return nil
 	}
 
 	spec := mapValue(artifact, keySpec)
-	if spec == nil {
-		v.add(nil, artifact, joinPath(keyArtifact, keySpec), "is required for an inline artifact")
+	if isNullish(spec) {
+		v.add(spec, artifact, joinPath(keyArtifact, keySpec), "is required for an inline artifact")
 
 		return nil
 	}
@@ -265,11 +299,8 @@ func (v *validator) checkArtifact(artifact *yaml.Node) []groupShape {
 func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape {
 	shape := groupShape{}
 
-	name, ok := scalarString(mapValue(group, keyName))
-	if !ok || name == "" {
-		v.add(mapValue(group, keyName), group, joinPath(path, keyName),
-			"is required: runtime sizing is joined to the artifact by group name")
-	}
+	name, _ := v.requiredString(group, keyName, joinPath(path, keyName),
+		"is required: runtime sizing is joined to the artifact by group name")
 
 	shape.name = name
 
@@ -287,10 +318,7 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 	for i, container := range containers {
 		containerPath := fmt.Sprintf("%s.%s[%d]", path, keyContainers, i)
 
-		containerName, ok := scalarString(mapValue(container, keyName))
-		if !ok || containerName == "" {
-			v.add(mapValue(container, keyName), container, joinPath(containerPath, keyName), "is required")
-		}
+		containerName, _ := v.requiredString(container, keyName, joinPath(containerPath, keyName), "is required")
 
 		shape.containers = append(shape.containers, containerName)
 
@@ -301,6 +329,7 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 
 		v.checkImageSource(container, containerPath)
 		v.checkPort(container, containerPath, primary)
+		v.checkEnvironmentVars(container, containerPath)
 	}
 
 	// Two primaries in one group is unambiguously wrong: only one container
@@ -315,19 +344,29 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 
 // checkImageSource holds the exactly-one rule: a container names an image or
 // says how to build one, never both and never neither.
+//
+// Uses isNull (not isNullish) for hasBuildConfig: the server silently
+// discards imageUri on artifact CREATE when imageBuildConfig parses non-None
+// (workload-api artifact.py:201-214, _strip_client_image_uris_on_build_
+// containers), and Pydantic default-constructs imageBuildConfig: {} into a
+// real ImageBuildConfig (containers.py:83-95). An empty mapping must still
+// count as "set" so that imageUri + imageBuildConfig: {} is caught locally
+// with the clean never-both message rather than silently dropping the
+// user's declared imageUri.
 func (v *validator) checkImageSource(container *yaml.Node, path string) {
 	imageURI, hasImage := scalarString(mapValue(container, keyImageURI))
 	hasImage = hasImage && imageURI != ""
 	buildConfig := mapValue(container, keyImageBuildConfig)
+	hasBuildConfig := !isNull(buildConfig)
 
 	switch {
-	case hasImage && buildConfig != nil:
+	case hasImage && hasBuildConfig:
 		v.add(buildConfig, container, path,
 			"sets both %s and %s; a container names an image or says how to build one, never both",
 			keyImageURI, keyImageBuildConfig)
-	case !hasImage && buildConfig == nil:
+	case !hasImage && !hasBuildConfig:
 		v.add(nil, container, path, "must set either %s or %s", keyImageURI, keyImageBuildConfig)
-	case buildConfig != nil:
+	case hasBuildConfig:
 		v.checkBuildConfig(buildConfig, joinPath(path, keyImageBuildConfig))
 	}
 }
@@ -338,8 +377,12 @@ func (v *validator) checkImageSource(container *yaml.Node, path string) {
 // reinterpret later.
 func (v *validator) checkBuildConfig(buildConfig *yaml.Node, path string) {
 	dockerfile := mapValue(buildConfig, keyDockerfile)
-	if dockerfile == nil {
-		v.add(buildConfig, buildConfig, joinPath(path, keyDockerfile),
+	if isNullish(dockerfile) {
+		// Pass the dockerfile node (not nil) so the error anchors to the
+		// dockerfile key's own line when it is present-but-null. When the key
+		// is absent entirely, mapValue returns nil and the anchor falls back
+		// to buildConfig — the nearest node that does exist.
+		v.add(dockerfile, buildConfig, joinPath(path, keyDockerfile),
 			"is required: %s must say how the image is built", keyImageBuildConfig)
 
 		return
@@ -379,12 +422,8 @@ func (v *validator) checkProvidedBuild(dockerfile *yaml.Node, path string) {
 // so the same file builds the same image after the environment moves on.
 func (v *validator) checkGeneratedBuild(dockerfile *yaml.Node, path string) {
 	for _, key := range []string{keyExecEnvID, keyExecEnvVersionID} {
-		node := mapValue(dockerfile, key)
-
-		if value, ok := scalarString(node); !ok || value == "" {
-			v.add(node, dockerfile, joinPath(path, key),
-				"is required when source is %q", sourceGenerated)
-		}
+		v.requiredString(dockerfile, key, joinPath(path, key),
+			"is required when source is %q", sourceGenerated)
 	}
 
 	entrypoint := mapValue(dockerfile, keyEntrypoint)
@@ -422,10 +461,45 @@ func (v *validator) checkPort(container *yaml.Node, path string, primary bool) {
 	}
 }
 
+// checkEnvironmentVars holds the value-or-source rule for each entry in a
+// container's environmentVars sequence. This is a Surface B guard: the
+// validator's input is a hand-editable file, so a user can write value: null
+// or omit value entirely regardless of what the server schema allows on the
+// wire. The rule requires a non-null value for the string variant (source
+// absent or "string"); the credential and api-key variants carry no value and
+// are exempt. An explicitly empty value ("") passes — that is the valid
+// spelling of an intentionally-empty variable. Surfacing a value-less string
+// entry at validate time (with a line anchor) beats discovering it as a 422
+// at deploy time.
+func (v *validator) checkEnvironmentVars(container *yaml.Node, path string) {
+	vars := mapValue(container, keyEnvironmentVars)
+	if isNullish(vars) {
+		return
+	}
+
+	for i, entry := range seqItems(vars) {
+		entryPath := fmt.Sprintf("%s.%s[%d]", path, keyEnvironmentVars, i)
+
+		// Credential and api-key sources resolve their value server-side, so
+		// they are exempt from the value requirement.
+		source, _ := scalarString(mapValue(entry, keySource))
+		if source == credentialSource || source == sourceAPIKey {
+			continue
+		}
+
+		value := mapValue(entry, keyValue)
+		if isNullish(value) {
+			v.add(value, entry, joinPath(entryPath, keyValue),
+				"is required: set a value or use a %s/%s source",
+				credentialSource, sourceAPIKey)
+		}
+	}
+}
+
 // checkRuntime validates the sizing half of the file against the shape of the
 // artifact half.
 func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
-	if runtime == nil {
+	if isNullish(runtime) {
 		return
 	}
 
@@ -464,17 +538,24 @@ func (v *validator) checkRuntimeContainers(group *yaml.Node, path string, shape 
 // checkScaling holds replicaCount against autoscaling. A group may say how
 // many replicas to run or how to scale them, not both. Autoscaling switched
 // off is not scaling, so an explicit enabled:false leaves replicaCount alone,
-// matching what the create endpoint accepts.
+// matching what the create endpoint accepts. A null or empty autoscaling block
+// is also not a policy, matching the server's own echo, and a null
+// replicaCount is no count at all: neither side of the pair trips on the
+// other's placeholder.
+//
+// replicaCount itself is never type-checked: "replicaCount: three" passes
+// the ledger and fails only at the create endpoint. Noted rather than fixed;
+// add the scalarInt rule if the server's error for it proves confusing.
 func (v *validator) checkScaling(group *yaml.Node, path string) {
 	replicas := mapValue(group, keyReplicaCount)
 	autoscaling := mapValue(group, keyAutoscaling)
 
-	if replicas == nil || autoscaling == nil {
+	if isNullish(replicas) || isNullish(autoscaling) {
 		return
 	}
 
 	enabled := mapValue(autoscaling, keyEnabled)
-	if enabled != nil && !isTrue(enabled) {
+	if !isNullish(enabled) && !isTrue(enabled) {
 		return
 	}
 

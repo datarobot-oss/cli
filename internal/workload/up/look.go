@@ -39,7 +39,14 @@ const (
 	keyStatus     = "status"
 	keyEndpoint   = "endpoint"
 	keyArtifactID = "artifactId"
+	keySpec       = "spec"
 	keyType       = "type"
+
+	// keyArtifactRepositoryID is the repository an artifact belongs to. The
+	// platform assigns it, so it is read here and never written to the file;
+	// a create that sends it back is what makes successive versions land in
+	// one repository instead of each opening its own.
+	keyArtifactRepositoryID = "artifactRepositoryId"
 )
 
 // keyArtifactType is what the plan calls a change of artifact kind. It is
@@ -77,6 +84,12 @@ type Live struct {
 	// the spec, so the spec walk never sees it.
 	ArtifactType string
 
+	// ArtifactRepositoryID is the lineage the running version belongs to, ""
+	// when there is no artifact to read it from. A roll hands it to the
+	// version it mints, which is what makes the two successive versions of one
+	// thing rather than two unrelated artifacts sharing a name.
+	ArtifactRepositoryID string
+
 	// Endpoint is the workload's stable URL. The platform assigns it at
 	// creation and it survives every rollout, so it is safe to print before
 	// the workload is actually serving.
@@ -86,6 +99,27 @@ type Live struct {
 	// artifact means production, and its successor has to be locked too
 	// before the platform will accept a replacement.
 	Locked bool
+}
+
+// liveArtifactType reads the discriminator off the artifact document, falling
+// back to the spec.
+//
+// The platform hoists a type sent inside the spec and answers with it beside
+// the spec, which is what the fallback is for: the file's side is read from
+// both placements, and a live side that read only one would leave the two
+// halves of the same comparison enforcing different invariants. If a route
+// ever answered without hoisting, an agent would read as having no type, be
+// defaulted to a service, and drift against a file correctly calling it an
+// agent on every run.
+func liveArtifactType(artifactDoc workload.Document) string {
+	if beside := artifactDoc.String(keyType); beside != "" {
+		return beside
+	}
+
+	spec, _ := artifactDoc[keySpec].(map[string]any)
+	within, _ := spec[keyType].(string)
+
+	return within
 }
 
 // Look fetches the live workload and the artifact it runs.
@@ -104,7 +138,11 @@ func Look(workloadID string) (Live, error) {
 	workloadDoc, err := getWorkloadDocFn(workloadID)
 	if err != nil {
 		if isNotFound(err) {
-			return Live{State: StateMissing}, nil
+			// The id travels on even though nothing answers to it. What the
+			// file was bound to is the whole difference between "this creates a
+			// workload" and "the thing you were pointing at is gone", and the
+			// plan is the only place that gets said.
+			return Live{Live: manifest.Live{WorkloadID: workloadID}, State: StateMissing}, nil
 		}
 
 		return Live{}, fmt.Errorf("cannot read workload %s: %w", workloadID, err)
@@ -119,14 +157,31 @@ func Look(workloadID string) (Live, error) {
 
 	status := workloadDoc.String(keyStatus)
 
+	live, err := manifest.NewLive(workloadID, workloadDoc, artifactDoc)
+	// A missing artifact (nil doc) is a valid state for the up path: a
+	// workload in the moments around creation has no artifact to read, and
+	// the spec comparing as absent is the right answer for something not
+	// yet built.
+	//
+	// Propagating the error when the artifact doc IS present but carries no
+	// usable spec is a DELIBERATE hard failure: a spec-less artifact means
+	// the manifest cannot be reconstructed, and failing loudly mirrors
+	// Apply's own "edit by hand" contract — the right answer is to stop and
+	// let the user edit the file, not to write something Validate would
+	// then refuse to read.
+	if err != nil && artifactDoc != nil {
+		return Live{}, err
+	}
+
 	return Live{
-		Live:         manifest.NewLive(workloadID, workloadDoc, artifactDoc),
-		State:        stateFor(status),
-		Status:       status,
-		ArtifactID:   artifactID,
-		ArtifactType: artifactDoc.String(keyType),
-		Endpoint:     workloadDoc.String(keyEndpoint),
-		Locked:       isLocked(artifactDoc.String(keyStatus)),
+		Live:                 live,
+		State:                stateFor(status),
+		Status:               status,
+		ArtifactID:           artifactID,
+		ArtifactType:         liveArtifactType(artifactDoc),
+		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
+		Endpoint:             workloadDoc.String(keyEndpoint),
+		Locked:               isLocked(artifactDoc.String(keyStatus)),
 	}, nil
 }
 

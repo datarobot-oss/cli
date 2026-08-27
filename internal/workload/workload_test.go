@@ -346,10 +346,62 @@ func TestListWorkloads_SinglePageWithStatusFilter(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	workloads, err := ListWorkloads(25, []string{"running", "errored"})
+	workloads, err := ListWorkloads(25, []string{"running", "errored"}, "")
 	require.NoError(t, err)
 	require.Len(t, workloads, 1)
 	assert.Equal(t, "wl-1", workloads[0].ID)
+}
+
+func TestListWorkloads_EnclaveFilter(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "prod-east", r.URL.Query().Get("enclave"))
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDoc("wl-1", "a", "running")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	workloads, err := ListWorkloads(25, nil, "prod-east")
+	require.NoError(t, err)
+	require.Len(t, workloads, 1)
+}
+
+func TestListWorkloads_TrimsEnclave(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "prod-east", r.URL.Query().Get("enclave"),
+			"stray whitespace from a copied name must not reach the query")
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDoc("wl-1", "a", "running")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListWorkloads(25, nil, "  prod-east  ")
+	require.NoError(t, err)
+}
+
+func TestListWorkloads_NoEnclaveParamWhenUnfiltered(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, present := r.URL.Query()["enclave"]
+
+		assert.False(t, present, "an empty filter must stay out of the query entirely")
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDoc("wl-1", "a", "running")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListWorkloads(25, nil, "")
+	require.NoError(t, err)
 }
 
 func TestListWorkloads_ClampsPageSizeToServerMax(t *testing.T) {
@@ -366,7 +418,7 @@ func TestListWorkloads_ClampsPageSizeToServerMax(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := ListWorkloads(250, nil)
+	_, err := ListWorkloads(250, nil, "")
 	require.NoError(t, err)
 }
 
@@ -401,7 +453,7 @@ func TestListWorkloads_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	workloads, err := ListWorkloads(3, nil)
+	workloads, err := ListWorkloads(3, nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
 	require.Len(t, workloads, 3)
@@ -410,7 +462,7 @@ func TestListWorkloads_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 func TestListWorkloads_RejectsNonPositiveLimit(t *testing.T) {
 	for _, limit := range []int{0, -1} {
-		_, err := ListWorkloads(limit, nil)
+		_, err := ListWorkloads(limit, nil, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be positive")
 	}
@@ -530,6 +582,158 @@ func TestIsWorkloadErrorStatus(t *testing.T) {
 	for _, s := range steady {
 		assert.False(t, IsWorkloadErrorStatus(s), "%s should not be an error status", s)
 	}
+}
+
+func TestIsSteadyWorkloadStatus(t *testing.T) {
+	steady := []string{
+		WorkloadStatusRunning,
+		WorkloadStatusStopped,
+		WorkloadStatusSuspended,
+		WorkloadStatusInterrupted,
+		WorkloadStatusErrored,
+		WorkloadStatusTerminated,
+	}
+
+	moving := []string{
+		WorkloadStatusSubmitted,
+		WorkloadStatusProvisioning,
+		WorkloadStatusLaunching,
+		WorkloadStatusStopping,
+		WorkloadStatusUnknown,
+	}
+
+	for _, s := range steady {
+		assert.True(t, IsSteadyWorkloadStatus(s), "%s should be steady", s)
+		assert.True(t, IsSteadyWorkloadStatus(strings.ToUpper(s)), "%s should be steady whatever the casing", s)
+	}
+
+	for _, s := range moving {
+		assert.False(t, IsSteadyWorkloadStatus(s), "%s is the platform still moving", s)
+	}
+
+	assert.False(t, IsSteadyWorkloadStatus("something-added-later"),
+		"an unrecognised status costs a wait rather than mistaking a transition for a destination")
+}
+
+func TestIsSuspendedWorkloadStatus(t *testing.T) {
+	assert.True(t, IsSuspendedWorkloadStatus(WorkloadStatusSuspended))
+	assert.True(t, IsSuspendedWorkloadStatus("SUSPENDED"), "it folds like every other status")
+
+	for _, s := range []string{WorkloadStatusStopped, WorkloadStatusInterrupted, WorkloadStatusRunning} {
+		assert.False(t, IsSuspendedWorkloadStatus(s),
+			"%s is not the status a start cannot undo", s)
+	}
+}
+
+func TestIsStoppedWorkloadStatus(t *testing.T) {
+	for _, s := range []string{WorkloadStatusStopped, WorkloadStatusSuspended, WorkloadStatusInterrupted} {
+		assert.True(t, IsStoppedWorkloadStatus(s), "%s is a way of being switched off", s)
+		assert.True(t, IsStoppedWorkloadStatus(strings.ToUpper(s)), "%s folds like every other status", s)
+	}
+
+	for _, s := range []string{
+		WorkloadStatusRunning, WorkloadStatusErrored, WorkloadStatusTerminated,
+		WorkloadStatusStopping, WorkloadStatusProvisioning,
+	} {
+		assert.False(t, IsStoppedWorkloadStatus(s), "%s is not switched off", s)
+	}
+
+	assert.False(t, IsStoppedWorkloadStatus(WorkloadStatusStopping),
+		"stopping is the platform on its way there, which is a different answer")
+}
+
+// The pairing that justifies both waits existing: stopped is a destination to
+// one and a step on the way up to the other, so the same fixture ends one wait
+// and runs the other to its deadline.
+func TestWaitForSteadyWorkload_ReturnsAtStoppedWhereWaitForWorkloadWouldNot(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", WorkloadStatusStopped))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	assert.Equal(t, WorkloadStatusStopped, wl.Status)
+
+	_, err = WaitForWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout")
+}
+
+func TestWaitForSteadyWorkload_PollsUntilTheTransitionLands(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		page := atomic.AddInt32(&hits, 1)
+
+		status := WorkloadStatusStopping
+		if page >= 2 {
+			status = WorkloadStatusStopped
+		}
+
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", status))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	var ticks int
+
+	wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, func(*Workload) {
+		ticks++
+	})
+	require.NoError(t, err)
+	assert.Equal(t, WorkloadStatusStopped, wl.Status)
+	assert.GreaterOrEqual(t, ticks, 2)
+}
+
+// Errored is an answer to "has it stopped moving", not a failure of the wait.
+// The caller decides what it means: a deploy recovers the workload, while a
+// wait for one it just started calls the same status a failure.
+func TestWaitForSteadyWorkload_ErroredIsAnAnswerNotAFailure(t *testing.T) {
+	installSkipAuth(t)
+
+	for _, status := range []string{WorkloadStatusErrored, WorkloadStatusTerminated} {
+		t.Run(status, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", status))
+			}))
+
+			defer srv.Close()
+
+			installEndpoint(t, srv.URL)
+
+			wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, nil)
+			require.NoError(t, err)
+			assert.Equal(t, status, wl.Status)
+		})
+	}
+}
+
+func TestWaitForSteadyWorkload_TimeoutKeepsTheLastSeen(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "a", WorkloadStatusLaunching))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	wl, err := WaitForSteadyWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout")
+	require.NotNil(t, wl, "the caller can still say where it got to")
+	assert.Equal(t, WorkloadStatusLaunching, wl.Status)
 }
 
 func TestWaitForWorkload_RunningReturnsNil(t *testing.T) {

@@ -17,11 +17,15 @@ package up
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/tui"
 )
 
 // buildAndCreate is the first deploy of a project whose image the platform
@@ -37,15 +41,32 @@ import (
 // pointing at an image that does not exist yet, visible in the UI and unable
 // to start, for as long as the build took.
 func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options, report *reporter) (Result, error) {
-	artifactID, fresh, err := ensureArtifact(loaded, report)
+	made, err := ensureArtifact(loaded, report)
+
+	// Recorded before the error check, the same way roll records the build it
+	// ran: an artifact created and then stranded by a link that would not write
+	// is the one failure the envelope has to be able to name.
+	result.ArtifactID = made.ID
+
 	if err != nil {
 		return result, err
 	}
 
-	result.ArtifactID = artifactID
+	artifactID, fresh := made.ID, made.Fresh
 
 	synced, err := syncCode(loaded.ProjectDir, report)
 	if err != nil {
+		return result, err
+	}
+
+	// Asked unconditionally, exactly as the roll path asks it. A sync that
+	// minted a version answers immediately; the cases that reach further are a
+	// version standing in for a locked one, whose tree was already synced and
+	// so may upload nothing, and a run resuming after an earlier one relinked
+	// and died. Neither is distinguishable from the ordinary case by then: the
+	// link has already moved, so the only record of what happened is the
+	// catalog version in the project's own state, which is what this reads.
+	if err := inheritCode(loaded.ProjectDir, artifactID, synced, report); err != nil {
 		return result, err
 	}
 
@@ -102,7 +123,7 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 			"only one workload per draft artifact.\n"+
 			"  The link lives in %s and is what makes repeated deploys update one artifact rather than "+
 			"making a new one each time.\n"+
-			"  To deploy to that workload, add 'workloadId: %s' to %s.\n"+
+			"  To deploy to that workload, set 'workloadId: %s' in %s, replacing any already there.\n"+
 			"  To deploy a separate workload from this directory, delete %s: the next run then creates "+
 			"an artifact of its own.\n"+
 			"  %w",
@@ -113,7 +134,7 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 // cannot say. It turns the advice from "find out what owns this" into a line
 // the reader can paste.
 func workloadOn(artifactID string) string {
-	existing, err := listWorkloadsFn(conflictSearchLimit, nil)
+	existing, err := listWorkloadsFn(conflictSearchLimit, nil, "")
 	if err != nil {
 		return ""
 	}
@@ -128,77 +149,126 @@ func workloadOn(artifactID string) string {
 }
 
 // ensureArtifact returns the artifact this project builds into, creating one
-// and linking the directory to it the first time. fresh reports which of the
-// two happened, because an artifact that was just created has no image and
+// and linking the directory to it the first time. Fresh reports that this run
+// made it, because an artifact that was just created has no image and
 // therefore always needs a build.
 //
 // The link lives in the project's own state directory rather than in the
 // manifest. The manifest describes what to deploy and is committed; which
 // artifact a particular checkout has been pushing to is local, and writing it
 // into a shared file would have two developers fighting over one draft.
-func ensureArtifact(loaded Loaded, report *reporter) (string, bool, error) {
-	if projectLinkedFn(loaded.ProjectDir) {
-		cfg, err := loadProjectFn(loaded.ProjectDir)
-		if err != nil {
-			return "", false, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
-		}
-
-		if err := usableArtifact(loaded.ProjectDir, cfg.ArtifactID); err != nil {
-			return "", false, err
-		}
-
-		return cfg.ArtifactID, false, nil
+//
+// A linked artifact is reused only while it can still take this deploy and
+// still says what the file says. Two things end that, and they have one
+// answer. Locking is one-way, so a locked link can take neither new code nor a
+// new image. A spec that has diverged is the other: the link records which
+// artifact this checkout pushes to, not what that artifact contains, and an
+// artifact's spec is fixed when it is created, so reusing a diverged one
+// deploys the frozen answer and reports success. The reconcile path guards
+// that already, in describes(); this path reaches the same artifact by another
+// route and needs the same guard, or editing a port in the file and
+// redeploying changes nothing and says nothing.
+//
+// Either way the answer is the one the roll path already gives: mint a new
+// version, in the lineage the old one belongs to, and move the link onto it.
+func ensureArtifact(loaded Loaded, report *reporter) (version, error) {
+	if !projectLinkedFn(loaded.ProjectDir) {
+		return freshArtifact(loaded, "", labelFirstArtifact, report)
 	}
 
-	var created *workload.Artifact
-
-	err := report.run("Creating the artifact", func() error {
-		payload, payloadErr := loaded.Compiled.ArtifactPayload()
-		if payloadErr != nil {
-			return payloadErr
-		}
-
-		artifact, createErr := createArtifactFn(payload)
-		created = artifact
-
-		return createErr
-	})
+	cfg, err := loadProjectFn(loaded.ProjectDir)
 	if err != nil {
-		return "", false, err
+		return version{}, fmt.Errorf("cannot read which artifact %s is linked to: %w", loaded.ProjectDir, err)
 	}
 
-	// The artifact exists and nothing records that fact yet, so a failure
-	// here strands it: the next run would create a second one. Saying which
-	// id was lost is the difference between a re-run and a support ticket.
-	if err := initProjectFn(loaded.ProjectDir, wapi.InitOptions{ArtifactID: created.ID}); err != nil {
-		return "", false, fmt.Errorf(
-			"artifact %s was created but %s could not be linked to it, so the next deploy would create another. "+
-				"Run 'dr artifact code init %s' here, then deploy again: %w",
-			created.ID, loaded.ProjectDir, created.ID, err)
+	// One read answers every question asked of the linked artifact below:
+	// whether it is locked, which lineage a replacement would join, and whether
+	// its spec still says what the file says. Reading it once per question had
+	// every deploy of a linked project pay several sequential round trips to a
+	// single resource on the way to one decision.
+	linked, err := getArtifactDocFn(cfg.ArtifactID)
+	if err != nil {
+		return version{}, fmt.Errorf(
+			"cannot read artifact %s, which this project is linked to: %w", cfg.ArtifactID, err)
 	}
 
-	return created.ID, true, nil
+	// Nothing came back and nothing failed, which says neither that the
+	// artifact can take this deploy nor that it cannot. Reusing it on that
+	// basis rolls out whatever it happens to contain; replacing it discards the
+	// lineage over a fault nobody established. Stopping is the only answer that
+	// does not act on an unread state.
+	if linked == nil {
+		return version{}, fmt.Errorf(
+			"the platform returned nothing for artifact %s, which this project is linked to, so there is no "+
+				"way to tell whether it can still take this deploy", cfg.ArtifactID)
+	}
+
+	if workload.IsLockedStatus(linked.String(keyStatus)) {
+		// Phrased as what the run needs rather than what it did, because the
+		// create below can still fail and a line already claiming the version
+		// exists would be the last thing printed before the error saying it
+		// does not.
+		//
+		// The alternative was telling the reader to delete the state
+		// directory, which works but throws away the catalog and the
+		// last-synced version with it, so the following sync re-uploads a tree
+		// the platform already holds.
+		report.say("  Artifact %s is locked, so this deploy needs a new version.\n", cfg.ArtifactID)
+
+		return freshArtifact(loaded, redraftRepository(loaded, linked), labelNewVersion, report)
+	}
+
+	// Cannot tell reads as yes. Replacing on a comparison that never completed
+	// would discard the artifact this project pushes to over a fault that was
+	// never established, and the read that could have failed already has.
+	if matches, err := specMatches(loaded, linked); err != nil || matches {
+		return version{ID: cfg.ArtifactID}, nil
+	}
+
+	report.say("  Artifact %s no longer matches %s; making a new one.\n", cfg.ArtifactID, manifest.FileName)
+
+	return freshArtifact(loaded, redraftRepository(loaded, linked), labelNewVersion, report)
 }
 
-// usableArtifact refuses a locked artifact before the sync finds out the hard
-// way. Locking is one-way and makes the artifact immutable, so neither the
-// code push nor the build that follows can land; the platform would refuse
-// the PATCH halfway through with a 403 that says nothing about what to do.
-func usableArtifact(projectDir, artifactID string) error {
-	artifact, err := getArtifactFn(artifactID)
+// redraftRepository is the lineage the replacement joins, "" when it has to
+// start one of its own. It is the same question sameRepository answers for a
+// roll, asked of the linked artifact rather than the live one because on this
+// path there is no live workload to read a type off.
+//
+// A file that changed the artifact's kind is the case that has to start fresh:
+// a repository carries the type of the artifact that opened it, and the
+// platform answers 422 for one that disagrees. createInRepository would recover
+// from that by retrying without the id, so the cost of not asking is a wasted
+// round trip and a line blaming the repository for something the file did.
+//
+// The type and the repository are read off the document the caller already
+// has, rather than a typed artifact fetched again for two fields.
+func redraftRepository(loaded Loaded, linked workload.Document) string {
+	wanted, err := loaded.ArtifactType()
 	if err != nil {
-		return fmt.Errorf("cannot read artifact %s, which this project is linked to: %w", artifactID, err)
+		return ""
 	}
 
-	if artifact.IsLocked() {
-		return fmt.Errorf(
-			"artifact %s is locked, so it can take neither new code nor a new image. "+
-				"Locking is permanent, so deploying a change means a new artifact: "+
-				"delete %s and run up again to make one",
-			artifactID, wapi.Dir(projectDir))
+	if !manifest.SameArtifactType(
+		manifest.ArtifactTypeOrDefault(wanted),
+		manifest.ArtifactTypeOrDefault(linked.String(keyType)),
+	) {
+		return ""
 	}
 
-	return nil
+	return linked.String(keyArtifactRepositoryID)
+}
+
+// freshArtifact mints the artifact and points the project at it. The two are
+// one act: an artifact nothing records is one the next run cannot find, so it
+// would create a second and leave the first unreachable.
+func freshArtifact(loaded Loaded, repositoryID, label string, report *reporter) (version, error) {
+	made, err := createVersion(loaded, repositoryID, label, report)
+	if err != nil {
+		return made, err
+	}
+
+	return made, linkProject(loaded.ProjectDir, made, report)
 }
 
 // syncCode uploads the working tree to the artifact's code store. The engine
@@ -251,19 +321,60 @@ func maybeBuild(
 	report *reporter,
 ) (string, error) {
 	if !fresh && !opts.ForceBuild && !changed(code, synced) {
-		built, err := hasImage(artifactID)
+		builds, err := listBuildsFn(artifactID, buildHistoryLimit)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
 		}
 
-		if built {
+		if hasImage(builds) {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
 			return "", nil
 		}
+
+		// The tree matches what was synced and no image exists yet — if a
+		// build of that code is already running (a previous up triggered it
+		// and died, or another terminal is mid-deploy), attach to it instead
+		// of starting a second one. Only safe on this path: when the code
+		// changed, a running build is building the old tree, and a fresh
+		// trigger — which supersedes it server-side — is the correct move.
+		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
+			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
+
+			return buildImage(artifactID, running, opts, report)
+		}
 	}
 
-	return buildImage(artifactID, opts, report)
+	return buildImage(artifactID, "", opts, report)
+}
+
+// runningBuild names the newest non-terminal build, "" when there is none
+// (the caller then just triggers, which is the pre-attach behavior and
+// always safe).
+func runningBuild(builds []workload.Build, maxAge time.Duration) string {
+	if len(builds) == 0 || workload.IsTerminalBuildStatus(builds[0].Status) {
+		return ""
+	}
+
+	// A non-terminal build older than a wait would ever tolerate is wedged —
+	// an orphaned trigger or a lost reconcile — not running. Attaching would
+	// wait the whole timeout on a build that can never finish; triggering
+	// supersedes it server-side, which is also the cleanup.
+	if !builds[0].CreatedAt.IsZero() && phaseClock().Sub(builds[0].CreatedAt) > maxAge {
+		return ""
+	}
+
+	return builds[0].ID
+}
+
+// attachMaxAge is how old a running build may be and still be worth attaching
+// to: the poll timeout, because a healthy build finishes within one wait.
+func attachMaxAge(opts Options) time.Duration {
+	if opts.PollTimeout > 0 {
+		return opts.PollTimeout
+	}
+
+	return 30 * time.Minute
 }
 
 // changed reports whether anything moved. The sync's own count is preferred
@@ -285,43 +396,81 @@ func changed(code CodeChange, synced *sync.Result) bool {
 // The exception is code pushed by `dr artifact code sync` between deploys,
 // which leaves a completed build of the previous version and a tree that
 // looks unchanged to `up`. That is what --force-build is for.
-func hasImage(artifactID string) (bool, error) {
-	builds, err := listBuildsFn(artifactID, buildHistoryLimit)
-	if err != nil {
-		return false, fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
-	}
-
+func hasImage(builds []workload.Build) bool {
 	for _, build := range builds {
-		if build.Status == workload.BuildStatusCompleted {
-			return true, nil
+		if workload.IsBuildCompleted(build.Status) {
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }
 
 // buildHistoryLimit bounds the look back for a completed build. A handful of
 // attempts is all a deploy can have made; past that the answer is no.
 const buildHistoryLimit = 20
 
-// buildImage builds the artifact's image and waits for it. The wait is not
-// optional even under --detach: a workload created against an artifact with
-// no image would come up unable to start, and --detach promises not to wait
-// for the workload, not to deploy something that cannot run.
-func buildImage(artifactID string, opts Options, report *reporter) (string, error) {
+// buildImage builds the artifact's image and waits for it, streaming the
+// build's own log lines beneath the phase header while it runs. attachTo, when
+// set, is an already-running build to follow instead of triggering a new one.
+//
+// The wait is not optional even under --detach: a workload created against an
+// artifact with no image would come up unable to start, and --detach promises
+// not to wait for the workload, not to deploy something that cannot run.
+func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
 	var built *workload.Build
 
-	err := report.run("Building the image", func() error {
-		buildID, triggerErr := triggerBuild(artifactID)
-		if triggerErr != nil {
-			return triggerErr
+	err := report.stream("Building the image", func(say func(string, lipgloss.Style)) error {
+		buildID := attachTo
+		if buildID == "" {
+			triggered, triggerErr := triggerBuild(artifactID)
+			if triggerErr != nil {
+				return triggerErr
+			}
+
+			buildID = triggered
+		}
+
+		// The line below is the phase's heartbeat: the trigger above can
+		// legitimately take minutes against a slow platform, and the first
+		// log line lags the build by however long ingestion takes, so without
+		// it the header sits alone and reads as a hang.
+		say("following build "+buildID+"; its first log lines can take a minute to arrive", tui.HintStyle)
+
+		// The tail is progress feedback only: it never errors, and after
+		// sustained fetch failures it says so once and goes quiet, while the
+		// build wait carries on. Its notices go into the stream marked as the
+		// CLI's own — silence here is indistinguishable from a hang, which is
+		// worse than one meta line among the build's output.
+		tail := workload.NewBuildLogTail(artifactID, buildID,
+			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
+			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
+
+		// Each status transition is narrated, because the stages before the
+		// builder speaks — accepted, waiting for a builder — are exactly the
+		// quiet ones where the user wonders whether anything is happening.
+		// Terminal statuses are left to the phase's own ending.
+		lastStatus := ""
+
+		onTick := func(b *workload.Build) {
+			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
+				lastStatus = b.Status
+
+				say(workload.BuildStatusLine(b.Status), tui.HintStyle)
+			}
+
+			tail.Poll()
 		}
 
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, nil)
+		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
+
+		// The final catch-up: ingestion lags the build, so the last lines
+		// routinely land after the wait, and the reorder buffer must drain.
+		tail.Finish()
 
 		return waitErr
 	})
@@ -341,6 +490,22 @@ func buildImage(artifactID string, opts Options, report *reporter) (string, erro
 	// A build still running when the wait expires keeps its id too: it is
 	// what the user needs to follow it to the end.
 	return built.ID, err
+}
+
+// buildLogLine renders one streamed build log line, colored by its level —
+// the wording is the shared formatter's, so `dr artifact build create --wait`
+// and this stream say the same thing; only the styling is this terminal's.
+func buildLogLine(e workload.WorkloadLogEntry) (string, lipgloss.Style) {
+	line := workload.FormatBuildLogLine(e)
+
+	switch strings.ToLower(e.Level) {
+	case "", "info", "debug":
+		return line, tui.HintStyle
+	case "warn", "warning":
+		return line, tui.WarnStyle
+	default:
+		return line, tui.ErrorStyle
+	}
 }
 
 // triggerBuild starts one build and names it. The endpoint answers with a

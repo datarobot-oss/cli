@@ -91,6 +91,7 @@ func TestPost_NonSuccess(t *testing.T) {
 
 // Non-success response bodies must reach the caller so server validation
 // details (e.g. a FastAPI {"detail":[...]} envelope) survive in the error.
+// The body arrives verbatim: drapi does not read any API's envelope.
 func TestPost_NonSuccess_IncludesBody(t *testing.T) {
 	defer resetTokenForTest(t, "test-token")()
 

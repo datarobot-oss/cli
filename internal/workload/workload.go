@@ -104,25 +104,53 @@ func knownWorkloadStatuses() []string {
 // reason to bail. A workload that never leaves them surfaces via the timeout
 // rather than a spurious "settled" error on the first, still-stale poll.
 func IsTerminalWorkloadStatus(s string) bool {
-	switch s {
-	case WorkloadStatusRunning,
-		WorkloadStatusErrored,
-		WorkloadStatusTerminated:
-		return true
-	}
+	return IsWorkloadErrorStatus(s) || strings.EqualFold(s, WorkloadStatusRunning)
+}
 
-	return false
+// IsSteadyWorkloadStatus reports whether s is a status the platform will not
+// move away from on its own. It is the opposite question to
+// IsTerminalWorkloadStatus, which asks whether a workload on its way up has
+// arrived: this one asks whether it has stopped moving at all, so the states
+// that one deliberately keeps polling through (stopped, suspended,
+// interrupted) are answers here rather than steps on the way to one.
+//
+// Everything left over is the platform moving under its own power: submitted,
+// provisioning, launching, stopping, unknown, and whatever it adds later. An
+// unrecognised status therefore reads as still moving, which costs a wait and
+// never mistakes a transition for a destination.
+func IsSteadyWorkloadStatus(s string) bool {
+	return IsTerminalWorkloadStatus(s) || IsStoppedWorkloadStatus(s)
+}
+
+// IsSuspendedWorkloadStatus reports the one switched-off status a start cannot
+// undo. The platform ignores a start while a workload is suspended, so both the
+// plan that says what a deploy will do and the apply that refuses to do it have
+// to single this status out, and they must not spell it differently.
+func IsSuspendedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSuspended)
+}
+
+// IsStoppedWorkloadStatus reports whether s is one of the three ways a
+// workload can be switched off. They are grouped because a deploy treats them
+// alike, and named here because three files ask the same question: this one,
+// the deploy's own state reduction, and the status a detached start reports.
+//
+// Grouped, not equivalent. Only some of them can be started again, which is a
+// question for whoever is about to try rather than for this classification.
+func IsStoppedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusStopped) ||
+		strings.EqualFold(s, WorkloadStatusSuspended) ||
+		strings.EqualFold(s, WorkloadStatusInterrupted)
 }
 
 // IsWorkloadErrorStatus reports whether s is a terminal failure a caller should
 // surface as an error rather than a settled state.
+//
+// Folded, like every other status comparison in this package: the platform
+// does not agree with itself about the casing of its enums, and a terminal
+// status read as non-terminal is a poll loop that runs to its timeout.
 func IsWorkloadErrorStatus(s string) bool {
-	switch s {
-	case WorkloadStatusErrored, WorkloadStatusTerminated:
-		return true
-	}
-
-	return false
+	return strings.EqualFold(s, WorkloadStatusErrored) || strings.EqualFold(s, WorkloadStatusTerminated)
 }
 
 // Workload is the projection of the server's workload document the CLI
@@ -365,6 +393,57 @@ func WaitForWorkload(
 	interval, timeout time.Duration,
 	onTick func(*Workload),
 ) (*Workload, error) {
+	wl, err := pollWorkload(workloadID, interval, timeout, IsTerminalWorkloadStatus, onTick)
+	if err != nil || wl == nil {
+		return wl, err
+	}
+
+	if IsWorkloadErrorStatus(wl.Status) {
+		return wl, fmt.Errorf("workload %s ended with status %s; run 'dr workload logs %s' to inspect",
+			workloadID, wl.Status, workloadID)
+	}
+
+	return wl, nil
+}
+
+// WaitForSteadyWorkload polls until the workload stops moving under its own
+// power (see IsSteadyWorkloadStatus) or deadline expires. It is for a caller
+// that has to know where a transition landed before it can decide anything,
+// rather than one waiting for a workload it just started to come up.
+//
+// The difference from WaitForWorkload is the whole reason both exist. That one
+// polls through stopped, suspended and interrupted, because for a workload on
+// its way up they are steps rather than destinations; this one returns at them.
+// A `stopping` workload handed to WaitForWorkload runs to its timeout.
+//
+// Errored and terminated come back with a nil error. They are legitimate
+// answers to "has it stopped moving", so the verdict belongs to the caller
+// rather than here: the same "errored" is a destination to a caller asking
+// where a transition landed and a failure to one waiting for a workload it
+// just started. A caller that treats a nil error as "healthy" is reading this
+// as the wrong function; that is what WaitForWorkload is for.
+func WaitForSteadyWorkload(
+	workloadID string,
+	interval, timeout time.Duration,
+	onTick func(*Workload),
+) (*Workload, error) {
+	return pollWorkload(workloadID, interval, timeout, IsSteadyWorkloadStatus, onTick)
+}
+
+// pollWorkload is the loop both waits share. It errors only on a poll that
+// failed and on the deadline, so the verdict on a status the loop stopped at is
+// the caller's to pass: the same "errored" is a failure to one of them and an
+// answer to the other.
+//
+// The last-seen workload comes back with a timeout so a caller can still say
+// where it got to, and nothing at all comes back from a failed poll, since
+// there is no status to report.
+func pollWorkload(
+	workloadID string,
+	interval, timeout time.Duration,
+	stop func(string) bool,
+	onTick func(*Workload),
+) (*Workload, error) {
 	deadline := time.Now().Add(timeout)
 
 	for {
@@ -377,11 +456,7 @@ func WaitForWorkload(
 			onTick(wl)
 		}
 
-		if IsTerminalWorkloadStatus(wl.Status) {
-			if IsWorkloadErrorStatus(wl.Status) {
-				return wl, fmt.Errorf("workload %s ended with status %s; run 'dr workload logs %s' to inspect", workloadID, wl.Status, workloadID)
-			}
-
+		if stop(wl.Status) {
 			return wl, nil
 		}
 
@@ -406,16 +481,25 @@ type WorkloadList struct {
 // page size is clamped and larger totals are satisfied via next-links.
 const maxWorkloadPageSize = 100
 
-func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
+// ListWorkloads fetches up to limit workloads, optionally filtered by status
+// and by the name of the Enclave they actually run on.
+func ListWorkloads(limit int, statuses []string, enclave string) ([]Workload, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
+
+	// Trim so a copied name with stray spaces matches, same as the pin side.
+	enclave = strings.TrimSpace(enclave)
 
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
 
 	for _, s := range statuses {
 		query.Add("status", s)
+	}
+
+	if enclave != "" {
+		query.Set("enclave", enclave)
 	}
 
 	pageURL, err := drapi.EndpointURL("/workloads/", query)

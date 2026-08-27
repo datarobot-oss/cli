@@ -158,6 +158,41 @@ func TestRowTable_Filter(t *testing.T) {
 	assert.False(t, table.clearFilter())
 }
 
+// Space reaches the filter like any other printable key. It arrives as its
+// own key type, never inside KeyRunes, and the table underneath binds it to
+// page-down — so before this was handled, a name like "Py 3.12" could not be
+// typed and the keystroke silently paged the list instead.
+func TestRowTable_FilterAcceptsSpaces(t *testing.T) {
+	rows := []tableRow{
+		{cells: []string{"Py 3.12", "a"}, value: 1},
+		{cells: []string{"Py 3.9", "b"}, value: 2},
+		{cells: []string{"Python-nospace", "c"}, value: 3},
+	}
+
+	table := newRowTable([]string{"NAME", "DETAIL"}, rows, true, 120, 44)
+
+	// A leading space is swallowed like "/": a filter of one space is
+	// invisible, and the esc that then seems to do nothing would be spent
+	// clearing it instead of going back.
+	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "swallowed, not handed to paging")
+	assert.Empty(t, table.filter, "a space does not start a filter")
+
+	typeFilter(&table, "py")
+	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "space is filter input, not paging")
+	typeFilter(&table, "3.1")
+
+	assert.Equal(t, "py 3.1", table.filter)
+	assert.Equal(t, 1, visibleRowCount(table.view(120)), "only 'Py 3.12' carries the spaced query")
+
+	// One backspace removes the space like any other character.
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "py", table.filter)
+	assert.Equal(t, 3, visibleRowCount(table.view(120)))
+}
+
 // A filter that matches nothing says so, rather than showing an empty frame.
 func TestRowTable_FilterMatchingNothing(t *testing.T) {
 	table := newRowTable([]string{"NAME", "DETAIL"}, fakeRows(3), true, 120, 44)

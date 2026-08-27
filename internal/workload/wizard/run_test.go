@@ -63,6 +63,42 @@ func swapLiveFns(t *testing.T, getWorkload, getArtifact func(string) (workload.D
 	t.Cleanup(func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact })
 }
 
+// Headless there is no screen to explain that a probe is being preserved, so a
+// flag that cannot be carried out is an error rather than a run that reports
+// success having ignored the one thing it was asked to change.
+func TestRun_ProbeFlagOnAnUnmodelledProbeIsRefused(t *testing.T) {
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/tcp:v1",
+				 "readinessProbe": {"tcpSocket": {"port": 9100}, "periodSeconds": 10}}]}]}}`))
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+
+	for name, answers := range map[string]Answers{
+		"declined": {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", NoProbe: true},
+		"a path":   {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", HealthPath: "/ready"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Run(Options{Dir: dir, NonInteractive: true, Answers: answers})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "readiness probe with no path")
+			assert.NoFileExists(t, manifest.Path(dir))
+		})
+	}
+
+	// Binding without saying anything about the probe still works, and keeps it.
+	result, err := Run(Options{
+		Dir: dir, NonInteractive: true,
+		Answers: Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+		DryRun:  true,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(result.Content), "tcpSocket")
+}
+
 func documentFrom(t *testing.T, raw string) workload.Document {
 	t.Helper()
 
@@ -336,7 +372,7 @@ func TestRun_BoundWorkloadDoesNotGuessAtLiveValues(t *testing.T) {
 // clear, in either spelling, so neither is a finding.
 func TestRun_BoundWorkloadIgnoresCredentialReferences(t *testing.T) {
 	boundWithLiveEnv(t, `[{"name": "SHORTHAND_KEY", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
-		{"name": "OBJECT_KEY", "source": "credential",
+		{"name": "OBJECT_KEY", "source": "dr-credential",
 		 "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}]`)
 
 	assert.NotContains(t, boundRun(t), "looks like a secret")

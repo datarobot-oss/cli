@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -65,6 +67,34 @@ const (
         "name": "default",
         "containers": [
           {"name": "primary", "primary": true, "port": 8080, "imageUri": "registry/team/app:v1"}
+        ]
+      }
+    ]
+  }
+}`
+
+	// The same artifact with the credential reference already on it. A file
+	// that names the same reference therefore describes no artifact change, so
+	// a run that moves only the sizing really is a retune. Splicing the
+	// reference into the file alone would make it drift, and the run under test
+	// would quietly become a roll.
+	liveCredentialArtifactJSON = `{
+  "id": "68a0000000000000000000a1",
+  "name": "my-app-artifact",
+  "status": "draft",
+  "spec": {
+    "type": "service",
+    "containerGroups": [
+      {
+        "name": "default",
+        "containers": [
+          {
+            "name": "primary", "primary": true, "port": 8080, "imageUri": "registry/team/app:v1",
+            "environmentVars": [
+              {"source": "dr-credential", "name": "OPENAI_API_KEY",
+               "drCredentialId": "68b0cccc0000000000000003", "key": "apiToken"}
+            ]
+          }
         ]
       }
     ]
@@ -214,14 +244,37 @@ func TestRun_ReplacementInFlightStopsBeforeAnythingIsMade(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.guard = func(string) error { return errors.New("workload wl-1 already has a replacement in progress") }
+	f.guard = func(workloadID string) error {
+		return fmt.Errorf("workload %s: %w (status switching)", workloadID, workload.ErrReplacementInFlight)
+	}
 
 	install(t, f)
 
 	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already has a replacement in progress")
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+	assert.NotContains(t, err.Error(), "cannot tell whether",
+		"a refusal travels in its own words; only a failure to find out gets the operation named for it")
 	assert.Empty(t, tr.steps, "nothing may be created while a rollout is running")
+}
+
+// The other half of the roll guard's contract: a route that could not answer
+// says nothing about the deploy it stopped, so the operation is named for it.
+func TestRun_RollNamesWhatItStoppedWhenTheGuardCannotAnswer(t *testing.T) {
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.guard = func(string) error { return errors.New("HTTP error: 500 Internal Server Error") }
+
+	install(t, f)
+
+	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		"cannot tell whether workload 68b0c1d2e3f4a5b6c7d8e9f0 already has a rollout in progress, "+
+			"so nothing was built or rolled out")
+	assert.Contains(t, err.Error(), "500 Internal Server Error")
+	assert.Empty(t, tr.steps, "a guard that could not answer is not permission to proceed")
 }
 
 // Decision 1: rolling production is allowed, and typing the name is the whole
@@ -338,7 +391,7 @@ func TestRun_LockIsNotTakenWhenTheFinalGuardRefuses(t *testing.T) {
 			return nil
 		}
 
-		return errors.New("workload wl-1 already has a replacement in progress")
+		return fmt.Errorf("workload wl-1: %w (status switching)", workload.ErrReplacementInFlight)
 	}
 
 	install(t, f)
@@ -347,7 +400,8 @@ func TestRun_LockIsNotTakenWhenTheFinalGuardRefuses(t *testing.T) {
 		Confirm: func(string, string) (bool, error) { return true, nil },
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already has a replacement in progress")
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+	assert.NotContains(t, err.Error(), "cannot tell whether")
 	assert.NotContains(t, tr.steps, "lock:art-2",
 		"a refused rollout must not leave an artifact locked for a swap that never happened")
 }
@@ -361,9 +415,11 @@ func TestRun_LockedProductionLeftAloneWhenTheAnswerIsNo(t *testing.T) {
 		Confirm: func(string, string) (bool, error) { return false, nil },
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "still running the version it was")
+	assert.Contains(t, err.Error(), "as it was")
 	assert.NotContains(t, tr.steps, "lock:art-2", "locking cannot be undone, so it must not happen on a no")
 	assert.NotContains(t, tr.steps, "replace:art-2")
+	assert.NotContains(t, tr.steps, "create-artifact",
+		"the question is put before anything is made, so a no leaves no draft behind")
 }
 
 // Being unable to ask is not the same as having been told to go ahead.
@@ -478,12 +534,243 @@ func TestRun_DetachedRollDoesNotWait(t *testing.T) {
 	assert.Contains(t, stderr, "not waiting")
 }
 
-// Rolling onto something that is not running is a different operation, and
-// guessing which half the user meant is worse than asking.
-func TestRun_StoppedWorkloadWithANewVersionSaysStartItFirst(t *testing.T) {
+// The production confirm is asked before anything is touched, which means it is
+// now asked of a workload that is switched off. It must not open by telling the
+// reader their workload is running: that is the one prompt where being wrong
+// about live state costs something, and the run is about to start it.
+func TestRun_LockedProductionPromptDoesNotClaimAStoppedWorkloadIsRunning(t *testing.T) {
+	var (
+		tr    track
+		asked string
+	)
+
+	f := lockedLive(stoppedRoll(&tr))
+
+	install(t, f)
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err)
+
+	assert.NotContains(t, asked, "is running a locked version")
+	assert.Contains(t, asked, "is on a locked version")
+	assert.Contains(t, asked, "this deploy starts it",
+		"that the run also switches the workload on is material to the answer")
+	assert.Equal(t, []string{"guard"}, tr.steps,
+		"a no leaves the workload off and nothing minted; only the checks ahead of it ran")
+}
+
+// The same prompt against a running workload says nothing about starting,
+// because nothing is being started.
+func TestRun_LockedProductionPromptSaysNothingAboutStartingWhenItIsUp(t *testing.T) {
+	var (
+		tr    track
+		asked string
+	)
+
+	install(t, lockedLive(wiredRoll(&tr)))
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, asked, "is on a locked version")
+	assert.NotContains(t, asked, "starts it")
+}
+
+// A stopped workload with a new version to roll is started first and then
+// rolled, in one run. It used to be refused, on the grounds that coming up on
+// the old version and then failing was the worst of both; the refusal was
+// worse, because it left the workload switched off and asked for two more
+// commands. From the start onwards this is the same deploy a running workload
+// gets, which is why the step list below is a roll's with a start in front.
+func TestRun_StoppedWorkloadWithANewVersionStartsThenRolls(t *testing.T) {
+	var tr track
+
+	f := stoppedRoll(&tr)
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "start", "await-start", "guard", "create-artifact", "guard",
+		"replace:art-2", "await-rollout", "settle",
+	}, tr.steps, "the guard that can refuse comes before the start that mutates")
+	assert.Equal(t, ActionRolled, result.Action,
+		"rolling is the more significant of the two things this run did")
+	assert.Contains(t, stderr, "started, having been stopped")
+	assert.Contains(t, stderr, "artifact")
+}
+
+// The sizing half of the same rule: a stopped workload whose file moved only a
+// resource figure is started and then resized, rather than refused for asking
+// for more than a start.
+func TestRun_StoppedWorkloadWithASizingChangeStartsThenRetunes(t *testing.T) {
+	var tr track
+
+	f := stoppedRoll(&tr)
+	f.settings = func(id string, runtime json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+		tr.rolledRuntime = runtime
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(boundImageManifest, "replicaCount: 1", "replicaCount: 2", 1)
+
+	result, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "start", "await-start", "guard", "settings", "await-rollout", "settle"},
+		tr.steps, "the guard that can refuse comes before the start that mutates")
+	assert.Equal(t, ActionUpdated, result.Action)
+}
+
+// A resize of a running workload deliberately skips the credential check, so
+// that a reference this deploy does not touch cannot refuse it. A stopped one
+// is not that run: it is started too, and a start is when the container
+// resolves its references from cold.
+//
+// The live artifact carries the reference as well as the file, which is what
+// makes this a retune. An earlier version of this test spliced the reference
+// into the file alone; that is artifact drift, so the run was a roll, the
+// settings seam was never called, and the rule the test is named for had no
+// coverage at all.
+func TestRun_StoppedRetuneStillVerifiesCredentials(t *testing.T) {
+	var (
+		tr      track
+		lookups int
+	)
+
+	f := stoppedRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveCredentialArtifactJSON), nil }
+	f.settings = func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+	f.cred = func(string) (*workload.Credential, error) {
+		lookups++
+
+		return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(withCredential(boundImageManifest), "replicaCount: 1", "replicaCount: 2", 1)
+
+	_, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Equal(t, 1, lookups)
+	assert.Empty(t, tr.steps, "a bad reference stops the run before it starts anything")
+}
+
+// The pairing that gives the test above its meaning: the same manifest against
+// a running workload is the one case that may skip the check, because a resize
+// sends no environment and the artifact keeps every variable it has.
+func TestRun_RunningRetuneWithACredentialSkipsTheCheck(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveCredentialArtifactJSON), nil }
+	f.settings = func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+		tr.steps = append(tr.steps, "settings")
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+	f.cred = func(string) (*workload.Credential, error) {
+		t.Fatal("a settings update sends no environment, so a credential must not be able to refuse it")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	resized := strings.Replace(withCredential(boundImageManifest), "replicaCount: 1", "replicaCount: 2", 1)
+
+	_, _, err := runIn(t, resized, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, tr.steps, "settings")
+}
+
+// The lock is about the artifact left serving, so a run that starts a workload
+// only to roll it off that version must not lock what it is about to replace.
+// Locking cannot be undone, so this is not a tidiness point.
+func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
+	var tr track
+
+	install(t, stoppedRoll(&tr))
+
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"lock:art-2"}, locks(tr.steps),
+		"one lock, on the version the run left running")
+	assert.True(t, result.Locked)
+}
+
+// --detach says not to wait for the deploy. The start is not the deploy: the
+// rollout cannot be requested against a workload that is not up yet, so the
+// wait happens and the run says why rather than blocking in silence.
+func TestRun_DetachedStoppedRollWaitsForTheStartOnly(t *testing.T) {
+	var tr track
+
+	install(t, stoppedRoll(&tr))
+
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "start", "await-start", "guard", "create-artifact", "guard", "replace:art-2"},
+		tr.steps)
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+	assert.Contains(t, stderr, "not waiting")
+}
+
+// A credential id is a round trip each, and a stopped workload with drift
+// passes through both the branch that starts it and the one that rolls it.
+func TestRun_StoppedRollVerifiesCredentialsOnce(t *testing.T) {
+	var (
+		tr      track
+		lookups int
+	)
+
+	f := stoppedRoll(&tr)
+	f.cred = func(id string) (*workload.Credential, error) {
+		lookups++
+
+		return &workload.Credential{CredentialID: id}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, withCredential(newImage()), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, lookups, "the same credential must not be looked up once per branch")
+}
+
+// stoppedRoll is wiredRoll against a workload that is switched off, with the
+// start wired so the order of the two halves is assertable.
+func stoppedRoll(tr *track) fakes {
+	f := wiredRoll(tr)
+
 	f.workloadD = func(string) (workload.Document, error) {
 		d := docOf(liveImageWorkloadJSON)
 		d["status"] = workload.WorkloadStatusStopped
@@ -491,12 +778,61 @@ func TestRun_StoppedWorkloadWithANewVersionSaysStartItFirst(t *testing.T) {
 		return d, nil
 	}
 
-	install(t, f)
+	f.start = func(id string) (*workload.WorkloadOperationResponse, error) {
+		tr.steps = append(tr.steps, "start")
 
-	_, _, err := runIn(t, newImage(), Options{NonInteractive: true})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dr workload start")
-	assert.Empty(t, tr.steps)
+		return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+	}
+
+	// The two waits are the same seam, so the label says which one this is:
+	// the first is the prerequisite start, the rest are the deploy settling.
+	settled := false
+	f.wait = func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		step := "await-start"
+		if settled {
+			step = "settle"
+		}
+
+		settled = true
+
+		tr.steps = append(tr.steps, step)
+
+		artifact := "68a0000000000000000000a1"
+		if step == "settle" {
+			artifact = "art-2"
+		}
+
+		return &workload.Workload{
+			ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
+			ArtifactID: artifact, Endpoint: "https://app.datarobot.com/workloads/68b0/",
+		}, nil
+	}
+
+	return f
+}
+
+// withCredential hangs a stored-credential reference off the primary
+// container, which is the one thing in a manifest no local check can judge.
+func withCredential(file string) string {
+	return strings.Replace(file, "imageUri: registry/team/app:",
+		"environmentVars:\n"+
+			"              - name: OPENAI_API_KEY\n"+
+			"                value: dr-credential:68b0cccc0000000000000003/apiToken\n"+
+			"            imageUri: registry/team/app:", 1)
+}
+
+// locks picks the lock steps out of a track, so a test about how many locks a
+// run took does not have to restate every other step to say so.
+func locks(steps []string) []string {
+	var out []string
+
+	for _, step := range steps {
+		if strings.HasPrefix(step, "lock:") {
+			out = append(out, step)
+		}
+	}
+
+	return out
 }
 
 // builtRoll is a roll of a project whose image the platform builds, with
@@ -520,18 +856,8 @@ func builtRoll(tr *track) fakes {
 
 		return nil
 	}
-	f.save = func(_ string, cfg wapi.Config) error {
-		tr.steps = append(tr.steps, "relink")
-		tr.savedCfg = cfg
-
-		return nil
-	}
-	f.codeRef = func(artifactID, catalogID, versionID string) error {
-		tr.steps = append(tr.steps, "carry-code")
-		tr.carried = []string{artifactID, catalogID, versionID}
-
-		return nil
-	}
+	f.save = relinkStep(tr)
+	f.codeRef = carryCodeStep(tr)
 	f.sync = func(string) (*sync.Result, error) {
 		tr.steps = append(tr.steps, "sync")
 
@@ -554,6 +880,38 @@ func builtRoll(tr *track) fakes {
 func builtDrift() string {
 	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
 		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+}
+
+// emptySync is a sync that found nothing to do, which is the precondition of
+// every test about carrying code onto a version that has none of its own.
+func emptySync(tr *track) func(string) (*sync.Result, error) {
+	return func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{}, nil
+	}
+}
+
+// relinkStep records a project re-pointed at a new version, and carryCodeStep
+// the patch that gives that version the code the old one was running. Both
+// fixtures are shared with the create path's tests, so the step names the
+// suite pins stay in one place.
+func relinkStep(tr *track) func(string, wapi.Config) error {
+	return func(_ string, cfg wapi.Config) error {
+		tr.steps = append(tr.steps, "relink")
+		tr.savedCfg = cfg
+
+		return nil
+	}
+}
+
+func carryCodeStep(tr *track) func(string, string, string) error {
+	return func(artifactID, catalogID, versionID string) error {
+		tr.steps = append(tr.steps, "carry-code")
+		tr.carried = []string{artifactID, catalogID, versionID}
+
+		return nil
+	}
 }
 
 // syncedProject is a project that has pushed code before, linked to the
@@ -594,6 +952,34 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A built project whose live version is locked, and whose link therefore
+// points at something immutable. Nothing here is new machinery. The roll
+// already mints a version, moves the link and locks to match, so what is being
+// asserted is that the run reaches any of it, which a preflight refusal
+// computing the file count used to prevent.
+func TestRun_RollsABuiltProjectOffALockedVersion(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil }
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "create-artifact", "relink", "sync", "build",
+		"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle",
+	}, tr.steps)
+	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the link has to leave the locked version behind")
+	assert.True(t, result.Locked, "a locked version is replaced by a locked one")
+	assert.Contains(t, stderr, "the running version is locked, so a new one is created and locked to match",
+		"a --yes run locks something without being asked to, and the plan has to say so")
 }
 
 // The project is linked to the version that is serving, which is the state a
@@ -646,6 +1032,130 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// The same reuse against the shape the platform actually answers with. The
+// file states the artifact type inside the spec, which the platform accepts;
+// it hoists the discriminator and returns it beside the spec, so the two
+// blocks disagree about where the type lives. Unreconciled, that read as a
+// field the draft was missing, no leftover ever described the file, and every
+// attempt minted another one: the same drift the plan had, on the path whose
+// whole job is to stop the pile.
+//
+// The package's other fixtures answer with the type inside the spec, which is
+// not what staging returns, which is why nothing else here catches it.
+func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-abandoned")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("the leftover says what the file says, wherever each of them keeps the type")
+
+		return nil, nil
+	}
+
+	// The platform's own shape: type beside the spec, never inside it.
+	docs := artifactDocs("art-abandoned", 9000)
+	f.artifactD = func(id string) (workload.Document, error) {
+		d, err := docs(id)
+		if err != nil {
+			return nil, err
+		}
+
+		spec, _ := d["spec"].(map[string]any)
+		delete(spec, "type")
+
+		d["type"] = "service"
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle"},
+		tr.steps)
+	assert.Equal(t, ActionRolled, result.Action)
+}
+
+// Normalising where the type lives is not enough on its own: the walk that
+// follows compares by exact equality, so a file spelling it "Service" against
+// a live "service", or a document carrying no type at all, each read as a
+// difference no deploy can settle. The leftover is refused, another draft is
+// minted, and the next attempt refuses that one too.
+func TestRun_LeftoverDraftIsReusedAcrossTypeSpellingAndSilence(t *testing.T) {
+	for name, live := range map[string]func(workload.Document){
+		"different spelling": func(d workload.Document) { d["type"] = "Service" },
+		"no type at all":     func(d workload.Document) { delete(d, "type") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var tr track
+
+			f := builtRoll(&tr)
+			f.linked = func(string) bool { return true }
+			f.project = syncedProject("art-abandoned")
+			f.getArtifact = func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+			}
+			f.newArtifact = func(any) (*workload.Artifact, error) {
+				t.Fatal("the leftover says what the file says; a spelling is not a different kind")
+
+				return nil, nil
+			}
+
+			docs := artifactDocs("art-abandoned", 9000)
+			f.artifactD = func(id string) (workload.Document, error) {
+				d, err := docs(id)
+				if err != nil {
+					return nil, err
+				}
+
+				spec, _ := d["spec"].(map[string]any)
+				delete(spec, "type")
+				live(d)
+
+				return d, nil
+			}
+
+			install(t, f)
+
+			result, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+			require.NoError(t, err)
+			assert.Equal(t, ActionRolled, result.Action)
+		})
+	}
+}
+
+// A rollout that starts and then ends failed never promotes, so the previous
+// version keeps serving. Reporting "rolled" would name an outcome the workload
+// did not reach, on the one field a caller reads to find out what happened.
+func TestRun_FailedRolloutDoesNotReportThatItRolled(t *testing.T) {
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusFailed
+
+		return started, errors.New("rollout failed")
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still running the version it was")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"the version serving did not change, so the run did not roll")
 }
 
 // An artifact's spec is fixed when it is created, so a draft left by an
@@ -788,11 +1298,7 @@ func TestRun_SpecOnlyRollCarriesTheCodeOver(t *testing.T) {
 	f := builtRoll(&tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("68a0000000000000000000a1")
-	f.sync = func(string) (*sync.Result, error) {
-		tr.steps = append(tr.steps, "sync")
-
-		return &sync.Result{}, nil
-	}
+	f.sync = emptySync(&tr)
 
 	install(t, f)
 
@@ -818,11 +1324,7 @@ func TestRun_SpecOnlyRollWithNoCodeToCarryStopsBeforeTheBuild(t *testing.T) {
 	f.project = func(string) (wapi.Config, error) {
 		return wapi.Config{ArtifactID: "68a0000000000000000000a1"}, nil
 	}
-	f.sync = func(string) (*sync.Result, error) {
-		tr.steps = append(tr.steps, "sync")
-
-		return &sync.Result{}, nil
-	}
+	f.sync = emptySync(&tr)
 
 	install(t, f)
 
@@ -850,7 +1352,9 @@ func TestRun_RollLinkFailureNamesTheStrandedVersion(t *testing.T) {
 	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "art-2")
-	assert.Contains(t, err.Error(), "dr artifact code init art-2")
+	assert.Contains(t, err.Error(), "artifactId",
+		"the directory is already linked, so 'dr artifact code init' would refuse: name the file to edit")
+	assert.Contains(t, err.Error(), "config.json")
 	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed at a version nothing points to")
 }
 

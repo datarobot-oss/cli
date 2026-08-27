@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -75,24 +76,55 @@ func printArtifactsJSON(artifacts []Artifact) error {
 }
 
 func printArtifactDetails(artifact Artifact) {
-	catalogID, versionID := emptyValuePlaceholder, emptyValuePlaceholder
-
-	if codeRef := ExtractCodeRef(artifact); codeRef != nil {
-		catalogID = codeRef.CatalogID
-		versionID = codeRef.CatalogVersionID
-	}
+	catalogID, versionID := codeRefDisplay(artifact)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "ID:\t%s\n", artifact.ID)
 	fmt.Fprintf(w, "Name:\t%s\n", artifact.Name)
 	fmt.Fprintf(w, "Status:\t%s\n", artifact.Status)
+	// Spelled "Repository version" rather than "Version", which would sit two
+	// lines from the catalog's "Version ID" and read as the same thing.
+	fmt.Fprintf(w, "Repository:\t%s\n", orPlaceholder(artifact.ArtifactRepositoryID))
+	fmt.Fprintf(w, "Repository version:\t%s\n", artifactVersion(artifact))
 	fmt.Fprintf(w, "Catalog ID:\t%s\n", catalogID)
 	fmt.Fprintf(w, "Version ID:\t%s\n", versionID)
 	fmt.Fprintf(w, "Created:\t%s\n", artifact.CreatedAt.UTC().Format(timestampFormat))
 	fmt.Fprintf(w, "Updated:\t%s\n", artifact.UpdatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
+}
+
+// artifactVersion is the artifact's number within its repository. The platform
+// assigns one only on locking, so a draft genuinely has none and says so
+// rather than reporting 0, which would name a version no repository issues.
+func artifactVersion(artifact Artifact) string {
+	if artifact.Version == nil {
+		return emptyValuePlaceholder
+	}
+
+	return strconv.Itoa(*artifact.Version)
+}
+
+// codeRefDisplay is the artifact's catalog pair as the table and the detail
+// block both print it, with the placeholder wherever there is nothing to name.
+func codeRefDisplay(artifact Artifact) (catalogID, versionID string) {
+	codeRef := ExtractCodeRef(artifact)
+	if codeRef == nil {
+		return emptyValuePlaceholder, emptyValuePlaceholder
+	}
+
+	return orPlaceholder(codeRef.CatalogID), orPlaceholder(codeRef.CatalogVersionID)
+}
+
+// orPlaceholder is the single spelling of "nothing to show here", so a value
+// that renders as a dash in one command does not render as a blank in another.
+func orPlaceholder(value string) string {
+	if value == "" {
+		return emptyValuePlaceholder
+	}
+
+	return value
 }
 
 // Build log levels in ascending severity. Used by FilterLogsByLevel to drop
@@ -306,10 +338,7 @@ func printBuildsTable(builds []Build) {
 		Headers(headers...)
 
 	for _, b := range builds {
-		name := b.Name
-		if name == "" {
-			name = emptyValuePlaceholder
-		}
+		name := orPlaceholder(b.Name)
 
 		t.Row(
 			b.ID,
@@ -384,10 +413,7 @@ func printWorkloadsJSON(workloads []Workload) error {
 }
 
 func printWorkloadDetails(workload Workload) {
-	endpoint := workload.Endpoint
-	if endpoint == "" {
-		endpoint = emptyValuePlaceholder
-	}
+	endpoint := orPlaceholder(workload.Endpoint)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
@@ -476,12 +502,7 @@ func printArtifactsTable(artifacts []Artifact) {
 		Headers(headers...)
 
 	for _, a := range artifacts {
-		catalogID, versionID := emptyValuePlaceholder, emptyValuePlaceholder
-
-		if codeRef := ExtractCodeRef(a); codeRef != nil {
-			catalogID = codeRef.CatalogID
-			versionID = codeRef.CatalogVersionID
-		}
+		catalogID, versionID := codeRefDisplay(a)
 
 		updated := a.UpdatedAt.UTC().Format(timestampFormat)
 

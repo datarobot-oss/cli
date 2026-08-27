@@ -14,6 +14,8 @@
 
 package up
 
+import "github.com/datarobot/cli/internal/workload/manifest"
+
 // Actions are what a run will do, and what the JSON envelope reports. A run
 // does exactly one of them, so when several could apply the most significant
 // wins: creating beats rolling, rolling beats retuning, retuning beats
@@ -42,6 +44,18 @@ type CodeChange struct {
 	// FirstDeploy marks a project with nothing to compare against yet, so
 	// every file is new rather than changed.
 	FirstDeploy bool
+
+	// IgnoreNotice is the sync engine's note about a deprecated ignore
+	// filename, empty when there is nothing to say. Sizing the tree is the
+	// only part of a run that a --dry-run does, so carrying it here is what
+	// lets the preview mention it at all.
+	IgnoreNotice string
+
+	// LinkLocked reports that the artifact this project pushes into can no
+	// longer take code. The deploy answers by minting one that can and moving
+	// the link onto it, which the plan says out loud because nothing in the
+	// file asked for it.
+	LinkLocked bool
 }
 
 // Changed reports whether the code needs syncing and rebuilding.
@@ -55,27 +69,124 @@ type Plan struct {
 	// cannot actually be deployed onto.
 	State State
 
-	// Creates is a workload that does not exist yet, in which case Artifact
-	// and Runtime are empty: everything in the file is new, and listing it
+	// Creates is a workload the apply has to make rather than reconcile,
+	// because nothing is bound or what was bound is gone. Artifact and Runtime
+	// are empty in that case: everything in the file is new, and listing it
 	// field by field would be noise rather than a plan.
 	Creates bool
+
+	// PriorWorkloadID is the binding this create replaces, set only when the
+	// file named a workload the platform no longer has. A first deploy leaves
+	// it empty. The plan prints it, because a run that creates something where
+	// the file expected to find it is the one case where the user may be
+	// pointed at the wrong instance rather than at a deleted workload.
+	PriorWorkloadID string
+
+	// LinkedArtifact means this project already pushes to an artifact. Whether
+	// a create actually reuses it depends on the build mode: only a build
+	// consults the link, while a manifest naming a published image posts its
+	// artifact inline. Set by the caller rather than computed here, because
+	// this package deliberately never touches the filesystem.
+	LinkedArtifact bool
 
 	Code     CodeChange
 	Artifact []Change
 	Runtime  []Change
+
+	// Locked reports that the version now serving is immutable. Its successor
+	// has to be locked too before the platform will take it, so a deploy onto
+	// locked production locks something whether or not --lock was passed, and
+	// that cannot be undone. The plan is where it belongs: --dry-run is how a
+	// locked deploy is reviewed before it happens.
+	Locked bool
 }
 
-// Empty reports that the live state already matches the file. `up` prints
-// "Already up to date" and exits 0, having touched nothing.
+// Empty reports that the live state already matches the file and there is
+// nothing for the run to do about it. `up` prints "Already up to date" and
+// exits 0, having touched nothing.
 //
-// A stopped workload is never empty even when nothing differs: the user asked
-// to deploy, and a workload that is not running has not been deployed.
+// Matching the file is not sufficient, which is what actsOnState covers.
 func (p Plan) Empty() bool {
 	return !p.Creates &&
 		!p.Code.Changed() &&
 		len(p.Artifact) == 0 &&
 		len(p.Runtime) == 0 &&
-		p.State != StateStopped
+		!p.actsOnState()
+}
+
+// actsOnState reports the live states that give a run something to do even
+// when the file and the workload agree about every field.
+//
+// A stopped workload is the plain case: the user asked to deploy, and one that
+// is not running has not been deployed. The other two are about not lying. An
+// errored or terminated workload matches its file in exactly the way a crashed
+// process matches its source code, and the run that reaches them has to say so
+// rather than print a green tick: `up` announces what it found before it acts,
+// and "already up to date" over a header reading "errored" is the one summary
+// that sends the reader away.
+//
+// That mattered less when a deploy refused a moving workload outright. It
+// waits now, so a workload that dies while the deploy watches it is a case the
+// command deliberately observes, and reporting success for it would be a
+// success this run had a front-row seat to.
+func (p Plan) actsOnState() bool {
+	switch p.State {
+	case StateStopped, StateErrored, StateTerminated:
+		return true
+
+	case StateUnbound, StateMissing, StateSettling, StateRunning:
+		return false
+
+	default:
+		return false
+	}
+}
+
+// creates reports the states whose apply is a create rather than a reconcile.
+//
+// Unbound is the first deploy. Missing is the same answer for a different
+// reason: the file names a workload the platform does not have, and `up` is a
+// reconciler, so a target that no longer exists is drift like any other and
+// the file is what says what should be there. Refusing instead leaves the
+// binding for the user to clear by hand, which is a dead end on exactly the
+// recovery path where it is least welcome.
+//
+// Terminated is deliberately not among them, though it reads like it should
+// be. A terminated workload still exists: the platform returns it, and it goes
+// on holding its name and its artifact. Creating over it collides with the
+// name it still owns, and every line the plan would print about it would be
+// false, starting with the claim that it no longer exists.
+//
+// The risk this trades against is a 404 that means "not here" rather than
+// "deleted": a manifest deployed against the wrong instance, organisation or
+// token resolves to nothing and would be recreated somewhere unintended. That
+// is why the plan names the id it could not find, and why Terraform, which
+// treats a vanished resource the same way, is safe doing it while confirming
+// at apply. `up` announces rather than confirms, so the announcement is what
+// has to carry it.
+func creates(state State) bool {
+	switch state {
+	case StateUnbound, StateMissing:
+		return true
+
+	case StateTerminated, StateStopped, StateSettling, StateRunning, StateErrored:
+		return false
+
+	default:
+		return false
+	}
+}
+
+// priorBinding is the id a create is about to replace. A first deploy has
+// none, and only a binding that resolved to nothing has one worth printing:
+// the plan says which id went missing so a run pointed at the wrong instance
+// reads differently from one recovering a deleted workload.
+func priorBinding(live Live) string {
+	if live.State == StateMissing {
+		return live.WorkloadID
+	}
+
+	return ""
 }
 
 // RollsArtifact reports whether a new artifact version has to be minted and
@@ -84,6 +195,47 @@ func (p Plan) Empty() bool {
 // also has to replace.
 func (p Plan) RollsArtifact() bool {
 	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
+}
+
+// MintsVersion reports whether this run will produce a new artifact. Only a
+// run that does can lock one, so it is what decides whether the plan says
+// anything about locking: a change that moves the sizing alone is applied in
+// place, and a stopped workload is simply started, both leaving the locked
+// artifact exactly as it is.
+func (p Plan) MintsVersion() bool {
+	return p.Creates || p.RollsArtifact()
+}
+
+// OnlyStarts reports that starting the workload is the whole of what this run
+// does. It is asked twice on the stopped path, by the branch that decides
+// whether anything follows the start and by the start itself deciding whether
+// it may lock, and the two must not come to disagree: locking is one-way, so a
+// run that locked the version it was about to roll off could not take it back.
+func (p Plan) OnlyStarts() bool {
+	return p.Action() == ActionStarted
+}
+
+// Retunes reports that the sizing is the only thing this run changes: no
+// version is minted and the workload is updated where it stands. It is the
+// branch the apply takes, and it says nothing about whether the workload was
+// running when the run started, because by the time that branch is reached a
+// stopped one has been started.
+func (p Plan) Retunes() bool {
+	return !p.Creates && !p.RollsArtifact() && len(p.Runtime) > 0
+}
+
+// SendsNoEnvironment reports the one shape of deploy that resolves no
+// credential references, which is why the check that costs a round trip each
+// skips it: a resize sends the runtime block alone, so the artifact keeps every
+// variable it already has and a reference this deploy never touches must not be
+// able to refuse it.
+//
+// It is Retunes with one thing added rather than a second spelling of it. A
+// stopped workload whose file moved only its sizing is still started by the
+// run, and a start is when the container resolves its references from cold, so
+// that one verifies.
+func (p Plan) SendsNoEnvironment() bool {
+	return p.Retunes() && p.State != StateStopped
 }
 
 // Action names the outcome, for the summary line and the JSON envelope.
@@ -110,9 +262,11 @@ func (p Plan) Action() string {
 // and hands over the count.
 func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	plan := Plan{
-		State:   live.State,
-		Creates: live.State == StateUnbound,
-		Code:    code,
+		State:           live.State,
+		Creates:         creates(live.State),
+		PriorWorkloadID: priorBinding(live),
+		Code:            code,
+		Locked:          live.Locked,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an
@@ -161,10 +315,27 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	// Only when the file names one. Saying nothing about the type is not the
 	// same as asking for a service, and this walk never reverts what the file
 	// leaves out.
-	if kind != "" && kind != live.ArtifactType {
+	//
+	// The comparison folds case, which is not cosmetic: nothing in the file can
+	// resolve a difference the platform does not consider one, so a spelling
+	// the ledger accepts and the platform normalises would be drift that every
+	// run mints a version for and never clears.
+	// The live side is defaulted and the file's side is not, which is the same
+	// asymmetry the roll's repository check makes for the same reason. An
+	// unstated type in the file is the file having no opinion. An unstated type
+	// on the artifact is not: the platform defaults it to a service, so reading
+	// it as a difference would mint a version on every run of a file that
+	// correctly says service, and nothing the file can say would ever settle it.
+	//
+	// Have carries the defaulted value rather than the raw one, so the line the
+	// reader sees is the comparison that was actually made. Printing the empty
+	// string would render "artifact.type:  -> agent", a change with nothing on
+	// the left, about a side this code has just decided means service.
+	if running := manifest.ArtifactTypeOrDefault(live.ArtifactType); kind != "" &&
+		!manifest.SameArtifactType(kind, running) {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactType,
-			Have: live.ArtifactType,
+			Have: running,
 			Want: kind,
 		})
 	}

@@ -91,6 +91,12 @@ func TestAnswers_Check(t *testing.T) {
 		"privileged port": {
 			Answers{Port: 80}, "--port 80 is too low",
 		},
+		"a probe and no probe at once": {
+			Answers{NoProbe: true, HealthPath: "/ready"}, "--no-readiness-probe and --health",
+		},
+		"unsupported importance": {
+			Answers{Importance: "urgent"}, `--importance "urgent" is not supported`,
+		},
 	}
 
 	for name, test := range tests {
@@ -127,7 +133,7 @@ func TestAnswers_DraftFromDetectionAlone(t *testing.T) {
 	assert.Equal(t, manifest.BuildModeDockerfile, draft.Build.Mode)
 	assert.Equal(t, detected.Name, draft.Name)
 	assert.Equal(t, 3000, draft.Port)
-	assert.Equal(t, manifest.DefaultHealthPath, draft.HealthPath)
+	assert.Empty(t, draft.HealthPath, "no probe by default: a guessed path kills API-only deploys that 404 at /")
 	assert.Equal(t, manifest.TypeService, draft.Type)
 	assert.Equal(t, manifest.DefaultImportance, draft.Importance)
 	assert.Equal(t, manifest.DefaultReplicas, draft.Runtime.Replicas)
@@ -158,6 +164,38 @@ func TestAnswers_FlagsWinOverDetection(t *testing.T) {
 	assert.Equal(t, 3, draft.Runtime.Replicas)
 	assert.InEpsilon(t, 2.0, draft.Runtime.CPU, 0.0001)
 	assert.Equal(t, "4GB", draft.Runtime.Memory)
+}
+
+// The probe is optional to the platform, so declining it has to be reachable
+// without a terminal. An empty --health cannot say this: a string flag cannot
+// tell an empty value from an absent one, which is why the answer is a flag of
+// its own.
+func TestAnswers_NoProbeWritesNoProbe(t *testing.T) {
+	detected := Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n"))
+
+	draft, err := Answers{NoProbe: true}.draft(detected)
+	require.NoError(t, err)
+	assert.Empty(t, draft.HealthPath)
+
+	content, err := draft.Render()
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "readinessProbe")
+
+	// And what comes out is still a manifest this CLI reads.
+	parsed, err := manifest.Parse(content, detected.Dir)
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
+// Importance is written to every manifest and the screen keeps it behind the
+// advanced row, so the flag is the only way a headless run can say anything
+// but the default.
+func TestAnswers_ImportanceFlag(t *testing.T) {
+	detected := Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\n"))
+
+	draft, err := Answers{Importance: "HIGH"}.draft(detected)
+	require.NoError(t, err)
+	assert.Equal(t, "high", draft.Importance, "the casing is the user's business, the file's is settled")
 }
 
 // With nothing to build and nothing said, the error names the flags that

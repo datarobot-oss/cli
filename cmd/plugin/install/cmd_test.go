@@ -19,12 +19,32 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// makeCmd builds a minimal *cobra.Command with the --yes/-y flag registered,
+// parsing --yes onto it when yes is true. It is used to exercise
+// confirmPluginDepsInstall and checkAndInstallPluginDeps without relying on
+// the package-level flag state that was removed.
+func makeCmd(t *testing.T, yes bool) *cobra.Command {
+	t.Helper()
+
+	cmd := &cobra.Command{Use: "install"}
+
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "")
+
+	if yes {
+		require.NoError(t, cmd.ParseFlags([]string{"--yes"}))
+	}
+
+	return cmd
+}
 
 // versionsYAMLSatisfied has a dep that is always present and its version requirement is met.
 const versionsYAMLSatisfied = `echo-tool:
@@ -70,13 +90,7 @@ func writePluginVersionsYAML(t *testing.T, pluginName, yamlContent string) {
 // --- confirmPluginDepsInstall ---
 
 func TestConfirmPluginDepsInstall_YesFlag(t *testing.T) {
-	origYesFlag := yesFlag
-
-	defer func() { yesFlag = origYesFlag }()
-
-	yesFlag = true
-
-	assert.True(t, confirmPluginDepsInstall())
+	assert.True(t, confirmPluginDepsInstall(makeCmd(t, true)))
 }
 
 func TestConfirmPluginDepsInstall_ViperYes(t *testing.T) {
@@ -84,7 +98,10 @@ func TestConfirmPluginDepsInstall_ViperYes(t *testing.T) {
 
 	viperx.Set("yes", true)
 
-	assert.True(t, confirmPluginDepsInstall())
+	// IsNonInteractive falls back to viperx.GetBool(YesFlagName) when the
+	// --yes flag is not set on the command, so a cmd without --yes still
+	// resolves to non-interactive here.
+	assert.True(t, confirmPluginDepsInstall(makeCmd(t, false)))
 }
 
 func TestConfirmPluginDepsInstall_UserAnswersY(t *testing.T) {
@@ -103,7 +120,7 @@ func TestConfirmPluginDepsInstall_UserAnswersY(t *testing.T) {
 		r.Close()
 	}()
 
-	assert.True(t, confirmPluginDepsInstall())
+	assert.True(t, confirmPluginDepsInstall(makeCmd(t, false)))
 }
 
 func TestConfirmPluginDepsInstall_UserAnswersN(t *testing.T) {
@@ -122,13 +139,13 @@ func TestConfirmPluginDepsInstall_UserAnswersN(t *testing.T) {
 		r.Close()
 	}()
 
-	assert.False(t, confirmPluginDepsInstall())
+	assert.False(t, confirmPluginDepsInstall(makeCmd(t, false)))
 }
 
 // --- checkAndInstallPluginDeps ---
 
 func TestCheckAndInstallPluginDeps_SkipsWhenNoVersionsYaml(t *testing.T) {
-	err := checkAndInstallPluginDeps("nonexistent-test-dr-cli-install-plugin-xyz")
+	err := checkAndInstallPluginDeps(makeCmd(t, false), "nonexistent-test-dr-cli-install-plugin-xyz")
 
 	assert.NoError(t, err)
 }
@@ -138,7 +155,7 @@ func TestCheckAndInstallPluginDeps_NilWhenAllDepsSatisfied(t *testing.T) {
 
 	writePluginVersionsYAML(t, pluginName, versionsYAMLSatisfied)
 
-	err := checkAndInstallPluginDeps(pluginName)
+	err := checkAndInstallPluginDeps(makeCmd(t, false), pluginName)
 
 	assert.NoError(t, err)
 }
@@ -147,12 +164,6 @@ func TestCheckAndInstallPluginDeps_SkipsInstallWhenUserDeclines(t *testing.T) {
 	const pluginName = "test-dr-cli-install-decline"
 
 	writePluginVersionsYAML(t, pluginName, versionsYAMLWrongVersion)
-
-	origYesFlag := yesFlag
-
-	defer func() { yesFlag = origYesFlag }()
-
-	yesFlag = false
 
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
@@ -169,7 +180,7 @@ func TestCheckAndInstallPluginDeps_SkipsInstallWhenUserDeclines(t *testing.T) {
 		r.Close()
 	}()
 
-	installErr := checkAndInstallPluginDeps(pluginName)
+	installErr := checkAndInstallPluginDeps(makeCmd(t, false), pluginName)
 
 	assert.NoError(t, installErr)
 }
@@ -179,13 +190,7 @@ func TestCheckAndInstallPluginDeps_AutoConfirmsWithYesFlag(t *testing.T) {
 
 	writePluginVersionsYAML(t, pluginName, versionsYAMLWrongVersion)
 
-	origYesFlag := yesFlag
-
-	defer func() { yesFlag = origYesFlag }()
-
-	yesFlag = true
-
-	err := checkAndInstallPluginDeps(pluginName)
+	err := checkAndInstallPluginDeps(makeCmd(t, true), pluginName)
 
 	assert.NoError(t, err)
 }
@@ -195,19 +200,11 @@ func TestCheckAndInstallPluginDeps_AutoConfirmsWithViperYes(t *testing.T) {
 
 	writePluginVersionsYAML(t, pluginName, versionsYAMLWrongVersion)
 
-	origYesFlag := yesFlag
-
-	defer func() {
-		yesFlag = origYesFlag
-
-		viperx.Reset()
-	}()
-
-	yesFlag = false
+	defer viperx.Reset()
 
 	viperx.Set("yes", true)
 
-	err := checkAndInstallPluginDeps(pluginName)
+	err := checkAndInstallPluginDeps(makeCmd(t, false), pluginName)
 
 	assert.NoError(t, err)
 }

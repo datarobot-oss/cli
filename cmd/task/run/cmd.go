@@ -34,6 +34,8 @@ type taskRunOptions struct {
 	taskOpts task.RunOpts
 }
 
+const taskRunFromRootEnv = task.RunFromRootEnv
+
 // splitTaskArgs separates task names from additional arguments.
 // Supports: dr run task1 task2 -- -flag1 -flag2
 // Also auto-detects flags after task names if no explicit -- separator is present.
@@ -98,11 +100,18 @@ Examples:
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
-			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+			taskNames, taskArgs := splitTaskArgs(args)
 
-			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
+			rootTaskfile, usingRootTaskfile, err := task.ResolveTaskfile(opts.Dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+				return cli.ErrSilent
+			}
+
+			runStackEnv, err := task.GuardRunStack(rootTaskfile, taskNames)
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, "❌ "+err.Error())
 
 				return cli.ErrSilent
 			}
@@ -130,13 +139,16 @@ Examples:
 				return cli.ErrSilent
 			}
 
-			taskNames, taskArgs := splitTaskArgs(args)
-
 			if !opts.taskOpts.Silent {
 				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
 			opts.taskOpts.TaskArgs = taskArgs
+			opts.taskOpts.Env = append(opts.taskOpts.Env, runStackEnv)
+
+			if usingRootTaskfile {
+				opts.taskOpts.Env = append(opts.taskOpts.Env, taskRunFromRootEnv+"=1")
+			}
 
 			err = runner.Run(taskNames, opts.taskOpts)
 			if err != nil { //nolint: nestif
@@ -207,10 +219,7 @@ func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective
 	if _, err := os.Stat(standardTaskfile); err == nil {
 		taskfilePath = standardTaskfile
 	} else {
-		// Try template discovery with Taskfile.gen.yaml
-		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
-
-		discoveredTaskfile, err := discovery.Discover(opts.Dir, 2)
+		discoveredTaskfile, _, err := task.ResolveTaskfile(opts.Dir)
 		if err != nil {
 			// No Taskfile found - return no completions
 			return nil, cobra.ShellCompDirectiveNoFileComp

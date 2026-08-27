@@ -322,6 +322,410 @@ func TestValidate_DisabledAutoscalingAllowsReplicaCount(t *testing.T) {
 `)))
 }
 
+// The server echoes autoscaling: null when no policy is configured, so the
+// ledger must treat it as absent rather than as an active scaling policy.
+func TestValidate_ReplicaCountWithNullAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling: null
+`)))
+}
+
+// An empty autoscaling mapping is the same as a null one: there is no policy.
+func TestValidate_ReplicaCountWithEmptyAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling: {}
+`)))
+}
+
+// A null replicaCount is no count at all, so it cannot conflict with an
+// active autoscaling policy. The server echoes the same placeholder shape
+// for replicas that it does for autoscaling.
+func TestValidate_NullReplicaCountAllowsAutoscaling(t *testing.T) {
+	require.NoError(t, validateString(t, "", runtimeWithGroupBody(`      replicaCount: null
+      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`)))
+}
+
+// A non-empty autoscaling body without an enabled key is treated as enabled by
+// the server, so replicaCount still conflicts.
+func TestValidate_ReplicaCountWithAutoscalingNoEnabled(t *testing.T) {
+	err := validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling:
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 16, Path: "runtime.containerGroups[0].replicaCount", Msg: "cannot be set alongside autoscaling"},
+	})
+}
+
+// A present autoscaling body with an explicit enabled: null is not the same as
+// a null or empty block: the platform treats a null enabled as its own
+// default, which is on. The ledger has to agree, or it would accept a file
+// that autoscalingActive then says is autoscaling — and Apply silently drops
+// the replica answer. This is the same silent-drop the PR exists to prevent.
+func TestValidate_ReplicaCountWithAutoscalingEnabledNull(t *testing.T) {
+	err := validateString(t, "", runtimeWithGroupBody(`      replicaCount: 3
+      autoscaling:
+        enabled: null
+        minReplicaCount: 1
+        maxReplicaCount: 4
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 16, Path: "runtime.containerGroups[0].replicaCount", Msg: "cannot be set alongside autoscaling"},
+	})
+}
+
+// The node-based checkScaling and the map-based autoscalingActive must agree on
+// every autoscaling shape, or a live workload will render a file the ledger
+// rejects (or drop a replica answer that should be kept).
+func TestValidate_AutoscalingAgreesWithLiveReader(t *testing.T) {
+	cases := []struct {
+		name        string
+		autoscaling string
+		// groupAutoscaling is the map[string]any shape autoscalingActive sees,
+		// parallel to the YAML shape checkScaling sees. Keeping it in the case
+		// struct avoids a switch that would trip the cyclop limit.
+		groupAutoscaling any
+		active           bool
+	}{
+		{
+			name:             "null",
+			autoscaling:      `      autoscaling: null`,
+			groupAutoscaling: nil,
+			active:           false,
+		},
+		{
+			name:             "empty mapping",
+			autoscaling:      `      autoscaling: {}`,
+			groupAutoscaling: map[string]any{},
+			active:           false,
+		},
+		{
+			name: "enabled false",
+			autoscaling: `      autoscaling:
+        enabled: false`,
+			groupAutoscaling: map[string]any{keyEnabled: false},
+			active:           false,
+		},
+		{
+			name: "enabled true",
+			autoscaling: `      autoscaling:
+        enabled: true
+        minReplicaCount: 1
+        maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				keyEnabled:        true,
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
+			active: true,
+		},
+		{
+			name: "missing enabled with body",
+			autoscaling: `      autoscaling:
+        minReplicaCount: 1
+        maxReplicaCount: 4`,
+			groupAutoscaling: map[string]any{
+				"minReplicaCount": 1,
+				"maxReplicaCount": 4,
+			},
+			active: true,
+		},
+		// enabled: true with no other keys. Both readers agree this is ON.
+		{
+			name: "enabled true only",
+			autoscaling: `      autoscaling:
+        enabled: true`,
+			groupAutoscaling: map[string]any{keyEnabled: true},
+			active:           true,
+		},
+		{
+			name:             "absent",
+			groupAutoscaling: nil, // absent: the key is never set on the group
+			active:           false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "      replicaCount: 3"
+			if tc.autoscaling != "" {
+				body += "\n" + tc.autoscaling
+			}
+
+			var validateErr error
+
+			if err := validateString(t, "", runtimeWithGroupBody(body+"\n")); err != nil {
+				validateErr = err
+			}
+
+			group := map[string]any{}
+
+			// "absent" leaves the autoscaling key unset; every other case
+			// sets it from the struct field.
+			if tc.name != "absent" {
+				group[keyAutoscaling] = tc.groupAutoscaling
+			}
+
+			assert.Equal(t, tc.active, autoscalingActive(group), "autoscalingActive agrees with expected")
+			assert.Equal(t, tc.active, validateErr != nil, "checkScaling agrees with expected; err=%v", validateErr)
+		})
+	}
+}
+
+// A null imageBuildConfig is the same as a missing one: the container names an
+// image and does not also say how to build one.
+func TestValidate_ImageBuildConfigNullWithImageUri(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            imageBuildConfig: null
+`)))
+}
+
+// A null imageBuildConfig with no imageUri is "neither set", not "dockerfile
+// required".
+func TestValidate_ImageBuildConfigNullWithoutImageUri(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 9, Path: "artifact.spec.containerGroups[0].containers[0]", Msg: "must set either imageUri or imageBuildConfig"},
+	})
+}
+
+// A null artifact block is treated as absent, so binding to an existing
+// artifact by id is allowed.
+func TestValidate_ArtifactNullWithArtifactId(t *testing.T) {
+	require.NoError(t, validateString(t, "", `name: my-app
+artifact: null
+artifactId: 68b0bbbb0000000000000002
+`))
+}
+
+// A null artifact and no artifactId is the same as neither set.
+func TestValidate_ArtifactNullAndNoArtifactId(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+	})
+}
+
+// Two null values are still "neither set".
+func TestValidate_ArtifactNullAndArtifactIdNull(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: null
+artifactId: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+	})
+}
+
+// An inline artifact with a null spec reports the same error as a missing spec.
+func TestValidate_ArtifactWithNullSpec(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec: null
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 4, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
+// A build config with a null dockerfile reports the same error as a missing
+// dockerfile.
+func TestValidate_BuildConfigWithNullDockerfile(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig:
+              dockerfile: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 13, Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg: "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// When dockerfile is present but null and is not the first key in the
+// imageBuildConfig mapping, the "is required" error must anchor to the
+// dockerfile key's own line, not the mapping's first-key line. The companion
+// test above (where dockerfile is the only key) cannot tell the two apart;
+// this one separates them by inserting a context key first.
+func TestValidate_BuildConfigDockerfileAnchorsAtDockerfileLine(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig:
+              context: ./build
+              dockerfile: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg: "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// An environmentVars entry with a null value is rejected at validate time
+// rather than surfacing as a 422 at deploy time. The error anchors to the
+// value key's own line.
+func TestValidate_EnvironmentVarsNullValueRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: null
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 15, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with neither a value nor a credential/api-key
+// source is rejected. The error anchors to the entry (the nearest node).
+func TestValidate_EnvironmentVarsNoValueNoSourceRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 14, Path: "artifact.spec.containerGroups[0].containers[0].environmentVars[0].value",
+			Msg: "is required",
+		},
+	})
+}
+
+// An environmentVars entry with an explicitly empty value passes: the server
+// treats value: "" as an intentionally-empty string variable.
+func TestValidate_EnvironmentVarsEmptyValuePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: EMPTY
+                value: ""
+`)))
+}
+
+// A credential-source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsCredentialSourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - name: TOKEN
+                source: dr-credential
+                drCredentialId: 68f0cccc0000000000000003
+                key: apiToken
+`)))
+}
+
+// An api-key source entry carries no value; it passes the value check.
+func TestValidate_EnvironmentVarsApiKeySourcePasses(t *testing.T) {
+	require.NoError(t, validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            environmentVars:
+              - source: api-key
+`)))
+}
+
+// A null artifactId is treated as absent, so an inline artifact is allowed.
+func TestValidate_InlineArtifactWithNullArtifactId(t *testing.T) {
+	require.NoError(t, validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+artifactId: null
+`))
+}
+
+// VAL-R3-001: an EMPTY inline artifact block (artifact: {}) alongside an
+// artifactId is REJECTED with the exactly-one-of error. The server never
+// echoes artifact: {} (it sends artifact: null on unset), and Pydantic 422s
+// on artifact: {} with a confusing missing-fields error — the CLI must catch
+// it locally. The narrow isNull predicate (not isNullish) keeps the empty
+// mapping from being treated as absent here. Both the exactly-one-of error
+// (both sides set) and the spec-required error (empty artifact has no spec)
+// are reported, giving the user the full picture of what to fix.
+func TestValidate_EmptyArtifactBlockWithArtifactIdRejected(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: {}
+artifactId: 68b0bbbb0000000000000002
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 1, Path: "", Msg: "exactly one of artifact"},
+		{Line: 2, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
+// VAL-R3-002: a container with both imageUri and an EMPTY imageBuildConfig
+// (imageBuildConfig: {}) is REJECTED with the never-both error. The server
+// silently discards imageUri on artifact CREATE when imageBuildConfig parses
+// non-None (workload-api artifact.py:201-214), and Pydantic default-constructs
+// imageBuildConfig: {} into a real ImageBuildConfig — so the CLI must catch
+// this locally. The narrow isNull predicate keeps the empty mapping from
+// being treated as absent here.
+func TestValidate_ImageUriWithEmptyBuildConfigRejected(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageUri: nginx:latest
+            imageBuildConfig: {}
+`))
+
+	requireFindings(t, err, []FieldError{
+		{Line: 13, Path: "artifact.spec.containerGroups[0].containers[0]", Msg: "never both"},
+	})
+}
+
+// VAL-R3-004: an empty imageBuildConfig: {} with NO imageUri reports the
+// missing dockerfile key (the same error as a missing dockerfile), not a
+// generic binding error. The empty-mapping arm must not short-circuit
+// checkBuildConfig into the wrong message.
+func TestValidate_EmptyBuildConfigAloneReportsDockerfileRequired(t *testing.T) {
+	err := validateString(t, "", serviceWithContainerBody(`            imageBuildConfig: {}
+`))
+
+	requireFindings(t, err, []FieldError{
+		{
+			Line: 12,
+			Path: "artifact.spec.containerGroups[0].containers[0].imageBuildConfig.dockerfile",
+			Msg:  "is required: imageBuildConfig must say how the image is built",
+		},
+	})
+}
+
+// VAL-R3-004: an empty artifact: {} with NO artifactId reports the missing
+// spec (the same error as a missing spec), not a generic binding/exclusivity
+// error. The empty-mapping arm must not short-circuit checkArtifact into the
+// wrong message.
+func TestValidate_EmptyArtifactBlockAloneReportsSpecRequired(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact: {}
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 2, Path: "artifact.spec", Msg: "is required for an inline artifact"},
+	})
+}
+
 func TestValidate_RuntimeNamesMustMatchTheArtifact(t *testing.T) {
 	err := validateString(t, "", `name: my-app
 artifact:

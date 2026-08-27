@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
@@ -25,6 +26,31 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// ---------------------------------------------------------------------------
+// Test isolation helper
+// ---------------------------------------------------------------------------
+
+// newIsolatedRootCmd returns a fresh *cli.CommandAdder built by
+// NewIsolatedRootFactory, which replaces every side-effecting dependency
+// with a safe no-op. Each call returns an independent command tree so that:
+//   - viperx global state set by one test cannot bleed into the next
+//   - global viper flag bindings are not re-pointed at the test tree
+//   - http.DefaultTransport is not mutated by TLS setup
+//   - Plugin discovery (filesystem + network) is skipped
+//   - The first-run animation is suppressed
+//   - No telemetry client is constructed or transmitted with
+//
+// Use this helper for any test that calls Execute() on the root command.
+// Tests that only inspect the static command tree (flags, subcommands,
+// annotations) may continue to reference the package-level RootCmd singleton.
+func newIsolatedRootCmd() *cli.CommandAdder {
+	return NewIsolatedRootFactory().Build()
+}
+
+// ---------------------------------------------------------------------------
+// Tests that execute commands (use newIsolatedRootCmd for isolation)
+// ---------------------------------------------------------------------------
 
 func TestCaseInsensitiveCommands(t *testing.T) {
 	tests := []struct {
@@ -61,18 +87,15 @@ func TestCaseInsensitiveCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a new root command for each test to ensure isolation
-			cmd := RootCmd
+			// Build a fresh, isolated command tree for each subtest so that
+			// PersistentPreRunE side effects (viperx, TLS) don't bleed.
+			cmd := newIsolatedRootCmd()
 
-			// Capture output
 			buf := new(bytes.Buffer)
 			cmd.SetOut(buf)
 			cmd.SetErr(buf)
-
-			// Set the args
 			cmd.SetArgs(tt.args)
 
-			// Execute the command
 			err := cmd.Execute()
 
 			if tt.shouldError {
@@ -95,14 +118,10 @@ func TestVersionFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// pflag does not reset flag values between Parse calls, so the
-			// version flag stays true after this test. Reset it so subsequent
-			// tests that execute the root command aren't affected.
-			t.Cleanup(func() {
-				_ = RootCmd.PersistentFlags().Set("version", "false")
-			})
+			// Fresh command tree per subtest: pflag flag values do not carry
+			// over between builds, so no manual cleanup of the version flag is needed.
+			cmd := newIsolatedRootCmd()
 
-			cmd := RootCmd
 			buf := new(bytes.Buffer)
 			cmd.SetOut(buf)
 			cmd.SetErr(buf)
@@ -129,17 +148,19 @@ func TestTelemetryPropExtractor_OnSuccessPath(t *testing.T) {
 		{Name: "echo-tool", Command: "echo 1.0.0", MinimumVersion: "1.0.0"},
 	}
 
-	cmd := RootCmd
-	cmd.SetArgs([]string{"dependency", "check"})
+	root := newIsolatedRootCmd()
+	root.SetArgs([]string{"dependency", "check"})
 
 	var outBuf bytes.Buffer
 
-	cmd.SetOut(&outBuf)
+	root.SetOut(&outBuf)
 
-	err := cmd.Execute()
+	err := root.Execute()
 	require.NoError(t, err)
 
-	checkCmd := findCommandByPath(RootCmd.Command, "dr dependency check")
+	// Locate the executed command in this build's command tree (not the
+	// production singleton) so annotations are read from the same instance.
+	checkCmd := findCommandByPath(root.Command, "dr dependency check")
 	require.NotNil(t, checkCmd)
 
 	event, ok := telemetry.EventFor(checkCmd, []string{})
@@ -161,16 +182,17 @@ func TestTelemetryPropExtractor_OnErrorPath(t *testing.T) {
 		{Name: "FakeTool", Command: "nonexistent_dr_fake_xyz", URL: "https://example.com"},
 	}
 
-	cmd := RootCmd
-	cmd.SetArgs([]string{"dependency", "check"})
+	root := newIsolatedRootCmd()
+	root.SetArgs([]string{"dependency", "check"})
 
 	var errBuf bytes.Buffer
 
-	cmd.SetErr(&errBuf)
+	root.SetErr(&errBuf)
 
-	_ = cmd.Execute() // returns error: missing dep
+	_ = root.Execute() // returns error: missing dep
 
-	checkCmd := findCommandByPath(RootCmd.Command, "dr dependency check")
+	// Find the command in this build's tree so annotations are authoritative.
+	checkCmd := findCommandByPath(root.Command, "dr dependency check")
 	require.NotNil(t, checkCmd)
 
 	event, ok := telemetry.EventFor(checkCmd, []string{})
@@ -215,7 +237,7 @@ func TestUnknownArgGuard(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := RootCmd
+			cmd := newIsolatedRootCmd()
 
 			var buf bytes.Buffer
 
@@ -234,6 +256,10 @@ func TestUnknownArgGuard(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// setUnknownArgGuards unit tests (pure cobra.Command, no RootCmd dependency)
+// ---------------------------------------------------------------------------
 
 func TestSetUnknownArgGuards_AppliesGuardToPureParent(t *testing.T) {
 	child := &cobra.Command{
@@ -277,7 +303,7 @@ func TestSetUnknownArgGuards_SkipsCommandWithRunE(t *testing.T) {
 // command (pure parent, no RunE) rejects an unrecognised first arg with the
 // expected "unknown command" message.
 //
-// Uses a fresh, isolated command tree rather than the global RootCmd to avoid
+// Uses a bare cobra.Command tree rather than the global RootCmd to avoid
 // state pollution from cobra's package-level finalizers slice, which accumulates
 // across Execute calls in other tests and can cause RootCmd to appear non-runnable
 // by the time this assertion runs in the full test suite.
@@ -320,14 +346,22 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
 }
 
+// ---------------------------------------------------------------------------
+// Structural tests (read-only, no Execute)
+// ---------------------------------------------------------------------------
+
+// TestWorkloadCommandNotPresentByDefault verifies that workload is absent from
+// the default command tree. Uses a fresh isolated build with the feature-gate
+// env var neutralized so the test passes even when
+// DATAROBOT_CLI_FEATURE_WORKLOAD is set in the ambient environment.
 func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
-	// Verify that workload command is not present by default (feature not enabled).
-	// The feature gating happens during init(), so this tests the actual state.
-	cmd := RootCmd
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+
+	root := newIsolatedRootCmd()
 
 	var found bool
 
-	for _, subCmd := range cmd.Commands() {
+	for _, subCmd := range root.Commands() {
 		if subCmd.Name() == "workload" {
 			found = true
 			break
@@ -337,15 +371,19 @@ func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
 	assert.False(t, found, "workload command should not be present when feature gate is not enabled")
 }
 
+// TestArtifactCommandNotPresentByDefault verifies that artifact is absent from
+// the default command tree. The artifact command shares the "workload" feature
+// gate, so it is filtered out by cli.CommandAdder during Build() when the gate
+// is not enabled. Uses a fresh isolated build with the env var neutralized so
+// the test passes even when DATAROBOT_CLI_FEATURE_WORKLOAD is set.
 func TestArtifactCommandNotPresentByDefault(t *testing.T) {
-	// The artifact command shares the "workload" feature gate, so it is
-	// filtered out by cli.CommandAdder during init() when the gate is not
-	// enabled (the default).
-	cmd := RootCmd
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+
+	root := newIsolatedRootCmd()
 
 	var found bool
 
-	for _, subCmd := range cmd.Commands() {
+	for _, subCmd := range root.Commands() {
 		if subCmd.Name() == "artifact" {
 			found = true
 			break
@@ -355,10 +393,9 @@ func TestArtifactCommandNotPresentByDefault(t *testing.T) {
 	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
 }
 
-// TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-ca
-// TLS flags are always registered on RootCmd (no longer feature-gated).
-// Flag registration happens during init(), so this tests the actual
-// registered state.
+// TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags
+// are always registered on RootCmd (no longer feature-gated). Flag registration
+// happens during init(); no execution is required.
 func TestPrivateCATLSFlagsAlwaysRegistered(t *testing.T) {
 	for _, name := range []string{"skip-certificate-check", "ca-cert"} {
 		assert.NotNil(t, RootCmd.PersistentFlags().Lookup(name),
@@ -376,12 +413,14 @@ func TestRootCmdTraverseChildrenEnabled(t *testing.T) {
 			"placed before a plugin name are consumed by core and not forwarded as raw args")
 }
 
-// TestUniversalFlagsParsedOnCoreSubcommand verifies that a universal flag such as
-// --debug is parsed correctly when it appears after a core subcommand and that
-// subcommand's own flags (e.g. "dr <cmd> --set-url http://x --debug").
-// This guards the TraverseChildren behaviour for core commands: unlike plugins,
-// core subcommands have no DisableFlagParsing so cobra continues to parse flags
-// after the command name, including persistent flags from root.
+// TestUniversalFlagsParsedOnCoreSubcommand verifies that a universal flag such
+// as --debug is parsed correctly when it appears after a core subcommand and
+// that subcommand's own flags (e.g. "dr <cmd> --set-url http://x --debug").
+// This guards the TraverseChildren behaviour for core commands.
+//
+// A fresh isolated command tree is used so the sentinel command does not
+// permanently mutate the production RootCmd and the --debug flag state is
+// automatically discarded after the test.
 func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 	var parsedDebug bool
 
@@ -398,22 +437,24 @@ func TestUniversalFlagsParsedOnCoreSubcommand(t *testing.T) {
 	}
 	sentinel.Flags().String("set-url", "", "test flag")
 
-	RootCmd.AddCommand(sentinel)
+	// Build a fresh isolated tree and add the sentinel to it. No cleanup of
+	// the command tree or the debug flag is needed — the tree is discarded when
+	// this test returns.
+	root := newIsolatedRootCmd()
+	root.AddCommand(sentinel)
 
-	defer func() {
-		RootCmd.RemoveCommand(sentinel)
-		// Reset the debug persistent flag so it does not bleed into other tests.
-		_ = RootCmd.PersistentFlags().Set("debug", "false")
-	}()
+	root.SetArgs([]string{"sentinel-universal-flags-test", "--set-url", "http://example.com", "--debug"})
 
-	RootCmd.SetArgs([]string{"sentinel-universal-flags-test", "--set-url", "http://example.com", "--debug"})
-
-	err := RootCmd.Execute()
+	err := root.Execute()
 	require.NoError(t, err)
 
 	assert.True(t, parsedDebug,
 		"--debug must be parsed by core when it appears after a core subcommand and its own flags")
 }
+
+// ---------------------------------------------------------------------------
+// showFirstRunAnimation isolation test
+// ---------------------------------------------------------------------------
 
 // TestShowFirstRunAnimationSkipsWhenNonInteractive guards against tools like
 // `expect` (used by the smoke test suite) attaching a real pty to dr's

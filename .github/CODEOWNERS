@@ -1,5 +1,6 @@
 * @datarobot-oss/cli-maintainers
 cmd/workload/ @datarobot-oss/workload-cli
+cmd/artifact/ @datarobot-oss/workload-cli
 internal/workload/ @datarobot-oss/workload-cli
 cmd/pipeline/ @datarobot-oss/compute-services
 internal/pipeline/ @datarobot-oss/compute-services

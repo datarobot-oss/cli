@@ -30,6 +30,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The build statuses are upper case where the workload's are lower, which is
+// the platform disagreeing with itself. Read exactly, a build answering
+// "completed" is polled to the timeout and then fails a deploy whose image is
+// already built.
+func TestBuildStatusClassifiersFoldCase(t *testing.T) {
+	for _, c := range []struct {
+		status   string
+		terminal bool
+		failed   bool
+	}{
+		{BuildStatusCompleted, true, false},
+		{BuildStatusFailed, true, true},
+		{BuildStatusCancelled, true, true},
+		{"completed", true, false},
+		{"Failed", true, true},
+		{"cancelled", true, true},
+		{BuildStatusInProgress, false, false},
+		{"in_progress", false, false},
+		{"", false, false},
+	} {
+		assert.Equal(t, c.terminal, IsTerminalBuildStatus(c.status), "terminal %q", c.status)
+		assert.Equal(t, c.failed, IsBuildErrorStatus(c.status), "failed %q", c.status)
+		assert.Equal(t, c.terminal && !c.failed, IsBuildCompleted(c.status), "completed %q", c.status)
+	}
+}
+
 func TestIsTerminalBuildStatus(t *testing.T) {
 	cases := []struct {
 		status string
@@ -117,46 +143,6 @@ func TestLastN(t *testing.T) {
 	})
 }
 
-func TestParseBuildLogs(t *testing.T) {
-	t.Run("valid JSONL passthrough", func(t *testing.T) {
-		body := `{"asctime":"2026-06-09 10:00:00","levelname":"INFO","name":"image-builder","message":"start","build_id":"b-1"}
-{"asctime":"2026-06-09 10:00:01","levelname":"DEBUG","name":"image-builder","message":"detail","build_id":"b-1"}
-`
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		require.Len(t, entries, 2)
-		assert.Equal(t, "INFO", entries[0].Levelname)
-		assert.Equal(t, "start", entries[0].Message)
-		assert.Equal(t, "b-1", entries[0].BuildID)
-		assert.NotEmpty(t, entries[0].Raw, "raw bytes preserved for passthrough")
-	})
-
-	t.Run("malformed lines are skipped", func(t *testing.T) {
-		body := `{"levelname":"INFO","message":"ok"}
-not-json-garbage
-{"levelname":"ERROR","message":"bad"}
-`
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		require.Len(t, entries, 2)
-		assert.Equal(t, "ok", entries[0].Message)
-		assert.Equal(t, "bad", entries[1].Message)
-	})
-
-	t.Run("empty body returns empty slice", func(t *testing.T) {
-		entries, err := parseBuildLogs(strings.NewReader(""))
-		require.NoError(t, err)
-		assert.Empty(t, entries)
-	})
-
-	t.Run("blank lines are skipped", func(t *testing.T) {
-		body := "\n\n{\"levelname\":\"INFO\",\"message\":\"x\"}\n\n"
-		entries, err := parseBuildLogs(strings.NewReader(body))
-		require.NoError(t, err)
-		assert.Len(t, entries, 1)
-	})
-}
-
 func TestBuildLogEntry_MarshalJSON_PassesThroughRaw(t *testing.T) {
 	entry := BuildLogEntry{
 		Asctime:   "later", // would disagree with Raw to prove passthrough wins
@@ -237,6 +223,157 @@ func TestTriggerArtifactBuild_PropagatesValidationError(t *testing.T) {
 	_, err := TriggerArtifactBuild("art-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Artifact not found", "validation body must reach caller (0ae2527 regression)")
+}
+
+func TestTriggerArtifactBuild_RetriesGatewayTimeoutThenSucceeds(t *testing.T) {
+	installSkipAuth(t)
+
+	var slept []time.Duration
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(d time.Duration) { slept = append(slept, d) }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte(`{"detail":"The image build service did not confirm the build submission in time. No build was recorded on the artifact; it is safe to retry."}`))
+
+			return
+		}
+
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"buildIds":["b-1"]}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	resp, err := TriggerArtifactBuild("art-1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"b-1"}, resp.BuildIDs)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, []time.Duration{2 * time.Second}, slept)
+}
+
+func TestTriggerArtifactBuild_DoesNotRetryProxy504(t *testing.T) {
+	// A 504 without a FastAPI detail body was minted by a proxy, not the
+	// platform — the platform may still be processing and might yet record
+	// the build, so retrying risks a duplicate.
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) { t.Fatal("must not sleep: a proxy 504 is not retryable") }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = w.Write([]byte("<html>504 Gateway Time-out</html>"))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
+func TestTriggerArtifactBuild_DoesNotRetryPlain500(t *testing.T) {
+	// A bare 500 has no safe-to-retry contract: an older server may have
+	// half-succeeded, and re-POSTing could start a duplicate build.
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) { t.Fatal("must not sleep: 500 is not retryable") }
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"detail":"Internal server error"}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
+func TestTriggerArtifactBuild_ClientTimeoutSaysRerunIsSafe(t *testing.T) {
+	// When the CLI itself hangs up (no response at all), the outcome is
+	// unknown — no status code, no retry. The error must say re-running is
+	// safe rather than leaving a bare "context deadline exceeded".
+	installSkipAuth(t)
+
+	origTimeout := triggerTimeoutSecs
+	triggerTimeoutSecs = 1
+
+	t.Cleanup(func() { triggerTimeoutSecs = origTimeout })
+
+	release := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release // hold the response until the client has given up
+
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Re-running 'dr workload up' is safe")
+	assert.Contains(t, err.Error(), "may still have started")
+}
+
+func TestTriggerArtifactBuild_GivesUpAfterRetryBudget(t *testing.T) {
+	installSkipAuth(t)
+
+	origSleep := triggerRetrySleep
+	triggerRetrySleep = func(time.Duration) {}
+
+	t.Cleanup(func() { triggerRetrySleep = origSleep })
+
+	var calls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"detail":"A DataRobot service needed to submit the build is temporarily unavailable, please retry in a few minutes."}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := TriggerArtifactBuild("art-1")
+	require.Error(t, err)
+	assert.Equal(t, 1+len(triggerRetryDelays), calls)
+	// The server's own sentence must reach the user, not a raw JSON dump.
+	assert.Contains(t, err.Error(), "temporarily unavailable")
+	assert.NotContains(t, err.Error(), `{"detail"`)
 }
 
 func TestGetArtifactBuild_Decodes(t *testing.T) {
@@ -367,18 +504,22 @@ func TestListArtifactBuilds_InvalidLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "limit")
 }
 
-func TestGetArtifactBuildLogs_ParsesJSONL(t *testing.T) {
+func TestGetArtifactBuildLogs_ReadsTheOTELStream(t *testing.T) {
 	installSkipAuth(t)
 
-	body := `{"asctime":"2026-06-09 10:00:00","levelname":"INFO","name":"image-builder","message":"line-1","build_id":"b-1"}
-{"asctime":"2026-06-09 10:00:01","levelname":"DEBUG","name":"image-builder","message":"line-2","build_id":"b-1"}
-`
+	var gotPath string
+
+	var gotQuery map[string][]string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/artifacts/art-1/builds/b-1/logs", r.URL.Path)
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
 
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(body))
+		// Newest first, as the OTEL route answers.
+		fmt.Fprint(w, logsPage("",
+			logEntryDocAt("2026-06-09 10:00:01.000000+00:00", "DEBUG", "line-2"),
+			logEntryDocAt("2026-06-09 10:00:00.000000+00:00", "INFO", "line-1"),
+		))
 	}))
 
 	defer srv.Close()
@@ -388,17 +529,28 @@ func TestGetArtifactBuildLogs_ParsesJSONL(t *testing.T) {
 	entries, err := GetArtifactBuildLogs("art-1", "b-1")
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
+
+	// The deprecated per-build proxy is gone: the artifact stream is read,
+	// narrowed to the one build via external_build_id.
+	assert.Equal(t, "/api/v2/otel/artifact/art-1/logs/", gotPath)
+	assert.Equal(t, []string{"external_build_id"}, gotQuery["searchKeys"])
+	assert.Equal(t, []string{"b-1"}, gotQuery["searchValues"])
+
+	// Chronological for display, mapped onto the legacy entry shape.
+	assert.Equal(t, "line-1", entries[0].Message)
 	assert.Equal(t, "INFO", entries[0].Levelname)
 	assert.Equal(t, "line-2", entries[1].Message)
+	assert.Equal(t, "b-1", entries[0].BuildID)
+	assert.NotEmpty(t, entries[0].Raw, "OTEL record preserved for JSON passthrough")
 }
 
-// A 404 means no log resource exists for this build (e.g. it failed before
-// the builder emitted anything) -- a legitimate empty result, not an error.
-func TestGetArtifactBuildLogs_404IsEmpty(t *testing.T) {
+// An empty OTEL page (no records for this build's external_build_id) is a
+// legitimate empty result, not an error.
+func TestGetArtifactBuildLogs_EmptyPageIsEmpty(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(logsPage("")))
 	}))
 
 	defer srv.Close()
@@ -407,7 +559,7 @@ func TestGetArtifactBuildLogs_404IsEmpty(t *testing.T) {
 
 	entries, err := GetArtifactBuildLogs("art-1", "b-1")
 	require.NoError(t, err)
-	assert.Nil(t, entries)
+	assert.Empty(t, entries)
 }
 
 func TestBuildLogsAvailable(t *testing.T) {
@@ -415,7 +567,7 @@ func TestBuildLogsAvailable(t *testing.T) {
 		installSkipAuth(t)
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{"levelname":"INFO","message":"hi"}` + "\n"))
+			_, _ = w.Write([]byte(logsPage("", logEntryDoc("INFO", "hi"))))
 		}))
 
 		defer srv.Close()
@@ -439,11 +591,11 @@ func TestBuildLogsAvailable(t *testing.T) {
 		assert.False(t, BuildLogsAvailable("art-1", "b-1"))
 	})
 
-	t.Run("false on empty 200 body", func(t *testing.T) {
+	t.Run("false on empty page", func(t *testing.T) {
 		installSkipAuth(t)
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(""))
+			_, _ = w.Write([]byte(logsPage("")))
 		}))
 
 		defer srv.Close()
@@ -599,16 +751,55 @@ func TestBuildSummaryFor_SuccessSkipsLogs(t *testing.T) {
 	assert.False(t, logsHit, "logs endpoint must not be hit on success")
 }
 
-func TestBuildSummaryFor_FailureFetchesLogs(t *testing.T) {
+// The consumers have to fold with the classifier. Folding the terminal check
+// while this went on comparing exactly was worse than not folding at all: the
+// wait accepts a lowercase "completed", then the code reading the result calls
+// the same build unfinished, so the deploy succeeds its wait and has no image
+// to show for it, and the next run rebuilds for nothing.
+func TestBuildSummaryFor_ReadsTheImageOffALowercaseCompleted(t *testing.T) {
 	installSkipAuth(t)
 
-	logBody := `{"levelname":"INFO","message":"start"}
-{"levelname":"ERROR","message":"boom"}
-`
+	var logsHit bool
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/logs") {
-			_, _ = w.Write([]byte(logBody))
+			logsHit = true
+
+			return
+		}
+
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:tag"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	summary, err := BuildSummaryFor(&Build{
+		ID:         "b-1",
+		ArtifactID: "art-1",
+		Status:     "completed",
+	}, DefaultBuildLogTail)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ecr/img:tag", summary.ImageURI, "the image is what a completed build is read for")
+	assert.False(t, logsHit, "a completed build has no failure logs to fetch")
+}
+
+func TestBuildSummaryFor_FailureFetchesLogs(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/otel/artifact/") {
+			// Newest first, as the OTEL route answers.
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-09 10:00:01.000000+00:00", "ERROR", "boom"),
+				logEntryDocAt("2026-06-09 10:00:00.000000+00:00", "INFO", "start"),
+			))
 
 			return
 		}
@@ -686,7 +877,7 @@ func TestBuildSummaryFor_FailureLogFetch502(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/logs") {
+		if strings.Contains(r.URL.Path, "/otel/artifact/") {
 			// Match the staging shape: 502 with a JSON detail body.
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = w.Write([]byte(`{"detail":"Failed to retrieve build logs"}`))
