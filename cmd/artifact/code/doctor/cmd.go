@@ -20,6 +20,7 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -67,6 +68,12 @@ remedy for anything that needs attention. It is a read-only diagnostic: no
 prompt is issued, no file is written, and no remote call is made unless
 remote checks apply.
 
+Pass --fix to attempt the safe local repairs (rebuild the manifest from
+config, restore an interrupted rollback, clear a stale sync lock), then
+re-run every check and report the post-fix state. Nothing is ever written to
+the server, and a live sync holding the lock gates all repairs. --fix and
+--relink are mutually exclusive.
+
 Exit code is 0 when no check FAILs (warnings are allowed) and 1 when at
 least one check FAILs. Pass --output-format json for a machine-parseable
 report on stdout.
@@ -74,6 +81,7 @@ report on stdout.
 Example:
   dr artifact code doctor
   dr artifact code doctor --dir ./service
+  dr artifact code doctor --fix
   dr artifact code doctor --output-format json`,
 		// No PreRunE on purpose: a read-only diagnostic must never abort on
 		// auth or launch the interactive login wizard. Auth is probed softly
@@ -94,6 +102,10 @@ Example:
 	// share the same non-interactive switch.
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Never prompt (read-only diagnosis never prompts anyway).")
 
+	c.Flags().Bool("fix", false,
+		"Attempt safe local repairs (rebuild the manifest from config, restore an "+
+			"interrupted rollback, clear a stale sync lock), then re-run the checks.")
+
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"yes":           cli.IsNonInteractive(cmd),
@@ -105,15 +117,34 @@ Example:
 }
 
 // runDoctor executes one diagnosis: resolve the project directory, run the
-// check suite, render the report, and exit 1 iff any check FAILed. The
-// rendered report is the user-facing outcome, so a FAIL run returns
-// cli.ErrSilent (with SilenceErrors set) instead of a second cobra error line.
+// check suite, render the report, and exit 1 iff any check FAILed. With
+// --fix, the safe local repairs run first and the reported checks (and exit
+// code) reflect the POST-fix state. The rendered report is the user-facing
+// outcome, so a FAIL run returns cli.ErrSilent (with SilenceErrors set)
+// instead of a second cobra error line.
 func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error {
+	fix, _ := cmd.Flags().GetBool("fix")
+
+	// --fix and --relink are mutually exclusive: a usage error exits 1
+	// before any check runs. The relink flag lands with the relink feature;
+	// Flags().Changed reports false until it is registered.
+	if fix && cmd.Flags().Changed("relink") {
+		return errors.New("--fix and --relink are mutually exclusive; use one or the other")
+	}
+
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
 	projectDir, err := resolveProjectDir(dirFlag)
 	if err != nil {
 		return err
+	}
+
+	var actions *[]core.Action
+
+	if fix {
+		performed := wldoctor.RunFix(cmd.Context(), projectDir)
+
+		actions = &performed
 	}
 
 	// Soft auth probe: resolve remote credentials without prompting and
@@ -130,12 +161,15 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 
 	// The complete check suite in the pinned fixed order: six local checks
 	// then the four remote checks. The remote checks share one artifact
-	// fetch through the getArtifactFn seam.
+	// fetch through the getArtifactFn seam. After --fix this is the post-fix
+	// state, so both the report and the exit code describe what remains.
 	results := core.NewRunner(
 		wldoctor.Checks(projectDir, wldoctor.ArtifactGetterFunc(getArtifactFn))...,
 	).Run(cmd.Context())
 
 	report := core.NewReport(projectDir, linkedArtifactID(projectDir), results)
+
+	report.Actions = actions
 
 	out := cmd.OutOrStdout()
 
